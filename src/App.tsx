@@ -2,6 +2,8 @@ import { useEffect } from 'react';
 import { APP_NAME } from './app';
 import * as platform from './platform';
 import {
+  alignSelected,
+  alignSelectedOn,
   cancelPlacing,
   copySelected,
   deleteSelected,
@@ -19,6 +21,7 @@ import {
   receiveFiles,
   redo,
   restoreSession,
+  rotateSelected,
   saveDesign,
   saveDesignAs,
   saveVersion,
@@ -63,6 +66,28 @@ function onKeyDown(e: KeyboardEvent): void {
     return;
   }
   if (getState().viewing) return;
+
+  // Shift + X / Y / Z turn the selection a quarter turn about that axis; with Alt, the other way.
+  if (e.shiftKey && !mod && (key === 'x' || key === 'y' || key === 'z')) {
+    e.preventDefault();
+    rotateSelected(key === 'x' ? 0 : key === 'y' ? 1 : 2, e.altKey ? -90 : 90);
+    return;
+  }
+
+  // Alt + arrows line the selection up; with Shift, on the centre of that axis. Alt+C centres X and Y at once.
+  if (e.altKey && !mod) {
+    const axis = ALIGN_KEYS[key];
+    if (axis) {
+      e.preventDefault();
+      alignSelected(axis[0], e.shiftKey ? 'centre' : axis[1]);
+      return;
+    }
+    if (key === 'c') {
+      e.preventDefault();
+      alignSelectedOn(e.shiftKey ? [[0, 'centre'], [1, 'centre'], [2, 'centre']] : [[0, 'centre'], [1, 'centre']]);
+      return;
+    }
+  }
 
   if (mod) {
     const action =
@@ -115,7 +140,9 @@ function onKeyDown(e: KeyboardEvent): void {
     s: () => setHole(false),
     d: dropSelected,
     f: () => viewerRef.current?.fit(),
-    m: () => mirrorSelected(0),
+    x: () => mirrorSelected(0),
+    y: () => mirrorSelected(1),
+    z: () => mirrorSelected(2),
   };
   const action = plain[key];
   if (action) {
@@ -123,6 +150,16 @@ function onKeyDown(e: KeyboardEvent): void {
     action();
   }
 }
+
+/** Which side of which axis each alignment key goes to: left/right along X, front/back along Y, down/up along Z. */
+const ALIGN_KEYS: Record<string, [0 | 1 | 2, 'min' | 'max']> = {
+  ArrowLeft: [0, 'min'],
+  ArrowRight: [0, 'max'],
+  ArrowDown: [1, 'min'],
+  ArrowUp: [1, 'max'],
+  PageDown: [2, 'min'],
+  PageUp: [2, 'max'],
+};
 
 /** Arrow keys move by the snap step; Shift makes it ten times that. */
 function step(e: KeyboardEvent): number {

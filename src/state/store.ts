@@ -20,6 +20,7 @@ import {
   makeShape,
   mirrorNodes,
   newId,
+  rotateNodes,
   ungroup,
   uniqueName,
   usedAssets,
@@ -446,11 +447,18 @@ export function setColor(color: string): void {
 }
 
 export function alignSelected(axis: 0 | 1 | 2, mode: AlignMode): void {
+  alignSelectedOn([[axis, mode]]);
+}
+
+/** Several alignments as one step (centre on X and Y, say). */
+export function alignSelectedOn(steps: [0 | 1 | 2, AlignMode][]): void {
   const nodes = selectedNodes();
   // A single object is aligned to the plate's centre lines; several to their common box.
   const target: Bounds | null = nodes.length > 1 ? selectionBounds(nodes) : { min: [0, 0, 0], max: [0, 0, 0] };
   if (!target || nodes.length === 0) return;
-  replaceNodes(alignNodes(nodes.filter((n) => !n.locked), (n) => geometry.bounds(n), axis, mode, target));
+  let moved = nodes.filter((n) => !n.locked);
+  for (const [axis, mode] of steps) moved = alignNodes(moved, (n) => geometry.bounds(n), axis, mode, target);
+  replaceNodes(moved);
 }
 
 export function mirrorSelected(axis: 0 | 1 | 2): void {
@@ -458,6 +466,15 @@ export function mirrorSelected(axis: 0 | 1 | 2): void {
   const bounds = selectionBounds(nodes);
   if (!bounds) return;
   replaceNodes(mirrorNodes(nodes, axis, boundsCenter(bounds)));
+}
+
+/** Turn the selection by `degrees` about a fixed axis through its centre (a single object turns about its own). */
+export function rotateSelected(axis: 0 | 1 | 2, degrees: number): void {
+  const nodes = selectedNodes().filter((n) => !n.locked);
+  if (nodes.length === 0) return;
+  const bounds = selectionBounds(nodes);
+  if (!bounds) return;
+  replaceNodes(rotateNodes(nodes, axis, degrees, nodes.length === 1 ? nodes[0].pos : boundsCenter(bounds)));
 }
 
 /** Rest each selected object on the build plate. */

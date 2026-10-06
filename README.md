@@ -80,7 +80,12 @@ design is still there after a restart.
 | Group / ungroup | Ctrl+G / Ctrl+Shift+G |
 | Solid / hole | S / H |
 | Drop onto the plate | D |
-| Mirror | M (or the toolbar, for the other axes) |
+| Flip (mirror) on an axis | X / Y / Z |
+| Turn 90° about an axis | Shift+X / Shift+Y / Shift+Z; add Alt to turn the other way |
+| Align left / right, front / back | Alt+← / Alt+→ / Alt+↓ / Alt+↑ |
+| Align bottom / top | Alt+PgDn / Alt+PgUp |
+| Centre on an axis | Alt+Shift + the same arrow or page key |
+| Centre on X and Y | Alt+C (Alt+Shift+C also centres Z) |
 | Fit to view | F |
 | Undo / redo | Ctrl+Z / Ctrl+Y |
 | Save / save as / open / new | Ctrl+S / Ctrl+Shift+S / Ctrl+O / Ctrl+N |

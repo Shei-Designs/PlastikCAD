@@ -53,10 +53,10 @@ const VIEWS: { id: ViewPreset; label: string }[] = [
   { id: 'side', label: 'Side' },
 ];
 
-const ALIGN_ROWS: { axis: 0 | 1 | 2; label: string; options: [string, string, string] }[] = [
-  { axis: 0, label: 'X', options: ['Left', 'Centre', 'Right'] },
-  { axis: 1, label: 'Y', options: ['Front', 'Centre', 'Back'] },
-  { axis: 2, label: 'Z', options: ['Bottom', 'Centre', 'Top'] },
+const ALIGN_ROWS: { axis: 0 | 1 | 2; label: string; options: [string, string, string]; keys: [string, string, string] }[] = [
+  { axis: 0, label: 'X', options: ['Left', 'Centre', 'Right'], keys: ['Alt+←', 'Alt+Shift+←', 'Alt+→'] },
+  { axis: 1, label: 'Y', options: ['Front', 'Centre', 'Back'], keys: ['Alt+↓', 'Alt+Shift+↓', 'Alt+↑'] },
+  { axis: 2, label: 'Z', options: ['Bottom', 'Centre', 'Top'], keys: ['Alt+PgDn', 'Alt+Shift+PgDn', 'Alt+PgUp'] },
 ];
 const ALIGN_MODES = ['min', 'centre', 'max'] as const;
 
@@ -99,7 +99,7 @@ function Actions() {
         </button>
       </div>
       <div className="chip-group">
-        <Popover className="chip icon" title="Align" button={<AlignIcon />} disabled={none} align="right">
+        <Popover className="chip icon" title="Align (Alt + arrows)" button={<AlignIcon />} disabled={none} align="right">
           {() => (
             <div className="align-panel">
               <p>{picked.length > 1 ? 'Line the selected objects up with each other' : 'Line the object up with the centre of the plate'}</p>
@@ -108,7 +108,7 @@ function Actions() {
                   <span>{row.label}</span>
                   <div className="segmented">
                     {row.options.map((label, i) => (
-                      <button key={label} type="button" onClick={() => alignSelected(row.axis, ALIGN_MODES[i])}>
+                      <button key={label} type="button" title={row.keys[i]} onClick={() => alignSelected(row.axis, ALIGN_MODES[i])}>
                         {label}
                       </button>
                     ))}
@@ -118,13 +118,13 @@ function Actions() {
             </div>
           )}
         </Popover>
-        <Popover className="chip icon" title="Mirror (M)" button={<MirrorIcon />} disabled={none} align="right">
+        <Popover className="chip icon" title="Mirror (X / Y / Z)" button={<MirrorIcon />} disabled={none} align="right">
           {() => (
             <div className="align-panel">
               <p>Flip the selection, as in a mirror standing across the chosen axis</p>
               <div className="segmented">
                 {(['X', 'Y', 'Z'] as const).map((label, axis) => (
-                  <button key={label} type="button" onClick={() => mirrorSelected(axis as 0 | 1 | 2)}>
+                  <button key={label} type="button" title={`Press ${label}`} onClick={() => mirrorSelected(axis as 0 | 1 | 2)}>
                     Flip {label}
                   </button>
                 ))}
