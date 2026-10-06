@@ -1,0 +1,57 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "BashCAD",
+  "mainBinaryName": "bashcad",
+  "version": "0.1.0",
+  "identifier": "com.andrewoshei.bashcad",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "BashCAD",
+        "width": 1360,
+        "height": 860,
+        "minWidth": 940,
+        "minHeight": 600
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "GraphicsAndDesign",
+    "shortDescription": "Fast solid modelling for 3D printing",
+    "license": "GPL-3.0-or-later",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "fileAssociations": [
+      {
+        "ext": ["bashcad"],
+        "name": "BashCAD design",
+        "description": "BashCAD design",
+        "mimeType": "application/x-bashcad",
+        "role": "Editor",
+        "exportedType": {
+          "identifier": "com.andrewoshei.bashcad.design",
+          "conformsTo": ["public.data"]
+        }
+      }
+    ],
+    "macOS": {
+      "signingIdentity": "-"
+    }
+  }
+}

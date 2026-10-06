@@ -1,0 +1,82 @@
+// Small catalog pictures of the basic shapes, drawn by hand in the style of a
+// technical sketch (visible edges only).
+import type { ReactNode } from 'react';
+import type { ShapeKind } from '../model/types';
+
+const glyph = (children: ReactNode) => (
+  <svg viewBox="0 0 36 36" width="36" height="36" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" aria-hidden="true">
+    {children}
+  </svg>
+);
+
+const GLYPHS: Record<ShapeKind, ReactNode> = {
+  box: glyph(
+    <>
+      <path d="M18 4.5 30 10.5v14L18 31 6 24.5v-14L18 4.5z" />
+      <path d="M6 10.5 18 17l12-6.5M18 17v14" />
+    </>,
+  ),
+  cylinder: glyph(
+    <>
+      <ellipse cx="18" cy="9.5" rx="10.5" ry="4.5" />
+      <path d="M7.5 9.5v17c0 2.5 4.7 4.5 10.5 4.5s10.5-2 10.5-4.5v-17" />
+    </>,
+  ),
+  sphere: glyph(
+    <>
+      <circle cx="18" cy="18" r="12.5" />
+      <path d="M5.5 18c0 2.3 5.6 4.2 12.5 4.2s12.5-1.9 12.5-4.2" />
+    </>,
+  ),
+  cone: glyph(
+    <>
+      <path d="M18 4.5 7.5 26.5M18 4.5l10.5 22" />
+      <path d="M7.5 26.5c0 2.5 4.7 4.5 10.5 4.5s10.5-2 10.5-4.5" />
+    </>,
+  ),
+  pyramid: glyph(
+    <>
+      <path d="M18 4.5 5.5 24 16 31.5 30.5 23 18 4.5z" />
+      <path d="M18 4.5 16 31.5" />
+    </>,
+  ),
+  wedge: glyph(
+    <>
+      <path d="M5.5 9v15.5l10 6.5 15-8-15-1.5L5.5 9z" />
+      <path d="M15.5 21.5V31M5.5 9l25 14" />
+    </>,
+  ),
+  roof: glyph(
+    <>
+      <path d="M11.5 10 5 25.5l8 5.5 6-15.5-7.5-5.5z" />
+      <path d="M11.5 10 25 6.5l6 14.5-18 10M19 15.5 31 21M19 15.5 25 6.5" />
+    </>,
+  ),
+  prism: glyph(
+    <>
+      <path d="M11 5.5h14l6 7-6 7H11l-6-7 6-7z" />
+      <path d="M5 12.5v10l6 7h14l6-7v-10M11 19.5v10M25 19.5v10" />
+    </>,
+  ),
+  tube: glyph(
+    <>
+      <ellipse cx="18" cy="9.5" rx="10.5" ry="4.5" />
+      <ellipse cx="18" cy="9.5" rx="5.5" ry="2.2" />
+      <path d="M7.5 9.5v17c0 2.5 4.7 4.5 10.5 4.5s10.5-2 10.5-4.5v-17" />
+    </>,
+  ),
+  torus: glyph(
+    <>
+      <ellipse cx="18" cy="18" rx="13" ry="8" />
+      <path d="M12 17c1.3 1.6 3.5 2.5 6 2.5s4.7-.9 6-2.5M13.5 18.3c1-1.3 2.6-2 4.5-2s3.5.7 4.5 2" />
+    </>,
+  ),
+  dome: glyph(
+    <>
+      <path d="M5.5 23.5a12.5 12.5 0 0 1 25 0" />
+      <ellipse cx="18" cy="23.5" rx="12.5" ry="4.5" />
+    </>,
+  ),
+};
+
+export const shapeThumbnail = (kind: ShapeKind): ReactNode => GLYPHS[kind];

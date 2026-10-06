@@ -1,0 +1,78 @@
+import type { Bounds } from '../model/math';
+import type { Asset, SceneNode } from '../model/types';
+import type { BuildResult, ExportResult, WorkerRequest, WorkerResponse } from './protocol';
+
+interface Waiting {
+  resolve: (value: never) => void;
+  reject: (error: Error) => void;
+}
+
+type Outgoing = WorkerRequest extends infer R ? (R extends { id: number } ? Omit<R, 'id'> : never) : never;
+
+/** Promise-based front end of the geometry worker. Requests are answered in the order they were sent. */
+export class GeometryClient {
+  private worker: Worker;
+  private nextId = 1;
+  private waiting = new Map<number, Waiting>();
+  private sentAssets = new Set<string>();
+
+  constructor() {
+    this.worker = new Worker(new URL('./geometry.worker.ts', import.meta.url), { type: 'module' });
+    this.worker.onmessage = (e: MessageEvent<WorkerResponse>) => this.onMessage(e.data);
+    this.worker.onerror = (e) => {
+      const error = new Error(e.message || 'The geometry worker crashed');
+      for (const w of this.waiting.values()) w.reject(error);
+      this.waiting.clear();
+    };
+  }
+
+  /** Hand over imported data the worker has not seen yet. Call before sending nodes that use it. */
+  syncAssets(assets: Record<string, Asset>): void {
+    const fresh: Record<string, Asset> = {};
+    let any = false;
+    for (const key of Object.keys(assets)) {
+      if (this.sentAssets.has(key)) continue;
+      this.sentAssets.add(key);
+      fresh[key] = assets[key];
+      any = true;
+    }
+    if (any) this.worker.postMessage({ type: 'assets', assets: fresh } satisfies WorkerRequest);
+  }
+
+  build(key: string, node: SceneNode): Promise<BuildResult> {
+    return this.send({ type: 'build', key, node });
+  }
+
+  measure(nodes: SceneNode[]): Promise<Bounds | null> {
+    return this.send({ type: 'measure', nodes });
+  }
+
+  export(nodes: SceneNode[], outline: boolean): Promise<ExportResult> {
+    return this.send({ type: 'export', nodes, outline });
+  }
+
+  dispose(): void {
+    this.worker.terminate();
+    const error = new Error('The geometry worker was stopped');
+    for (const w of this.waiting.values()) w.reject(error);
+    this.waiting.clear();
+  }
+
+  private send<T>(request: Outgoing): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const id = this.nextId++;
+      this.waiting.set(id, { resolve: resolve as (value: never) => void, reject });
+      this.worker.postMessage({ ...request, id });
+    });
+  }
+
+  private onMessage(msg: WorkerResponse): void {
+    const w = this.waiting.get(msg.id);
+    if (!w) return;
+    this.waiting.delete(msg.id);
+    if (msg.type === 'error') w.reject(new Error(msg.message));
+    else if (msg.type === 'built') w.resolve(msg.result as never);
+    else if (msg.type === 'measured') w.resolve(msg.bounds as never);
+    else w.resolve(msg.result as never);
+  }
+}
