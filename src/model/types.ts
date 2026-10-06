@@ -16,10 +16,12 @@ export type ShapeKind =
   | 'pyramid'
   | 'wedge'
   | 'roof'
+  | 'roundroof'
   | 'prism'
   | 'tube'
   | 'torus'
-  | 'dome';
+  | 'dome'
+  | 'fillet';
 
 interface NodeBase {
   id: string;
@@ -63,7 +65,29 @@ export interface ImportNode extends NodeBase {
   natural: Vec3;
 }
 
-export type SceneNode = ShapeNode | GroupNode | ImportNode;
+export type TextAlign = 'left' | 'centre' | 'right';
+
+/** Lettering, extruded along Z. Only the words are stored; the outlines come from the built-in fonts. */
+export interface TextNode extends NodeBase {
+  type: 'text';
+  /** May hold several lines. */
+  text: string;
+  /** Id of a built-in font (see `TEXT_FONTS`). */
+  font: string;
+  align: TextAlign;
+  /** Bounding box of the lettering as laid out (10 mm em, 1 mm thick); `size / natural` is its scale. */
+  natural: Vec3;
+}
+
+export type SceneNode = ShapeNode | GroupNode | ImportNode | TextNode;
+
+/** The fonts lettering can be set in. All are bold or heavy cuts: thin strokes do not print. */
+export const TEXT_FONTS: { id: string; name: string }[] = [
+  { id: 'sans', name: 'Sans' },
+  { id: 'serif', name: 'Slab serif' },
+  { id: 'mono', name: 'Monospace' },
+  { id: 'stencil', name: 'Stencil' },
+];
 export type Scene = SceneNode[];
 
 /** Imported triangle mesh, centred on its bounding box. Arrays are base64 (little-endian). */

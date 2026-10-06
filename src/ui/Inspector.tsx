@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useEffect, useId, useMemo, useState, useSyncExternalStore } from 'react';
 import { PALETTE, paramMax, polygonExtent, shapeDef } from '../geometry/shapes';
 import { boundsSize, tidy, tidyAngle, tidyVec, unionBounds } from '../model/math';
 import { countShapes } from '../model/ops';
-import type { SceneNode, ShapeNode, Vec3 } from '../model/types';
+import { TEXT_FONTS } from '../model/types';
+import type { SceneNode, ShapeNode, TextAlign, TextNode, Vec3 } from '../model/types';
 import { geometry } from '../state/geometry';
-import { resizeNode, setColor, setHole, setPrefs, shownScene, updateNode, updateSelected, useEditor } from '../state/store';
+import { editText, resizeNode, setColor, setHole, setPrefs, shownScene, updateNode, updateSelected, useEditor } from '../state/store';
 import { ExportPanel } from './ExportPanel';
 import { formatNumber, NumberBox, SliderField } from './Fields';
 import { LinkIcon } from './icons';
@@ -33,7 +34,9 @@ const kindOf = (node: SceneNode): string =>
     ? `Group of ${countShapes(node.children)} shape${countShapes(node.children) === 1 ? '' : 's'}`
     : node.type === 'import'
       ? 'Imported model'
-      : shapeDef(node.shape).summary;
+      : node.type === 'text'
+        ? 'Lettering: solid to emboss, hole to engrave'
+        : shapeDef(node.shape).summary;
 
 function NameField({ node }: { node: SceneNode }) {
   const [text, setText] = useState(node.name);
@@ -204,6 +207,61 @@ function ShapeParams({ node }: { node: SceneNode }) {
   );
 }
 
+const ALIGNMENTS: { id: TextAlign; label: string }[] = [
+  { id: 'left', label: 'Left' },
+  { id: 'centre', label: 'Centre' },
+  { id: 'right', label: 'Right' },
+];
+
+function TextFields({ node }: { node: TextNode }) {
+  const id = useId();
+  // What is being typed may briefly be nothing at all, which the node itself never is.
+  const [draft, setDraft] = useState(node.text);
+  useEffect(() => setDraft(node.text), [node.id, node.text]);
+  const locked = Boolean(node.locked);
+  return (
+    <fieldset className="group">
+      <legend>Text</legend>
+      <div className="field">
+        <textarea
+          className="text-input area"
+          rows={2}
+          aria-label="Text"
+          spellCheck={false}
+          disabled={locked}
+          value={draft}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            void editText(node.id, { text: e.target.value });
+          }}
+          onBlur={() => setDraft(node.text)}
+        />
+      </div>
+      <div className="field">
+        <label htmlFor={id}>Font</label>
+        <select id={id} value={node.font} disabled={locked} onChange={(e) => void editText(node.id, { font: e.target.value })}>
+          {TEXT_FONTS.map((f) => (
+            <option key={f.id} value={f.id}>
+              {f.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      {node.text.includes('\n') && (
+        <div className="field">
+          <div className="segmented" role="radiogroup" aria-label="Alignment of the lines">
+            {ALIGNMENTS.map((a) => (
+              <button key={a.id} type="button" role="radio" aria-checked={a.id === node.align} className={a.id === node.align ? 'on' : ''} disabled={locked} onClick={() => void editText(node.id, { align: a.id })}>
+                {a.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </fieldset>
+  );
+}
+
 function Overview() {
   const scene = useEditor(shownScene);
   useSyncExternalStore(geometry.subscribe, geometry.getRevision);
@@ -287,6 +345,7 @@ function Design() {
           <p>{kindOf(node)}{node.locked ? ' · locked' : ''}</p>
         </div>
       </header>
+      {node.type === 'text' && <TextFields node={node} />}
       <Appearance nodes={nodes} />
       <Transform node={node} />
       <ShapeParams node={node} />

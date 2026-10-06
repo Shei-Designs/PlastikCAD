@@ -16,8 +16,14 @@ software under the GPL-3.0.
 It is the Tinkercad way of modelling, without the cloud and without the clutter:
 
 - **Shapes** – box (with rounded edges), cylinder, sphere, cone, pyramid,
-  wedge, roof, polygon prism, tube, torus and dome. Click one, then click on the
-  plate (or on top of another object) to put it down.
+  wedge, roof, round roof, polygon prism, tube, torus and dome. Click one, then
+  click on the plate (or on top of another object) to put it down.
+- **Text** – lettering in four print-friendly fonts (sans, slab serif,
+  monospace, stencil), on one line or several. Put it on a face and group it
+  to emboss; make it a hole and sink it in a little (Ctrl+Down) to engrave.
+- **Fillet** – an edge cutter that comes in as a hole. Line it up with an edge
+  (select both, then Align), group, and the edge is rounded; with one step it
+  cuts a straight chamfer instead.
 - **Solid or hole** – any object can add material or cut it away.
 - **Group** – merges the selected solids and cuts the holes out of them. Groups
   can be grouped again, turned into holes themselves, and taken apart at any
@@ -106,6 +112,19 @@ just the selection, with *Selection only*). Units are millimetres, Z is up.
   [Gearwright](https://github.com/AOShei/gearwright)). Convert text to
   paths first; `<use>`, images and CSS classes are not read.
 
+## Fonts
+
+Text is set in fonts that ship with the app, so a design looks the same on
+every machine: [Inter](https://rsms.me/inter/) (sans),
+[Roboto Slab](https://github.com/googlefonts/robotoslab) (slab serif),
+[JetBrains Mono](https://www.jetbrains.com/lp/mono/) (monospace) and
+[Allerta Stencil](https://fonts.google.com/specimen/Allerta+Stencil), all in
+bold or heavy cuts with Latin and extended Latin characters. Inter, JetBrains
+Mono and Allerta Stencil are under the SIL Open Font License 1.1; Roboto Slab
+is under the Apache License 2.0; the licence texts are in
+`public/font-licenses/` and ship with the app. A design stores only the
+words, not their outlines.
+
 ## Development
 
 Requirements: [Node.js](https://nodejs.org) 22+, [pnpm](https://pnpm.io),
@@ -142,6 +161,7 @@ src/
   state/              the editor: selection, undo, versions, files, preferences
   viewer/             three.js view: drawing, picking, handles
   io/                 STL, 3MF, OBJ, SVG, DXF writers; STL, OBJ, 3MF, SVG readers
+  text/               fonts, and laying words out as outlines
   ui/                 React components
   platform.ts         desktop app or plain browser: dialogs, files, drops
 src-tauri/            native window, file dialogs, reading and writing files (Rust)
@@ -174,7 +194,7 @@ The palette, inspector, file format and export pick it up from there.
 - Gearwright parts as a shape family (gears, pulleys and threads straight from
   the palette).
 - Work plane on any face, ruler and snapping to other objects.
-- Text.
+- Text on curved surfaces; more scripts and fonts.
 - Editing inside a group without taking it apart.
 - STEP export.
 

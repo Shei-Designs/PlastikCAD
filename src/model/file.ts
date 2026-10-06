@@ -5,6 +5,7 @@
 import { FILE_FORMAT, FILE_VERSION } from '../app';
 import { SHAPES, clampParams, defaultParams } from '../geometry/shapes';
 import { usedAssets } from './ops';
+import { TEXT_FONTS } from './types';
 import type { Asset, Doc, OutlineShape, Scene, SceneNode, ShapeKind, Vec3, Version } from './types';
 
 export function emptyDoc(): Doc {
@@ -42,6 +43,9 @@ function canonical(node: SceneNode): Record<string, unknown> {
     shape: node.type === 'shape' ? node.shape : undefined,
     params: node.type === 'shape' && Object.keys(node.params).length ? sortKeys(node.params) : undefined,
     asset: node.type === 'import' ? node.asset : undefined,
+    text: node.type === 'text' ? node.text : undefined,
+    font: node.type === 'text' ? node.font : undefined,
+    align: node.type === 'text' && node.align !== 'left' ? node.align : undefined,
     natural: node.type === 'shape' ? undefined : node.natural,
     pos: node.pos,
     rot: node.rot,
@@ -127,6 +131,17 @@ function readNode(raw: unknown, assets: Record<string, Asset>): SceneNode | null
   if (raw.type === 'import') {
     if (typeof raw.asset !== 'string' || !assets[raw.asset]) return null;
     return { ...base, type: 'import', asset: raw.asset, natural: vec3(raw.natural, base.size, true) };
+  }
+  if (raw.type === 'text') {
+    if (typeof raw.text !== 'string' || raw.text.trim() === '') return null;
+    return {
+      ...base,
+      type: 'text',
+      text: raw.text,
+      font: TEXT_FONTS.some((f) => f.id === raw.font) ? (raw.font as string) : TEXT_FONTS[0].id,
+      align: raw.align === 'centre' || raw.align === 'right' ? raw.align : 'left',
+      natural: vec3(raw.natural, base.size, true),
+    };
   }
   if (raw.type === 'group') {
     const children = readScene(raw.children, assets);

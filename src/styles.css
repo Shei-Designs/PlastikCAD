@@ -1349,6 +1349,17 @@ kbd {
   background: var(--control);
 }
 
+.text-input.area {
+  display: block;
+  height: auto;
+  min-height: 46px;
+  padding: 5px 8px;
+  font: inherit;
+  color: inherit;
+  line-height: 1.35;
+  resize: vertical;
+}
+
 .text-input::placeholder {
   color: var(--faint);
 }

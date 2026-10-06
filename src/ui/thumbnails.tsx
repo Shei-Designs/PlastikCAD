@@ -52,6 +52,12 @@ const GLYPHS: Record<ShapeKind, ReactNode> = {
       <path d="M11.5 10 25 6.5l6 14.5-18 10M19 15.5 31 21M19 15.5 25 6.5" />
     </>,
   ),
+  roundroof: glyph(
+    <>
+      <path d="M4 27a9 9 0 0 1 18 0z" />
+      <path d="M7 20.3l10-9A9 9 0 0 1 32 18l-10 9" />
+    </>,
+  ),
   prism: glyph(
     <>
       <path d="M11 5.5h14l6 7-6 7H11l-6-7 6-7z" />
@@ -71,6 +77,12 @@ const GLYPHS: Record<ShapeKind, ReactNode> = {
       <path d="M12 17c1.3 1.6 3.5 2.5 6 2.5s4.7-.9 6-2.5M13.5 18.3c1-1.3 2.6-2 4.5-2s3.5.7 4.5 2" />
     </>,
   ),
+  fillet: glyph(
+    <>
+      <path d="M6 13h15v15A15 15 0 0 0 6 13z" />
+      <path d="M6 13l8-6h15l-8 6M29 7v15l-8 6" />
+    </>,
+  ),
   dome: glyph(
     <>
       <path d="M5.5 23.5a12.5 12.5 0 0 1 25 0" />
@@ -80,3 +92,10 @@ const GLYPHS: Record<ShapeKind, ReactNode> = {
 };
 
 export const shapeThumbnail = (kind: ShapeKind): ReactNode => GLYPHS[kind];
+
+export const textThumbnail: ReactNode = glyph(
+  <>
+    <path d="M7 8h17v5.5h-5.5V27h-6V13.5H7z" />
+    <path d="M7 8l5-3.5h17L24 8M29 4.5V10l-5 3.5M24 13.5h-5.5M18.5 27l5-3.5V13.5" />
+  </>,
+);

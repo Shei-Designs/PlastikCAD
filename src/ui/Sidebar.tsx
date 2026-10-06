@@ -6,6 +6,7 @@ import type { SceneNode } from '../model/types';
 import { isDesktop } from '../platform';
 import {
   addShape,
+  addText,
   importModel,
   isDirty,
   newDesign,
@@ -17,6 +18,7 @@ import {
   select,
   setPrefs,
   startPlacing,
+  startPlacingText,
   toggleHidden,
   toggleLocked,
   toggleSelected,
@@ -24,7 +26,7 @@ import {
 } from '../state/store';
 import { EyeIcon, EyeOffIcon, ImportIcon, LockIcon, Logo, MenuIcon, MoonIcon, SaveIcon, SunIcon, UnlockIcon } from './icons';
 import { Popover } from './Popover';
-import { shapeThumbnail } from './thumbnails';
+import { shapeThumbnail, textThumbnail } from './thumbnails';
 
 const MOD = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform) ? '⌘' : 'Ctrl+';
 
@@ -141,6 +143,24 @@ function Shapes() {
             </button>
           </li>
         ))}
+        <li>
+          <button
+            type="button"
+            className={placing?.type === 'text' ? 'shape selected' : 'shape'}
+            title={'Lettering to emboss on an object or, as a hole, to engrave in it\nClick, then click on the plate or on top of an object to place it.'}
+            disabled={Boolean(viewing)}
+            onPointerDown={(e) => {
+              if (e.button === 0) void startPlacingText();
+            }}
+            onDoubleClick={() => void addText()}
+            onClick={(e) => {
+              if (e.detail === 0) void addText();
+            }}
+          >
+            <span className="thumb">{textThumbnail}</span>
+            <span className="shape-name">Text</span>
+          </button>
+        </li>
       </ul>
       <button type="button" className="part" disabled={Boolean(viewing)} onClick={() => void importModel()}>
         <span className="thumb small">
@@ -153,7 +173,13 @@ function Shapes() {
 }
 
 const describe = (node: SceneNode): string =>
-  node.type === 'group' ? `Group of ${node.children.length}` : node.type === 'import' ? 'Imported' : (SHAPES.find((s) => s.kind === node.shape)?.name ?? '');
+  node.type === 'group'
+    ? `Group of ${node.children.length}`
+    : node.type === 'import'
+      ? 'Imported'
+      : node.type === 'text'
+        ? 'Text'
+        : (SHAPES.find((s) => s.kind === node.shape)?.name ?? '');
 
 function Objects() {
   const scene = useEditor((s) => s.doc.scene);

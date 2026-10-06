@@ -3,11 +3,12 @@
 // operations. Runs inside the geometry worker (and directly under vitest).
 import Module from 'manifold-3d';
 import type { CrossSection, Manifold, ManifoldToplevel, Mat4 } from 'manifold-3d';
-import { geomKey } from '../model/geomKey';
+import { geomKey, textAssetKey } from '../model/geomKey';
 import { apply, determinant, emptyBounds, expandBounds, isEmptyBounds, nodeMatrix, unionBounds } from '../model/math';
 import type { Bounds, Mat } from '../model/math';
 import type { Asset, GroupNode, ImportNode, MeshAsset, OutlineAsset, Polygon, SceneNode } from '../model/types';
 import type { BuildResult, ExportResult } from '../worker/protocol';
+import { CREASE_ANGLE } from './mesh';
 import type { MeshData, RenderMesh } from './mesh';
 import { buildShape } from './shapes';
 import type { Keep } from './shapes';
@@ -25,7 +26,6 @@ export function initKernel(wasmUrl?: string): Promise<ManifoldToplevel> {
   return loading;
 }
 
-const SHARP_ANGLE = 30;
 
 /**
  * Per-corner normals: each corner averages the faces around its vertex that
@@ -258,6 +258,12 @@ function construct(k: ManifoldToplevel, node: SceneNode): Built {
       if (!asset) throw new Error(`The imported data of "${node.name}" is missing from this design.`);
       return asset.kind === 'mesh' ? meshEntry(k, node, asset) : solidEntry(outlineSolid(k, node, asset));
     }
+    case 'text': {
+      // The outlines of lettering are sent along like imported drawings (see `textAssetKey`).
+      const asset = assets.get(textAssetKey(node));
+      if (asset?.kind !== 'outline') throw new Error(`"${node.name}" has no letters that can be drawn.`);
+      return solidEntry(outlineSolid(k, node, asset));
+    }
   }
 }
 
@@ -290,7 +296,7 @@ function groupSolid(k: ManifoldToplevel, node: GroupNode, keep: Keep): Manifold 
   return result;
 }
 
-function outlineSolid(k: ManifoldToplevel, node: ImportNode, asset: OutlineAsset): Manifold {
+function outlineSolid(k: ManifoldToplevel, node: SceneNode, asset: OutlineAsset): Manifold {
   return scoped((keep) => {
     const parts: CrossSection[] = [];
     for (const shape of asset.shapes) {
@@ -410,7 +416,7 @@ export function build(key: string, node: SceneNode): BuildResult {
       const { positions, triangles } = entry.open;
       return {
         key,
-        render: creasedNormals(positions, triangles, SHARP_ANGLE),
+        render: creasedNormals(positions, triangles, CREASE_ANGLE),
         bounds: boundsOfPositions(positions),
         triangles: entry.triangles,
         volume: 0,
@@ -420,7 +426,7 @@ export function build(key: string, node: SceneNode): BuildResult {
     const mesh = meshOf(entry.solid);
     return {
       key,
-      render: creasedNormals(mesh.positions, mesh.triangles, SHARP_ANGLE),
+      render: creasedNormals(mesh.positions, mesh.triangles, CREASE_ANGLE),
       bounds: toBounds(entry.solid.boundingBox()),
       triangles: entry.triangles,
       volume: entry.solid.volume(),

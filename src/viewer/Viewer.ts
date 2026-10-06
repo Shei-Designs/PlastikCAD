@@ -40,6 +40,7 @@ import {
 import type { WebGLRenderTarget } from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { CREASE_ANGLE } from '../geometry/mesh';
 import { clampParams } from '../geometry/shapes';
 import { boundsCenter, builtSize, flipSigns, frameMatrix, isEmptyBounds, rotation, tidy, tidyVec, unionBounds } from '../model/math';
 import type { Bounds, Mat } from '../model/math';
@@ -88,7 +89,6 @@ const DEFAULTS: ViewerOptions = { theme: 'dark', edges: true, grid: true, snap: 
 const FOV = 35;
 const FIT_MARGIN = 1.25;
 const ANIMATION_MS = 250;
-const EDGE_ANGLE = 30;
 /** Above this, sharp-edge extraction costs more than it is worth. */
 const EDGE_TRIANGLE_LIMIT = 300_000;
 const MIN_PHI = 1e-3; // keeps the camera off the Z axis, where "up" is undefined
@@ -768,7 +768,7 @@ export class Viewer {
     }
     if (!d.edges && d.shown) {
       const shared = this.share(d.shown);
-      if (!shared.edges && d.shown.triangles <= EDGE_TRIANGLE_LIMIT) shared.edges = new EdgesGeometry(shared.geometry, EDGE_ANGLE);
+      if (!shared.edges && d.shown.triangles <= EDGE_TRIANGLE_LIMIT) shared.edges = new EdgesGeometry(shared.geometry, CREASE_ANGLE);
       if (shared.edges) {
         d.edges = new LineSegments(shared.edges, new LineBasicMaterial({ transparent: true }));
         d.edges.matrixAutoUpdate = false;

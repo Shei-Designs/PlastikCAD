@@ -1,10 +1,11 @@
 // Built geometry, shared by the viewer (to draw it) and the editor (to know
 // the true bounds of things). Entries are keyed by `geomKey`, so they survive
 // moves, turns, undo and version switches without ever being rebuilt.
-import { geomKey } from '../model/geomKey';
+import { geomKey, textAssetKey } from '../model/geomKey';
 import { boxBounds, emptyBounds, nodeMatrix } from '../model/math';
 import type { Bounds } from '../model/math';
-import type { Asset, Scene, SceneNode } from '../model/types';
+import type { Asset, Scene, SceneNode, TextNode } from '../model/types';
+import { fontReady, loadFont, outlineOf } from '../text/fonts';
 import { GeometryClient } from '../worker/client';
 import type { BuildResult } from '../worker/protocol';
 
@@ -12,12 +13,23 @@ export type GeomEntry = { state: 'pending' } | { state: 'ready'; result: BuildRe
 
 const KEEP = 400;
 
+/** The lettering in a scene, at any depth. */
+function textNodes(nodes: Scene, out: TextNode[] = []): TextNode[] {
+  for (const node of nodes) {
+    if (node.type === 'text') out.push(node);
+    else if (node.type === 'group') textNodes(node.children, out);
+  }
+  return out;
+}
+
 class GeometryStore {
   private client: GeometryClient | null = null;
   private entries = new Map<string, GeomEntry>();
   private listeners = new Set<() => void>();
   private revision = 0;
   private tight = new WeakMap<SceneNode, { result: BuildResult; bounds: Bounds }>();
+  private wanted: { nodes: Scene; assets: Record<string, Asset> } | null = null;
+  private fetching = new Set<string>();
 
   /** The worker is started on first use. */
   worker(): GeometryClient {
@@ -39,6 +51,7 @@ class GeometryStore {
 
   /** Request whatever the given top-level nodes need and is not there yet. */
   ensure(nodes: Scene, assets: Record<string, Asset>): void {
+    this.wanted = { nodes, assets };
     let asked = false;
     for (const node of nodes) {
       const key = geomKey(node);
@@ -49,6 +62,8 @@ class GeometryStore {
         this.entries.set(key, entry);
         continue;
       }
+      // Lettering waits for its font; this runs again when the font is in.
+      if (!this.sendLettering(node)) continue;
       if (!asked) {
         this.worker().syncAssets(assets);
         asked = true;
@@ -68,6 +83,47 @@ class GeometryStore {
         if (entry.state !== 'pending' && !wanted.has(key)) this.entries.delete(key);
       }
     }
+  }
+
+  /**
+   * The worker, with everything it needs to work on these nodes: imported
+   * data, and the outlines of any lettering (once its fonts have loaded).
+   */
+  async prepare(nodes: Scene, assets: Record<string, Asset>): Promise<GeometryClient> {
+    await Promise.all([...new Set(textNodes(nodes).map((t) => t.font))].map(loadFont));
+    for (const node of nodes) this.sendLettering(node);
+    const worker = this.worker();
+    worker.syncAssets(assets);
+    return worker;
+  }
+
+  /** Hands the worker the outlines of the lettering in `node`. False while a font for it is still loading. */
+  private sendLettering(node: SceneNode): boolean {
+    const texts = textNodes([node]);
+    if (texts.length === 0) return true;
+    const outlines: Record<string, Asset> = {};
+    let ready = true;
+    for (const text of texts) {
+      if (!fontReady(text.font)) {
+        ready = false;
+        this.fetchFont(text.font);
+        continue;
+      }
+      const outline = outlineOf(text);
+      if (outline) outlines[textAssetKey(text)] = { kind: 'outline', shapes: outline.shapes };
+    }
+    if (ready) this.worker().syncAssets(outlines);
+    return ready;
+  }
+
+  private fetchFont(id: string): void {
+    if (this.fetching.has(id)) return;
+    this.fetching.add(id);
+    loadFont(id)
+      .then(() => {
+        if (this.wanted) this.ensure(this.wanted.nodes, this.wanted.assets);
+      }, console.error)
+      .finally(() => this.fetching.delete(id));
   }
 
   /**

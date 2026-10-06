@@ -25,9 +25,10 @@ import {
   usedAssets,
 } from '../model/ops';
 import type { AlignMode } from '../model/ops';
-import type { Asset, Doc, ImportNode, Scene, SceneNode, ShapeKind, Vec3, Version } from '../model/types';
+import type { Asset, Doc, ImportNode, Scene, SceneNode, ShapeKind, TextNode, Vec3, Version } from '../model/types';
 import * as platform from '../platform';
 import type { PickedFile } from '../platform';
+import { DEFAULT_FONT, loadFont, outlineOf } from '../text/fonts';
 import { geometry } from './geometry';
 import { loadPrefs, loadSession, savePrefs, saveSession } from './persist';
 import type { Prefs } from './persist';
@@ -282,6 +283,85 @@ export function startPlacing(kind: ShapeKind): void {
   set({ placing: node, selection: [] });
 }
 
+const TEXT_THICKNESS = 2;
+/** Lettering is listed under its own words until it is given another name. */
+const textLabel = (text: string): string => text.trim().split('\n')[0].slice(0, 24) || 'Text';
+
+/** New lettering parked below the plate, or null if the words draw nothing. Its font must be loaded. */
+function makeText(text: string, font: string): TextNode | null {
+  const outline = outlineOf({ text, font, align: 'left' });
+  if (!outline) return null;
+  return {
+    id: newId(),
+    type: 'text',
+    name: textLabel(text),
+    text,
+    font,
+    align: 'left',
+    natural: [outline.size[0], outline.size[1], 1],
+    pos: [0, 0, -1e6],
+    rot: [0, 0, 0],
+    size: [outline.size[0], outline.size[1], TEXT_THICKNESS],
+    hole: false,
+    color: '#e6e1d6',
+  };
+}
+
+/** Start carrying new lettering, to be put down like a shape. */
+export async function startPlacingText(): Promise<void> {
+  if (state.viewing) return;
+  try {
+    await loadFont(DEFAULT_FONT);
+    const node = makeText('Text', DEFAULT_FONT);
+    if (node && !state.viewing) set({ placing: node, selection: [] });
+  } catch (e) {
+    fail(e);
+  }
+}
+
+/** Add lettering at the middle of the plate straight away (keyboard route, double-click). */
+export async function addText(): Promise<void> {
+  if (state.viewing) return;
+  try {
+    await loadFont(DEFAULT_FONT);
+    const node = makeText('Text', DEFAULT_FONT);
+    if (!node || state.viewing) return;
+    node.pos = [0, 0, node.size[2] / 2];
+    node.name = uniqueName(state.doc.scene, node.name);
+    state = { ...state, placing: null };
+    commit([...state.doc.scene, node], { selection: [node.id] });
+  } catch (e) {
+    fail(e);
+  }
+}
+
+/**
+ * Change the words, font or alignment of lettering. Its letters keep their
+ * scale: the box grows or shrinks around them. Returns false if the change
+ * would leave nothing to draw (the node then stays as it was).
+ */
+export async function editText(id: string, change: Partial<Pick<TextNode, 'text' | 'font' | 'align'>>): Promise<boolean> {
+  try {
+    const before = state.doc.scene.find((n) => n.id === id);
+    if (before?.type !== 'text') return false;
+    await loadFont(change.font ?? before.font);
+    // Typing is faster than fonts load: work from the node as it is by now.
+    const node = state.doc.scene.find((n) => n.id === id);
+    if (node?.type !== 'text' || node.locked || state.viewing) return false;
+    const next = { text: node.text, font: node.font, align: node.align, ...change };
+    const outline = outlineOf(next);
+    if (!outline) return false;
+    const natural: Vec3 = [outline.size[0], outline.size[1], 1];
+    const size = tidyVec([(node.size[0] / node.natural[0]) * natural[0], (node.size[1] / node.natural[1]) * natural[1], node.size[2]]);
+    const name = node.name === textLabel(node.text) ? textLabel(next.text) : node.name;
+    updateNode(id, { ...next, natural, size, name } as Partial<SceneNode>, `text:${id}`);
+    return true;
+  } catch (e) {
+    fail(e);
+    return false;
+  }
+}
+
 export function movePlacing(point: Vec3 | null): void {
   const node = state.placing;
   if (!node) return;
@@ -415,8 +495,7 @@ export async function groupSelected(): Promise<void> {
   if (nodes.some((n) => n.locked)) return notify('Unlock the selected objects before grouping them.', 'error');
   set({ busy: 'Grouping…' });
   try {
-    const worker = geometry.worker();
-    worker.syncAssets(state.doc.assets);
+    const worker = await geometry.prepare(nodes, state.doc.assets);
     const bounds = await worker.measure(nodes);
     if (!bounds) {
       notify(nodes.every((n) => n.hole) ? 'A group needs at least one solid: these are all holes.' : 'Nothing would be left: the holes remove everything.', 'error');
@@ -644,8 +723,7 @@ export async function exportDesign(formatId: FormatId, selectionOnly: boolean): 
   const format = FORMATS.find((f) => f.id === formatId)!;
   const shown = state.viewing ? (state.doc.versions.find((v) => v.id === state.viewing)?.scene ?? []) : state.doc.scene;
   const nodes = selectionOnly && !state.viewing ? selectedNodes() : shown;
-  const worker = geometry.worker();
-  worker.syncAssets(state.doc.assets);
+  const worker = await geometry.prepare(nodes, state.doc.assets);
   const result = await worker.export(nodes, format.kind === '2d');
   const name = state.doc.name;
   const bytes =

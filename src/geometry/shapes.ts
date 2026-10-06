@@ -25,6 +25,8 @@ export interface ShapeDef {
   defaultSize: Vec3;
   params: ShapeParamDef[];
   defaultColor: string;
+  /** Shapes that exist to cut come in as holes. */
+  hole?: boolean;
 }
 
 const STEEL = '#8fa3bf';
@@ -183,6 +185,14 @@ export const SHAPES: ShapeDef[] = [
     defaultColor: IVORY,
   },
   {
+    kind: 'roundroof',
+    name: 'Round roof',
+    summary: 'Half a cylinder lying on its flat side',
+    defaultSize: [20, 20, 10],
+    params: [sidesParam(2, 64, 32, 'Steps', 'Number of flat faces over the curve.')],
+    defaultColor: ORANGE,
+  },
+  {
     kind: 'prism',
     name: 'Prism',
     summary: 'A bar with a polygon cross-section, such as a hexagon',
@@ -225,6 +235,15 @@ export const SHAPES: ShapeDef[] = [
     defaultSize: [20, 20, 10],
     params: [sidesParam(8, 128, 48, 'Segments', 'Number of segments around the base, in steps of four.')],
     defaultColor: BLUE,
+  },
+  {
+    kind: 'fillet',
+    name: 'Fillet',
+    summary: 'An edge cutter: as a hole along an edge it rounds it off, or chamfers it',
+    defaultSize: [5, 20, 5],
+    params: [sidesParam(1, 64, 16, 'Steps', 'Number of flat faces along the curve. One step cuts a straight chamfer.')],
+    defaultColor: GRAPHITE,
+    hole: true,
   },
 ];
 
@@ -309,7 +328,10 @@ function solid({ k, keep }: BuildContext, positions: Float32Array, triangles: nu
   return keep(new k.Manifold(mesh));
 }
 
-/** Solid with the convex CCW polygon `section` as its cross-section, from z0 up to z1. */
+/**
+ * Solid with the CCW polygon `section` as its cross-section, from z0 up to z1.
+ * The polygon must be convex, or at least visible in full from its first corner.
+ */
 function prism(c: BuildContext, section: Polygon, z0: number, z1: number): Manifold {
   const n = section.length;
   const positions = new Float32Array(n * 6);
@@ -327,10 +349,10 @@ function prism(c: BuildContext, section: Polygon, z0: number, z1: number): Manif
   return solid(c, positions, triangles);
 }
 
-/** Triangle given in the XZ plane, extruded along Y. */
-function triangularPrism(c: BuildContext, triangle: Polygon): Manifold {
-  // Made along Z, then stood up: the section's Y becomes Z.
-  return c.keep(prism(c, triangle, -0.5, 0.5).rotate([90, 0, 0]));
+/** Section given in the XZ plane (see `prism` for what it may look like), extruded along Y. */
+function lyingPrism(c: BuildContext, section: Polygon): Manifold {
+  // Made along Z, then laid down: the section's Y becomes Z.
+  return c.keep(prism(c, section, -0.5, 0.5).rotate([90, 0, 0]));
 }
 
 /**
@@ -397,18 +419,38 @@ const BUILDERS: Record<ShapeKind, (c: BuildContext) => Manifold> = {
   dome: ({ k, keep, p }) => keep(keep(k.Manifold.sphere(0.5, p.sides)).trimByPlane([0, 0, 1], 0)),
 
   wedge: (c) =>
-    triangularPrism(c, [
+    lyingPrism(c, [
       [-0.5, -0.5],
       [0.5, -0.5],
       [-0.5, 0.5],
     ]),
 
   roof: (c) =>
-    triangularPrism(c, [
+    lyingPrism(c, [
       [-0.5, -0.5],
       [0.5, -0.5],
       [0, 0.5],
     ]),
+
+  roundroof(c) {
+    const section: Polygon = [];
+    for (let i = 0; i <= c.p.sides; i++) {
+      const a = (i / c.p.sides) * Math.PI;
+      section.push([Math.cos(a) / 2, Math.sin(a) - 0.5]);
+    }
+    return lyingPrism(c, section);
+  },
+
+  // What is left of a square bar when a quarter-round bar is taken out of it: the solid corner is
+  // at +X +Z, and the hollow curve runs from the top at -X down to the bottom at +X.
+  fillet(c) {
+    const section: Polygon = [[0.5, 0.5]];
+    for (let i = 0; i <= c.p.sides; i++) {
+      const a = ((1 - i / c.p.sides) * Math.PI) / 2;
+      section.push([Math.cos(a) - 0.5, Math.sin(a) - 0.5]);
+    }
+    return lyingPrism(c, section);
+  },
 
   tube(c) {
     const { keep, size, p } = c;

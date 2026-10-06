@@ -1,5 +1,5 @@
 import { sizeDependent } from './math';
-import type { SceneNode } from './types';
+import type { SceneNode, TextNode } from './types';
 
 /** Fast, well-mixed 53-bit string hash (cyrb53). */
 export function hashString(s: string): string {
@@ -32,10 +32,22 @@ export function geomKey(node: SceneNode): string {
     }
     case 'import':
       return `i:${node.asset}`;
+    case 'text':
+      return `t:${textKey(node)}`;
     case 'group':
       return `g:${hashString(node.children.map(placedKey).join('|'))}`;
   }
 }
+
+/** Identifies the outlines of a piece of lettering: its words, font and alignment. */
+export const textKey = (node: Pick<TextNode, 'text' | 'font' | 'align'>): string => `${node.font}:${node.align}:${JSON.stringify(node.text)}`;
+
+/**
+ * Name under which the outlines of a text node are handed to the geometry
+ * worker. They travel like imported drawings, but are made on the fly and
+ * never saved.
+ */
+export const textAssetKey = (node: Pick<TextNode, 'text' | 'font' | 'align'>): string => `text:${textKey(node)}`;
 
 /** A child's geometry together with its placement inside the group. */
 function placedKey(node: SceneNode): string {

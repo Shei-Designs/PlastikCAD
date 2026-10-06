@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { geomKey } from '../model/geomKey';
-import type { Asset, GroupNode, ImportNode, Polygon, SceneNode, ShapeKind, ShapeNode, Vec3 } from '../model/types';
+import { geomKey, textAssetKey } from '../model/geomKey';
+import type { Asset, GroupNode, ImportNode, Polygon, SceneNode, ShapeKind, ShapeNode, TextNode, Vec3 } from '../model/types';
 import { build, cacheSize, clearCache, decodeBase64, exportNodes, initKernel, measure, setAssets } from './kernel';
 import type { MeshData } from './mesh';
 import { defaultParams, shapeDef } from './shapes';
@@ -196,6 +196,53 @@ describe('measure', () => {
     expect(measure([far])).toBeNull();
     expect(measure([shape('box', { hole: true })])).toBeNull();
     expect(measure([box, shape('box', { size: [30, 30, 30], hole: true })])).toBeNull();
+  });
+});
+
+describe('lettering', () => {
+  const text = (over: Partial<TextNode> = {}): TextNode => ({
+    ...base('Label'),
+    type: 'text',
+    text: 'O',
+    font: 'sans',
+    align: 'left',
+    natural: [10, 10, 1],
+    size: [10, 10, 1],
+    hole: false,
+    color: '#e6e1d6',
+    ...over,
+  });
+  const square = (h: number): Polygon => [
+    [-h, -h],
+    [h, -h],
+    [h, h],
+    [-h, h],
+  ];
+  // Counter wound the other way, as in a font.
+  const ring = (): Polygon[] => [square(5), [...square(2)].reverse()];
+
+  it('extrudes the outlines sent along under its text key', () => {
+    const node = text();
+    setAssets({ [textAssetKey(node)]: { kind: 'outline', shapes: [{ contours: ring(), evenodd: false }] } });
+    const r = build(geomKey(node), node);
+    expect(r.watertight).toBe(true);
+    expect(r.volume).toBeCloseTo(100 - 16, 6);
+    expect(r.bounds.min[2]).toBeCloseTo(-0.5);
+    expect(r.bounds.max[2]).toBeCloseTo(0.5);
+  });
+
+  it('engraves when it is a hole in a group', () => {
+    const label = text({ size: [10, 10, 2], pos: [0, 0, 9.5], hole: true });
+    setAssets({ [textAssetKey(label)]: { kind: 'outline', shapes: [{ contours: ring(), evenodd: false }] } });
+    const block = { ...base('Block'), type: 'shape', shape: 'box', params: defaultParams('box'), size: [20, 20, 20], hole: false, color: '#8fa3bf' } as ShapeNode;
+    const group: GroupNode = { ...base('Group'), type: 'group', natural: [20, 20, 20], size: [20, 20, 20], hole: false, color: '#8fa3bf', children: [block, label] };
+    // The lettering reaches a millimetre and a half into the top of the block.
+    expect(build(geomKey(group), group).volume).toBeCloseTo(8000 - 84 * 1.5, 4);
+  });
+
+  it('says so when the outlines are missing', () => {
+    const node = text({ text: 'never sent' });
+    expect(() => build(geomKey(node), node)).toThrow(/no letters/);
   });
 });
 

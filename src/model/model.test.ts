@@ -144,6 +144,13 @@ describe('geometry keys', () => {
     expect(geomKey({ ...rounded, size: [30, 30, 10] })).not.toBe(geomKey(rounded));
   });
 
+  it('follow the words, font and alignment of lettering, not its size', () => {
+    const label = { ...shape('box'), type: 'text', text: 'A', font: 'sans', align: 'left', natural: [7, 7, 1] } as unknown as SceneNode;
+    expect(geomKey({ ...label, size: [70, 70, 3], pos: [1, 2, 3] })).toBe(geomKey(label));
+    expect(geomKey({ ...label, text: 'B' } as SceneNode)).not.toBe(geomKey(label));
+    expect(geomKey({ ...label, font: 'mono' } as SceneNode)).not.toBe(geomKey(label));
+  });
+
   it('follow the contents of a group but not where the group is', () => {
     const group = makeGroup([shape('box'), shape('sphere', { hole: true })], { min: [-10, -10, 0], max: [10, 10, 20] }, 'Group');
     expect(geomKey({ ...group, pos: [9, 9, 9], size: [5, 5, 5] })).toBe(geomKey(group));
@@ -159,9 +166,12 @@ describe('design files', () => {
     const drawing: SceneNode = { ...shape('box'), type: 'import', asset: 'outline-1', natural: [10, 10, 1] } as unknown as SceneNode;
     delete (drawing as { shape?: unknown }).shape;
     delete (drawing as { params?: unknown }).params;
+    const label: SceneNode = { ...shape('box'), type: 'text', text: 'M8\nleft', font: 'stencil', align: 'centre', natural: [14, 16, 1] } as unknown as SceneNode;
+    delete (label as { shape?: unknown }).shape;
+    delete (label as { params?: unknown }).params;
     return {
       name: 'Bracket',
-      scene: [box, group, { ...drawing, hidden: true }],
+      scene: [box, group, { ...drawing, hidden: true }, label],
       versions: [{ id: 'v1', parent: null, label: 'First', time: '2026-01-02T03:04:05.000Z', scene: [box], thumb: 'data:image/jpeg;base64,AAAA' }],
       head: 'v1',
       assets: {
@@ -204,7 +214,14 @@ describe('design files', () => {
 
   it('skips nodes it cannot make sense of', () => {
     const text = serializeDoc(sample()).replace('"shape": "box"', '"shape": "teapot"');
-    expect(parseDoc(text).scene.length).toBe(2);
+    expect(parseDoc(text).scene.length).toBe(3);
+  });
+
+  it('stores lettering as its words, and falls back to a font it knows', () => {
+    const text = serializeDoc(sample());
+    expect(text).toContain('"text": "M8\\nleft"');
+    const [label] = parseDoc(text.replace('"font": "stencil"', '"font": "comic"')).scene.slice(-1);
+    expect(label.type === 'text' && label.font).toBe('sans');
   });
 });
 

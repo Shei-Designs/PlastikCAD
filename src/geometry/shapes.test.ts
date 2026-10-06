@@ -64,9 +64,9 @@ function volumeOf(node: ShapeNode): number {
 const around = (n: number, r: number) => n * Math.tan(Math.PI / n) * r * r;
 
 describe('shape catalog', () => {
-  it('lists the eleven shapes in order', () => {
+  it('lists the shapes in order', () => {
     expect(SHAPES.map((s) => s.kind)).toEqual([
-      'box', 'cylinder', 'sphere', 'cone', 'pyramid', 'wedge', 'roof', 'prism', 'tube', 'torus', 'dome',
+      'box', 'cylinder', 'sphere', 'cone', 'pyramid', 'wedge', 'roof', 'roundroof', 'prism', 'tube', 'torus', 'dome', 'fillet',
     ]);
   });
 
@@ -186,6 +186,35 @@ describe('shapes', () => {
     expect(volumeOf(shape('prism'))).toBeCloseTo(0.75, 6);
     // Half a sphere, stretched to the full height of the box.
     expect(Math.abs(volumeOf(shape('dome')) / (Math.PI / 6) - 1)).toBeLessThan(0.02);
+  });
+
+  it('leaves the fillet what a quarter-round bar does not fill', () => {
+    // Sixteen chords inside the quarter circle of radius 1.
+    expect(volumeOf(shape('fillet'))).toBeCloseTo(1 - 8 * Math.sin(Math.PI / 32), 5);
+    // One step is a straight cut: half the bar.
+    expect(volumeOf(shape('fillet', { params: { sides: 1 } }))).toBeCloseTo(0.5, 6);
+    // Solid at +X +Z, hollow towards -X -Z: nothing reaches inside the quarter circle.
+    const p = make(shape('fillet')).render.positions;
+    for (let i = 0; i < p.length; i += 3) expect(Math.hypot(p[i] + 0.5, p[i + 2] + 0.5)).toBeGreaterThan(1 - 1e-5);
+  });
+
+  it('rounds the round roof over its flat base', () => {
+    // Thirty-two chords inside a half circle of radius 1/2, stretched to twice its height.
+    expect(volumeOf(shape('roundroof'))).toBeCloseTo(2 * 16 * Math.sin(Math.PI / 32) * 0.25, 5);
+    const p = make(shape('roundroof')).render.positions;
+    // The whole width at the bottom, only the ridge at the top.
+    for (let i = 0; i < p.length; i += 3) if (p[i + 2] > 0.4999) expect(p[i]).toBeCloseTo(0);
+  });
+
+  it('keeps the corners of a twelve-sided prism sharp', () => {
+    const { normals } = make(shape('prism', { params: { sides: 12 } })).render;
+    // Flat shading: every corner of a side face carries that face's own normal, so the
+    // horizontal normals point in exactly twelve directions.
+    const directions = new Set<string>();
+    for (let i = 0; i < normals.length; i += 3) {
+      if (Math.abs(normals[i + 2]) < 0.5) directions.add(`${normals[i].toFixed(3)},${normals[i + 1].toFixed(3)}`);
+    }
+    expect(directions.size).toBe(12);
   });
 
   it('tapers a cone to its top size', () => {

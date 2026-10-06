@@ -45,7 +45,7 @@ export function makeShape(kind: ShapeKind, at: Vec3 = [0, 0, 0]): ShapeNode {
     pos: [at[0], at[1], at[2] + size[2] / 2],
     rot: [0, 0, 0],
     size,
-    hole: false,
+    hole: def.hole ?? false,
     color: def.defaultColor,
   };
 }
