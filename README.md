@@ -56,18 +56,22 @@ It is the Tinkercad way of modelling, without the cloud and without the clutter:
 
 ## Parts
 
-| Gears | Pulleys & sprockets | Screws & threads |
-| --- | --- | --- |
-| Spur gear | GT2 timing pulley (2 / 3 / 5 mm) | Metric bolt / threaded rod (M3–M20) |
-| Helical gear | HTD timing pulley (3M / 5M / 8M) | Metric nut |
-| Herringbone gear | T-series timing pulley (T2.5 / T5 / T10) | Trapezoidal lead screw (multi-start) |
-| Internal ring gear | MXL / XL timing pulley | Lead screw nut (flanged) |
-| Gear rack (straight, helical, herringbone) | Chain sprocket (#25–#41, 05B–08B, bicycle) | |
-| Bevel gear (90° shafts) | | |
-| Worm | | |
+| Gears | Pulleys & sprockets | Screws & threads | Extrusions & frames |
+| --- | --- | --- | --- |
+| Spur gear | GT2 timing pulley (2 / 3 / 5 mm) | Metric bolt / threaded rod (M3–M20) | Aluminium extrusion to the makers' drawings: OpenBuilds V-Slot 20, Misumi HFS5 / HFS6 / HFS8, 80/20 20 / 30 / 40 series, any cell count (2020, 2040, 4040, 3030, 3060, 6060, 4080...) |
+| Helical gear | HTD timing pulley (3M / 5M / 8M) | Metric nut | |
+| Herringbone gear | T-series timing pulley (T2.5 / T5 / T10) | Trapezoidal lead screw (multi-start) | |
+| Internal ring gear | MXL / XL timing pulley | Lead screw nut (flanged) | |
+| Gear rack (straight, helical, herringbone) | Chain sprocket (#25–#41, 05B–08B, bicycle) | | |
+| Bevel gear (90° shafts) | | | |
+| Worm | | | |
 
 Rotating parts share the same options for the shaft: round, D-shaft, hex or
 keyed bore with a fit clearance, plus an optional hub with set-screw holes.
+The extrusion is there to design around: make it a hole, give it a little
+clearance, and group it with a block to get a bracket that slides onto the
+real rail. It comes in as a 20 mm stub; its height is its length, so pull the
+top grip or type the H size to make it as long as you need.
 Only the kind, its parameters and the detail level are stored in the design;
 the geometry is made from them.
 
@@ -172,6 +176,17 @@ millimetres, Z is up.
   ANSI B29.1 tooth form.
 - **Threads** follow the ISO metric and ISO trapezoidal basic profiles, with a
   clearance setting for printing.
+- **Extrusions** follow the makers' own section drawings (OpenBuilds V-Slot,
+  Misumi HFS5 / HFS6 / HFS8, 80/20's 20, 30 and 40 series): lip thickness,
+  slot opening, channel width, the 45° taper down to the square core, bore,
+  web thickness, outer corner radius and, where the real one has them, the
+  corner holes (HFS6) and corner hollows (HFS8, 80/20 30). Where two cells
+  meet, the cores and webs frame the hollow of the real 2040 with its short
+  neck to the skin; where four meet, the middle is open. The sectional areas
+  come out within a few percent of the catalogue figures (HFS5-2020 183 mm²,
+  HFS6-3030 333 mm², 80/20 40-4040 874 mm²...). Left out are the small inner
+  fillets, the scalloped bores and 80/20's 2° drop-lock lip angle, so check
+  against the rail you have before relying on a tight fit.
 
 Dimension tables (chain sizes, hex sizes, belt pitch-line offsets) were entered
 by hand. Check critical dimensions against a datasheet before relying on them.
