@@ -51,6 +51,11 @@ export interface EditorState {
   viewing: string | null;
   /** New shape following the pointer until it is put down. */
   placing: SceneNode | null;
+  /**
+   * Align mode: anchor dots sit on `bounds`, the box of the anchor object or,
+   * without one, of the whole selection. Frozen while a dot is being previewed.
+   */
+  aligning: { anchor: string | null; bounds: Bounds } | null;
   prefs: Prefs;
   notice: Notice | null;
   /** Something slow is going on ("Grouping…"). */
@@ -78,6 +83,7 @@ let state: EditorState = {
   saved: null,
   viewing: null,
   placing: null,
+  aligning: null,
   prefs: loadPrefs(),
   notice: null,
   busy: null,
@@ -100,11 +106,15 @@ let thumbnailer: (() => string | null) | null = null;
 
 function set(patch: Partial<EditorState>): void {
   const before = state;
+  // Any change of selection ends align mode.
+  if (state.aligning && patch.selection && patch.aligning === undefined && !sameIds(patch.selection, state.selection)) patch = { ...patch, aligning: null };
   state = { ...state, ...patch, canUndo: past.length > 0, canRedo: future.length > 0 };
   if (state.prefs !== before.prefs) savePrefs(state.prefs);
   if (state.doc !== before.doc || state.filePath !== before.filePath || state.saved !== before.saved) scheduleSession();
   for (const l of listeners) l();
 }
+
+const sameIds = (a: string[], b: string[]): boolean => a.length === b.length && a.every((id, i) => id === b[i]);
 
 const subscribe = (listener: () => void) => {
   listeners.add(listener);
@@ -195,6 +205,8 @@ function restore(from: Step[], to: Step[]): void {
   lastMerge = null;
   const ids = new Set(target.scene.map((n) => n.id));
   set({ doc: { ...state.doc, scene: target.scene, head: target.head }, selection: target.selection.filter((id) => ids.has(id)) });
+  // The dots follow the objects back.
+  if (state.aligning) refreshAlignBounds();
 }
 
 export const undo = (): void => restore(past, future);
@@ -453,12 +465,89 @@ export function alignSelected(axis: 0 | 1 | 2, mode: AlignMode): void {
 /** Several alignments as one step (centre on X and Y, say). */
 export function alignSelectedOn(steps: [0 | 1 | 2, AlignMode][]): void {
   const nodes = selectedNodes();
-  // A single object is aligned to the plate's centre lines; several to their common box.
-  const target: Bounds | null = nodes.length > 1 ? selectionBounds(nodes) : { min: [0, 0, 0], max: [0, 0, 0] };
+  // In align mode the dots' box is the reference; otherwise a single object is aligned to
+  // the plate's centre lines, and several to their common box.
+  const target: Bounds | null = state.aligning?.bounds ?? (nodes.length > 1 ? selectionBounds(nodes) : { min: [0, 0, 0], max: [0, 0, 0] });
   if (!target || nodes.length === 0) return;
   let moved = nodes.filter((n) => !n.locked);
   for (const [axis, mode] of steps) moved = alignNodes(moved, (n) => geometry.bounds(n), axis, mode, target);
   replaceNodes(moved);
+  if (state.aligning) refreshAlignBounds();
+}
+
+// --- align mode ---------------------------------------------------------------
+
+/** The box the anchor dots sit on: the anchor object's, or the whole selection's. */
+function alignBounds(anchor: string | null): Bounds | null {
+  const nodes = selectedNodes();
+  const target = anchor ? nodes.find((n) => n.id === anchor) : null;
+  return target ? geometry.bounds(target) : selectionBounds(nodes);
+}
+
+function refreshAlignBounds(): void {
+  const aligning = state.aligning;
+  if (!aligning) return;
+  const bounds = alignBounds(aligning.anchor);
+  set({ aligning: bounds ? { ...aligning, bounds } : null });
+}
+
+/** Show the anchor dots around the selection (two or more objects). */
+export function startAligning(): void {
+  if (state.viewing || state.aligning) return;
+  if (state.selection.length < 2) return notify('Select two or more objects to line them up.');
+  const bounds = alignBounds(null);
+  if (bounds) set({ aligning: { anchor: null, bounds }, placing: null });
+}
+
+export function stopAligning(): void {
+  if (!state.aligning) return;
+  // A dot being previewed is let go of first.
+  if (gesture) endGesture(true);
+  set({ aligning: null });
+}
+
+export const toggleAligning = (): void => (state.aligning ? stopAligning() : startAligning());
+
+/** Make one of the selected objects the one the others line up with; the same one again clears it. */
+export function setAlignAnchor(id: string | null): void {
+  const aligning = state.aligning;
+  if (!aligning) return;
+  const anchor = id === aligning.anchor ? null : id;
+  const bounds = alignBounds(anchor);
+  if (bounds) set({ aligning: { anchor, bounds } });
+}
+
+/** The selection as it would be after lining up on a dot; from the scene before any preview. */
+function aligned(axis: 0 | 1 | 2, mode: AlignMode): SceneNode[] | null {
+  const aligning = state.aligning;
+  if (!aligning) return null;
+  const base = gesture?.scene ?? state.doc.scene;
+  const ids = new Set(state.selection);
+  const nodes = base.filter((n) => ids.has(n.id) && !n.locked && n.id !== aligning.anchor);
+  return alignNodes(nodes, (n) => geometry.bounds(n), axis, mode, aligning.bounds);
+}
+
+/** Hovering a dot moves the objects there for a look; null puts them back. */
+export function previewAlign(axis: 0 | 1 | 2 | null, mode: AlignMode = 'centre'): void {
+  if (!state.aligning) return;
+  if (axis === null) {
+    if (gesture) endGesture(true);
+    return;
+  }
+  const nodes = aligned(axis, mode);
+  if (!nodes) return;
+  beginGesture();
+  replaceNodes(nodes);
+}
+
+/** Clicking a dot keeps the objects where the preview put them. */
+export function commitAlign(axis: 0 | 1 | 2, mode: AlignMode): void {
+  const nodes = aligned(axis, mode);
+  if (!nodes) return;
+  beginGesture();
+  replaceNodes(nodes);
+  endGesture(false);
+  refreshAlignBounds();
 }
 
 export function mirrorSelected(axis: 0 | 1 | 2): void {

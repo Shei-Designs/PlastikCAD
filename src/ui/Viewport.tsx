@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { geometry } from '../state/geometry';
 import { SNAP_STEPS } from '../state/persist';
 import {
-  alignSelected,
   beginGesture,
+  commitAlign,
   commitPlacing,
   deleteSelected,
   dismissNotice,
@@ -14,13 +14,16 @@ import {
   groupSelected,
   mirrorSelected,
   movePlacing,
+  previewAlign,
   redo,
   replaceNodes,
   restoreVersion,
   select,
+  setAlignAnchor,
   setPrefs,
   setThumbnailer,
   shownScene,
+  toggleAligning,
   toggleSelected,
   undo,
   ungroupSelected,
@@ -53,12 +56,6 @@ const VIEWS: { id: ViewPreset; label: string }[] = [
   { id: 'side', label: 'Side' },
 ];
 
-const ALIGN_ROWS: { axis: 0 | 1 | 2; label: string; options: [string, string, string]; keys: [string, string, string] }[] = [
-  { axis: 0, label: 'X', options: ['Left', 'Centre', 'Right'], keys: ['Alt+←', 'Alt+Shift+←', 'Alt+→'] },
-  { axis: 1, label: 'Y', options: ['Front', 'Centre', 'Back'], keys: ['Alt+↓', 'Alt+Shift+↓', 'Alt+↑'] },
-  { axis: 2, label: 'Z', options: ['Bottom', 'Centre', 'Top'], keys: ['Alt+PgDn', 'Alt+Shift+PgDn', 'Alt+PgUp'] },
-];
-const ALIGN_MODES = ['min', 'centre', 'max'] as const;
 
 /** The viewer other parts of the app may talk to (fit to view from a shortcut, cancel a drag). */
 export const viewerRef: { current: Viewer | null } = { current: null };
@@ -69,6 +66,7 @@ function Actions() {
   const scene = useEditor((s) => s.doc.scene);
   const selection = useEditor((s) => s.selection);
   const picked = useMemo(() => scene.filter((n) => selection.includes(n.id)), [scene, selection]);
+  const aligning = useEditor((s) => s.aligning);
   const none = picked.length === 0;
   const hasGroup = picked.some((n) => n.type === 'group');
 
@@ -99,25 +97,17 @@ function Actions() {
         </button>
       </div>
       <div className="chip-group">
-        <Popover className="chip icon" title="Align (Alt + arrows)" button={<AlignIcon />} disabled={none} align="right">
-          {() => (
-            <div className="align-panel">
-              <p>{picked.length > 1 ? 'Line the selected objects up with each other' : 'Line the object up with the centre of the plate'}</p>
-              {ALIGN_ROWS.map((row) => (
-                <div className="align-row" key={row.axis}>
-                  <span>{row.label}</span>
-                  <div className="segmented">
-                    {row.options.map((label, i) => (
-                      <button key={label} type="button" title={row.keys[i]} onClick={() => alignSelected(row.axis, ALIGN_MODES[i])}>
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Popover>
+        <button
+          type="button"
+          className={aligning ? 'chip icon on' : 'chip icon'}
+          title="Align: anchor dots on the selection (L)"
+          aria-label="Align"
+          aria-pressed={Boolean(aligning)}
+          disabled={picked.length < 2 && !aligning}
+          onClick={toggleAligning}
+        >
+          <AlignIcon />
+        </button>
         <Popover className="chip icon" title="Mirror (X / Y / Z)" button={<MirrorIcon />} disabled={none} align="right">
           {() => (
             <div className="align-panel">
@@ -146,7 +136,7 @@ export function Viewport() {
   const viewer = useRef<Viewer | null>(null);
 
   const state = useEditor((s) => s);
-  const { prefs, placing, selection, viewing, notice, busy } = state;
+  const { prefs, placing, selection, viewing, notice, busy, aligning } = state;
   const scene = shownScene(state);
   const assets = state.doc.assets;
   const revision = useSyncExternalStore(geometry.subscribe, geometry.getRevision);
@@ -175,6 +165,9 @@ export function Viewport() {
           el.style.top = `${y - rect.top + 16}px`;
         },
         boundsOf: (node) => geometry.bounds(node),
+        onAlignHover: previewAlign,
+        onAlignPick: commitAlign,
+        onAnchor: setAlignAnchor,
       },
       { theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap },
     );
@@ -189,8 +182,8 @@ export function Viewport() {
   }, []);
 
   useEffect(() => {
-    viewer.current?.setOptions({ theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap, interactive: !viewing });
-  }, [prefs.theme, prefs.edges, prefs.grid, prefs.snap, viewing]);
+    viewer.current?.setOptions({ theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap, interactive: !viewing, align: aligning });
+  }, [prefs.theme, prefs.edges, prefs.grid, prefs.snap, viewing, aligning]);
 
   useEffect(() => {
     viewer.current?.setPlacing(Boolean(placing));
@@ -286,6 +279,11 @@ export function Viewport() {
       )}
 
       {placing && <div className="hint-bar">Click on the plate to place the {placing.name.toLowerCase()} · Esc to cancel</div>}
+      {aligning && !placing && (
+        <div className="hint-bar">
+          {aligning.anchor ? 'Lining up with the chosen object' : 'Click a dot to line the objects up'} · click an object to make it the anchor · Esc to finish
+        </div>
+      )}
 
       <div className="overlay">
         {failures.map((text) => (

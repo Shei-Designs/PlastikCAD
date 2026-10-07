@@ -82,10 +82,8 @@ design is still there after a restart.
 | Drop onto the plate | D |
 | Flip (mirror) on an axis | X / Y / Z |
 | Turn 90° about an axis | Shift+X / Shift+Y / Shift+Z; add Alt to turn the other way |
-| Align left / right, front / back | Alt+← / Alt+→ / Alt+↓ / Alt+↑ |
-| Align bottom / top | Alt+PgDn / Alt+PgUp |
-| Centre on an axis | Alt+Shift + the same arrow or page key |
-| Centre on X and Y | Alt+C (Alt+Shift+C also centres Z) |
+| Align | L shows anchor dots on the selection: hover one to preview, click to apply; click one of the objects to make it the anchor, Esc to finish |
+| Align by key | Alt+← / → / ↓ / ↑ (left / right / front / back), Alt+PgDn / PgUp (bottom / top); add Shift to centre on that axis; Alt+C centres on X and Y |
 | Fit to view | F |
 | Undo / redo | Ctrl+Z / Ctrl+Y |
 | Save / save as / open / new | Ctrl+S / Ctrl+Shift+S / Ctrl+O / Ctrl+N |

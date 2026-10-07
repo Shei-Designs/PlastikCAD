@@ -29,6 +29,8 @@ import {
   selectAll,
   setHole,
   setPrefs,
+  stopAligning,
+  toggleAligning,
   undo,
   ungroupSelected,
   useEditor,
@@ -60,7 +62,8 @@ function onKeyDown(e: KeyboardEvent): void {
   if (key === 'Escape') {
     if (viewerRef.current?.cancelGesture()) return;
     const s = getState();
-    if (s.placing) cancelPlacing();
+    if (s.aligning) stopAligning();
+    else if (s.placing) cancelPlacing();
     else if (s.viewing) viewVersion(null);
     else select([]);
     return;
@@ -140,6 +143,7 @@ function onKeyDown(e: KeyboardEvent): void {
     s: () => setHole(false),
     d: dropSelected,
     f: () => viewerRef.current?.fit(),
+    l: toggleAligning,
     x: () => mirrorSelected(0),
     y: () => mirrorSelected(1),
     z: () => mirrorSelected(2),

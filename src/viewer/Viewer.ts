@@ -58,7 +58,11 @@ export interface ViewerOptions {
   snap: number;
   /** False while an old version is shown: look, don't touch. */
   interactive: boolean;
+  /** Align mode: anchor dots on this box instead of the usual handles. */
+  align: { bounds: Bounds; anchor: string | null } | null;
 }
+
+export type AlignMode = 'min' | 'centre' | 'max';
 
 export interface ViewItem {
   node: SceneNode;
@@ -82,9 +86,17 @@ export interface ViewerEvents {
   onReadout(text: string | null, clientX: number, clientY: number): void;
   /** Tight bounds of a node (the viewer only knows its box). */
   boundsOf(node: SceneNode): Bounds;
+  /** Align mode: the pointer is over a dot (or has left one: axis null), and a dot was clicked. */
+  onAlignHover(axis: 0 | 1 | 2 | null, mode: AlignMode): void;
+  onAlignPick(axis: 0 | 1 | 2, mode: AlignMode): void;
+  /** Align mode: one of the selected objects was clicked, to line the others up with it. */
+  onAnchor(id: string): void;
 }
 
-const DEFAULTS: ViewerOptions = { theme: 'dark', edges: true, grid: true, snap: 1, interactive: true };
+const DEFAULTS: ViewerOptions = { theme: 'dark', edges: true, grid: true, snap: 1, interactive: true, align: null };
+/** Distance of the anchor dots from the box, in pixels. */
+const ALIGN_GAP = 22;
+const ALIGN_MODES: AlignMode[] = ['min', 'centre', 'max'];
 
 const FOV = 35;
 const FIT_MARGIN = 1.25;
@@ -151,7 +163,8 @@ type HandleKind =
   | { type: 'resize'; sx: -1 | 0 | 1; sy: -1 | 0 | 1 }
   | { type: 'height' }
   | { type: 'lift' }
-  | { type: 'rotate'; axis: 0 | 1 | 2 };
+  | { type: 'rotate'; axis: 0 | 1 | 2 }
+  | { type: 'align'; axis: 0 | 1 | 2; mode: AlignMode };
 
 interface Handle {
   kind: HandleKind;
@@ -232,6 +245,19 @@ function gripTexture(fill: string, rim: string): CanvasTexture {
   });
 }
 
+/** Anchor dot for align mode. */
+function dotTexture(fill: string): CanvasTexture {
+  return canvasTexture(64, (g, size) => {
+    g.beginPath();
+    g.arc(size / 2, size / 2, size / 2 - 8, 0, Math.PI * 2);
+    g.fillStyle = fill;
+    g.fill();
+    g.lineWidth = 6;
+    g.strokeStyle = '#ffffff';
+    g.stroke();
+  });
+}
+
 /** Up/down arrow for the handle that lifts things off the plate. */
 function liftTexture(): CanvasTexture {
   return canvasTexture(64, (g) => {
@@ -297,9 +323,10 @@ export class Viewer {
   private frame: Frame | null = null;
   private outline!: LineSegments<BufferGeometry, LineBasicMaterial>;
   private handles: Handle[] = [];
-  private handleMode: 'none' | 'single' | 'several' | 'locked' = 'none';
+  private handleMode: 'none' | 'single' | 'several' | 'locked' | 'align' = 'none';
+  private alignLines!: LineSegments<BufferGeometry, LineBasicMaterial>;
   private hovered: Handle | null = null;
-  private grips!: { corner: SpriteMaterial; edge: SpriteMaterial; lift: SpriteMaterial };
+  private grips!: { corner: SpriteMaterial; edge: SpriteMaterial; lift: SpriteMaterial; dot: SpriteMaterial; dotHot: SpriteMaterial };
   private arcParts!: { arc: TorusGeometry; head: ConeGeometry; hit: TorusGeometry };
 
   private readonly raycaster = new Raycaster();
@@ -596,7 +623,15 @@ export class Viewer {
       corner: grip(gripTexture('#ffffff', '#14171c')),
       edge: grip(gripTexture('#14171c', '#ffffff')),
       lift: grip(liftTexture()),
+      dot: grip(dotTexture('#14171c')),
+      dotHot: grip(dotTexture('#ff9f4d')),
     };
+    // One line per axis through its three dots.
+    const lines = new BufferGeometry();
+    lines.setAttribute('position', new BufferAttribute(new Float32Array(18), 3));
+    this.alignLines = new LineSegments(lines, new LineBasicMaterial({ transparent: true, opacity: 0.55, depthTest: false }));
+    this.alignLines.visible = false;
+    this.overlay.add(this.alignLines);
     // Quarter ring with an arrowhead at each end, in the XY plane from +X to +Y.
     this.arcParts = {
       arc: new TorusGeometry(1, 0.07, 8, 20, Math.PI / 2),
@@ -636,6 +671,7 @@ export class Viewer {
     this.gridMinor.material.opacity = t.minor;
     this.gridMajor.visible = this.gridMinor.visible = this.axes.visible = grid;
     this.outline.material.color.set(t.accent);
+    this.alignLines.material.color.set(t.accent);
     for (const d of this.drawn.values()) this.style(d, d.item.selected);
   }
 
@@ -839,6 +875,7 @@ export class Viewer {
     this.handles = [];
     this.hovered = null;
     this.handleMode = 'none';
+    this.alignLines.visible = false;
   }
 
   /** Recompute the selection's box and which handles it gets. */
@@ -850,8 +887,9 @@ export class Viewer {
       if (this.handleMode !== 'none') this.clearHandles();
       return;
     }
-    const bounds = unionBounds(picked.map((i) => this.events.boundsOf(i.node)));
-    const single = picked.length === 1 ? picked[0].node : null;
+    const align = this.options.align;
+    const bounds = align ? align.bounds : unionBounds(picked.map((i) => this.events.boundsOf(i.node)));
+    const single = !align && picked.length === 1 ? picked[0].node : null;
     if (single) {
       this.frame = { matrix: frameMatrix(single), half: [single.size[0] / 2, single.size[1] / 2, single.size[2] / 2], bounds, single };
     } else {
@@ -863,7 +901,7 @@ export class Viewer {
         single: null,
       };
     }
-    const mode = picked.every((i) => i.node.locked) ? 'locked' : single ? 'single' : 'several';
+    const mode = align ? 'align' : picked.every((i) => i.node.locked) ? 'locked' : single ? 'single' : 'several';
     if (mode !== this.handleMode) this.buildHandles(mode);
 
     const f = this.frame;
@@ -874,7 +912,7 @@ export class Viewer {
     this.outline.visible = true;
   }
 
-  private buildHandles(mode: 'single' | 'several' | 'locked'): void {
+  private buildHandles(mode: 'single' | 'several' | 'locked' | 'align'): void {
     this.clearHandles();
     this.handleMode = mode;
     if (mode === 'locked') return;
@@ -884,6 +922,11 @@ export class Viewer {
       this.overlay.add(object);
       this.handles.push({ kind, object, pixels, cursor });
     };
+    if (mode === 'align') {
+      for (const axis of [0, 1, 2] as const) for (const m of ALIGN_MODES) add({ type: 'align', axis, mode: m }, new Sprite(this.grips.dot), 15, 'pointer');
+      this.alignLines.visible = true;
+      return;
+    }
     if (single) {
       for (const sx of [-1, 0, 1] as const) {
         for (const sy of [-1, 0, 1] as const) {
@@ -945,6 +988,10 @@ export class Viewer {
     const f = this.frame;
     if (!f) return;
     const [hx, hy, hz] = f.half;
+    if (this.handleMode === 'align') {
+      this.layoutAlignDots();
+      return;
+    }
     for (const h of this.handles) {
       const k = h.kind;
       if (k.type === 'resize' || k.type === 'height') {
@@ -964,6 +1011,36 @@ export class Viewer {
         h.object.matrixWorldNeedsUpdate = true;
       }
     }
+  }
+
+  /**
+   * The nine anchor dots: three along X in front of the box, three along Y
+   * beside it, three along Z up its front-left corner, all a little outside.
+   */
+  private layoutAlignDots(): void {
+    const { min, max } = this.frame!.bounds;
+    const corner = new Vector3(min[0], min[1], min[2]);
+    const gap = ALIGN_GAP * this.pixelSize(corner);
+    const at = (axis: number, mode: AlignMode): Vector3 => {
+      const v = mode === 'min' ? min[axis] : mode === 'max' ? max[axis] : (min[axis] + max[axis]) / 2;
+      if (axis === 0) return new Vector3(v, min[1] - gap, min[2]);
+      if (axis === 1) return new Vector3(min[0] - gap, v, min[2]);
+      return new Vector3(min[0] - gap, min[1] - gap, v);
+    };
+    for (const h of this.handles) {
+      if (h.kind.type !== 'align') continue;
+      const p = at(h.kind.axis, h.kind.mode);
+      const hot = h === this.hovered;
+      (h.object as Sprite).material = hot ? this.grips.dotHot : this.grips.dot;
+      h.object.position.copy(p);
+      h.object.scale.setScalar(h.pixels * this.pixelSize(p) * (hot ? 1.3 : 1));
+    }
+    const pts = this.alignLines.geometry.getAttribute('position') as BufferAttribute;
+    for (const axis of [0, 1, 2]) {
+      at(axis, 'min').toArray(pts.array as Float32Array, axis * 6);
+      at(axis, 'max').toArray(pts.array as Float32Array, axis * 6 + 3);
+    }
+    pts.needsUpdate = true;
   }
 
   // --- pointer -------------------------------------------------------------
@@ -1018,6 +1095,10 @@ export class Viewer {
     if (!this.options.interactive) return;
 
     const handle = this.pickHandle();
+    if (handle?.kind.type === 'align') {
+      this.events.onAlignPick(handle.kind.axis, handle.kind.mode);
+      return;
+    }
     if (handle && this.frame) {
       this.startHandleDrag(handle, event);
       return;
@@ -1025,6 +1106,11 @@ export class Viewer {
 
     const hit = this.pickNode();
     const additive = event.shiftKey || event.ctrlKey || event.metaKey;
+    // In align mode a click on a selected object makes it the anchor instead of starting a drag.
+    if (this.options.align && hit?.item.selected && !additive) {
+      this.events.onAnchor(hit.item.node.id);
+      return;
+    }
     if (!hit) {
       this.drag = { mode: 'pending-marquee', x: event.clientX, y: event.clientY, additive };
       return;
@@ -1229,7 +1315,11 @@ export class Viewer {
 
   private hover(handle: Handle | null): void {
     if (handle === this.hovered) return;
+    const was = this.hovered?.kind;
     this.hovered = handle;
+    // Over an anchor dot the objects move there for a look; off it, they come back.
+    if (handle?.kind.type === 'align') this.events.onAlignHover(handle.kind.axis, handle.kind.mode);
+    else if (was?.type === 'align') this.events.onAlignHover(null, 'centre');
     if (!this.placing) this.renderer.domElement.style.cursor = handle ? handle.cursor : '';
     this.requestRender();
   }
