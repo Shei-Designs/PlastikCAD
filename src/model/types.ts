@@ -80,11 +80,11 @@ export interface TextNode extends NodeBase {
 
 export type PartQuality = 'draft' | 'normal' | 'fine';
 
-/** A value of a part parameter: Gearwright's generators take numbers, choices and switches. */
+/** A value of a part parameter: the generators take numbers, choices and switches. */
 export type PartParamValue = number | string | boolean;
 
 /**
- * A Gearwright part: a gear, pulley, sprocket or thread made from a handful
+ * A parametric part: a gear, pulley, sprocket or thread made from a handful
  * of parameters. Only the parameters are stored; the generator (see
  * `src/parts`) makes the geometry.
  */

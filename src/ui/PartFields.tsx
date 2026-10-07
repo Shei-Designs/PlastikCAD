@@ -1,4 +1,4 @@
-// The settings of a Gearwright part: a picker for the kind, its parameter
+// The settings of a parametric part: a picker for the kind, its parameter
 // groups as tabs, and the dimensions it works out (pitch diameter and the like).
 import { useEffect, useId, useMemo, useState } from 'react';
 import { CATEGORIES, GENERATORS, getGenerator } from '../parts/generators';
@@ -127,7 +127,6 @@ export function PartFields({ node }: { node: PartNode }) {
             </li>
           ))}
         </ul>
-        <p className="field-note">{def.summary}</p>
         <div className="field">
           <label id={`${id}-detail`}>
             Detail

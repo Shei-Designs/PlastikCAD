@@ -1,4 +1,4 @@
-// Pictures of the Gearwright parts for the type picker. Parts with a flat
+// Pictures of the parametric parts for the type picker. Parts with a flat
 // outline are drawn from their real default geometry; the rest get a glyph.
 import type { ReactNode } from 'react';
 import { bounds } from '../parts/math2d';

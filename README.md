@@ -4,28 +4,31 @@
 
 Fast solid modelling for 3D printing: a desktop app for bashing out a part from
 a few simple shapes.
-Drop boxes, cylinders and wedges on the plate, turn some of them into holes,
-group them, and export a file for your slicer. Every design keeps its own
-version history.
+Drop boxes, cylinders and wedges on the plate, add a gear, a pulley or a
+threaded rod made to your numbers, turn some of it into holes, group, and
+export a file for your slicer. Every design keeps its own version history.
 
 Runs locally on Linux, Windows and macOS; nothing leaves your machine. Free
 software under the GPL-3.0.
+
+BashCAD supersedes [Gearwright](https://github.com/AOShei/gearwright): every
+part type and parameter it had is in here, as objects you can combine with
+everything else.
 
 ## How it works
 
 It is the Tinkercad way of modelling, without the cloud and without the clutter:
 
-- **Shapes** – box (with rounded edges), cylinder, sphere, cone, pyramid,
-  wedge, roof, round roof, polygon prism, torus and dome. Click one, then
-  click on the plate (or on top of another object) to put it down.
+- **Shapes** – box and cylinder (both with optional rounded edges), sphere,
+  cone, pyramid, wedge, roof, round roof, polygon prism, torus and dome. Click
+  one, then click on the plate (or on top of another object) to put it down.
 - **Parts** – the Gear, Pulley and Screw tiles place a parametric part. The
-  panel then offers the kind (spur, helical, herringbone, ring gear, rack,
-  bevel, worm; GT2, HTD, T, MXL/XL pulleys and chain sprockets; metric bolts
-  and nuts, lead screws and their nuts), its parameters in tabs, and the
-  dimensions that follow from them (pitch diameter and so on). A part is just
-  an object: group it, cut it, scale it, version it. This is
-  [Gearwright](https://github.com/AOShei/gearwright), folded into BashCAD; it
-  lives on here, in `src/parts`.
+  panel shows what it is for, a picture menu of the kinds in that family, the
+  parameters in tabs (gear, tooth form, hub, bore; thread, head; and so on),
+  the dimensions that follow from them (pitch diameter, outside diameter,
+  centre distance...) and a Draft / Normal / Fine detail setting. A part is
+  just an object: group it, cut it, scale it, version it. See
+  [Parts](#parts) for the list.
 - **Text** – lettering in four print-friendly fonts (sans, slab serif,
   monospace, stencil), on one line or several. Put it on a face and group it
   to emboss; make it a hole and sink it in a little (Ctrl+Down) to engrave.
@@ -43,11 +46,30 @@ It is the Tinkercad way of modelling, without the cloud and without the clutter:
   where things were grouped together. Hover a node to see that part on the
   plate; pick one and *Edit here* takes the groupings apart down to it, so the
   part can be changed, and *Done* puts them back together in the same order.
-- **Handles** – drag an object to move it, the corner and edge grips to size it,
-  the arrow to lift it, the coloured arcs to turn it. Or type exact numbers in
-  the panel on the right.
+- **Handles** – drag an object to move it, the corner and edge grips to size
+  it (the top and bottom grips pull the height either way), the arrow to lift
+  it, the coloured arcs to turn it. Click a grip instead of dragging it and a
+  box appears on that edge to type the value. Or type exact numbers in the
+  panel on the right.
 - **Import** – STL, OBJ and 3MF meshes, and SVG drawings (extruded into a
   plate), which then behave like any other object. Drop files on the window.
+
+## Parts
+
+| Gears | Pulleys & sprockets | Screws & threads |
+| --- | --- | --- |
+| Spur gear | GT2 timing pulley (2 / 3 / 5 mm) | Metric bolt / threaded rod (M3–M20) |
+| Helical gear | HTD timing pulley (3M / 5M / 8M) | Metric nut |
+| Herringbone gear | T-series timing pulley (T2.5 / T5 / T10) | Trapezoidal lead screw (multi-start) |
+| Internal ring gear | MXL / XL timing pulley | Lead screw nut (flanged) |
+| Gear rack (straight, helical, herringbone) | Chain sprocket (#25–#41, 05B–08B, bicycle) | |
+| Bevel gear (90° shafts) | | |
+| Worm | | |
+
+Rotating parts share the same options for the shaft: round, D-shaft, hex or
+keyed bore with a fit clearance, plus an optional hub with set-screw holes.
+Only the kind, its parameters and the detail level are stored in the design;
+the geometry is made from them.
 
 ## Versions
 
@@ -116,8 +138,10 @@ design is still there after a restart.
 | SVG | Outline of the design seen from above, for laser cutters and vector editors |
 | DXF | The same outline, to extrude in CAD or cut on a laser / CNC |
 
-Everything visible that is not a hole is merged into one watertight mesh, or
-just the selection when something is selected. Units are millimetres, Z is up.
+The button reads *Export selection* when something is selected and exports just
+that; otherwise *Export* merges everything visible that is not a hole into one
+watertight mesh (after asking, when there are several objects). Units are
+millimetres, Z is up.
 
 ## Import notes
 
@@ -127,9 +151,9 @@ just the selection when something is selected. Units are millimetres, Z is up.
 - **3MF**: all objects on the build plate come in as one mesh; colours and
   slicer settings are ignored.
 - **SVG**: every closed outline is filled and extruded, whatever its stroke or
-  fill (so laser-cutter drawings work, including the profiles exported by
-  [Gearwright](https://github.com/AOShei/gearwright)). Convert text to
-  paths first; `<use>`, images and CSS classes are not read.
+  fill, so laser-cutter drawings work (including a gear profile exported from
+  BashCAD as SVG). Convert text to paths first; `<use>`, images and CSS
+  classes are not read.
 
 ## How accurate are the parts?
 
@@ -176,7 +200,7 @@ platform.
 pnpm install
 pnpm tauri dev      # run the desktop app with hot reload
 pnpm dev            # or just the UI, in a browser at http://localhost:1420
-pnpm test           # model, geometry and file-format tests
+pnpm test           # model, geometry, part and file-format tests
 pnpm typecheck
 pnpm tauri build    # build installers into src-tauri/target/release/bundle
 ```
@@ -200,7 +224,7 @@ src/
   worker/             runs the kernel off the UI thread
   state/              the editor: selection, undo, versions, files, preferences
   viewer/             three.js view: drawing, picking, handles
-  parts/              the gear, pulley, sprocket and thread generators (formerly Gearwright)
+  parts/              the gear, pulley, sprocket and thread generators
   io/                 STL, 3MF, OBJ, SVG, DXF writers; STL, OBJ, 3MF, SVG readers
   text/               fonts, and laying words out as outlines
   ui/                 React components
@@ -208,9 +232,11 @@ src/
 src-tauri/            native window, file dialogs, reading and writing files (Rust)
 ```
 
-A design is a flat list of nodes: shapes, imports, and groups of nodes. A node
-has a position, a rotation and a size, and nothing else is stored: no meshes,
-no history of operations. Solids are computed from that description by
+A design is a flat list of nodes: shapes, parts, text, imports, and groups of
+nodes. A node has a position, a rotation and a size, plus what defines its
+form (a shape's parameters, a part's kind and parameters, the words of a
+text), and nothing else is stored: no meshes, no history of operations. Solids
+are computed from that description by
 [Manifold](https://github.com/elalish/manifold) (WebAssembly), which guarantees
 watertight results from every union and cut.
 
@@ -230,11 +256,28 @@ only for that node. Undo, redo and switching versions reuse the same cache.
 
 The palette, inspector, file format and export pick it up from there.
 
+### Adding a part
+
+1. Write a `GeneratorDef` in `src/parts/generators/` — its parameter groups
+   (each group becomes a tab) and a `build(params, quality)` function returning
+   a `Solid` description, an optional 2D `outline` (which also draws its
+   picture in the kind picker), and `info` rows for the dimensions tab.
+2. Add it to the list in `src/parts/generators/index.ts`. Parts with no
+   outline get a glyph in `src/ui/partThumbnails.tsx`.
+
+Generators are plain functions from parameters to a shape description; they
+never touch the mesh kernel, which keeps them easy to test.
+
 ## Roadmap
 
 - Work plane on any face, ruler and snapping to other objects.
 - Text on curved surfaces; more scripts and fonts.
-- STEP export.
+- More parts: throated worm wheel, planetary set helper, V-belt pulleys,
+  imperial threads.
+- Assembly preview of meshing gears.
+- STEP export. Shapes and parts are already described as profiles and
+  operations rather than triangles, so a B-rep backend can evaluate the same
+  descriptions.
 
 ## License
 

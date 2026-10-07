@@ -301,7 +301,7 @@ function groupSolid(k: ManifoldToplevel, node: GroupNode, keep: Keep): Manifold 
   return result;
 }
 
-/** A Gearwright part, moved from standing on the plate to being centred on its box like every other node. */
+/** A parametric part, moved from standing on the plate to being centred on its box like every other node. */
 function partSolid(k: ManifoldToplevel, node: PartNode, keep: Keep): Manifold {
   const built = getGenerator(node.part).build(node.params, QUALITY[node.quality] ?? QUALITY.normal);
   const solid = checked(buildSolid(k, built.solid, keep));

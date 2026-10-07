@@ -389,7 +389,7 @@ export async function editText(id: string, change: Partial<Pick<TextNode, 'text'
   }
 }
 
-// --- Gearwright parts ---------------------------------------------------------------
+// --- parametric parts ---------------------------------------------------------------
 
 /** A part before it has been measured: a unit box, which `sizePart` replaces with the real one. */
 function makePart(generatorId: string, params?: Record<string, PartParamValue>): PartNode {

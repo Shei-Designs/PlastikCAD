@@ -86,7 +86,7 @@ const GLYPHS: Record<ShapeKind, ReactNode> = {
 
 export const shapeThumbnail = (kind: ShapeKind): ReactNode => GLYPHS[kind];
 
-/** Catalog pictures of the Gearwright part families, by category id. */
+/** Catalog pictures of the part families, by category id. */
 export const PART_THUMBNAILS: Record<string, ReactNode> = {
   gears: glyph(
     <>

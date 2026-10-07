@@ -176,7 +176,7 @@ function Shapes() {
             <button
               type="button"
               className={placing?.type === 'part' && placingFamily === c.id ? 'shape selected' : 'shape'}
-              title={`${c.label}, made with Gearwright: pick the kind and the numbers once it is placed.\nClick, then click on the plate to place it. Double-click to drop it in the middle.`}
+              title={`${c.label}: pick the kind and the numbers once it is placed.\nClick, then click on the plate to place it. Double-click to drop it in the middle.`}
               disabled={Boolean(viewing)}
               onPointerDown={(e) => {
                 if (e.button === 0) void startPlacingPart(c.id);

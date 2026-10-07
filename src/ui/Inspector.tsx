@@ -47,7 +47,7 @@ const kindOf = (node: SceneNode): string =>
       : node.type === 'text'
         ? 'Lettering: solid to emboss, hole to engrave'
         : node.type === 'part'
-          ? `${getGenerator(node.part).name}, from Gearwright`
+          ? getGenerator(node.part).summary
           : shapeDef(node.shape).summary;
 
 function NameField({ node }: { node: SceneNode }) {
@@ -169,7 +169,6 @@ function Transform({ node }: { node: SceneNode }) {
             />
           ))}
         </div>
-        <p className="field-note">X and Y locate the centre; Z is the gap under the object.</p>
       </fieldset>
       <fieldset className="group">
         <legend>Rotation</legend>
