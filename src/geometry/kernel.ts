@@ -6,10 +6,13 @@ import type { CrossSection, Manifold, ManifoldToplevel, Mat4 } from 'manifold-3d
 import { geomKey, textAssetKey } from '../model/geomKey';
 import { apply, determinant, emptyBounds, expandBounds, isEmptyBounds, nodeMatrix, unionBounds } from '../model/math';
 import type { Bounds, Mat } from '../model/math';
-import type { Asset, GroupNode, ImportNode, MeshAsset, OutlineAsset, Polygon, SceneNode } from '../model/types';
+import type { Asset, GroupNode, ImportNode, MeshAsset, OutlineAsset, PartNode, Polygon, SceneNode } from '../model/types';
 import type { BuildResult, ExportResult } from '../worker/protocol';
 import { CREASE_ANGLE } from './mesh';
 import type { MeshData, RenderMesh } from './mesh';
+import { buildSolid } from '../parts/evaluate';
+import { getGenerator } from '../parts/generators';
+import { QUALITY } from '../parts/types';
 import { buildShape } from './shapes';
 import type { Keep } from './shapes';
 
@@ -258,6 +261,8 @@ function construct(k: ManifoldToplevel, node: SceneNode): Built {
       if (!asset) throw new Error(`The imported data of "${node.name}" is missing from this design.`);
       return asset.kind === 'mesh' ? meshEntry(k, node, asset) : solidEntry(outlineSolid(k, node, asset));
     }
+    case 'part':
+      return solidEntry(scoped((keep) => partSolid(k, node, keep)));
     case 'text': {
       // The outlines of lettering are sent along like imported drawings (see `textAssetKey`).
       const asset = assets.get(textAssetKey(node));
@@ -294,6 +299,15 @@ function groupSolid(k: ManifoldToplevel, node: GroupNode, keep: Keep): Manifold 
   if (!result) throw new Error('This group has nothing left: it only contains holes.');
   if (checked(result).isEmpty()) throw new Error('This group has nothing left: its holes remove everything.');
   return result;
+}
+
+/** A Gearwright part, moved from standing on the plate to being centred on its box like every other node. */
+function partSolid(k: ManifoldToplevel, node: PartNode, keep: Keep): Manifold {
+  const built = getGenerator(node.part).build(node.params, QUALITY[node.quality] ?? QUALITY.normal);
+  const solid = checked(buildSolid(k, built.solid, keep));
+  if (solid.isEmpty()) throw new Error(`"${node.name}" came out empty with these settings.`);
+  const { min, max } = solid.boundingBox();
+  return keep(solid.translate([-(min[0] + max[0]) / 2, -(min[1] + max[1]) / 2, -(min[2] + max[2]) / 2]));
 }
 
 function outlineSolid(k: ManifoldToplevel, node: SceneNode, asset: OutlineAsset): Manifold {

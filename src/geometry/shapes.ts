@@ -213,26 +213,6 @@ export const SHAPES: ShapeDef[] = [
     defaultColor: GREEN,
   },
   {
-    kind: 'tube',
-    name: 'Tube',
-    summary: 'A pipe with a wall of constant thickness',
-    defaultSize: [20, 20, 20],
-    params: [
-      {
-        key: 'wall',
-        label: 'Wall thickness',
-        min: 0.2,
-        max: 500,
-        step: 0.1,
-        unit: 'mm',
-        default: 2,
-        help: 'Stays the same however the tube is resized. Limited to just under half its width.',
-      },
-      sidesParam(3, 128, 64, 'Sides', ROUND_HELP),
-    ],
-    defaultColor: STEEL,
-  },
-  {
     kind: 'torus',
     name: 'Torus',
     summary: 'A ring; its height is the thickness of the ring',
@@ -278,15 +258,11 @@ export interface ShapeSpec {
   size: Vec3;
 }
 
-/** Share of a tube's smaller width that its wall may take up; just short of half, where the bore would close. */
-const MAX_WALL = 0.49;
-
 /** Largest value a parameter can usefully take for a shape of this size (some limits depend on the size). */
 export function paramMax(kind: ShapeKind, key: string, size: Vec3): number {
   const def = shapeDef(kind).params.find((p) => p.key === key);
   if (!def) throw new Error(`Shape "${kind}" has no parameter "${key}"`);
   if ((kind === 'box' || kind === 'cylinder') && key === 'radius') return Math.min(def.max, Math.min(size[0], size[1], size[2]) / 2);
-  if (kind === 'tube' && key === 'wall') return Math.min(def.max, Math.min(size[0], size[1]) * MAX_WALL);
   return def.max;
 }
 
@@ -297,7 +273,6 @@ export function clampParams(node: ShapeSpec): Record<string, number> {
     let v = node.params[p.key];
     if (typeof v !== 'number' || !Number.isFinite(v)) v = p.default;
     if (p.integer) v = Math.round(v);
-    // The size limit is applied last: on a very small tube it wins over the minimum wall.
     out[p.key] = Math.min(Math.max(v, p.min), paramMax(node.shape, p.key, node.size));
   }
   return out;
@@ -367,42 +342,6 @@ function prism(c: BuildContext, section: Polygon, z0: number, z1: number): Manif
 function lyingPrism(c: BuildContext, section: Polygon): Manifold {
   // Made along Z, then laid down: the section's Y becomes Z.
   return c.keep(prism(c, section, -0.5, 0.5).rotate([90, 0, 0]));
-}
-
-/**
- * A convex CCW polygon with every side moved inwards by `d`. Sides that are
- * squeezed out disappear; the result is empty if nothing is left at all.
- */
-export function inset(polygon: Polygon, d: number): Polygon {
-  let out = polygon;
-  for (let i = 0; i < polygon.length && out.length > 0; i++) {
-    const [ax, ay] = polygon[i];
-    const [bx, by] = polygon[(i + 1) % polygon.length];
-    const len = Math.hypot(bx - ax, by - ay);
-    if (len === 0) continue;
-    // Distance beyond this side's new position, measured along its inward normal.
-    const inside = ([x, y]: Vec2) => ((x - ax) * (ay - by) + (y - ay) * (bx - ax)) / len - d;
-    const kept: Polygon = [];
-    for (let j = 0; j < out.length; j++) {
-      const p = out[j];
-      const q = out[(j + 1) % out.length];
-      const dp = inside(p);
-      const dq = inside(q);
-      if (dp >= 0) kept.push(p);
-      if (dp >= 0 !== dq >= 0) {
-        const t = dp / (dp - dq);
-        kept.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]);
-      }
-    }
-    out = kept;
-  }
-  let area = 0;
-  for (let i = 0; i < out.length; i++) {
-    const [x0, y0] = out[i];
-    const [x1, y1] = out[(i + 1) % out.length];
-    area += (x0 * y1 - x1 * y0) / 2;
-  }
-  return out.length >= 3 && area > 1e-9 ? out : [];
 }
 
 const BUILDERS: Record<ShapeKind, (c: BuildContext) => Manifold> = {
@@ -492,20 +431,6 @@ const BUILDERS: Record<ShapeKind, (c: BuildContext) => Manifold> = {
       section.push([Math.cos(a) - 0.5, Math.sin(a) - 0.5]);
     }
     return lyingPrism(c, section);
-  },
-
-  tube(c) {
-    const { keep, size, p } = c;
-    const [w, d] = polygonExtent(p.sides);
-    // Centred on its box rather than on its circumcentre, which differ when the number of sides is odd.
-    const centreY = Math.cos(Math.PI / p.sides) - d / 2;
-    const outline = regularPolygon(p.sides).map(([x, y]): Vec2 => [(x * size[0]) / w, ((y + centreY) * size[1]) / d]);
-    const outer = prism(c, outline, -size[2] / 2, size[2] / 2);
-    // A true inward offset, not a scaled copy: the wall is then `wall` thick all the way round,
-    // also when the tube is oval or has few sides.
-    const bore = inset(outline, p.wall);
-    // The cutter pokes out at both ends so that no faces coincide.
-    return bore.length === 0 ? outer : keep(outer.subtract(prism(c, bore, -size[2], size[2])));
   },
 
   torus(c) {

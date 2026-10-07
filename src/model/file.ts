@@ -4,9 +4,11 @@
 // come in a fixed order, one node property per line, numbers kept short.
 import { FILE_FORMAT, FILE_VERSION } from '../app';
 import { SHAPES, clampParams, defaultParams } from '../geometry/shapes';
+import { GENERATORS, getGenerator } from '../parts/generators';
+import { sanitizeParams } from '../parts/generators/types';
 import { usedAssets } from './ops';
 import { TEXT_FONTS } from './types';
-import type { Asset, Doc, OutlineShape, Scene, SceneNode, ShapeKind, Vec3, Version } from './types';
+import type { Asset, Doc, OutlineShape, PartParamValue, Scene, SceneNode, ShapeKind, Vec3, Version } from './types';
 
 export function emptyDoc(): Doc {
   return { name: 'Untitled', scene: [], versions: [], head: null, assets: {} };
@@ -41,8 +43,10 @@ function canonical(node: SceneNode): Record<string, unknown> {
     type: node.type,
     name: node.name,
     shape: node.type === 'shape' ? node.shape : undefined,
-    params: node.type === 'shape' && Object.keys(node.params).length ? sortKeys(node.params) : undefined,
     asset: node.type === 'import' ? node.asset : undefined,
+    part: node.type === 'part' ? node.part : undefined,
+    quality: node.type === 'part' && node.quality !== 'normal' ? node.quality : undefined,
+    params: node.type === 'part' ? sortKeys(node.params) : node.type === 'shape' && Object.keys(node.params).length ? sortKeys(node.params) : undefined,
     text: node.type === 'text' ? node.text : undefined,
     font: node.type === 'text' ? node.font : undefined,
     align: node.type === 'text' && node.align !== 'left' ? node.align : undefined,
@@ -116,6 +120,23 @@ function readNode(raw: unknown, assets: Record<string, Asset>): SceneNode | null
     ...(raw.hidden === true ? { hidden: true } : {}),
     ...(raw.locked === true ? { locked: true } : {}),
   };
+  if (raw.type === 'shape' && raw.shape === 'tube') {
+    // The tube shape is gone; an old one becomes what it always was: a cylinder with a cylinder cut out.
+    const wall = isRecord(raw.params) && typeof raw.params.wall === 'number' ? raw.params.wall : 2;
+    const sides = isRecord(raw.params) && typeof raw.params.sides === 'number' ? raw.params.sides : 64;
+    const [w, d, h] = base.size;
+    const outer: SceneNode = { ...base, id: `${base.id}o`, name: 'Outer', pos: [0, 0, 0], rot: [0, 0, 0], hole: false, type: 'shape', shape: 'cylinder', params: { sides, radius: 0 } };
+    const inner: SceneNode = {
+      ...outer,
+      id: `${base.id}i`,
+      name: 'Bore',
+      hole: true,
+      size: [Math.max(w - 2 * wall, 0.1), Math.max(d - 2 * wall, 0.1), h * 2],
+    };
+    delete outer.flip;
+    delete inner.flip;
+    return { ...base, type: 'group', natural: base.size, children: [outer, inner] };
+  }
   if (raw.type === 'shape') {
     if (typeof raw.shape !== 'string' || !KINDS.has(raw.shape)) return null;
     const shape = raw.shape as ShapeKind;
@@ -131,6 +152,18 @@ function readNode(raw: unknown, assets: Record<string, Asset>): SceneNode | null
   if (raw.type === 'import') {
     if (typeof raw.asset !== 'string' || !assets[raw.asset]) return null;
     return { ...base, type: 'import', asset: raw.asset, natural: vec3(raw.natural, base.size, true) };
+  }
+  if (raw.type === 'part') {
+    if (typeof raw.part !== 'string' || !GENERATORS.some((g) => g.id === raw.part)) return null;
+    const def = getGenerator(raw.part);
+    return {
+      ...base,
+      type: 'part',
+      part: raw.part,
+      params: sanitizeParams(def, isRecord(raw.params) ? (raw.params as Record<string, PartParamValue>) : undefined),
+      quality: raw.quality === 'draft' || raw.quality === 'fine' ? raw.quality : 'normal',
+      natural: vec3(raw.natural, base.size, true),
+    };
   }
   if (raw.type === 'text') {
     if (typeof raw.text !== 'string' || raw.text.trim() === '') return null;

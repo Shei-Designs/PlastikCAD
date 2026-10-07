@@ -147,7 +147,7 @@ export function makeGroup(nodes: SceneNode[], bounds: Bounds, name: string, over
   };
 }
 
-const MM_PARAMS = ['radius', 'wall'];
+const MM_PARAMS = ['radius'];
 
 /**
  * The children of a group, placed where the group put them. Exact when the
@@ -180,7 +180,7 @@ export function ungroup(group: GroupNode): SceneNode[] {
       size: tidyVec([child.size[0] * lengths[0], child.size[1] * lengths[1], child.size[2] * lengths[2]]),
     };
     if (next.type === 'shape' && even && Math.abs(Math.abs(scale[0]) - 1) > 1e-9) {
-      // Radii and wall thicknesses are in millimetres, so they grow with the group.
+      // Radii are in millimetres, so they grow with the group.
       const params = { ...next.params };
       for (const key of MM_PARAMS) if (key in params) params[key] = tidy(params[key] * Math.abs(scale[0]));
       next.params = params;

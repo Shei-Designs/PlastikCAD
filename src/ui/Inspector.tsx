@@ -9,6 +9,8 @@ import { editText, resizeNode, setColor, setHole, setPrefs, shownScene, updateNo
 import { ExportPanel } from './ExportPanel';
 import { formatNumber, NumberBox, SliderField } from './Fields';
 import { LinkIcon } from './icons';
+import { getGenerator } from '../parts/generators';
+import { PartFields } from './PartFields';
 import { EditingNote, Structure } from './Structure';
 import { Versions } from './Versions';
 
@@ -22,6 +24,8 @@ const SHORTCUTS: [string, string][] = [
   ['Zoom', 'Wheel'],
   ['Move', 'Drag · arrow keys'],
   ['Raise or lower', `Arrow handle · ${MOD}↑↓`],
+  ['Height', 'Top grip pulls up, bottom grip pulls down'],
+  ['Type a value', 'Click a grip instead of dragging it'],
   ['Duplicate', `${MOD}D`],
   ['Group / ungroup', `${MOD}G / ${MOD}Shift+G`],
   ['Solid / hole', 'S / H'],
@@ -42,7 +46,9 @@ const kindOf = (node: SceneNode): string =>
       ? 'Imported model'
       : node.type === 'text'
         ? 'Lettering: solid to emboss, hole to engrave'
-        : shapeDef(node.shape).summary;
+        : node.type === 'part'
+          ? `${getGenerator(node.part).name}, from Gearwright`
+          : shapeDef(node.shape).summary;
 
 function NameField({ node }: { node: SceneNode }) {
   const [text, setText] = useState(node.name);
@@ -362,6 +368,7 @@ function Design() {
       <Appearance nodes={nodes} />
       <Transform node={node} />
       <ShapeParams node={node} />
+      {node.type === 'part' && <PartFields node={node} />}
       <EditingNote />
       {node.type === 'group' && <Structure root={node} />}
     </>

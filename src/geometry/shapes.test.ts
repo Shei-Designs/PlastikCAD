@@ -1,14 +1,11 @@
-import type { Manifold, ManifoldToplevel } from 'manifold-3d';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { geomKey } from '../model/geomKey';
 import { builtSize } from '../model/math';
 import type { ShapeKind, ShapeNode, Vec3 } from '../model/types';
 import { build, clearCache, initKernel } from './kernel';
 import {
-  buildShape,
   clampParams,
   defaultParams,
-  inset,
   PALETTE,
   paramMax,
   polygonExtent,
@@ -17,10 +14,8 @@ import {
   SHAPES,
 } from './shapes';
 
-let k: ManifoldToplevel;
-
 beforeAll(async () => {
-  k = await initKernel();
+  await initKernel();
 });
 
 afterAll(() => clearCache());
@@ -66,7 +61,7 @@ const around = (n: number, r: number) => n * Math.tan(Math.PI / n) * r * r;
 describe('shape catalog', () => {
   it('lists the shapes in order', () => {
     expect(SHAPES.map((s) => s.kind)).toEqual([
-      'box', 'cylinder', 'sphere', 'cone', 'pyramid', 'wedge', 'roof', 'roundroof', 'prism', 'tube', 'torus', 'dome', 'fillet',
+      'box', 'cylinder', 'sphere', 'cone', 'pyramid', 'wedge', 'roof', 'roundroof', 'prism', 'torus', 'dome', 'fillet',
     ]);
   });
 
@@ -108,29 +103,6 @@ describe('shape catalog', () => {
   });
 });
 
-describe('inset', () => {
-  const square = regularPolygon(4).map(([x, y]): [number, number] => [x * 10 * Math.SQRT2, y * 5 * Math.SQRT2]);
-
-  it('moves every side inwards', () => {
-    // 20 by 10, shrunk by 2 all round.
-    const inner = inset(square, 2);
-    expect(inner).toHaveLength(4);
-    expect(Math.max(...inner.map((p) => p[0]))).toBeCloseTo(8);
-    expect(Math.min(...inner.map((p) => p[0]))).toBeCloseTo(-8);
-    expect(Math.max(...inner.map((p) => p[1]))).toBeCloseTo(3);
-    expect(Math.min(...inner.map((p) => p[1]))).toBeCloseTo(-3);
-  });
-
-  it('drops sides that are squeezed out, and everything in the end', () => {
-    // A square with one corner cut off by a short fifth side.
-    const cut: [number, number][] = [[-10, -10], [10, -10], [10, 9], [9, 10], [-10, 10]];
-    expect(inset(cut, 0.1)).toHaveLength(5);
-    expect(inset(cut, 5)).toHaveLength(4);
-    expect(inset(square, 5)).toEqual([]);
-    expect(inset(square, 8)).toEqual([]);
-  });
-});
-
 describe('clampParams', () => {
   it('fills in defaults and rounds whole numbers', () => {
     expect(clampParams({ shape: 'cone', params: {}, size: [20, 20, 20] })).toEqual({ sides: 64, top: 0 });
@@ -147,14 +119,6 @@ describe('clampParams', () => {
     expect(paramMax('box', 'radius', [20, 30, 10])).toBe(5);
   });
 
-  it('keeps the wall thinner than half the tube', () => {
-    const p = clampParams({ shape: 'tube', params: { wall: 50, sides: 64 }, size: [30, 20, 10] });
-    expect(p.wall).toBeLessThan(10);
-    expect(p.wall).toBeGreaterThan(9);
-    expect(clampParams({ shape: 'tube', params: { wall: 0, sides: 64 }, size: [30, 20, 10] }).wall).toBe(0.2);
-    // On a tiny tube the size limit wins over the minimum.
-    expect(clampParams({ shape: 'tube', params: { wall: 2, sides: 64 }, size: [0.2, 0.2, 5] }).wall).toBeCloseTo(0.098);
-  });
 });
 
 describe('shapes', () => {
@@ -289,42 +253,6 @@ describe('shapes', () => {
     expect(Math.abs(v / ((4 / 3) * Math.PI * 1000) - 1)).toBeLessThan(0.02);
   });
 
-  it('builds a tube with the wall it was asked for', () => {
-    const v = volumeOf(shape('tube'));
-    expect(v).toBeCloseTo((around(64, 10) - around(64, 8)) * 20, 3);
-    const thick = volumeOf(shape('tube', { params: { wall: 5, sides: 64 } }));
-    expect(thick).toBeCloseTo((around(64, 10) - around(64, 5)) * 20, 3);
-  });
-
-  it('keeps the wall of an oval tube the same on both axes', () => {
-    const garbage: { delete(): void }[] = [];
-    const keep = <T extends { delete(): void }>(o: T): T => {
-      garbage.push(o);
-      return o;
-    };
-    try {
-      const node = shape('tube', { size: [30, 20, 10], params: { wall: 2, sides: 64 } });
-      const tube = buildShape(k, node, keep);
-      // A thin stick from the centre outwards crosses the wall once: the piece left is as long as the wall is thick.
-      const crossing = (stick: Manifold): number => keep(tube.intersect(keep(stick))).volume() / (0.01 * 1);
-      expect(crossing(k.Manifold.cube([40, 0.01, 1], true).translate([20, 0, 0]))).toBeCloseTo(2, 2);
-      expect(crossing(k.Manifold.cube([0.01, 40, 1], true).translate([0, 20, 0]))).toBeCloseTo(2, 2);
-      expect(crossing(k.Manifold.cube([0.01, 40, 1], true).translate([0, -20, 0]))).toBeCloseTo(2, 2);
-    } finally {
-      for (const o of garbage) o.delete();
-    }
-  });
-
-  it('gives a tube with few sides an even wall', () => {
-    // Triangle 20 wide and 20 deep: offsetting each side inwards by 2 leaves a similar triangle.
-    const v = volumeOf(shape('tube', { params: { wall: 2, sides: 3 } }));
-    const inradius = 400 / (20 + 2 * Math.hypot(10, 20));
-    const outer = 200;
-    const inner = outer * ((inradius - 2) / inradius) ** 2;
-    expect(v).toBeCloseTo((outer - inner) * 20, 2);
-    // Too thick a wall for the shape just closes the bore.
-    expect(volumeOf(shape('tube', { params: { wall: 8, sides: 3 } }))).toBeCloseTo(outer * 20, 3);
-  });
 
   it('builds a torus from its width and height', () => {
     const v = volumeOf(shape('torus'));

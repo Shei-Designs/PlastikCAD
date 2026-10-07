@@ -64,13 +64,6 @@ const GLYPHS: Record<ShapeKind, ReactNode> = {
       <path d="M5 12.5v10l6 7h14l6-7v-10M11 19.5v10M25 19.5v10" />
     </>,
   ),
-  tube: glyph(
-    <>
-      <ellipse cx="18" cy="9.5" rx="10.5" ry="4.5" />
-      <ellipse cx="18" cy="9.5" rx="5.5" ry="2.2" />
-      <path d="M7.5 9.5v17c0 2.5 4.7 4.5 10.5 4.5s10.5-2 10.5-4.5v-17" />
-    </>,
-  ),
   torus: glyph(
     <>
       <ellipse cx="18" cy="18" rx="13" ry="8" />
@@ -92,6 +85,29 @@ const GLYPHS: Record<ShapeKind, ReactNode> = {
 };
 
 export const shapeThumbnail = (kind: ShapeKind): ReactNode => GLYPHS[kind];
+
+/** Catalog pictures of the Gearwright part families, by category id. */
+export const PART_THUMBNAILS: Record<string, ReactNode> = {
+  gears: glyph(
+    <>
+      <path d="M18 4.5l2.2 3.4 3.9-1.2.6 4 3.9 1.3-1.6 3.7 2.8 2.9-2.8 2.9 1.6 3.7-3.9 1.3-.6 4-3.9-1.2L18 31.5l-2.2-3.4-3.9 1.2-.6-4-3.9-1.3 1.6-3.7L6.2 18l2.8-2.9-1.6-3.7 3.9-1.3.6-4 3.9 1.2z" />
+      <circle cx="18" cy="18" r="4" />
+    </>,
+  ),
+  pulleys: glyph(
+    <>
+      <ellipse cx="18" cy="10" rx="12" ry="4" />
+      <path d="M6 10v4c0 2.2 5.4 4 12 4s12-1.8 12-4v-4M6 20v3c0 2.2 5.4 4 12 4s12-1.8 12-4v-3M6 14c0 2.2 5.4 4 12 4s12-1.8 12-4" />
+      <path d="M8 23.5l-2-9.5M28 23.5l2-9.5" />
+    </>,
+  ),
+  screws: glyph(
+    <>
+      <path d="M10 5h16v7H10z" />
+      <path d="M14 12v19h8V12M14 17l8-2M14 21l8-2M14 25l8-2M14 29l8-2" />
+    </>,
+  ),
+};
 
 export const textThumbnail: ReactNode = glyph(
   <>

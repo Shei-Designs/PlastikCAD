@@ -1,5 +1,5 @@
 import { sizeDependent } from './math';
-import type { SceneNode, TextNode } from './types';
+import type { PartNode, SceneNode, TextNode } from './types';
 
 /** Fast, well-mixed 53-bit string hash (cyrb53). */
 export function hashString(s: string): string {
@@ -34,10 +34,19 @@ export function geomKey(node: SceneNode): string {
       return `i:${node.asset}`;
     case 'text':
       return `t:${textKey(node)}`;
+    case 'part':
+      return `p:${partKey(node)}`;
     case 'group':
       return `g:${hashString(node.children.map(placedKey).join('|'))}`;
   }
 }
+
+/** Identifies a part's geometry: its generator and parameters. */
+export const partKey = (node: Pick<PartNode, 'part' | 'params' | 'quality'>): string =>
+  `${node.part}@${node.quality}:${Object.keys(node.params)
+    .sort()
+    .map((k) => `${k}=${JSON.stringify(node.params[k])}`)
+    .join(',')}`;
 
 /** Identifies the outlines of a piece of lettering: its words, font and alignment. */
 export const textKey = (node: Pick<TextNode, 'text' | 'font' | 'align'>): string => `${node.font}:${node.align}:${JSON.stringify(node.text)}`;

@@ -5,6 +5,7 @@ import { HOLE_COLOR } from '../model/ops';
 import type { SceneNode } from '../model/types';
 import { isDesktop } from '../platform';
 import {
+  addPart,
   addShape,
   addText,
   importModel,
@@ -18,6 +19,7 @@ import {
   select,
   setPrefs,
   startPlacing,
+  startPlacingPart,
   startPlacingText,
   toggleHidden,
   toggleLocked,
@@ -26,7 +28,8 @@ import {
 } from '../state/store';
 import { EyeIcon, EyeOffIcon, ImportIcon, LockIcon, Logo, MenuIcon, MoonIcon, SaveIcon, SunIcon, UnlockIcon } from './icons';
 import { Popover } from './Popover';
-import { shapeThumbnail, textThumbnail } from './thumbnails';
+import { CATEGORIES, getGenerator } from '../parts/generators';
+import { PART_THUMBNAILS, shapeThumbnail, textThumbnail } from './thumbnails';
 
 const MOD = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform) ? '⌘' : 'Ctrl+';
 
@@ -113,10 +116,14 @@ function FileBar() {
   );
 }
 
+/** Short tile names for the part families. */
+const FAMILY_NAMES: Record<string, string> = { gears: 'Gear', pulleys: 'Pulley', screws: 'Screw' };
+
 function Shapes() {
   const placing = useEditor((s) => s.placing);
   const viewing = useEditor((s) => s.viewing);
   const active = placing?.type === 'shape' ? placing.shape : null;
+  const placingFamily = placing?.type === 'part' ? getGenerator(placing.part).category : null;
   return (
     <section>
       <h2>Shapes</h2>
@@ -162,6 +169,29 @@ function Shapes() {
           </button>
         </li>
       </ul>
+      <h2>Parts</h2>
+      <ul className="shape-grid">
+        {CATEGORIES.map((c) => (
+          <li key={c.id}>
+            <button
+              type="button"
+              className={placing?.type === 'part' && placingFamily === c.id ? 'shape selected' : 'shape'}
+              title={`${c.label}, made with Gearwright: pick the kind and the numbers once it is placed.\nClick, then click on the plate to place it. Double-click to drop it in the middle.`}
+              disabled={Boolean(viewing)}
+              onPointerDown={(e) => {
+                if (e.button === 0) void startPlacingPart(c.id);
+              }}
+              onDoubleClick={() => void addPart(c.id)}
+              onClick={(e) => {
+                if (e.detail === 0) void addPart(c.id);
+              }}
+            >
+              <span className="thumb">{PART_THUMBNAILS[c.id]}</span>
+              <span className="shape-name">{FAMILY_NAMES[c.id] ?? c.label}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
       <button type="button" className="part" disabled={Boolean(viewing)} onClick={() => void importModel()}>
         <span className="thumb small">
           <ImportIcon />
@@ -179,7 +209,9 @@ const describe = (node: SceneNode): string =>
       ? 'Imported'
       : node.type === 'text'
         ? 'Text'
-        : (SHAPES.find((s) => s.kind === node.shape)?.name ?? '');
+        : node.type === 'part'
+          ? getGenerator(node.part).name
+          : (SHAPES.find((s) => s.kind === node.shape)?.name ?? '');
 
 function Objects() {
   const scene = useEditor((s) => s.doc.scene);

@@ -22,6 +22,12 @@ export const FitIcon = () => (
     <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
   </Icon>
 );
+export const ResetIcon = () => (
+  <Icon>
+    <path d="M3 12a9 9 0 1 0 3-6.7" />
+    <path d="M3 4v5h5" />
+  </Icon>
+);
 export const DownloadIcon = () => (
   <Icon>
     <path d="M12 4v11M7 11l5 5 5-5M5 20h14" />

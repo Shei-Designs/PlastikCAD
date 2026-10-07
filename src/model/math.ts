@@ -123,8 +123,8 @@ export const flipSigns = (flip: SceneNode['flip']): Vec3 => [flip?.[0] ? -1 : 1,
 /**
  * Size at which a node's geometry is built. Groups and imports are built once
  * at their natural size and scaled; so are shapes whose form does not depend
- * on their proportions. The rest (rounded boxes, tubes, tori) are rebuilt at
- * the exact size, so that radii and wall thicknesses stay true.
+ * on their proportions. The rest (rounded boxes and cylinders, tori) are
+ * rebuilt at the exact size, so that radii stay true.
  */
 export function builtSize(node: SceneNode): Vec3 {
   if (node.type !== 'shape') return node.natural;
@@ -133,7 +133,7 @@ export function builtSize(node: SceneNode): Vec3 {
 
 export function sizeDependent(node: SceneNode): boolean {
   if (node.type !== 'shape') return false;
-  return node.shape === 'tube' || node.shape === 'torus' || ((node.shape === 'box' || node.shape === 'cylinder') && (node.params.radius ?? 0) > 0);
+  return node.shape === 'torus' || ((node.shape === 'box' || node.shape === 'cylinder') && (node.params.radius ?? 0) > 0);
 }
 
 /** Scale from the geometry as built to the node's size, including mirroring. */

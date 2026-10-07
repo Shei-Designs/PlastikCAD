@@ -103,10 +103,11 @@ describe('groups', () => {
   });
 
   it('scales millimetre parameters with an evenly scaled group', () => {
-    const tube = shape('tube', { pos: [0, 0, 10] });
-    const base = makeGroup([tube], { min: [-10, -10, 0], max: [10, 10, 20] }, 'Group');
+    const rounded = shape('box', { pos: [0, 0, 10] });
+    if (rounded.type === 'shape') rounded.params = { radius: 2 };
+    const base = makeGroup([rounded], { min: [-10, -10, 0], max: [10, 10, 20] }, 'Group');
     const [out] = ungroup({ ...base, size: [40, 40, 40] });
-    expect(out.type === 'shape' && out.params.wall).toBe(4);
+    expect(out.type === 'shape' && out.params.radius).toBe(4);
     close(out.size, [40, 40, 40]);
   });
 });
@@ -192,8 +193,8 @@ describe('geometry keys', () => {
   });
 
   it('follow size where the shape depends on it', () => {
-    const tube = shape('tube');
-    expect(geomKey({ ...tube, size: [30, 30, 10] })).not.toBe(geomKey(tube));
+    const ring = shape('torus');
+    expect(geomKey({ ...ring, size: [30, 30, 10] })).not.toBe(geomKey(ring));
     const rounded = shape('box');
     if (rounded.type === 'shape') rounded.params = { radius: 2 };
     expect(geomKey({ ...rounded, size: [30, 30, 10] })).not.toBe(geomKey(rounded));
@@ -217,7 +218,7 @@ describe('geometry keys', () => {
 describe('design files', () => {
   const sample = (): Doc => {
     const box = shape('box');
-    const group = makeGroup([shape('tube'), shape('cone', { hole: true, flip: [false, false, true] })], { min: [-10, -10, 0], max: [10, 10, 20] }, 'Group');
+    const group = makeGroup([shape('torus'), shape('cone', { hole: true, flip: [false, false, true] })], { min: [-10, -10, 0], max: [10, 10, 20] }, 'Group');
     const drawing: SceneNode = { ...shape('box'), type: 'import', asset: 'outline-1', natural: [10, 10, 1] } as unknown as SceneNode;
     delete (drawing as { shape?: unknown }).shape;
     delete (drawing as { params?: unknown }).params;

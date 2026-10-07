@@ -10,7 +10,7 @@ import type { FormatId } from '../io/export';
 import { centreMesh, centreOutline, IMPORT_EXTENSIONS, importFile } from '../io/import';
 import { emptyDoc, parseDoc, serializeDoc } from '../model/file';
 import { hashString } from '../model/geomKey';
-import { boundsCenter, tidyVec, unionBounds } from '../model/math';
+import { boundsCenter, boxBounds, tidyVec, unionBounds } from '../model/math';
 import type { Bounds, Mat } from '../model/math';
 import {
   alignNodes,
@@ -29,7 +29,9 @@ import {
   usedAssets,
 } from '../model/ops';
 import type { AlignMode, Layer } from '../model/ops';
-import type { Asset, Doc, GroupNode, ImportNode, Scene, SceneNode, ShapeKind, TextNode, Vec3, Version } from '../model/types';
+import type { Asset, Doc, GroupNode, ImportNode, PartNode, PartParamValue, PartQuality, Scene, SceneNode, ShapeKind, TextNode, Vec3, Version } from '../model/types';
+import { GENERATORS, getGenerator } from '../parts/generators';
+import { sanitizeParams } from '../parts/generators/types';
 import * as platform from '../platform';
 import type { PickedFile } from '../platform';
 import { DEFAULT_FONT, loadFont, outlineOf } from '../text/fonts';
@@ -384,6 +386,106 @@ export async function editText(id: string, change: Partial<Pick<TextNode, 'text'
   } catch (e) {
     fail(e);
     return false;
+  }
+}
+
+// --- Gearwright parts ---------------------------------------------------------------
+
+/** A part before it has been measured: a unit box, which `sizePart` replaces with the real one. */
+function makePart(generatorId: string, params?: Record<string, PartParamValue>): PartNode {
+  const def = getGenerator(generatorId);
+  return {
+    id: newId(),
+    type: 'part',
+    name: def.name,
+    part: def.id,
+    params: sanitizeParams(def, params),
+    quality: 'normal',
+    natural: [1, 1, 1],
+    pos: [0, 0, -1e6],
+    rot: [0, 0, 0],
+    size: [1, 1, 1],
+    hole: false,
+    color: '#8fa3bf',
+  };
+}
+
+/** The part's box as its generator makes it, from the geometry kernel. */
+async function measurePart(node: PartNode): Promise<Vec3> {
+  const probe: PartNode = { ...node, natural: [1, 1, 1], size: [1, 1, 1], pos: [0, 0, 0], rot: [0, 0, 0] };
+  delete probe.flip;
+  const worker = await geometry.prepare([probe], state.doc.assets);
+  const bounds = await worker.measure([probe]);
+  if (!bounds) throw new Error(`"${node.name}" came out empty with these settings.`);
+  return [bounds.max[0] - bounds.min[0], bounds.max[1] - bounds.min[1], bounds.max[2] - bounds.min[2]];
+}
+
+/** Give a part its measured box, keeping whatever scale it had and where it stands. */
+async function sizePart(node: PartNode): Promise<PartNode> {
+  const natural = await measurePart(node);
+  const size: Vec3 = [0, 1, 2].map((i) => (node.size[i] / node.natural[i]) * natural[i]) as Vec3;
+  const next: PartNode = { ...node, natural, size };
+  // Parked parts have no base to keep; placed ones stay on whatever they stand on.
+  if (node.pos[2] > -1e5) {
+    const lift = geometry.bounds(node).min[2] - boxBounds(next).min[2];
+    next.pos = [node.pos[0], node.pos[1], node.pos[2] + lift];
+  }
+  return next;
+}
+
+/** Start carrying a new part of this kind (gears, pulleys, screws), to be put down like a shape. */
+export async function startPlacingPart(category: string): Promise<void> {
+  if (state.viewing) return;
+  const def = GENERATORS.find((g) => g.category === category);
+  if (!def) return;
+  set({ busy: 'Making the part…' });
+  try {
+    const node = await sizePart(makePart(def.id));
+    if (!state.viewing) set({ placing: node, selection: [] });
+  } catch (e) {
+    fail(e);
+  } finally {
+    set({ busy: null });
+  }
+}
+
+/** Add a part at the middle of the plate straight away (keyboard route, double-click). */
+export async function addPart(category: string): Promise<void> {
+  if (state.viewing) return;
+  const def = GENERATORS.find((g) => g.category === category);
+  if (!def) return;
+  set({ busy: 'Making the part…' });
+  try {
+    const node = await sizePart(makePart(def.id));
+    if (state.viewing) return;
+    node.pos = [0, 0, node.size[2] / 2];
+    node.name = uniqueName(state.doc.scene, node.name);
+    state = { ...state, placing: null };
+    commit([...state.doc.scene, node], { selection: [node.id] });
+  } catch (e) {
+    fail(e);
+  } finally {
+    set({ busy: null });
+  }
+}
+
+let partEdits = 0;
+
+/** Change a part's generator or parameters. The part keeps its scale and stays on its base. */
+export async function editPart(id: string, change: { part?: string; params?: Record<string, PartParamValue>; quality?: PartQuality }): Promise<void> {
+  const node = state.doc.scene.find((n) => n.id === id);
+  if (node?.type !== 'part' || node.locked || state.viewing) return;
+  const def = getGenerator(change.part ?? node.part);
+  const params = change.part && change.part !== node.part ? sanitizeParams(def, change.params) : sanitizeParams(def, { ...node.params, ...change.params });
+  const name = node.name === getGenerator(node.part).name ? def.name : node.name;
+  const edit = ++partEdits;
+  try {
+    const sized = await sizePart({ ...node, part: def.id, params, name, quality: change.quality ?? node.quality });
+    // A later edit has overtaken this one, or the part is gone.
+    if (edit !== partEdits || !state.doc.scene.some((n) => n.id === id)) return;
+    updateNode(id, sized, `part:${id}`);
+  } catch (e) {
+    fail(e);
   }
 }
 

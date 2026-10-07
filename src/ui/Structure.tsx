@@ -4,6 +4,7 @@
 // pick one to edit the object at that layer.
 import { useMemo, useState } from 'react';
 import { shapeDef } from '../geometry/shapes';
+import { getGenerator } from '../parts/generators';
 import { HOLE_COLOR } from '../model/ops';
 import type { GroupNode, SceneNode } from '../model/types';
 import { cancelEditing, editInside, finishEditing, setHighlight, useEditor } from '../state/store';
@@ -39,7 +40,15 @@ const flatten = (p: Placed, out: Placed[] = []): Placed[] => {
 };
 
 const kindOf = (node: SceneNode): string =>
-  node.type === 'group' ? `Group of ${node.children.length}` : node.type === 'import' ? 'Imported' : node.type === 'text' ? 'Text' : shapeDef(node.shape).name;
+  node.type === 'group'
+    ? `Group of ${node.children.length}`
+    : node.type === 'import'
+      ? 'Imported'
+      : node.type === 'text'
+        ? 'Text'
+        : node.type === 'part'
+          ? getGenerator(node.part).name
+          : shapeDef(node.shape).name;
 
 export function Structure({ root }: { root: GroupNode }) {
   const [picked, setPicked] = useState<string[] | null>(null);

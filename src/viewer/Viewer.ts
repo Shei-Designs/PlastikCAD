@@ -93,6 +93,15 @@ export interface ViewerEvents {
   onAlignPick(axis: 0 | 1 | 2, mode: AlignMode): void;
   /** Align mode: one of the selected objects was clicked, to line the others up with it. */
   onAnchor(id: string): void;
+  /** A handle was clicked rather than dragged: offer to type the value it would set (see `applyTyped`). */
+  onHandleClick(prompt: HandlePrompt): void;
+}
+
+export interface HandlePrompt {
+  kind: HandleKind;
+  unit: string;
+  /** One box per value, each sitting on the edge of the object it measures. */
+  fields: { tag: string; value: number; clientX: number; clientY: number }[];
 }
 
 const DEFAULTS: ViewerOptions = { theme: 'dark', edges: true, grid: true, snap: 1, interactive: true, align: null, highlight: null };
@@ -161,9 +170,10 @@ interface SharedGeometry {
   edges: BufferGeometry | null;
 }
 
-type HandleKind =
+export type HandleKind =
   | { type: 'resize'; sx: -1 | 0 | 1; sy: -1 | 0 | 1 }
-  | { type: 'height' }
+  /** Height grip at the top (side 1, base stays put) or at the bottom (side -1, top stays put). */
+  | { type: 'height'; side: 1 | -1 }
   | { type: 'lift' }
   | { type: 'rotate'; axis: 0 | 1 | 2 }
   | { type: 'align'; axis: 0 | 1 | 2; mode: AlignMode };
@@ -191,7 +201,7 @@ type Drag =
   | { mode: 'pending-marquee'; x: number; y: number; additive: boolean }
   | { mode: 'marquee'; x: number; y: number; additive: boolean }
   | { mode: 'resize'; node: SceneNode; sx: number; sy: number; grab: Vector3 }
-  | { mode: 'height'; node: SceneNode; grab: number }
+  | { mode: 'height'; node: SceneNode; side: 1 | -1; grab: number }
   | { mode: 'lift'; nodes: SceneNode[]; origin: Vector3; grab: number }
   | { mode: 'rotate'; nodes: SceneNode[]; axis: 0 | 1 | 2; pivot: Vec3; start: number | null; x: number }
   | { mode: 'place' };
@@ -952,7 +962,8 @@ export class Viewer {
           add({ type: 'resize', sx, sy }, new Sprite(corner ? this.grips.corner : this.grips.edge), corner ? 13 : 11, 'nwse-resize');
         }
       }
-      add({ type: 'height' }, new Sprite(this.grips.corner), 13, 'ns-resize');
+      add({ type: 'height', side: 1 }, new Sprite(this.grips.corner), 13, 'ns-resize');
+      add({ type: 'height', side: -1 }, new Sprite(this.grips.corner), 13, 'ns-resize');
     }
     add({ type: 'lift' }, new Sprite(this.grips.lift), 26, 'ns-resize');
     for (const axis of [0, 1, 2] as const) {
@@ -1012,7 +1023,7 @@ export class Viewer {
     for (const h of this.handles) {
       const k = h.kind;
       if (k.type === 'resize' || k.type === 'height') {
-        const at = k.type === 'resize' ? this.framePoint([k.sx * hx, k.sy * hy, -hz]) : this.framePoint([0, 0, hz]);
+        const at = k.type === 'resize' ? this.framePoint([k.sx * hx, k.sy * hy, -hz]) : this.framePoint([0, 0, k.side * hz]);
         h.object.position.copy(at);
         h.object.scale.setScalar(h.pixels * this.pixelSize(at) * (h === this.hovered ? 1.35 : 1));
       } else if (k.type === 'lift') {
@@ -1162,9 +1173,10 @@ export class Viewer {
       const handleLocal = new Vector3(k.sx * f.half[0], k.sy * f.half[1], 0);
       this.drag = { mode: 'resize', node: f.single, sx: k.sx, sy: k.sy, grab: grab.sub(handleLocal) };
     } else if (k.type === 'height' && f.single) {
-      const t = this.alongAxis(this.framePoint([0, 0, -f.half[2]]), this.frameAxis(f.single, 2));
+      // Measured from the end that stays put: the base for the top grip, the top for the bottom one.
+      const t = this.alongAxis(this.framePoint([0, 0, -k.side * f.half[2]]), this.frameAxis(f.single, 2));
       if (t === null) return;
-      this.drag = { mode: 'height', node: f.single, grab: t - f.single.size[2] };
+      this.drag = { mode: 'height', node: f.single, side: k.side, grab: t - k.side * f.single.size[2] };
     } else if (k.type === 'lift') {
       const origin = handle.object.position.clone();
       const t = this.alongAxis(origin, new Vector3(0, 0, 1));
@@ -1177,7 +1189,99 @@ export class Viewer {
       return;
     }
     this.renderer.domElement.style.cursor = k.type === 'rotate' ? 'grabbing' : handle.cursor;
+    this.press = { handle, x: event.clientX, y: event.clientY };
     this.events.onGestureStart();
+  }
+
+  /** The handle just pressed, until the pointer has moved far enough to count as a drag. */
+  private press: { handle: Handle; x: number; y: number } | null = null;
+
+  /** Where a point of the scene is on screen. */
+  private toClient(p: Vector3): { clientX: number; clientY: number } {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const v = p.clone().project(this.camera);
+    return { clientX: rect.left + ((v.x + 1) / 2) * rect.width, clientY: rect.top + ((1 - v.y) / 2) * rect.height };
+  }
+
+  /** Of some points in the object's frame, the one nearest the camera. */
+  private nearest(locals: Vec3[]): Vector3 {
+    let best = this.framePoint(locals[0]);
+    for (const l of locals.slice(1)) {
+      const p = this.framePoint(l);
+      if (p.distanceTo(this.camera.position) < best.distanceTo(this.camera.position)) best = p;
+    }
+    return best;
+  }
+
+  /**
+   * What typing a value for this handle would set. Each box sits in the middle
+   * of an edge running along the dimension it changes, on the side of the grip
+   * (or the side facing the camera), so it reads like a dimension line.
+   */
+  private promptFor(handle: Handle): HandlePrompt | null {
+    const f = this.frame;
+    if (!f) return null;
+    const k = handle.kind;
+    const [hx, hy, hz] = f.half;
+    const field = (tag: string, value: number, at: Vector3) => ({ tag, value, ...this.toClient(at) });
+    switch (k.type) {
+      case 'height': {
+        if (!f.single) return null;
+        // Midway up the nearest vertical edge.
+        const at = this.nearest([[-hx, -hy, 0], [hx, -hy, 0], [hx, hy, 0], [-hx, hy, 0]]);
+        return { kind: k, unit: 'mm', fields: [field('H', f.single.size[2], at)] };
+      }
+      case 'resize': {
+        if (!f.single) return null;
+        const fields = [];
+        if (k.sx !== 0) {
+          // Width goes on an edge running along X: at the grip's side, else the side facing the camera.
+          const at = k.sy !== 0 ? this.framePoint([0, k.sy * hy, -hz]) : this.nearest([[0, -hy, -hz], [0, hy, -hz]]);
+          fields.push(field('W', f.single.size[0], at));
+        }
+        if (k.sy !== 0) {
+          const at = k.sx !== 0 ? this.framePoint([k.sx * hx, 0, -hz]) : this.nearest([[-hx, 0, -hz], [hx, 0, -hz]]);
+          fields.push(field('D', f.single.size[1], at));
+        }
+        return { kind: k, unit: 'mm', fields };
+      }
+      case 'lift':
+        return { kind: k, unit: 'mm', fields: [field('Z', f.bounds.min[2], handle.object.position.clone())] };
+      case 'rotate':
+        return { kind: k, unit: '°', fields: [field('XYZ'[k.axis], 0, handle.object.getWorldPosition(new Vector3()))] };
+      default:
+        return null;
+    }
+  }
+
+  /** Apply a typed value as if the handle had been dragged there (one undo step). */
+  applyTyped(kind: HandleKind, values: number[]): void {
+    const f = this.frame;
+    if (!f || !this.options.interactive || values.length === 0) return;
+    const nodes = this.items.filter((i) => i.selected && !i.ghost && !i.node.locked).map((i) => i.node);
+    if (nodes.length === 0) return;
+    let changed: SceneNode[] | null = null;
+    const v = values[0];
+    if (kind.type === 'height' && f.single) {
+      if (v >= MIN_SIZE) changed = [this.resized(f.single, [f.single.size[0], f.single.size[1], v], [0, 0, -kind.side])];
+    } else if (kind.type === 'resize' && f.single) {
+      const size: Vec3 = [...f.single.size];
+      const w = values[0];
+      const d = values.length > 1 ? values[1] : values[0];
+      if (kind.sx !== 0 && w >= MIN_SIZE) size[0] = w;
+      if (kind.sy !== 0 && d >= MIN_SIZE) size[1] = d;
+      changed = [this.resized(f.single, size, [-kind.sx as -1 | 0 | 1, -kind.sy as -1 | 0 | 1, 0])];
+    } else if (kind.type === 'lift') {
+      const dz = v - f.bounds.min[2];
+      changed = nodes.map((n) => ({ ...n, pos: [n.pos[0], n.pos[1], n.pos[2] + dz] as Vec3 }));
+    } else if (kind.type === 'rotate') {
+      const pivot: Vec3 = f.single ? [...f.single.pos] : boundsCenter(f.bounds);
+      changed = rotateNodes(nodes, kind.axis, v, pivot);
+    }
+    if (!changed) return;
+    this.events.onGestureStart();
+    this.events.onGestureChange(changed);
+    this.events.onGestureEnd(false);
   }
 
   private frameAxis(node: SceneNode, axis: 0 | 1 | 2): Vector3 {
@@ -1249,6 +1353,7 @@ export class Viewer {
       if (event.buttons === 0 && this.options.interactive) this.hover(this.pickHandle());
       return;
     }
+    if (this.press && Math.hypot(event.clientX - this.press.x, event.clientY - this.press.y) >= DRAG_THRESHOLD) this.press = null;
 
     switch (drag.mode) {
       case 'pending-move': {
@@ -1320,8 +1425,18 @@ export class Viewer {
         this.events.onSelect(this.insideMarquee(drag.x, drag.y, event.clientX, event.clientY), drag.additive ? 'add' : 'replace');
         this.hideMarquee();
         return;
-      default:
+      default: {
+        // A press without a drag asks for the value instead.
+        const press = this.press;
+        this.press = null;
+        if (press && event.type === 'pointerup') {
+          this.events.onGestureEnd(true);
+          const prompt = this.promptFor(press.handle);
+          if (prompt) this.events.onHandleClick(prompt);
+          return;
+        }
         this.events.onGestureEnd(event.type === 'pointercancel');
+      }
     }
   };
 
@@ -1414,16 +1529,16 @@ export class Viewer {
   }
 
   private heightTo(drag: Extract<Drag, { mode: 'height' }>, event: PointerEvent): void {
-    const { node } = drag;
+    const { node, side } = drag;
     const m = frameMatrix(node);
     const z = new Vector3(m[6], m[7], m[8]);
-    const base = new Vector3(m[9], m[10], m[11]).addScaledVector(z, -node.size[2] / 2);
-    const t = this.alongAxis(base, z);
+    const fixed = new Vector3(m[9], m[10], m[11]).addScaledVector(z, (-side * node.size[2]) / 2);
+    const t = this.alongAxis(fixed, z);
     if (t === null) return;
-    const h = Math.max(MIN_SIZE, this.snap(t - drag.grab));
+    const h = Math.max(MIN_SIZE, this.snap(side * (t - drag.grab)));
     const f = h / node.size[2];
     const size: Vec3 = event.shiftKey ? [node.size[0] * f, node.size[1] * f, h] : [node.size[0], node.size[1], h];
-    this.events.onGestureChange([this.resized(node, size, [0, 0, -1])]);
+    this.events.onGestureChange([this.resized(node, size, [0, 0, -side])]);
     this.events.onReadout(event.shiftKey ? size.map(fmt).join(' × ') : fmt(h), event.clientX, event.clientY);
   }
 

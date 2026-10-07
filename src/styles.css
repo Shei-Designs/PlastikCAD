@@ -634,6 +634,14 @@ ul {
   font-size: 12px;
 }
 
+.field-note.warn {
+  margin: 0 0 6px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--warn-bg);
+  color: var(--warn-text);
+}
+
 input[type='range'] {
   flex: 1;
   min-width: 0;
@@ -1215,6 +1223,43 @@ kbd {
   pointer-events: none;
 }
 
+.prompt-boxes {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.readout.prompt {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 7px 3px 8px;
+  /* Centred on the middle of the edge it measures. */
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+}
+
+.readout.prompt .tag {
+  color: var(--faint);
+  font-weight: 600;
+  font-size: 11px;
+}
+
+.readout.prompt input {
+  width: 58px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  outline: 0;
+  background: var(--control);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
 .version-banner,
 .hint-bar {
   position: absolute;
@@ -1598,4 +1643,35 @@ kbd {
 
 .layers li {
   padding: 1px 0;
+}
+
+/* ---------- part picker ---------- */
+
+.part-types {
+  margin: 0 0 4px;
+}
+
+.part-types .shape {
+  padding: 4px 2px 5px;
+}
+
+.part-types .shape-name {
+  max-width: 100%;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.tabs-row {
+  margin-bottom: 10px;
+}
+
+.tabs-row button {
+  padding: 0 6px;
+  font-size: 12px;
 }

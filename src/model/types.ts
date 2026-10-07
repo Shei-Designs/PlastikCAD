@@ -18,7 +18,6 @@ export type ShapeKind =
   | 'roof'
   | 'roundroof'
   | 'prism'
-  | 'tube'
   | 'torus'
   | 'dome'
   | 'fillet';
@@ -79,7 +78,28 @@ export interface TextNode extends NodeBase {
   natural: Vec3;
 }
 
-export type SceneNode = ShapeNode | GroupNode | ImportNode | TextNode;
+export type PartQuality = 'draft' | 'normal' | 'fine';
+
+/** A value of a part parameter: Gearwright's generators take numbers, choices and switches. */
+export type PartParamValue = number | string | boolean;
+
+/**
+ * A Gearwright part: a gear, pulley, sprocket or thread made from a handful
+ * of parameters. Only the parameters are stored; the generator (see
+ * `src/parts`) makes the geometry.
+ */
+export interface PartNode extends NodeBase {
+  type: 'part';
+  /** Id of the generator. */
+  part: string;
+  params: Record<string, PartParamValue>;
+  /** How finely curves are tessellated; draft is quickest, fine is for export. */
+  quality: PartQuality;
+  /** Bounding box of the part as generated; `size / natural` is its scale. */
+  natural: Vec3;
+}
+
+export type SceneNode = ShapeNode | GroupNode | ImportNode | TextNode | PartNode;
 
 /** The fonts lettering can be set in. All are bold or heavy cuts: thin strokes do not print. */
 export const TEXT_FONTS: { id: string; name: string }[] = [

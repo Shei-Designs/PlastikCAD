@@ -16,8 +16,16 @@ software under the GPL-3.0.
 It is the Tinkercad way of modelling, without the cloud and without the clutter:
 
 - **Shapes** – box (with rounded edges), cylinder, sphere, cone, pyramid,
-  wedge, roof, round roof, polygon prism, tube, torus and dome. Click one, then
+  wedge, roof, round roof, polygon prism, torus and dome. Click one, then
   click on the plate (or on top of another object) to put it down.
+- **Parts** – the Gear, Pulley and Screw tiles place a parametric part. The
+  panel then offers the kind (spur, helical, herringbone, ring gear, rack,
+  bevel, worm; GT2, HTD, T, MXL/XL pulleys and chain sprockets; metric bolts
+  and nuts, lead screws and their nuts), its parameters in tabs, and the
+  dimensions that follow from them (pitch diameter and so on). A part is just
+  an object: group it, cut it, scale it, version it. This is
+  [Gearwright](https://github.com/AOShei/gearwright), folded into BashCAD; it
+  lives on here, in `src/parts`.
 - **Text** – lettering in four print-friendly fonts (sans, slab serif,
   monospace, stencil), on one line or several. Put it on a face and group it
   to emboss; make it a hole and sink it in a little (Ctrl+Down) to engrave.
@@ -81,7 +89,8 @@ design is still there after a restart.
 | Select | Click; Shift-click adds; drag on the plate for a box selection |
 | Move | Drag (Shift keeps to one axis); arrow keys nudge by the snap step, Shift ×10 |
 | Raise or lower | Arrow handle; Ctrl+Up / Ctrl+Down |
-| Resize | Corner and edge grips, top grip for the height; Shift scales evenly |
+| Resize | Corner and edge grips; the top grip pulls the height up, the bottom grip pulls it down; Shift scales evenly |
+| Type a value | Click any grip instead of dragging it, type the value (two for a corner grip, e.g. `20 x 15`), Enter |
 | Turn | Coloured arcs, in 15° steps; Shift 45°, Alt 1° |
 | Duplicate / copy / paste | Ctrl+D / Ctrl+C / Ctrl+V |
 | Group / ungroup | Ctrl+G / Ctrl+Shift+G |
@@ -121,6 +130,27 @@ just the selection when something is selected. Units are millimetres, Z is up.
   fill (so laser-cutter drawings work, including the profiles exported by
   [Gearwright](https://github.com/AOShei/gearwright)). Convert text to
   paths first; `<use>`, images and CSS classes are not read.
+
+## How accurate are the parts?
+
+- **Involute gears** are generated the way a real gear is cut: a rack cutter
+  rolls around the blank. Flanks are true involutes, root fillets are the
+  trochoids the cutter tip would leave, and small pinions get the same undercut
+  a hobbed gear has (with a warning and the profile shift that removes it).
+  Helical gears take the module and pressure angle in the normal plane.
+- **Bevel gears** use Tredgold's approximation (the usual construction for cut
+  and printed straight bevels), not a spherical involute.
+- **Timing pulleys** use the standard pitch and outside diameters. The groove
+  shapes are parametric fits to the belt standards rather than the
+  manufacturers' multi-arc drawings, with a clearance setting to tune the fit
+  on your printer.
+- **Sprockets** use the common arc-based drafting construction, not the full
+  ANSI B29.1 tooth form.
+- **Threads** follow the ISO metric and ISO trapezoidal basic profiles, with a
+  clearance setting for printing.
+
+Dimension tables (chain sizes, hex sizes, belt pitch-line offsets) were entered
+by hand. Check critical dimensions against a datasheet before relying on them.
 
 ## Fonts
 
@@ -170,6 +200,7 @@ src/
   worker/             runs the kernel off the UI thread
   state/              the editor: selection, undo, versions, files, preferences
   viewer/             three.js view: drawing, picking, handles
+  parts/              the gear, pulley, sprocket and thread generators (formerly Gearwright)
   io/                 STL, 3MF, OBJ, SVG, DXF writers; STL, OBJ, 3MF, SVG readers
   text/               fonts, and laying words out as outlines
   ui/                 React components
@@ -201,8 +232,6 @@ The palette, inspector, file format and export pick it up from there.
 
 ## Roadmap
 
-- Gearwright parts as a shape family (gears, pulleys and threads straight from
-  the palette).
 - Work plane on any face, ruler and snapping to other objects.
 - Text on curved surfaces; more scripts and fonts.
 - STEP export.

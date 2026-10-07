@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { geometry } from '../state/geometry';
 import { SNAP_STEPS } from '../state/persist';
 import {
@@ -33,7 +33,7 @@ import {
   viewVersion,
 } from '../state/store';
 import { Viewer } from '../viewer/Viewer';
-import type { ViewItem, ViewPreset } from '../viewer/Viewer';
+import type { HandlePrompt, ViewItem, ViewPreset } from '../viewer/Viewer';
 import {
   AlignIcon,
   ChevronIcon,
@@ -132,8 +132,62 @@ function Actions() {
   );
 }
 
+/**
+ * Boxes on the object's edges after a grip was clicked: type the value(s),
+ * Enter applies them as if the grip had been dragged there.
+ */
+function HandleInput({ prompt, onClose }: { prompt: HandlePrompt; onClose: () => void }) {
+  const [texts, setTexts] = useState(prompt.fields.map((f) => String(Number(f.value.toFixed(3)))));
+  const host = useRef<HTMLFormElement>(null);
+  const submit = () => {
+    const values = texts.map((t) => Number(t.trim().replace(',', '.')));
+    if (values.every((v) => Number.isFinite(v))) viewerRef.current?.applyTyped(prompt.kind, values);
+    onClose();
+  };
+  const rect = host.current?.parentElement?.getBoundingClientRect();
+  return (
+    <form
+      ref={host}
+      className="prompt-boxes"
+      onSubmit={(e) => {
+        e.preventDefault();
+        submit();
+      }}
+      // Leaving one box for the other keeps the prompt; leaving the form closes it.
+      onBlur={(e) => {
+        if (!host.current?.contains(e.relatedTarget as Node | null)) onClose();
+      }}
+    >
+      {prompt.fields.map((f, i) => (
+        <label key={f.tag} className="readout prompt" style={{ left: `${f.clientX - (rect?.left ?? 0)}px`, top: `${f.clientY - (rect?.top ?? 0)}px` }}>
+          <span className="tag">{f.tag}</span>
+          <input
+            autoFocus={i === 0}
+            aria-label={f.tag}
+            value={texts[i]}
+            spellCheck={false}
+            inputMode="decimal"
+            onFocus={(e) => e.target.select()}
+            onChange={(e) => setTexts(texts.map((t, j) => (j === i ? e.target.value : t)))}
+            onKeyDown={(e) => {
+              // With two boxes and no button, Enter would not submit the form on its own.
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                submit();
+              } else if (e.key === 'Escape') onClose();
+              e.stopPropagation();
+            }}
+          />
+          <span className="unit">{prompt.unit}</span>
+        </label>
+      ))}
+    </form>
+  );
+}
+
 export function Viewport() {
   const host = useRef<HTMLDivElement>(null);
+  const [prompt, setPrompt] = useState<HandlePrompt | null>(null);
   const readout = useRef<HTMLDivElement>(null);
   const viewer = useRef<Viewer | null>(null);
 
@@ -170,6 +224,7 @@ export function Viewport() {
         onAlignHover: previewAlign,
         onAlignPick: commitAlign,
         onAnchor: setAlignAnchor,
+        onHandleClick: setPrompt,
       },
       { theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap },
     );
@@ -235,6 +290,7 @@ export function Viewport() {
     <div className="viewport">
       <div className="canvas-host" ref={host} />
       <div className="readout" ref={readout} hidden />
+      {prompt && <HandleInput key={prompt.fields.map((f) => `${f.tag}${f.clientX}`).join()} prompt={prompt} onClose={() => setPrompt(null)} />}
       <div className="view-toolbar">
         <div className="segmented small" role="group" aria-label="Camera view">
           {VIEWS.map((v) => (
