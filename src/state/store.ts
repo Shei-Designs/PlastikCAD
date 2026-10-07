@@ -11,22 +11,25 @@ import { centreMesh, centreOutline, IMPORT_EXTENSIONS, importFile } from '../io/
 import { emptyDoc, parseDoc, serializeDoc } from '../model/file';
 import { hashString } from '../model/geomKey';
 import { boundsCenter, tidyVec, unionBounds } from '../model/math';
-import type { Bounds } from '../model/math';
+import type { Bounds, Mat } from '../model/math';
 import {
   alignNodes,
   cloneNode,
   diffScenes,
+  dissolve,
+  frameAlong,
   makeGroup,
   makeShape,
   mirrorNodes,
   newId,
+  nodeAt,
   rotateNodes,
   ungroup,
   uniqueName,
   usedAssets,
 } from '../model/ops';
-import type { AlignMode } from '../model/ops';
-import type { Asset, Doc, ImportNode, Scene, SceneNode, ShapeKind, TextNode, Vec3, Version } from '../model/types';
+import type { AlignMode, Layer } from '../model/ops';
+import type { Asset, Doc, GroupNode, ImportNode, Scene, SceneNode, ShapeKind, TextNode, Vec3, Version } from '../model/types';
 import * as platform from '../platform';
 import type { PickedFile } from '../platform';
 import { DEFAULT_FONT, loadFont, outlineOf } from '../text/fonts';
@@ -56,6 +59,13 @@ export interface EditorState {
    * without one, of the whole selection. Frozen while a dot is being previewed.
    */
   aligning: { anchor: string | null; bounds: Bounds } | null;
+  /**
+   * Editing inside a group: the layers taken apart to reach a part of it,
+   * which are put back together on Done. `before` is the scene for Cancel.
+   */
+  editing: { root: string; target: string; layers: Layer[]; before: Scene } | null;
+  /** A box drawn in the viewport, for pointing at a part of a group from the structure graph. */
+  highlight: { matrix: Mat; size: Vec3 } | null;
   prefs: Prefs;
   notice: Notice | null;
   /** Something slow is going on ("Grouping…"). */
@@ -84,6 +94,8 @@ let state: EditorState = {
   viewing: null,
   placing: null,
   aligning: null,
+  editing: null,
+  highlight: null,
   prefs: loadPrefs(),
   notice: null,
   busy: null,
@@ -595,22 +607,34 @@ export function toggleLocked(id: string): void {
   commit(state.doc.scene.map((n) => (n.id === id ? next : n)));
 }
 
+/**
+ * Holes grouped on their own become one hole: inside, they merge like solids,
+ * and the group cuts as a whole (a connector cut-out with its screw holes, say).
+ */
+function holeGroup(nodes: SceneNode[]): { members: SceneNode[]; hole: boolean } {
+  if (nodes.length === 0 || !nodes.every((n) => n.hole)) return { members: nodes, hole: false };
+  return { members: nodes.map((n) => ({ ...n, hole: false })), hole: true };
+}
+
+/** Measure and build a group of the given nodes; null if nothing solid would be left. */
+async function buildGroup(nodes: SceneNode[], name: string, over: Partial<Pick<GroupNode, 'id' | 'color' | 'hidden' | 'locked'>> = {}): Promise<GroupNode | null> {
+  const { members, hole } = holeGroup(nodes);
+  const worker = await geometry.prepare(members, state.doc.assets);
+  const bounds = await worker.measure(members);
+  return bounds ? makeGroup(members, bounds, name, { ...over, hole }) : null;
+}
+
 export async function groupSelected(): Promise<void> {
   const nodes = selectedNodes();
   if (state.viewing || nodes.length < 2) return;
   if (nodes.some((n) => n.locked)) return notify('Unlock the selected objects before grouping them.', 'error');
   set({ busy: 'Grouping…' });
   try {
-    const worker = await geometry.prepare(nodes, state.doc.assets);
-    const bounds = await worker.measure(nodes);
-    if (!bounds) {
-      notify(nodes.every((n) => n.hole) ? 'A group needs at least one solid: these are all holes.' : 'Nothing would be left: the holes remove everything.', 'error');
-      return;
-    }
+    const group = await buildGroup(nodes, uniqueName(state.doc.scene, 'Group'));
+    if (!group) return notify('Nothing would be left: the holes remove everything.', 'error');
     // The scene may have moved on while the worker was measuring.
     const ids = new Set(nodes.map((n) => n.id));
     if (!nodes.every((n) => state.doc.scene.includes(n))) return;
-    const group = makeGroup(nodes, bounds, uniqueName(state.doc.scene, 'Group'));
     commit([...state.doc.scene.filter((n) => !ids.has(n.id)), group], { selection: [group.id] });
   } catch (e) {
     fail(e);
@@ -639,6 +663,73 @@ export function ungroupSelected(): void {
   commit(scene, { selection });
 }
 
+// --- editing inside a group --------------------------------------------------------
+
+export function setHighlight(path: string[] | null): void {
+  const matrix = path ? frameAlong(state.doc.scene, path) : null;
+  const node = path ? nodeAt(state.doc.scene, path) : null;
+  const highlight = matrix && node ? { matrix, size: node.size } : null;
+  if (highlight || state.highlight) set({ highlight });
+}
+
+/**
+ * Take the groups along `path` apart so that the part at its end can be
+ * changed, remembering how to put them back together (see `finishEditing`).
+ */
+export function editInside(path: string[]): void {
+  if (state.viewing || state.editing || path.length < 2) return;
+  const root = state.doc.scene.find((n) => n.id === path[0]);
+  if (root?.type !== 'group') return;
+  if (root.locked) return notify('Unlock the object before editing inside it.', 'error');
+  const { scene, layers } = dissolve(state.doc.scene, path);
+  const target = path[path.length - 1];
+  state = { ...state, editing: { root: root.id, target, layers, before: state.doc.scene }, highlight: null, aligning: null };
+  commit(scene, { selection: scene.some((n) => n.id === target) ? [target] : [] });
+}
+
+/** Put the layers back together, innermost first, around whatever is left of their contents. */
+export async function finishEditing(): Promise<void> {
+  const session = state.editing;
+  if (!session) return;
+  set({ busy: 'Regrouping…' });
+  try {
+    let scene = state.doc.scene;
+    let outermost: string | null = null;
+    for (const layer of [...session.layers].reverse()) {
+      // Undo may have put a layer back already; what was deleted meanwhile is simply left out.
+      if (scene.some((n) => n.id === layer.id)) {
+        outermost = layer.id;
+        continue;
+      }
+      const members = scene.filter((n) => layer.children.includes(n.id));
+      if (members.length === 0) continue;
+      // A dissolved hole group handed its role to its parts; grouped again, they fold back into one hole.
+      const group = await buildGroup(layer.hole ? members.map((n) => ({ ...n, hole: true })) : members, layer.name, layer);
+      if (!group) {
+        notify(`"${layer.name}" could not be put back together: nothing solid is left in it.`, 'error');
+        continue;
+      }
+      const at = scene.indexOf(members[0]);
+      scene = [...scene.filter((n) => !members.includes(n)).slice(0, at), group, ...scene.filter((n) => !members.includes(n)).slice(at)];
+      outermost = group.id;
+    }
+    state = { ...state, editing: null };
+    commit(scene, { selection: outermost ? [outermost] : [] });
+  } catch (e) {
+    fail(e);
+  } finally {
+    set({ busy: null });
+  }
+}
+
+/** Back to how things were before `editInside`. */
+export function cancelEditing(): void {
+  const session = state.editing;
+  if (!session) return;
+  state = { ...state, editing: null };
+  commit(session.before, { selection: [session.root] });
+}
+
 // --- documents ----------------------------------------------------------------
 
 function adopt(doc: Doc, filePath: string | null, dirty = false): void {
@@ -650,6 +741,8 @@ function adopt(doc: Doc, filePath: string | null, dirty = false): void {
     selection: [],
     viewing: null,
     placing: null,
+    editing: null,
+    highlight: null,
     epoch: state.epoch + 1,
   });
   if (filePath) rememberRecent(filePath);

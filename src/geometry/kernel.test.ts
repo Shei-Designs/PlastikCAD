@@ -202,6 +202,22 @@ describe('measure', () => {
   });
 });
 
+describe('hole groups', () => {
+  it('cuts as one when a group of holes is itself a hole', () => {
+    // A cut-out and two screw holes, kept together as one template.
+    const slot = shape('box', { size: [20, 10, 30] });
+    const left = shape('cylinder', { size: [3, 3, 30], pos: [-14, 0, 0] });
+    const right = shape('cylinder', { size: [3, 3, 30], pos: [14, 0, 0] });
+    const template = makeGroup([slot, left, right], measure([slot, left, right])!, 'XLR', { hole: true });
+    expect(template.hole).toBe(true);
+    const panel = shape('box', { size: [60, 40, 3] });
+    const cut = makeGroup([panel, template], measure([panel, template])!, 'Panel');
+    const v = build(geomKey(cut), cut).volume;
+    const bores = 2 * around(64, 1.5) * 3;
+    expect(v).toBeCloseTo(60 * 40 * 3 - 20 * 10 * 3 - bores, 3);
+  });
+});
+
 describe('faces that are meant to meet', () => {
   /** Coordinates of result vertices that lie within a hair of `value` on `axis` without being exactly there. */
   const nearMisses = (node: SceneNode, axis: number, value: number): number[] => {

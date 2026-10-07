@@ -9,6 +9,7 @@ import { editText, resizeNode, setColor, setHole, setPrefs, shownScene, updateNo
 import { ExportPanel } from './ExportPanel';
 import { formatNumber, NumberBox, SliderField } from './Fields';
 import { LinkIcon } from './icons';
+import { EditingNote, Structure } from './Structure';
 import { Versions } from './Versions';
 
 const AXES = ['X', 'Y', 'Z'] as const;
@@ -317,7 +318,13 @@ function Design() {
   const nodes = useMemo(() => scene.filter((n) => selection.includes(n.id)), [scene, selection]);
   useSyncExternalStore(geometry.subscribe, geometry.getRevision);
 
-  if (viewing || nodes.length === 0) return <Overview />;
+  if (viewing || nodes.length === 0)
+    return (
+      <>
+        <Overview />
+        <EditingNote />
+      </>
+    );
   if (nodes.length > 1) {
     const size = boundsSize(unionBounds(nodes.map((n) => geometry.bounds(n))));
     return (
@@ -329,6 +336,7 @@ function Design() {
           </div>
         </header>
         <Appearance nodes={nodes} />
+        <EditingNote />
         <fieldset className="group">
           <legend>Selection</legend>
           <dl className="facts">
@@ -354,6 +362,8 @@ function Design() {
       <Appearance nodes={nodes} />
       <Transform node={node} />
       <ShapeParams node={node} />
+      <EditingNote />
+      {node.type === 'group' && <Structure root={node} />}
     </>
   );
 }

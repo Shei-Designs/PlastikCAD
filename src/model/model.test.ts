@@ -3,7 +3,7 @@ import { emptyDoc, parseDoc, serializeDoc } from './file';
 import { geomKey } from './geomKey';
 import { apply, axisRotation, determinant, eulerOf, multiply, nodeMatrix, rotation } from './math';
 import type { Mat } from './math';
-import { alignNodes, boxBoundsOf, cloneNode, diffScenes, makeGroup, makeShape, mirrorNodes, rotateNodes, ungroup } from './ops';
+import { alignNodes, boxBoundsOf, cloneNode, diffScenes, dissolve, frameAlong, makeGroup, makeShape, mirrorNodes, nodeAt, rotateNodes, ungroup } from './ops';
 import type { Doc, GroupNode, SceneNode, Vec3 } from './types';
 
 const close = (a: number[], b: number[], eps = 1e-6) => {
@@ -108,6 +108,55 @@ describe('groups', () => {
     const [out] = ungroup({ ...base, size: [40, 40, 40] });
     expect(out.type === 'shape' && out.params.wall).toBe(4);
     close(out.size, [40, 40, 40]);
+  });
+});
+
+describe('taking groups apart and finding parts', () => {
+  const nested = () => {
+    const a = shape('box', { pos: [0, 0, 10] });
+    const b = shape('cylinder', { pos: [10, 0, 10], hole: true });
+    const inner = makeGroup([a, b], { min: [-10, -10, 0], max: [20, 10, 20] }, 'Inner');
+    const c = shape('sphere', { pos: [40, 0, 10] });
+    const outer = makeGroup([inner, c], { min: [-10, -10, 0], max: [50, 10, 20] }, 'Outer', { color: '#5fa777' });
+    return { a, b, c, inner, outer, scene: [outer, shape('cone', { pos: [-50, 0, 10] })] };
+  };
+
+  it('finds a node by its path', () => {
+    const { a, inner, outer, scene } = nested();
+    expect(nodeAt(scene, [outer.id, inner.id, a.id])?.name).toBe('Box');
+    expect(nodeAt(scene, [outer.id, a.id])).toBeNull();
+  });
+
+  it('places a part through its groups', () => {
+    const { a, inner, outer, scene } = nested();
+    const moved = { ...outer, pos: [outer.pos[0] + 5, outer.pos[1], outer.pos[2]] as Vec3 };
+    const frame = frameAlong([moved, scene[1]], [moved.id, inner.id, a.id])!;
+    close(apply(frame, [0, 0, 0]), [5, 0, 10]);
+  });
+
+  it('dissolves the groups down to a part, and remembers how to rebuild them', () => {
+    const { a, b, c, inner, outer, scene } = nested();
+    const { scene: out, layers } = dissolve(scene, [outer.id, inner.id, a.id]);
+    expect(out.map((n) => n.name)).toEqual(['Box', 'Cylinder', 'Sphere', 'Cone']);
+    expect(layers.map((l) => l.id)).toEqual([outer.id, inner.id]);
+    expect(layers[0].children).toEqual([inner.id, c.id]);
+    expect(layers[1].children).toEqual([a.id, b.id]);
+    expect(layers[0].color).toBe('#5fa777');
+    // Parts end up where they were.
+    close(out[0].pos, a.pos);
+    close(out[1].pos, b.pos);
+    expect(out[1].hole).toBe(true);
+    // And can be put back together under the same ids.
+    const rebuilt = makeGroup([out[0], out[1]], { min: [-10, -10, 0], max: [20, 10, 20] }, layers[1].name, layers[1]);
+    expect(rebuilt.id).toBe(inner.id);
+    expect(rebuilt.children.map((n) => n.id)).toEqual([a.id, b.id]);
+  });
+
+  it('stops at the first layer that is not a group', () => {
+    const { a, outer, scene } = nested();
+    const { scene: out, layers } = dissolve(scene, [outer.id, a.id, 'nothing']);
+    expect(layers.map((l) => l.id)).toEqual([outer.id]);
+    expect(out.length).toBe(3);
   });
 });
 

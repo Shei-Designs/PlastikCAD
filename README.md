@@ -27,7 +27,14 @@ It is the Tinkercad way of modelling, without the cloud and without the clutter:
 - **Solid or hole** – any object can add material or cut it away.
 - **Group** – merges the selected solids and cuts the holes out of them. Groups
   can be grouped again, turned into holes themselves, and taken apart at any
-  time: nothing is ever baked in.
+  time: nothing is ever baked in. Grouping only holes gives one hole: a
+  connector cut-out with its screw holes becomes a single template to drop
+  into any panel.
+- **Structure** – a grouped object shows its history as a tree in the panel:
+  primitives on the left, each grouping a node further right, branches merging
+  where things were grouped together. Hover a node to see that part on the
+  plate; pick one and *Edit here* takes the groupings apart down to it, so the
+  part can be changed, and *Done* puts them back together in the same order.
 - **Handles** – drag an object to move it, the corner and edge grips to size it,
   the arrow to lift it, the coloured arcs to turn it. Or type exact numbers in
   the panel on the right.
@@ -198,7 +205,6 @@ The palette, inspector, file format and export pick it up from there.
   the palette).
 - Work plane on any face, ruler and snapping to other objects.
 - Text on curved surfaces; more scripts and fonts.
-- Editing inside a group without taking it apart.
 - STEP export.
 
 ## License

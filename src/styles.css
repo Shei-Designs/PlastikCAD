@@ -1525,3 +1525,77 @@ kbd {
 .version:not(:hover):not(:focus-within) .version-actions {
   visibility: hidden;
 }
+
+/* ---------- structure graph ---------- */
+
+.structure .tree {
+  display: block;
+  max-width: 100%;
+  margin: 6px 0 2px;
+  overflow: visible;
+}
+
+.tree-edge {
+  fill: none;
+  stroke: var(--faint);
+  stroke-width: 1.2;
+}
+
+.tree-node {
+  cursor: pointer;
+  outline: 0;
+}
+
+.tree-node circle {
+  stroke: var(--panel);
+  stroke-width: 1.5;
+}
+
+.tree-node text {
+  font-size: 11.5px;
+  fill: var(--muted);
+}
+
+.tree-node .tree-group {
+  font-size: 10.5px;
+  fill: var(--faint);
+}
+
+.tree-node:hover text,
+.tree-node:focus-visible text,
+.tree-node.on text {
+  fill: var(--text);
+}
+
+.tree-node:hover circle,
+.tree-node:focus-visible circle,
+.tree-node.on circle {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+}
+
+.tree-node.hole circle {
+  stroke-dasharray: 2 1.5;
+}
+
+.structure-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.structure-actions .chip {
+  flex: none;
+}
+
+.layers {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+}
+
+.layers li {
+  padding: 1px 0;
+}

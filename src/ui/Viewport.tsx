@@ -3,6 +3,7 @@ import { geometry } from '../state/geometry';
 import { SNAP_STEPS } from '../state/persist';
 import {
   beginGesture,
+  cancelEditing,
   commitAlign,
   commitPlacing,
   deleteSelected,
@@ -10,6 +11,7 @@ import {
   dropSelected,
   duplicateSelected,
   endGesture,
+  finishEditing,
   getState,
   groupSelected,
   mirrorSelected,
@@ -136,7 +138,7 @@ export function Viewport() {
   const viewer = useRef<Viewer | null>(null);
 
   const state = useEditor((s) => s);
-  const { prefs, placing, selection, viewing, notice, busy, aligning } = state;
+  const { prefs, placing, selection, viewing, notice, busy, aligning, editing, highlight } = state;
   const scene = shownScene(state);
   const assets = state.doc.assets;
   const revision = useSyncExternalStore(geometry.subscribe, geometry.getRevision);
@@ -182,8 +184,8 @@ export function Viewport() {
   }, []);
 
   useEffect(() => {
-    viewer.current?.setOptions({ theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap, interactive: !viewing, align: aligning });
-  }, [prefs.theme, prefs.edges, prefs.grid, prefs.snap, viewing, aligning]);
+    viewer.current?.setOptions({ theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap, interactive: !viewing, align: aligning, highlight });
+  }, [prefs.theme, prefs.edges, prefs.grid, prefs.snap, viewing, aligning, highlight]);
 
   useEffect(() => {
     viewer.current?.setPlacing(Boolean(placing));
@@ -278,6 +280,19 @@ export function Viewport() {
         </div>
       )}
 
+      {editing && !viewing && (
+        <div className="version-banner" role="status">
+          <span>
+            Editing inside <strong>{editing.layers[0]?.name}</strong>
+          </span>
+          <button type="button" className="chip on" disabled={Boolean(busy)} onClick={() => void finishEditing()}>
+            Done
+          </button>
+          <button type="button" className="chip" disabled={Boolean(busy)} onClick={cancelEditing}>
+            Cancel
+          </button>
+        </div>
+      )}
       {placing && <div className="hint-bar">Click on the plate to place the {placing.name.toLowerCase()} · Esc to cancel</div>}
       {aligning && !placing && (
         <div className="hint-bar">

@@ -60,6 +60,8 @@ export interface ViewerOptions {
   interactive: boolean;
   /** Align mode: anchor dots on this box instead of the usual handles. */
   align: { bounds: Bounds; anchor: string | null } | null;
+  /** A box to point out (a part inside a group): its frame and size. */
+  highlight: { matrix: Mat; size: Vec3 } | null;
 }
 
 export type AlignMode = 'min' | 'centre' | 'max';
@@ -93,7 +95,7 @@ export interface ViewerEvents {
   onAnchor(id: string): void;
 }
 
-const DEFAULTS: ViewerOptions = { theme: 'dark', edges: true, grid: true, snap: 1, interactive: true, align: null };
+const DEFAULTS: ViewerOptions = { theme: 'dark', edges: true, grid: true, snap: 1, interactive: true, align: null, highlight: null };
 /** Distance of the anchor dots from the box, in pixels. */
 const ALIGN_GAP = 22;
 const ALIGN_MODES: AlignMode[] = ['min', 'centre', 'max'];
@@ -322,6 +324,7 @@ export class Viewer {
   private overlay!: Scene;
   private frame: Frame | null = null;
   private outline!: LineSegments<BufferGeometry, LineBasicMaterial>;
+  private pointer3d!: LineSegments<BufferGeometry, LineBasicMaterial>;
   private handles: Handle[] = [];
   private handleMode: 'none' | 'single' | 'several' | 'locked' | 'align' = 'none';
   private alignLines!: LineSegments<BufferGeometry, LineBasicMaterial>;
@@ -480,7 +483,7 @@ export class Viewer {
       s.edges?.dispose();
     }
     this.shared.clear();
-    for (const grid of [this.gridMajor, this.gridMinor, this.axes, this.outline]) {
+    for (const grid of [this.gridMajor, this.gridMinor, this.axes, this.outline, this.pointer3d, this.alignLines]) {
       grid.geometry.dispose();
       grid.material.dispose();
     }
@@ -613,6 +616,11 @@ export class Viewer {
     this.outline.matrixAutoUpdate = false;
     this.outline.visible = false;
     this.overlay.add(this.outline);
+    // The same box again, for pointing at a part of a group from the structure graph.
+    this.pointer3d = new LineSegments(box, new LineBasicMaterial({ transparent: true, opacity: 0.95, depthTest: false, linewidth: 2 }));
+    this.pointer3d.matrixAutoUpdate = false;
+    this.pointer3d.visible = false;
+    this.overlay.add(this.pointer3d);
 
     const grip = (map: CanvasTexture) => {
       const material = new SpriteMaterial({ map, depthTest: false, toneMapped: false });
@@ -672,6 +680,15 @@ export class Viewer {
     this.gridMajor.visible = this.gridMinor.visible = this.axes.visible = grid;
     this.outline.material.color.set(t.accent);
     this.alignLines.material.color.set(t.accent);
+    this.pointer3d.material.color.set(theme === 'dark' ? 0xffffff : 0x1b1f27);
+    const h = this.options.highlight;
+    if (h) {
+      const m = [...h.matrix] as Mat;
+      for (let c = 0; c < 3; c++) for (let r = 0; r < 3; r++) m[c * 3 + r] *= Math.max(h.size[c], 1e-6);
+      toMatrix4(m, this.pointer3d.matrix);
+      this.pointer3d.matrixWorldNeedsUpdate = true;
+    }
+    this.pointer3d.visible = Boolean(h);
     for (const d of this.drawn.values()) this.style(d, d.item.selected);
   }
 
@@ -1602,7 +1619,7 @@ export class Viewer {
     if (!withOverlays) return;
 
     renderer.autoClear = false;
-    if (this.frame) {
+    if (this.frame || this.pointer3d.visible) {
       this.layoutHandles();
       renderer.clearDepth();
       renderer.render(this.overlay, camera);

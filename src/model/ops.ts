@@ -6,6 +6,8 @@ import {
   axisRotation,
   eulerOf,
   flipSigns,
+  frameMatrix,
+  IDENTITY,
   localScale,
   multiply,
   nodeMatrix,
@@ -115,7 +117,7 @@ export function mirrorNodes<T extends SceneNode>(nodes: T[], axis: 0 | 1 | 2, pi
 }
 
 /** Combine nodes into a group whose result has the given bounds (measured by the geometry kernel). */
-export function makeGroup(nodes: SceneNode[], bounds: Bounds, name: string): GroupNode {
+export function makeGroup(nodes: SceneNode[], bounds: Bounds, name: string, over: Partial<Pick<GroupNode, 'id' | 'color' | 'hole' | 'hidden' | 'locked'>> = {}): GroupNode {
   const centre: Vec3 = [
     (bounds.min[0] + bounds.max[0]) / 2,
     (bounds.min[1] + bounds.max[1]) / 2,
@@ -125,15 +127,17 @@ export function makeGroup(nodes: SceneNode[], bounds: Bounds, name: string): Gro
   const size: Vec3 = [bounds.max[0] - bounds.min[0], bounds.max[1] - bounds.min[1], bounds.max[2] - bounds.min[2]];
   const solids = nodes.filter((n) => !n.hole);
   return {
-    id: newId(),
+    id: over.id ?? newId(),
     type: 'group',
     name,
     pos: centre,
     rot: [0, 0, 0],
     size,
     natural: size,
-    hole: false,
-    color: (solids[0] ?? nodes[0]).color,
+    hole: over.hole ?? false,
+    color: over.color ?? (solids[0] ?? nodes[0]).color,
+    ...(over.hidden ? { hidden: true } : {}),
+    ...(over.locked ? { locked: true } : {}),
     children: nodes.map((n) => {
       const child = { ...n, pos: [n.pos[0] - centre[0], n.pos[1] - centre[1], n.pos[2] - centre[2]] as Vec3 };
       delete child.hidden;
@@ -208,6 +212,72 @@ function orthonormal(axes: Mat, lengths: Vec3, flip: [boolean, boolean, boolean]
 export const boxBoundsOf = (node: SceneNode): Bounds => boxBounds(node);
 
 export type AlignMode = 'min' | 'centre' | 'max';
+
+/** What it takes to put a dissolved group back together. */
+export interface Layer {
+  id: string;
+  name: string;
+  color: string;
+  hole: boolean;
+  hidden?: boolean;
+  locked?: boolean;
+  /** Ids of what was inside it. */
+  children: string[];
+}
+
+/** The node at a path of ids from the top level down, or null. */
+export function nodeAt(scene: Scene, path: string[]): SceneNode | null {
+  let nodes: Scene = scene;
+  let found: SceneNode | null = null;
+  for (const id of path) {
+    found = nodes.find((n) => n.id === id) ?? null;
+    if (!found) return null;
+    nodes = found.type === 'group' ? found.children : [];
+  }
+  return found;
+}
+
+/**
+ * Take apart the groups along `path` (top-level group first), so that the
+ * node at its end stands on its own. The layers come back outermost first,
+ * with everything needed to rebuild them with `makeGroup` later.
+ */
+export function dissolve(scene: Scene, path: string[]): { scene: Scene; layers: Layer[] } {
+  const layers: Layer[] = [];
+  let out = scene;
+  for (const id of path.slice(0, -1)) {
+    const group = out.find((n) => n.id === id);
+    if (group?.type !== 'group') break;
+    layers.push({
+      id: group.id,
+      name: group.name,
+      color: group.color,
+      hole: group.hole,
+      ...(group.hidden ? { hidden: true } : {}),
+      ...(group.locked ? { locked: true } : {}),
+      children: group.children.map((c) => c.id),
+    });
+    const freed = ungroup(group).map((child) => (group.hole ? { ...child, hole: true } : child));
+    const at = out.indexOf(group);
+    out = [...out.slice(0, at), ...freed, ...out.slice(at + 1)];
+  }
+  return { scene: out, layers };
+}
+
+/** World transform of a node's own box (centred, `size` wide) reached through `path`. */
+export function frameAlong(scene: Scene, path: string[]): Mat | null {
+  let m: Mat = IDENTITY;
+  let nodes: Scene = scene;
+  for (let i = 0; i < path.length; i++) {
+    const node = nodes.find((n) => n.id === path[i]);
+    if (!node) return null;
+    if (i === path.length - 1) return multiply(m, frameMatrix(node));
+    if (node.type !== 'group') return null;
+    m = multiply(m, nodeMatrix(node));
+    nodes = node.children;
+  }
+  return null;
+}
 
 /** Shift each node along one axis so that its bounds line up with `target`. */
 export function alignNodes<T extends SceneNode>(
