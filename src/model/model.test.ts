@@ -22,6 +22,12 @@ describe('rotations', () => {
     close(apply(m, [1, 0, 0]), [0, 1, 0]);
   });
 
+  it('is exact at quarter turns', () => {
+    expect(rotation([0, 0, 90])).toEqual([0, 1, 0, -1, 0, 0, 0, 0, 1, 0, 0, 0]);
+    expect(rotation([180, 0, 0])).toEqual([1, 0, 0, 0, -1, 0, 0, 0, -1, 0, 0, 0]);
+    expect(rotation([0, -90, 270])).toEqual([0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0]);
+  });
+
   it('round-trips Euler angles, including gimbal lock', () => {
     const cases: Vec3[] = [
       [0, 0, 0],

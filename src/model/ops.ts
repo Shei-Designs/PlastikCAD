@@ -89,7 +89,7 @@ export function rotateNodes<T extends SceneNode>(nodes: T[], axis: 0 | 1 | 2, de
     return {
       ...node,
       rot: eulerOf(multiply(turn, rotation(node.rot))),
-      pos: tidyVec([pivot[0] + offset[0], pivot[1] + offset[1], pivot[2] + offset[2]]),
+      pos: [pivot[0] + offset[0], pivot[1] + offset[1], pivot[2] + offset[2]],
     };
   });
 }
@@ -109,7 +109,7 @@ export function mirrorNodes<T extends SceneNode>(nodes: T[], axis: 0 | 1 | 2, pi
     const flip: [boolean, boolean, boolean] = node.flip ? [...node.flip] : [false, false, false];
     flip[axis] = !flip[axis];
     const pos: Vec3 = [...node.pos];
-    pos[axis] = tidy(2 * pivot[axis] - pos[axis]);
+    pos[axis] = 2 * pivot[axis] - pos[axis];
     return withFlip({ ...node, rot: eulerOf(r), pos }, flip);
   });
 }
@@ -121,20 +121,21 @@ export function makeGroup(nodes: SceneNode[], bounds: Bounds, name: string): Gro
     (bounds.min[1] + bounds.max[1]) / 2,
     (bounds.min[2] + bounds.max[2]) / 2,
   ];
-  const size = tidyVec([bounds.max[0] - bounds.min[0], bounds.max[1] - bounds.min[1], bounds.max[2] - bounds.min[2]]);
+  // Measured, so kept exact: rounding would scale the contents by a hair (size over natural).
+  const size: Vec3 = [bounds.max[0] - bounds.min[0], bounds.max[1] - bounds.min[1], bounds.max[2] - bounds.min[2]];
   const solids = nodes.filter((n) => !n.hole);
   return {
     id: newId(),
     type: 'group',
     name,
-    pos: tidyVec(centre),
+    pos: centre,
     rot: [0, 0, 0],
     size,
     natural: size,
     hole: false,
     color: (solids[0] ?? nodes[0]).color,
     children: nodes.map((n) => {
-      const child = { ...n, pos: tidyVec([n.pos[0] - centre[0], n.pos[1] - centre[1], n.pos[2] - centre[2]]) };
+      const child = { ...n, pos: [n.pos[0] - centre[0], n.pos[1] - centre[1], n.pos[2] - centre[2]] as Vec3 };
       delete child.hidden;
       delete child.locked;
       return child;
@@ -219,9 +220,10 @@ export function alignNodes<T extends SceneNode>(
   const at = (b: Bounds) => (mode === 'min' ? b.min[axis] : mode === 'max' ? b.max[axis] : (b.min[axis] + b.max[axis]) / 2);
   return nodes.map((node) => {
     const shift = at(target) - at(boundsOf(node));
-    if (Math.abs(shift) < 1e-9) return node;
+    if (shift === 0) return node;
     const pos: Vec3 = [...node.pos];
-    pos[axis] = tidy(pos[axis] + shift);
+    // Exact on purpose: the faces are meant to meet.
+    pos[axis] = pos[axis] + shift;
     return { ...node, pos };
   });
 }

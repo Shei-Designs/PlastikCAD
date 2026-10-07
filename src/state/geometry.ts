@@ -2,7 +2,7 @@
 // the true bounds of things). Entries are keyed by `geomKey`, so they survive
 // moves, turns, undo and version switches without ever being rebuilt.
 import { geomKey, textAssetKey } from '../model/geomKey';
-import { boxBounds, emptyBounds, nodeMatrix } from '../model/math';
+import { apply, boxBounds, emptyBounds, expandBounds, nodeMatrix, squareTurn } from '../model/math';
 import type { Bounds } from '../model/math';
 import type { Asset, Scene, SceneNode, TextNode } from '../model/types';
 import { fontReady, loadFont, outlineOf } from '../text/fonts';
@@ -136,8 +136,16 @@ class GeometryStore {
     const cached = this.tight.get(node);
     if (cached && cached.result === entry.result) return cached.bounds;
     const m = nodeMatrix(node);
-    const p = entry.result.render.positions;
     const bounds = emptyBounds();
+    if (squareTurn(node.rot)) {
+      // Square to the axes, the kernel's own (double precision) box maps corner to corner. The
+      // drawn mesh is single precision, and a bound off by a hair means a face missed by a hair.
+      const { min, max } = entry.result.bounds;
+      for (let i = 0; i < 8; i++) expandBounds(bounds, apply(m, [i & 1 ? max[0] : min[0], i & 2 ? max[1] : min[1], i & 4 ? max[2] : min[2]]));
+      this.tight.set(node, { result: entry.result, bounds });
+      return bounds;
+    }
+    const p = entry.result.render.positions;
     if (p.length === 0) return boxBounds(node);
     // Written out rather than calling apply(): imported meshes have millions of corners.
     const { min, max } = bounds;

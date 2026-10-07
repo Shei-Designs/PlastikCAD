@@ -31,15 +31,29 @@ export function multiply(a: Mat, b: Mat): Mat {
 export const translation = (v: Vec3): Mat => [1, 0, 0, 0, 1, 0, 0, 0, 1, v[0], v[1], v[2]];
 export const scaling = (v: Vec3): Mat => [v[0], 0, 0, 0, v[1], 0, 0, 0, v[2], 0, 0, 0];
 
+/**
+ * Cosine and sine that are exact at multiples of 90 degrees. Math.cos(90°) is
+ * 6e-17, which is enough to keep two faces that should coincide from doing
+ * so, and the geometry kernel then leaves paper-thin slivers between them.
+ */
+function cosSin(degrees: number): [number, number] {
+  const quarter = degrees / 90;
+  if (Number.isInteger(quarter)) {
+    const q = ((quarter % 4) + 4) % 4;
+    return q === 0 ? [1, 0] : q === 1 ? [0, 1] : q === 2 ? [-1, 0] : [0, -1];
+  }
+  return [Math.cos(degrees * RAD), Math.sin(degrees * RAD)];
+}
+
+/** True when every axis is turned by a multiple of 90 degrees, so boxes stay boxes. */
+export const squareTurn = (rot: Vec3): boolean => rot.every((a) => Number.isInteger(a / 90));
+
 /** Rotation by `rot` degrees about X, then Y, then Z (fixed axes): Rz·Ry·Rx. */
 export function rotation(rot: Vec3): Mat {
-  const cx = Math.cos(rot[0] * RAD);
-  const sx = Math.sin(rot[0] * RAD);
-  const cy = Math.cos(rot[1] * RAD);
-  const sy = Math.sin(rot[1] * RAD);
-  const cz = Math.cos(rot[2] * RAD);
-  const sz = Math.sin(rot[2] * RAD);
-  return [
+  const [cx, sx] = cosSin(rot[0]);
+  const [cy, sy] = cosSin(rot[1]);
+  const [cz, sz] = cosSin(rot[2]);
+  const m: Mat = [
     cz * cy,
     sz * cy,
     -sy,
@@ -53,6 +67,9 @@ export function rotation(rot: Vec3): Mat {
     0,
     0,
   ];
+  // Products of exact zeros come out as -0, which compares equal but prints and hashes differently.
+  for (let i = 0; i < 9; i++) if (m[i] === 0) m[i] = 0;
+  return m;
 }
 
 /** Rotation by `degrees` about one of the fixed axes (0 = X, 1 = Y, 2 = Z). */
@@ -184,7 +201,12 @@ export function boxBounds(node: SceneNode): Bounds {
 export const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 export const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 
-/** Rounds to 1/10000 mm so that drags and repeated edits don't accumulate noise in saved files. */
+/**
+ * Rounds to 1/10000 mm so that drags and repeated edits don't accumulate noise
+ * in saved files. Only for values that come from the user (a snapped drag, a
+ * typed number): a position worked out from measured geometry must keep its
+ * full precision, or the faces it was meant to meet are missed by a hair.
+ */
 export const tidy = (v: number): number => {
   const r = Math.round(v * 1e4) / 1e4;
   return r === 0 ? 0 : r;

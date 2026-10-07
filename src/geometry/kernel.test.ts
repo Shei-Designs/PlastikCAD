@@ -1,5 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { geomKey, textAssetKey } from '../model/geomKey';
+import { add, apply, emptyBounds, expandBounds, nodeMatrix } from '../model/math';
+import type { Bounds } from '../model/math';
+import { alignNodes, makeGroup } from '../model/ops';
 import type { Asset, GroupNode, ImportNode, Polygon, SceneNode, ShapeKind, ShapeNode, TextNode, Vec3 } from '../model/types';
 import { build, cacheSize, clearCache, decodeBase64, exportNodes, initKernel, measure, setAssets } from './kernel';
 import type { MeshData } from './mesh';
@@ -196,6 +199,60 @@ describe('measure', () => {
     expect(measure([far])).toBeNull();
     expect(measure([shape('box', { hole: true })])).toBeNull();
     expect(measure([box, shape('box', { size: [30, 30, 30], hole: true })])).toBeNull();
+  });
+});
+
+describe('faces that are meant to meet', () => {
+  /** Coordinates of result vertices that lie within a hair of `value` on `axis` without being exactly there. */
+  const nearMisses = (node: SceneNode, axis: number, value: number): number[] => {
+    // The drawn mesh is single precision; a vertex exactly on the face rounds the same way as the face.
+    const p = build(geomKey(node), node).render.positions;
+    const out = new Set<number>();
+    for (let i = axis; i < p.length; i += 3) {
+      const d = Math.abs(p[i] - Math.fround(value));
+      if (d > 1e-9 && d < 1e-2) out.add(p[i]);
+    }
+    return [...out];
+  };
+
+  it('cuts a hole flush with a face whose position is not a round number', () => {
+    // A box turned 30 degrees has faces at irrational coordinates; grouping it keeps them exact.
+    const turned = shape('box', { size: [20, 20, 10], rot: [0, 0, 30] });
+    const bounds = measure([turned])!;
+    const inner = makeGroup([turned], bounds, 'Turned');
+    const r = build(geomKey(inner), inner);
+    const face = inner.pos[0] + r.bounds.max[0];
+    expect(face).toBeCloseTo(10 * Math.cos(Math.PI / 6) + 10 * Math.sin(Math.PI / 6), 12);
+
+    // A cutter lined up with that face by the same arithmetic the editor uses.
+    const cutter = shape('box', { size: [4, 40, 4], hole: true });
+    const boundsOf = (node: SceneNode): Bounds => {
+      const b = build(geomKey(node), node).bounds;
+      return { min: add(node.pos, b.min), max: add(node.pos, b.max) };
+    };
+    const [placed] = alignNodes([cutter], boundsOf, 0, 'max', boundsOf(inner));
+    const outer = makeGroup([inner, placed], measure([inner, placed])!, 'Cut');
+    // No paper-thin wall left standing next to the face.
+    expect(nearMisses(outer, 0, face - outer.pos[0])).toEqual([]);
+  });
+
+  it('keeps a quarter-turned cutter flush with the face it is on', () => {
+    const block = shape('box', { size: [30, 20, 10] });
+    // Turned about Z and lined up with the top and the +Y face: all three must stay exact.
+    const cutter = shape('fillet', { size: [5, 30, 5], rot: [0, 0, 90], hole: true });
+    const boundsOf = (node: SceneNode): Bounds => {
+      const b = build(geomKey(node), node).bounds;
+      const m = nodeMatrix(node);
+      const out = emptyBounds();
+      for (let i = 0; i < 8; i++) expandBounds(out, apply(m, [i & 1 ? b.max[0] : b.min[0], i & 2 ? b.max[1] : b.min[1], i & 4 ? b.max[2] : b.min[2]]));
+      return out;
+    };
+    let [placed] = alignNodes([cutter], boundsOf, 1, 'max', boundsOf(block));
+    [placed] = alignNodes([placed], boundsOf, 2, 'max', boundsOf(block));
+    const group = makeGroup([block, placed], measure([block, placed])!, 'Rounded');
+    expect(nearMisses(group, 1, 10 - group.pos[1])).toEqual([]);
+    expect(nearMisses(group, 2, 10 - group.pos[2])).toEqual([]);
+    expect(build(geomKey(group), group).volume).toBeCloseTo(6000 - 30 * 25 * (1 - 8 * Math.sin(Math.PI / 32)), 3);
   });
 });
 

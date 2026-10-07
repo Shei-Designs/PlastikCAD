@@ -10,7 +10,7 @@ import type { FormatId } from '../io/export';
 import { centreMesh, centreOutline, IMPORT_EXTENSIONS, importFile } from '../io/import';
 import { emptyDoc, parseDoc, serializeDoc } from '../model/file';
 import { hashString } from '../model/geomKey';
-import { boundsCenter, tidy, tidyVec, unionBounds } from '../model/math';
+import { boundsCenter, tidyVec, unionBounds } from '../model/math';
 import type { Bounds } from '../model/math';
 import {
   alignNodes,
@@ -285,7 +285,7 @@ export function resizeNode(node: SceneNode, axis: 0 | 1 | 2, value: number, unif
   const before = geometry.bounds(node);
   const after = geometry.bounds(next);
   const lift = before.min[2] - after.min[2];
-  if (Math.abs(lift) > 1e-9) next = { ...next, pos: tidyVec([next.pos[0], next.pos[1], next.pos[2] + lift]) };
+  if (lift !== 0) next = { ...next, pos: [next.pos[0], next.pos[1], next.pos[2] + lift] };
   updateNode(node.id, next, `size:${node.id}:${axis}`);
 }
 
@@ -570,7 +570,7 @@ export function rotateSelected(axis: 0 | 1 | 2, degrees: number): void {
 export function dropSelected(): void {
   updateSelected((n) => {
     const low = geometry.bounds(n).min[2];
-    return Math.abs(low) < 1e-9 ? n : { ...n, pos: [n.pos[0], n.pos[1], tidy(n.pos[2] - low)] };
+    return low === 0 ? n : { ...n, pos: [n.pos[0], n.pos[1], n.pos[2] - low] };
   });
 }
 
