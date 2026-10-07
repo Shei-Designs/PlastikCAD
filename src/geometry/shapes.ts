@@ -128,9 +128,21 @@ export const SHAPES: ShapeDef[] = [
   {
     kind: 'cylinder',
     name: 'Cylinder',
-    summary: 'A round bar or disc',
+    summary: 'A round bar or disc, optionally with rounded rims',
     defaultSize: [20, 20, 20],
-    params: [sidesParam(3, 128, 64, 'Sides', ROUND_HELP)],
+    params: [
+      sidesParam(3, 128, 64, 'Sides', ROUND_HELP),
+      {
+        key: 'radius',
+        label: 'Edge radius',
+        min: 0,
+        max: 500,
+        step: 0.5,
+        unit: 'mm',
+        default: 0,
+        help: 'Rounds the top and bottom rims. Limited to half the smallest side.',
+      },
+    ],
     defaultColor: ORANGE,
   },
   {
@@ -273,7 +285,7 @@ const MAX_WALL = 0.49;
 export function paramMax(kind: ShapeKind, key: string, size: Vec3): number {
   const def = shapeDef(kind).params.find((p) => p.key === key);
   if (!def) throw new Error(`Shape "${kind}" has no parameter "${key}"`);
-  if (kind === 'box' && key === 'radius') return Math.min(def.max, Math.min(size[0], size[1], size[2]) / 2);
+  if ((kind === 'box' || kind === 'cylinder') && key === 'radius') return Math.min(def.max, Math.min(size[0], size[1], size[2]) / 2);
   if (kind === 'tube' && key === 'wall') return Math.min(def.max, Math.min(size[0], size[1]) * MAX_WALL);
   return def.max;
 }
@@ -310,6 +322,8 @@ interface BuildContext {
 
 /** Segments around the corner spheres of a rounded box: ten steps per quarter turn. */
 const CORNER_SEGMENTS = 40;
+/** Steps over the half turn of a rounded rim. */
+const RIM_SEGMENTS = 20;
 
 // The builders stay away from the kernel's CrossSection class: the JS binding
 // leaks WASM memory whenever polygons cross it (and a whole solid when
@@ -408,7 +422,35 @@ const BUILDERS: Record<ShapeKind, (c: BuildContext) => Manifold> = {
     return corners.length === 1 ? corners[0] : keep(k.Manifold.hull(corners));
   },
 
-  cylinder: (c) => taper(c, c.p.sides, 1),
+  cylinder(c) {
+    const { k, keep, size, p } = c;
+    const r = p.radius;
+    if (!(r > 0)) return taper(c, p.sides, 1);
+    // Hull of a tube of radius r run round the rim, at the top and at the bottom. The tube follows
+    // the ellipse r inside the outline, so the rounding is r everywhere even when the cylinder is
+    // oval, and the result still fills its box exactly.
+    const a = Math.max(size[0] / 2 - r, 0);
+    const b = Math.max(size[1] / 2 - r, 0);
+    const lift = Math.max(size[2] / 2 - r, 0);
+    const points: Vec3[] = [];
+    for (let i = 0; i < p.sides; i++) {
+      const t = (i * TAU) / p.sides;
+      const cx = a * Math.cos(t);
+      const cy = b * Math.sin(t);
+      // Outward normal of the ellipse at this point.
+      const nx = b * Math.cos(t);
+      const ny = a * Math.sin(t);
+      const len = Math.hypot(nx, ny) || 1;
+      for (let j = 0; j <= RIM_SEGMENTS; j++) {
+        // Only the outer half of the tube can show; the rest is inside the hull anyway.
+        const f = (j / RIM_SEGMENTS - 0.5) * Math.PI;
+        const out = r * Math.cos(f);
+        const up = r * Math.sin(f);
+        points.push([cx + (nx / len) * out, cy + (ny / len) * out, lift + up], [cx + (nx / len) * out, cy + (ny / len) * out, -lift - up]);
+      }
+    }
+    return keep(k.Manifold.hull(points));
+  },
   prism: (c) => taper(c, c.p.sides, 1),
   cone: (c) => taper(c, c.p.sides, c.p.top),
   pyramid: (c) => taper(c, c.p.sides, 0),

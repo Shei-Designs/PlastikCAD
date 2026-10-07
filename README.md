@@ -107,8 +107,8 @@ design is still there after a restart.
 | SVG | Outline of the design seen from above, for laser cutters and vector editors |
 | DXF | The same outline, to extrude in CAD or cut on a laser / CNC |
 
-Everything visible that is not a hole is merged into one watertight mesh (or
-just the selection, with *Selection only*). Units are millimetres, Z is up.
+Everything visible that is not a hole is merged into one watertight mesh, or
+just the selection when something is selected. Units are millimetres, Z is up.
 
 ## Import notes
 

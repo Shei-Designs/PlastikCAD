@@ -134,7 +134,7 @@ describe('inset', () => {
 describe('clampParams', () => {
   it('fills in defaults and rounds whole numbers', () => {
     expect(clampParams({ shape: 'cone', params: {}, size: [20, 20, 20] })).toEqual({ sides: 64, top: 0 });
-    expect(clampParams({ shape: 'cylinder', params: { sides: 6.6 }, size: [20, 20, 20] })).toEqual({ sides: 7 });
+    expect(clampParams({ shape: 'cylinder', params: { sides: 6.6 }, size: [20, 20, 20] })).toEqual({ sides: 7, radius: 0 });
     expect(clampParams({ shape: 'pyramid', params: { sides: 99 }, size: [20, 20, 20] })).toEqual({ sides: 12 });
     const cone = clampParams({ shape: 'cone', params: { sides: 2, top: 3 }, size: [20, 20, 20] });
     expect(cone).toEqual({ sides: 3, top: 0.95 });
@@ -196,6 +196,20 @@ describe('shapes', () => {
     // Solid at +X +Z, hollow towards -X -Z: nothing reaches inside the quarter circle.
     const p = make(shape('fillet')).render.positions;
     for (let i = 0; i < p.length; i += 3) expect(Math.hypot(p[i] + 0.5, p[i + 2] + 0.5)).toBeGreaterThan(1 - 1e-5);
+  });
+
+  it('rounds the rims of a cylinder, keeping its box', () => {
+    // The plain cylinder is built as a unit cube; scale it up to compare.
+    const plain = volumeOf(shape('cylinder', { size: [20, 20, 10] })) * 20 * 20 * 10;
+    const soft = volumeOf(shape('cylinder', { size: [20, 20, 10], params: { sides: 64, radius: 3 } }));
+    // Less than the sharp cylinder, but more than one whose rims were chamfered flat.
+    expect(soft).toBeLessThan(plain);
+    const ring = Math.PI * ((10 * 10 - 7 * 7) * 6 + 2 * 3 * 3 * 7 * 2);
+    expect(soft).toBeGreaterThan(plain - ring);
+    // Oval, with the rounding worth the whole height: the rims meet in the middle.
+    volumeOf(shape('cylinder', { size: [30, 12, 6], params: { sides: 48, radius: 3 } }));
+    // The rounding never makes a cylinder a different shape as it is resized (size-dependent key).
+    expect(builtSize(shape('cylinder', { size: [30, 12, 6], params: { sides: 48, radius: 3 } }))).toEqual([30, 12, 6]);
   });
 
   it('rounds the round roof over its flat base', () => {

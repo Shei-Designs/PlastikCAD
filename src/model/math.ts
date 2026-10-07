@@ -133,7 +133,7 @@ export function builtSize(node: SceneNode): Vec3 {
 
 export function sizeDependent(node: SceneNode): boolean {
   if (node.type !== 'shape') return false;
-  return node.shape === 'tube' || node.shape === 'torus' || (node.shape === 'box' && (node.params.radius ?? 0) > 0);
+  return node.shape === 'tube' || node.shape === 'torus' || ((node.shape === 'box' || node.shape === 'cylinder') && (node.params.radius ?? 0) > 0);
 }
 
 /** Scale from the geometry as built to the node's size, including mirroring. */

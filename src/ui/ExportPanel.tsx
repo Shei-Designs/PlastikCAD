@@ -1,21 +1,31 @@
 import { useState } from 'react';
+import { APP_NAME } from '../app';
 import { FORMATS } from '../io/export';
+import { confirm } from '../platform';
 import { exportDesign, setPrefs, shownScene, useEditor } from '../state/store';
 import { DownloadIcon } from './icons';
 
 export function ExportPanel() {
   const format = useEditor((s) => s.prefs.format);
-  const selectionOnly = useEditor((s) => s.prefs.selectionOnly);
-  const selected = useEditor((s) => s.selection.length);
+  const selection = useEditor((s) => s.selection);
   const viewing = useEditor((s) => s.viewing);
   const scene = useEditor(shownScene);
   const [saved, setSaved] = useState<{ ok: boolean; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const active = FORMATS.find((f) => f.id === format)!;
-  const partial = selectionOnly && selected > 0 && !viewing;
-  const solids = scene.filter((n) => !n.hole && !n.hidden).length;
+  // Holes and hidden objects do not come out; what is selected counts only while the working design is shown.
+  const exportable = (nodes: typeof scene) => nodes.filter((n) => !n.hole && !n.hidden);
+  const picked = viewing ? [] : exportable(scene.filter((n) => selection.includes(n.id)));
+  const all = exportable(scene);
+  const partial = picked.length > 0;
+  const count = partial ? picked.length : all.length;
 
   const run = async () => {
+    // Nothing selected: everything goes out as one part, which is worth a moment's pause.
+    if (!partial && count > 1) {
+      const ok = await confirm(`Export all ${count} objects together as one ${active.label}?`, { title: APP_NAME, okLabel: 'Export' });
+      if (!ok) return;
+    }
     setSaving(true);
     setSaved(null);
     try {
@@ -41,19 +51,15 @@ export function ExportPanel() {
             ))}
           </div>
         </div>
-        <div className="export-row">
-          <label className="export-label wide" htmlFor="selection-only">
-            Selection only
-          </label>
-          <input id="selection-only" className="switch" type="checkbox" role="switch" checked={selectionOnly} onChange={(e) => setPrefs({ selectionOnly: e.target.checked })} />
-        </div>
         <p className="export-note">
           {active.description}
-          {partial ? ` · ${selected} selected object${selected === 1 ? '' : 's'}` : ` · ${solids} object${solids === 1 ? '' : 's'}, merged`}
+          {count === 0
+            ? ' · nothing to export yet'
+            : ` · ${count} ${partial ? 'selected ' : ''}object${count === 1 ? '' : 's'}${count > 1 ? ', merged' : ''}`}
         </p>
-        <button type="button" className="primary" disabled={saving || (partial ? selected === 0 : solids === 0)} onClick={run}>
+        <button type="button" className="primary" disabled={saving || count === 0} onClick={run}>
           <DownloadIcon />
-          {saving ? 'Exporting…' : `Export ${active.label}`}
+          {saving ? 'Exporting…' : partial ? 'Export selection' : 'Export'}
         </button>
         {saved && <p className={saved.ok ? 'export-result' : 'export-result failed'}>{saved.text}</p>}
       </section>
