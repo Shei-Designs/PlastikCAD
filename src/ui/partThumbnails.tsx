@@ -15,6 +15,30 @@ const glyph = (children: ReactNode) => (
 );
 
 const GLYPHS: Record<string, ReactNode> = {
+  pipe: glyph(
+    <>
+      <rect x="4" y="12" width="28" height="12" />
+      <path d="M4 15.5h28M4 20.5h28" />
+    </>,
+  ),
+  elbow: glyph(
+    <>
+      <path d="M4 10h10a14 14 0 0 1 14 14v8M4 22h10a2 2 0 0 1 2 2v8" />
+      <path d="M4 10v12M16 32h12" />
+    </>,
+  ),
+  reducer: glyph(
+    <>
+      <path d="M4 8h10l14 7v6l-14 7H4z" />
+      <path d="M4 12h10l14 5M4 24h10l14-5" />
+    </>,
+  ),
+  tee: glyph(
+    <>
+      <path d="M3 13h30v10H3zM13 13V4h10v9" />
+      <path d="M3 16h10v-9M23 7v9h10M3 20h30" />
+    </>,
+  ),
   bevel: glyph(
     <>
       <path d="M5 26h26l-6-13H11L5 26z" />

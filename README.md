@@ -56,18 +56,21 @@ It is the Tinkercad way of modelling, without the cloud and without the clutter:
 
 ## Parts
 
-| Gears | Pulleys & sprockets | Screws & threads | Rails & frames |
-| --- | --- | --- | --- |
-| Spur gear | GT2 timing pulley (2 / 3 / 5 mm) | Metric bolt / threaded rod (M3–M20) | Aluminium rail: 20, 30 and 40 mm series, V-slot or T-slot, one to four cells in one or two rows (2020, 2040, 4040, 3030, 3060, 6060, 4080...) |
-| Helical gear | HTD timing pulley (3M / 5M / 8M) | Metric nut | |
-| Herringbone gear | T-series timing pulley (T2.5 / T5 / T10) | Trapezoidal lead screw (multi-start) | |
-| Internal ring gear | MXL / XL timing pulley | Lead screw nut (flanged) | |
-| Gear rack (straight, helical, herringbone) | Chain sprocket (#25–#41, 05B–08B, bicycle) | | |
-| Bevel gear (90° shafts) | | | |
-| Worm | | | |
+| Gears | Pulleys & sprockets | Screws & threads | Rails & frames | Pipes & ducts |
+| --- | --- | --- | --- | --- |
+| Spur gear | GT2 timing pulley (2 / 3 / 5 mm) | Metric bolt / threaded rod (M3–M20) | Aluminium rail: 20, 30 and 40 mm series, V-slot or T-slot, one to four cells in one or two rows (2020, 2040, 4040, 3030, 3060, 6060, 4080...) | Straight pipe or duct |
+| Helical gear | HTD timing pulley (3M / 5M / 8M) | Metric nut | | Elbow (any angle and bend radius, legs either side) |
+| Herringbone gear | T-series timing pulley (T2.5 / T5 / T10) | Trapezoidal lead screw (multi-start) | | Reducer (in line or eccentric) |
+| Internal ring gear | MXL / XL timing pulley | Lead screw nut (flanged) | | Tee / wye (branch at any angle) |
+| Gear rack (straight, helical, herringbone) | Chain sprocket (#25–#41, 05B–08B, bicycle) | | | |
+| Bevel gear (90° shafts) | | | | |
+| Worm | | | | |
 
 Rotating parts share the same options for the shaft: round, D-shaft, hex or
 keyed bore with a fit clearance, plus an optional hub with set-screw holes.
+Pipes and ducts are round or rectangular (with rounded corners), hollow with a
+wall or solid, and the bends are true arcs, the tapers true frustums; a solid
+elbow makes a good hole to cut a curved channel with.
 The rail is there to design around: make it a hole and group it with a block
 to get a bracket that fits the real thing. It comes in as a 20 mm stub; its
 height is its length, so pull the top grip or type the H size to make it as

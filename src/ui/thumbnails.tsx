@@ -121,6 +121,14 @@ export const PART_THUMBNAILS: Record<string, ReactNode> = {
       <path d="M8 23.5l-2-9.5M28 23.5l2-9.5" />
     </>,
   ),
+  ducts: glyph(
+    <>
+      <path d="M5 11h9a13 13 0 0 1 13 13v7" />
+      <path d="M5 19h9a5 5 0 0 1 5 5v7" />
+      <path d="M5 11v8M19 31h8" />
+      <path d="M5 11l-1.5 8M27 31v-7" />
+    </>,
+  ),
   screws: glyph(
     <>
       <path d="M10 5h16v7H10z" />
