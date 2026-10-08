@@ -86,11 +86,31 @@ const GLYPHS: Record<ShapeKind, ReactNode> = {
 
 export const shapeThumbnail = (kind: ShapeKind): ReactNode => GLYPHS[kind];
 
-/** Catalog pictures of the part families, by category id. */
+/** Outline of a gear with `n` teeth: flat tips at `outer`, flat roots at `inner`, flanks between. */
+function gearPath(n: number, outer: number, inner: number, cx: number, cy: number): string {
+  const pts: string[] = [];
+  const step = (Math.PI * 2) / n;
+  for (let i = 0; i < n; i++) {
+    const a = i * step;
+    // A quarter of the pitch for each flank and each flat.
+    for (const [r, da] of [
+      [inner, -0.25],
+      [outer, -0.125],
+      [outer, 0.125],
+      [inner, 0.25],
+    ]) {
+      const t = a + da * step;
+      pts.push(`${(cx + r * Math.cos(t)).toFixed(2)} ${(cy + r * Math.sin(t)).toFixed(2)}`);
+    }
+  }
+  return `M${pts.join('L')}Z`;
+}
+
+/** Catalog pictures of the part families, by category id; families without one show their first part's own outline. */
 export const PART_THUMBNAILS: Record<string, ReactNode> = {
   gears: glyph(
     <>
-      <path d="M18 4.5l2.2 3.4 3.9-1.2.6 4 3.9 1.3-1.6 3.7 2.8 2.9-2.8 2.9 1.6 3.7-3.9 1.3-.6 4-3.9-1.2L18 31.5l-2.2-3.4-3.9 1.2-.6-4-3.9-1.3 1.6-3.7L6.2 18l2.8-2.9-1.6-3.7 3.9-1.3.6-4 3.9 1.2z" />
+      <path d={gearPath(10, 13.5, 10.5, 18, 18)} />
       <circle cx="18" cy="18" r="4" />
     </>,
   ),
@@ -99,13 +119,6 @@ export const PART_THUMBNAILS: Record<string, ReactNode> = {
       <ellipse cx="18" cy="10" rx="12" ry="4" />
       <path d="M6 10v4c0 2.2 5.4 4 12 4s12-1.8 12-4v-4M6 20v3c0 2.2 5.4 4 12 4s12-1.8 12-4v-3M6 14c0 2.2 5.4 4 12 4s12-1.8 12-4" />
       <path d="M8 23.5l-2-9.5M28 23.5l2-9.5" />
-    </>,
-  ),
-  frames: glyph(
-    <>
-      <path d="M5 5h26v26H5z" />
-      <path d="M15 5v4l3 3 3-3V5M31 15h-4l-3 3 3 3h4M21 31v-4l-3-3-3 3v4M5 21h4l3-3-3-3H5" />
-      <circle cx="18" cy="18" r="2" />
     </>,
   ),
   screws: glyph(

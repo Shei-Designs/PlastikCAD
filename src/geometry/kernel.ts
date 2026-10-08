@@ -12,6 +12,7 @@ import { CREASE_ANGLE } from './mesh';
 import type { MeshData, RenderMesh } from './mesh';
 import { buildSolid } from '../parts/evaluate';
 import { getGenerator } from '../parts/generators';
+import { sanitizeParams } from '../parts/generators/types';
 import { QUALITY } from '../parts/types';
 import { buildShape } from './shapes';
 import type { Keep } from './shapes';
@@ -241,7 +242,13 @@ function checked(m: Manifold): Manifold {
   return m;
 }
 
-function builtOf(k: ManifoldToplevel, node: SceneNode, key = geomKey(node)): Built {
+/**
+ * Set for the length of an export at fine detail: curved shapes and parts are
+ * then built with more facets than are shown, under keys of their own.
+ */
+let refining = false;
+
+function builtOf(k: ManifoldToplevel, node: SceneNode, key = (refining ? 'fine:' : '') + geomKey(node)): Built {
   let entry = cache.get(key);
   if (entry) cache.delete(key);
   else entry = construct(k, node);
@@ -253,7 +260,7 @@ function builtOf(k: ManifoldToplevel, node: SceneNode, key = geomKey(node)): Bui
 function construct(k: ManifoldToplevel, node: SceneNode): Built {
   switch (node.type) {
     case 'shape':
-      return solidEntry(scoped((keep) => checked(buildShape(k, node, keep))));
+      return solidEntry(scoped((keep) => checked(buildShape(k, node, keep, refining))));
     case 'group':
       return solidEntry(scoped((keep) => groupSolid(k, node, keep)));
     case 'import': {
@@ -303,7 +310,9 @@ function groupSolid(k: ManifoldToplevel, node: GroupNode, keep: Keep): Manifold 
 
 /** A parametric part, moved from standing on the plate to being centred on its box like every other node. */
 function partSolid(k: ManifoldToplevel, node: PartNode, keep: Keep): Manifold {
-  const built = getGenerator(node.part).build(node.params, QUALITY[node.quality] ?? QUALITY.normal);
+  // A design saved with an older set of parameters gets the defaults for whatever it lacks.
+  const def = getGenerator(node.part);
+  const built = def.build(sanitizeParams(def, node.params), refining ? QUALITY.fine : QUALITY.normal);
   const solid = checked(buildSolid(k, built.solid, keep));
   if (solid.isEmpty()) throw new Error(`"${node.name}" came out empty with these settings.`);
   const { min, max } = solid.boundingBox();
@@ -474,7 +483,16 @@ export function measure(nodes: SceneNode[]): Bounds | null {
  * imported mesh that is not watertight cannot be merged; its triangles are
  * passed through unchanged, with a warning.
  */
-export function exportNodes(nodes: SceneNode[], outline: boolean): ExportResult {
+export function exportNodes(nodes: SceneNode[], outline: boolean, fine = false): ExportResult {
+  refining = fine;
+  try {
+    return exportAt(nodes, outline);
+  } finally {
+    refining = false;
+  }
+}
+
+function exportAt(nodes: SceneNode[], outline: boolean): ExportResult {
   return operation((k) =>
     scoped((keep): ExportResult => {
       const warnings: string[] = [];

@@ -27,7 +27,7 @@ function handle(req: WorkerRequest): void {
       ctx.postMessage({ type: 'measured', id: req.id, bounds: measure(req.nodes) });
       break;
     case 'export': {
-      const result = exportNodes(req.nodes, req.outline);
+      const result = exportNodes(req.nodes, req.outline, req.fine);
       ctx.postMessage({ type: 'exported', id: req.id, result }, [
         result.mesh.positions.buffer,
         result.mesh.triangles.buffer,

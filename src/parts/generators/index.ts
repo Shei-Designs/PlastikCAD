@@ -31,7 +31,7 @@ export const CATEGORIES: { id: Category; label: string }[] = [
   { id: 'gears', label: 'Gears' },
   { id: 'pulleys', label: 'Pulleys & sprockets' },
   { id: 'screws', label: 'Screws & threads' },
-  { id: 'frames', label: 'Extrusions & frames' },
+  { id: 'frames', label: 'Rails & frames' },
 ];
 
 export function getGenerator(id: string): GeneratorDef {

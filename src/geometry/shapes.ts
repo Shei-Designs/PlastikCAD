@@ -482,8 +482,22 @@ function fit(m: Manifold, size: Vec3, keep: Keep): Manifold {
  * origin. Everything made along the way, the result included, is handed to
  * `keep`; the caller deletes what it does not need.
  */
-export function buildShape(k: ManifoldToplevel, node: ShapeNode, keep: Keep): Manifold {
+/**
+ * Shapes whose side count is only there to approximate a curve. A prism or a
+ * pyramid is its number of sides; these are round, and a cylinder with fewer
+ * than this many sides was meant to be faceted too.
+ */
+const ROUND: Partial<Record<ShapeKind, number>> = { cylinder: 16, cone: 16, sphere: 8, dome: 8, torus: 8, roundroof: 8, fillet: 4 };
+
+/** The parameters with twice the facets on every curve (up to 256), for an export at fine detail. */
+export function refineParams(kind: ShapeKind, p: Record<string, number>): Record<string, number> {
+  const least = ROUND[kind];
+  if (least === undefined || p.sides < least) return p;
+  return { ...p, sides: Math.min(256, p.sides * 2) };
+}
+
+export function buildShape(k: ManifoldToplevel, node: ShapeNode, keep: Keep, fine = false): Manifold {
   const size = builtSize(node);
-  const p = clampParams(node);
+  const p = fine ? refineParams(node.shape, clampParams(node)) : clampParams(node);
   return fit(BUILDERS[node.shape]({ k, keep, size, p }), size, keep);
 }

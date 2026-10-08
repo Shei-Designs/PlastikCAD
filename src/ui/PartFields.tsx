@@ -2,10 +2,10 @@
 // groups as tabs, and the dimensions it works out (pitch diameter and the like).
 import { useEffect, useId, useMemo, useState } from 'react';
 import { CATEGORIES, GENERATORS, getGenerator } from '../parts/generators';
-import { defaultParams } from '../parts/generators/types';
+import { defaultParams, sanitizeParams } from '../parts/generators/types';
 import type { BooleanParam, ParamDef, Params, SelectParam } from '../parts/generators/types';
 import { QUALITY } from '../parts/types';
-import type { PartNode, PartQuality } from '../model/types';
+import type { PartNode } from '../model/types';
 import { editPart } from '../state/store';
 import { SliderField } from './Fields';
 import { Hint } from './Hint';
@@ -69,14 +69,7 @@ function Field({ def, params, onChange }: { def: ParamDef; params: Params; onCha
 
 const DIMENSIONS = 'Dimensions';
 
-const QUALITIES: { id: PartQuality; label: string }[] = [
-  { id: 'draft', label: 'Draft' },
-  { id: 'normal', label: 'Normal' },
-  { id: 'fine', label: 'Fine' },
-];
-
 export function PartFields({ node }: { node: PartNode }) {
-  const id = useId();
   const def = getGenerator(node.part);
   const family = CATEGORIES.find((c) => c.id === def.category)!;
   const kin = GENERATORS.filter((g) => g.category === def.category);
@@ -84,7 +77,7 @@ export function PartFields({ node }: { node: PartNode }) {
   // Generators are pure functions: the figures are worked out here, the mesh in the worker.
   const built = useMemo(() => {
     try {
-      return def.build(node.params, QUALITY.draft);
+      return def.build(sanitizeParams(def, node.params), QUALITY.draft);
     } catch {
       return null;
     }
@@ -98,52 +91,47 @@ export function PartFields({ node }: { node: PartNode }) {
   const group = groups.find((g) => g.title === current);
   const change = (key: string, v: Params[string]) => void editPart(node.id, { params: { [key]: v } });
 
+  const reset = (
+    <button type="button" className="legend-button" title="Reset to defaults" aria-label="Reset to defaults" disabled={locked} onClick={() => void editPart(node.id, { part: def.id, params: defaultParams(def) })}>
+      <ResetIcon />
+    </button>
+  );
   return (
     <>
-      <fieldset className="group">
-        <legend>
-          {family.label}
-          <button type="button" className="legend-button" title="Reset to defaults" aria-label="Reset to defaults" disabled={locked} onClick={() => void editPart(node.id, { part: def.id, params: defaultParams(def) })}>
-            <ResetIcon />
-          </button>
-        </legend>
-        <ul className="shape-grid part-types" role="radiogroup" aria-label="Kind of part">
-          {kin.map((g) => (
-            <li key={g.id}>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={g.id === def.id}
-                className={g.id === def.id ? 'shape selected' : 'shape'}
-                title={g.summary}
-                disabled={locked}
-                onClick={() => {
-                  if (g.id !== def.id) void editPart(node.id, { part: g.id });
-                }}
-              >
-                <span className="thumb">{partThumbnail(g)}</span>
-                <span className="shape-name">{g.name}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-        <div className="field">
-          <label id={`${id}-detail`}>
-            Detail
-            <Hint text="How finely the curves are tessellated. Draft is quickest while working; Fine is worth it for the export." />
-          </label>
-          <div className="segmented" role="radiogroup" aria-labelledby={`${id}-detail`}>
-            {QUALITIES.map((q) => (
-              <button key={q.id} type="button" role="radio" aria-checked={q.id === node.quality} className={q.id === node.quality ? 'on' : ''} disabled={locked} onClick={() => void editPart(node.id, { quality: q.id })}>
-                {q.label}
-              </button>
+      {kin.length > 1 && (
+        <fieldset className="group">
+          <legend>
+            {family.label}
+            {reset}
+          </legend>
+          <ul className="shape-grid part-types" role="radiogroup" aria-label="Kind of part">
+            {kin.map((g) => (
+              <li key={g.id}>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={g.id === def.id}
+                  className={g.id === def.id ? 'shape selected' : 'shape'}
+                  title={g.summary}
+                  disabled={locked}
+                  onClick={() => {
+                    if (g.id !== def.id) void editPart(node.id, { part: g.id });
+                  }}
+                >
+                  <span className="thumb">{partThumbnail(g)}</span>
+                  <span className="shape-name">{g.name}</span>
+                </button>
+              </li>
             ))}
-          </div>
-        </div>
-      </fieldset>
+          </ul>
+        </fieldset>
+      )}
 
       <fieldset className="group">
-        <legend>Settings</legend>
+        <legend>
+          Settings
+          {kin.length === 1 && reset}
+        </legend>
         {built?.warnings.map((w) => (
           <p key={w} className="field-note warn">
             {w}

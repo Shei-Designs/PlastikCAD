@@ -47,8 +47,8 @@ export class GeometryClient {
     return this.send({ type: 'measure', nodes });
   }
 
-  export(nodes: SceneNode[], outline: boolean): Promise<ExportResult> {
-    return this.send({ type: 'export', nodes, outline });
+  export(nodes: SceneNode[], outline: boolean, fine: boolean): Promise<ExportResult> {
+    return this.send({ type: 'export', nodes, outline, fine });
   }
 
   dispose(): void {

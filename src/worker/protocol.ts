@@ -9,8 +9,8 @@ export type WorkerRequest =
   | { type: 'build'; id: number; key: string; node: SceneNode }
   /** Bounds of what the nodes would produce as a group (solids merged, holes cut), in the nodes' own coordinates. */
   | { type: 'measure'; id: number; nodes: SceneNode[] }
-  /** Merge the nodes (holes are ignored at the top level) into one mesh for export. */
-  | { type: 'export'; id: number; nodes: SceneNode[]; outline: boolean };
+  /** Merge the nodes (holes are ignored at the top level) into one mesh for export; `fine` rebuilds curves with more facets. */
+  | { type: 'export'; id: number; nodes: SceneNode[]; outline: boolean; fine: boolean };
 
 export interface BuildResult {
   key: string;

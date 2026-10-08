@@ -1,9 +1,11 @@
-// Aluminium extrusion profiles, drawn from the makers' own section drawings:
-// OpenBuilds V-Slot, Misumi HFS5 / HFS6 / HFS8 and 80/20's 20, 30 and 40
-// series. They all share one anatomy, which is what this file builds:
+// Aluminium extrusion profiles: 20, 30 and 40 mm cells, V-slot or T-slot, in
+// a row of up to four cells, one or two rows deep. Each size follows one
+// maker's section drawing, the rest being close enough to it: OpenBuilds
+// V-Slot for 20 mm, Misumi HFS6 for 30 mm and HFS8 for 40 mm. They share one
+// anatomy, which is what this file builds:
 //
 //   - a skin with slotted lips on every outside face (a 45° V on the lip tips
-//     of V-Slot, square lips on the T-slots);
+//     of a V-slot, square lips on a T-slot);
 //   - behind each lip, a channel that is wider than the opening, with straight
 //     walls at first and then a 45° taper down to the flat top of the core;
 //   - a square core round the bore in the middle of each cell;
@@ -13,8 +15,9 @@
 //   - where two cells meet there is no slot and no corner block: the cores'
 //     facing sides and the two webs frame one hollow that reaches the skin
 //     through a short neck (the tall octagon of a 2040);
-//   - where four cells meet, the four hollows run into one open cross, so a
-//     4040 has nothing in its middle but the cores' corners.
+//   - where four cells meet, the hollows run into one open middle, with the
+//     cores' corners rounded off; in a two-row bar of three or four cells the
+//     inner cells' stacked cores are joined by walls flush with their sides.
 //
 // Every figure in the table below is read off a drawing; the sectional areas
 // come out within a few percent of the catalogue values.
@@ -27,10 +30,10 @@ import type { BuildResult, GeneratorDef, Params } from './types';
 /** Built this long; the object's height is then simply stretched to the length wanted, which a prism survives exactly. */
 const STUB = 20;
 
-export interface Family {
+export interface Size {
   label: string;
-  /** Catalogue names this covers, for the help text. */
-  models: string;
+  /** Whose drawing the figures are read from. */
+  source: string;
   /** Cell size: the extrusion is a grid of these squares. */
   cell: number;
   /** Thickness of the lips, and of the faces between slots. */
@@ -43,28 +46,30 @@ export interface Family {
   core: number;
   /** Bore down the middle of each cell. */
   bore: number;
-  /** Thickness of the 45° webs. */
+  /** Thickness of the 45° webs, and of the walls between inner cells. */
   web: number;
   /** Radius of the outer corners. */
   radius: number;
+  /** The V on a V-slot's lip tips: a 45° chamfer this deep from the surface to a short flat tip. */
+  chamfer: number;
   /**
-   * V-Slot lips: a 45° chamfer `chamfer` deep from the surface to a short flat tip, and a
-   * different hollow between cells: a neck `neck` wide that runs `neckDepth` in from the
-   * surface before opening at 45° onto the cores' sides.
+   * The hollow between two cells, as V-Slot has it: a neck `neck` wide that runs `neckDepth` in
+   * from the surface before opening at 45° onto the cores' sides. Without it the hollow is the
+   * T-slot octagon, whose sides are the slot tapers moved over by a web.
    */
-  vslot?: { chamfer: number; neck: number; neckDepth: number };
+  neck?: { width: number; depth: number };
   /** A round hole in each corner block of the profile, this far in from both faces. */
   cornerHole?: { diameter: number; inset: number };
   /** A square hollow in each corner block of the profile, with rounded corners. */
   cornerCavity?: { size: number; inset: number; radius: number };
-  /** Sectional area of the single-cell profile from the catalogue, for the tests. */
+  /** Sectional area of the single-cell T-slot (V-slot for 20) from the catalogue, for the tests. */
   catalogueArea: number;
 }
 
-export const FAMILIES: Record<string, Family> = {
-  vslot20: {
-    label: 'OpenBuilds V-Slot 20',
-    models: 'V-SLOT-2020, 2040, 4040',
+export const SIZES: Record<string, Size> = {
+  '20': {
+    label: '20 mm (2020, 2040, 4040...)',
+    source: 'OpenBuilds V-Slot 20',
     cell: 20,
     lip: 1.5,
     opening: 6,
@@ -73,38 +78,13 @@ export const FAMILIES: Record<string, Family> = {
     bore: 5.5,
     web: 1.5,
     radius: 2,
-    vslot: { chamfer: 1.1, neck: 4.6, neckDepth: 3.7 },
-    catalogueArea: 165,
+    chamfer: 1.1,
+    neck: { width: 4.6, depth: 3.7 },
+    catalogueArea: 166,
   },
-  hfs5: {
-    label: 'Misumi HFS5 (20 mm)',
-    models: 'HFS5-2020, 2040, 4040',
-    cell: 20,
-    lip: 2,
-    opening: 6,
-    channel: 12,
-    core: 8,
-    bore: 4.2,
-    web: 1.5,
-    radius: 1,
-    catalogueArea: 183,
-  },
-  tslot20: {
-    label: '80/20 20 series',
-    models: '20-2020, 2040, 4040',
-    cell: 20,
-    lip: 1.6,
-    opening: 5.26,
-    channel: 11.99,
-    core: 7.32,
-    bore: 4.19,
-    web: 1.5,
-    radius: 1,
-    catalogueArea: 159,
-  },
-  hfs6: {
-    label: 'Misumi HFS6 (30 mm)',
-    models: 'HFS6-3030, 3060, 6060',
+  '30': {
+    label: '30 mm (3030, 3060, 6060...)',
+    source: 'Misumi HFS6',
     cell: 30,
     lip: 2,
     opening: 8,
@@ -113,26 +93,13 @@ export const FAMILIES: Record<string, Family> = {
     bore: 6.8,
     web: 2,
     radius: 2,
+    chamfer: 1.6,
     cornerHole: { diameter: 4.2, inset: 3.4 },
     catalogueArea: 333,
   },
-  tslot30: {
-    label: '80/20 30 series',
-    models: '30-3030, 3060, 6060',
-    cell: 30,
-    lip: 2.21,
-    opening: 8.14,
-    channel: 16.51,
-    core: 11.64,
-    bore: 6.65,
-    web: 2.54,
-    radius: 2,
-    cornerCavity: { size: 4.2, inset: 1.33, radius: 0.5 },
-    catalogueArea: 314,
-  },
-  hfs8: {
-    label: 'Misumi HFS8 (40 mm)',
-    models: 'HFS8-4040, 4080',
+  '40': {
+    label: '40 mm (4040, 4080...)',
+    source: 'Misumi HFS8',
     cell: 40,
     lip: 5.5,
     opening: 10,
@@ -141,21 +108,9 @@ export const FAMILIES: Record<string, Family> = {
     bore: 10.5,
     web: 2.5,
     radius: 3,
+    chamfer: 2.5,
     cornerCavity: { size: 6, inset: 2, radius: 1 },
     catalogueArea: 640,
-  },
-  tslot40: {
-    label: '80/20 40 series',
-    models: '40-4040, 4080',
-    cell: 40,
-    lip: 4.32,
-    opening: 8.13,
-    channel: 20.57,
-    core: 14.85,
-    bore: 6.81,
-    web: 4.32,
-    radius: 3.5,
-    catalogueArea: 874,
   },
 };
 
@@ -198,33 +153,35 @@ export interface Profile {
   mouths: Polygon[];
   width: number;
   height: number;
-  family: Family;
-  /** Sectional area, less the clearance. */
+  size: Size;
+  /** Cells along and rows deep. */
+  across: number;
+  up: number;
+  /** Sectional area. */
   area: number;
 }
 
 export function profile(p: Params, q: Quality): Profile {
-  const family = FAMILIES[str(p, 'family')] ?? FAMILIES.vslot20;
-  const across = Math.max(1, Math.round(num(p, 'across')));
-  const up = Math.max(1, Math.round(num(p, 'up')));
-  const cl = Math.max(0, num(p, 'clearance'));
-  const { cell: C, lip, opening, channel, core, web } = family;
+  const size = SIZES[str(p, 'size')] ?? SIZES['20'];
+  const across = Math.min(4, Math.max(1, Math.round(num(p, 'cells'))));
+  const up = bool(p, 'double') ? 2 : 1;
+  const { cell: C, lip, opening, channel, core, web } = size;
   const h = C / 2;
   // Depth of the core's flat top below the face, and half the web measured along a face.
   const cd = (C - core) / 2;
   const o = web / Math.SQRT2;
   // Where the straight channel wall ends and the 45° taper to the core begins.
   const ys = h - channel / 2 - o;
-  const width = across * C + 2 * cl;
-  const height = up * C + 2 * cl;
+  const width = across * C;
+  const height = up * C;
   const hw = width / 2;
   const hh = height / 2;
   const n = Math.max(16, Math.round(q.circle / 2));
-  const cellX = (i: number) => -hw + cl + (i + 0.5) * C;
-  const cellY = (j: number) => -hh + cl + (j + 0.5) * C;
-  const vs = family.vslot;
-  const chamfer = vs ? Math.min(vs.chamfer, lip) : 0;
-  const a = Math.max(opening / 2 - cl, 0.5);
+  const cellX = (i: number) => -hw + (i + 0.5) * C;
+  const cellY = (j: number) => -hh + (j + 0.5) * C;
+  const chamfer = str(p, 'style') === 't' ? 0 : Math.min(size.chamfer, lip);
+  const neck = size.neck;
+  const a = opening / 2;
 
   const voids: Polygon[] = [];
   const mouths: Polygon[] = [];
@@ -234,7 +191,7 @@ export function profile(p: Params, q: Quality): Profile {
   for (let i = 0; i < across; i++) {
     for (let j = 0; j < up; j++) {
       const c: Vec2 = [cellX(i), cellY(j)];
-      if (bool(p, 'bores')) bores.push(circle(family.bore / 2, n, c[0], c[1]));
+      if (bool(p, 'bores')) bores.push(circle(size.bore / 2, n, c[0], c[1]));
       for (const d of DIRS) {
         const e = left(d);
         const outer = (d[0] < 0 && i === 0) || (d[0] > 0 && i === across - 1) || (d[1] < 0 && j === 0) || (d[1] > 0 && j === up - 1);
@@ -242,20 +199,19 @@ export function profile(p: Params, q: Quality): Profile {
         const at = (u: number, v: number): Vec2 => [c[0] + d[0] * (h - v) + e[0] * u, c[1] + d[1] * (h - v) + e[1] * u];
         if (outer) {
           // The channel behind the lip: straight walls, then the 45° taper onto the core's top.
-          // Clearance shrinks it all round, so that a printed tongue slides in.
-          const wall = channel / 2 - cl;
-          const floor = h - cd - o - cl;
-          voids.push(ensureCCW([at(-wall, lip + cl), at(-wall, ys + cl), at(-floor, cd - cl), at(floor, cd - cl), at(wall, ys + cl), at(wall, lip + cl)]));
-          // The opening through the lip, from outside the surface (which sits `cl` out) to just inside the channel.
-          const s = -cl;
+          const wall = channel / 2;
+          const floor = h - cd - o;
+          voids.push(ensureCCW([at(-wall, lip), at(-wall, ys), at(-floor, cd), at(floor, cd), at(wall, ys), at(wall, lip)]));
+          // The opening through the lip, from outside the surface to just inside the channel.
+          const s = 0;
           const m = a + chamfer;
           mouths.push(
             ensureCCW([
               at(-m - 1, s - 1),
               at(-m, s),
               at(-a, s + chamfer),
-              at(-a, lip + cl + 0.5),
-              at(a, lip + cl + 0.5),
+              at(-a, lip + 0.5),
+              at(a, lip + 0.5),
               at(a, s + chamfer),
               at(m, s),
               at(m + 1, s - 1),
@@ -274,58 +230,80 @@ export function profile(p: Params, q: Quality): Profile {
           });
           const half = (sign: number, end: string): Vec2[] => {
             // From the near core's side (r = -cd) round to the far core's side (r = +cd), at this end.
-            if (vs) {
-              const nk = vs.neck / 2;
-              const s1 = h - vs.neckDepth - cd + nk;
-              if (end === 'skin') {
-                const sn = h - vs.neckDepth;
-                return [at2(sign * s1, -cd), at2(sign * sn, -nk), at2(sign * (h - lip), -nk), at2(sign * (h - lip), nk), at2(sign * sn, nk), at2(sign * s1, cd)];
-              }
-              const q = h - cd - s1;
-              return [at2(sign * s1, -cd), at2(sign * (h - cd), -cd + q), at2(sign * (h - cd), cd - q), at2(sign * s1, cd)];
+            // Where four cells meet the hollow simply runs on to the cores' corners and the open middle.
+            // In a two-row bar, the inner cells' stacked cores are joined by a wall down each side
+            // of the hollow between them, flush with the cores' faces.
+            const walled = d[1] > 0 && up === 2 && i >= 1 && i <= across - 2;
+            if (end === 'open') {
+              const s0 = h - cd - (walled ? web : 0);
+              return [at2(sign * s0, -cd), at2(sign * s0, cd)];
+            }
+            if (neck) {
+              const nk = neck.width / 2;
+              const s1 = h - neck.depth - cd + nk;
+              const sn = h - neck.depth;
+              return [at2(sign * s1, -cd), at2(sign * sn, -nk), at2(sign * (h - lip), -nk), at2(sign * (h - lip), nk), at2(sign * sn, nk), at2(sign * s1, cd)];
             }
             const s1 = h - cd - o;
-            if (end === 'skin') {
-              const flat = lip - o;
-              if (flat <= 0) return [at2(sign * s1, -cd), at2(sign * (h - o), 0), at2(sign * s1, cd)];
-              return [at2(sign * s1, -cd), at2(sign * (h - lip), -flat), at2(sign * (h - lip), flat), at2(sign * s1, cd)];
-            }
-            return [at2(sign * s1, -cd), at2(sign * (h - cd), -cd + o), at2(sign * (h - cd), cd - o), at2(sign * s1, cd)];
+            const flat = lip - o;
+            if (flat <= 0) return [at2(sign * s1, -cd), at2(sign * (h - o), 0), at2(sign * s1, cd)];
+            return [at2(sign * s1, -cd), at2(sign * (h - lip), -flat), at2(sign * (h - lip), flat), at2(sign * s1, cd)];
           };
           voids.push(ensureCCW([...half(1, ends[1]), ...half(-1, ends[0]).reverse()]));
         }
       }
     }
   }
-  // Where four cells meet, the square between their cores is open.
+  // Where four cells meet, the square between their cores is open, with the cores' corners
+  // rounded off, except where a core's face runs on into one of those walls.
+  const fr = web;
+  const nf = Math.max(2, Math.round(n / 8));
   for (let i = 1; i < across; i++)
     for (let j = 1; j < up; j++) {
-      const x = -hw + cl + i * C;
-      const y = -hh + cl + j * C;
+      const x = -hw + i * C;
+      const y = -hh + j * C;
       voids.push([
         [x - cd, y - cd],
         [x + cd, y - cd],
         [x + cd, y + cd],
         [x - cd, y + cd],
       ]);
+      const inner = (column: number) => up === 2 && column >= 1 && column <= across - 2;
+      for (const [sx, sy] of [
+        [1, -1],
+        [1, 1],
+        [-1, 1],
+        [-1, -1],
+      ]) {
+        if (inner(sx > 0 ? i : i - 1)) continue;
+        // The fillet: what an arc centred a radius into the core takes off its corner. It only
+        // touches the open middle at the corner, so it is a polygon of its own, between the two
+        // hollows that meet there.
+        const qx = x + sx * (cd + fr);
+        const qy = y + sy * (cd + fr);
+        const towards = Math.atan2(-sy, -sx);
+        const arc: Vec2[] = [];
+        for (let k = 0; k <= nf; k++) arc.push(polar(fr, towards - Math.PI / 4 + (k / nf) * (Math.PI / 2), qx, qy));
+        voids.push(ensureCCW([[x + sx * cd, y + sy * cd], ...arc]));
+      }
     }
   // Holes or hollows in the four corner blocks.
   for (const sx of [-1, 1])
     for (const sy of [-1, 1]) {
-      const cx = sx * (hw - cl);
-      const cy = sy * (hh - cl);
-      if (family.cornerHole) {
-        const { diameter, inset } = family.cornerHole;
+      const cx = sx * hw;
+      const cy = sy * hh;
+      if (size.cornerHole) {
+        const { diameter, inset } = size.cornerHole;
         cavities.push(circle(diameter / 2, n, cx - sx * inset, cy - sy * inset));
       }
-      if (family.cornerCavity) {
-        const { size, inset, radius } = family.cornerCavity;
-        cavities.push(roundedSquare(size, radius, cx - sx * (inset + size / 2), cy - sy * (inset + size / 2), Math.max(2, Math.round(n / 8))));
+      if (size.cornerCavity) {
+        const { size: side, inset, radius } = size.cornerCavity;
+        cavities.push(roundedSquare(side, radius, cx - sx * (inset + side / 2), cy - sy * (inset + side / 2), Math.max(2, Math.round(n / 8))));
       }
     }
 
   // The outside: rounded corners, and (unless `plain`) the opening of every slot notched through the lips.
-  const R = family.radius + cl;
+  const R = size.radius;
   const nr = arcSegments(q, Math.PI / 2, 4);
   const sides: { d: Vec2; from: Vec2; cells: number }[] = [
     { d: [0, -1], from: [-hw, -hh], cells: across },
@@ -344,9 +322,9 @@ export function profile(p: Params, q: Quality): Profile {
       if (plain) return;
       for (let kc = 0; kc < cells; kc++) {
         // The mouth profile around this cell's slot centre: (u, v) along the side and in from the surface.
-        const u0 = cl + (kc + 0.5) * C;
+        const u0 = (kc + 0.5) * C;
         const m = a + chamfer;
-        const depth = lip + 2 * cl;
+        const depth = lip;
         const pts: Vec2[] = [
           [-m, 0],
           [-a, chamfer],
@@ -365,54 +343,45 @@ export function profile(p: Params, q: Quality): Profile {
 
   const polyArea = (polys: Polygon[]) => polys.reduce((s, poly) => s + Math.abs(signedArea(poly)), 0);
   const area = signedArea(outline) - polyArea(voids) - polyArea(bores) - polyArea(cavities);
-  return { outline, plain, voids, bores, cavities, mouths, width, height, family, area };
+  return { outline, plain, voids, bores, cavities, mouths, width, height, size, across, up, area };
 }
 
 export const extrusion: GeneratorDef = {
   id: 'extrusion',
-  name: 'Aluminium extrusion',
+  name: 'Aluminium rail',
   category: 'frames',
-  summary:
-    'Slotted aluminium profile to the makers’ drawings: OpenBuilds V-Slot, Misumi HFS and 80/20, in 20, 30 and 40 mm cells (2020, 2040, 4040, 3030, 3060, 4080...). Use it as a hole to cut the pocket a part slides onto; its height is its length.',
+  summary: 'Slotted aluminium profile in 20, 30 and 40 mm cells (2020, 2040, 4040, 3030, 3060, 4080...), V-slot or T-slot.',
   groups: [
     {
       title: 'Profile',
       params: [
         {
-          key: 'family',
-          label: 'Standard',
+          key: 'size',
+          label: 'Series',
           type: 'select',
-          default: 'vslot20',
-          options: Object.entries(FAMILIES).map(([value, f]) => ({ value, label: f.label })),
-          help: 'Whose profile: the section follows that maker’s drawing, slot and bore included.',
+          default: '20',
+          options: Object.entries(SIZES).map(([value, s]) => ({ value, label: s.label })),
+          help: 'The size of one cell: 2020 is one 20 mm cell, 4040 is two by two of them or one 40 mm cell.',
         },
-        { key: 'across', label: 'Cells across', type: 'number', default: 1, min: 1, max: 4, step: 1, integer: true, help: '2040 is one cell across and two up, or the other way round; 4040 of a 20 mm standard is two by two.' },
-        { key: 'up', label: 'Cells up', type: 'number', default: 1, min: 1, max: 4, step: 1, integer: true },
-      ],
-    },
-    {
-      title: 'Fit',
-      params: [
-        { key: 'bores', label: 'Centre bores', type: 'boolean', default: true, help: 'The hole down the middle of each cell.' },
         {
-          key: 'clearance',
-          label: 'Clearance',
-          type: 'number',
-          default: 0,
-          min: 0,
-          max: 1,
-          step: 0.05,
-          unit: 'mm',
-          help: 'Grows the outside and shrinks the slots by this much. Set it when the extrusion is a hole, so the printed part slides on.',
+          key: 'style',
+          label: 'Slot',
+          type: 'select',
+          default: 'v',
+          options: [
+            { value: 'v', label: 'V-slot' },
+            { value: 't', label: 'T-slot' },
+          ],
+          help: 'V-slot has 45° lips for wheels to run on; T-slot has square lips.',
         },
+        { key: 'cells', label: 'Cells', type: 'number', default: 1, min: 1, max: 4, step: 1, integer: true, help: 'Cells in a row: 2020 is one, 2040 two, 2060 three.' },
+        { key: 'double', label: 'Two rows', type: 'boolean', default: false, help: 'Two rows of cells: 4040 is two cells with two rows, 4080 four cells with two rows.' },
+        { key: 'bores', label: 'Centre bores', type: 'boolean', default: true, help: 'The hole down the middle of each cell.' },
       ],
     },
   ],
   build(p, q): BuildResult {
-    const { outline, plain, voids, bores, cavities, mouths, width, height, family, area } = profile(p, q);
-    const across = Math.max(1, Math.round(num(p, 'across')));
-    const up = Math.max(1, Math.round(num(p, 'up')));
-    const clearance = num(p, 'clearance');
+    const { plain, outline, voids, bores, cavities, mouths, width, height, size, across, up, area } = profile(p, q);
     // Through-cuts are a hair longer than the bar so that no faces coincide.
     const cut = (shape: Shape2D): Solid => translate(extrude(shape, STUB + 2), [0, 0, -1]);
     // The solid starts from the plain rounded square; the openings are cut with the rest.
@@ -422,18 +391,19 @@ export const extrusion: GeneratorDef = {
     const solid = difference(extrude([plain], STUB), ...cutters);
     const warnings: string[] = [];
     if (signedArea(outline) <= 0) warnings.push('The profile came out inside out; check the settings.');
-    const cd = (family.cell - family.core) / 2;
+    const cd = (size.cell - size.core) / 2;
+    const name = `${up * size.cell}${across * size.cell}`;
     return {
       solid,
       // For the picture and the SVG: even-odd contours. The hollows only ever touch, and each bore
       // and corner hole sits in solid metal, so the parity works out.
       outline: [outline, ...voids, ...bores, ...cavities],
       info: [
-        { label: 'Profile', value: `${Math.round(width - 2 * clearance)} × ${Math.round(height - 2 * clearance)} mm (${family.models})` },
-        { label: 'Slot opening', value: mm(family.opening) },
+        { label: 'Profile', value: `${name}: ${Math.round(width)} × ${Math.round(height)} mm` },
+        { label: 'Slot', value: `${str(p, 'style') === 't' ? 'T' : 'V'}, ${mm(size.opening, 1)} opening` },
         { label: 'Slots', value: String(2 * (across + up)) },
         { label: 'Slot depth', value: mm(cd) },
-        { label: 'Centre bore', value: bool(p, 'bores') ? mm(family.bore, 1) : 'none' },
+        { label: 'Centre bore', value: bool(p, 'bores') ? mm(size.bore, 1) : 'none' },
         { label: 'Section', value: `${Math.round(area)} mm²` },
       ],
       warnings,

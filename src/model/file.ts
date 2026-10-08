@@ -45,7 +45,6 @@ function canonical(node: SceneNode): Record<string, unknown> {
     shape: node.type === 'shape' ? node.shape : undefined,
     asset: node.type === 'import' ? node.asset : undefined,
     part: node.type === 'part' ? node.part : undefined,
-    quality: node.type === 'part' && node.quality !== 'normal' ? node.quality : undefined,
     params: node.type === 'part' ? sortKeys(node.params) : node.type === 'shape' && Object.keys(node.params).length ? sortKeys(node.params) : undefined,
     text: node.type === 'text' ? node.text : undefined,
     font: node.type === 'text' ? node.font : undefined,
@@ -161,7 +160,6 @@ function readNode(raw: unknown, assets: Record<string, Asset>): SceneNode | null
       type: 'part',
       part: raw.part,
       params: sanitizeParams(def, isRecord(raw.params) ? (raw.params as Record<string, PartParamValue>) : undefined),
-      quality: raw.quality === 'draft' || raw.quality === 'fine' ? raw.quality : 'normal',
       natural: vec3(raw.natural, base.size, true),
     };
   }

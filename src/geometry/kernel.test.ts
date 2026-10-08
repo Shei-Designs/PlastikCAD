@@ -556,4 +556,28 @@ describe('cache', () => {
     make(shape('box'));
     expect(cacheSize()).toBeLessThanOrEqual(400);
   });
+
+  it('exports at fine detail with twice the facets, without touching what is shown', () => {
+    const cyl = shape('cylinder', { size: [20, 20, 10] });
+    const sides = cyl.params.sides;
+    const shown = exportNodes([cyl], false);
+    const fine = exportNodes([cyl], false, true);
+    expect(fine.mesh.triangles.length).toBeGreaterThan(shown.mesh.triangles.length * 1.5);
+    // Closer to a true circle: 2 * sides facets around.
+    expect(shown.volume).toBeCloseTo(around(sides, 10) * 10, 3);
+    expect(fine.volume).toBeCloseTo(around(2 * sides, 10) * 10, 3);
+    // The viewport's build is unchanged, and the fine solid lives under a key of its own.
+    const before = cacheSize();
+    expect(make(cyl).volume).toBeCloseTo(around(sides, 0.5), 6);
+    expect(cacheSize()).toBe(before);
+    // A faceted cylinder and a prism keep their sides: those are the shape.
+    const hex = shape('cylinder', { size: [20, 20, 10], params: { sides: 6, radius: 0 } });
+    expect(exportNodes([hex], false, true).volume).toBeCloseTo(exportNodes([hex], false).volume, 6);
+    const prism = shape('prism', { size: [20, 20, 10] });
+    expect(exportNodes([prism], false, true).volume).toBeCloseTo(exportNodes([prism], false).volume, 6);
+    // Inside a group too.
+    const g = group([20, 20, 10], [{ ...cyl, pos: [0, 0, 0] }]);
+    expect(exportNodes([g], false, true).volume).toBeCloseTo(fine.volume, 3);
+    expect(exportNodes([g], false).volume).toBeCloseTo(shown.volume, 3);
+  });
 });

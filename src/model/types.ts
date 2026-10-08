@@ -78,8 +78,6 @@ export interface TextNode extends NodeBase {
   natural: Vec3;
 }
 
-export type PartQuality = 'draft' | 'normal' | 'fine';
-
 /** A value of a part parameter: the generators take numbers, choices and switches. */
 export type PartParamValue = number | string | boolean;
 
@@ -93,8 +91,6 @@ export interface PartNode extends NodeBase {
   /** Id of the generator. */
   part: string;
   params: Record<string, PartParamValue>;
-  /** How finely curves are tessellated; draft is quickest, fine is for export. */
-  quality: PartQuality;
   /** Bounding box of the part as generated; `size / natural` is its scale. */
   natural: Vec3;
 }

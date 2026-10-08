@@ -29,7 +29,7 @@ import {
   usedAssets,
 } from '../model/ops';
 import type { AlignMode, Layer } from '../model/ops';
-import type { Asset, Doc, GroupNode, ImportNode, PartNode, PartParamValue, PartQuality, Scene, SceneNode, ShapeKind, TextNode, Vec3, Version } from '../model/types';
+import type { Asset, Doc, GroupNode, ImportNode, PartNode, PartParamValue, Scene, SceneNode, ShapeKind, TextNode, Vec3, Version } from '../model/types';
 import { GENERATORS, getGenerator } from '../parts/generators';
 import { sanitizeParams } from '../parts/generators/types';
 import * as platform from '../platform';
@@ -400,7 +400,6 @@ function makePart(generatorId: string, params?: Record<string, PartParamValue>):
     name: def.name,
     part: def.id,
     params: sanitizeParams(def, params),
-    quality: 'normal',
     natural: [1, 1, 1],
     pos: [0, 0, -1e6],
     rot: [0, 0, 0],
@@ -472,7 +471,7 @@ export async function addPart(category: string): Promise<void> {
 let partEdits = 0;
 
 /** Change a part's generator or parameters. The part keeps its scale and stays on its base. */
-export async function editPart(id: string, change: { part?: string; params?: Record<string, PartParamValue>; quality?: PartQuality }): Promise<void> {
+export async function editPart(id: string, change: { part?: string; params?: Record<string, PartParamValue> }): Promise<void> {
   const node = state.doc.scene.find((n) => n.id === id);
   if (node?.type !== 'part' || node.locked || state.viewing) return;
   const def = getGenerator(change.part ?? node.part);
@@ -480,7 +479,7 @@ export async function editPart(id: string, change: { part?: string; params?: Rec
   const name = node.name === getGenerator(node.part).name ? def.name : node.name;
   const edit = ++partEdits;
   try {
-    const sized = await sizePart({ ...node, part: def.id, params, name, quality: change.quality ?? node.quality });
+    const sized = await sizePart({ ...node, part: def.id, params, name });
     // A later edit has overtaken this one, or the part is gone.
     if (edit !== partEdits || !state.doc.scene.some((n) => n.id === id)) return;
     updateNode(id, sized, `part:${id}`);
@@ -1025,7 +1024,8 @@ export async function exportDesign(formatId: FormatId, selectionOnly: boolean): 
   const shown = state.viewing ? (state.doc.versions.find((v) => v.id === state.viewing)?.scene ?? []) : state.doc.scene;
   const nodes = selectionOnly && !state.viewing ? selectedNodes() : shown;
   const worker = await geometry.prepare(nodes, state.doc.assets);
-  const result = await worker.export(nodes, format.kind === '2d');
+  // Exports are always made at fine detail: curves get more facets than are drawn on screen.
+  const result = await worker.export(nodes, format.kind === '2d', true);
   const name = state.doc.name;
   const bytes =
     format.id === 'svg' || format.id === 'dxf' ? exportOutline(format.id, result.outline ?? [], name) : exportMesh(format.id, result.mesh, name);

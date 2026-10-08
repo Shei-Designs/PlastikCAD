@@ -42,8 +42,8 @@ export function geomKey(node: SceneNode): string {
 }
 
 /** Identifies a part's geometry: its generator and parameters. */
-export const partKey = (node: Pick<PartNode, 'part' | 'params' | 'quality'>): string =>
-  `${node.part}@${node.quality}:${Object.keys(node.params)
+export const partKey = (node: Pick<PartNode, 'part' | 'params'>): string =>
+  `${node.part}:${Object.keys(node.params)
     .sort()
     .map((k) => `${k}=${JSON.stringify(node.params[k])}`)
     .join(',')}`;

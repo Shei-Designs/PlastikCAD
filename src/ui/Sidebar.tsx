@@ -28,7 +28,8 @@ import {
 } from '../state/store';
 import { EyeIcon, EyeOffIcon, ImportIcon, LockIcon, Logo, MenuIcon, MoonIcon, SaveIcon, SunIcon, UnlockIcon } from './icons';
 import { Popover } from './Popover';
-import { CATEGORIES, getGenerator } from '../parts/generators';
+import { CATEGORIES, GENERATORS, getGenerator } from '../parts/generators';
+import { partThumbnail } from './partThumbnails';
 import { PART_THUMBNAILS, shapeThumbnail, textThumbnail } from './thumbnails';
 
 const MOD = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform) ? '⌘' : 'Ctrl+';
@@ -117,7 +118,7 @@ function FileBar() {
 }
 
 /** Short tile names for the part families. */
-const FAMILY_NAMES: Record<string, string> = { gears: 'Gear', pulleys: 'Pulley', screws: 'Screw', frames: 'Extrusion' };
+const FAMILY_NAMES: Record<string, string> = { gears: 'Gear', pulleys: 'Pulley', screws: 'Screw', frames: 'Rail' };
 
 function Shapes() {
   const placing = useEditor((s) => s.placing);
@@ -186,7 +187,7 @@ function Shapes() {
                 if (e.detail === 0) void addPart(c.id);
               }}
             >
-              <span className="thumb">{PART_THUMBNAILS[c.id]}</span>
+              <span className="thumb">{PART_THUMBNAILS[c.id] ?? partThumbnail(GENERATORS.find((g) => g.category === c.id)!)}</span>
               <span className="shape-name">{FAMILY_NAMES[c.id] ?? c.label}</span>
             </button>
           </li>
