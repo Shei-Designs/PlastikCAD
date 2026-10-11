@@ -96,3 +96,30 @@ export function bounds(polys: Polygon[]): { min: Vec2; max: Vec2 } {
     }
   return { min, max };
 }
+
+/**
+ * The polygon moved out by `d` (in by a negative `d`): each vertex slides along
+ * the bisector of its two edges so that both edges end up `d` further out.
+ * Meant for CCW outlines with no very sharp corners, such as board shapes.
+ */
+export function offsetPolygon(poly: Polygon, d: number): Polygon {
+  const n = poly.length;
+  if (d === 0 || n < 3) return poly;
+  const out: Polygon = [];
+  for (let i = 0; i < n; i++) {
+    const [px, py] = poly[(i + n - 1) % n];
+    const [x, y] = poly[i];
+    const [nx, ny] = poly[(i + 1) % n];
+    // Outward unit normals of the edge in and the edge out (CCW: outward is to the right of travel).
+    const l1 = Math.hypot(x - px, y - py) || 1;
+    const l2 = Math.hypot(nx - x, ny - y) || 1;
+    const ax = (y - py) / l1;
+    const ay = -(x - px) / l1;
+    const bx = (ny - y) / l2;
+    const by = -(nx - x) / l2;
+    const dot = Math.max(-0.9, ax * bx + ay * by);
+    const k = d / (1 + dot);
+    out.push([x + (ax + bx) * k, y + (ay + by) * k]);
+  }
+  return out;
+}

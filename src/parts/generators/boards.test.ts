@@ -91,8 +91,28 @@ describe('dev board mounts', () => {
     expect(extent(stops.stats, 0)).toBeCloseTo(48.3 + 2 * 0.3 + 2 * 2, 6);
     expect(extent(stops.stats, 1)).toBeCloseTo(25.4 + 2 * 0.3 + 2 * 2, 6);
     expect(extent(stops.stats, 2)).toBeCloseTo(5, 6);
-    // Eight legs of 2 × (8 + 2) less the four shared corners.
-    expect(stops.stats.volume).toBeCloseTo((8 * 2 * 10 - 4 * 2 * 2) * 5, 3);
+    // Eight legs of 2 × (8 + 2) less the four shared corners, plus the fill of the four 1 mm rounded corners.
+    const cornerFill = 4 * (1 - Math.PI / 4) * 1.3 * 1.3;
+    expect(stops.stats.volume).toBeCloseTo((8 * 2 * 10 - 4 * 2 * 2 + cornerFill) * 5, 0);
+  });
+
+  it('draws the Arduino notches and seats the corner stops in them', () => {
+    const blank = made(arduino, { board: 'uno', form: 'blank', blankGap: 0, blankThickness: 1.6 });
+    expect(blank.warnings).toEqual([]);
+    expect(extent(blank.stats, 0)).toBeCloseTo(68.58, 3);
+    expect(extent(blank.stats, 1)).toBeCloseTo(53.34, 3);
+    // The rectangle less the narrow strips, the two 45° jogs, the chamfer, three radii and four holes.
+    const notches = 2.54 * 2.54 + 2.54 * (53.34 - 40.386) + 2 * 0.5 * 2.54 * 2.54 + 0.5 * 1.524 * 1.524 + 3 * (1 - Math.PI / 4);
+    expect(blank.stats.volume).toBeCloseTo((68.58 * 53.34 - notches - 4 * disc(3.2)) * 1.6, 0);
+    const mega = made(arduino, { board: 'mega', form: 'blank' });
+    expect(extent(mega.stats, 0)).toBeCloseTo(101.6, 3);
+    expect(mega.stats.volume).toBeCloseTo((101.6 * 53.34 - notches - 6 * disc(3.2)) * 1.6, 0);
+    // Stops: the plain L volume plus the notch they fill at each right-hand corner.
+    const stops = made(arduino, { board: 'uno', form: 'corners', stopGap: 0.3, stopThickness: 2, stopLength: 8, stopHeight: 5 });
+    expect(extent(stops.stats, 0)).toBeCloseTo(68.58 + 2 * 0.3 + 2 * 2, 6);
+    const plain = (8 * 2 * 10 - 4 * 2 * 2) * 5;
+    expect(stops.stats.volume).toBeGreaterThan(plain + 2 * 2.54 * 2.54 * 5);
+    expect(stops.stats.volume).toBeLessThan(plain + 2 * (2.54 * 8 + 10) * 5);
   });
 
   it('allows for the antenna that reaches past the end of a DevKitC', () => {
@@ -108,6 +128,7 @@ describe('dev board mounts', () => {
     expect(stops.warnings.some((w) => w.includes('antenna end'))).toBe(true);
     expect(extent(stops.stats, 0)).toBeCloseTo(48.26 + 2 * 0.3 + 2 * 2, 6);
     const endLeg = (27.94 - 18) / 2 - 0.3 - 0.5;
-    expect(stops.stats.volume).toBeCloseTo((6 * 2 * 10 + 2 * 2 * (endLeg + 2) - 4 * 2 * 2) * 5, 3);
+    const cornerFill = 4 * (1 - Math.PI / 4) * 1.3 * 1.3;
+    expect(stops.stats.volume).toBeCloseTo((6 * 2 * 10 + 2 * 2 * (endLeg + 2) - 4 * 2 * 2 + cornerFill) * 5, 0);
   });
 });

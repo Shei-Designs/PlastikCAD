@@ -14,7 +14,7 @@
 //
 // Boards lie along X with the origin at their lower-left corner as the
 // drawing shows them; the app centres the part afterwards.
-import { arc, circle } from '../math2d';
+import { arc, circle, offsetPolygon } from '../math2d';
 import { cylinder, difference, extrude, translate, union } from '../types';
 import type { Polygon, Quality, Shape2D, Solid, Vec2 } from '../types';
 import { mm, num, str } from './types';
@@ -43,6 +43,8 @@ export interface Board {
   layout: string;
   /** A module that reaches past the +X end of the board, centred on its width: the antenna end of an ESP32 kit. */
   overhang?: { length: number; width: number };
+  /** The board's own outline, CCW from its lower-left corner, when it is not a rounded rectangle. */
+  outline?: (q: Quality) => Polygon;
   /** Shown as a warning: clones of this board differ. */
   caution?: string;
 }
@@ -84,18 +86,43 @@ const unoHoles: Vec2[] = [
   [66.04, 35.56],
 ];
 
+/**
+ * The Uno outline, which the Mega stretches: 53.34 wide, with the right-hand
+ * end 2.54 narrower above and below a band from 5.08 to 37.85 up, 45° jogs
+ * between, a 1.52 chamfer at the top-right corner and 1 mm radii on the other
+ * three. Read from Arduino's own Eagle board files.
+ */
+function arduinoOutline(length: number, q: Quality): Polygon {
+  const w = 53.34;
+  const step = 2.54;
+  const x1 = length - step;
+  const n = Math.max(2, Math.round(q.circle / 4));
+  return [
+    ...arc(1, 1, 1, Math.PI, 1.5 * Math.PI, n),
+    ...arc(x1 - 1, 1, 1, -Math.PI / 2, 0, n),
+    [x1, 2.54],
+    [length, 5.08],
+    [length, 37.846],
+    [x1, 40.386],
+    [x1, 51.816],
+    [x1 - 1.524, w],
+    ...arc(1, w - 1, 1, Math.PI / 2, Math.PI, n),
+  ];
+}
+
 export const ARDUINO: Board[] = [
-  { id: 'uno', label: 'Arduino Uno (R3 / R4)', length: 68.58, width: 53.34, corner: 1.6, holes: unoHoles, holeDiameter: 3.2, screw: 'M3', layout: 'USB and power jack on the left. The outline is drawn as a plain rectangle; the real board has two small notches on its right-hand edge.' },
+  { id: 'uno', label: 'Arduino Uno (R3 / R4)', length: 68.58, width: 53.34, corner: 1, holes: unoHoles, holeDiameter: 3.2, screw: 'M3', layout: 'USB and power jack on the left, the notched end on the right.', outline: (q) => arduinoOutline(68.58, q) },
   {
     id: 'mega',
     label: 'Arduino Mega 2560',
     length: 101.6,
     width: 53.34,
-    corner: 1.6,
+    corner: 1,
     holes: [...unoHoles, [90.17, 50.8], [96.52, 2.54]],
     holeDiameter: 3.2,
     screw: 'M3',
-    layout: 'USB and power jack on the left.',
+    layout: 'USB and power jack on the left, the notched end on the right.',
+    outline: (q) => arduinoOutline(101.6, q),
   },
   {
     id: 'nano',
@@ -189,7 +216,8 @@ const rect = (x0: number, y0: number, x1: number, y1: number): Polygon => [
 ];
 
 /** The board outline grown by `grow` all round. */
-const outlineOf = (b: Board, grow: number, q: Quality): Polygon => roundedRect(-grow, -grow, b.length + 2 * grow, b.width + 2 * grow, b.corner + grow, q);
+const outlineOf = (b: Board, grow: number, q: Quality): Polygon =>
+  b.outline ? offsetPolygon(b.outline(q), grow) : roundedRect(-grow, -grow, b.length + 2 * grow, b.width + 2 * grow, b.corner + grow, q);
 
 /** The module's reach past the +X end, grown by `grow`, as a rectangle overlapping the board's edge. */
 const overhangOf = (b: Board, grow: number): Polygon | null =>
@@ -376,7 +404,9 @@ function build(boards: Board[], p: Params, q: Quality): BuildResult {
     return { solid: slab(b, gap, t, gap === 0, q), outline, info, warnings };
   }
 
-  // Corner stops: an L outside each corner of the board grown by the gap.
+  // Corner stops: a block over each corner of the board's box, with the board itself, grown by the
+  // gap, carved out of it. On a plain board that leaves an L; on a notched or rounded corner the
+  // stop follows the notch, so it holds the board where the board actually is.
   const gap = num(p, 'stopGap');
   const height = num(p, 'stopHeight');
   const t = num(p, 'stopThickness');
@@ -390,16 +420,15 @@ function build(boards: Board[], p: Params, q: Quality): BuildResult {
   const x1 = b.length + gap;
   const y1 = b.width + gap;
   const stops: Polygon[] = [
-    rect(x0 - t, y0 - t, x0 + leg, y0),
-    rect(x0 - t, y0 - t, x0, y0 + leg),
+    rect(x0 - t, y0 - t, x0 + leg, y0 + leg),
     rect(x1 - leg, y0 - t, x1 + t, y0),
-    rect(x1, y0 - t, x1 + t, y0 + endLeg),
-    rect(x0 - t, y1, x0 + leg, y1 + t),
-    rect(x0 - t, y1 - leg, x0, y1 + t),
+    rect(x1 - leg, y0 - t, x1 + t, y0 + endLeg),
+    rect(x0 - t, y1 - leg, x0 + leg, y1 + t),
     rect(x1 - leg, y1, x1 + t, y1 + t),
-    rect(x1, y1 - endLeg, x1 + t, y1 + t),
+    rect(x1 - leg, y1 - endLeg, x1 + t, y1 + t),
   ];
-  const blocks = stops.map((s) => translate(extrude([s], height), [0, 0, baseT]));
+  const carved = difference(union(...stops.map((s) => extrude([s], height))), translate(slab(b, gap, height + 2, false, q), [0, 0, -1]));
+  const blocks = [translate(carved, [0, 0, baseT])];
   info.push({ label: 'Stops', value: `${t.toFixed(1)} mm thick, ${height.toFixed(1)} mm high, legs ${leg.toFixed(1)} mm` }, { label: 'Pocket', value: `${(b.length + 2 * gap).toFixed(2)} × ${(b.width + 2 * gap).toFixed(2)} mm` });
   return { solid: union(...plate(), ...blocks), outline, info, warnings };
 }
