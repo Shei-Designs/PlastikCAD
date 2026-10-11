@@ -1549,19 +1549,64 @@ kbd {
   padding: 0 20px;
 }
 
-/* The mating gear section: teeth and ratio side by side, the rest one figure per line. */
+/* The mating gear wizard: a panel at the top right of the viewport while the mate is previewed. */
+.mate-button {
+  margin: 2px 0 12px;
+}
+
+.mate-panel {
+  position: absolute;
+  z-index: 20;
+  top: 52px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 272px;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-raised);
+  box-shadow: var(--shadow);
+}
+
+.mate-panel .field {
+  margin: 0;
+}
+
+.mate-panel .field label {
+  color: var(--text);
+}
+
+.mate-panel .field.inline .number-box {
+  width: 96px;
+}
+
 .mate-pair {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
-.mate-pair .number-box {
-  width: 72px;
+/* Teeth and ratio stack their labels so the two boxes share the width evenly. */
+.mate-panel .mate-pair .field.inline {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
 }
 
-.mate .array-foot {
-  margin-top: 6px;
+.mate-panel .mate-pair .number-box {
+  width: auto;
+  min-width: 0;
+}
+
+.mate-panel .array-foot {
+  margin-top: 2px;
+}
+
+.mate-panel .array-foot .chip {
+  height: 30px;
+  padding: 0 14px;
 }
 
 .align-row > span {

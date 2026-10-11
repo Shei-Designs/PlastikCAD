@@ -60,6 +60,8 @@ export interface EditorState {
   viewing: string | null;
   /** New shape following the pointer until it is put down. */
   placing: SceneNode | null;
+  /** The gear a mate is being made for while the wizard is open; the previewed mate carries `id`. */
+  mating: { source: string; id: string } | null;
   /**
    * Align mode: anchor dots sit on `bounds`, the box of the anchor object or,
    * without one, of the whole selection. Frozen while a dot is being previewed.
@@ -99,6 +101,7 @@ let state: EditorState = {
   saved: null,
   viewing: null,
   placing: null,
+  mating: null,
   aligning: null,
   editing: null,
   highlight: null,
@@ -217,6 +220,7 @@ export function endGesture(cancel = false): void {
 }
 
 function restore(from: Step[], to: Step[]): void {
+  if (state.mating) cancelMate();
   const target = from.pop();
   if (!target || state.viewing) return;
   to.push(step());
@@ -472,44 +476,122 @@ export async function addPart(category: string): Promise<void> {
   }
 }
 
+// --- mating gears -------------------------------------------------------------
+
+/** A mate laid out next to its gear: standing on the same base, meshed, and measured (not yet in the scene). */
+async function placeMate(source: PartNode, request: MateRequest): Promise<{ node: PartNode; warnings: string[] }> {
+  const mate = mateOf(source, request);
+  const node = makePart(mate.part, mate.params);
+  const [box, sourceBox] = await Promise.all([partBox(node), partBox(source)]);
+  node.natural = boundsSize(box);
+  node.size = [...node.natural];
+  node.rot = [0, 0, mate.rotation];
+  // Both parts are placed by their box centers, which sit off their generators' origins (the gear's
+  // axis, the rack's corner); the mate is laid out between origins and then moved by its own box.
+  const spin = (deg: number, v: Vec3): [number, number] => {
+    const a = (deg * Math.PI) / 180;
+    return [v[0] * Math.cos(a) - v[1] * Math.sin(a), v[0] * Math.sin(a) + v[1] * Math.cos(a)];
+  };
+  const c1 = boundsCenter(sourceBox).map((c, i) => (c * source.size[i]) / source.natural[i]) as Vec3;
+  const c2 = boundsCenter(box);
+  const [ax, ay] = spin(source.rot[2], c1);
+  const axis = [source.pos[0] - ax, source.pos[1] - ay];
+  const [bx, by] = spin(mate.rotation, c2);
+  const base = source.pos[2] - source.size[2] / 2;
+  node.pos = tidyVec([axis[0] + mate.offset[0] + bx, axis[1] + mate.offset[1] + by, base + node.size[2] / 2]);
+  node.color = source.color;
+  return { node, warnings: mate.warnings };
+}
+
+/** The request waiting while a preview is being built, and a count that tells a stale build from the latest. */
+let mateNext: MateRequest | null = null;
+let mateBuilding = false;
+let mateBuilds = 0;
+
 /**
- * Add the gear that meshes with this one (or the ring or rack it runs in), standing on the same
- * base, at the working center distance on the side asked for, turned so that the teeth engage.
- * Nothing links the two afterwards: change the gear and a fresh mate is a click away.
+ * Open the mating gear wizard for this gear. The panel then shows the mate it asks for, live,
+ * with `previewMate`; `commitMate` keeps it and `cancelMate` drops it. Nothing links the two
+ * parts afterwards: change the gear and a fresh mate is a click away.
  */
-export async function addMate(id: string, request: MateRequest): Promise<void> {
-  const source = state.doc.scene.find((n) => n.id === id);
+export function startMate(sourceId: string): void {
+  const source = state.doc.scene.find((n) => n.id === sourceId);
   if (source?.type !== 'part' || state.viewing) return;
-  set({ busy: 'Making the mate…' });
+  cancelMate();
+  cancelArray();
+  if (state.aligning) stopAligning();
+  set({ mating: { source: sourceId, id: newId() }, selection: [sourceId], placing: null });
+}
+
+/** Show the mate as the panel now asks for it. Rapid requests fold together: only the latest is built. */
+export async function previewMate(request: MateRequest): Promise<void> {
+  if (mateBuilding) {
+    mateNext = request;
+    return;
+  }
+  mateBuilding = true;
   try {
-    const mate = mateOf(source, request);
-    const node = makePart(mate.part, mate.params);
-    const [box, sourceBox] = await Promise.all([partBox(node), partBox(source)]);
-    node.natural = boundsSize(box);
-    node.size = [...node.natural];
-    node.rot = [0, 0, mate.rotation];
-    // Both parts are placed by their box centers, which sit off their generators' origins (the gear's
-    // axis, the rack's corner); the mate is laid out between origins and then moved by its own box.
-    const spin = (deg: number, v: Vec3): [number, number] => {
-      const a = (deg * Math.PI) / 180;
-      return [v[0] * Math.cos(a) - v[1] * Math.sin(a), v[0] * Math.sin(a) + v[1] * Math.cos(a)];
-    };
-    const c1 = boundsCenter(sourceBox).map((c, i) => (c * source.size[i]) / source.natural[i]) as Vec3;
-    const c2 = boundsCenter(box);
-    const [ax, ay] = spin(source.rot[2], c1);
-    const axis = [source.pos[0] - ax, source.pos[1] - ay];
-    const [bx, by] = spin(mate.rotation, c2);
-    const base = source.pos[2] - source.size[2] / 2;
-    node.pos = tidyVec([axis[0] + mate.offset[0] + bx, axis[1] + mate.offset[1] + by, base + node.size[2] / 2]);
-    node.name = uniqueName(state.doc.scene, getGenerator(mate.part).name);
-    if (state.viewing) return;
-    commit([...state.doc.scene, node], { selection: [node.id] });
-    if (mate.warnings.length) notify(mate.warnings[0]);
+    await buildMatePreview(request);
+  } finally {
+    mateBuilding = false;
+    const next = mateNext;
+    mateNext = null;
+    if (next && state.mating) void previewMate(next);
+  }
+}
+
+async function buildMatePreview(request: MateRequest): Promise<void> {
+  const mating = state.mating;
+  if (!mating) return;
+  const source = state.doc.scene.find((n) => n.id === mating.source);
+  if (source?.type !== 'part') return cancelMate();
+  const build = ++mateBuilds;
+  try {
+    const { node, warnings } = await placeMate(source, request);
+    node.id = mating.id;
+    const others = state.doc.scene.filter((n) => n.id !== mating.id);
+    node.name = uniqueName(others, node.name);
+    await geometry.ready(node, state.doc.assets);
+    if (build !== mateBuilds || state.mating !== mating) return;
+    // The preview is no step of its own: the whole wizard becomes one on Accept.
+    set({ doc: { ...state.doc, scene: [...state.doc.scene.filter((n) => n.id !== mating.id), node] } });
+    if (warnings.length) notify(warnings[0]);
   } catch (e) {
     fail(e);
-  } finally {
-    set({ busy: null });
   }
+}
+
+/** Keep the previewed mate, selected, as one undo step. */
+export function commitMate(): void {
+  const mating = state.mating;
+  if (!mating) return;
+  mateNext = null;
+  mateBuilds++;
+  const node = state.doc.scene.find((n) => n.id === mating.id);
+  const before = state.doc.scene.filter((n) => n.id !== mating.id);
+  scrubMate(mating.id);
+  if (node) {
+    past.push({ scene: before, selection: state.selection, head: state.doc.head });
+    if (past.length > UNDO_LIMIT) past.shift();
+    future = [];
+    lastMerge = null;
+  }
+  set({ mating: null, selection: node ? [node.id] : state.selection });
+}
+
+export function cancelMate(): void {
+  const mating = state.mating;
+  if (!mating) return;
+  mateNext = null;
+  mateBuilds++;
+  scrubMate(mating.id);
+  set({ mating: null, doc: { ...state.doc, scene: state.doc.scene.filter((n) => n.id !== mating.id) } });
+}
+
+/** Steps recorded while the wizard was open (edits to the gear itself) hold the preview too; it does not belong in them. */
+function scrubMate(id: string): void {
+  const clean = (s: Step): Step => (s.scene.some((n) => n.id === id) ? { ...s, scene: s.scene.filter((n) => n.id !== id), selection: s.selection.filter((x) => x !== id) } : s);
+  past = past.map(clean);
+  future = future.map(clean);
 }
 
 let partEdits = 0;
@@ -993,6 +1075,7 @@ function adopt(doc: Doc, filePath: string | null, dirty = false): void {
     selection: [],
     viewing: null,
     placing: null,
+    mating: null,
     editing: null,
     highlight: null,
     epoch: state.epoch + 1,
@@ -1213,6 +1296,7 @@ export function saveVersion(label: string): void {
 
 export function viewVersion(id: string | null): void {
   if (id && !state.doc.versions.some((v) => v.id === id)) return;
+  cancelMate();
   set({ viewing: id, selection: [], placing: null });
 }
 

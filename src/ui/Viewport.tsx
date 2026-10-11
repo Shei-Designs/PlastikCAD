@@ -52,6 +52,7 @@ import {
 } from './icons';
 import { ArrayPanel } from './ArrayPanel';
 import { Popover } from './Popover';
+import { MatePanel } from './MatePanel';
 import { TransformBox } from './TransformBox';
 
 const VIEWS: { id: ViewPreset; label: string }[] = [
@@ -207,7 +208,7 @@ export function Viewport() {
   const viewer = useRef<Viewer | null>(null);
 
   const state = useEditor((s) => s);
-  const { prefs, placing, selection, viewing, notice, busy, aligning, editing, highlight } = state;
+  const { prefs, placing, selection, viewing, notice, busy, aligning, editing, highlight, mating } = state;
   // Another selection, or an edit from elsewhere, and the typing boxes no longer belong to anything.
   useEffect(() => {
     viewer.current?.dismissPrompt();
@@ -374,6 +375,8 @@ export function Viewport() {
           {aligning.anchor ? 'Lining up with the chosen object' : 'Click a dot to line the objects up'} · click an object to make it the anchor · Esc to finish
         </div>
       )}
+
+      {mating && <MatePanel key={mating.id} />}
 
       <div className="corner">
         <div className="overlay">

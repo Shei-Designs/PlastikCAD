@@ -4,6 +4,7 @@ import * as platform from './platform';
 import {
   alignSelected,
   alignSelectedOn,
+  cancelMate,
   cancelPlacing,
   copySelected,
   deleteSelected,
@@ -62,7 +63,8 @@ function onKeyDown(e: KeyboardEvent): void {
   if (key === 'Escape') {
     if (viewerRef.current?.cancelGesture()) return;
     const s = getState();
-    if (s.aligning) stopAligning();
+    if (s.mating) cancelMate();
+    else if (s.aligning) stopAligning();
     else if (s.placing) cancelPlacing();
     else if (s.viewing) viewVersion(null);
     else select([]);
