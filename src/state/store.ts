@@ -30,8 +30,8 @@ import {
   uniqueName,
   usedAssets,
 } from '../model/ops';
-import type { AlignMode, GridArray, Layer, RingArray } from '../model/ops';
-import type { Asset, Doc, GroupNode, ImportNode, PartNode, PartParamValue, Scene, SceneNode, ShapeKind, TextNode, Vec3, Version } from '../model/types';
+import type { AlignMode, ArraySpec, GridArray, Layer, RingArray } from '../model/ops';
+import type { Asset, Doc, GroupNode, ImportNode, PartNode, PartParamValue, Scene, SceneNode, ShapeKind, TextNode, Vec2, Vec3, Version } from '../model/types';
 import { GENERATORS, getGenerator } from '../parts/generators';
 import { sanitizeParams } from '../parts/generators/types';
 import * as platform from '../platform';
@@ -667,8 +667,12 @@ export function commitAlign(axis: 0 | 1 | 2, mode: AlignMode): void {
 
 // --- arrays -------------------------------------------------------------------
 
-/** A grid as the panel asks for it: the box to fit is found here, from the selection. */
-export type ArrayRequest = RingArray | (Omit<GridArray, 'fit'> & { fit?: { inset: number } });
+/**
+ * A pattern as the panel asks for it. The frame (the largest of two or more
+ * selected objects) is found here: a grid fits inside it, a ring goes round
+ * its centre, and either way it stays put.
+ */
+export type ArrayRequest = (Omit<RingArray, 'centre'> & { centre: Vec2 | 'frame' }) | (Omit<GridArray, 'fit'> & { fit?: { inset: number } });
 
 /** Patterns stop here: every place is another object for the kernel to merge. */
 export const ARRAY_LIMIT = 400;
@@ -697,11 +701,17 @@ export function previewArray(request: ArrayRequest): void {
   const base = gesture ?? step();
   const ids = new Set(base.selection);
   const picked = base.scene.filter((n) => ids.has(n.id));
-  const frame = request.kind === 'grid' && request.fit ? arrayFrame(picked) : null;
+  const framed = request.kind === 'grid' ? Boolean(request.fit) : request.centre === 'frame';
+  const frame = framed ? arrayFrame(picked) : null;
   const seeds = picked.filter((n) => !n.locked && n !== frame);
   if (seeds.length === 0) return;
   if (arrayPlaces(request) > ARRAY_LIMIT) return notify(`A pattern can have up to ${ARRAY_LIMIT} places.`);
-  const spec = request.kind === 'grid' && request.fit ? { ...request, fit: { inset: request.fit.inset, bounds: geometry.bounds(frame!) } } : (request as GridArray | RingArray);
+  let spec: ArraySpec;
+  if (request.kind === 'grid') spec = request.fit && frame ? { ...request, fit: { inset: request.fit.inset, bounds: geometry.bounds(frame) } } : { ...request, fit: undefined };
+  else if (request.centre === 'frame') {
+    const c = frame ? boundsCenter(geometry.bounds(frame)) : boundsCenter(unionBounds(seeds.map((n) => geometry.bounds(n))));
+    spec = { ...request, centre: [c[0], c[1]] };
+  } else spec = { ...request, centre: request.centre };
   const { originals, copies } = arrayNodes(seeds, (n) => geometry.bounds(n), spec);
   const moved = new Map(originals.map((n) => [n.id, n]));
   let scene = base.scene.map((n) => moved.get(n.id) ?? n);

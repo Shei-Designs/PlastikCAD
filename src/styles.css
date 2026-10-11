@@ -124,7 +124,8 @@ ul {
 
 .app {
   display: grid;
-  grid-template-columns: 236px minmax(0, 1fr) 316px;
+  /* The side panels give up a little width before the toolbar over the stage would run out of room. */
+  grid-template-columns: minmax(212px, 236px) minmax(812px, 1fr) minmax(292px, 316px);
   height: 100%;
 }
 
@@ -269,13 +270,14 @@ ul {
   left: 12px;
   right: 12px;
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   pointer-events: none;
 }
 
+/* One firm row: nothing wraps or squashes; the window's minimum width keeps it all in view. */
 .view-toolbar > * {
+  flex: none;
   pointer-events: auto;
 }
 
@@ -352,12 +354,18 @@ ul {
 
 .chip-group .chip.on {
   position: relative;
+  z-index: 1;
+}
+
+/* An open popover's chip sits over the neighbour that shares its edge, like any lit chip. */
+.chip-group > .popover.open {
+  z-index: 20;
 }
 
 .actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex: none;
+  gap: 6px;
   margin-left: auto;
 }
 
@@ -471,6 +479,10 @@ ul {
 
 .segmented.small button {
   height: 22px;
+}
+
+.segmented.small button.on {
+  background: var(--control);
 }
 
 /* ---------- inspector ---------- */
@@ -1353,12 +1365,17 @@ kbd {
   font-size: 11px;
   letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: var(--faint);
+  color: var(--muted);
 }
 
-.array-row > span {
-  color: var(--faint);
+/* The axis letter at the start of a row; the number boxes after it are spans too. */
+.array-row > span:first-child {
+  color: var(--muted);
   font-weight: 600;
+}
+
+.array-panel .field label {
+  color: var(--text);
 }
 
 .array-panel .number-box {

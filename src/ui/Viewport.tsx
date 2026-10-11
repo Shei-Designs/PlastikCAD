@@ -88,7 +88,7 @@ function Actions() {
         <button type="button" className="chip icon" title="Duplicate in place (Ctrl+D)" aria-label="Duplicate" disabled={none} onClick={duplicateSelected}>
           <DuplicateIcon />
         </button>
-        <Popover className="chip icon" title="Array: copies in a grid or round a ring" button={<ArrayIcon />} disabled={none}>
+        <Popover className="chip icon" title="Array: copies in a grid or around a ring" button={<ArrayIcon />} disabled={none}>
           {(close) => <ArrayPanel close={close} />}
         </Popover>
         <button type="button" className="chip icon" title="Delete (Del)" aria-label="Delete" disabled={none} onClick={deleteSelected}>

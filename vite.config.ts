@@ -28,5 +28,15 @@ export default defineConfig(() => ({
       // 3. tell Vite to ignore watching `src-tauri`
       ignored: ["**/src-tauri/**"],
     },
+    // Vite turns browser-console forwarding on by itself when it sees an AI agent in the
+    // environment, and that plugin is part of the dependency-cache hash: a dev server
+    // started by an agent and one started from a terminal would otherwise keep
+    // invalidating each other's cache. Pin it so every launch shares one cache.
+    forwardConsole: false,
+  },
+  optimizeDeps: {
+    // The geometry worker is the only importer, so Vite would otherwise find this
+    // dependency after the first page load, re-optimise and reload the page mid-start.
+    include: ["manifold-3d"],
   },
 }));

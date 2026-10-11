@@ -37,7 +37,7 @@ export function Popover({ button, title, className = 'chip', disabled, align = '
   }, [open]);
 
   return (
-    <div className="popover" ref={root}>
+    <div className={open ? 'popover open' : 'popover'} ref={root}>
       <button type="button" className={open ? `${className} on` : className} title={title} aria-label={title} aria-expanded={open} disabled={disabled} onClick={() => setOpen((o) => !o)}>
         {button}
       </button>

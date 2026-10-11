@@ -42,10 +42,12 @@ It is the Tinkercad way of modelling, without the cloud and without the clutter:
   connector cut-out with its screw holes becomes a single template to drop
   into any panel.
 - **Array** – copies of the selection in a row, a grid or a stack at a set
-  spacing, or round a ring. Select a hole together with the plate it goes in and
+  spacing, or around a ring. Select a hole together with the plate it goes in and
   *Fit* spreads the copies over the plate, a set distance in from its edges:
-  four corner holes in one go. The pattern shows live while the numbers are
-  typed.
+  four corner holes in one go. For a ring, put the hole where the middle of
+  the bolt circle goes and type its radius or diameter; or leave the hole where
+  it is and ring it around the middle of the plate, or around any point. The
+  pattern shows live while the numbers are typed.
 - **Structure** – a grouped object shows its history as a tree in the panel:
   primitives on the left, each grouping a node further right, branches merging
   where things were grouped together. Hover a node to see that part on the

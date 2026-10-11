@@ -137,6 +137,11 @@ export interface RingArray {
   /** Degrees the pattern spreads over: 360 is a full ring, less an arc with a copy at either end. */
   sweep: number;
   centre: Vec2;
+  /**
+   * Given, the originals mark the centre and are first moved out from it along
+   * +X to this radius; otherwise they already sit on the ring where they are.
+   */
+  radius?: number;
   /** Turn each copy with its place on the ring, the way the bolts of a flange face the middle. */
   turn: boolean;
 }
@@ -181,14 +186,20 @@ export function arrayNodes<T extends SceneNode>(nodes: T[], boundsOf: (n: T) => 
   }
   const step = spec.count < 2 ? 0 : spec.sweep >= 360 ? 360 / spec.count : spec.sweep / (spec.count - 1);
   const pivot: Vec3 = [spec.centre[0], spec.centre[1], 0];
+  let originals = nodes;
+  if (spec.radius !== undefined) {
+    const c = boundsCenter(unionBounds(nodes.map(boundsOf)));
+    const shift: Vec3 = [spec.centre[0] + spec.radius - c[0], spec.centre[1] - c[1], 0];
+    if (shift.some(Boolean)) originals = nodes.map((n) => ({ ...n, pos: tidyVec(add(n.pos, shift)) }));
+  }
   for (let i = 1; i < spec.count; i++) {
     const degrees = i * step;
     const placed = spec.turn
-      ? rotateNodes(nodes, 2, degrees, pivot)
-      : nodes.map((node) => ({ ...node, pos: add(apply(axisRotation(2, degrees), sub(node.pos, pivot)), pivot) }));
+      ? rotateNodes(originals, 2, degrees, pivot)
+      : originals.map((node) => ({ ...node, pos: add(apply(axisRotation(2, degrees), sub(node.pos, pivot)), pivot) }));
     for (const node of placed) copies.push(cloneNode({ ...node, pos: tidyVec(node.pos) }));
   }
-  return { originals: nodes, copies };
+  return { originals, copies };
 }
 
 /** Combine nodes into a group whose result has the given bounds (measured by the geometry kernel). */

@@ -125,6 +125,24 @@ describe('arrays', () => {
     const off = arrayNodes([seed], boxBoundsOf, { kind: 'ring', count: 2, sweep: 360, centre: [30, 10], turn: false });
     close(off.copies[0].pos, [30, 20, 5]);
   });
+
+  it('rings round the selection itself, moving it out to the radius first', () => {
+    const seed = shape('cylinder', { pos: [40, 25, 5], size: [3, 3, 10], hole: true });
+    const { originals, copies } = arrayNodes([seed], boxBoundsOf, { kind: 'ring', count: 4, sweep: 360, centre: [40, 25], radius: 15, turn: false });
+    expect(originals[0].id).toBe(seed.id);
+    expect(originals[0].pos).toEqual([55, 25, 5]);
+    close(copies[0].pos, [40, 40, 5]);
+    close(copies[1].pos, [25, 25, 5]);
+    close(copies[2].pos, [40, 10, 5]);
+    // Two seeds keep their offset from each other.
+    const pair = arrayNodes([seed, shape('box', { pos: [40, 29, 5], size: [3, 3, 10] })], boxBoundsOf, { kind: 'ring', count: 2, sweep: 360, centre: [40, 25], radius: 15, turn: true });
+    expect(pair.originals.map((n) => n.pos)).toEqual([
+      [55, 23, 5],
+      [55, 27, 5],
+    ]);
+    close(pair.copies[0].pos, [25, 27, 5]);
+    close(pair.copies[1].pos, [25, 23, 5]);
+  });
 });
 
 describe('groups', () => {
