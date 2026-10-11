@@ -308,15 +308,26 @@ function groupSolid(k: ManifoldToplevel, node: GroupNode, keep: Keep): Manifold 
   return result;
 }
 
-/** A parametric part, moved from standing on the plate to being centered on its box like every other node. */
-function partSolid(k: ManifoldToplevel, node: PartNode, keep: Keep): Manifold {
+/** A parametric part as its generator makes it: standing on the plate, its axis or corner at the origin. */
+function partAsBuilt(k: ManifoldToplevel, node: PartNode, keep: Keep): Manifold {
   // A design saved with an older set of parameters gets the defaults for whatever it lacks.
   const def = getGenerator(node.part);
   const built = def.build(sanitizeParams(def, node.params), refining ? QUALITY.fine : QUALITY.normal);
   const solid = checked(buildSolid(k, built.solid, keep));
   if (solid.isEmpty()) throw new Error(`"${node.name}" came out empty with these settings.`);
+  return solid;
+}
+
+/** A parametric part, moved from standing on the plate to being centered on its box like every other node. */
+function partSolid(k: ManifoldToplevel, node: PartNode, keep: Keep): Manifold {
+  const solid = partAsBuilt(k, node, keep);
   const { min, max } = solid.boundingBox();
   return keep(solid.translate([-(min[0] + max[0]) / 2, -(min[1] + max[1]) / 2, -(min[2] + max[2]) / 2]));
+}
+
+/** A part's box in its generator's frame, which says where the generator's origin sits in the box. */
+export function partBox(node: PartNode): Bounds | null {
+  return operation((k) => scoped((keep) => toBounds(partAsBuilt(k, node, keep).boundingBox())));
 }
 
 function outlineSolid(k: ManifoldToplevel, node: SceneNode, asset: OutlineAsset): Manifold {

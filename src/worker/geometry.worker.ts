@@ -1,6 +1,6 @@
 // Runs all solid modeling off the UI thread so the viewport stays responsive.
 import wasmUrl from 'manifold-3d/manifold.wasm?url';
-import { build, exportNodes, initKernel, measure, setAssets } from '../geometry/kernel';
+import { build, exportNodes, initKernel, measure, partBox, setAssets } from '../geometry/kernel';
 import type { WorkerRequest, WorkerResponse } from './protocol';
 
 const ctx = self as unknown as {
@@ -25,6 +25,9 @@ function handle(req: WorkerRequest): void {
     }
     case 'measure':
       ctx.postMessage({ type: 'measured', id: req.id, bounds: measure(req.nodes) });
+      break;
+    case 'partBox':
+      ctx.postMessage({ type: 'partBoxed', id: req.id, bounds: partBox(req.node) });
       break;
     case 'export': {
       const result = exportNodes(req.nodes, req.outline, req.fine);

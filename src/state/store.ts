@@ -34,6 +34,8 @@ import type { AlignMode, ArraySpec, GridArray, Layer, RingArray } from '../model
 import type { Asset, Doc, GroupNode, ImportNode, PartNode, PartParamValue, Scene, SceneNode, ShapeKind, TextNode, Vec2, Vec3, Version } from '../model/types';
 import { GENERATORS, getGenerator } from '../parts/generators';
 import { sanitizeParams } from '../parts/generators/types';
+import { mateOf } from '../parts/mates';
+import type { MateRequest } from '../parts/mates';
 import * as platform from '../platform';
 import type { PickedFile } from '../platform';
 import { DEFAULT_FONT, loadFont, outlineOf } from '../text/fonts';
@@ -411,15 +413,15 @@ function makePart(generatorId: string, params?: Record<string, PartParamValue>):
   };
 }
 
-/** The part's box as its generator makes it, from the geometry kernel. */
-async function measurePart(node: PartNode): Promise<Vec3> {
-  const probe: PartNode = { ...node, natural: [1, 1, 1], size: [1, 1, 1], pos: [0, 0, 0], rot: [0, 0, 0] };
-  delete probe.flip;
-  const worker = await geometry.prepare([probe], state.doc.assets);
-  const bounds = await worker.measure([probe]);
+/** The part's box as its generator makes it, in the generator's own frame, from the geometry kernel. */
+async function partBox(node: PartNode): Promise<Bounds> {
+  const worker = await geometry.prepare([], state.doc.assets);
+  const bounds = await worker.partBox(node);
   if (!bounds) throw new Error(`"${node.name}" came out empty with these settings.`);
-  return [bounds.max[0] - bounds.min[0], bounds.max[1] - bounds.min[1], bounds.max[2] - bounds.min[2]];
+  return bounds;
 }
+
+const measurePart = async (node: PartNode): Promise<Vec3> => boundsSize(await partBox(node));
 
 /** Give a part its measured box, keeping whatever scale it had and where it stands. */
 async function sizePart(node: PartNode): Promise<PartNode> {
@@ -463,6 +465,46 @@ export async function addPart(category: string): Promise<void> {
     node.name = uniqueName(state.doc.scene, node.name);
     state = { ...state, placing: null };
     commit([...state.doc.scene, node], { selection: [node.id] });
+  } catch (e) {
+    fail(e);
+  } finally {
+    set({ busy: null });
+  }
+}
+
+/**
+ * Add the gear that meshes with this one (or the ring or rack it runs in), standing on the same
+ * base, at the working center distance on the side asked for, turned so that the teeth engage.
+ * Nothing links the two afterwards: change the gear and a fresh mate is a click away.
+ */
+export async function addMate(id: string, request: MateRequest): Promise<void> {
+  const source = state.doc.scene.find((n) => n.id === id);
+  if (source?.type !== 'part' || state.viewing) return;
+  set({ busy: 'Making the mate…' });
+  try {
+    const mate = mateOf(source, request);
+    const node = makePart(mate.part, mate.params);
+    const [box, sourceBox] = await Promise.all([partBox(node), partBox(source)]);
+    node.natural = boundsSize(box);
+    node.size = [...node.natural];
+    node.rot = [0, 0, mate.rotation];
+    // Both parts are placed by their box centers, which sit off their generators' origins (the gear's
+    // axis, the rack's corner); the mate is laid out between origins and then moved by its own box.
+    const spin = (deg: number, v: Vec3): [number, number] => {
+      const a = (deg * Math.PI) / 180;
+      return [v[0] * Math.cos(a) - v[1] * Math.sin(a), v[0] * Math.sin(a) + v[1] * Math.cos(a)];
+    };
+    const c1 = boundsCenter(sourceBox).map((c, i) => (c * source.size[i]) / source.natural[i]) as Vec3;
+    const c2 = boundsCenter(box);
+    const [ax, ay] = spin(source.rot[2], c1);
+    const axis = [source.pos[0] - ax, source.pos[1] - ay];
+    const [bx, by] = spin(mate.rotation, c2);
+    const base = source.pos[2] - source.size[2] / 2;
+    node.pos = tidyVec([axis[0] + mate.offset[0] + bx, axis[1] + mate.offset[1] + by, base + node.size[2] / 2]);
+    node.name = uniqueName(state.doc.scene, getGenerator(mate.part).name);
+    if (state.viewing) return;
+    commit([...state.doc.scene, node], { selection: [node.id] });
+    if (mate.warnings.length) notify(mate.warnings[0]);
   } catch (e) {
     fail(e);
   } finally {
@@ -515,6 +557,8 @@ async function applyPartChange(id: string, change: PartChange): Promise<void> {
   const edit = ++partEdits;
   try {
     const sized = await sizePart({ ...node, part: def.id, params, name });
+    // The new shape is built before the node changes, so the old one is never shown at the new size.
+    await geometry.ready(sized, state.doc.assets);
     // A later edit has overtaken this one, or the part is gone.
     if (edit !== partEdits || !state.doc.scene.some((n) => n.id === id)) return;
     updateNode(id, sized, `part:${id}`);

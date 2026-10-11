@@ -1549,6 +1549,21 @@ kbd {
   padding: 0 20px;
 }
 
+/* The mating gear section: teeth and ratio side by side, the rest one figure per line. */
+.mate-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.mate-pair .number-box {
+  width: 72px;
+}
+
+.mate .array-foot {
+  margin-top: 6px;
+}
+
 .align-row > span {
   width: 10px;
   color: var(--faint);

@@ -92,6 +92,34 @@ class GeometryStore {
   }
 
   /**
+   * Builds a node's geometry ahead of its appearance in the scene, and resolves
+   * once it is there (or has failed), so that a change can be shown the moment
+   * it is applied rather than through a frame of the old shape at the new size.
+   */
+  ready(node: SceneNode, assets: Record<string, Asset>): Promise<void> {
+    const key = geomKey(node);
+    if (!this.entries.has(key)) {
+      if (!this.sendLettering(node)) return Promise.resolve();
+      this.worker().syncAssets(assets);
+      this.entries.set(key, { state: 'pending' });
+      this.start(node.id, key, node);
+    }
+    if (this.entries.get(key)?.state !== 'pending') return Promise.resolve();
+    return new Promise((resolve) => {
+      const off = this.subscribe(() => {
+        const entry = this.entries.get(key);
+        if (entry && entry.state !== 'pending') {
+          off();
+          resolve();
+        } else if (!entry) {
+          off();
+          resolve();
+        }
+      });
+    });
+  }
+
+  /**
    * The worker, with everything it needs to work on these nodes: imported
    * data, and the outlines of any lettering (once its fonts have loaded).
    */

@@ -1,6 +1,6 @@
 import type { MeshData, RenderMesh } from '../geometry/mesh';
 import type { Bounds } from '../model/math';
-import type { Asset, Polygon, SceneNode } from '../model/types';
+import type { Asset, PartNode, Polygon, SceneNode } from '../model/types';
 
 export type WorkerRequest =
   /** Imported data that later requests may refer to. Sent before any node that uses it. */
@@ -9,6 +9,8 @@ export type WorkerRequest =
   | { type: 'build'; id: number; key: string; node: SceneNode }
   /** Bounds of what the nodes would produce as a group (solids merged, holes cut), in the nodes' own coordinates. */
   | { type: 'measure'; id: number; nodes: SceneNode[] }
+  /** Bounds of a part as its generator makes it, before it is centered: where its origin sits in its box. */
+  | { type: 'partBox'; id: number; node: PartNode }
   /** Merge the nodes (holes are ignored at the top level) into one mesh for export; `fine` rebuilds curves with more facets. */
   | { type: 'export'; id: number; nodes: SceneNode[]; outline: boolean; fine: boolean };
 
@@ -36,5 +38,6 @@ export interface ExportResult {
 export type WorkerResponse =
   | { type: 'built'; id: number; result: BuildResult }
   | { type: 'measured'; id: number; bounds: Bounds | null }
+  | { type: 'partBoxed'; id: number; bounds: Bounds | null }
   | { type: 'exported'; id: number; result: ExportResult }
   | { type: 'error'; id: number; message: string };

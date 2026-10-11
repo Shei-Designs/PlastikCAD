@@ -1,5 +1,5 @@
 import { addHubAndBore, boreGroup, boreRadius, boreShape, handParam, hubGroup, isLeftHanded } from '../features';
-import { gearOutline, inv, minShiftWithoutUndercut, ringOutline, standardTooth, toothProfile } from '../involute';
+import { gearOutline, minShiftWithoutUndercut, ringOutline, standardTooth, toothProfile } from '../involute';
 import { arc, arcSegments, circle, deg, toDeg, TAU } from '../math2d';
 import { shearedPrism } from '../meshUtil';
 import { extrude, intersection, mirror, translate, union } from '../types';
@@ -94,13 +94,6 @@ const toothFormGroup = (opts: { shift?: boolean } = {}): ParamGroup => ({
   ],
 });
 
-/** Inverse involute function by Newton iteration. */
-function invInverse(value: number): number {
-  let a = Math.cbrt(3 * value);
-  for (let i = 0; i < 8; i++) a -= (inv(a) - value) / Math.tan(a) ** 2;
-  return a;
-}
-
 /** Twist slices so that helical flanks stay smooth without wasting triangles. */
 const twistDivisions = (twistDeg: number, q: Quality) => Math.max(2, Math.ceil(Math.abs(twistDeg) / (360 / q.circle)));
 
@@ -114,26 +107,19 @@ function involuteGear(kind: GearKind): GeneratorDef {
       type: 'number',
       key: 'helixAngle',
       label: 'Helix angle',
-      help: 'Angle of the teeth to the axis. Meshing gears need the same angle' + (kind === 'helical' ? ' and opposite hands.' : '.'),
+      help: 'Angle of the teeth to the axis. Meshing gears need the same angle and opposite hands.',
       default: kind === 'helical' ? 20 : 30,
       min: 5,
       max: 45,
       step: 1,
       unit: '°',
     });
+    main.push(
+      kind === 'helical'
+        ? handParam
+        : { ...handParam, help: 'Which way the lower half of the teeth winds. A herringbone gear and its mate have opposite hands.' },
+    );
   }
-  if (kind === 'helical') main.push(handParam);
-  main.push({
-    type: 'number',
-    key: 'mateTeeth',
-    label: 'Mating gear teeth',
-    help: 'Only used to work out the center distance shown under Dimensions.',
-    default: 40,
-    min: 5,
-    max: 300,
-    step: 1,
-    integer: true,
-  });
 
   const names: Record<GearKind, [string, string]> = {
     spur: ['Spur gear', 'Straight-toothed involute gear.'],
@@ -176,7 +162,7 @@ function involuteGear(kind: GearKind): GeneratorDef {
       if (!helical) {
         body = extrude([outline], b);
       } else {
-        const sign = kind === 'helical' && isLeftHanded(p) ? -1 : 1;
+        const sign = isLeftHanded(p) ? -1 : 1;
         const length = kind === 'herringbone' ? b / 2 : b;
         const twist = sign * toDeg((length * Math.tan(deg(helix))) / r);
         const half = extrude([outline], length, { twist, divisions: twistDivisions(twist, q) });
@@ -195,21 +181,12 @@ function involuteGear(kind: GearKind): GeneratorDef {
       const { solid, height } = addHubAndBore(body, 0, b, p, q, warnings);
       const bore = boreShape(p, q);
 
-      // Working center distance with a standard (unshifted) mate.
-      const z2 = Math.round(num(p, 'mateTeeth'));
-      const mt = spec.module;
-      const nominal = (mt * (z + z2)) / 2;
-      const invW = inv(spec.pressureAngle) + (2 * x * Math.tan(deg(num(p, 'pressureAngle')))) / (z + z2);
-      const center = Math.abs(x) < 1e-9 ? nominal : (nominal * Math.cos(spec.pressureAngle)) / Math.cos(invInverse(invW));
-
       const info: InfoItem[] = [
         { label: 'Pitch diameter', value: mm(2 * r) },
         { label: 'Outside diameter', value: mm(2 * profile.outerRadius) },
         { label: 'Root diameter', value: mm(2 * profile.rootRadius) },
-        { label: `Center distance (${z2}T mate)`, value: mm(center, 3) },
-        { label: 'Ratio', value: `1 : ${(z2 / z).toFixed(3).replace(/\.?0+$/, '')}` },
       ];
-      if (helical) info.push({ label: 'Transverse module', value: mm(mt, 3) });
+      if (helical) info.push({ label: 'Transverse module', value: mm(spec.module, 3) });
       info.push({ label: 'Total height', value: mm(height) });
 
       return { solid, outline: bore ? [outline, ...bore] : [outline], info, warnings };

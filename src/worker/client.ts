@@ -1,5 +1,5 @@
 import type { Bounds } from '../model/math';
-import type { Asset, SceneNode } from '../model/types';
+import type { Asset, PartNode, SceneNode } from '../model/types';
 import type { BuildResult, ExportResult, WorkerRequest, WorkerResponse } from './protocol';
 
 interface Waiting {
@@ -47,6 +47,11 @@ export class GeometryClient {
     return this.send({ type: 'measure', nodes });
   }
 
+  /** A part's box in its generator's own frame (built geometry is otherwise centered). */
+  partBox(node: PartNode): Promise<Bounds | null> {
+    return this.send({ type: 'partBox', node });
+  }
+
   export(nodes: SceneNode[], outline: boolean, fine: boolean): Promise<ExportResult> {
     return this.send({ type: 'export', nodes, outline, fine });
   }
@@ -72,7 +77,7 @@ export class GeometryClient {
     this.waiting.delete(msg.id);
     if (msg.type === 'error') w.reject(new Error(msg.message));
     else if (msg.type === 'built') w.resolve(msg.result as never);
-    else if (msg.type === 'measured') w.resolve(msg.bounds as never);
+    else if (msg.type === 'measured' || msg.type === 'partBoxed') w.resolve(msg.bounds as never);
     else w.resolve(msg.result as never);
   }
 }
