@@ -472,8 +472,38 @@ export async function addPart(category: string): Promise<void> {
 
 let partEdits = 0;
 
-/** Change a part's generator or parameters. The part keeps its scale and stays on its base. */
-export async function editPart(id: string, change: { part?: string; params?: Record<string, PartParamValue> }): Promise<void> {
+type PartChange = { part?: string; params?: Record<string, PartParamValue> };
+/** Parts being rebuilt right now, and for each the change that arrived meanwhile, folded into one. */
+const partBusy = new Set<string>();
+const partNext = new Map<string, PartChange>();
+
+/**
+ * Change a part's generator or parameters. The part keeps its scale and stays on its base.
+ * A slider fires many changes in a row and each rebuild takes a moment, so while one rebuild
+ * is under way the changes that follow are folded together and only the latest is built after
+ * it: the worker never queues up a drag's worth of stale shapes.
+ */
+export async function editPart(id: string, change: PartChange): Promise<void> {
+  if (partBusy.has(id)) {
+    const held = partNext.get(id);
+    // A new kind resets the parameters, as it does when applied straight away.
+    partNext.set(id, change.part && change.part !== held?.part ? { ...change } : { part: held?.part ?? change.part, params: { ...held?.params, ...change.params } });
+    return;
+  }
+  partBusy.add(id);
+  try {
+    await applyPartChange(id, change);
+  } finally {
+    partBusy.delete(id);
+    const next = partNext.get(id);
+    if (next) {
+      partNext.delete(id);
+      void editPart(id, next);
+    }
+  }
+}
+
+async function applyPartChange(id: string, change: PartChange): Promise<void> {
   const node = state.doc.scene.find((n) => n.id === id);
   if (node?.type !== 'part' || node.locked || state.viewing) return;
   const def = getGenerator(change.part ?? node.part);

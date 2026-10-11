@@ -30,6 +30,9 @@ class GeometryStore {
   private tight = new WeakMap<SceneNode, { result: BuildResult; bounds: Bounds }>();
   private wanted: { nodes: Scene; assets: Record<string, Asset> } | null = null;
   private fetching = new Set<string>();
+  /** Nodes with a build under way, by id, and the key of it; a newer key for the same node waits its turn. */
+  private inFlight = new Map<string, string>();
+  private deferred = new Map<string, string>();
 
   /** The worker is started on first use. */
   worker(): GeometryClient {
@@ -69,12 +72,15 @@ class GeometryStore {
         asked = true;
       }
       this.entries.set(key, { state: 'pending' });
-      this.worker()
-        .build(key, node)
-        .then(
-          (result) => this.settle(key, { state: 'ready', result }),
-          (e: Error) => this.settle(key, { state: 'error', message: e.message }),
-        );
+      // While this node is still being built at an older key (a slider mid-drag, lettering being typed),
+      // the new key waits, and a newer one again takes its place: the worker never queues stale shapes.
+      if (this.inFlight.has(node.id)) {
+        const stale = this.deferred.get(node.id);
+        if (stale && stale !== key && this.entries.get(stale)?.state === 'pending') this.entries.delete(stale);
+        this.deferred.set(node.id, key);
+        continue;
+      }
+      this.start(node.id, key, node);
     }
     if (this.entries.size > KEEP) {
       const wanted = new Set(nodes.map(geomKey));
@@ -158,6 +164,25 @@ class GeometryStore {
     }
     this.tight.set(node, { result: entry.result, bounds });
     return bounds;
+  }
+
+  private start(id: string, key: string, node: SceneNode): void {
+    this.inFlight.set(id, key);
+    this.worker()
+      .build(key, node)
+      .then(
+        (result) => this.settle(key, { state: 'ready', result }),
+        (e: Error) => this.settle(key, { state: 'error', message: e.message }),
+      )
+      .finally(() => {
+        if (this.inFlight.get(id) === key) this.inFlight.delete(id);
+        const next = this.deferred.get(id);
+        if (next === undefined) return;
+        this.deferred.delete(id);
+        // Whatever the node's key is by now is what gets built; a waiting key it has moved on from is dropped.
+        if (this.entries.get(next)?.state === 'pending') this.entries.delete(next);
+        if (this.wanted) this.ensure(this.wanted.nodes, this.wanted.assets);
+      });
   }
 
   private settle(key: string, entry: GeomEntry): void {
