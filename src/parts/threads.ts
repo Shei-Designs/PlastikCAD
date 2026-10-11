@@ -47,7 +47,7 @@ export interface TrapezoidOptions {
   maxTruncation?: number;
 }
 
-/** Symmetric tooth with straight flanks, centred on t = 0.5. */
+/** Symmetric tooth with straight flanks, centered on t = 0.5. */
 export function trapezoidProfile(o: TrapezoidOptions): AxialProfile {
   const offset = o.offset ?? 0;
   const cap = o.maxTruncation ?? Infinity;
@@ -68,7 +68,7 @@ export function trapezoidProfile(o: TrapezoidOptions): AxialProfile {
   rc = Math.max(rc, rr + 1e-3);
   let wr = wc + (rc - rr) * tan;
   if (wr > half) {
-    // The flanks of neighbouring teeth meet above the root: V-shaped groove.
+    // The flanks of neighboring teeth meet above the root: V-shaped groove.
     rr = rc - (half - wc) / tan;
     wr = half;
   }
@@ -182,7 +182,7 @@ export function profileRadius(profile: AxialProfile, t: number): number {
 
 export interface ThreadOptions {
   profile: AxialProfile;
-  /** Axial distance between neighbouring crests. */
+  /** Axial distance between neighboring crests. */
   pitch: number;
   starts?: number;
   length: number;

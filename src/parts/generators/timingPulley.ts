@@ -17,7 +17,7 @@ interface BeltBase {
   plo: number;
   /** Groove depth below the OD. */
   depth: number;
-  /** Flank angle measured from the groove centreline, degrees. */
+  /** Flank angle measured from the groove centerline, degrees. */
   flankAngle: number;
   /** Radius rounding the corner between flank and OD. */
   tipFillet: number;
@@ -74,8 +74,8 @@ function arcN(q: Quality, r: number, sweep: number, min = 2): number {
 }
 
 /**
- * Half of one groove, for a groove centred on the +X axis: points from the
- * bottom centre (on the axis) up the +Y flank to where the tip fillet meets
+ * Half of one groove, for a groove centered on the +X axis: points from the
+ * bottom center (on the axis) up the +Y flank to where the tip fillet meets
  * the outside circle of radius `ro`.
  */
 function halfGroove(b: BeltProfile, ro: number, clearance: number, halfPitch: number, q: Quality): Vec2[] {
@@ -84,7 +84,7 @@ function halfGroove(b: BeltProfile, ro: number, clearance: number, halfPitch: nu
   const n: Vec2 = [-Math.sin(phi), Math.cos(phi)]; // flank normal, into the material
   const xBottom = ro - (b.depth + clearance);
 
-  // Root arc: centre and radius of the arc joining the groove bottom to the flank.
+  // Root arc: center and radius of the arc joining the groove bottom to the flank.
   let rootR: number;
   let rootC: Vec2;
   if (b.kind === 'round') {
@@ -93,20 +93,20 @@ function halfGroove(b: BeltProfile, ro: number, clearance: number, halfPitch: nu
   } else {
     const hw = b.width / 2;
     const onOd: Vec2 = [Math.sqrt(ro * ro - hw * hw) + clearance * n[0], hw + clearance * n[1]];
-    const centre = (r: number): Vec2 => {
+    const center = (r: number): Vec2 => {
       const qx = onOd[0] - r * n[0];
       const qy = onOd[1] - r * n[1];
       return [xBottom + r, qy + ((xBottom + r - qx) / dir[0]) * dir[1]];
     };
     rootR = b.rootFillet;
-    rootC = centre(rootR);
+    rootC = center(rootR);
     for (let i = 0; i < 24 && rootC[1] < 0; i++) {
       rootR *= 0.75;
-      rootC = centre(rootR);
+      rootC = center(rootR);
     }
     if (rootC[1] < 0) {
       rootR = 0;
-      rootC = centre(0);
+      rootC = center(0);
     }
     if (rootC[1] < 0) throw new Error('The belt groove is too deep for its width.');
   }
@@ -120,10 +120,10 @@ function halfGroove(b: BeltProfile, ro: number, clearance: number, halfPitch: nu
     if (disc < 0) return null;
     const t = -bq + Math.sqrt(disc);
     if (t < 0) return null;
-    const centre: Vec2 = [q0[0] + t * dir[0], q0[1] + t * dir[1]];
-    return { centre, angle: Math.atan2(centre[1], centre[0]) };
+    const center: Vec2 = [q0[0] + t * dir[0], q0[1] + t * dir[1]];
+    return { center, angle: Math.atan2(center[1], center[0]) };
   };
-  // Shrink the fillet until a little land is left between neighbouring grooves.
+  // Shrink the fillet until a little land is left between neighboring grooves.
   const limit = halfPitch * 0.97;
   let rt = b.tipFillet;
   let fillet = tip(rt);
@@ -148,9 +148,9 @@ function halfGroove(b: BeltProfile, ro: number, clearance: number, halfPitch: nu
   }
   if (rt > 1e-6) {
     const a0 = phi - Math.PI / 2;
-    pts.push(...arc(fillet.centre[0], fillet.centre[1], rt, a0, fillet.angle, arcN(q, rt, fillet.angle - a0)));
+    pts.push(...arc(fillet.center[0], fillet.center[1], rt, a0, fillet.angle, arcN(q, rt, fillet.angle - a0)));
   } else {
-    pts.push(fillet.centre);
+    pts.push(fillet.center);
   }
   return dedupe(pts, 1e-6);
 }

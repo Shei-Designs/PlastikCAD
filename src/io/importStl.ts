@@ -5,7 +5,7 @@ import { MeshBuilder } from './weld';
 const HEADER = 84;
 const FACET = 50;
 
-/** Binary or ASCII STL. STL has no units; millimetres are assumed, as every slicer does. */
+/** Binary or ASCII STL. STL has no units; millimeters are assumed, as every slicer does. */
 export function parseStl(bytes: Uint8Array): MeshData {
   if (bytes.length === 0) throw new Error('This STL file is empty.');
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);

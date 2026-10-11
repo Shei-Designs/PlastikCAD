@@ -4,14 +4,14 @@ import { parseObj } from './importObj';
 import { parseStl } from './importStl';
 import { parseSvg } from './importSvg';
 
-/** Indexed triangles in millimetres; vertices at the same position are shared. Not necessarily watertight. */
+/** Indexed triangles in millimeters; vertices at the same position are shared. Not necessarily watertight. */
 export interface ImportedMesh {
   kind: 'mesh';
   positions: Float32Array;
   triangles: Uint32Array;
 }
 
-/** Filled 2D shapes in millimetres, Y up. */
+/** Filled 2D shapes in millimeters, Y up. */
 export interface ImportedOutline {
   kind: 'outline';
   shapes: OutlineShape[];
@@ -41,10 +41,10 @@ export function importFile(fileName: string, bytes: Uint8Array): Imported {
   }
 }
 
-/** Recentres the mesh on the centre of its bounding box, in place. Returns the box's size and where its centre was. */
-export function centreMesh(mesh: ImportedMesh): { size: Vec3; centre: Vec3 } {
+/** Recenters the mesh on the center of its bounding box, in place. Returns the box's size and where its center was. */
+export function centerMesh(mesh: ImportedMesh): { size: Vec3; center: Vec3 } {
   const p = mesh.positions;
-  if (p.length < 3) return { size: [0, 0, 0], centre: [0, 0, 0] };
+  if (p.length < 3) return { size: [0, 0, 0], center: [0, 0, 0] };
   const min: Vec3 = [Infinity, Infinity, Infinity];
   const max: Vec3 = [-Infinity, -Infinity, -Infinity];
   for (let i = 0; i < p.length; i += 3) {
@@ -54,17 +54,17 @@ export function centreMesh(mesh: ImportedMesh): { size: Vec3; centre: Vec3 } {
       if (v > max[k]) max[k] = v;
     }
   }
-  const centre: Vec3 = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2];
+  const center: Vec3 = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2];
   for (let i = 0; i < p.length; i += 3) {
-    p[i] -= centre[0];
-    p[i + 1] -= centre[1];
-    p[i + 2] -= centre[2];
+    p[i] -= center[0];
+    p[i + 1] -= center[1];
+    p[i + 2] -= center[2];
   }
-  return { size: [max[0] - min[0], max[1] - min[1], max[2] - min[2]], centre };
+  return { size: [max[0] - min[0], max[1] - min[1], max[2] - min[2]], center };
 }
 
-/** As `centreMesh`, for the contours of an outline. */
-export function centreOutline(outline: ImportedOutline): { size: Vec2; centre: Vec2 } {
+/** As `centerMesh`, for the contours of an outline. */
+export function centerOutline(outline: ImportedOutline): { size: Vec2; center: Vec2 } {
   const min: Vec2 = [Infinity, Infinity];
   const max: Vec2 = [-Infinity, -Infinity];
   for (const shape of outline.shapes)
@@ -75,13 +75,13 @@ export function centreOutline(outline: ImportedOutline): { size: Vec2; centre: V
         if (x > max[0]) max[0] = x;
         if (y > max[1]) max[1] = y;
       }
-  if (min[0] > max[0]) return { size: [0, 0], centre: [0, 0] };
-  const centre: Vec2 = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2];
+  if (min[0] > max[0]) return { size: [0, 0], center: [0, 0] };
+  const center: Vec2 = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2];
   for (const shape of outline.shapes)
     for (const contour of shape.contours)
       for (const point of contour) {
-        point[0] -= centre[0];
-        point[1] -= centre[1];
+        point[0] -= center[0];
+        point[1] -= center[1];
       }
-  return { size: [max[0] - min[0], max[1] - min[1]], centre };
+  return { size: [max[0] - min[0], max[1] - min[1]], center };
 }

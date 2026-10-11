@@ -10,7 +10,7 @@ const BACKSLASH = 92;
 
 /**
  * Wavefront OBJ: only the geometry (`v` and `f` lines). OBJ has no units and
- * no agreed up axis; coordinates are taken as millimetres, as they are.
+ * no agreed up axis; coordinates are taken as millimeters, as they are.
  */
 export function parseObj(bytes: Uint8Array): MeshData {
   const n = bytes.length;

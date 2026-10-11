@@ -53,7 +53,7 @@ function ring(s: Section, n: number, nc: number): Ring {
 /** Shrink a section by a wall all round. */
 const inner = (s: Section, wall: number): Section => ({ round: s.round, w: s.w - 2 * wall, h: s.h - 2 * wall, corner: Math.max(0, s.corner - wall) });
 
-/** Where a ring goes: its centre and the directions its u and v axes map to. */
+/** Where a ring goes: its center and the directions its u and v axes map to. */
 interface Station {
   p: Vec3;
   u: Vec3;
@@ -70,8 +70,8 @@ const norm = (a: Vec3): Vec3 => {
 
 /**
  * A closed mesh through the rings placed at the stations: quads between
- * neighbours, fans over the ends. The rings must all have the same number of
- * points and be star-shaped about their centre (circles and rounded
+ * neighbors, fans over the ends. The rings must all have the same number of
+ * points and be star-shaped about their center (circles and rounded
  * rectangles are), and the triangles are turned to face outwards whichever
  * way the path runs.
  */
@@ -87,7 +87,7 @@ function loft(stations: Station[], rings: Ring[]): Solid {
   const at = (i: number, j: number) => i * n + (j % n);
   for (let i = 0; i + 1 < m; i++)
     for (let j = 0; j < n; j++) triangles.push(at(i, j), at(i + 1, j), at(i + 1, j + 1), at(i, j), at(i + 1, j + 1), at(i, j + 1));
-  // The end caps, fanned from the ring's centre.
+  // The end caps, fanned from the ring's center.
   const c0 = positions.length / 3;
   positions.push(...stations[0].p);
   const c1 = positions.length / 3;
@@ -229,7 +229,7 @@ export const elbow: GeneratorDef = {
       title: 'Bend',
       params: [
         { key: 'angle', label: 'Angle', type: 'number', default: 90, min: 1, max: 180, step: 1, unit: '°', help: 'How far the run turns. 90° is a square corner.' },
-        { key: 'bendRadius', label: 'Bend radius', type: 'number', default: 30, min: 1, max: 500, step: 1, unit: 'mm', help: 'Radius of the bend along the centre line. It cannot be less than half the width, or the inside of the bend would fold over.' },
+        { key: 'bendRadius', label: 'Bend radius', type: 'number', default: 30, min: 1, max: 500, step: 1, unit: 'mm', help: 'Radius of the bend along the center line. It cannot be less than half the width, or the inside of the bend would fold over.' },
         { key: 'legA', label: 'Leg before', type: 'number', default: 10, min: 0, max: 500, step: 1, unit: 'mm', help: 'Straight length before the bend.' },
         { key: 'legB', label: 'Leg after', type: 'number', default: 10, min: 0, max: 500, step: 1, unit: 'mm', help: 'Straight length after the bend.' },
       ],
@@ -249,7 +249,7 @@ export const elbow: GeneratorDef = {
     }
     const legA = num(p, 'legA');
     const legB = num(p, 'legB');
-    // Up +Z, then round towards +X about a centre at (radius, 0, 0); the section's u axis stays in the bend plane.
+    // Up +Z, then round towards +X about a center at (radius, 0, 0); the section's u axis stays in the bend plane.
     const stations: Station[] = [];
     if (legA > 0) stations.push({ p: [0, 0, -legA], u: X, v: Y });
     const steps = arcSegments(q, angle, 8);

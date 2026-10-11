@@ -38,7 +38,7 @@ export const FORMATS: ExportFormat[] = [
     id: 'obj',
     label: 'OBJ',
     extension: 'obj',
-    description: 'Text mesh for modelling and rendering tools',
+    description: 'Text mesh for modeling and rendering tools',
     kind: '3d',
     mime: 'model/obj',
   },

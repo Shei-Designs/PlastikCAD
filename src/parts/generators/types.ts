@@ -54,7 +54,7 @@ export interface BuildResult {
   warnings: string[];
 }
 
-export type Category = 'gears' | 'pulleys' | 'screws' | 'frames' | 'ducts' | 'boards';
+export type Category = 'gears' | 'pulleys' | 'screws' | 'frames' | 'ducts' | 'boards' | 'cutouts' | 'motors';
 
 export interface GeneratorDef {
   id: string;

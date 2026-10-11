@@ -17,7 +17,7 @@ export function writeDxf(outline: Polygon[], name: string): Uint8Array {
   const contours = outline.filter((c) => c.length >= 2);
   const b = contours.length ? bounds(contours) : { min: [0, 0], max: [0, 0] };
 
-  add(999, `${APP_NAME} - ${name.replace(/[\r\n]+/g, ' ')} - units: millimetres`);
+  add(999, `${APP_NAME} - ${name.replace(/[\r\n]+/g, ' ')} - units: millimeters`);
   add(0, 'SECTION', 2, 'HEADER');
   add(9, '$ACADVER', 1, 'AC1009');
   add(9, '$INSUNITS', 70, 4);

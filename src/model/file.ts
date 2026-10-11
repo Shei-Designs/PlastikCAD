@@ -36,7 +36,7 @@ function isPlain(value: unknown): boolean {
   return Array.isArray(value) && value.every((v) => v === null || typeof v !== 'object' || (Array.isArray(v) && v.every((w) => typeof w !== 'object')));
 }
 
-/** Fixed key order, so that the same node always serialises to the same text. */
+/** Fixed key order, so that the same node always serializes to the same text. */
 function canonical(node: SceneNode): Record<string, unknown> {
   return {
     id: node.id,
@@ -170,7 +170,7 @@ function readNode(raw: unknown, assets: Record<string, Asset>): SceneNode | null
       type: 'text',
       text: raw.text,
       font: TEXT_FONTS.some((f) => f.id === raw.font) ? (raw.font as string) : TEXT_FONTS[0].id,
-      align: raw.align === 'centre' || raw.align === 'right' ? raw.align : 'left',
+      align: raw.align === 'center' || raw.align === 'right' ? raw.align : 'left',
       natural: vec3(raw.natural, base.size, true),
     };
   }

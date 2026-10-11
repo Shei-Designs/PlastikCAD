@@ -1,4 +1,4 @@
-// The design document. Everything is in millimetres, Z up, with the build
+// The design document. Everything is in millimeters, Z up, with the build
 // plate at z=0. A design is a flat list of nodes; grouping nodes combines
 // them (solids are merged, holes are cut away), exactly like Tinkercad.
 
@@ -25,7 +25,7 @@ export type ShapeKind =
 interface NodeBase {
   id: string;
   name: string;
-  /** Centre of the node's local bounding box, in the parent's coordinates. */
+  /** Center of the node's local bounding box, in the parent's coordinates. */
   pos: Vec3;
   /** Degrees, applied about X, then Y, then Z (fixed axes). */
   rot: Vec3;
@@ -51,7 +51,7 @@ export interface GroupNode extends NodeBase {
   type: 'group';
   /** Bounding box of the combined children when the group was made; `size / natural` is its scale. */
   natural: Vec3;
-  /** Positioned relative to the centre of the group. */
+  /** Positioned relative to the center of the group. */
   children: SceneNode[];
 }
 
@@ -64,7 +64,7 @@ export interface ImportNode extends NodeBase {
   natural: Vec3;
 }
 
-export type TextAlign = 'left' | 'centre' | 'right';
+export type TextAlign = 'left' | 'center' | 'right';
 
 /** Lettering, extruded along Z. Only the words are stored; the outlines come from the built-in fonts. */
 export interface TextNode extends NodeBase {
@@ -106,7 +106,7 @@ export const TEXT_FONTS: { id: string; name: string }[] = [
 ];
 export type Scene = SceneNode[];
 
-/** Imported triangle mesh, centred on its bounding box. Arrays are base64 (little-endian). */
+/** Imported triangle mesh, centered on its bounding box. Arrays are base64 (little-endian). */
 export interface MeshAsset {
   kind: 'mesh';
   /** Float32 xyz per vertex. */
@@ -115,7 +115,7 @@ export interface MeshAsset {
   triangles: string;
 }
 
-/** Imported 2D artwork, centred on its bounding box; extruded 1 mm along Z (then scaled by the node). */
+/** Imported 2D artwork, centered on its bounding box; extruded 1 mm along Z (then scaled by the node). */
 export interface OutlineAsset {
   kind: 'outline';
   shapes: OutlineShape[];

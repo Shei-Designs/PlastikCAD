@@ -2,7 +2,7 @@
   <img src="docs/banner.svg" alt="BashCAD" width="100%">
 </h1>
 
-Fast solid modelling for 3D printing: a desktop app for bashing out a part from
+Fast solid modeling for 3D printing: a desktop app for bashing out a part from
 a few simple shapes.
 Drop boxes, cylinders and wedges on the plate, add a gear, a pulley or a
 threaded rod made to your numbers, turn some of it into holes, group, and
@@ -17,7 +17,7 @@ everything else.
 
 ## How it works
 
-It is the Tinkercad way of modelling, without the cloud and without the clutter:
+It is the Tinkercad way of modeling, without the cloud and without the clutter:
 
 - **Shapes** – box and cylinder (both with optional rounded edges), sphere,
   cone, pyramid, wedge, roof, round roof, polygon prism, torus and dome. Click
@@ -26,7 +26,7 @@ It is the Tinkercad way of modelling, without the cloud and without the clutter:
   panel shows what it is for, a picture menu of the kinds in that family, the
   parameters in tabs (gear, tooth form, hub, bore; thread, head; and so on),
   the dimensions that follow from them (pitch diameter, outside diameter,
-  centre distance...). A part is just an object: group it, cut it, scale it,
+  center distance...). A part is just an object: group it, cut it, scale it,
   version it. See
   [Parts](#parts) for the list.
 - **Text** – lettering in four print-friendly fonts (sans, slab serif,
@@ -55,7 +55,7 @@ It is the Tinkercad way of modelling, without the cloud and without the clutter:
   part can be changed, and *Done* puts them back together in the same order.
 - **Handles** – drag an object to move it, the corner and edge grips to size
   it (the top and bottom grips pull the height either way), the arrow to lift
-  it, the coloured arcs to turn it. Click a grip instead of dragging it and a
+  it, the colored arcs to turn it. Click a grip instead of dragging it and a
   box appears on that edge to type the value. Or type exact numbers in the
   panel on the right.
 - **Import** – STL, OBJ and 3MF meshes, and SVG drawings (extruded into a
@@ -63,29 +63,41 @@ It is the Tinkercad way of modelling, without the cloud and without the clutter:
 
 ## Parts
 
-| Gears | Pulleys & sprockets | Screws & threads | Rails & frames | Pipes & ducts | Dev boards |
-| --- | --- | --- | --- | --- | --- |
-| Spur gear | GT2 timing pulley (2 / 3 / 5 mm) | Metric bolt / threaded rod (M3–M20) | Aluminium rail: 20, 30 and 40 mm series, V-slot or T-slot, one to four cells in one or two rows (2020, 2040, 4040, 3030, 3060, 6060, 4080...) | Straight pipe or duct | Raspberry Pi 5, 4, 3, Zero 2 W, Pico |
-| Helical gear | HTD timing pulley (3M / 5M / 8M) | Metric nut | | Elbow (any angle and bend radius, legs either side) | Arduino Uno R3/R4, Mega 2560, Nano |
-| Herringbone gear | T-series timing pulley (T2.5 / T5 / T10) | Trapezoidal lead screw (multi-start) | | Reducer (in line or eccentric) | ESP32-DevKitC V4, DevKit V1, NodeMCU-32S |
-| Internal ring gear | MXL / XL timing pulley | Lead screw nut (flanged) | | Tee / wye (branch at any angle) | |
-| Gear rack (straight, helical, herringbone) | Chain sprocket (#25–#41, 05B–08B, bicycle) | | | | |
-| Bevel gear (90° shafts) | | | | | |
-| Worm | | | | | |
+| Gears | Pulleys & sprockets | Screws & threads | Rails & frames | Pipes & ducts | Dev boards | Panel cutouts | Motor mounts |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Spur gear | GT2 timing pulley (2 / 3 / 5 mm) | Metric bolt / threaded rod (M3–M20) | Aluminum rail: 20, 30 and 40 mm series, V-slot or T-slot, one to four cells in one or two rows (2020, 2040, 4040, 3030, 3060, 6060, 4080...) | Straight pipe or duct | Raspberry Pi 5, 4, 3, Zero 2 W, Pico | Fan: 25–140 mm, round opening, guard rings or holes only | Stepper: NEMA 8, 11, 14, 17, 23 and the 28BYJ-48 |
+| Helical gear | HTD timing pulley (3M / 5M / 8M) | Metric nut | | Elbow (any angle and bend radius, legs either side) | Arduino Uno R3/R4, Mega 2560, Nano | Panel connector: Neutrik D-series, IEC C14 / C13 / C8, D-sub 9 / 15 / 25, XT60, with their screw holes | Gearmotor: N20, TT, 25 mm (JGA25), 37 mm (JGB37) |
+| Herringbone gear | T-series timing pulley (T2.5 / T5 / T10) | Trapezoidal lead screw (multi-start) | | Reducer (in line or eccentric) | ESP32-DevKitC V4, DevKit V1, NodeMCU-32S | | Servo: SG90, MG996R |
+| Internal ring gear | MXL / XL timing pulley | Lead screw nut (flanged) | | Tee / wye (branch at any angle) | | | DC motor: 775, 130 |
+| Gear rack (straight, helical, herringbone) | Chain sprocket (#25–#41, 05B–08B, bicycle) | | | | | | |
+| Bevel gear (90° shafts) | | | | | | | |
+| Worm | | | | | | | |
 
 Rotating parts share the same options for the shaft: round, D-shaft, hex or
 keyed bore with a fit clearance, plus an optional hub with set-screw holes.
 Pipes and ducts are round or rectangular (with rounded corners), hollow with a
 wall or solid, and the bends are true arcs, the tapers true frustums; a solid
 elbow makes a good hole to cut a curved channel with.
-A dev board part knows the board's outline and mounting holes from its
-maker's drawing and makes one of four things from them: standoffs at the holes,
-drilled for the screw to cut its thread, for a clearance fit or for a heat-set
-insert, on an optional base plate; the holes alone, as pins to group with a
-floor or lid as a hole; a blank the shape of the board, to check fit or, grown
-by a gap, to pocket a floor; or corner stops, which hold the ESP32 dev kits and
-anything else without holes. The ESP32 figures are the least certain: only
+A dev board part knows the board's outline, mounting holes and sockets from
+its maker's drawing and makes one of five things from them: standoffs at the
+holes, drilled for the screw to cut its thread, for a clearance fit or for a
+heat-set insert, on an optional base plate; the holes alone, as pins to group
+with a floor or lid as a hole; a blank the shape of the board, to check fit
+or, grown by a gap, to pocket a floor; the board with its connectors in place,
+each reaching out past the edge, to design a case round and, made a hole, to
+cut the wall openings exactly where the plugs go; or corner stops, which hold
+the ESP32 dev kits and anything else without holes. The ESP32 figures are the least certain: only
 Espressif's own DevKitC has a published drawing, so the part says so.
+A motor mount knows the motor's mounting face from its maker's drawing: the
+bolt pattern, the pilot boss or the body that drops through, and the shaft.
+It makes a plate with the holes and the bore, the holes alone as a cutter, the
+motor itself as a body to design round (or, made a hole, to pocket for), or an
+L-bracket standing the plate on a slotted, gusseted foot.
+A panel cutout is an opening a wall needs that is worth looking up rather
+than drawing: a fan's opening with its screw pattern, or a connector's cutout
+with its screw holes as its maker draws it. Each is grown by a clearance and
+comes lying through a wall across Y, a case front; turn it to a side or the
+floor, make it a hole and group it with the wall.
 The rail is there to design around: make it a hole and group it with a block
 to get a bracket that fits the real thing. It comes in as a 20 mm stub; its
 height is its length, so pull the top grip or type the H size to make it as
@@ -135,7 +147,7 @@ design is still there after a restart.
 | Raise or lower | Arrow handle; Ctrl+Up / Ctrl+Down |
 | Resize | Corner and edge grips; the top grip pulls the height up, the bottom grip pulls it down; Shift scales evenly |
 | Type a value | Click any grip instead of dragging it, type the value (two for a corner grip, e.g. `20 x 15`), Enter |
-| Turn | Coloured arcs, in 15° steps; Shift 45°, Alt 1° |
+| Turn | Colored arcs, in 15° steps; Shift 45°, Alt 1° |
 | Duplicate / copy / paste | Ctrl+D / Ctrl+C / Ctrl+V |
 | Group / ungroup | Ctrl+G / Ctrl+Shift+G |
 | Solid / hole | S / H |
@@ -143,7 +155,7 @@ design is still there after a restart.
 | Flip (mirror) on an axis | X / Y / Z |
 | Turn 90° about an axis | Shift+X / Shift+Y / Shift+Z; add Alt to turn the other way |
 | Align | L shows anchor dots on the selection: hover one to preview, click to apply; click one of the objects to make it the anchor, Esc to finish |
-| Align by key | Alt+← / → / ↓ / ↑ (left / right / front / back), Alt+PgDn / PgUp (bottom / top); add Shift to centre on that axis; Alt+C centres on X and Y |
+| Align by key | Alt+← / → / ↓ / ↑ (left / right / front / back), Alt+PgDn / PgUp (bottom / top); add Shift to center on that axis; Alt+C centers on X and Y |
 | Fit to view | F |
 | Undo / redo | Ctrl+Z / Ctrl+Y |
 | Save / save as / open / new | Ctrl+S / Ctrl+Shift+S / Ctrl+O / Ctrl+N |
@@ -156,14 +168,14 @@ design is still there after a restart.
 | --- | --- |
 | STL | 3D mesh for any slicer |
 | 3MF | 3D mesh with units, preferred by modern slicers |
-| OBJ | 3D mesh for modelling tools |
+| OBJ | 3D mesh for modeling tools |
 | SVG | Outline of the design seen from above, for laser cutters and vector editors |
 | DXF | The same outline, to extrude in CAD or cut on a laser / CNC |
 
 The button reads *Export selection* when something is selected and exports just
 that; otherwise *Export* merges everything visible that is not a hole into one
 watertight mesh (after asking, when there are several objects). Units are
-millimetres, Z is up.
+millimeters, Z is up.
 
 The file is made at a finer detail than the screen: round shapes, gear teeth
 and threads get twice the facets they are drawn with, so prints come out
@@ -172,10 +184,10 @@ left alone, since that is its shape.
 
 ## Import notes
 
-- **STL / OBJ** carry no units; coordinates are taken as millimetres.
+- **STL / OBJ** carry no units; coordinates are taken as millimeters.
 - A mesh that is not watertight can be placed, scaled and exported as it is,
   but cannot be grouped: there is no telling its inside from its outside.
-- **3MF**: all objects on the build plate come in as one mesh; colours and
+- **3MF**: all objects on the build plate come in as one mesh; colors and
   slicer settings are ignored.
 - **SVG**: every closed outline is filled and extruded, whatever its stroke or
   fill, so laser-cutter drawings work (including a gear profile exported from
@@ -209,7 +221,7 @@ left alone, since that is its shape.
   hollow of the real 2040 with its short neck to the skin; where four meet,
   the middle is open with the cores' corners rounded, and in a two-row bar of
   three or four cells the inner cells get walls across it. The sectional areas
-  come out within a few percent of the catalogue figures (V-Slot 2020 about
+  come out within a few percent of the catalog figures (V-Slot 2020 about
   166 mm², HFS6-3030 333 mm², HFS8-4040 640 mm²). Left out are the small inner
   fillets and the scalloped bores, so check against the rail you have before
   relying on a tight fit.
@@ -226,7 +238,7 @@ every machine: [Inter](https://rsms.me/inter/) (sans),
 [Allerta Stencil](https://fonts.google.com/specimen/Allerta+Stencil), all in
 bold or heavy cuts with Latin and extended Latin characters. Inter, JetBrains
 Mono and Allerta Stencil are under the SIL Open Font License 1.1; Roboto Slab
-is under the Apache License 2.0; the licence texts are in
+is under the Apache License 2.0; the license texts are in
 `public/font-licenses/` and ship with the app. A design stores only the
 words, not their outlines.
 
@@ -291,7 +303,7 @@ only for that node. Undo, redo and switching versions reuse the same cache.
 
 1. Add its kind to `ShapeKind` in `src/model/types.ts`.
 2. Describe it in `SHAPES` in `src/geometry/shapes.ts` (name, default size,
-   parameters) and build it in `buildShape`, centred on the origin and filling
+   parameters) and build it in `buildShape`, centered on the origin and filling
    its bounding box.
 3. Draw its catalog picture in `src/ui/thumbnails.tsx`.
 

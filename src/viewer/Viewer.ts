@@ -1,4 +1,4 @@
-// Framework-agnostic three.js editor view. Model space is millimetres, Z up,
+// Framework-agnostic three.js editor view. Model space is millimeters, Z up,
 // with the build plate at z=0. The viewer draws the scene it is given and
 // turns pointer input into edits (select, move, lift, resize, turn), which it
 // reports through callbacks; it never owns the design.
@@ -34,6 +34,7 @@ import {
   SRGBColorSpace,
   TorusGeometry,
   Vector2,
+  Quaternion,
   Vector3,
   WebGLRenderer,
 } from 'three';
@@ -64,7 +65,7 @@ export interface ViewerOptions {
   highlight: { matrix: Mat; size: Vec3 } | null;
 }
 
-export type AlignMode = 'min' | 'centre' | 'max';
+export type AlignMode = 'min' | 'center' | 'max';
 
 export interface ViewItem {
   node: SceneNode;
@@ -80,7 +81,7 @@ export interface ViewerEvents {
   /** A drag begins; every `onGestureChange` until `onGestureEnd` belongs to one edit. */
   onGestureStart(): void;
   onGestureChange(nodes: SceneNode[]): void;
-  onGestureEnd(cancelled: boolean): void;
+  onGestureEnd(canceled: boolean): void;
   /** While placing a new shape: where it would land (null when the pointer leaves). */
   onPlaceMove(point: Vec3 | null): void;
   onPlaceCommit(): void;
@@ -94,20 +95,44 @@ export interface ViewerEvents {
   /** Align mode: one of the selected objects was clicked, to line the others up with it. */
   onAnchor(id: string): void;
   /** A handle was clicked rather than dragged: offer to type the value it would set (see `applyTyped`). */
-  onHandleClick(prompt: HandlePrompt): void;
+  /** A grip was clicked rather than dragged: show boxes to type its values. `null` takes them away again. */
+  onHandleClick(prompt: HandlePrompt | null): void;
 }
 
 export interface HandlePrompt {
   kind: HandleKind;
   unit: string;
-  /** One box per value, each sitting on the edge of the object it measures. */
-  fields: { tag: string; value: number; clientX: number; clientY: number }[];
+  /** The middle of the object, in the scene. */
+  center: Vec3;
+  /** One box per value, each sitting just outside the edge of the object it measures, with its place on screen. */
+  fields: {
+    tag: string;
+    value: number;
+    /** The point measured: the middle of an edge, or a grip. */
+    anchor: Vec3;
+    /** The point the box keeps away from, on screen: the middle of the face the grips sit on. Away from the object's middle when missing. */
+    ref?: Vec3;
+    /** A fixed way out instead, for a box that is not on an edge. */
+    out?: Vec3;
+    /** How far out, instead of the usual pad. */
+    pad?: number;
+    /** Sit right beside the anchor instead, level with it: for a grip the box must stay close to. */
+    beside?: boolean;
+    /** Points of a handle the box must not cover: it is pushed out until it clears their extent on screen. */
+    keepOut?: Vec3[];
+    /** Which way the edge runs, so the box keeps clear of it. */
+    along?: Vec3;
+    /** Which way the box went from its anchor on screen, settled when the boxes appeared and kept while they follow the camera. */
+    heading?: [number, number];
+    clientX: number;
+    clientY: number;
+  }[];
 }
 
 const DEFAULTS: ViewerOptions = { theme: 'dark', edges: true, grid: true, snap: 1, interactive: true, align: null, highlight: null };
 /** Distance of the anchor dots from the box, in pixels. */
 const ALIGN_GAP = 22;
-const ALIGN_MODES: AlignMode[] = ['min', 'centre', 'max'];
+const ALIGN_MODES: AlignMode[] = ['min', 'center', 'max'];
 
 const FOV = 35;
 const FIT_MARGIN = 1.25;
@@ -120,6 +145,15 @@ const GIZMO_MARGIN = 8;
 const EMPTY_RADIUS = 70;
 const PLATE_HALF = 100;
 const DRAG_THRESHOLD = 4; // px
+/** A typing box sits this far out from the edge it measures: clear of the grip drawn there. */
+const PROMPT_PAD = 14; // px
+/** A box beside a grip starts this far from the grip's center, and no box comes nearer than this to the edge of the view (more at the top, under the toolbar). */
+const PROMPT_BESIDE = 30; // px
+/** The lift arrow is taller than a grip, so its box sits further up. */
+const PROMPT_LIFT_PAD = 30; // px
+const PROMPT_MARGIN = 8; // px
+const PROMPT_MARGIN_TOP = 52; // px
+const PROMPT_BOX: [number, number] = [100, 28]; // px, about the size of a box
 /** A finger wobbles more than a mouse before it means to drag. */
 const TOUCH_DRAG_THRESHOLD = 10; // px
 /** How much bigger a grip is to a finger than to the eye. */
@@ -205,7 +239,10 @@ type Drag =
   | { mode: 'move'; nodes: SceneNode[]; plane: Plane; origin: Vector3 }
   | { mode: 'pending-marquee'; x: number; y: number; additive: boolean }
   | { mode: 'marquee'; x: number; y: number; additive: boolean }
-  | { mode: 'resize'; node: SceneNode; sx: number; sy: number; grab: Vector3 }
+  /** `axisOnly` restricts a corner grip to one base axis when the base is seen edge-on and the other cannot be followed. */
+  | { mode: 'resize'; node: SceneNode; sx: number; sy: number; grab: Vector3; axisOnly?: 0 | 1 }
+  /** A grip pressed from an angle it cannot be dragged from: a click still brings up its typing boxes. */
+  | { mode: 'held' }
   | { mode: 'height'; node: SceneNode; side: 1 | -1; grab: number }
   | { mode: 'lift'; nodes: SceneNode[]; origin: Vector3; grab: number }
   | { mode: 'rotate'; nodes: SceneNode[]; axis: 0 | 1 | 2; pivot: Vec3; start: number | null; x: number }
@@ -488,6 +525,7 @@ export class Viewer {
     canvas.removeEventListener('pointercancel', this.onPointerUp);
     canvas.removeEventListener('pointerleave', this.onPointerLeave);
     this.controls.removeEventListener('change', this.requestRender);
+    this.controls.removeEventListener('change', this.onCameraChange);
     this.controls.dispose();
 
     for (const d of this.drawn.values()) this.discard(d);
@@ -558,7 +596,7 @@ export class Viewer {
     const lineMaterial = () => new LineBasicMaterial({ transparent: true, depthWrite: false });
     this.gridMajor = new LineSegments(new BufferGeometry(), lineMaterial());
     this.gridMinor = new LineSegments(new BufferGeometry(), lineMaterial());
-    // The X and Y axes drawn on the plate, in the colours of the corner triad.
+    // The X and Y axes drawn on the plate, in the colors of the corner triad.
     const axes = new BufferGeometry();
     axes.setAttribute('position', new BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0]), 3));
     const tint = [...new Color(AXIS_COLORS[0]).toArray(), ...new Color(AXIS_COLORS[0]).toArray(), ...new Color(AXIS_COLORS[1]).toArray(), ...new Color(AXIS_COLORS[1]).toArray()];
@@ -577,6 +615,7 @@ export class Viewer {
     // The left button edits; the camera is on the other two (as in Tinkercad).
     controls.mouseButtons = { LEFT: -1 as MOUSE, MIDDLE: MOUSE.PAN, RIGHT: MOUSE.ROTATE };
     controls.addEventListener('change', this.requestRender);
+    controls.addEventListener('change', this.onCameraChange);
 
     // Captured, so that an edit can start before OrbitControls sees the press: a finger on a grip or
     // an object must not also turn the camera, as a finger on empty space does.
@@ -598,7 +637,7 @@ export class Viewer {
     const e = 1.5;
     this.triadCamera = new OrthographicCamera(-e, e, e, -e, 0.1, 10);
 
-    const shaft = new CylinderGeometry(0.045, 0.045, 1, 10); // along +Y, centred
+    const shaft = new CylinderGeometry(0.045, 0.045, 1, 10); // along +Y, centered
     this.disposables.push(shaft);
     const dirs = [new Vector3(1, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 0, 1)];
     ['X', 'Y', 'Z'].forEach((label, i) => {
@@ -668,7 +707,7 @@ export class Viewer {
 
   private showFallback(): void {
     const el = document.createElement('div');
-    el.textContent = '3D view unavailable: WebGL could not be initialised.';
+    el.textContent = '3D view unavailable: WebGL could not be initialized.';
     Object.assign(el.style, {
       position: 'absolute',
       inset: '0',
@@ -812,7 +851,7 @@ export class Viewer {
     }
   }
 
-  /** Colours, transparency and edge lines of one node. */
+  /** Colors, transparency and edge lines of one node. */
   private style(d: Drawn, selected: boolean): void {
     const { node, ghost } = d.item;
     const t = THEMES[this.options.theme];
@@ -826,7 +865,7 @@ export class Viewer {
     }
     material.opacity = ghost ? 0.6 : node.hole ? 0.38 : 1;
     material.depthWrite = !faint;
-    // Selected parts glow a little in their own colour; the accent is kept for edges and handles.
+    // Selected parts glow a little in their own color; the accent is kept for edges and handles.
     material.emissive.set(selected ? color : 0x000000);
     material.emissiveIntensity = selected ? 0.14 : 0;
     d.mesh.renderOrder = faint ? 1 : 0;
@@ -853,7 +892,7 @@ export class Viewer {
       d.edges.material.color.set(t.accent);
       d.edges.material.opacity = 1;
     } else {
-      // A darkened shade of the part colour reads on any colour and theme.
+      // A darkened shade of the part color reads on any color and theme.
       d.edges.material.color.copy(new Color(color)).multiplyScalar(0.22);
       d.edges.material.opacity = node.hole ? 0.5 : t.edge;
     }
@@ -879,7 +918,7 @@ export class Viewer {
     };
   }
 
-  /** Build-plate grid centred on the origin: 200 mm square, growing with the design. */
+  /** Build-plate grid centered on the origin: 200 mm square, growing with the design. */
   private updateGrid(): void {
     const wanted = Math.max(this.reach * 1.2, PLATE_HALF);
     const major = wanted <= 300 ? 10 : wanted <= 3000 ? 100 : 1000;
@@ -890,7 +929,7 @@ export class Viewer {
     this.gridMajor.geometry.dispose();
     this.gridMinor.geometry.dispose();
     this.gridMajor.geometry = gridLines(half, major, 0);
-    // A millimetre grid on a big plate is more lines than it is help.
+    // A millimeter grid on a big plate is more lines than it is help.
     this.gridMinor.geometry = gridLines(half, half <= 150 ? major / 10 : major / 2, major);
     this.axes.scale.set(half, half, 1);
   }
@@ -1122,7 +1161,11 @@ export class Viewer {
   }
 
   private readonly onPointerDown = (event: PointerEvent): void => {
+    // A camera button must not take the focus off a typing box: a pan keeps the boxes.
+    if (event.button !== 0 && this.prompt) event.preventDefault();
     if (event.button !== 0 || this.drag) return;
+    // Whatever the press does next, the boxes from the last click are stale.
+    this.dismissPrompt();
     this.animation = null;
     this.controls.enabled = true;
     const canvas = this.renderer.domElement;
@@ -1189,20 +1232,19 @@ export class Viewer {
     const nodes = this.items.filter((i) => i.selected && !i.ghost && !i.node.locked).map((i) => i.node);
     if (nodes.length === 0) return;
     if (k.type === 'resize' && f.single) {
-      const grab = this.resizePoint(f.single, k.sx, k.sy);
-      if (!grab) return;
+      // A corner grip seen with the base edge-on cannot follow both axes: it follows the one seen best.
+      const axisOnly = k.sx !== 0 && k.sy !== 0 && this.baseEdgeOn(f.single) ? this.bestBaseAxis(f.single) : undefined;
+      const grab = this.resizePoint(f.single, k.sx, k.sy, axisOnly);
       const handleLocal = new Vector3(k.sx * f.half[0], k.sy * f.half[1], 0);
-      this.drag = { mode: 'resize', node: f.single, sx: k.sx, sy: k.sy, grab: grab.sub(handleLocal) };
+      this.drag = grab ? { mode: 'resize', node: f.single, sx: k.sx, sy: k.sy, grab: grab.sub(handleLocal), axisOnly } : { mode: 'held' };
     } else if (k.type === 'height' && f.single) {
       // Measured from the end that stays put: the base for the top grip, the top for the bottom one.
       const t = this.alongAxis(this.framePoint([0, 0, -k.side * f.half[2]]), this.frameAxis(f.single, 2));
-      if (t === null) return;
-      this.drag = { mode: 'height', node: f.single, side: k.side, grab: t - k.side * f.single.size[2] };
+      this.drag = t === null ? { mode: 'held' } : { mode: 'height', node: f.single, side: k.side, grab: t - k.side * f.single.size[2] };
     } else if (k.type === 'lift') {
       const origin = handle.object.position.clone();
       const t = this.alongAxis(origin, new Vector3(0, 0, 1));
-      if (t === null) return;
-      this.drag = { mode: 'lift', nodes, origin, grab: t };
+      this.drag = t === null ? { mode: 'held' } : { mode: 'lift', nodes, origin, grab: t };
     } else if (k.type === 'rotate') {
       const pivot: Vec3 = f.single ? [...f.single.pos] : boundsCenter(f.bounds);
       this.drag = { mode: 'rotate', nodes, axis: k.axis, pivot, start: this.angleAbout(k.axis, pivot), x: event.clientX };
@@ -1216,6 +1258,8 @@ export class Viewer {
 
   /** The handle just pressed, until the pointer has moved far enough to count as a drag. */
   private press: { handle: Handle; x: number; y: number } | null = null;
+  /** The typing boxes on show, with the camera's heading when they appeared: a turn takes them away, a zoom or pan moves them. */
+  private prompt: { prompt: HandlePrompt; heading: Quaternion } | null = null;
 
   /** Where a point of the scene is on screen. */
   private toClient(p: Vector3): { clientX: number; clientY: number } {
@@ -1225,54 +1269,206 @@ export class Viewer {
   }
 
   /** Of some points in the object's frame, the one nearest the camera. */
-  private nearest(locals: Vec3[]): Vector3 {
-    let best = this.framePoint(locals[0]);
-    for (const l of locals.slice(1)) {
-      const p = this.framePoint(l);
-      if (p.distanceTo(this.camera.position) < best.distanceTo(this.camera.position)) best = p;
+  private nearest<T extends { at: Vec3 }>(choices: T[]): T {
+    let best = choices[0];
+    let bestD = this.framePoint(best.at).distanceTo(this.camera.position);
+    for (const c of choices.slice(1)) {
+      const d = this.framePoint(c.at).distanceTo(this.camera.position);
+      if (d < bestD) [best, bestD] = [c, d];
     }
     return best;
   }
 
+  /** A direction of the object's frame, in the scene. */
+  private frameDir(local: Vec3): Vec3 {
+    return this.framePoint(local).sub(this.framePoint([0, 0, 0])).normalize().toArray() as Vec3;
+  }
+
   /**
-   * What typing a value for this handle would set. Each box sits in the middle
-   * of an edge running along the dimension it changes, on the side of the grip
-   * (or the side facing the camera), so it reads like a dimension line.
+   * What typing a value for this handle would set. Each box sits just outside
+   * the middle of an edge running along the dimension it changes, on the side
+   * of the grip (or the side facing the camera), so it reads like a dimension
+   * line and keeps off the object.
    */
   private promptFor(handle: Handle): HandlePrompt | null {
     const f = this.frame;
     if (!f) return null;
     const k = handle.kind;
     const [hx, hy, hz] = f.half;
-    const field = (tag: string, value: number, at: Vector3) => ({ tag, value, ...this.toClient(at) });
+    const center = this.framePoint([0, 0, 0]).toArray() as Vec3;
+    type Field = HandlePrompt['fields'][number];
+    /**
+     * A box on the middle of an edge of the frame: `at` its middle, `along` its run, `ref` the point it
+     * keeps away from. For the bottom edges that is the middle of the bottom face: seen from above, a
+     * box on a back edge then goes up the picture, over the object but on the side the edge is read
+     * from, rather than down into the drawing of the underside.
+     */
+    const edge = (tag: string, value: number, at: Vec3, along: Vec3, ref: Vec3): Field => ({
+      tag,
+      value,
+      anchor: this.framePoint(at).toArray() as Vec3,
+      ref: this.framePoint(ref).toArray() as Vec3,
+      along: this.frameDir(along),
+      clientX: 0,
+      clientY: 0,
+    });
+    let made: HandlePrompt | null = null;
     switch (k.type) {
-      case 'height': {
+      case 'height':
         if (!f.single) return null;
-        // Midway up the nearest vertical edge.
-        const at = this.nearest([[-hx, -hy, 0], [hx, -hy, 0], [hx, hy, 0], [-hx, hy, 0]]);
-        return { kind: k, unit: 'mm', fields: [field('H', f.single.size[2], at)] };
-      }
+        // Right beside the height grip, so that it stays to hand on a big object seen close up; level with
+        // the grip, it covers neither the grip nor the lift arrow above it.
+        made = { kind: k, unit: 'mm', center, fields: [{ tag: 'H', value: f.single.size[2], anchor: handle.object.getWorldPosition(new Vector3()).toArray() as Vec3, beside: true, clientX: 0, clientY: 0 }] };
+        break;
       case 'resize': {
         if (!f.single) return null;
-        const fields = [];
+        const fields: Field[] = [];
         if (k.sx !== 0) {
-          // Width goes on an edge running along X: at the grip's side, else the side facing the camera.
-          const at = k.sy !== 0 ? this.framePoint([0, k.sy * hy, -hz]) : this.nearest([[0, -hy, -hz], [0, hy, -hz]]);
-          fields.push(field('W', f.single.size[0], at));
+          // Width goes on a bottom edge running along X: at the grip's side, else the side facing the camera.
+          const side = k.sy !== 0 ? k.sy : this.nearest([{ at: [0, -hy, -hz] as Vec3, s: -1 }, { at: [0, hy, -hz] as Vec3, s: 1 }]).s;
+          fields.push(edge('W', f.single.size[0], [0, side * hy, -hz], [1, 0, 0], [0, 0, -hz]));
         }
         if (k.sy !== 0) {
-          const at = k.sx !== 0 ? this.framePoint([k.sx * hx, 0, -hz]) : this.nearest([[-hx, 0, -hz], [hx, 0, -hz]]);
-          fields.push(field('D', f.single.size[1], at));
+          const side = k.sx !== 0 ? k.sx : this.nearest([{ at: [-hx, 0, -hz] as Vec3, s: -1 }, { at: [hx, 0, -hz] as Vec3, s: 1 }]).s;
+          fields.push(edge('D', f.single.size[1], [side * hx, 0, -hz], [0, 1, 0], [0, 0, -hz]));
         }
-        return { kind: k, unit: 'mm', fields };
+        made = { kind: k, unit: 'mm', center, fields };
+        break;
       }
       case 'lift':
-        return { kind: k, unit: 'mm', fields: [field('Z', f.bounds.min[2], handle.object.position.clone())] };
-      case 'rotate':
-        return { kind: k, unit: '°', fields: [field('XYZ'[k.axis], 0, handle.object.getWorldPosition(new Vector3()))] };
+        made = { kind: k, unit: 'mm', center, fields: [{ tag: 'Z', value: f.bounds.min[2], anchor: handle.object.position.toArray() as Vec3, out: [0, 0, 1], pad: PROMPT_LIFT_PAD, clientX: 0, clientY: 0 }] };
+        break;
+      case 'rotate': {
+        // The arc with its two arrowheads, sampled, so that the box can keep off the whole of it.
+        const ring = handle.object;
+        const keepOut = [0, 0.25, 0.5, 0.75, 1].map((t) => new Vector3(Math.cos((t * Math.PI) / 2), Math.sin((t * Math.PI) / 2), 0));
+        keepOut.push(new Vector3(1.2, -0.35, 0), new Vector3(-0.35, 1.2, 0), new Vector3(0, 0, 0));
+        made = {
+          kind: k,
+          unit: '°',
+          center,
+          fields: [{ tag: 'XYZ'[k.axis], value: 0, anchor: ring.getWorldPosition(new Vector3()).toArray() as Vec3, keepOut: keepOut.map((p) => ring.localToWorld(p).toArray() as Vec3), clientX: 0, clientY: 0 }],
+        };
+        break;
+      }
       default:
         return null;
     }
+    return made && this.placePrompt(made);
+  }
+
+  /**
+   * Where the boxes go on screen. Each box is pushed out from its anchor along
+   * the way out of the object there, which is the way from the object's middle
+   * through the edge, square to the edge as seen on screen, far enough that the
+   * box's near corner sits a pad off the anchor. That holds for an edge behind
+   * the object too: the box then lies over the object, but on the side a
+   * dimension of that edge would be read from. The boxes are the same size at
+   * any zoom, so a small-looking object gets them hugging its edges just the
+   * same; two that would still land on each other are moved apart.
+   */
+  private placePrompt(prompt: HandlePrompt): HandlePrompt {
+    const EPS = 1e-3;
+    const center = this.toClient(new Vector3(...prompt.center));
+    const [bw, bh] = PROMPT_BOX;
+    /**
+     * The center of a box pushed out from `at` along `n`: its near corner a pad off `at` when `n` is well
+     * off the axes, sliding towards centered on the pad line as `n` lines up with an axis. The slide is
+     * continuous, so a small change of view moves the box a little rather than snapping it across.
+     */
+    const centerFor = (at: { clientX: number; clientY: number }, n: [number, number], pad = PROMPT_PAD): [number, number] => {
+      const lean = (c: number) => Math.max(-1, Math.min(1, c / 0.45));
+      return [at.clientX + n[0] * pad + lean(n[0]) * (bw / 2), at.clientY + n[1] * pad + lean(n[1]) * (bh / 2)];
+    };
+    const dirOnScreen = (from: Vec3, dir: Vec3): [number, number] => {
+      const a = this.toClient(new Vector3(...from));
+      const b = this.toClient(new Vector3(from[0] + dir[0] * EPS, from[1] + dir[1] * EPS, from[2] + dir[2] * EPS));
+      return [b.clientX - a.clientX, b.clientY - a.clientY];
+    };
+    const unit = ([x, y]: [number, number]): [number, number] | null => {
+      const l = Math.hypot(x, y);
+      return l < 1e-9 ? null : [x / l, y / l];
+    };
+    const view = this.renderer.domElement.getBoundingClientRect();
+    const fields = prompt.fields.map((field) => {
+      const at = this.toClient(new Vector3(...field.anchor));
+      if (field.beside) {
+        // To the right of the grip, or to the left when the right would run off the view.
+        const right = at.clientX + PROMPT_BESIDE + bw / 2;
+        const cx = right + bw / 2 + PROMPT_MARGIN <= view.right ? right : at.clientX - PROMPT_BESIDE - bw / 2;
+        return { ...field, clientX: cx, clientY: at.clientY };
+      }
+      if (field.keepOut) {
+        // Away from the object's middle, starting at the handle's middle, out until the box clears the handle by a pad.
+        const pts = field.keepOut.map((p) => this.toClient(new Vector3(...p)));
+        const box = { l: Math.min(...pts.map((p) => p.clientX)), r: Math.max(...pts.map((p) => p.clientX)), t: Math.min(...pts.map((p) => p.clientY)), b: Math.max(...pts.map((p) => p.clientY)) };
+        const mid = { clientX: (box.l + box.r) / 2, clientY: (box.t + box.b) / 2 };
+        let n = unit([mid.clientX - center.clientX, mid.clientY - center.clientY]) ?? [0, -1];
+        if (field.heading && n[0] * field.heading[0] + n[1] * field.heading[1] < 0) n = [-n[0], -n[1]];
+        const clear = (cx: number, cy: number) => cx + bw / 2 + PROMPT_PAD / 2 <= box.l || cx - bw / 2 - PROMPT_PAD / 2 >= box.r || cy + bh / 2 + PROMPT_PAD / 2 <= box.t || cy - bh / 2 - PROMPT_PAD / 2 >= box.b;
+        let t = 0;
+        while (t < 400 && !clear(mid.clientX + n[0] * t, mid.clientY + n[1] * t)) t += 2;
+        return { ...field, heading: n, clientX: mid.clientX + n[0] * t, clientY: mid.clientY + n[1] * t };
+      }
+      // Out of the object on screen: away from the box's reference point, a fixed way out, or away from the middle; then square to the edge.
+      const from = field.ref ? this.toClient(new Vector3(...field.ref)) : center;
+      let n: [number, number] | null = field.out ? unit(dirOnScreen(field.anchor, field.out)) : null;
+      n ??= unit([at.clientX - from.clientX, at.clientY - from.clientY]);
+      const e = field.along ? unit(dirOnScreen(field.anchor, field.along)) : null;
+      if (n && e) {
+        const d = n[0] * e[0] + n[1] * e[1];
+        n = unit([n[0] - d * e[0], n[1] - d * e[1]]) ?? n;
+      }
+      n ??= [0, 1];
+      // The side was settled when the boxes first appeared; a zoom or pan afterwards must not swap it.
+      if (field.heading && n[0] * field.heading[0] + n[1] * field.heading[1] < 0) n = [-n[0], -n[1]];
+      const [cx, cy] = centerFor(at, n, field.pad);
+      return { ...field, heading: n, clientX: cx, clientY: cy };
+    });
+    // Boxes that would overlap are moved apart along the line between them until they clear.
+    for (let a = 0; a < fields.length; a++)
+      for (let b = a + 1; b < fields.length; b++) {
+        const dx = fields[b].clientX - fields[a].clientX;
+        const dy = fields[b].clientY - fields[a].clientY;
+        if (Math.abs(dx) >= bw || Math.abs(dy) >= bh) continue;
+        // Clear whichever way needs the smaller move, up and down for a level pair.
+        const needX = bw - Math.abs(dx);
+        const needY = bh - Math.abs(dy);
+        if (needY <= needX) {
+          const sign = dy >= 0 ? 1 : -1;
+          fields[a].clientY -= (sign * (needY + 2)) / 2;
+          fields[b].clientY += (sign * (needY + 2)) / 2;
+        } else {
+          const sign = dx >= 0 ? 1 : -1;
+          fields[a].clientX -= (sign * (needX + 2)) / 2;
+          fields[b].clientX += (sign * (needX + 2)) / 2;
+        }
+      }
+    // Nothing goes off the view: a box that would is brought back to the margin.
+    for (const f of fields) {
+      f.clientX = Math.min(Math.max(f.clientX, view.left + PROMPT_MARGIN + bw / 2), view.right - PROMPT_MARGIN - bw / 2);
+      f.clientY = Math.min(Math.max(f.clientY, view.top + PROMPT_MARGIN_TOP + bh / 2), view.bottom - PROMPT_MARGIN - bh / 2);
+    }
+    return { ...prompt, fields };
+  }
+
+  /** Take the typing boxes away (the boxes call this too when they close themselves). */
+  dismissPrompt(): void {
+    if (!this.prompt) return;
+    this.prompt = null;
+    this.events.onHandleClick(null);
+  }
+
+  /** After the camera moved: boxes follow a zoom or a pan, and go away when the view turns. */
+  private followPrompt(): void {
+    if (!this.prompt) return;
+    if (this.camera.quaternion.angleTo(this.prompt.heading) > 1e-4) {
+      this.dismissPrompt();
+      return;
+    }
+    const prompt = this.placePrompt(this.prompt.prompt);
+    this.prompt = { prompt, heading: this.prompt.heading };
+    this.events.onHandleClick(prompt);
   }
 
   /** Apply a typed value as if the handle had been dragged there (one undo step). */
@@ -1321,27 +1517,44 @@ export class Viewer {
     return (b * w.dot(ray.direction) - w.dot(axis)) / denominator;
   }
 
-  /** Pointer position on the plane of the node's base, in the node's own (unscaled) frame, relative to its centre. */
-  private resizePoint(node: SceneNode, sx: number, sy: number): Vector3 | null {
+  /** True when the node's base plane is seen so nearly edge-on that a pointer cannot be placed on it. */
+  private baseEdgeOn(node: SceneNode): boolean {
+    const m = frameMatrix(node);
+    return Math.abs(this.raycaster.ray.direction.dot(new Vector3(m[6], m[7], m[8]))) < 0.06;
+  }
+
+  /** Of the node's two base axes, the one squarer to the view, which the pointer can follow. */
+  private bestBaseAxis(node: SceneNode): 0 | 1 {
+    const m = frameMatrix(node);
+    const d = this.raycaster.ray.direction;
+    return Math.abs(d.dot(new Vector3(m[0], m[1], m[2]))) <= Math.abs(d.dot(new Vector3(m[3], m[4], m[5]))) ? 0 : 1;
+  }
+
+  /**
+   * Pointer position on the plane of the node's base, in the node's own (unscaled) frame, relative to
+   * its center. With `axisOnly`, or for an edge grip, the pointer is followed along one axis only and
+   * the other is held at the grip, which works from any viewing angle.
+   */
+  private resizePoint(node: SceneNode, sx: number, sy: number, axisOnly?: 0 | 1): Vector3 | null {
     const m = frameMatrix(node);
     const x = new Vector3(m[0], m[1], m[2]);
     const y = new Vector3(m[3], m[4], m[5]);
     const z = new Vector3(m[6], m[7], m[8]);
-    const centre = new Vector3(m[9], m[10], m[11]);
-    const base = centre.clone().addScaledVector(z, -node.size[2] / 2);
-    if (sx !== 0 && sy !== 0) {
+    const center = new Vector3(m[9], m[10], m[11]);
+    const base = center.clone().addScaledVector(z, -node.size[2] / 2);
+    const single = axisOnly ?? (sx !== 0 && sy !== 0 ? null : sx !== 0 ? 0 : 1);
+    if (single === null) {
       const plane = new Plane().setFromNormalAndCoplanarPoint(z, base);
       if (Math.abs(this.raycaster.ray.direction.dot(z)) < 0.06) return null;
       const p = this.raycaster.ray.intersectPlane(plane, new Vector3());
       if (!p) return null;
-      p.sub(centre);
+      p.sub(center);
       return new Vector3(p.dot(x), p.dot(y), 0);
     }
-    // Edge grips slide along one axis only, which works from any viewing angle.
-    const axis = sx !== 0 ? x : y;
-    const t = this.alongAxis(base, axis);
+    const t = this.alongAxis(base, single === 0 ? x : y);
     if (t === null) return null;
-    return sx !== 0 ? new Vector3(t, 0, 0) : new Vector3(0, t, 0);
+    // The axis not followed stays at the grip's own place, so that side keeps its size.
+    return single === 0 ? new Vector3(t, (sy * node.size[1]) / 2, 0) : new Vector3((sx * node.size[0]) / 2, t, 0);
   }
 
   /** Angle of the pointer around a fixed axis through `pivot`, or null when that axis is seen side-on. */
@@ -1377,6 +1590,8 @@ export class Viewer {
     if (this.press && Math.hypot(event.clientX - this.press.x, event.clientY - this.press.y) >= dragThreshold(event)) this.press = null;
 
     switch (drag.mode) {
+      case 'held':
+        return;
       case 'pending-move': {
         if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < dragThreshold(event) || drag.nodes.length === 0) return;
         this.drag = { mode: 'move', nodes: drag.nodes, plane: drag.plane, origin: drag.origin };
@@ -1453,7 +1668,10 @@ export class Viewer {
         if (press && event.type === 'pointerup') {
           this.events.onGestureEnd(true);
           const prompt = this.promptFor(press.handle);
-          if (prompt) this.events.onHandleClick(prompt);
+          if (prompt) {
+            this.prompt = { prompt, heading: this.camera.quaternion.clone() };
+            this.events.onHandleClick(prompt);
+          }
           return;
         }
         this.events.onGestureEnd(event.type === 'pointercancel');
@@ -1472,7 +1690,7 @@ export class Viewer {
     this.hovered = handle;
     // Over an anchor dot the objects move there for a look; off it, they come back.
     if (handle?.kind.type === 'align') this.events.onAlignHover(handle.kind.axis, handle.kind.mode);
-    else if (was?.type === 'align') this.events.onAlignHover(null, 'centre');
+    else if (was?.type === 'align') this.events.onAlignHover(null, 'center');
     if (!this.placing) this.renderer.domElement.style.cursor = handle ? handle.cursor : '';
     this.requestRender();
   }
@@ -1529,7 +1747,7 @@ export class Viewer {
 
   private resizeTo(drag: Extract<Drag, { mode: 'resize' }>, event: PointerEvent): void {
     const { node, sx, sy } = drag;
-    const p = this.resizePoint(node, sx, sy);
+    const p = this.resizePoint(node, sx, sy, drag.axisOnly);
     if (!p) return;
     p.sub(drag.grab);
     const size: Vec3 = [...node.size];
@@ -1705,6 +1923,8 @@ export class Viewer {
 
   // --- rendering ---------------------------------------------------------
 
+  private readonly onCameraChange = (): void => this.followPrompt();
+
   private readonly requestRender = (): void => {
     if (!this.ok || this.disposed || this.raf) return;
     this.raf = requestAnimationFrame(this.frameTick);
@@ -1714,6 +1934,8 @@ export class Viewer {
     this.raf = 0;
     if (this.disposed) return;
     this.stepAnimation();
+    // A view animation moves the camera without the controls noticing, so the boxes are told here.
+    if (this.animation) this.followPrompt();
     // With damping, update() keeps emitting 'change' (and so re-requesting frames) until the motion settles.
     this.controls.update();
     this.draw();

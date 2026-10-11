@@ -51,14 +51,14 @@ async function readable(reads: Promise<PickedFile>[]): Promise<PickedFile[]> {
  * has finished.
  */
 function listen(register: () => Promise<() => void>): () => void {
-  let cancelled = false;
+  let canceled = false;
   let unlisten: (() => void) | null = null;
   register().then((stop) => {
-    if (cancelled) stop();
+    if (canceled) stop();
     else unlisten = stop;
   }, console.error);
   return () => {
-    cancelled = true;
+    canceled = true;
     unlisten?.();
   };
 }
@@ -83,7 +83,7 @@ function pickInBrowser(filters: FileFilter[], multiple: boolean): Promise<Picked
   });
 }
 
-/** Native open dialog, or a hidden <input type="file"> in the browser. Empty array if cancelled. */
+/** Native open dialog, or a hidden <input type="file"> in the browser. Empty array if canceled. */
 export async function pickFiles(options: { filters: FileFilter[]; multiple?: boolean }): Promise<PickedFile[]> {
   const multiple = options.multiple ?? false;
   if (!isTauri()) return pickInBrowser(options.filters, multiple);
@@ -101,7 +101,7 @@ export async function readPath(path: string): Promise<PickedFile> {
   return { name: baseName(path), path, bytes };
 }
 
-/** Native save dialog then write (desktop), or a download (browser, where `path` is null). Null if cancelled. */
+/** Native save dialog then write (desktop), or a download (browser, where `path` is null). Null if canceled. */
 export async function saveAs(
   suggestedName: string,
   filters: FileFilter[],
@@ -157,7 +157,7 @@ export function onFilesDropped(handler: (files: PickedFile[]) => void): () => vo
       });
     });
   }
-  // Both events must be cancelled, or the browser navigates to the dropped file.
+  // Both events must be canceled, or the browser navigates to the dropped file.
   const allow = (event: DragEvent) => event.preventDefault();
   const drop = (event: DragEvent) => {
     event.preventDefault();
@@ -206,7 +206,7 @@ export function guardClose(isDirty: () => boolean): () => void {
       });
     });
   }
-  // Browsers show their own wording; cancelling the event is what triggers the prompt.
+  // Browsers show their own wording; canceling the event is what triggers the prompt.
   const warn = (event: BeforeUnloadEvent) => {
     if (isDirty()) event.preventDefault();
   };

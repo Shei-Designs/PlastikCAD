@@ -1,4 +1,4 @@
-// Solid modelling backend: turns scene nodes into meshes with the Manifold
+// Solid modeling backend: turns scene nodes into meshes with the Manifold
 // kernel, which guarantees watertight (printable) output from boolean
 // operations. Runs inside the geometry worker (and directly under vitest).
 import Module from 'manifold-3d';
@@ -159,7 +159,7 @@ function decodeMesh(asset: MeshAsset): MeshData {
 
 type Deletable = { delete(): void };
 
-/** The geometry of a node as built: at its built size, centred on the origin. */
+/** The geometry of a node as built: at its built size, centered on the origin. */
 type Built =
   | { solid: Manifold; triangles: number }
   /** An imported mesh that is not watertight. It can be shown and exported as it is, but not combined. */
@@ -223,7 +223,7 @@ function scoped<T>(fn: (keep: Keep) => T): T {
 
 /** One request from the outside. The cache is only trimmed once it is over, so no solid is deleted while in use. */
 function operation<T>(fn: (k: ManifoldToplevel) => T): T {
-  if (!kernel) throw new Error('Geometry kernel is not initialised');
+  if (!kernel) throw new Error('Geometry kernel is not initialized');
   touched.clear();
   try {
     return fn(kernel);
@@ -308,7 +308,7 @@ function groupSolid(k: ManifoldToplevel, node: GroupNode, keep: Keep): Manifold 
   return result;
 }
 
-/** A parametric part, moved from standing on the plate to being centred on its box like every other node. */
+/** A parametric part, moved from standing on the plate to being centered on its box like every other node. */
 function partSolid(k: ManifoldToplevel, node: PartNode, keep: Keep): Manifold {
   // A design saved with an older set of parameters gets the defaults for whatever it lacks.
   const def = getGenerator(node.part);
@@ -329,8 +329,8 @@ function outlineSolid(k: ManifoldToplevel, node: SceneNode, asset: OutlineAsset)
     }
     const section = parts.length === 1 ? parts[0] : keep(k.CrossSection.union(parts));
     if (section.isEmpty()) throw new Error(`"${node.name}" has no filled areas to extrude.`);
-    // 1 mm thick, centred like the artwork itself already is. Not with the binding's own `center`
-    // option, which leaks the uncentred solid. (Polygons going into and out of a CrossSection leak
+    // 1 mm thick, centered like the artwork itself already is. Not with the binding's own `center`
+    // option, which leaks the uncentered solid. (Polygons going into and out of a CrossSection leak
     // a little too, some bytes a point; that is tolerable once per asset, and nothing here repeats it.)
     return checked(keep(keep(section.extrude(1, 0, 0, [1, 1])).translate([0, 0, -0.5])));
   });
@@ -431,7 +431,7 @@ function concatenate(parts: MeshData[]): MeshData {
 // ---------------------------------------------------------------------------
 // Requests
 
-/** Geometry of one node at its built size, centred on the origin (see `builtSize`); `key` is its `geomKey`. */
+/** Geometry of one node at its built size, centered on the origin (see `builtSize`); `key` is its `geomKey`. */
 export function build(key: string, node: SceneNode): BuildResult {
   return operation((k) => {
     const entry = builtOf(k, node, key);

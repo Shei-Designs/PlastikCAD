@@ -18,7 +18,7 @@ const maxX = (poly: Polygon) => Math.max(...poly.map(([x]) => x));
 const maxY = (poly: Polygon) => Math.max(...poly.map(([, y]) => y));
 const minY = (poly: Polygon) => Math.min(...poly.map(([, y]) => y));
 
-describe('aluminium extrusion', () => {
+describe('aluminum extrusion', () => {
   it('is a 20 mm V-slot cell with four slots and a bore by default', () => {
     const pr = profile(params(), q);
     expect(pr.size).toBe(SIZES['20']);
@@ -76,7 +76,7 @@ describe('aluminium extrusion', () => {
     expect(Math.max(...profile(params(), q).outline.map(([x, y]) => Math.abs(x) + Math.abs(y)))).toBeLessThan(20 - 2 * (2 - Math.SQRT2) + 1e-6);
   });
 
-  it('matches the catalogue sectional areas for every size', () => {
+  it('matches the catalog sectional areas for every size', () => {
     for (const [size, s] of Object.entries(SIZES)) {
       const style = size === '20' ? 'v' : 't';
       const pr = profile(params({ size, style }), q);
@@ -109,7 +109,7 @@ describe('aluminium extrusion', () => {
     expect([four.width, four.height]).toEqual([40, 40]);
     expect(four.mouths).toHaveLength(8);
     expect(four.bores).toHaveLength(4);
-    // Eight channels, four hollows, the 11 mm square middle and four fillets; nothing crosses the centre.
+    // Eight channels, four hollows, the 11 mm square middle and four fillets; nothing crosses the center.
     expect(four.voids).toHaveLength(17);
     const middle = four.voids.find((v) => v.length === 4 && v.every(([x, y]) => Math.abs(x) < 6 && Math.abs(y) < 6))!;
     expect(signedArea(middle)).toBeCloseTo(121, 9);
@@ -165,6 +165,6 @@ describe('aluminium extrusion', () => {
 
   it('can do without the bores', () => {
     expect(profile(params({ bores: false }), q).bores).toHaveLength(0);
-    expect(extrusion.build(params({ bores: false }), q).info.find((i) => i.label === 'Centre bore')?.value).toBe('none');
+    expect(extrusion.build(params({ bores: false }), q).info.find((i) => i.label === 'Center bore')?.value).toBe('none');
   });
 });

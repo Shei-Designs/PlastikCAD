@@ -66,7 +66,7 @@ const meshAsset = (positions: number[], triangles: number[]): Asset => ({
   triangles: encode(Uint32Array.from(triangles)),
 });
 
-// A 2 mm cube centred on the origin; vertex i sits at (bit 0, bit 1, bit 2) of i. Outward-facing triangles.
+// A 2 mm cube centered on the origin; vertex i sits at (bit 0, bit 1, bit 2) of i. Outward-facing triangles.
 const CUBE_POSITIONS = Array.from({ length: 8 }, (_, i) => [i & 1 ? 1 : -1, i & 2 ? 1 : -1, i & 4 ? 1 : -1]).flat();
 // prettier-ignore
 const CUBE_TRIANGLES = [
@@ -309,7 +309,7 @@ describe('lettering', () => {
     setAssets({ [textAssetKey(label)]: { kind: 'outline', shapes: [{ contours: ring(), evenodd: false }] } });
     const block = { ...base('Block'), type: 'shape', shape: 'box', params: defaultParams('box'), size: [20, 20, 20], hole: false, color: '#8fa3bf' } as ShapeNode;
     const group: GroupNode = { ...base('Group'), type: 'group', natural: [20, 20, 20], size: [20, 20, 20], hole: false, color: '#8fa3bf', children: [block, label] };
-    // The lettering reaches a millimetre and a half into the top of the block.
+    // The lettering reaches a millimeter and a half into the top of the block.
     expect(build(geomKey(group), group).volume).toBeCloseTo(8000 - 84 * 1.5, 4);
   });
 
@@ -352,14 +352,14 @@ describe('imported outlines', () => {
     });
   });
 
-  it('extrudes them 1 mm, centred', () => {
+  it('extrudes them 1 mm, centered', () => {
     const r = make(imported('frame', [10, 10, 1], { size: [10, 10, 5] }));
     expect(r.watertight).toBe(true);
     expect(r.volume).toBeCloseTo(100 - 16, 6);
     expectBounds(r.bounds, [-5, -5, -0.5], [5, 5, 0.5]);
   });
 
-  it('honours the fill rule and merges shapes', () => {
+  it('honors the fill rule and merges shapes', () => {
     expect(make(imported('solid', [10, 10, 1])).volume).toBeCloseTo(100, 6);
     const pair = make(imported('pair', [18, 10, 1]));
     expect(pair.volume).toBeCloseTo(180, 6);

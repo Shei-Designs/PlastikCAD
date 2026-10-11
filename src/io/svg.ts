@@ -5,7 +5,7 @@ import { bounds } from './outline';
 const MARGIN = 1; // mm
 const STROKE = 0.05; // mm, hairline for laser cutters
 
-/** SVG in millimetres (1 user unit = 1 mm). Y is negated because SVG's Y axis points down. */
+/** SVG in millimeters (1 user unit = 1 mm). Y is negated because SVG's Y axis points down. */
 export function writeSvg(outline: Polygon[], name: string): Uint8Array {
   const contours = outline.filter((c) => c.length >= 2);
   const b = contours.length ? bounds(contours) : { min: [0, 0], max: [0, 0] };

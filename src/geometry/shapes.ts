@@ -38,7 +38,7 @@ const RED = '#d8605a';
 const BLUE = '#5b8fd9';
 const YELLOW = '#e5c04b';
 
-/** The colours offered for nodes; the same set as the sibling app's materials. */
+/** The colors offered for nodes: two rows of eight, muted enough that edges and shading still read. Any other color can be picked by hand. */
 export const PALETTE: { name: string; value: string }[] = [
   { name: 'Steel', value: STEEL },
   { name: 'Orange', value: ORANGE },
@@ -48,6 +48,14 @@ export const PALETTE: { name: string; value: string }[] = [
   { name: 'Red', value: RED },
   { name: 'Blue', value: BLUE },
   { name: 'Yellow', value: YELLOW },
+  { name: 'White', value: '#f2f2f0' },
+  { name: 'Black', value: '#2a2d33' },
+  { name: 'Teal', value: '#3fa9a3' },
+  { name: 'Purple', value: '#8b6fd0' },
+  { name: 'Pink', value: '#df7fa6' },
+  { name: 'Lime', value: '#a3c24a' },
+  { name: 'Brown', value: '#9a6b4c' },
+  { name: 'Sky', value: '#7fbfe3' },
 ];
 
 const TAU = Math.PI * 2;
@@ -302,7 +310,7 @@ const RIM_SEGMENTS = 20;
 
 // The builders stay away from the kernel's CrossSection class: the JS binding
 // leaks WASM memory whenever polygons cross it (and a whole solid when
-// extruding "centred"), which adds up for the shapes that are rebuilt on every
+// extruding "centered"), which adds up for the shapes that are rebuilt on every
 // step of a resize.
 
 /** Regular polygon extruded along Z, tapering to `top` times its size; `fit` then sizes it to the box. */
@@ -439,8 +447,8 @@ const BUILDERS: Record<ShapeKind, (c: BuildContext) => Manifold> = {
     // Radial half-width of the ring's section: round, unless the hole would close up - then it is
     // squeezed so that the hole just does.
     const a = Math.min(r, size[0] / 4);
-    const centre = size[0] / 2 - a;
-    const closed = centre - a < 1e-9;
+    const center = size[0] / 2 - a;
+    const closed = center - a < 1e-9;
     const rings = p.sides;
     const n = Math.max(8, Math.round(p.sides / 8) * 4);
     const positions = new Float32Array(rings * n * 3);
@@ -448,11 +456,11 @@ const BUILDERS: Record<ShapeKind, (c: BuildContext) => Manifold> = {
       const turn = (i * TAU) / rings;
       for (let j = 0; j < n; j++) {
         const t = (j * TAU) / n;
-        const radius = centre + a * Math.cos(t);
+        const radius = center + a * Math.cos(t);
         positions.set([radius * Math.cos(turn), radius * Math.sin(turn), r * Math.sin(t)], (i * n + j) * 3);
       }
     }
-    // Vertex j of ring i. With the hole closed the innermost vertices of all rings meet in the centre and are one.
+    // Vertex j of ring i. With the hole closed the innermost vertices of all rings meet in the center and are one.
     const at = (i: number, j: number) => (closed && j % n === n / 2 ? n / 2 : (i % rings) * n + (j % n));
     const triangles: number[] = [];
     for (let i = 0; i < rings; i++) {
@@ -467,7 +475,7 @@ const BUILDERS: Record<ShapeKind, (c: BuildContext) => Manifold> = {
   },
 };
 
-/** Stretches and moves a solid so that its bounding box is exactly `size`, centred on the origin. */
+/** Stretches and moves a solid so that its bounding box is exactly `size`, centered on the origin. */
 function fit(m: Manifold, size: Vec3, keep: Keep): Manifold {
   if (m.isEmpty()) throw new Error('This shape is empty.');
   const { min, max } = m.boundingBox();
@@ -478,7 +486,7 @@ function fit(m: Manifold, size: Vec3, keep: Keep): Manifold {
 }
 
 /**
- * Builds a shape node at its built size (see `builtSize`), centred on the
+ * Builds a shape node at its built size (see `builtSize`), centered on the
  * origin. Everything made along the way, the result included, is handed to
  * `keep`; the caller deletes what it does not need.
  */

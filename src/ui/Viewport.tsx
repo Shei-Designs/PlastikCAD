@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { geometry } from '../state/geometry';
 import { SNAP_STEPS } from '../state/persist';
 import {
@@ -52,6 +52,7 @@ import {
 } from './icons';
 import { ArrayPanel } from './ArrayPanel';
 import { Popover } from './Popover';
+import { TransformBox } from './TransformBox';
 
 const VIEWS: { id: ViewPreset; label: string }[] = [
   { id: 'iso', label: '3D' },
@@ -88,7 +89,7 @@ function Actions() {
         <button type="button" className="chip icon" title="Duplicate in place (Ctrl+D)" aria-label="Duplicate" disabled={none} onClick={duplicateSelected}>
           <DuplicateIcon />
         </button>
-        <Popover className="chip icon" title="Array: copies in a grid or around a ring" button={<ArrayIcon />} disabled={none}>
+        <Popover className="chip icon" title="Array: copies in a grid or around a ring" button={<ArrayIcon />} disabled={none} align="right">
           {(close) => <ArrayPanel close={close} />}
         </Popover>
         <button type="button" className="chip icon" title="Delete (Del)" aria-label="Delete" disabled={none} onClick={deleteSelected}>
@@ -149,7 +150,17 @@ function HandleInput({ prompt, onClose }: { prompt: HandlePrompt; onClose: () =>
     if (values.every((v) => Number.isFinite(v))) viewerRef.current?.applyTyped(prompt.kind, values);
     onClose();
   };
-  const rect = host.current?.parentElement?.getBoundingClientRect();
+  // The fields carry screen coordinates; the boxes are placed within the viewport, so its
+  // corner comes off. That is only known once the form is in the page, hence the effect.
+  const [origin, setOrigin] = useState<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const r = host.current?.parentElement?.getBoundingClientRect();
+    setOrigin(r ? { left: r.left, top: r.top } : { left: 0, top: 0 });
+  }, []);
+  // The first box takes the focus once it is in place (a box still hidden cannot).
+  useEffect(() => {
+    if (origin) host.current?.querySelector('input')?.focus();
+  }, [origin]);
   return (
     <form
       ref={host}
@@ -164,10 +175,9 @@ function HandleInput({ prompt, onClose }: { prompt: HandlePrompt; onClose: () =>
       }}
     >
       {prompt.fields.map((f, i) => (
-        <label key={f.tag} className="readout prompt" style={{ left: `${f.clientX - (rect?.left ?? 0)}px`, top: `${f.clientY - (rect?.top ?? 0)}px` }}>
+        <label key={f.tag} className="readout prompt" style={{ left: `${f.clientX - (origin?.left ?? 0)}px`, top: `${f.clientY - (origin?.top ?? 0)}px`, visibility: origin ? undefined : 'hidden' }}>
           <span className="tag">{f.tag}</span>
           <input
-            autoFocus={i === 0}
             aria-label={f.tag}
             value={texts[i]}
             spellCheck={false}
@@ -198,6 +208,10 @@ export function Viewport() {
 
   const state = useEditor((s) => s);
   const { prefs, placing, selection, viewing, notice, busy, aligning, editing, highlight } = state;
+  // Another selection, or an edit from elsewhere, and the typing boxes no longer belong to anything.
+  useEffect(() => {
+    viewer.current?.dismissPrompt();
+  }, [selection, editing]);
   const scene = shownScene(state);
   const assets = state.doc.assets;
   const revision = useSyncExternalStore(geometry.subscribe, geometry.getRevision);
@@ -295,7 +309,7 @@ export function Viewport() {
     <div className="viewport">
       <div className="canvas-host" ref={host} />
       <div className="readout" ref={readout} hidden />
-      {prompt && <HandleInput key={prompt.fields.map((f) => `${f.tag}${f.clientX}`).join()} prompt={prompt} onClose={() => setPrompt(null)} />}
+      {prompt && <HandleInput key={JSON.stringify(prompt.kind)} prompt={prompt} onClose={() => viewer.current?.dismissPrompt()} />}
       <div className="view-toolbar">
         <div className="segmented small" role="group" aria-label="Camera view">
           {VIEWS.map((v) => (
@@ -361,7 +375,8 @@ export function Viewport() {
         </div>
       )}
 
-      <div className="overlay">
+      <div className="corner">
+        <div className="overlay">
         {failures.map((text) => (
           <div className="notice error" role="alert" key={text}>
             <WarningIcon />
@@ -377,6 +392,8 @@ export function Viewport() {
             </button>
           </div>
         )}
+        </div>
+        <TransformBox />
       </div>
 
       {busy && (

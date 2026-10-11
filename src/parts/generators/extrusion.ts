@@ -1,4 +1,4 @@
-// Aluminium extrusion profiles: 20, 30 and 40 mm cells, V-slot or T-slot, in
+// Aluminum extrusion profiles: 20, 30 and 40 mm cells, V-slot or T-slot, in
 // a row of up to four cells, one or two rows deep. Each size follows one
 // maker's section drawing, the rest being close enough to it: OpenBuilds
 // V-Slot for 20 mm, Misumi HFS6 for 30 mm and HFS8 for 40 mm. They share one
@@ -20,7 +20,7 @@
 //     inner cells' stacked cores are joined by walls flush with their sides.
 //
 // Every figure in the table below is read off a drawing; the sectional areas
-// come out within a few percent of the catalogue values.
+// come out within a few percent of the catalog values.
 import { arcSegments, circle, ensureCCW, polar, signedArea } from '../math2d';
 import { difference, extrude, translate } from '../types';
 import type { Polygon, Quality, Shape2D, Solid, Vec2 } from '../types';
@@ -62,7 +62,7 @@ export interface Size {
   cornerHole?: { diameter: number; inset: number };
   /** A square hollow in each corner block of the profile, with rounded corners. */
   cornerCavity?: { size: number; inset: number; radius: number };
-  /** Sectional area of the single-cell T-slot (V-slot for 20) from the catalogue, for the tests. */
+  /** Sectional area of the single-cell T-slot (V-slot for 20) from the catalog, for the tests. */
   catalogueArea: number;
 }
 
@@ -122,7 +122,7 @@ const DIRS: Vec2[] = [
 ];
 const left = (d: Vec2): Vec2 => [-d[1], d[0]];
 
-/** A square with rounded corners, CCW, centred on (cx, cy). */
+/** A square with rounded corners, CCW, centered on (cx, cy). */
 function roundedSquare(size: number, r: number, cx: number, cy: number, n: number): Polygon {
   const h = size / 2;
   const pts: Vec2[] = [];
@@ -195,7 +195,7 @@ export function profile(p: Params, q: Quality): Profile {
       for (const d of DIRS) {
         const e = left(d);
         const outer = (d[0] < 0 && i === 0) || (d[0] > 0 && i === across - 1) || (d[1] < 0 && j === 0) || (d[1] > 0 && j === up - 1);
-        // (u, v): along the face from the slot's centre line, and depth in from the cell's edge.
+        // (u, v): along the face from the slot's center line, and depth in from the cell's edge.
         const at = (u: number, v: number): Vec2 => [c[0] + d[0] * (h - v) + e[0] * u, c[1] + d[1] * (h - v) + e[1] * u];
         if (outer) {
           // The channel behind the lip: straight walls, then the 45° taper onto the core's top.
@@ -276,7 +276,7 @@ export function profile(p: Params, q: Quality): Profile {
         [-1, -1],
       ]) {
         if (inner(sx > 0 ? i : i - 1)) continue;
-        // The fillet: what an arc centred a radius into the core takes off its corner. It only
+        // The fillet: what an arc centered a radius into the core takes off its corner. It only
         // touches the open middle at the corner, so it is a polygon of its own, between the two
         // hollows that meet there.
         const qx = x + sx * (cd + fr);
@@ -315,13 +315,13 @@ export function profile(p: Params, q: Quality): Profile {
     const out: Polygon = [];
     sides.forEach(({ d, from, cells }, k) => {
       const e = left(d);
-      // The corner before this side: its arc is centred R in from the corner.
-      const centre: Vec2 = [from[0] - d[0] * R + e[0] * R, from[1] - d[1] * R + e[1] * R];
+      // The corner before this side: its arc is centered R in from the corner.
+      const center: Vec2 = [from[0] - d[0] * R + e[0] * R, from[1] - d[1] * R + e[1] * R];
       const a0 = (k - 2) * (Math.PI / 2);
-      for (let t = 0; t <= nr; t++) out.push(polar(R, a0 + (t / nr) * (Math.PI / 2), centre[0], centre[1]));
+      for (let t = 0; t <= nr; t++) out.push(polar(R, a0 + (t / nr) * (Math.PI / 2), center[0], center[1]));
       if (plain) return;
       for (let kc = 0; kc < cells; kc++) {
-        // The mouth profile around this cell's slot centre: (u, v) along the side and in from the surface.
+        // The mouth profile around this cell's slot center: (u, v) along the side and in from the surface.
         const u0 = (kc + 0.5) * C;
         const m = a + chamfer;
         const depth = lip;
@@ -348,9 +348,9 @@ export function profile(p: Params, q: Quality): Profile {
 
 export const extrusion: GeneratorDef = {
   id: 'extrusion',
-  name: 'Aluminium rail',
+  name: 'Aluminum rail',
   category: 'frames',
-  summary: 'Slotted aluminium profile in 20, 30 and 40 mm cells (2020, 2040, 4040, 3030, 3060, 4080...), V-slot or T-slot.',
+  summary: 'Slotted aluminum profile in 20, 30 and 40 mm cells (2020, 2040, 4040, 3030, 3060, 4080...), V-slot or T-slot.',
   groups: [
     {
       title: 'Profile',
@@ -376,7 +376,7 @@ export const extrusion: GeneratorDef = {
         },
         { key: 'cells', label: 'Cells', type: 'number', default: 1, min: 1, max: 4, step: 1, integer: true, help: 'Cells in a row: 2020 is one, 2040 two, 2060 three.' },
         { key: 'double', label: 'Two rows', type: 'boolean', default: false, help: 'Two rows of cells: 4040 is two cells with two rows, 4080 four cells with two rows.' },
-        { key: 'bores', label: 'Centre bores', type: 'boolean', default: true, help: 'The hole down the middle of each cell.' },
+        { key: 'bores', label: 'Center bores', type: 'boolean', default: true, help: 'The hole down the middle of each cell.' },
       ],
     },
   ],
@@ -403,7 +403,7 @@ export const extrusion: GeneratorDef = {
         { label: 'Slot', value: `${str(p, 'style') === 't' ? 'T' : 'V'}, ${mm(size.opening, 1)} opening` },
         { label: 'Slots', value: String(2 * (across + up)) },
         { label: 'Slot depth', value: mm(cd) },
-        { label: 'Centre bore', value: bool(p, 'bores') ? mm(size.bore, 1) : 'none' },
+        { label: 'Center bore', value: bool(p, 'bores') ? mm(size.bore, 1) : 'none' },
         { label: 'Section', value: `${Math.round(area)} mm²` },
       ],
       warnings,

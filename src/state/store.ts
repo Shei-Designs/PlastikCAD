@@ -7,7 +7,7 @@ import { clampParams } from '../geometry/shapes';
 import { encodeFloat32, encodeUint32 } from '../io/base64';
 import { exportMesh, exportOutline, FORMATS } from '../io/export';
 import type { FormatId } from '../io/export';
-import { centreMesh, centreOutline, IMPORT_EXTENSIONS, importFile } from '../io/import';
+import { centerMesh, centerOutline, IMPORT_EXTENSIONS, importFile } from '../io/import';
 import { emptyDoc, parseDoc, serializeDoc } from '../model/file';
 import { hashString } from '../model/geomKey';
 import { boundsCenter, boundsSize, boxBounds, tidyVec, unionBounds } from '../model/math';
@@ -478,7 +478,10 @@ export async function editPart(id: string, change: { part?: string; params?: Rec
   if (node?.type !== 'part' || node.locked || state.viewing) return;
   const def = getGenerator(change.part ?? node.part);
   const params = change.part && change.part !== node.part ? sanitizeParams(def, change.params) : sanitizeParams(def, { ...node.params, ...change.params });
-  const name = node.name === getGenerator(node.part).name ? def.name : node.name;
+  // A part still carrying its kind's own name (or that plus a number) takes the new kind's name with it.
+  const was = getGenerator(node.part).name;
+  const auto = node.name === was || new RegExp(`^${was.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\d+$`).test(node.name);
+  const name = change.part && change.part !== node.part && auto ? uniqueName(state.doc.scene.filter((n) => n.id !== id), def.name) : node.name;
   const edit = ++partEdits;
   try {
     const sized = await sizePart({ ...node, part: def.id, params, name });
@@ -577,11 +580,11 @@ export function alignSelected(axis: 0 | 1 | 2, mode: AlignMode): void {
   alignSelectedOn([[axis, mode]]);
 }
 
-/** Several alignments as one step (centre on X and Y, say). */
+/** Several alignments as one step (center on X and Y, say). */
 export function alignSelectedOn(steps: [0 | 1 | 2, AlignMode][]): void {
   const nodes = selectedNodes();
   // In align mode the dots' box is the reference; otherwise a single object is aligned to
-  // the plate's centre lines, and several to their common box.
+  // the plate's center lines, and several to their common box.
   const target: Bounds | null = state.aligning?.bounds ?? (nodes.length > 1 ? selectionBounds(nodes) : { min: [0, 0, 0], max: [0, 0, 0] });
   if (!target || nodes.length === 0) return;
   let moved = nodes.filter((n) => !n.locked);
@@ -643,7 +646,7 @@ function aligned(axis: 0 | 1 | 2, mode: AlignMode): SceneNode[] | null {
 }
 
 /** Hovering a dot moves the objects there for a look; null puts them back. */
-export function previewAlign(axis: 0 | 1 | 2 | null, mode: AlignMode = 'centre'): void {
+export function previewAlign(axis: 0 | 1 | 2 | null, mode: AlignMode = 'center'): void {
   if (!state.aligning) return;
   if (axis === null) {
     if (gesture) endGesture(true);
@@ -670,9 +673,9 @@ export function commitAlign(axis: 0 | 1 | 2, mode: AlignMode): void {
 /**
  * A pattern as the panel asks for it. The frame (the largest of two or more
  * selected objects) is found here: a grid fits inside it, a ring goes round
- * its centre, and either way it stays put.
+ * its center, and either way it stays put.
  */
-export type ArrayRequest = (Omit<RingArray, 'centre'> & { centre: Vec2 | 'frame' }) | (Omit<GridArray, 'fit'> & { fit?: { inset: number } });
+export type ArrayRequest = (Omit<RingArray, 'center'> & { center: Vec2 | 'frame' }) | (Omit<GridArray, 'fit'> & { fit?: { inset: number } });
 
 /** Patterns stop here: every place is another object for the kernel to merge. */
 export const ARRAY_LIMIT = 400;
@@ -701,17 +704,17 @@ export function previewArray(request: ArrayRequest): void {
   const base = gesture ?? step();
   const ids = new Set(base.selection);
   const picked = base.scene.filter((n) => ids.has(n.id));
-  const framed = request.kind === 'grid' ? Boolean(request.fit) : request.centre === 'frame';
+  const framed = request.kind === 'grid' ? Boolean(request.fit) : request.center === 'frame';
   const frame = framed ? arrayFrame(picked) : null;
   const seeds = picked.filter((n) => !n.locked && n !== frame);
   if (seeds.length === 0) return;
   if (arrayPlaces(request) > ARRAY_LIMIT) return notify(`A pattern can have up to ${ARRAY_LIMIT} places.`);
   let spec: ArraySpec;
   if (request.kind === 'grid') spec = request.fit && frame ? { ...request, fit: { inset: request.fit.inset, bounds: geometry.bounds(frame) } } : { ...request, fit: undefined };
-  else if (request.centre === 'frame') {
+  else if (request.center === 'frame') {
     const c = frame ? boundsCenter(geometry.bounds(frame)) : boundsCenter(unionBounds(seeds.map((n) => geometry.bounds(n))));
-    spec = { ...request, centre: [c[0], c[1]] };
-  } else spec = { ...request, centre: request.centre };
+    spec = { ...request, center: [c[0], c[1]] };
+  } else spec = { ...request, center: request.center };
   const { originals, copies } = arrayNodes(seeds, (n) => geometry.bounds(n), spec);
   const moved = new Map(originals.map((n) => [n.id, n]));
   let scene = base.scene.map((n) => moved.get(n.id) ?? n);
@@ -744,7 +747,7 @@ export function mirrorSelected(axis: 0 | 1 | 2): void {
   replaceNodes(mirrorNodes(nodes, axis, boundsCenter(bounds)));
 }
 
-/** Turn the selection by `degrees` about a fixed axis through its centre (a single object turns about its own). */
+/** Turn the selection by `degrees` about a fixed axis through its center (a single object turns about its own). */
 export function rotateSelected(axis: 0 | 1 | 2, degrees: number): void {
   const nodes = selectedNodes().filter((n) => !n.locked);
   if (nodes.length === 0) return;
@@ -1018,13 +1021,13 @@ function importModels(files: PickedFile[]): void {
     let natural: Vec3;
     let size: Vec3;
     if (data.kind === 'mesh') {
-      natural = centreMesh(data).size;
+      natural = centerMesh(data).size;
       size = natural;
       asset = { kind: 'mesh', positions: encodeFloat32(data.positions), triangles: encodeUint32(data.triangles) };
     } else {
-      const flat = centreOutline(data).size;
+      const flat = centerOutline(data).size;
       natural = [flat[0], flat[1], 1];
-      // Flat artwork comes in as a plate a few millimetres thick.
+      // Flat artwork comes in as a plate a few millimeters thick.
       size = [flat[0], flat[1], 3];
       asset = { kind: 'outline', shapes: data.shapes };
     }
@@ -1048,7 +1051,7 @@ function importModels(files: PickedFile[]): void {
     nodes.push(node);
     scene = [...scene, node];
   }
-  // Centre the row on the plate.
+  // Center the row on the plate.
   const shift = (x - 5) / 2;
   for (const n of nodes) n.pos = tidyVec([n.pos[0] - shift, n.pos[1], n.pos[2]]);
   state = { ...state, doc: { ...state.doc, assets }, placing: null };
@@ -1092,7 +1095,7 @@ export async function importModel(): Promise<void> {
   }
 }
 
-/** Write the design (or just the selection) in an exchange format. Returns where it went, or null if cancelled. */
+/** Write the design (or just the selection) in an exchange format. Returns where it went, or null if canceled. */
 export async function exportDesign(formatId: FormatId, selectionOnly: boolean): Promise<string | null> {
   const format = FORMATS.find((f) => f.id === formatId)!;
   const shown = state.viewing ? (state.doc.versions.find((v) => v.id === state.viewing)?.scene ?? []) : state.doc.scene;
@@ -1180,7 +1183,9 @@ export async function restoreSession(): Promise<void> {
     const path = await platform.startupFile();
     if (path) return void (await openPath(path, false));
     const session = await loadSession();
-    if (session) adopt(session.doc, session.filePath, session.dirty);
+    // The stored copy is read back the way a file is, so that anything the app no longer knows (a
+    // part kind that has since gone, say) is dropped rather than breaking the first render.
+    if (session) adopt(parseDoc(serializeDoc(session.doc)), session.filePath, session.dirty);
   } catch (e) {
     fail(e);
   }

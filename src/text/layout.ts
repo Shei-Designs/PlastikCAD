@@ -10,7 +10,7 @@ const TOLERANCE = 0.01;
 const MAX_SEGMENTS = 24;
 
 export interface TextOutline {
-  /** Centred on the bounding box of the lettering; Y up. */
+  /** Centered on the bounding box of the lettering; Y up. */
   shapes: OutlineShape[];
   /** Width and height of that box. */
   size: Vec2;

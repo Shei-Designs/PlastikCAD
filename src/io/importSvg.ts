@@ -11,7 +11,7 @@ const MAX_CURVE = 1000;
 const MIN_TURN = 24;
 const MAX_TURN = 1440;
 
-/** Millimetres per CSS pixel, the size of a user unit unless the root element says otherwise. */
+/** Millimeters per CSS pixel, the size of a user unit unless the root element says otherwise. */
 const PX = 25.4 / 96;
 /** CSS pixels per unit. */
 const UNITS: Record<string, number> = { '': 1, px: 1, mm: 96 / 25.4, cm: 960 / 25.4, in: 96, pt: 96 / 72, pc: 16 };
@@ -42,7 +42,7 @@ const mul = (a: Matrix, b: Matrix): Matrix => [
 
 /** What an element hands down to its children. */
 interface Frame {
-  /** From the element's coordinates to millimetres, Y up. */
+  /** From the element's coordinates to millimeters, Y up. */
   transform: Matrix;
   evenodd: boolean;
   /** `visibility`, which a child may switch back on. */
@@ -51,11 +51,11 @@ interface Frame {
   skip: boolean;
 }
 
-/** Above the outermost element: CSS pixels to millimetres, and SVG's Y axis (down) to ours (up). */
+/** Above the outermost element: CSS pixels to millimeters, and SVG's Y axis (down) to ours (up). */
 const ROOT: Frame = { transform: [PX, 0, 0, -PX, 0, 0], evenodd: false, visible: true, skip: false };
 
 /**
- * SVG artwork as filled outlines in millimetres. Every subpath is closed and
+ * SVG artwork as filled outlines in millimeters. Every subpath is closed and
  * treated as filled whatever its `fill` and `stroke` say: drawings made for a
  * laser cutter are hairline strokes with no fill, and they are the ones worth
  * extruding.
@@ -173,7 +173,7 @@ function parseTransform(s: string): Matrix {
           const cos = Math.cos(a[0] * RAD);
           const sin = Math.sin(a[0] * RAD);
           t = [cos, sin, -sin, cos, 0, 0];
-          // About a centre: move it to the origin, turn, move it back.
+          // About a center: move it to the origin, turn, move it back.
           if (a.length >= 3) t = mul(mul([1, 0, 0, 1, a[1], a[2]], t), [1, 0, 0, 1, -a[1], -a[2]]);
         }
         break;
@@ -205,7 +205,7 @@ function fit(box: number[], width: number, height: number, attrs: Record<string,
   const aspect = attrs.preserveAspectRatio ?? '';
   // Unless told to stretch, the drawing keeps its proportions and fits inside
   // the viewport (or covers it). Where it sits in the spare room is of no
-  // interest: the caller recentres the result.
+  // interest: the caller recenters the result.
   if (!aspect.includes('none')) sx = sy = aspect.includes('slice') ? Math.max(sx, sy) : Math.min(sx, sy);
   return [sx, 0, 0, sy, -box[0] * sx, -box[1] * sy];
 }
@@ -229,7 +229,7 @@ function innerViewport(attrs: Record<string, string>): Matrix {
 // ---------------------------------------------------------------------------
 // Shapes
 
-/** The closed contours of one element, in millimetres. Empty for elements that enclose no area. */
+/** The closed contours of one element, in millimeters. Empty for elements that enclose no area. */
 function outline(name: string, attrs: Record<string, string>, m: Matrix): Polygon[] {
   // Curves are flattened in the element's own coordinates, so the tolerance
   // has to be brought there: divide by the most the transform stretches anything.
@@ -357,7 +357,7 @@ function rect(attrs: Record<string, string>, tolerance: number): Polygon[] {
   }
   const contour: Polygon = [];
   const n = turnSegments(Math.max(rx, ry), tolerance) / 4;
-  // Corner centres, in the order the outline visits them, each with the angle its arc starts at.
+  // Corner centers, in the order the outline visits them, each with the angle its arc starts at.
   const corners = [
     [x + w - rx, y + ry, -TAU / 4],
     [x + w - rx, y + h - ry, 0],
@@ -617,7 +617,7 @@ function arc(
     out.push([x1, y1]);
     return;
   }
-  // Conversion to centre form, from the implementation notes of the SVG specification.
+  // Conversion to center form, from the implementation notes of the SVG specification.
   const cos = Math.cos(rotation);
   const sin = Math.sin(rotation);
   const dx = (x0 - x1) / 2;

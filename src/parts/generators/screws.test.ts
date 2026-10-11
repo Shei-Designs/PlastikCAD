@@ -112,7 +112,7 @@ describe('metric bolt', () => {
     expect(rod.stats.volume).toBeGreaterThan(plain.stats.volume - 8);
   });
 
-  it('honours a custom pitch and limits silly ones', () => {
+  it('honors a custom pitch and limits silly ones', () => {
     expect(info(metricBolt, { pitch: 2 }, 'Pitch')).toBe(2);
     const silly = build(metricBolt, { size: 'M3', pitch: 5, length: 6 }, draft);
     expect(silly.warnings.length).toBe(1);

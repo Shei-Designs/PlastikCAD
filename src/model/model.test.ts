@@ -83,7 +83,7 @@ describe('arrays', () => {
     expect(arrayPlaces({ kind: 'grid', count: [3, 2, 4] })).toBe(24);
   });
 
-  it('fits a grid inside a box, centres a set distance in from its edges', () => {
+  it('fits a grid inside a box, centers a set distance in from its edges', () => {
     const plate = { min: [0, 0, 0] as Vec3, max: [80, 50, 4] as Vec3 };
     const { originals, copies } = arrayNodes([hole], boxBoundsOf, { kind: 'grid', count: [2, 2, 1], pitch: [1, 1, 1], fit: { bounds: plate, inset: 5 } });
     // The original moves to the first corner and keeps its height.
@@ -99,43 +99,43 @@ describe('arrays', () => {
     expect(row.originals[0].pos).toEqual([10, 20, 5]);
     expect(row.copies.map((c) => c.pos[0])).toEqual([40, 70]);
     expect(row.copies.every((c) => c.pos[1] === 20)).toBe(true);
-    // Several seeds move together, by their common centre.
+    // Several seeds move together, by their common center.
     const pair = arrayNodes([hole, shape('box', { pos: [14, 20, 5], size: [2, 2, 10] })], boxBoundsOf, { kind: 'grid', count: [2, 1, 1], pitch: [1, 1, 1], fit: { bounds: plate, inset: 5 } });
     expect(pair.originals.map((n) => n.pos[0])).toEqual([3.3, 7.3]);
     expect(pair.copies.map((n) => n.pos[0])).toEqual([73.3, 77.3]);
   });
 
-  it('rings copies round a centre, turned with the ring or not', () => {
+  it('rings copies round a center, turned with the ring or not', () => {
     const seed = shape('box', { pos: [30, 0, 5], size: [6, 4, 10] });
-    const { originals, copies } = arrayNodes([seed], boxBoundsOf, { kind: 'ring', count: 4, sweep: 360, centre: [0, 0], turn: true });
+    const { originals, copies } = arrayNodes([seed], boxBoundsOf, { kind: 'ring', count: 4, sweep: 360, center: [0, 0], turn: true });
     expect(originals).toEqual([seed]);
     expect(copies).toHaveLength(3);
     close(copies[0].pos, [0, 30, 5]);
     close(copies[1].pos, [-30, 0, 5]);
     close(copies[2].pos, [0, -30, 5]);
     expect(copies.map((c) => c.rot[2])).toEqual([90, 180, -90]);
-    const still = arrayNodes([seed], boxBoundsOf, { kind: 'ring', count: 4, sweep: 360, centre: [0, 0], turn: false });
+    const still = arrayNodes([seed], boxBoundsOf, { kind: 'ring', count: 4, sweep: 360, center: [0, 0], turn: false });
     close(still.copies[1].pos, [-30, 0, 5]);
     expect(still.copies.every((c) => c.rot.every((r) => r === 0))).toBe(true);
     // An arc puts a copy at either end.
-    const arc = arrayNodes([seed], boxBoundsOf, { kind: 'ring', count: 3, sweep: 90, centre: [0, 0], turn: true });
+    const arc = arrayNodes([seed], boxBoundsOf, { kind: 'ring', count: 3, sweep: 90, center: [0, 0], turn: true });
     expect(arc.copies.map((c) => c.rot[2])).toEqual([45, 90]);
     close(arc.copies[1].pos, [0, 30, 5]);
-    // Round another centre.
-    const off = arrayNodes([seed], boxBoundsOf, { kind: 'ring', count: 2, sweep: 360, centre: [30, 10], turn: false });
+    // Round another center.
+    const off = arrayNodes([seed], boxBoundsOf, { kind: 'ring', count: 2, sweep: 360, center: [30, 10], turn: false });
     close(off.copies[0].pos, [30, 20, 5]);
   });
 
   it('rings round the selection itself, moving it out to the radius first', () => {
     const seed = shape('cylinder', { pos: [40, 25, 5], size: [3, 3, 10], hole: true });
-    const { originals, copies } = arrayNodes([seed], boxBoundsOf, { kind: 'ring', count: 4, sweep: 360, centre: [40, 25], radius: 15, turn: false });
+    const { originals, copies } = arrayNodes([seed], boxBoundsOf, { kind: 'ring', count: 4, sweep: 360, center: [40, 25], radius: 15, turn: false });
     expect(originals[0].id).toBe(seed.id);
     expect(originals[0].pos).toEqual([55, 25, 5]);
     close(copies[0].pos, [40, 40, 5]);
     close(copies[1].pos, [25, 25, 5]);
     close(copies[2].pos, [40, 10, 5]);
     // Two seeds keep their offset from each other.
-    const pair = arrayNodes([seed, shape('box', { pos: [40, 29, 5], size: [3, 3, 10] })], boxBoundsOf, { kind: 'ring', count: 2, sweep: 360, centre: [40, 25], radius: 15, turn: true });
+    const pair = arrayNodes([seed, shape('box', { pos: [40, 29, 5], size: [3, 3, 10] })], boxBoundsOf, { kind: 'ring', count: 2, sweep: 360, center: [40, 25], radius: 15, turn: true });
     expect(pair.originals.map((n) => n.pos)).toEqual([
       [55, 23, 5],
       [55, 27, 5],
@@ -153,7 +153,7 @@ describe('groups', () => {
   ];
   const bounds = { min: [-10, -10, 0] as Vec3, max: [20, 15, 20] as Vec3 };
 
-  it('centres children on the group', () => {
+  it('centers children on the group', () => {
     const group = makeGroup(children(), bounds, 'Group');
     close(group.pos, [5, 2.5, 10]);
     close(group.size, [30, 25, 20]);
@@ -183,7 +183,7 @@ describe('groups', () => {
     ungroup(group).forEach((node, i) => close(nodeMatrix(node), placed(group)[i], 1e-4));
   });
 
-  it('scales millimetre parameters with an evenly scaled group', () => {
+  it('scales millimeter parameters with an evenly scaled group', () => {
     const rounded = shape('box', { pos: [0, 0, 10] });
     if (rounded.type === 'shape') rounded.params = { radius: 2 };
     const base = makeGroup([rounded], { min: [-10, -10, 0], max: [10, 10, 20] }, 'Group');
@@ -303,7 +303,7 @@ describe('design files', () => {
     const drawing: SceneNode = { ...shape('box'), type: 'import', asset: 'outline-1', natural: [10, 10, 1] } as unknown as SceneNode;
     delete (drawing as { shape?: unknown }).shape;
     delete (drawing as { params?: unknown }).params;
-    const label: SceneNode = { ...shape('box'), type: 'text', text: 'M8\nleft', font: 'stencil', align: 'centre', natural: [14, 16, 1] } as unknown as SceneNode;
+    const label: SceneNode = { ...shape('box'), type: 'text', text: 'M8\nleft', font: 'stencil', align: 'center', natural: [14, 16, 1] } as unknown as SceneNode;
     delete (label as { shape?: unknown }).shape;
     delete (label as { params?: unknown }).params;
     return {
@@ -329,6 +329,18 @@ describe('design files', () => {
 
   it('drops imported data nothing uses', () => {
     expect(Object.keys(parseDoc(serializeDoc(sample())).assets)).toEqual(['outline-1']);
+  });
+
+  it('drops a part of a kind the app no longer has, and keeps the rest', () => {
+    const doc = sample();
+    const gone: SceneNode = { ...shape('box'), type: 'part', part: 'port-cutout', params: { port: 'usb-c' }, natural: [10, 10, 10] } as unknown as SceneNode;
+    delete (gone as { shape?: unknown }).shape;
+    const kept: SceneNode = { ...shape('box'), type: 'part', part: 'fan-cutout', params: { size: '80' }, natural: [80, 80, 20] } as unknown as SceneNode;
+    delete (kept as { shape?: unknown }).shape;
+    const back = parseDoc(serializeDoc({ ...doc, scene: [...doc.scene, gone, kept] }));
+    expect(back.scene.length).toBe(doc.scene.length + 1);
+    expect(back.scene.some((n) => n.type === 'part' && n.part === 'port-cutout')).toBe(false);
+    expect(back.scene.some((n) => n.type === 'part' && n.part === 'fan-cutout')).toBe(true);
   });
 
   it('writes the same text for the same design, with vectors on one line', () => {

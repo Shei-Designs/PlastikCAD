@@ -53,9 +53,9 @@ describe('pipes and ducts', () => {
   it('bends an elbow round a true arc, legs included', () => {
     const r = made(elbow, { diameter: 25, wall: 2, angle: 90, bendRadius: 30, legA: 10, legB: 10 });
     expect(r.warnings).toEqual([]);
-    const centreLine = 10 + 10 + (Math.PI / 2) * 30;
-    expect(r.stats.volume / (annulus(25, 2) * centreLine)).toBeGreaterThan(0.985);
-    expect(r.stats.volume / (annulus(25, 2) * centreLine)).toBeLessThan(1.005);
+    const centerLine = 10 + 10 + (Math.PI / 2) * 30;
+    expect(r.stats.volume / (annulus(25, 2) * centerLine)).toBeGreaterThan(0.985);
+    expect(r.stats.volume / (annulus(25, 2) * centerLine)).toBeLessThan(1.005);
     // Up 10 + 30, and across 30 + 10, plus half the diameter either way.
     expect(extent(r.stats, 2)).toBeCloseTo(10 + 30 + 12.5, 1);
     expect(extent(r.stats, 0)).toBeCloseTo(12.5 + 30 + 10, 1);

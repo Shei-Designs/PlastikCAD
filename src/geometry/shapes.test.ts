@@ -65,9 +65,9 @@ describe('shape catalog', () => {
     ]);
   });
 
-  it('uses palette colours and sane defaults', () => {
+  it('uses palette colors and sane defaults', () => {
     const colors = PALETTE.map((c) => c.value);
-    expect(colors).toHaveLength(8);
+    expect(colors).toHaveLength(16);
     for (const def of SHAPES) {
       expect(colors).toContain(def.defaultColor);
       for (const p of def.params) {

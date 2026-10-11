@@ -62,7 +62,7 @@ const toothFormGroup = (opts: { shift?: boolean } = {}): ParamGroup => ({
             type: 'number',
             key: 'profileShift',
             label: 'Profile shift',
-            help: 'Shifts the teeth outward (positive) to strengthen small pinions and avoid undercut. Changes the centre distance.',
+            help: 'Shifts the teeth outward (positive) to strengthen small pinions and avoid undercut. Changes the center distance.',
             default: 0,
             min: -0.5,
             max: 1,
@@ -138,7 +138,7 @@ function involuteGear(kind: GearKind): GeneratorDef {
     type: 'number',
     key: 'mateTeeth',
     label: 'Mating gear teeth',
-    help: 'Only used to work out the centre distance shown under Dimensions.',
+    help: 'Only used to work out the center distance shown under Dimensions.',
     default: 40,
     min: 5,
     max: 300,
@@ -149,7 +149,7 @@ function involuteGear(kind: GearKind): GeneratorDef {
   const names: Record<GearKind, [string, string]> = {
     spur: ['Spur gear', 'Straight-toothed involute gear, the everyday workhorse.'],
     helical: ['Helical gear', 'Angled teeth for smoother, quieter running.'],
-    herringbone: ['Herringbone gear', 'Double helical: quiet, self-centring, no axial thrust.'],
+    herringbone: ['Herringbone gear', 'Double helical: quiet, self-centering, no axial thrust.'],
   };
 
   return {
@@ -206,18 +206,18 @@ function involuteGear(kind: GearKind): GeneratorDef {
       const { solid, height } = addHubAndBore(body, 0, b, p, q, warnings);
       const bore = boreShape(p, q);
 
-      // Working centre distance with a standard (unshifted) mate.
+      // Working center distance with a standard (unshifted) mate.
       const z2 = Math.round(num(p, 'mateTeeth'));
       const mt = spec.module;
       const nominal = (mt * (z + z2)) / 2;
       const invW = inv(spec.pressureAngle) + (2 * x * Math.tan(deg(num(p, 'pressureAngle')))) / (z + z2);
-      const centre = Math.abs(x) < 1e-9 ? nominal : (nominal * Math.cos(spec.pressureAngle)) / Math.cos(invInverse(invW));
+      const center = Math.abs(x) < 1e-9 ? nominal : (nominal * Math.cos(spec.pressureAngle)) / Math.cos(invInverse(invW));
 
       const info: InfoItem[] = [
         { label: 'Pitch diameter', value: mm(2 * r) },
         { label: 'Outside diameter', value: mm(2 * profile.outerRadius) },
         { label: 'Root diameter', value: mm(2 * profile.rootRadius) },
-        { label: `Centre distance (${z2}T mate)`, value: mm(centre, 3) },
+        { label: `Center distance (${z2}T mate)`, value: mm(center, 3) },
         { label: 'Ratio', value: `1 : ${(z2 / z).toFixed(3).replace(/\.?0+$/, '')}` },
       ];
       if (helical) info.push({ label: 'Transverse module', value: mm(mt, 3) });
@@ -325,7 +325,7 @@ function rackTopEdge(o: {
   const half = (y: number) => o.pitch / 4 - o.backlash / 2 - (y - o.pitchLine) * tanA;
   const rhoMax = Math.max(0, ((o.pitch / 4 + o.backlash / 2 - o.dedendum * tanA) * cosA) / (1 - sinA));
   const rho = Math.min(o.fillet, rhoMax * 0.999);
-  const s = half(yRoot + rho) + rho / cosA; // fillet centre offset from the tooth centre
+  const s = half(yRoot + rho) + rho / cosA; // fillet center offset from the tooth center
   const wTip = Math.max(half(yTip), 0);
   const n = Math.max(2, Math.ceil(o.q.flank / 3));
   const pts: Vec2[] = [];

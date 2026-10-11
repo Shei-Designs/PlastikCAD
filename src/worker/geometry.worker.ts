@@ -1,4 +1,4 @@
-// Runs all solid modelling off the UI thread so the viewport stays responsive.
+// Runs all solid modeling off the UI thread so the viewport stays responsive.
 import wasmUrl from 'manifold-3d/manifold.wasm?url';
 import { build, exportNodes, initKernel, measure, setAssets } from '../geometry/kernel';
 import type { WorkerRequest, WorkerResponse } from './protocol';

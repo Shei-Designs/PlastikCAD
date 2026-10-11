@@ -166,7 +166,7 @@ export function buildSolid(k: ManifoldToplevel, solid: Solid, keep: <T extends {
 }
 
 export function evaluate(solid: Solid): EvalResult {
-  if (!kernel) throw new Error('Geometry kernel is not initialised');
+  if (!kernel) throw new Error('Geometry kernel is not initialized');
   const k = kernel;
   const garbage: { delete(): void }[] = [];
   const keep = <T extends { delete(): void }>(o: T): T => {

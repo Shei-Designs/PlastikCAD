@@ -70,6 +70,61 @@ const GLYPHS: Record<string, ReactNode> = {
       <path d="M13 9l10-4M13 15l10-4M13 21l10-4M13 27l10-4M13 33l10-4" />
     </>,
   ),
+  'stepper-mount': glyph(
+    <>
+      <rect x="5" y="5" width="26" height="26" rx="4" />
+      <circle cx="18" cy="18" r="7" />
+      <circle cx="18" cy="18" r="2" />
+      <circle cx="9.5" cy="9.5" r="1.4" />
+      <circle cx="26.5" cy="9.5" r="1.4" />
+      <circle cx="9.5" cy="26.5" r="1.4" />
+      <circle cx="26.5" cy="26.5" r="1.4" />
+    </>,
+  ),
+  'gearmotor-mount': glyph(
+    <>
+      <rect x="4" y="12" width="18" height="12" rx="1.5" />
+      <rect x="22" y="14" width="7" height="8" rx="1" />
+      <path d="M29 18h4" />
+      <circle cx="9" cy="18" r="1.4" />
+      <circle cx="17" cy="18" r="1.4" />
+    </>,
+  ),
+  'servo-mount': glyph(
+    <>
+      <rect x="9" y="8" width="18" height="22" rx="1.5" />
+      <path d="M3 13h6M27 13h6M3 13v4h6M27 13v4h6" />
+      <circle cx="14" cy="8" r="3.5" />
+      <path d="M14 4.5v-2" />
+    </>,
+  ),
+  'dc-motor-mount': glyph(
+    <>
+      <circle cx="18" cy="18" r="13" />
+      <circle cx="18" cy="18" r="5" />
+      <circle cx="18" cy="18" r="1.6" />
+      <circle cx="8" cy="18" r="1.4" />
+      <circle cx="28" cy="18" r="1.4" />
+    </>,
+  ),
+  'panel-connector': glyph(
+    <>
+      <rect x="3" y="6" width="30" height="24" rx="2" />
+      <rect x="10" y="10" width="16" height="16" rx="8" />
+      <circle cx="18" cy="8.5" r="1.3" />
+      <circle cx="18" cy="27.5" r="1.3" />
+    </>,
+  ),
+  'fan-cutout': glyph(
+    <>
+      <rect x="4" y="4" width="28" height="28" rx="2" />
+      <circle cx="18" cy="18" r="11" />
+      <circle cx="7.5" cy="7.5" r="1.3" />
+      <circle cx="28.5" cy="7.5" r="1.3" />
+      <circle cx="7.5" cy="28.5" r="1.3" />
+      <circle cx="28.5" cy="28.5" r="1.3" />
+    </>,
+  ),
   'raspberry-pi': glyph(
     <>
       <rect x="3" y="9" width="30" height="20" rx="2" />

@@ -7,7 +7,7 @@ export function triangulate(poly: Polygon): number[] {
   const flat: number[] = [];
   for (const [x, y] of poly) flat.push(x, y);
   const tris = earcut(flat);
-  // earcut does not promise a winding; normalise every triangle to CCW.
+  // earcut does not promise a winding; normalize every triangle to CCW.
   const flip = signedArea(poly) < 0;
   for (let i = 0; i < tris.length; i += 3) {
     const [ax, ay] = poly[tris[i]];

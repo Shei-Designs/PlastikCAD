@@ -30,6 +30,7 @@ import { EyeIcon, EyeOffIcon, ImportIcon, LockIcon, Logo, MenuIcon, MoonIcon, Sa
 import { Popover } from './Popover';
 import { CATEGORIES, GENERATORS, getGenerator } from '../parts/generators';
 import { partThumbnail } from './partThumbnails';
+import { Structure } from './Structure';
 import { PART_THUMBNAILS, shapeThumbnail, textThumbnail } from './thumbnails';
 
 const MOD = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform) ? '⌘' : 'Ctrl+';
@@ -89,7 +90,7 @@ function FileBar() {
             {item('Save', `${MOD}S`, () => void saveDesign(), close)}
             {item('Save as…', `${MOD}Shift+S`, () => void saveDesignAs(), close)}
             <hr />
-            {item('Import STL, OBJ, 3MF, SVG…', `${MOD}I`, () => void importModel(), close)}
+            {item('Import model…', `${MOD}I`, () => void importModel(), close)}
             {isDesktop() && recent.length > 0 && (
               <>
                 <hr />
@@ -118,7 +119,7 @@ function FileBar() {
 }
 
 /** Short tile names for the part families. */
-const FAMILY_NAMES: Record<string, string> = { gears: 'Gear', pulleys: 'Pulley', screws: 'Screw', frames: 'Rail', ducts: 'Pipe', boards: 'Board' };
+const FAMILY_NAMES: Record<string, string> = { gears: 'Gear', pulleys: 'Pulley', screws: 'Screw', frames: 'Rail', ducts: 'Pipe', boards: 'Board', cutouts: 'Cutout', motors: 'Motor' };
 
 function Shapes() {
   const placing = useEditor((s) => s.placing);
@@ -193,13 +194,21 @@ function Shapes() {
           </li>
         ))}
       </ul>
-      <button type="button" className="part" disabled={Boolean(viewing)} onClick={() => void importModel()}>
+    </section>
+  );
+}
+
+function ImportRow() {
+  const viewing = useEditor((s) => s.viewing);
+  return (
+    <div className="import-row">
+      <button type="button" className="part" title="Import an STL, OBJ or 3MF mesh, or an SVG drawing" disabled={Boolean(viewing)} onClick={() => void importModel()}>
         <span className="thumb small">
           <ImportIcon />
         </span>
-        <span className="part-name">Import STL, SVG…</span>
+        <span className="part-name">Import model…</span>
       </button>
-    </section>
+    </div>
   );
 }
 
@@ -225,7 +234,7 @@ function Objects() {
         Objects <span className="count">{scene.length || ''}</span>
       </h2>
       {scene.length === 0 ? (
-        <p className="empty">Pick a shape above and click on the plate to place it.</p>
+        <p className="empty">Nothing yet. Pick a shape from the library and click on the plate to place it.</p>
       ) : (
         <ul>
           {scene.map((node) => {
@@ -274,8 +283,31 @@ function Objects() {
   );
 }
 
+/** The lower half of the Objects tab: how the selected object was put together, when it is a group. */
+function SelectedStructure() {
+  const scene = useEditor((s) => s.doc.scene);
+  const selection = useEditor((s) => s.selection);
+  const viewing = useEditor((s) => s.viewing);
+  const nodes = scene.filter((n) => selection.includes(n.id));
+  const group = nodes.length === 1 && nodes[0].type === 'group' ? nodes[0] : null;
+  if (viewing) return null;
+  return (
+    <section className="structure-pane">
+      {group ? (
+        <Structure root={group} />
+      ) : (
+        <>
+          <h2>Structure tree</h2>
+          <p className="empty">{nodes.length === 1 ? 'A single shape has no parts inside it.' : 'Select a group to see how it was put together.'}</p>
+        </>
+      )}
+    </section>
+  );
+}
+
 export function Sidebar() {
   const theme = useEditor((s) => s.prefs.theme);
+  const tab = useEditor((s) => s.prefs.sidebar);
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -283,10 +315,27 @@ export function Sidebar() {
         <span>{APP_NAME}</span>
       </div>
       <FileBar />
-      <nav className="catalog" aria-label="Shapes and objects">
-        <Shapes />
-        <Objects />
-      </nav>
+      <div className="tabs">
+        <div className="segmented" role="tablist">
+          <button type="button" role="tab" aria-selected={tab === 'library'} className={tab === 'library' ? 'on' : ''} onClick={() => setPrefs({ sidebar: 'library' })}>
+            Library
+          </button>
+          <button type="button" role="tab" aria-selected={tab === 'objects'} className={tab === 'objects' ? 'on' : ''} onClick={() => setPrefs({ sidebar: 'objects' })}>
+            Objects
+          </button>
+        </div>
+      </div>
+      {tab === 'library' ? (
+        <nav className="catalog library" aria-label="Shapes and parts">
+          <Shapes />
+          <ImportRow />
+        </nav>
+      ) : (
+        <nav className="catalog objects-tab" aria-label="Objects">
+          <Objects />
+          <SelectedStructure />
+        </nav>
+      )}
       <footer className="sidebar-foot">
         <span>v{APP_VERSION} · GPL-3.0</span>
         <button

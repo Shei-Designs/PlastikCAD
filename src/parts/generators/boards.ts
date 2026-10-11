@@ -13,9 +13,9 @@
 //     hold a board that has no mounting holes.
 //
 // Boards lie along X with the origin at their lower-left corner as the
-// drawing shows them; the app centres the part afterwards.
+// drawing shows them; the app centers the part afterwards.
 import { arc, circle, offsetPolygon } from '../math2d';
-import { cylinder, difference, extrude, translate, union } from '../types';
+import { cylinder, difference, extrude, rotate, translate, union } from '../types';
 import type { Polygon, Quality, Shape2D, Solid, Vec2 } from '../types';
 import { mm, num, str } from './types';
 import type { BuildResult, GeneratorDef, ParamGroup, Params } from './types';
@@ -41,13 +41,99 @@ export interface Board {
   screw: keyof typeof SCREWS;
   /** Which way the board lies, for the help text. */
   layout: string;
-  /** A module that reaches past the +X end of the board, centred on its width: the antenna end of an ESP32 kit. */
+  /** A module that reaches past the +X end of the board, centered on its width: the antenna end of an ESP32 kit. */
   overhang?: { length: number; width: number };
   /** The board's own outline, CCW from its lower-left corner, when it is not a rounded rectangle. */
   outline?: (q: Quality) => Polygon;
   /** Shown as a warning: clones of this board differ. */
   caution?: string;
+  /** The sockets along the board's edges, from its drawing. */
+  sockets?: EdgeSocket[];
 }
+
+/** The kinds of socket found along a board's edge, each with the envelope of the plug that mates with it. */
+type Socket = 'usb-c' | 'micro-usb' | 'micro-hdmi' | 'mini-hdmi' | 'hdmi' | 'usb-a-stack' | 'rj45' | 'av-jack' | 'barrel' | 'usb-b';
+
+/** Plug envelopes (width along the edge × height), centered on the socket: the USB-IF overmold maxima, typical HDMI and AV plugs, a stacked pair of USB-A plugs. */
+const PLUGS: Record<Socket, { w: number; h: number; r: number }> = {
+  'usb-c': { w: 12.35, h: 6.5, r: 2.5 },
+  'micro-usb': { w: 10.6, h: 8.5, r: 1.5 },
+  'micro-hdmi': { w: 12.6, h: 7, r: 2 },
+  'mini-hdmi': { w: 13.5, h: 8, r: 2 },
+  hdmi: { w: 20.5, h: 10.5, r: 2.5 },
+  'usb-a-stack': { w: 16, h: 17, r: 1.5 },
+  rj45: { w: 16.4, h: 13.5, r: 0.5 },
+  'av-jack': { w: 9, h: 9, r: 4.5 },
+  barrel: { w: 10.5, h: 10.5, r: 5.25 },
+  'usb-b': { w: 16.5, h: 12.5, r: 1.5 },
+};
+
+/**
+ * A socket on a board's edge: which edge of the board's frame it sits on, where its center is along
+ * that edge (from the frame's origin corner), its body's width along the edge and height above the
+ * PCB top, and how far the body stands out past the edge.
+ */
+export interface EdgeSocket {
+  name: string;
+  socket: Socket;
+  edge: 'left' | 'right' | 'bottom';
+  at: number;
+  w: number;
+  h: number;
+  out: number;
+}
+
+// Socket positions and widths are read from the boards' drawings (the Pi drawings print the positions,
+// widths are measured off them to ±0.3), the Uno's from Arduino's Eagle outlines, the DevKitC's from
+// Espressif's DXF. Heights the drawings omit (micro USB 2.9, the Uno's jack and USB-B 11) are typical.
+const PI_END = (ports: [string, Socket, number, number, number, number][]): EdgeSocket[] => ports.map(([name, socket, at, w, h, out]) => ({ name, socket, edge: 'right', at, w, h, out }));
+const PI_LONG = (ports: [string, Socket, number, number, number, number][]): EdgeSocket[] => ports.map(([name, socket, at, w, h, out]) => ({ name, socket, edge: 'bottom', at, w, h, out }));
+const PI5_SOCKETS: EdgeSocket[] = [
+  ...PI_LONG([
+    ['USB-C power', 'usb-c', 11.2, 9, 3.2, 1.3],
+    ['Micro HDMI 0', 'micro-hdmi', 25.8, 7.1, 3.4, 1.7],
+    ['Micro HDMI 1', 'micro-hdmi', 39.2, 7.1, 3.4, 1.7],
+  ]),
+  ...PI_END([
+    ['Ethernet', 'rj45', 10.2, 16, 13.5, 3],
+    ['USB pair', 'usb-a-stack', 29.1, 13.1, 16, 3],
+    ['USB pair', 'usb-a-stack', 47, 13.1, 16, 3],
+  ]),
+];
+const PI4_SOCKETS: EdgeSocket[] = [
+  ...PI_LONG([
+    ['USB-C power', 'usb-c', 11.2, 8.7, 3.2, 1.2],
+    ['Micro HDMI 0', 'micro-hdmi', 26, 7.1, 3, 1.4],
+    ['Micro HDMI 1', 'micro-hdmi', 39.5, 7.1, 3, 1.4],
+    ['AV jack', 'av-jack', 53.5, 6, 6, 2.5],
+  ]),
+  ...PI_END([
+    ['USB pair', 'usb-a-stack', 9, 13.1, 16, 3],
+    ['USB pair', 'usb-a-stack', 27, 13.1, 16, 3],
+    ['Ethernet', 'rj45', 45.75, 15.5, 13.5, 3],
+  ]),
+];
+const PI3_SOCKETS: EdgeSocket[] = [
+  ...PI_LONG([
+    ['Micro USB power', 'micro-usb', 10.6, 8.1, 2.9, 1.3],
+    ['HDMI', 'hdmi', 32, 14.4, 6.5, 1.5],
+    ['AV jack', 'av-jack', 53.5, 7, 6, 2.6],
+  ]),
+  ...PI_END([
+    ['Ethernet', 'rj45', 10.25, 15.5, 13.5, 2],
+    ['USB pair', 'usb-a-stack', 29, 13.2, 16, 2],
+    ['USB pair', 'usb-a-stack', 47, 13.1, 16, 2],
+  ]),
+];
+const ZERO_SOCKETS: EdgeSocket[] = PI_LONG([
+  ['Mini HDMI', 'mini-hdmi', 12.4, 10.9, 3.2, 0.5],
+  ['Micro USB', 'micro-usb', 41.4, 8.1, 2.9, 1.2],
+  ['Micro USB power', 'micro-usb', 54, 8.1, 2.9, 1.2],
+]);
+const UNO_SOCKETS: EdgeSocket[] = [
+  { name: 'Power jack', socket: 'barrel', edge: 'left', at: 7.8, w: 9, h: 11, out: 1.8 },
+  { name: 'USB-B', socket: 'usb-b', edge: 'left', at: 38.1, w: 11.8, h: 11, out: 6.34 },
+];
 
 const piHoles = (width: number): Vec2[] => [
   [3.5, 3.5],
@@ -57,10 +143,10 @@ const piHoles = (width: number): Vec2[] => [
 ];
 
 export const RASPBERRY_PI: Board[] = [
-  { id: 'pi5', label: 'Raspberry Pi 5', length: 85, width: 56, corner: 3, holes: piHoles(56), holeDiameter: 2.7, screw: 'M2.5', layout: 'USB and Ethernet on the right, SD card slot on the left.' },
-  { id: 'pi4', label: 'Raspberry Pi 4 Model B', length: 85, width: 56, corner: 3, holes: piHoles(56), holeDiameter: 2.7, screw: 'M2.5', layout: 'USB and Ethernet on the right, SD card slot on the left.' },
-  { id: 'pi3', label: 'Raspberry Pi 3 Model B / B+', length: 85, width: 56, corner: 3, holes: piHoles(56), holeDiameter: 2.75, screw: 'M2.5', layout: 'USB and Ethernet on the right, SD card slot on the left.' },
-  { id: 'pi-zero-2', label: 'Raspberry Pi Zero / Zero 2 W', length: 65, width: 30, corner: 3, holes: piHoles(30), holeDiameter: 2.75, screw: 'M2.5', layout: 'Mini HDMI and micro USB along the bottom long edge. The holes sit 3.5 mm in from every edge, so the pattern is the same whichever way round.' },
+  { id: 'pi5', label: 'Raspberry Pi 5', length: 85, width: 56, corner: 3, holes: piHoles(56), holeDiameter: 2.7, screw: 'M2.5', layout: 'USB and Ethernet on the right, SD card slot on the left, GPIO header along the top, power and HDMI along the bottom.', sockets: PI5_SOCKETS },
+  { id: 'pi4', label: 'Raspberry Pi 4 Model B', length: 85, width: 56, corner: 3, holes: piHoles(56), holeDiameter: 2.7, screw: 'M2.5', layout: 'USB and Ethernet on the right, SD card slot on the left, GPIO header along the top, power, HDMI and audio along the bottom.', sockets: PI4_SOCKETS },
+  { id: 'pi3', label: 'Raspberry Pi 3 Model B / B+', length: 85, width: 56, corner: 3, holes: piHoles(56), holeDiameter: 2.75, screw: 'M2.5', layout: 'USB and Ethernet on the right, SD card slot on the left, GPIO header along the top, power, HDMI and audio along the bottom.', sockets: PI3_SOCKETS },
+  { id: 'pi-zero-2', label: 'Raspberry Pi Zero / Zero 2 W', length: 65, width: 30, corner: 3, holes: piHoles(30), holeDiameter: 2.75, screw: 'M2.5', layout: 'Mini HDMI and micro USB along the bottom long edge, SD card slot on the left. The holes sit 3.5 mm in from every edge, so the pattern is the same whichever way round.', sockets: ZERO_SOCKETS },
   {
     id: 'pico',
     label: 'Raspberry Pi Pico / Pico W / Pico 2',
@@ -76,6 +162,7 @@ export const RASPBERRY_PI: Board[] = [
     holeDiameter: 2.1,
     screw: 'M2',
     layout: 'Micro USB on the left.',
+    sockets: [{ name: 'Micro USB', socket: 'micro-usb', edge: 'left', at: 10.5, w: 8, h: 2.9, out: 1.3 }],
   },
 ];
 
@@ -111,7 +198,7 @@ function arduinoOutline(length: number, q: Quality): Polygon {
 }
 
 export const ARDUINO: Board[] = [
-  { id: 'uno', label: 'Arduino Uno (R3 / R4)', length: 68.58, width: 53.34, corner: 1, holes: unoHoles, holeDiameter: 3.2, screw: 'M3', layout: 'USB and power jack on the left, the notched end on the right.', outline: (q) => arduinoOutline(68.58, q) },
+  { id: 'uno', label: 'Arduino Uno (R3 / R4)', length: 68.58, width: 53.34, corner: 1, holes: unoHoles, holeDiameter: 3.2, screw: 'M3', layout: 'USB and power jack on the left, the notched end on the right.', outline: (q) => arduinoOutline(68.58, q), sockets: UNO_SOCKETS },
   {
     id: 'mega',
     label: 'Arduino Mega 2560',
@@ -123,6 +210,7 @@ export const ARDUINO: Board[] = [
     screw: 'M3',
     layout: 'USB and power jack on the left, the notched end on the right.',
     outline: (q) => arduinoOutline(101.6, q),
+    sockets: UNO_SOCKETS,
   },
   {
     id: 'nano',
@@ -154,7 +242,8 @@ export const ESP32: Board[] = [
     screw: 'M3',
     layout: 'Micro USB on the left. The module\'s antenna reaches 6 mm past the right-hand end of the board, which the blank, the pocket and the corner stops allow for. No mounting holes.',
     overhang: { length: 6.04, width: 18 },
-    caution: 'Clones of this board differ by a millimetre or two, and some have the antenna flush with the end: measure yours.',
+    sockets: [{ name: 'Micro USB', socket: 'micro-usb', edge: 'left', at: 13.95, w: 7.4, h: 2.9, out: 0.95 }],
+    caution: 'Clones of this board differ by a millimeter or two, and some have the antenna flush with the end: measure yours.',
   },
   {
     id: 'esp32-devkit-v1',
@@ -171,7 +260,7 @@ export const ESP32: Board[] = [
     holeDiameter: 2.8,
     screw: 'M2.5',
     layout: 'Micro USB on the left, antenna on the right. The holes sit 2.2 mm in from every edge.',
-    caution: 'No maker\'s drawing exists for this board; these figures are measured from real ones and clones differ by up to half a millimetre. Some have no holes.',
+    caution: 'No maker\'s drawing exists for this board; these figures are measured from real ones and clones differ by up to half a millimeter. Some have no holes.',
   },
   {
     id: 'nodemcu-32s',
@@ -232,7 +321,7 @@ function slab(b: Board, grow: number, thickness: number, holes: boolean, q: Qual
 
 // --- parameters ------------------------------------------------------------------
 
-type Form = 'standoffs' | 'holes' | 'blank' | 'corners';
+type Form = 'standoffs' | 'holes' | 'blank' | 'corners' | 'connectors';
 const form = (p: Params) => str(p, 'form') as Form;
 const is = (...forms: Form[]) => (p: Params) => forms.includes(form(p));
 const onBase = (p: Params) => is('standoffs', 'corners')(p) && str(p, 'base') === 'plate';
@@ -248,11 +337,12 @@ function groups(boards: Board[], defaultForm: Form): ParamGroup[] {
           label: 'Make',
           type: 'select',
           default: defaultForm,
-          help: 'Standoffs are posts at the mounting holes. Holes are pins to cut the holes with. The blank is a slab the shape of the board, for checking fit or, grown by a gap and made a hole, for a pocket. Corner stops hold a board that has no holes.',
+          help: 'Standoffs are posts at the mounting holes. Holes are pins to cut the holes with. The blank is a slab the shape of the board, for checking fit or, grown by a gap and made a hole, for a pocket. Corner stops hold a board that has no holes. The board with its connectors is the blank with every socket in its place, reaching out past the edge: a reference to design round, or, made a hole, the cutter for the wall openings.',
           options: [
             { value: 'standoffs', label: 'Standoffs' },
             { value: 'holes', label: 'Mounting holes' },
             { value: 'blank', label: 'Board blank' },
+            { value: 'connectors', label: 'Board with connectors' },
             { value: 'corners', label: 'Corner stops' },
           ],
         },
@@ -301,6 +391,24 @@ function groups(boards: Board[], defaultForm: Form): ParamGroup[] {
       params: [
         { key: 'blankGap', label: 'Gap all round', type: 'number', default: 0, min: 0, max: 3, step: 0.05, unit: 'mm', help: '0 is the board itself, holes included. A gap makes it a pocket cutter: the holes are left out so that the pocket is clear.', visible: is('blank') },
         { key: 'blankThickness', label: 'Thickness', type: 'number', default: 1.6, min: 0.5, max: 60, step: 0.1, unit: 'mm', help: '1.6 mm is the board. For a pocket, the depth of the pocket.', visible: is('blank') },
+      ],
+    },
+    {
+      title: 'Connectors',
+      params: [
+        { key: 'reach', label: 'Reach past the edge', type: 'number', default: 15, min: 0, max: 60, step: 0.5, unit: 'mm', help: 'How far every connector reaches out beyond the board edge: enough to pass right through the wall it faces.', visible: is('connectors') },
+        {
+          key: 'fit',
+          label: 'Past the edge',
+          type: 'select',
+          default: 'plug',
+          help: 'What reaches out past the edge. The plugs: the molded plug bodies, so that as a hole the part cuts openings the plugs fit through (the sockets themselves stop at the edge, as on a Pi). The socket bodies: the sockets carried straight on out, for ones that poke through the wall.',
+          options: [
+            { value: 'plug', label: 'The plugs' },
+            { value: 'body', label: 'The socket bodies' },
+          ],
+          visible: is('connectors'),
+        },
       ],
     },
     {
@@ -396,6 +504,47 @@ function build(boards: Board[], p: Params, q: Quality): BuildResult {
     return { solid: union(...pins), outline, info, warnings };
   }
 
+  if (make === 'connectors') {
+    const reach = num(p, 'reach');
+    const forPlug = str(p, 'fit') === 'plug';
+    const PCB = 1.6;
+    const INBOARD = 8;
+    const pieces: Solid[] = [slab(b, 0, PCB, true, q)];
+    const sockets = b.sockets ?? [];
+    if (sockets.length === 0) warnings.push(`No socket positions are recorded for the ${b.label} yet: this is the blank alone.`);
+    for (const s of sockets) {
+      // The socket body: a block from a little inside the edge to where the body stops (or on to the reach).
+      const bodyOut = forPlug ? s.out : Math.max(s.out, reach);
+      const box = (x0: number, y0: number, x1: number, y1: number, z0: number, z1: number): Solid =>
+        translate(extrude([[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]], z1 - z0), [0, 0, z0]);
+      if (s.edge === 'bottom') pieces.push(box(s.at - s.w / 2, -bodyOut, s.at + s.w / 2, INBOARD, PCB, PCB + s.h));
+      else if (s.edge === 'right') pieces.push(box(b.length - INBOARD, s.at - s.w / 2, b.length + bodyOut, s.at + s.w / 2, PCB, PCB + s.h));
+      else pieces.push(box(-bodyOut, s.at - s.w / 2, INBOARD, s.at + s.w / 2, PCB, PCB + s.h));
+      if (forPlug && reach > 0) {
+        // The plug envelope, from the edge outwards, centered on the socket.
+        const plug = PLUGS[s.socket];
+        const face = roundedRect(-plug.w / 2, -plug.h / 2, plug.w, plug.h, plug.r, q);
+        const along = extrude([face], reach);
+        const zc = PCB + s.h / 2;
+        if (s.edge === 'bottom') pieces.push(translate(rotate(along, [90, 0, 0]), [s.at, 0, zc]));
+        else if (s.edge === 'right') pieces.push(translate(rotate(along, [90, 0, 90]), [b.length, s.at, zc]));
+        else pieces.push(translate(rotate(along, [90, 0, -90]), [0, s.at, zc]));
+      }
+    }
+    // A plug body can hang below the PCB: say so, since the part then stands that much lower than the board.
+    const lowest = forPlug ? Math.min(0, ...sockets.map((s) => PCB + s.h / 2 - PLUGS[s.socket].h / 2)) : 0;
+    info.push(
+      { label: 'PCB', value: `${PCB} mm thick, holes included` },
+      ...(lowest < 0 ? [{ label: 'Base', value: `${(-lowest).toFixed(1)} mm below the PCB underside: a plug hangs lower than the board` }] : []),
+      ...sockets.map((s) => ({
+        label: s.name,
+        value: `${s.w.toFixed(1)} × ${s.h.toFixed(1)} mm, ${s.at.toFixed(2)} mm along the ${s.edge} edge${forPlug ? `, plug ${PLUGS[s.socket].w} × ${PLUGS[s.socket].h}` : ''}`,
+      })),
+      { label: 'Reach', value: mm(reach, 1) },
+    );
+    return { solid: union(...pieces), outline, info, warnings };
+  }
+
   if (make === 'blank') {
     const gap = num(p, 'blankGap');
     const t = num(p, 'blankThickness');
@@ -444,9 +593,9 @@ function family(id: string, name: string, summary: string, boards: Board[], defa
   };
 }
 
-export const raspberryPi = family('raspberry-pi', 'Raspberry Pi', 'Mounts for the Raspberry Pi 5, 4, 3, Zero 2 W and Pico: standoffs, hole templates, a blank or corner stops.', RASPBERRY_PI, 'standoffs');
-export const arduino = family('arduino', 'Arduino', 'Mounts for the Arduino Uno, Mega and Nano: standoffs, hole templates, a blank or corner stops.', ARDUINO, 'standoffs');
-export const esp32 = family('esp32', 'ESP32', 'Mounts for the ESP32 dev kits: corner stops or a pocket for the ones without holes, standoffs for the DevKit V1.', ESP32, 'corners');
+export const raspberryPi = family('raspberry-pi', 'Raspberry Pi', 'The Raspberry Pi 5, 4, 3, Zero 2 W and Pico: standoffs, hole templates, a blank, corner stops, or the board with its connectors in place to design round and cut the wall with.', RASPBERRY_PI, 'standoffs');
+export const arduino = family('arduino', 'Arduino', 'The Arduino Uno, Mega and Nano: standoffs, hole templates, a blank, corner stops, or the board with its connectors in place.', ARDUINO, 'standoffs');
+export const esp32 = family('esp32', 'ESP32', 'The ESP32 dev kits: corner stops or a pocket for the ones without holes, standoffs for the DevKit V1, or the board with its USB socket in place.', ESP32, 'corners');
 
 export const BOARDS: GeneratorDef[] = [raspberryPi, arduino, esp32];
 export const ALL_BOARDS: Board[] = [...RASPBERRY_PI, ...ARDUINO, ...ESP32];

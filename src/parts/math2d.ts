@@ -30,7 +30,7 @@ export function circle(r: number, n: number, cx = 0, cy = 0): Polygon {
   return pts;
 }
 
-/** CCW regular polygon given its apothem (centre-to-flat distance). First flat faces +X. */
+/** CCW regular polygon given its apothem (center-to-flat distance). First flat faces +X. */
 export function regularPolygon(sides: number, apothem: number): Polygon {
   const rc = apothem / Math.cos(Math.PI / sides);
   const pts: Vec2[] = [];

@@ -26,7 +26,7 @@ const area = (outline: NonNullable<ReturnType<typeof layoutText>>) =>
   outline.shapes.flatMap((s) => s.contours).reduce((sum, c) => sum + signedArea(c), 0);
 
 describe('text layout', () => {
-  it('centres the lettering on its bounding box', () => {
+  it('centers the lettering on its bounding box', () => {
     const outline = layoutText(sans, 'Hxg', 'left')!;
     let minX = Infinity;
     let maxX = -Infinity;
@@ -85,14 +85,14 @@ describe('text layout', () => {
     const single = layoutText(sans, 'MMMM', 'left')!;
     expect(lines.size[0]).toBeCloseTo(single.size[0], 3);
     expect(lines.size[1]).toBeGreaterThan(single.size[1] * 2);
-    const middleOfI = (align: 'left' | 'centre' | 'right') => {
+    const middleOfI = (align: 'left' | 'center' | 'right') => {
       const below = layoutText(sans, 'MMMM\nI', align)!
         .shapes[0].contours.filter((c) => c.every(([, y]) => y < 0))
         .flat();
       return below.reduce((sum, [x]) => sum + x, 0) / below.length;
     };
     expect(middleOfI('left')).toBeLessThan(-lines.size[0] / 4);
-    expect(Math.abs(middleOfI('centre'))).toBeLessThan(0.5);
+    expect(Math.abs(middleOfI('center'))).toBeLessThan(0.5);
     expect(middleOfI('right')).toBeGreaterThan(lines.size[0] / 4);
   });
 

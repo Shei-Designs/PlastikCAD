@@ -1,21 +1,17 @@
-import { useEffect, useId, useMemo, useState, useSyncExternalStore } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { PALETTE, paramMax, polygonExtent, shapeDef } from '../geometry/shapes';
-import { boundsSize, tidy, tidyAngle, tidyVec, unionBounds } from '../model/math';
+import { boundsSize, tidyVec, unionBounds } from '../model/math';
 import { countShapes } from '../model/ops';
 import { TEXT_FONTS } from '../model/types';
-import type { SceneNode, ShapeNode, TextAlign, TextNode, Vec3 } from '../model/types';
+import type { SceneNode, ShapeNode, TextAlign, TextNode } from '../model/types';
 import { geometry } from '../state/geometry';
-import { editText, resizeNode, setColor, setHole, setPrefs, shownScene, updateNode, updateSelected, useEditor } from '../state/store';
+import { editText, setColor, setHole, setPrefs, shownScene, updateNode, updateSelected, useEditor } from '../state/store';
 import { ExportPanel } from './ExportPanel';
-import { formatNumber, NumberBox, SliderField } from './Fields';
-import { LinkIcon } from './icons';
+import { formatNumber, SliderField } from './Fields';
 import { getGenerator } from '../parts/generators';
 import { PartFields } from './PartFields';
-import { EditingNote, Structure } from './Structure';
 import { Versions } from './Versions';
 
-const AXES = ['X', 'Y', 'Z'] as const;
-const SIZE_TAGS = ['W', 'D', 'H'] as const;
 const MOD = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform) ? '⌘' : 'Ctrl+';
 
 const SHORTCUTS: [string, string][] = [
@@ -32,8 +28,8 @@ const SHORTCUTS: [string, string][] = [
   ['Flip on an axis', 'X / Y / Z'],
   ['Turn 90° about an axis', 'Shift+X / Y / Z (Alt: the other way)'],
   ['Align (anchor dots)', 'L · click an object to anchor'],
-  ['Align by key', 'Alt+arrows / PgUp / PgDn; +Shift centres'],
-  ['Centre on X and Y', 'Alt+C'],
+  ['Align by key', 'Alt+arrows / PgUp / PgDn; +Shift centers'],
+  ['Center on X and Y', 'Alt+C'],
   ['Drop onto the plate', 'D'],
   ['Fit to view', 'F'],
   ['Save a version', `${MOD}Shift+V`],
@@ -79,7 +75,7 @@ function NameField({ node }: { node: SceneNode }) {
 function Appearance({ nodes }: { nodes: SceneNode[] }) {
   const hole = nodes.every((n) => n.hole);
   const solid = nodes.every((n) => !n.hole);
-  const colour = solid && nodes.every((n) => n.color === nodes[0].color) ? nodes[0].color : null;
+  const color = solid && nodes.every((n) => n.color === nodes[0].color) ? nodes[0].color : null;
   return (
     <fieldset className="group">
       <legend>Material</legend>
@@ -93,91 +89,40 @@ function Appearance({ nodes }: { nodes: SceneNode[] }) {
           </button>
         </div>
       </div>
-      <div className="swatch-row" role="group" aria-label="Colour">
+      <div className="swatch-row" role="group" aria-label="Color">
         {PALETTE.map((c) => (
           <button
             key={c.value}
             type="button"
-            className={c.value === colour ? 'swatch on' : 'swatch'}
+            className={c.value === color ? 'swatch on' : 'swatch'}
             style={{ background: c.value }}
             title={c.name}
             aria-label={c.name}
-            aria-pressed={c.value === colour}
+            aria-pressed={c.value === color}
             onClick={() => setColor(c.value)}
           />
         ))}
+        <CustomColor color={color} custom={color !== null && !PALETTE.some((c) => c.value === color)} />
       </div>
     </fieldset>
   );
 }
 
-function Transform({ node }: { node: SceneNode }) {
-  const [linked, setLinked] = useState(false);
-  // Tight bounds change when geometry arrives.
-  useSyncExternalStore(geometry.subscribe, geometry.getRevision);
-  const low = geometry.bounds(node).min[2];
-  const locked = Boolean(node.locked);
-  const setPos = (axis: number, value: number) => {
-    const pos: Vec3 = [...node.pos];
-    // Z is shown as the height of the lowest point above the plate, which is what matters for printing.
-    pos[axis] = axis === 2 ? tidy(node.pos[2] + value - low) : value;
-    updateNode(node.id, { pos }, `pos:${node.id}:${axis}`);
-  };
-  const setRot = (axis: number, value: number) => {
-    const rot: Vec3 = [...node.rot];
-    rot[axis] = tidyAngle(value);
-    updateNode(node.id, { rot }, `rot:${node.id}:${axis}`);
-  };
-
+/** A swatch for any other color: it opens the system color picker, and shows the color it last gave. */
+function CustomColor({ color, custom }: { color: string | null; custom: boolean }) {
+  const input = useRef<HTMLInputElement>(null);
   return (
     <>
-      <fieldset className="group">
-        <legend>
-          Size
-          <button type="button" className={linked ? 'legend-button on' : 'legend-button'} title="Keep proportions" aria-label="Keep proportions" aria-pressed={linked} onClick={() => setLinked(!linked)}>
-            <LinkIcon />
-          </button>
-        </legend>
-        <div className="triple">
-          {SIZE_TAGS.map((tag, axis) => (
-            <NumberBox
-              key={tag}
-              tag={tag}
-              label={['Width (X)', 'Depth (Y)', 'Height (Z)'][axis]}
-              value={node.size[axis]}
-              min={0.01}
-              max={100000}
-              disabled={locked}
-              onChange={(v) => resizeNode(node, axis as 0 | 1 | 2, v, linked)}
-            />
-          ))}
-        </div>
-      </fieldset>
-      <fieldset className="group">
-        <legend>Position</legend>
-        <div className="triple">
-          {AXES.map((tag, axis) => (
-            <NumberBox
-              key={tag}
-              tag={tag}
-              label={axis === 2 ? 'Height above the plate' : `${tag} of the centre`}
-              value={axis === 2 ? low : node.pos[axis]}
-              min={-100000}
-              max={100000}
-              disabled={locked}
-              onChange={(v) => setPos(axis, v)}
-            />
-          ))}
-        </div>
-      </fieldset>
-      <fieldset className="group">
-        <legend>Rotation</legend>
-        <div className="triple">
-          {AXES.map((tag, axis) => (
-            <NumberBox key={tag} tag={tag} unit="°" label={`Rotation about ${tag}`} value={node.rot[axis]} step={15} min={-360} max={360} disabled={locked} onChange={(v) => setRot(axis, v)} />
-          ))}
-        </div>
-      </fieldset>
+      <button
+        type="button"
+        className={custom ? 'swatch custom on' : 'swatch custom'}
+        style={custom && color ? { background: color } : undefined}
+        title="Any color…"
+        aria-label="Any color"
+        aria-pressed={custom}
+        onClick={() => input.current?.click()}
+      />
+      <input ref={input} type="color" className="swatch-input" aria-hidden tabIndex={-1} value={color ?? '#8fa3bf'} onChange={(e) => setColor(e.target.value)} />
     </>
   );
 }
@@ -220,7 +165,7 @@ function ShapeParams({ node }: { node: SceneNode }) {
 
 const ALIGNMENTS: { id: TextAlign; label: string }[] = [
   { id: 'left', label: 'Left' },
-  { id: 'centre', label: 'Centre' },
+  { id: 'center', label: 'Center' },
   { id: 'right', label: 'Right' },
 ];
 
@@ -323,15 +268,8 @@ function Design() {
   const nodes = useMemo(() => scene.filter((n) => selection.includes(n.id)), [scene, selection]);
   useSyncExternalStore(geometry.subscribe, geometry.getRevision);
 
-  if (viewing || nodes.length === 0)
-    return (
-      <>
-        <Overview />
-        <EditingNote />
-      </>
-    );
+  if (viewing || nodes.length === 0) return <Overview />;
   if (nodes.length > 1) {
-    const size = boundsSize(unionBounds(nodes.map((n) => geometry.bounds(n))));
     return (
       <>
         <header className="params-head">
@@ -341,16 +279,6 @@ function Design() {
           </div>
         </header>
         <Appearance nodes={nodes} />
-        <EditingNote />
-        <fieldset className="group">
-          <legend>Selection</legend>
-          <dl className="facts">
-            <div>
-              <dt>Overall size</dt>
-              <dd>{size.map((v) => formatNumber(v, 2)).join(' × ')} mm</dd>
-            </div>
-          </dl>
-        </fieldset>
       </>
     );
   }
@@ -365,11 +293,8 @@ function Design() {
       </header>
       {node.type === 'text' && <TextFields node={node} />}
       <Appearance nodes={nodes} />
-      <Transform node={node} />
       <ShapeParams node={node} />
       {node.type === 'part' && <PartFields node={node} />}
-      <EditingNote />
-      {node.type === 'group' && <Structure root={node} />}
     </>
   );
 }

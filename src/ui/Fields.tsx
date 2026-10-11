@@ -94,7 +94,7 @@ interface SliderFieldProps {
   onChange: (v: number) => void;
 }
 
-/** Labelled slider with a number box, for the handful of numbers a shape has besides its size. */
+/** Labeled slider with a number box, for the handful of numbers a shape has besides its size. */
 export function SliderField({ label, help, value, min, max, step, integer, unit, onChange }: SliderFieldProps) {
   const id = useId();
   const span = max - min || 1;

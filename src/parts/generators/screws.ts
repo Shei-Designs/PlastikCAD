@@ -322,7 +322,7 @@ const trapezoidalParams: ParamDef[] = [
     type: 'number',
     key: 'pitch',
     label: 'Pitch',
-    help: 'Distance between neighbouring thread crests.',
+    help: 'Distance between neighboring thread crests.',
     default: 2,
     min: 1,
     max: 12,

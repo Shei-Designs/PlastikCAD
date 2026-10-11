@@ -1,6 +1,6 @@
 // Roller chain sprockets. The tooth form is the classic drafting construction:
 // a roller seat arc on the pitch circle, joined tangentially to flank arcs
-// centred on the neighbouring rollers, with the tips cut at the outside diameter.
+// centered on the neighboring rollers, with the tips cut at the outside diameter.
 import { addHubAndBore, boreGroup, boreRadius, boreShape, hubGroup } from '../features';
 import { arc, arcSegments, dedupe, polar, rotatePoint, TAU } from '../math2d';
 import { extrude, intersection, revolve } from '../types';
@@ -54,14 +54,14 @@ function sprocketOutline(chain: Chain, teeth: number, clearance: number, q: Qual
   const outerR = Math.min((p * (0.6 + 1 / Math.tan(half))) / 2, pointR);
   const pointed = outerR >= pointR - 1e-9;
 
-  // One cell: the seat of roller 0 (centred on +X) and the tooth up to roller 1.
+  // One cell: the seat of roller 0 (centered on +X) and the tooth up to roller 1.
   const c0: Vec2 = [pitchR, 0];
   const c1 = polar(pitchR, step);
   const cell: Vec2[] = [];
   const seatSweep = Math.PI - 2 * half;
   cell.push(...arc(c0[0], c0[1], seatR, -Math.PI / 2 - half, -Math.PI / 2 - half - seatSweep, arcN(q, seatR, seatSweep, 4)));
 
-  // Angle (about a roller centre, measured from its radial direction) at which the flank ends.
+  // Angle (about a roller center, measured from its radial direction) at which the flank ends.
   let flankEnd: number;
   if (pointed) {
     const tip = polar(pointR, half);
@@ -71,7 +71,7 @@ function sprocketOutline(chain: Chain, teeth: number, clearance: number, q: Qual
   }
   const flankSweep = Math.PI / 2 + half - flankEnd;
   const flankN = arcN(q, flankR, flankSweep, 3);
-  // Leading flank, centred on the next roller; its first point is the end of the seat.
+  // Leading flank, centered on the next roller; its first point is the end of the seat.
   const lead = arc(c1[0], c1[1], flankR, step - Math.PI / 2 - half, step - flankEnd, flankN);
   cell.push(...lead.slice(1));
   if (!pointed) {
@@ -81,7 +81,7 @@ function sprocketOutline(chain: Chain, teeth: number, clearance: number, q: Qual
     const n = arcSegments(q, a1 - a0);
     for (let j = 1; j < n; j++) cell.push(polar(outerR, a0 + ((a1 - a0) * j) / n));
   }
-  // Trailing flank, centred on this roller; its last point starts the next seat.
+  // Trailing flank, centered on this roller; its last point starts the next seat.
   const trail = arc(c0[0], c0[1], flankR, flankEnd, Math.PI / 2 + half, flankN);
   cell.push(...trail.slice(pointed ? 1 : 0, -1));
 

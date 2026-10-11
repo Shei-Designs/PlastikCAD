@@ -77,17 +77,17 @@ function onKeyDown(e: KeyboardEvent): void {
     return;
   }
 
-  // Alt + arrows line the selection up; with Shift, on the centre of that axis. Alt+C centres X and Y at once.
+  // Alt + arrows line the selection up; with Shift, on the center of that axis. Alt+C centers X and Y at once.
   if (e.altKey && !mod) {
     const axis = ALIGN_KEYS[key];
     if (axis) {
       e.preventDefault();
-      alignSelected(axis[0], e.shiftKey ? 'centre' : axis[1]);
+      alignSelected(axis[0], e.shiftKey ? 'center' : axis[1]);
       return;
     }
     if (key === 'c') {
       e.preventDefault();
-      alignSelectedOn(e.shiftKey ? [[0, 'centre'], [1, 'centre'], [2, 'centre']] : [[0, 'centre'], [1, 'centre']]);
+      alignSelectedOn(e.shiftKey ? [[0, 'center'], [1, 'center'], [2, 'center']] : [[0, 'center'], [1, 'center']]);
       return;
     }
   }

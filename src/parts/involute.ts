@@ -111,8 +111,8 @@ export function toothProfile(spec: ToothSpec, q: Quality): ToothProfile {
   const sinA = Math.sin(alpha);
   const cosA = Math.cos(alpha);
 
-  // Rack frame: s along the pitch line (0 = centre of the rack tooth, i.e. the
-  // centre of the gear's tooth space), h = depth below the rolling pitch line.
+  // Rack frame: s along the pitch line (0 = center of the rack tooth, i.e. the
+  // center of the gear's tooth space), h = depth below the rolling pitch line.
   const hTip = r - rf;
   const halfWidth = (h: number) => (Math.PI * m) / 4 + spec.backlash / 2 - (h + spec.shift) * tanA;
   const rhoMax = Math.max(0, (halfWidth(hTip) * cosA) / (1 - sinA));
@@ -121,7 +121,7 @@ export function toothProfile(spec: ToothSpec, q: Quality): ToothProfile {
   const sc = Math.max(0, halfWidth(hc) - rho / cosA);
 
   // Position in the gear frame of rack point (s, h) after the gear has turned
-  // by theta. The tooth space is centred on +Y.
+  // by theta. The tooth space is centered on +Y.
   const roll = (s: number, h: number, theta: number): Vec2 => {
     const u = s + r * theta;
     const v = r - h;
@@ -179,7 +179,7 @@ export function toothProfile(spec: ToothSpec, q: Quality): ToothProfile {
   }
 
   // Convert to (radius, half-thickness) and clip at the tip circle and at the
-  // tooth centre line (pointed teeth).
+  // tooth center line (pointed teeth).
   const halfPitch = Math.PI / z;
   const flank: FlankSample[] = [];
   let pointed = false;
@@ -238,7 +238,7 @@ function innerArc(radius: number, a0: number, a1: number, q: Quality): Vec2[] {
   return pts;
 }
 
-/** Closed CCW outline of an external gear. Tooth 0 is centred on +X (rotated by `phase`). */
+/** Closed CCW outline of an external gear. Tooth 0 is centered on +X (rotated by `phase`). */
 export function gearOutline(profile: ToothProfile, teeth: number, q: Quality, phase = 0): Polygon {
   const f = profile.flank;
   const root = f[0];

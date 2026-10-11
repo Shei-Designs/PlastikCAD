@@ -125,7 +125,7 @@ ul {
 .app {
   display: grid;
   /* The side panels give up a little width before the toolbar over the stage would run out of room. */
-  grid-template-columns: minmax(212px, 236px) minmax(812px, 1fr) minmax(292px, 316px);
+  grid-template-columns: minmax(212px, 272px) minmax(812px, 1fr) minmax(292px, 360px);
   height: 100%;
 }
 
@@ -169,12 +169,57 @@ ul {
 
 .catalog {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  /* Laid out to fit without scrolling at the window's minimum height; a scrollbar appears only if it cannot. */
   overflow-y: auto;
   padding: 2px 8px 10px;
 }
 
+/* The library never scrolls: the grids fit the panel, and the import row sits at the bottom. */
+.library > section {
+  flex: none;
+}
+
+.import-row {
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+/* The objects tab: the list above, the selected object's structure below, each half scrolling on its own. */
+.objects-tab > section {
+  flex: 1 1 50%;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.objects-tab .structure-pane {
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
+  padding-top: 2px;
+}
+
+.structure-pane .group {
+  margin: 6px 8px 0;
+}
+
+.structure-pane .group legend {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.structure-pane .group legend .count {
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
 .catalog h2 {
-  margin: 14px 8px 5px;
+  margin: 10px 8px 4px;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.07em;
@@ -206,14 +251,14 @@ ul {
   display: grid;
   place-items: center;
   flex: none;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   color: var(--faint);
 }
 
 .thumb svg {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
 }
 
 .part.selected .thumb {
@@ -357,7 +402,7 @@ ul {
   z-index: 1;
 }
 
-/* An open popover's chip sits over the neighbour that shares its edge, like any lit chip. */
+/* An open popover's chip sits over the neighbor that shares its edge, like any lit chip. */
 .chip-group > .popover.open {
   z-index: 20;
 }
@@ -757,7 +802,7 @@ select:hover {
   background: var(--panel-raised);
 }
 
-.overlay {
+.corner {
   position: absolute;
   right: 12px;
   bottom: 12px;
@@ -765,8 +810,20 @@ select:hover {
   flex-direction: column;
   align-items: flex-end;
   gap: 8px;
-  width: min(292px, calc(100% - 120px));
   max-height: calc(100% - 64px);
+  pointer-events: none;
+}
+
+.corner > * {
+  pointer-events: auto;
+}
+
+.overlay {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  width: min(292px, calc(100vw - 700px));
   pointer-events: none;
 }
 
@@ -1013,7 +1070,8 @@ select:hover {
 .menu {
   display: flex;
   flex-direction: column;
-  width: 236px;
+  /* Narrow enough to open within the sidebar, whose left edge is the window's. */
+  width: 216px;
 }
 
 .menu-item {
@@ -1058,18 +1116,18 @@ kbd {
 
 .shape-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 2px;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .shape {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1px;
+  gap: 0;
   width: 100%;
-  padding: 5px 2px 6px;
+  padding: 4px 2px 5px;
   border: 0;
   border-radius: 7px;
   background: none;
@@ -1120,6 +1178,11 @@ kbd {
   flex-direction: column;
   flex: 1;
   min-height: 0;
+}
+
+.objects h2:first-child,
+.structure-pane h2:first-child {
+  margin-top: 8px;
 }
 
 .count {
@@ -1246,7 +1309,7 @@ kbd {
   align-items: center;
   gap: 5px;
   padding: 3px 7px 3px 8px;
-  /* Centred on the middle of the edge it measures. */
+  /* Centered on the middle of the edge it measures. */
   transform: translate(-50%, -50%);
   pointer-events: auto;
 }
@@ -1270,6 +1333,51 @@ kbd {
   user-select: text;
   -webkit-user-select: text;
   cursor: text;
+}
+
+.transform-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  backdrop-filter: blur(6px);
+  box-shadow: var(--shadow);
+}
+
+.transform-row {
+  display: grid;
+  grid-template-columns: 74px repeat(3, 84px);
+  align-items: center;
+  gap: 6px;
+}
+
+.transform-row .number-box {
+  width: auto;
+  min-width: 0;
+}
+
+.transform-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.transform-label .legend-button {
+  margin-left: 2px;
+}
+
+.transform-facts {
+  grid-column: 2 / -1;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
 }
 
 .version-banner,
@@ -1353,6 +1461,14 @@ kbd {
   width: 272px;
 }
 
+.array-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
 .array-head,
 .array-row {
   display: grid;
@@ -1369,6 +1485,29 @@ kbd {
 }
 
 /* The axis letter at the start of a row; the number boxes after it are spans too. */
+.array-head .wide {
+  grid-column: 1 / -1;
+}
+
+/* Two even columns across the whole panel, for the ring's pairs of numbers. */
+.array-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.array-pair.head {
+  font-size: 11px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.array-pair.head span {
+  padding-left: 8px;
+}
+
 .array-row > span:first-child {
   color: var(--muted);
   font-weight: 600;
@@ -1505,6 +1644,7 @@ kbd {
 
 .swatch-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 2px 2px 4px;
 }
@@ -1512,6 +1652,19 @@ kbd {
 .swatch-row .swatch {
   width: 18px;
   height: 18px;
+}
+
+/* The "any color" swatch: a color wheel until a color is picked, then that color. */
+.swatch.custom {
+  background: conic-gradient(#e5484d, #e5c04b, #5fa777, #4c8dff, #8b6fd0, #e5484d);
+}
+
+.swatch-input {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .facts > div {
@@ -1646,54 +1799,57 @@ kbd {
 
 /* ---------- structure graph ---------- */
 
-.structure .tree {
-  display: block;
-  max-width: 100%;
-  margin: 6px 0 2px;
-  overflow: visible;
+/* The structure outline: rows with a colour dot, each grouping's parts indented beneath it on a guide line. */
+.outline,
+.outline-branch {
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
-.tree-edge {
-  fill: none;
-  stroke: var(--faint);
-  stroke-width: 1.2;
+.outline {
+  margin: 4px 0 2px;
 }
 
-.tree-node {
+.outline-branch {
+  margin-left: 9px;
+  padding-left: 10px;
+  border-left: 1px solid var(--border);
+}
+
+.outline-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  height: 26px;
+  padding: 0 6px 0 4px;
+  border-radius: 6px;
   cursor: pointer;
   outline: 0;
+  color: var(--muted);
 }
 
-.tree-node circle {
-  stroke: var(--panel);
-  stroke-width: 1.5;
+.outline-row:hover,
+.outline-row:focus-visible,
+.outline-row.on {
+  background: var(--control);
+  color: var(--text);
 }
 
-.tree-node text {
-  font-size: 11.5px;
-  fill: var(--muted);
+.outline-row.on .dot {
+  box-shadow: 0 0 0 2px var(--accent);
 }
 
-.tree-node .tree-group {
+.outline-row .clip {
+  flex: 1;
+  min-width: 0;
+}
+
+.outline-kind {
+  flex: none;
   font-size: 10.5px;
-  fill: var(--faint);
-}
-
-.tree-node:hover text,
-.tree-node:focus-visible text,
-.tree-node.on text {
-  fill: var(--text);
-}
-
-.tree-node:hover circle,
-.tree-node:focus-visible circle,
-.tree-node.on circle {
-  stroke: var(--accent);
-  stroke-width: 2.5;
-}
-
-.tree-node.hole circle {
-  stroke-dasharray: 2 1.5;
+  color: var(--faint);
 }
 
 .structure-actions {
@@ -1708,15 +1864,7 @@ kbd {
   flex: none;
 }
 
-.layers {
-  margin: 4px 0 0;
-  padding-left: 18px;
-  color: var(--muted);
-}
 
-.layers li {
-  padding: 1px 0;
-}
 
 /* ---------- part picker ---------- */
 

@@ -124,9 +124,9 @@ export function mirrorNodes<T extends SceneNode>(nodes: T[], axis: 0 | 1 | 2, pi
 export interface GridArray {
   kind: 'grid';
   count: [number, number, number];
-  /** Centre-to-centre distance along each axis; negative runs the other way. */
+  /** Center-to-center distance along each axis; negative runs the other way. */
   pitch: Vec3;
-  /** Spread the pattern over a box instead: the first and last centres sit `inset` in from its faces, on X and Y. */
+  /** Spread the pattern over a box instead: the first and last centers sit `inset` in from its faces, on X and Y. */
   fit?: { bounds: Bounds; inset: number };
 }
 
@@ -136,9 +136,9 @@ export interface RingArray {
   count: number;
   /** Degrees the pattern spreads over: 360 is a full ring, less an arc with a copy at either end. */
   sweep: number;
-  centre: Vec2;
+  center: Vec2;
   /**
-   * Given, the originals mark the centre and are first moved out from it along
+   * Given, the originals mark the center and are first moved out from it along
    * +X to this radius; otherwise they already sit on the ring where they are.
    */
   radius?: number;
@@ -163,14 +163,14 @@ export function arrayNodes<T extends SceneNode>(nodes: T[], boundsOf: (n: T) => 
     let originals = nodes;
     if (spec.fit) {
       const { bounds, inset } = spec.fit;
-      const centre = boundsCenter(unionBounds(nodes.map(boundsOf)));
+      const center = boundsCenter(unionBounds(nodes.map(boundsOf)));
       const shift: Vec3 = [0, 0, 0];
       for (const axis of [0, 1] as const) {
         const n = spec.count[axis];
         if (n < 2) continue;
         const start = bounds.min[axis] + inset;
         pitch[axis] = (bounds.max[axis] - inset - start) / (n - 1);
-        shift[axis] = start - centre[axis];
+        shift[axis] = start - center[axis];
       }
       if (shift.some(Boolean)) originals = nodes.map((n) => ({ ...n, pos: tidyVec(add(n.pos, shift)) }));
     }
@@ -185,11 +185,11 @@ export function arrayNodes<T extends SceneNode>(nodes: T[], boundsOf: (n: T) => 
     return { originals, copies };
   }
   const step = spec.count < 2 ? 0 : spec.sweep >= 360 ? 360 / spec.count : spec.sweep / (spec.count - 1);
-  const pivot: Vec3 = [spec.centre[0], spec.centre[1], 0];
+  const pivot: Vec3 = [spec.center[0], spec.center[1], 0];
   let originals = nodes;
   if (spec.radius !== undefined) {
     const c = boundsCenter(unionBounds(nodes.map(boundsOf)));
-    const shift: Vec3 = [spec.centre[0] + spec.radius - c[0], spec.centre[1] - c[1], 0];
+    const shift: Vec3 = [spec.center[0] + spec.radius - c[0], spec.center[1] - c[1], 0];
     if (shift.some(Boolean)) originals = nodes.map((n) => ({ ...n, pos: tidyVec(add(n.pos, shift)) }));
   }
   for (let i = 1; i < spec.count; i++) {
@@ -204,7 +204,7 @@ export function arrayNodes<T extends SceneNode>(nodes: T[], boundsOf: (n: T) => 
 
 /** Combine nodes into a group whose result has the given bounds (measured by the geometry kernel). */
 export function makeGroup(nodes: SceneNode[], bounds: Bounds, name: string, over: Partial<Pick<GroupNode, 'id' | 'color' | 'hole' | 'hidden' | 'locked'>> = {}): GroupNode {
-  const centre: Vec3 = [
+  const center: Vec3 = [
     (bounds.min[0] + bounds.max[0]) / 2,
     (bounds.min[1] + bounds.max[1]) / 2,
     (bounds.min[2] + bounds.max[2]) / 2,
@@ -216,7 +216,7 @@ export function makeGroup(nodes: SceneNode[], bounds: Bounds, name: string, over
     id: over.id ?? newId(),
     type: 'group',
     name,
-    pos: centre,
+    pos: center,
     rot: [0, 0, 0],
     size,
     natural: size,
@@ -225,7 +225,7 @@ export function makeGroup(nodes: SceneNode[], bounds: Bounds, name: string, over
     ...(over.hidden ? { hidden: true } : {}),
     ...(over.locked ? { locked: true } : {}),
     children: nodes.map((n) => {
-      const child = { ...n, pos: [n.pos[0] - centre[0], n.pos[1] - centre[1], n.pos[2] - centre[2]] as Vec3 };
+      const child = { ...n, pos: [n.pos[0] - center[0], n.pos[1] - center[1], n.pos[2] - center[2]] as Vec3 };
       delete child.hidden;
       delete child.locked;
       return child;
@@ -266,7 +266,7 @@ export function ungroup(group: GroupNode): SceneNode[] {
       size: tidyVec([child.size[0] * lengths[0], child.size[1] * lengths[1], child.size[2] * lengths[2]]),
     };
     if (next.type === 'shape' && even && Math.abs(Math.abs(scale[0]) - 1) > 1e-9) {
-      // Radii are in millimetres, so they grow with the group.
+      // Radii are in millimeters, so they grow with the group.
       const params = { ...next.params };
       for (const key of MM_PARAMS) if (key in params) params[key] = tidy(params[key] * Math.abs(scale[0]));
       next.params = params;
@@ -297,7 +297,7 @@ function orthonormal(axes: Mat, lengths: Vec3, flip: [boolean, boolean, boolean]
 /** Bounds of a node's box; a stand-in for the tight bounds where no geometry is at hand. */
 export const boxBoundsOf = (node: SceneNode): Bounds => boxBounds(node);
 
-export type AlignMode = 'min' | 'centre' | 'max';
+export type AlignMode = 'min' | 'center' | 'max';
 
 /** What it takes to put a dissolved group back together. */
 export interface Layer {
@@ -350,7 +350,7 @@ export function dissolve(scene: Scene, path: string[]): { scene: Scene; layers: 
   return { scene: out, layers };
 }
 
-/** World transform of a node's own box (centred, `size` wide) reached through `path`. */
+/** World transform of a node's own box (centered, `size` wide) reached through `path`. */
 export function frameAlong(scene: Scene, path: string[]): Mat | null {
   let m: Mat = IDENTITY;
   let nodes: Scene = scene;

@@ -43,7 +43,7 @@ describe('dev board mounts', () => {
   it('puts Pi standoffs 58 × 49 mm apart, drilled for the screw', () => {
     const r = made(raspberryPi, { board: 'pi4', form: 'standoffs', postHeight: 6, postDiameter: 6, holeKind: 'tap' });
     expect(r.warnings).toEqual([]);
-    // Four posts: their centres span 58 × 49, plus a radius each side.
+    // Four posts: their centers span 58 × 49, plus a radius each side.
     expect(extent(r.stats, 0)).toBeCloseTo(58 + 6, 1);
     expect(extent(r.stats, 1)).toBeCloseTo(49 + 6, 1);
     expect(extent(r.stats, 2)).toBeCloseTo(6, 6);
@@ -130,5 +130,28 @@ describe('dev board mounts', () => {
     const endLeg = (27.94 - 18) / 2 - 0.3 - 0.5;
     const cornerFill = 4 * (1 - Math.PI / 4) * 1.3 * 1.3;
     expect(stops.stats.volume).toBeCloseTo((6 * 2 * 10 + 2 * 2 * (endLeg + 2) - 4 * 2 * 2 + cornerFill) * 5, 0);
+  });
+  it('models the board with its connectors in place, reaching out past the edge', () => {
+    // A Pi 4 with the plugs reaching 15 mm: the USB end reaches +X, the power side reaches -Y.
+    const r = made(raspberryPi, { board: 'pi4', form: 'connectors', reach: 15, fit: 'plug' });
+    expect(r.warnings).toEqual([]);
+    expect(r.stats.max[0]).toBeCloseTo(85 + 15, 3);
+    expect(r.stats.min[0]).toBeCloseTo(0, 3);
+    expect(r.stats.min[1]).toBeCloseTo(-15, 3);
+    expect(r.stats.max[1]).toBeCloseTo(56, 3);
+    // The micro HDMI plug (7 high on a 3 mm socket) hangs 0.4 below the PCB underside; the USB stacks' plugs reach 8.5 above their 8 mm center.
+    expect(r.stats.min[2]).toBeCloseTo(1.6 + 1.5 - 3.5, 3);
+    expect(r.stats.max[2]).toBeCloseTo(1.6 + 8 + 8.5, 3);
+    expect(r.info.find((i) => i.label === 'Base')?.value).toContain('0.4 mm below');
+    // Socket bodies alone stop at the edge plus their own protrusion when the reach is 0.
+    const flush = made(raspberryPi, { board: 'pi4', form: 'connectors', reach: 0, fit: 'body' });
+    expect(flush.stats.max[0]).toBeCloseTo(85 + 3, 3);
+    expect(flush.stats.min[1]).toBeCloseTo(-2.5, 3);
+    expect(flush.stats.volume).toBeLessThan(r.stats.volume);
+    // Boards with sockets on the left edge reach -X; a board with none recorded is the blank with a warning.
+    const uno = made(arduino, { board: 'uno', form: 'connectors', reach: 10, fit: 'body' });
+    expect(uno.stats.min[0]).toBeCloseTo(-10, 3);
+    const nano = made(arduino, { board: 'nano', form: 'connectors' });
+    expect(nano.warnings.some((w) => w.includes('No socket positions'))).toBe(true);
   });
 });

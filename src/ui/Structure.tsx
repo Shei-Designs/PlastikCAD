@@ -1,43 +1,13 @@
-// How a grouped object was put together, drawn as a tree: the primitives on
-// the left, each grouping a node further right, the object itself at the end.
-// Branches that merge are groupings; hover a node to see it on the plate,
-// pick one to edit the object at that layer.
-import { useMemo, useState } from 'react';
+// How a grouped object was put together, as an outline: the object at the
+// top, what it was grouped from indented beneath it, grouping by grouping,
+// down to the primitives. Hover a row to see that part on the plate; pick one
+// to edit the object at that layer.
+import { useState } from 'react';
 import { shapeDef } from '../geometry/shapes';
 import { getGenerator } from '../parts/generators';
 import { HOLE_COLOR } from '../model/ops';
 import type { GroupNode, SceneNode } from '../model/types';
-import { cancelEditing, editInside, finishEditing, setHighlight, useEditor } from '../state/store';
-
-interface Placed {
-  node: SceneNode;
-  path: string[];
-  /** Groupings between this node and the primitives below it (0 for a primitive). */
-  level: number;
-  /** Row, in units of leaf rows; groups sit midway between their children. */
-  row: number;
-  children: Placed[];
-}
-
-const ROW = 24;
-const LABEL = 118;
-const PAD = 10;
-const DOT = 4.5;
-
-/** Lays the tree out: leaves get consecutive rows, groups sit in the middle of their children. */
-function place(node: SceneNode, path: string[], rows: { next: number }): Placed {
-  if (node.type !== 'group') return { node, path, level: 0, row: rows.next++, children: [] };
-  const children = node.children.map((c) => place(c, [...path, c.id], rows));
-  const level = 1 + Math.max(...children.map((c) => c.level));
-  const row = children.reduce((sum, c) => sum + c.row, 0) / children.length;
-  return { node, path, level, row, children };
-}
-
-const flatten = (p: Placed, out: Placed[] = []): Placed[] => {
-  out.push(p);
-  for (const c of p.children) flatten(c, out);
-  return out;
-};
+import { editInside, setHighlight } from '../state/store';
 
 const kindOf = (node: SceneNode): string =>
   node.type === 'group'
@@ -50,109 +20,78 @@ const kindOf = (node: SceneNode): string =>
           ? getGenerator(node.part).name
           : shapeDef(node.shape).name;
 
+const countLeaves = (node: SceneNode): number => (node.type === 'group' ? node.children.reduce((n, c) => n + countLeaves(c), 0) : 1);
+const depthOf = (node: SceneNode): number => (node.type === 'group' ? 1 + Math.max(...node.children.map(depthOf)) : 0);
+
 export function Structure({ root }: { root: GroupNode }) {
   const [picked, setPicked] = useState<string[] | null>(null);
-  const tree = useMemo(() => place(root, [root.id], { next: 0 }), [root]);
-  const nodes = useMemo(() => flatten(tree), [tree]);
-  const leaves = nodes.filter((n) => n.level === 0).length;
-  const levels = tree.level;
-  // Fits the panel: the levels share whatever width is left of the labels.
-  const width = 284;
-  const step = Math.min(64, (width - LABEL - 2 * PAD) / Math.max(levels, 1));
-  const x = (p: Placed) => LABEL + PAD + p.level * step;
-  const y = (p: Placed) => PAD + p.row * ROW + ROW / 2;
-  const height = leaves * ROW + 2 * PAD;
-  const chosen = picked ? nodes.find((n) => n.path.join('/') === picked.join('/')) : null;
+  const leaves = countLeaves(root);
+  const levels = depthOf(root);
+  const chosenNode = (() => {
+    if (!picked) return null;
+    let node: SceneNode | undefined = root;
+    for (const id of picked.slice(1)) node = node?.type === 'group' ? node.children.find((c) => c.id === id) : undefined;
+    return node ?? null;
+  })();
+
+  const row = (node: SceneNode, path: string[]) => {
+    const key = path.join('/');
+    const on = picked?.join('/') === key;
+    return (
+      <li key={key} role="none">
+        <div
+          className={['outline-row', on ? 'on' : '', node.hole ? 'hole' : ''].join(' ')}
+          tabIndex={0}
+          role="treeitem"
+          aria-selected={on}
+          aria-label={`${node.name}, ${kindOf(node)}`}
+          onMouseEnter={() => setHighlight(path)}
+          onMouseLeave={() => setHighlight(null)}
+          onFocus={() => setHighlight(path)}
+          onBlur={() => setHighlight(null)}
+          onClick={() => setPicked(on ? null : path)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setPicked(on ? null : path);
+            }
+          }}
+        >
+          <span className={node.hole ? 'dot hole' : 'dot'} style={{ background: node.hole ? undefined : node.color, borderColor: node.hole ? HOLE_COLOR : undefined }} />
+          <span className="clip">{node.name}</span>
+          <span className="outline-kind">{kindOf(node)}</span>
+        </div>
+        {node.type === 'group' && (
+          <ul role="group" className="outline-branch">
+            {node.children.map((c) => row(c, [...path, c.id]))}
+          </ul>
+        )}
+      </li>
+    );
+  };
 
   return (
     <fieldset className="group structure">
-      <legend>Structure</legend>
-      <p className="field-note">
-        {leaves} part{leaves === 1 ? '' : 's'}, {levels} grouping{levels === 1 ? '' : 's'}. Hover to find a part; pick one, then edit the object at that layer.
-      </p>
-      <svg className="tree" width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="tree" aria-label="How the object was put together">
-        {nodes.map((p) =>
-          p.children.map((c) => {
-            // An elbow from the child to its grouping.
-            const d = `M${x(c) + DOT} ${y(c)} H${x(p) - step / 2} V${y(p)} H${x(p) - DOT}`;
-            return <path key={`${c.path.join('/')}>`} d={d} className="tree-edge" />;
-          }),
-        )}
-        {nodes.map((p) => {
-          const key = p.path.join('/');
-          const on = picked?.join('/') === key;
-          const leaf = p.level === 0;
-          return (
-            <g
-              key={key}
-              className={['tree-node', on ? 'on' : '', p.node.hole ? 'hole' : ''].join(' ')}
-              tabIndex={0}
-              role="treeitem"
-              aria-selected={on}
-              aria-label={`${p.node.name}, ${kindOf(p.node)}`}
-              onMouseEnter={() => setHighlight(p.path)}
-              onMouseLeave={() => setHighlight(null)}
-              onFocus={() => setHighlight(p.path)}
-              onBlur={() => setHighlight(null)}
-              onClick={() => setPicked(on ? null : p.path)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  setPicked(on ? null : p.path);
-                }
-              }}
-            >
-              <circle cx={x(p)} cy={y(p)} r={DOT} style={{ fill: p.node.hole ? HOLE_COLOR : p.node.color }} />
-              {leaf ? (
-                <text x={x(p) - DOT - 6} y={y(p)} textAnchor="end" dominantBaseline="central">
-                  {p.node.name}
-                </text>
-              ) : (
-                <text x={x(p)} y={y(p) - DOT - 4} textAnchor="middle" className="tree-group">
-                  {p.node.name}
-                </text>
-              )}
-            </g>
-          );
-        })}
-      </svg>
-      {chosen && chosen.path.length > 1 && (
+      <legend title="Hover a part to find it on the plate; pick one to edit the object at that layer">
+        Structure tree
+        <span className="count">
+          {leaves} part{leaves === 1 ? '' : 's'}, {levels} level{levels === 1 ? '' : 's'}
+        </span>
+      </legend>
+      <ul className="outline" role="tree" aria-label="How the object was put together">
+        {row(root, [root.id])}
+      </ul>
+      {chosenNode && picked && picked.length > 1 && (
         <div className="structure-actions">
           <span className="clip">
-            <strong>{chosen.node.name}</strong> · {kindOf(chosen.node)}
+            <strong>{chosenNode.name}</strong> · {kindOf(chosenNode)}
           </span>
-          <button type="button" className="chip" onClick={() => editInside(chosen.path)}>
+          <button type="button" className="chip" onClick={() => editInside(picked)}>
             Edit here
           </button>
         </div>
       )}
-      {chosen && chosen.path.length === 1 && <p className="field-note">That is the whole object. Pick a part or a grouping inside it.</p>}
-    </fieldset>
-  );
-}
-
-/** While editing inside a group: what was taken apart, and the way back. */
-export function EditingNote() {
-  const editing = useEditor((s) => s.editing);
-  const busy = useEditor((s) => s.busy);
-  if (!editing) return null;
-  return (
-    <fieldset className="group structure">
-      <legend>Editing inside</legend>
-      <ol className="layers">
-        {editing.layers.map((l) => (
-          <li key={l.id}>{l.name}</li>
-        ))}
-      </ol>
-      <p className="field-note">These groupings were taken apart so the part could be changed. Done puts them back together in the same order; Cancel undoes everything since.</p>
-      <div className="structure-actions">
-        <button type="button" className="chip on" disabled={Boolean(busy)} onClick={() => void finishEditing()}>
-          Done
-        </button>
-        <button type="button" className="chip" disabled={Boolean(busy)} onClick={cancelEditing}>
-          Cancel
-        </button>
-      </div>
+      {chosenNode && picked && picked.length === 1 && <p className="field-note">That is the whole object. Pick a part or a grouping inside it.</p>}
     </fieldset>
   );
 }

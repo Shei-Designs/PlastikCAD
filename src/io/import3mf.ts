@@ -5,7 +5,7 @@ import type { Mat } from '../model/math';
 import { MeshBuilder } from './weld';
 import { XmlScanner } from './xml';
 
-/** Millimetres per unit, for each value of the model's `unit` attribute. */
+/** Millimeters per unit, for each value of the model's `unit` attribute. */
 const UNITS: Record<string, number> = {
   micron: 0.001,
   millimeter: 1,
@@ -45,8 +45,8 @@ interface Model {
 }
 
 /**
- * 3MF: every build item of the package, merged into one mesh in millimetres.
- * Colours, materials, slicer settings and everything else are ignored.
+ * 3MF: every build item of the package, merged into one mesh in millimeters.
+ * Colors, materials, slicer settings and everything else are ignored.
  */
 export function parse3mf(bytes: Uint8Array): MeshData {
   if (bytes.length === 0) throw new Error('This 3MF file is empty.');

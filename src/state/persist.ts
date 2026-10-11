@@ -14,6 +14,8 @@ export interface Prefs {
   snap: number;
   format: FormatId;
   panel: 'design' | 'versions';
+  /** Which tab the left panel shows: the library of shapes and parts, or the design's objects. */
+  sidebar: 'library' | 'objects';
   /** Recently used design files (desktop app). */
   recent: string[];
 }
@@ -37,6 +39,7 @@ export function loadPrefs(): Prefs {
     snap: SNAP_STEPS.includes(saved.snap as number) ? (saved.snap as number) : 1,
     format: (['stl', '3mf', 'obj', 'svg', 'dxf'] as const).find((f) => f === saved.format) ?? 'stl',
     panel: saved.panel === 'versions' ? 'versions' : 'design',
+    sidebar: saved.sidebar === 'objects' ? 'objects' : 'library',
     recent: Array.isArray(saved.recent) ? saved.recent.filter((p): p is string => typeof p === 'string').slice(0, 8) : [],
   };
 }

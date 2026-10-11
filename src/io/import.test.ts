@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { MeshData } from '../geometry/mesh';
 import type { Polygon } from '../model/types';
 import { exportMesh, exportOutline } from './export';
-import { centreMesh, centreOutline, IMPORT_EXTENSIONS, importFile } from './import';
+import { centerMesh, centerOutline, IMPORT_EXTENSIONS, importFile } from './import';
 import type { ImportedMesh, ImportedOutline } from './import';
 import { signedArea } from './outline';
 
@@ -260,7 +260,7 @@ describe('OBJ import', () => {
     expect([...m.triangles.subarray(0, 6)]).toEqual([0, 2, 3, 0, 3, 1]);
   });
 
-  it('copes with CRLF, tabs, continued lines, vertex colours and scientific notation', () => {
+  it('copes with CRLF, tabs, continued lines, vertex colors and scientific notation', () => {
     const text = 'v\t0 0 0 1.0\r\nv 1e1 0 0 0.5 0.5 0.5\r\nv 0 1.0E+1 0\r\nv 0 0 -.5e1\r\nf 1 3 \\\r\n 2\r\nf 1 2 4\r\nf 2 3 4\r\nf 1 4 3';
     const m = mesh('tetra.obj', text);
     expect([...m.positions]).toEqual([0, 0, 0, 10, 0, 0, 0, 10, 0, 0, 0, -5]);
@@ -333,7 +333,7 @@ describe('3MF import', () => {
     expect([...m.triangles]).toEqual([...tetra.triangles]);
   });
 
-  it('converts the unit of the model to millimetres', () => {
+  it('converts the unit of the model to millimeters', () => {
     const file = (unit: string) =>
       pack({
         '_rels/.rels': RELS,
@@ -703,7 +703,7 @@ describe('SVG import', () => {
       expect(c.length).toBeLessThan(70);
     });
 
-    it('honours the large-arc and sweep flags', () => {
+    it('honors the large-arc and sweep flags', () => {
       const quarter = (Math.PI * 100) / 4;
       // From (10, 0) to (0, 10) about the origin: the short way, then the long way round.
       const short = contourOf('<path d="M10 0 A10 10 0 0 1 0 10 Z"/>');
@@ -923,7 +923,7 @@ describe('SVG import', () => {
 
   describe('round trip', () => {
     it('reads back what the SVG writer wrote', () => {
-      // A square with a square hole, off centre.
+      // A square with a square hole, off center.
       const square: Polygon[] = [
         [[5, 10], [25, 10], [25, 30], [5, 30]],
         [[10, 15], [10, 25], [20, 25], [20, 15]],
@@ -933,12 +933,12 @@ describe('SVG import', () => {
       const [shape] = imported.shapes;
       expect(shape.evenodd).toBe(true);
       expect(shape.contours.length).toBe(2);
-      const { size, centre } = centreOutline(imported);
+      const { size, center } = centerOutline(imported);
       expect(size[0]).toBeCloseTo(20, 9);
       expect(size[1]).toBeCloseTo(20, 9);
       // The writer leaves a 1 mm margin, and the page's top left corner is the origin.
-      expect(centre[0]).toBeCloseTo(11, 9);
-      expect(centre[1]).toBeCloseTo(-11, 9);
+      expect(center[0]).toBeCloseTo(11, 9);
+      expect(center[1]).toBeCloseTo(-11, 9);
       expectPoints(shape.contours[0], [[-10, -10], [10, -10], [10, 10], [-10, 10]]);
       expectPoints(shape.contours[1], [[-5, -5], [-5, 5], [5, 5], [5, -5]]);
       // Windings survive the two Y flips.
@@ -948,26 +948,26 @@ describe('SVG import', () => {
   });
 });
 
-describe('centring', () => {
-  it('moves a mesh onto the centre of its bounding box', () => {
+describe('centering', () => {
+  it('moves a mesh onto the center of its bounding box', () => {
     const m = mesh('cube.stl', binaryStl(cubeFacets().map((f) => f.map((v, i) => v * (1 + (i % 3)) + 5))));
     const positions = m.positions;
-    const { size, centre } = centreMesh(m);
+    const { size, center } = centerMesh(m);
     expect(size).toEqual([10, 20, 30]);
-    expect(centre).toEqual([10, 15, 20]);
+    expect(center).toEqual([10, 15, 20]);
     expect(m.positions).toBe(positions);
     expect(meshBounds(m)).toEqual({ min: [-5, -10, -15], max: [5, 10, 15] });
-    expect(centreMesh(m)).toEqual({ size: [10, 20, 30], centre: [0, 0, 0] });
+    expect(centerMesh(m)).toEqual({ size: [10, 20, 30], center: [0, 0, 0] });
   });
 
-  it('moves an outline onto the centre of its bounding box', () => {
+  it('moves an outline onto the center of its bounding box', () => {
     const o = outlineOf('<svg width="100mm" viewBox="0 0 100 100"><rect x="10" y="20" width="30" height="40"/><circle cx="60" cy="40" r="10"/></svg>');
     const first = o.shapes[0].contours[0];
-    const { size, centre } = centreOutline(o);
+    const { size, center } = centerOutline(o);
     expect(size[0]).toBeCloseTo(60, 9);
     expect(size[1]).toBeCloseTo(40, 9);
-    expect(centre[0]).toBeCloseTo(40, 9);
-    expect(centre[1]).toBeCloseTo(-40, 9);
+    expect(center[0]).toBeCloseTo(40, 9);
+    expect(center[1]).toBeCloseTo(-40, 9);
     expect(o.shapes[0].contours[0]).toBe(first);
     expect(first[0][0]).toBeCloseTo(-30, 9);
     expect(first[0][1]).toBeCloseTo(20, 9);
@@ -975,7 +975,7 @@ describe('centring', () => {
 
   it('leaves empty input alone', () => {
     const empty: ImportedMesh = { kind: 'mesh', positions: new Float32Array(0), triangles: new Uint32Array(0) };
-    expect(centreMesh(empty)).toEqual({ size: [0, 0, 0], centre: [0, 0, 0] });
-    expect(centreOutline({ kind: 'outline', shapes: [] })).toEqual({ size: [0, 0], centre: [0, 0] });
+    expect(centerMesh(empty)).toEqual({ size: [0, 0, 0], center: [0, 0, 0] });
+    expect(centerOutline({ kind: 'outline', shapes: [] })).toEqual({ size: [0, 0], center: [0, 0] });
   });
 });

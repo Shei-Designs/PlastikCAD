@@ -143,7 +143,7 @@ export function localScale(node: SceneNode): Vec3 {
   return [(node.size[0] / built[0]) * sign[0], (node.size[1] / built[1]) * sign[1], (node.size[2] / built[2]) * sign[2]];
 }
 
-/** Transform from a node's built geometry (centred on the origin) to its parent's coordinates. */
+/** Transform from a node's built geometry (centered on the origin) to its parent's coordinates. */
 export function nodeMatrix(node: SceneNode): Mat {
   const m = multiply(rotation(node.rot), scaling(localScale(node)));
   m[9] = node.pos[0];
@@ -152,7 +152,7 @@ export function nodeMatrix(node: SceneNode): Mat {
   return m;
 }
 
-/** Transform from a node's local box (centred, `size` wide, unmirrored axes) to its parent: translation and rotation only. */
+/** Transform from a node's local box (centered, `size` wide, unmirrored axes) to its parent: translation and rotation only. */
 export function frameMatrix(node: SceneNode): Mat {
   const m = rotation(node.rot);
   m[9] = node.pos[0];

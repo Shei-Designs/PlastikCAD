@@ -5,7 +5,7 @@ import type { Asset, Polygon, SceneNode } from '../model/types';
 export type WorkerRequest =
   /** Imported data that later requests may refer to. Sent before any node that uses it. */
   | { type: 'assets'; assets: Record<string, Asset> }
-  /** Build the geometry of one node at its built size, centred on the origin (see `builtSize`, `geomKey`). */
+  /** Build the geometry of one node at its built size, centered on the origin (see `builtSize`, `geomKey`). */
   | { type: 'build'; id: number; key: string; node: SceneNode }
   /** Bounds of what the nodes would produce as a group (solids merged, holes cut), in the nodes' own coordinates. */
   | { type: 'measure'; id: number; nodes: SceneNode[] }
@@ -15,7 +15,7 @@ export type WorkerRequest =
 export interface BuildResult {
   key: string;
   render: RenderMesh;
-  /** Bounds of the built geometry (at built size, centred on the origin). */
+  /** Bounds of the built geometry (at built size, centered on the origin). */
   bounds: Bounds;
   triangles: number;
   /** mm³ at built size; 0 for open meshes. */

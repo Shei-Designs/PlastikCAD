@@ -30,7 +30,7 @@ export function ArrayPanel({ close }: { close: () => void }) {
   const [ring, setRing] = useState(6);
   const [sweep, setSweep] = useState(360);
   const [turn, setTurn] = useState(true);
-  // What the ring goes around: the selection marks the centre and moves out to the radius, the frame's centre, or a typed point.
+  // What the ring goes around: the selection marks the center and moves out to the radius, the frame's center, or a typed point.
   const [around, setAround] = useState<'selection' | 'frame' | 'point'>(frame ? 'frame' : 'selection');
   const [radius, setRadius] = useState(() => {
     if (!frameBounds) return 20;
@@ -48,15 +48,15 @@ export function ArrayPanel({ close }: { close: () => void }) {
   // The frame stays put only while it is the reference; otherwise it is patterned with the rest, as the store does.
   const framed = mode === 'grid' ? fitted : around === 'frame' && frame !== null;
   const seeds = framed ? others : picked;
-  const seedCentre = boundsCenter(framed ? othersBounds : unionBounds(picked.map((n) => geometry.bounds(n))));
+  const seedCenter = boundsCenter(framed ? othersBounds : unionBounds(picked.map((n) => geometry.bounds(n))));
   const request: ArrayRequest =
     mode === 'grid'
       ? { kind: 'grid', count, pitch, ...(fitted ? { fit: { inset } } : {}) }
       : around === 'selection'
-        ? { kind: 'ring', count: ring, sweep, centre: [tidy(seedCentre[0]), tidy(seedCentre[1])], radius, turn }
+        ? { kind: 'ring', count: ring, sweep, center: [tidy(seedCenter[0]), tidy(seedCenter[1])], radius, turn }
         : around === 'frame' && frame
-          ? { kind: 'ring', count: ring, sweep, centre: 'frame', turn }
-          : { kind: 'ring', count: ring, sweep, centre: point, turn };
+          ? { kind: 'ring', count: ring, sweep, center: 'frame', turn }
+          : { kind: 'ring', count: ring, sweep, center: point, turn };
   const places = mode === 'grid' ? count[0] * count[1] * count[2] : ring;
   const tooMany = places > ARRAY_LIMIT;
 
@@ -78,7 +78,7 @@ export function ArrayPanel({ close }: { close: () => void }) {
     commitArray();
     close();
   };
-  /** Spacing a fitted axis works out to, shown greyed. */
+  /** Spacing a fitted axis works out to, shown grayed. */
   const fittedPitch = (axis: 0 | 1 | 2): number => {
     if (!frameBounds || axis === 2 || count[axis] < 2) return pitch[axis];
     const size = boundsSize(frameBounds)[axis];
@@ -87,15 +87,7 @@ export function ArrayPanel({ close }: { close: () => void }) {
 
   return (
     <div className="align-panel array-panel">
-      <p>
-        {mode === 'grid'
-          ? 'Copies in a row, a grid or a stack: how many along each axis, and the distance between their centres.'
-          : around === 'selection'
-            ? 'Copies around a circle: the selection marks its centre and moves out to the radius, the rest follow at equal angles.'
-            : around === 'frame' && frame
-              ? `Copies around the middle of ${frame.name}, which stays put: the selection is one of them where it is, the rest follow at equal angles.`
-              : 'Copies around a circle about the point: the selection is one of them where it is, the rest follow at equal angles.'}
-      </p>
+      <div className="array-title">Array</div>
       <div className="segmented" role="radiogroup" aria-label="Pattern">
         {(['grid', 'ring'] as const).map((m) => (
           <button key={m} type="button" role="radio" aria-checked={mode === m} className={mode === m ? 'on' : ''} onClick={() => setMode(m)}>
@@ -146,8 +138,8 @@ export function ArrayPanel({ close }: { close: () => void }) {
               </div>
               {fit && (
                 <div className="field inline">
-                  <label>Centres in from its edges</label>
-                  <NumberBox label="Distance from the edges to the centres of the first and last copies" value={inset} unit="mm" min={-BIG} max={BIG} onChange={setInset} />
+                  <label>Centers in from its edges</label>
+                  <NumberBox label="Distance from the edges to the centers of the first and last copies" value={inset} unit="mm" min={-BIG} max={BIG} onChange={setInset} />
                 </div>
               )}
             </>
@@ -155,10 +147,8 @@ export function ArrayPanel({ close }: { close: () => void }) {
         </>
       ) : (
         <>
-          <div className="array-row">
-            <span />
-            <NumberBox label="Number of copies around the ring" tag="N" value={ring} min={2} max={ARRAY_LIMIT} integer onChange={setRing} />
-            <NumberBox label="Degrees the pattern spreads over" tag="∠" value={sweep} unit="°" min={1} max={360} onChange={setSweep} />
+          <div className="array-head" aria-hidden>
+            <span className="wide">Around</span>
           </div>
           <div className="segmented" role="radiogroup" aria-label="What the ring goes around">
             {(frame ? (['selection', 'frame', 'point'] as const) : (['selection', 'point'] as const)).map((a) => (
@@ -167,18 +157,36 @@ export function ArrayPanel({ close }: { close: () => void }) {
               </button>
             ))}
           </div>
+          <div className="array-pair head" aria-hidden>
+            <span>Copies</span>
+            <span>Angle</span>
+          </div>
+          <div className="array-pair">
+            <NumberBox label="Number of copies around the ring" value={ring} min={2} max={ARRAY_LIMIT} integer onChange={setRing} />
+            <NumberBox label="Degrees the pattern spreads over" value={sweep} unit="°" min={1} max={360} onChange={setSweep} />
+          </div>
           {around === 'selection' ? (
-            <div className="array-row">
-              <span />
-              <NumberBox label="Radius of the ring" tag="R" value={radius} unit="mm" min={0} max={BIG} onChange={setRadius} />
-              <NumberBox label="Diameter of the ring" tag="Ø" value={tidy(2 * radius)} unit="mm" min={0} max={BIG} onChange={(v) => setRadius(tidy(v / 2))} />
-            </div>
+            <>
+              <div className="array-pair head" aria-hidden>
+                <span>Radius</span>
+                <span>Diameter</span>
+              </div>
+              <div className="array-pair">
+                <NumberBox label="Radius of the ring" value={radius} unit="mm" min={0} max={BIG} onChange={setRadius} />
+                <NumberBox label="Diameter of the ring" value={tidy(2 * radius)} unit="mm" min={0} max={BIG} onChange={(v) => setRadius(tidy(v / 2))} />
+              </div>
+            </>
           ) : around === 'frame' && frame ? null : (
-            <div className="array-row">
-              <span />
-              <NumberBox label="X of the centre of the ring" tag="X" value={point[0]} unit="mm" min={-BIG} max={BIG} onChange={(v) => setPoint([v, point[1]])} />
-              <NumberBox label="Y of the centre of the ring" tag="Y" value={point[1]} unit="mm" min={-BIG} max={BIG} onChange={(v) => setPoint([point[0], v])} />
-            </div>
+            <>
+              <div className="array-pair head" aria-hidden>
+                <span>Center X</span>
+                <span>Center Y</span>
+              </div>
+              <div className="array-pair">
+                <NumberBox label="X of the center of the ring" value={point[0]} unit="mm" min={-BIG} max={BIG} onChange={(v) => setPoint([v, point[1]])} />
+                <NumberBox label="Y of the center of the ring" value={point[1]} unit="mm" min={-BIG} max={BIG} onChange={(v) => setPoint([point[0], v])} />
+              </div>
+            </>
           )}
           <div className="field inline">
             <label htmlFor={turnId} title="Each copy turns to face its place on the ring; off, they all keep the original's heading">
