@@ -1,5 +1,5 @@
 // Cylindrical worm with straight flanks in the axial section (ZA form).
-import { boreGroup, boreRadius, boreShape } from '../features';
+import { boreGroup, boreRadius, boreShape, handParam, isLeftHanded } from '../features';
 import { toDeg } from '../math2d';
 import { pressureAngleProfile, profileExtent, threadedRod } from '../threads';
 import { difference, extrude, translate } from '../types';
@@ -71,7 +71,7 @@ export const worm: GeneratorDef = {
           unit: 'mm',
         },
         { type: 'boolean', key: 'chamfer', label: 'Chamfered ends', default: true },
-        { type: 'boolean', key: 'leftHanded', label: 'Left-handed', default: false },
+        handParam,
       ],
     },
     boreGroup({ type: 'round', diameter: 5 }),
@@ -84,7 +84,7 @@ export const worm: GeneratorDef = {
     const d = num(p, 'pitchDiameter');
     const length = num(p, 'length');
     const chamfer = bool(p, 'chamfer');
-    const leftHanded = bool(p, 'leftHanded');
+    const leftHanded = isLeftHanded(p);
     const pitch = Math.PI * m;
     const lead = pitch * starts;
     const leadAngle = Math.atan(lead / (Math.PI * d));

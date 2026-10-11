@@ -37,14 +37,14 @@ describe('worm', () => {
       2,
     );
     expect(item({}, 'Mating gear')).toContain('right-handed');
-    expect(item({ leftHanded: true }, 'Mating gear')).toContain('left-handed');
+    expect(item({ hand: 'left' }, 'Mating gear')).toContain('left-handed');
   });
 
   it('builds across the parameter range', () => {
     for (const overrides of [
       { module: 0.5, pitchDiameter: 8, boreType: 'none' },
       { module: 2, starts: 2, pitchDiameter: 24, length: 40, boreType: 'd', boreDiameter: 8, boreFlat: 7 },
-      { module: 1.5, starts: 4, pitchDiameter: 20, pressureAngle: 14.5, leftHanded: true, chamfer: false },
+      { module: 1.5, starts: 4, pitchDiameter: 20, pressureAngle: 14.5, hand: 'left', chamfer: false },
       { module: 3, pitchDiameter: 36, pressureAngle: 30, length: 50, boreType: 'hex', boreDiameter: 10 },
     ] as Params[]) {
       const result = build(overrides, QUALITY.draft);

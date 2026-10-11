@@ -87,6 +87,8 @@ export function defaultParams(def: GeneratorDef): Params {
 export function sanitizeParams(def: GeneratorDef, raw: Params | undefined): Params {
   const p = defaultParams(def);
   if (!raw) return p;
+  // Designs saved before every helix shared one "hand" choice stored a left-handed switch instead.
+  if (typeof raw.leftHanded === 'boolean' && raw.hand === undefined && 'hand' in p) raw = { ...raw, hand: raw.leftHanded ? 'left' : 'right' };
   for (const g of def.groups)
     for (const d of g.params) {
       const v = raw[d.key];

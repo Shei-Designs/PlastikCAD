@@ -1,4 +1,5 @@
 // Printable fasteners: ISO metric bolts and nuts, trapezoidal lead screws and their nuts.
+import { handParam, isLeftHanded } from '../features';
 import { regularPolygon } from '../math2d';
 import {
   isoMetricProfile,
@@ -67,7 +68,6 @@ const pitchParam: ParamDef = {
   unit: 'mm',
 };
 
-const leftHandedParam: ParamDef = { type: 'boolean', key: 'leftHanded', label: 'Left-handed', default: false };
 
 const clearanceParam = (def: number, help: string): ParamDef => ({
   type: 'number',
@@ -164,7 +164,7 @@ export const metricBolt: GeneratorDef = {
         },
         clearanceParam(0.15, 'The thread is shrunk by this amount so that it turns freely in a nut. 0.1–0.2 mm suits FDM.'),
         { type: 'boolean', key: 'chamfer', label: 'Chamfered end', default: true },
-        leftHandedParam,
+        handParam,
       ],
     },
     {
@@ -191,7 +191,7 @@ export const metricBolt: GeneratorDef = {
     const length = num(p, 'length');
     const head = str(p, 'head');
     const chamfer = bool(p, 'chamfer');
-    const leftHanded = bool(p, 'leftHanded');
+    const leftHanded = isLeftHanded(p);
     const clearance = num(p, 'clearance');
     checkEngagement(size, pitch, clearance, warnings);
     const profile = isoMetricProfile(size.d, pitch, -clearance);
@@ -265,7 +265,7 @@ export const metricNut: GeneratorDef = {
           help: 'Chamfers the hex corners and adds a lead-in to the thread.',
           default: true,
         },
-        leftHandedParam,
+        handParam,
       ],
     },
   ],
@@ -285,7 +285,7 @@ export const metricNut: GeneratorDef = {
       profile,
       pitch,
       length: height + 2 * pitch,
-      leftHanded: bool(p, 'leftHanded'),
+      leftHanded: isLeftHanded(p),
       q,
     });
     const cuts = [translate(cutter, [0, 0, -pitch])];
@@ -370,7 +370,7 @@ export const leadScrew: GeneratorDef = {
         { type: 'number', key: 'length', label: 'Length', default: 60, min: 5, max: 400, step: 1, unit: 'mm' },
         clearanceParam(0.1, 'The thread is shrunk by this amount so that it runs freely in its nut.'),
         { type: 'boolean', key: 'chamfer', label: 'Chamfered ends', default: true },
-        leftHandedParam,
+        handParam,
       ],
     },
   ],
@@ -386,7 +386,7 @@ export const leadScrew: GeneratorDef = {
       pitch,
       starts,
       length,
-      leftHanded: bool(p, 'leftHanded'),
+      leftHanded: isLeftHanded(p),
       q,
       chamferBottom: chamfer,
       chamferTop: chamfer,
@@ -417,7 +417,7 @@ export const leadScrewNut: GeneratorDef = {
       params: [
         ...trapezoidalParams,
         clearanceParam(0.2, 'The thread is cut oversize by this amount so that the screw runs freely in it.'),
-        leftHandedParam,
+        handParam,
       ],
     },
     {
@@ -526,7 +526,7 @@ export const leadScrewNut: GeneratorDef = {
       pitch,
       starts,
       length: length + 2 * pitch,
-      leftHanded: bool(p, 'leftHanded'),
+      leftHanded: isLeftHanded(p),
       q,
     });
     cuts.push(translate(cutter, [0, 0, -pitch]), ...countersinks(profile, length, q));

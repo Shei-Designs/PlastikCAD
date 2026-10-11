@@ -3,7 +3,21 @@ import { arc, arcSegments, circle, regularPolygon, TAU } from './math2d';
 import { cylinder, difference, extrude, rotate, translate, union } from './types';
 import type { Quality, Shape2D, Solid, Vec2 } from './types';
 import { num, str } from './generators/types';
-import type { ParamGroup, Params } from './generators/types';
+import type { ParamDef, ParamGroup, Params } from './generators/types';
+
+/** Which way a helix winds: the one choice every threaded or helical part offers, in the same words. */
+export const handParam: ParamDef = {
+  type: 'select',
+  key: 'hand',
+  label: 'Hand',
+  default: 'right',
+  help: 'Which way the helix winds. Right-handed is the usual thread; a helical gear and its mate have opposite hands.',
+  options: [
+    { value: 'right', label: 'Right-handed' },
+    { value: 'left', label: 'Left-handed' },
+  ],
+};
+export const isLeftHanded = (p: Params): boolean => str(p, 'hand') === 'left';
 
 export interface BoreDefaults {
   type?: 'none' | 'round' | 'd' | 'hex' | 'keyway';

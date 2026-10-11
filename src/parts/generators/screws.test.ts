@@ -162,10 +162,10 @@ describe('metric nut', () => {
     for (const size of ['M4', 'M8', 'M16']) {
       const nut = build(metricNut, { size }).solid;
       expect(volume(intersection(nut, rod({ size })))).toBeLessThan(1e-6);
-      expect(volume(intersection(nut, rod({ size, leftHanded: true })))).toBeGreaterThan(0.05);
+      expect(volume(intersection(nut, rod({ size, hand: 'left' })))).toBeGreaterThan(0.05);
     }
-    const leftNut = build(metricNut, { leftHanded: true }).solid;
-    expect(volume(intersection(leftNut, rod({ leftHanded: true })))).toBeLessThan(1e-6);
+    const leftNut = build(metricNut, { hand: 'left' }).solid;
+    expect(volume(intersection(leftNut, rod({ hand: 'left' })))).toBeLessThan(1e-6);
     expect(volume(intersection(leftNut, rod({})))).toBeGreaterThan(0.5);
     // the threads really do overlap radially: a wrong pitch collides
     expect(volume(intersection(build(metricNut).solid, rod({ pitch: 1 })))).toBeGreaterThan(0.5);
@@ -246,7 +246,7 @@ describe('lead screw nut', () => {
     const nut = build(leadScrewNut).solid;
     const screw = (overrides: Params = {}) => build(leadScrew, { length: 30, ...overrides }).solid;
     expect(volume(intersection(nut, screw()))).toBeLessThan(1e-6);
-    expect(volume(intersection(nut, screw({ leftHanded: true })))).toBeGreaterThan(0.5);
+    expect(volume(intersection(nut, screw({ hand: 'left' })))).toBeGreaterThan(0.5);
     expect(volume(intersection(nut, screw({ starts: 2 })))).toBeGreaterThan(0.5);
     // the screw core passes through
     expect(volume(intersection(nut, translate(cylinder(2.75, 40, 96), [0, 0, -10])))).toBeLessThan(1e-6);

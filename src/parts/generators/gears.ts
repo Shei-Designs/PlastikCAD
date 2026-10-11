@@ -1,10 +1,10 @@
-import { addHubAndBore, boreGroup, boreRadius, boreShape, hubGroup } from '../features';
+import { addHubAndBore, boreGroup, boreRadius, boreShape, handParam, hubGroup, isLeftHanded } from '../features';
 import { gearOutline, inv, minShiftWithoutUndercut, ringOutline, standardTooth, toothProfile } from '../involute';
 import { arc, arcSegments, circle, deg, toDeg, TAU } from '../math2d';
 import { shearedPrism } from '../meshUtil';
 import { extrude, intersection, mirror, translate, union } from '../types';
 import type { Polygon, Quality, Solid, Vec2 } from '../types';
-import { bool, mm, num, str } from './types';
+import { bool, mm, num } from './types';
 import type { GeneratorDef, InfoItem, ParamDef, ParamGroup, Params } from './types';
 
 const moduleParam: ParamDef = {
@@ -122,18 +122,7 @@ function involuteGear(kind: GearKind): GeneratorDef {
       unit: '°',
     });
   }
-  if (kind === 'helical') {
-    main.push({
-      type: 'select',
-      key: 'hand',
-      label: 'Hand',
-      default: 'right',
-      options: [
-        { value: 'right', label: 'Right-handed' },
-        { value: 'left', label: 'Left-handed' },
-      ],
-    });
-  }
+  if (kind === 'helical') main.push(handParam);
   main.push({
     type: 'number',
     key: 'mateTeeth',
@@ -147,7 +136,7 @@ function involuteGear(kind: GearKind): GeneratorDef {
   });
 
   const names: Record<GearKind, [string, string]> = {
-    spur: ['Spur gear', 'Straight-toothed involute gear, the everyday workhorse.'],
+    spur: ['Spur gear', 'Straight-toothed involute gear.'],
     helical: ['Helical gear', 'Angled teeth for smoother, quieter running.'],
     herringbone: ['Herringbone gear', 'Double helical: quiet, self-centering, no axial thrust.'],
   };
@@ -187,7 +176,7 @@ function involuteGear(kind: GearKind): GeneratorDef {
       if (!helical) {
         body = extrude([outline], b);
       } else {
-        const sign = kind === 'helical' && str(p, 'hand') === 'left' ? -1 : 1;
+        const sign = kind === 'helical' && isLeftHanded(p) ? -1 : 1;
         const length = kind === 'herringbone' ? b / 2 : b;
         const twist = sign * toDeg((length * Math.tan(deg(helix))) / r);
         const half = extrude([outline], length, { twist, divisions: twistDivisions(twist, q) });
