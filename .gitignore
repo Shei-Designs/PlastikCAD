@@ -23,9 +23,13 @@ dist-ssr
 *.sln
 *.sw?
 
-# Rust / Tauri build output and generated schemas
+# Rust / Tauri build output and generated schemas. The Android project under
+# src-tauri/gen/android is kept (it carries the signing setup); its own
+# .gitignore files leave out what Tauri regenerates.
 src-tauri/target
-src-tauri/gen
+src-tauri/gen/schemas
+src-tauri/gen/android/build
+src-tauri/gen/android/app/build
 
 # Local environment and tool state
 .env

@@ -10,10 +10,12 @@ import type { FormatId } from '../io/export';
 import { centreMesh, centreOutline, IMPORT_EXTENSIONS, importFile } from '../io/import';
 import { emptyDoc, parseDoc, serializeDoc } from '../model/file';
 import { hashString } from '../model/geomKey';
-import { boundsCenter, boxBounds, tidyVec, unionBounds } from '../model/math';
+import { boundsCenter, boundsSize, boxBounds, tidyVec, unionBounds } from '../model/math';
 import type { Bounds, Mat } from '../model/math';
 import {
   alignNodes,
+  arrayNodes,
+  arrayPlaces,
   cloneNode,
   diffScenes,
   dissolve,
@@ -28,7 +30,7 @@ import {
   uniqueName,
   usedAssets,
 } from '../model/ops';
-import type { AlignMode, Layer } from '../model/ops';
+import type { AlignMode, GridArray, Layer, RingArray } from '../model/ops';
 import type { Asset, Doc, GroupNode, ImportNode, PartNode, PartParamValue, Scene, SceneNode, ShapeKind, TextNode, Vec3, Version } from '../model/types';
 import { GENERATORS, getGenerator } from '../parts/generators';
 import { sanitizeParams } from '../parts/generators/types';
@@ -661,6 +663,68 @@ export function commitAlign(axis: 0 | 1 | 2, mode: AlignMode): void {
   replaceNodes(nodes);
   endGesture(false);
   refreshAlignBounds();
+}
+
+// --- arrays -------------------------------------------------------------------
+
+/** A grid as the panel asks for it: the box to fit is found here, from the selection. */
+export type ArrayRequest = RingArray | (Omit<GridArray, 'fit'> & { fit?: { inset: number } });
+
+/** Patterns stop here: every place is another object for the kernel to merge. */
+export const ARRAY_LIMIT = 400;
+/** Ids of the pattern being previewed, the originals first. */
+let arraying: string[] | null = null;
+
+const volumeOf = (node: SceneNode): number => {
+  const s = boundsSize(geometry.bounds(node));
+  return s[0] * s[1] * s[2];
+};
+
+/** The object a grid can be fitted into: the largest of two or more selected. */
+export function arrayFrame(nodes: SceneNode[] = selectedNodes()): SceneNode | null {
+  return nodes.length < 2 ? null : nodes.reduce((best, n) => (volumeOf(n) > volumeOf(best) ? n : best));
+}
+
+/**
+ * Lay the selection out in a pattern for a look. Another call replaces the
+ * pattern, `commitArray` keeps it and `cancelArray` drops it; until then it is
+ * one gesture, so nothing reaches the history.
+ */
+export function previewArray(request: ArrayRequest): void {
+  if (state.viewing) return;
+  if (state.aligning) stopAligning();
+  // Always from the scene and selection the preview started from.
+  const base = gesture ?? step();
+  const ids = new Set(base.selection);
+  const picked = base.scene.filter((n) => ids.has(n.id));
+  const frame = request.kind === 'grid' && request.fit ? arrayFrame(picked) : null;
+  const seeds = picked.filter((n) => !n.locked && n !== frame);
+  if (seeds.length === 0) return;
+  if (arrayPlaces(request) > ARRAY_LIMIT) return notify(`A pattern can have up to ${ARRAY_LIMIT} places.`);
+  const spec = request.kind === 'grid' && request.fit ? { ...request, fit: { inset: request.fit.inset, bounds: geometry.bounds(frame!) } } : (request as GridArray | RingArray);
+  const { originals, copies } = arrayNodes(seeds, (n) => geometry.bounds(n), spec);
+  const moved = new Map(originals.map((n) => [n.id, n]));
+  let scene = base.scene.map((n) => moved.get(n.id) ?? n);
+  for (const copy of copies) {
+    copy.name = uniqueName(scene, copy.name.replace(/ \d+$/, ''));
+    scene = [...scene, copy];
+  }
+  beginGesture();
+  arraying = [...originals.map((n) => n.id), ...copies.map((n) => n.id)];
+  commit(scene, { selection: arraying });
+}
+
+/** Keep the previewed pattern, selected, as one undo step. */
+export function commitArray(): void {
+  if (!arraying) return;
+  arraying = null;
+  endGesture(false);
+}
+
+export function cancelArray(): void {
+  if (!arraying) return;
+  arraying = null;
+  endGesture(true);
 }
 
 export function mirrorSelected(axis: 0 | 1 | 2): void {

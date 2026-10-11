@@ -2,8 +2,10 @@
 // operation returns new objects, which is what makes undo and versions cheap.
 import { defaultParams, shapeDef } from '../geometry/shapes';
 import {
+  add,
   apply,
   axisRotation,
+  boundsCenter,
   eulerOf,
   flipSigns,
   frameMatrix,
@@ -12,12 +14,14 @@ import {
   multiply,
   nodeMatrix,
   rotation,
+  sub,
   tidy,
   tidyVec,
+  unionBounds,
 } from './math';
 import { boxBounds } from './math';
 import type { Bounds, Mat } from './math';
-import type { GroupNode, Scene, SceneNode, ShapeKind, ShapeNode, Vec3 } from './types';
+import type { GroupNode, Scene, SceneNode, ShapeKind, ShapeNode, Vec2, Vec3 } from './types';
 
 export const HOLE_COLOR = '#9aa3b2';
 
@@ -114,6 +118,77 @@ export function mirrorNodes<T extends SceneNode>(nodes: T[], axis: 0 | 1 | 2, pi
     pos[axis] = 2 * pivot[axis] - pos[axis];
     return withFlip({ ...node, rot: eulerOf(r), pos }, flip);
   });
+}
+
+/** Copies in a row, a grid or a stack: `count` places along X, Y and Z, the original's included. */
+export interface GridArray {
+  kind: 'grid';
+  count: [number, number, number];
+  /** Centre-to-centre distance along each axis; negative runs the other way. */
+  pitch: Vec3;
+  /** Spread the pattern over a box instead: the first and last centres sit `inset` in from its faces, on X and Y. */
+  fit?: { bounds: Bounds; inset: number };
+}
+
+/** Copies round a circle in the plate's plane. */
+export interface RingArray {
+  kind: 'ring';
+  count: number;
+  /** Degrees the pattern spreads over: 360 is a full ring, less an arc with a copy at either end. */
+  sweep: number;
+  centre: Vec2;
+  /** Turn each copy with its place on the ring, the way the bolts of a flange face the middle. */
+  turn: boolean;
+}
+
+export type ArraySpec = GridArray | RingArray;
+
+/** How many places a pattern has, the original's included. */
+export const arrayPlaces = (spec: Pick<GridArray, 'kind' | 'count'> | Pick<RingArray, 'kind' | 'count'>): number =>
+  spec.kind === 'grid' ? spec.count[0] * spec.count[1] * spec.count[2] : spec.count;
+
+/**
+ * Lay `nodes` out in a pattern. Returns the originals, moved to the first place
+ * when the pattern is fitted into a box, and fresh copies for every other place.
+ */
+export function arrayNodes<T extends SceneNode>(nodes: T[], boundsOf: (n: T) => Bounds, spec: ArraySpec): { originals: T[]; copies: T[] } {
+  const copies: T[] = [];
+  if (spec.kind === 'grid') {
+    const pitch: Vec3 = [...spec.pitch];
+    let originals = nodes;
+    if (spec.fit) {
+      const { bounds, inset } = spec.fit;
+      const centre = boundsCenter(unionBounds(nodes.map(boundsOf)));
+      const shift: Vec3 = [0, 0, 0];
+      for (const axis of [0, 1] as const) {
+        const n = spec.count[axis];
+        if (n < 2) continue;
+        const start = bounds.min[axis] + inset;
+        pitch[axis] = (bounds.max[axis] - inset - start) / (n - 1);
+        shift[axis] = start - centre[axis];
+      }
+      if (shift.some(Boolean)) originals = nodes.map((n) => ({ ...n, pos: tidyVec(add(n.pos, shift)) }));
+    }
+    for (let k = 0; k < spec.count[2]; k++) {
+      for (let j = 0; j < spec.count[1]; j++) {
+        for (let i = 0; i < spec.count[0]; i++) {
+          if (i === 0 && j === 0 && k === 0) continue;
+          for (const n of originals) copies.push(cloneNode({ ...n, pos: tidyVec([n.pos[0] + i * pitch[0], n.pos[1] + j * pitch[1], n.pos[2] + k * pitch[2]]) }));
+        }
+      }
+    }
+    return { originals, copies };
+  }
+  const step = spec.count < 2 ? 0 : spec.sweep >= 360 ? 360 / spec.count : spec.sweep / (spec.count - 1);
+  const pivot: Vec3 = [spec.centre[0], spec.centre[1], 0];
+  for (let i = 1; i < spec.count; i++) {
+    const degrees = i * step;
+    const placed = spec.turn
+      ? rotateNodes(nodes, 2, degrees, pivot)
+      : nodes.map((node) => ({ ...node, pos: add(apply(axisRotation(2, degrees), sub(node.pos, pivot)), pivot) }));
+    for (const node of placed) copies.push(cloneNode({ ...node, pos: tidyVec(node.pos) }));
+  }
+  return { originals: nodes, copies };
 }
 
 /** Combine nodes into a group whose result has the given bounds (measured by the geometry kernel). */

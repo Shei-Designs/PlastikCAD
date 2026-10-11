@@ -3,7 +3,7 @@ import { emptyDoc, parseDoc, serializeDoc } from './file';
 import { geomKey } from './geomKey';
 import { apply, axisRotation, determinant, eulerOf, multiply, nodeMatrix, rotation } from './math';
 import type { Mat } from './math';
-import { alignNodes, boxBoundsOf, cloneNode, diffScenes, dissolve, frameAlong, makeGroup, makeShape, mirrorNodes, nodeAt, rotateNodes, ungroup } from './ops';
+import { alignNodes, arrayNodes, arrayPlaces, boxBoundsOf, cloneNode, diffScenes, dissolve, frameAlong, makeGroup, makeShape, mirrorNodes, nodeAt, rotateNodes, ungroup } from './ops';
 import type { Doc, GroupNode, SceneNode, Vec3 } from './types';
 
 const close = (a: number[], b: number[], eps = 1e-6) => {
@@ -61,6 +61,69 @@ describe('mirroring', () => {
     const [back] = mirrorNodes(mirrorNodes([node], 1, [0, 3, 0]), 1, [0, 3, 0]);
     close(nodeMatrix(back), nodeMatrix(node));
     expect(back.flip).toBeUndefined();
+  });
+});
+
+describe('arrays', () => {
+  const hole = shape('cylinder', { pos: [10, 20, 5], size: [3.2, 3.2, 10], hole: true });
+
+  it('spaces a grid by its pitch, the original staying put', () => {
+    const { originals, copies } = arrayNodes([hole], boxBoundsOf, { kind: 'grid', count: [3, 2, 1], pitch: [15, -8, 0] });
+    expect(originals).toEqual([hole]);
+    expect(copies).toHaveLength(5);
+    expect(copies.map((c) => c.pos)).toEqual([
+      [25, 20, 5],
+      [40, 20, 5],
+      [10, 12, 5],
+      [25, 12, 5],
+      [40, 12, 5],
+    ]);
+    expect(new Set([hole, ...copies].map((c) => c.id)).size).toBe(6);
+    expect(copies.every((c) => c.hole && c.size[0] === 3.2 && c.rot.every((r) => r === 0))).toBe(true);
+    expect(arrayPlaces({ kind: 'grid', count: [3, 2, 4] })).toBe(24);
+  });
+
+  it('fits a grid inside a box, centres a set distance in from its edges', () => {
+    const plate = { min: [0, 0, 0] as Vec3, max: [80, 50, 4] as Vec3 };
+    const { originals, copies } = arrayNodes([hole], boxBoundsOf, { kind: 'grid', count: [2, 2, 1], pitch: [1, 1, 1], fit: { bounds: plate, inset: 5 } });
+    // The original moves to the first corner and keeps its height.
+    expect(originals[0].pos).toEqual([5, 5, 5]);
+    expect(originals[0].id).toBe(hole.id);
+    expect(copies.map((c) => c.pos)).toEqual([
+      [75, 5, 5],
+      [5, 45, 5],
+      [75, 45, 5],
+    ]);
+    // One place along an axis leaves that axis where it was.
+    const row = arrayNodes([hole], boxBoundsOf, { kind: 'grid', count: [3, 1, 1], pitch: [1, 1, 1], fit: { bounds: plate, inset: 10 } });
+    expect(row.originals[0].pos).toEqual([10, 20, 5]);
+    expect(row.copies.map((c) => c.pos[0])).toEqual([40, 70]);
+    expect(row.copies.every((c) => c.pos[1] === 20)).toBe(true);
+    // Several seeds move together, by their common centre.
+    const pair = arrayNodes([hole, shape('box', { pos: [14, 20, 5], size: [2, 2, 10] })], boxBoundsOf, { kind: 'grid', count: [2, 1, 1], pitch: [1, 1, 1], fit: { bounds: plate, inset: 5 } });
+    expect(pair.originals.map((n) => n.pos[0])).toEqual([3.3, 7.3]);
+    expect(pair.copies.map((n) => n.pos[0])).toEqual([73.3, 77.3]);
+  });
+
+  it('rings copies round a centre, turned with the ring or not', () => {
+    const seed = shape('box', { pos: [30, 0, 5], size: [6, 4, 10] });
+    const { originals, copies } = arrayNodes([seed], boxBoundsOf, { kind: 'ring', count: 4, sweep: 360, centre: [0, 0], turn: true });
+    expect(originals).toEqual([seed]);
+    expect(copies).toHaveLength(3);
+    close(copies[0].pos, [0, 30, 5]);
+    close(copies[1].pos, [-30, 0, 5]);
+    close(copies[2].pos, [0, -30, 5]);
+    expect(copies.map((c) => c.rot[2])).toEqual([90, 180, -90]);
+    const still = arrayNodes([seed], boxBoundsOf, { kind: 'ring', count: 4, sweep: 360, centre: [0, 0], turn: false });
+    close(still.copies[1].pos, [-30, 0, 5]);
+    expect(still.copies.every((c) => c.rot.every((r) => r === 0))).toBe(true);
+    // An arc puts a copy at either end.
+    const arc = arrayNodes([seed], boxBoundsOf, { kind: 'ring', count: 3, sweep: 90, centre: [0, 0], turn: true });
+    expect(arc.copies.map((c) => c.rot[2])).toEqual([45, 90]);
+    close(arc.copies[1].pos, [0, 30, 5]);
+    // Round another centre.
+    const off = arrayNodes([seed], boxBoundsOf, { kind: 'ring', count: 2, sweep: 360, centre: [30, 10], turn: false });
+    close(off.copies[0].pos, [30, 20, 5]);
   });
 });
 

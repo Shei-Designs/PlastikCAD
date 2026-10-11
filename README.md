@@ -41,6 +41,11 @@ It is the Tinkercad way of modelling, without the cloud and without the clutter:
   time: nothing is ever baked in. Grouping only holes gives one hole: a
   connector cut-out with its screw holes becomes a single template to drop
   into any panel.
+- **Array** – copies of the selection in a row, a grid or a stack at a set
+  spacing, or round a ring. Select a hole together with the plate it goes in and
+  *Fit* spreads the copies over the plate, a set distance in from its edges:
+  four corner holes in one go. The pattern shows live while the numbers are
+  typed.
 - **Structure** – a grouped object shows its history as a tree in the panel:
   primitives on the left, each grouping a node further right, branches merging
   where things were grouped together. Hover a node to see that part on the

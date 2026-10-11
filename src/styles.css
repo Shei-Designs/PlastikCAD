@@ -1337,6 +1337,62 @@ kbd {
   gap: 8px;
 }
 
+.array-panel {
+  width: 272px;
+}
+
+.array-head,
+.array-row {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+}
+
+.array-head {
+  font-size: 11px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.array-row > span {
+  color: var(--faint);
+  font-weight: 600;
+}
+
+.array-panel .number-box {
+  width: auto;
+  min-width: 0;
+}
+
+.array-panel .field {
+  margin: 0;
+}
+
+.array-panel .field.inline .number-box {
+  width: 96px;
+}
+
+.array-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.array-foot .field-note {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.array-foot .primary {
+  width: auto;
+  height: 30px;
+  padding: 0 20px;
+}
+
 .align-row > span {
   width: 10px;
   color: var(--faint);

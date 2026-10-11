@@ -120,6 +120,11 @@ const GIZMO_MARGIN = 8;
 const EMPTY_RADIUS = 70;
 const PLATE_HALF = 100;
 const DRAG_THRESHOLD = 4; // px
+/** A finger wobbles more than a mouse before it means to drag. */
+const TOUCH_DRAG_THRESHOLD = 10; // px
+/** How much bigger a grip is to a finger than to the eye. */
+const TOUCH_GRIP_SCALE = 2.5;
+const dragThreshold = (event: PointerEvent) => (event.pointerType === 'touch' ? TOUCH_DRAG_THRESHOLD : DRAG_THRESHOLD);
 const MIN_SIZE = 0.1; // mm
 const ROTATE_STEP = 15;
 const ROTATE_COARSE = 45;
@@ -477,7 +482,7 @@ export class Viewer {
     const canvas = this.renderer.domElement;
     canvas.removeEventListener('webglcontextlost', this.onContextLost);
     canvas.removeEventListener('webglcontextrestored', this.requestRender);
-    canvas.removeEventListener('pointerdown', this.onPointerDown);
+    canvas.removeEventListener('pointerdown', this.onPointerDown, true);
     canvas.removeEventListener('pointermove', this.onPointerMove);
     canvas.removeEventListener('pointerup', this.onPointerUp);
     canvas.removeEventListener('pointercancel', this.onPointerUp);
@@ -573,7 +578,9 @@ export class Viewer {
     controls.mouseButtons = { LEFT: -1 as MOUSE, MIDDLE: MOUSE.PAN, RIGHT: MOUSE.ROTATE };
     controls.addEventListener('change', this.requestRender);
 
-    canvas.addEventListener('pointerdown', this.onPointerDown);
+    // Captured, so that an edit can start before OrbitControls sees the press: a finger on a grip or
+    // an object must not also turn the camera, as a finger on empty space does.
+    canvas.addEventListener('pointerdown', this.onPointerDown, true);
     canvas.addEventListener('pointermove', this.onPointerMove);
     canvas.addEventListener('pointerup', this.onPointerUp);
     canvas.addEventListener('pointercancel', this.onPointerUp);
@@ -1025,14 +1032,15 @@ export class Viewer {
       if (k.type === 'resize' || k.type === 'height') {
         const at = k.type === 'resize' ? this.framePoint([k.sx * hx, k.sy * hy, -hz]) : this.framePoint([0, 0, k.side * hz]);
         h.object.position.copy(at);
-        h.object.scale.setScalar(h.pixels * this.pixelSize(at) * (h === this.hovered ? 1.35 : 1));
+        h.object.scale.setScalar(h.pixels * this.pixelSize(at) * (h === this.hovered ? 1.35 : 1) * this.gripScale);
       } else if (k.type === 'lift') {
         const top = new Vector3((f.bounds.min[0] + f.bounds.max[0]) / 2, (f.bounds.min[1] + f.bounds.max[1]) / 2, f.bounds.max[2]);
         const px = this.pixelSize(top);
         h.object.position.copy(top).add(new Vector3(0, 0, 30 * px));
-        h.object.scale.setScalar(h.pixels * px * (h === this.hovered ? 1.2 : 1));
+        h.object.scale.setScalar(h.pixels * px * (h === this.hovered ? 1.2 : 1) * this.gripScale);
       } else {
         const { at, from, to } = this.ringPlacement(k.axis);
+        // The ring's hit tube is already several times fatter than the drawn arc, so it is not scaled.
         const s = h.pixels * this.pixelSize(at) * (h === this.hovered ? 1.15 : 1);
         const normal = from.clone().cross(to);
         h.object.matrix.makeBasis(from.multiplyScalar(s), to.multiplyScalar(s), normal.multiplyScalar(s)).setPosition(at);
@@ -1061,7 +1069,7 @@ export class Viewer {
       const hot = h === this.hovered;
       (h.object as Sprite).material = hot ? this.grips.dotHot : this.grips.dot;
       h.object.position.copy(p);
-      h.object.scale.setScalar(h.pixels * this.pixelSize(p) * (hot ? 1.3 : 1));
+      h.object.scale.setScalar(h.pixels * this.pixelSize(p) * (hot ? 1.3 : 1) * this.gripScale);
     }
     const pts = this.alignLines.geometry.getAttribute('position') as BufferAttribute;
     for (const axis of [0, 1, 2]) {
@@ -1079,10 +1087,15 @@ export class Viewer {
     this.raycaster.setFromCamera(this.pointer, this.camera);
   }
 
-  private pickHandle(): Handle | null {
+  /** Grips are laid out this much bigger than drawn while a finger is picking one. */
+  private gripScale = 1;
+
+  private pickHandle(event?: PointerEvent): Handle | null {
     if (!this.frame || this.handles.length === 0) return null;
+    this.gripScale = event?.pointerType === 'touch' ? TOUCH_GRIP_SCALE : 1;
     this.layoutHandles();
     this.overlay.updateMatrixWorld();
+    this.gripScale = 1;
     let best: Handle | null = null;
     let bestDistance = Infinity;
     for (const h of this.handles) {
@@ -1116,19 +1129,24 @@ export class Viewer {
     canvas.setPointerCapture(event.pointerId);
     this.setRay(event);
 
+    // Whatever starts here is ours alone: the camera does not get the press as well.
+    const claim = () => event.stopImmediatePropagation();
     if (this.placing) {
       this.drag = { mode: 'place' };
+      claim();
       return;
     }
     if (!this.options.interactive) return;
 
-    const handle = this.pickHandle();
+    const handle = this.pickHandle(event);
     if (handle?.kind.type === 'align') {
       this.events.onAlignPick(handle.kind.axis, handle.kind.mode);
+      claim();
       return;
     }
     if (handle && this.frame) {
       this.startHandleDrag(handle, event);
+      claim();
       return;
     }
 
@@ -1137,12 +1155,15 @@ export class Viewer {
     // In align mode a click on a selected object makes it the anchor instead of starting a drag.
     if (this.options.align && hit?.item.selected && !additive) {
       this.events.onAnchor(hit.item.node.id);
+      claim();
       return;
     }
     if (!hit) {
-      this.drag = { mode: 'pending-marquee', x: event.clientX, y: event.clientY, additive };
+      // Empty space: a mouse draws a marquee; a finger turns the camera (OrbitControls takes it from here).
+      if (event.pointerType !== 'touch') this.drag = { mode: 'pending-marquee', x: event.clientX, y: event.clientY, additive };
       return;
     }
+    claim();
     const { node } = hit.item;
     if (additive) {
       this.events.onSelect([node.id], 'toggle');
@@ -1350,14 +1371,14 @@ export class Viewer {
       return;
     }
     if (!drag) {
-      if (event.buttons === 0 && this.options.interactive) this.hover(this.pickHandle());
+      if (event.buttons === 0 && this.options.interactive) this.hover(this.pickHandle(event));
       return;
     }
-    if (this.press && Math.hypot(event.clientX - this.press.x, event.clientY - this.press.y) >= DRAG_THRESHOLD) this.press = null;
+    if (this.press && Math.hypot(event.clientX - this.press.x, event.clientY - this.press.y) >= dragThreshold(event)) this.press = null;
 
     switch (drag.mode) {
       case 'pending-move': {
-        if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < DRAG_THRESHOLD || drag.nodes.length === 0) return;
+        if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < dragThreshold(event) || drag.nodes.length === 0) return;
         this.drag = { mode: 'move', nodes: drag.nodes, plane: drag.plane, origin: drag.origin };
         this.renderer.domElement.style.cursor = 'move';
         this.events.onGestureStart();
@@ -1368,7 +1389,7 @@ export class Viewer {
         this.moveTo(drag, event);
         return;
       case 'pending-marquee':
-        if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < DRAG_THRESHOLD) return;
+        if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < dragThreshold(event)) return;
         this.drag = { ...drag, mode: 'marquee' };
         this.showMarquee(drag.x, drag.y, event.clientX, event.clientY);
         return;

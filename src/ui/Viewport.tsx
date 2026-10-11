@@ -36,6 +36,7 @@ import { Viewer } from '../viewer/Viewer';
 import type { HandlePrompt, ViewItem, ViewPreset } from '../viewer/Viewer';
 import {
   AlignIcon,
+  ArrayIcon,
   ChevronIcon,
   CloseIcon,
   DropIcon,
@@ -49,6 +50,7 @@ import {
   UngroupIcon,
   WarningIcon,
 } from './icons';
+import { ArrayPanel } from './ArrayPanel';
 import { Popover } from './Popover';
 
 const VIEWS: { id: ViewPreset; label: string }[] = [
@@ -86,6 +88,9 @@ function Actions() {
         <button type="button" className="chip icon" title="Duplicate in place (Ctrl+D)" aria-label="Duplicate" disabled={none} onClick={duplicateSelected}>
           <DuplicateIcon />
         </button>
+        <Popover className="chip icon" title="Array: copies in a grid or round a ring" button={<ArrayIcon />} disabled={none}>
+          {(close) => <ArrayPanel close={close} />}
+        </Popover>
         <button type="button" className="chip icon" title="Delete (Del)" aria-label="Delete" disabled={none} onClick={deleteSelected}>
           <TrashIcon />
         </button>
