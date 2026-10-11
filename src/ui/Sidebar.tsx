@@ -118,7 +118,7 @@ function FileBar() {
 }
 
 /** Short tile names for the part families. */
-const FAMILY_NAMES: Record<string, string> = { gears: 'Gear', pulleys: 'Pulley', screws: 'Screw', frames: 'Rail', ducts: 'Pipe' };
+const FAMILY_NAMES: Record<string, string> = { gears: 'Gear', pulleys: 'Pulley', screws: 'Screw', frames: 'Rail', ducts: 'Pipe', boards: 'Board' };
 
 function Shapes() {
   const placing = useEditor((s) => s.placing);

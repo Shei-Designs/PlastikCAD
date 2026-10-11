@@ -135,6 +135,16 @@ export const PART_THUMBNAILS: Record<string, ReactNode> = {
       <path d="M14 12v19h8V12M14 17l8-2M14 21l8-2M14 25l8-2M14 29l8-2" />
     </>,
   ),
+  boards: glyph(
+    <>
+      <rect x="4" y="8" width="28" height="20" rx="2" />
+      <circle cx="9" cy="13" r="1.6" />
+      <circle cx="27" cy="13" r="1.6" />
+      <circle cx="9" cy="23" r="1.6" />
+      <circle cx="27" cy="23" r="1.6" />
+      <rect x="14" y="14" width="8" height="8" />
+    </>,
+  ),
 };
 
 export const textThumbnail: ReactNode = glyph(

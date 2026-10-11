@@ -1,4 +1,5 @@
 import { bevelGear } from './bevel';
+import { BOARDS } from './boards';
 import { DUCTS } from './ducts';
 import { extrusion } from './extrusion';
 import { helicalGear, herringboneGear, rack, ringGear, spurGear } from './gears';
@@ -27,6 +28,7 @@ export const GENERATORS: GeneratorDef[] = [
   leadScrewNut,
   extrusion,
   ...DUCTS,
+  ...BOARDS,
 ];
 
 export const CATEGORIES: { id: Category; label: string }[] = [
@@ -35,6 +37,7 @@ export const CATEGORIES: { id: Category; label: string }[] = [
   { id: 'screws', label: 'Screws & threads' },
   { id: 'frames', label: 'Rails & frames' },
   { id: 'ducts', label: 'Pipes & ducts' },
+  { id: 'boards', label: 'Dev boards' },
 ];
 
 export function getGenerator(id: string): GeneratorDef {

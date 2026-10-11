@@ -70,6 +70,34 @@ const GLYPHS: Record<string, ReactNode> = {
       <path d="M13 9l10-4M13 15l10-4M13 21l10-4M13 27l10-4M13 33l10-4" />
     </>,
   ),
+  'raspberry-pi': glyph(
+    <>
+      <rect x="3" y="9" width="30" height="20" rx="2" />
+      <circle cx="7.5" cy="13.5" r="1.6" />
+      <circle cx="25.5" cy="13.5" r="1.6" />
+      <circle cx="7.5" cy="24.5" r="1.6" />
+      <circle cx="25.5" cy="24.5" r="1.6" />
+      <path d="M33 12h-4v5h4M33 21h-4v5h4" />
+    </>,
+  ),
+  arduino: glyph(
+    <>
+      <path d="M3 9h30v12l-3 3v5H3z" />
+      <circle cx="9" cy="12" r="1.6" />
+      <circle cx="9" cy="26" r="1.6" />
+      <circle cx="28" cy="14" r="1.6" />
+      <circle cx="28" cy="22" r="1.6" />
+      <path d="M3 13h4v4H3M3 20h4v5H3" />
+    </>,
+  ),
+  esp32: glyph(
+    <>
+      <rect x="3" y="10" width="30" height="16" rx="1.5" />
+      <rect x="14" y="13" width="10" height="10" />
+      <path d="M25 13l4 2-4 2 4 2-4 2 4 2" />
+      <path d="M5 13v10M8 13v10M11 13v10M28 13v10M31 13v10" strokeDasharray="1 1.4" />
+    </>,
+  ),
   'lead-screw-nut': glyph(
     <>
       <circle cx="18" cy="18" r="13" />

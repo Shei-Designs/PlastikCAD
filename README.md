@@ -63,21 +63,29 @@ It is the Tinkercad way of modelling, without the cloud and without the clutter:
 
 ## Parts
 
-| Gears | Pulleys & sprockets | Screws & threads | Rails & frames | Pipes & ducts |
-| --- | --- | --- | --- | --- |
-| Spur gear | GT2 timing pulley (2 / 3 / 5 mm) | Metric bolt / threaded rod (M3–M20) | Aluminium rail: 20, 30 and 40 mm series, V-slot or T-slot, one to four cells in one or two rows (2020, 2040, 4040, 3030, 3060, 6060, 4080...) | Straight pipe or duct |
-| Helical gear | HTD timing pulley (3M / 5M / 8M) | Metric nut | | Elbow (any angle and bend radius, legs either side) |
-| Herringbone gear | T-series timing pulley (T2.5 / T5 / T10) | Trapezoidal lead screw (multi-start) | | Reducer (in line or eccentric) |
-| Internal ring gear | MXL / XL timing pulley | Lead screw nut (flanged) | | Tee / wye (branch at any angle) |
-| Gear rack (straight, helical, herringbone) | Chain sprocket (#25–#41, 05B–08B, bicycle) | | | |
-| Bevel gear (90° shafts) | | | | |
-| Worm | | | | |
+| Gears | Pulleys & sprockets | Screws & threads | Rails & frames | Pipes & ducts | Dev boards |
+| --- | --- | --- | --- | --- | --- |
+| Spur gear | GT2 timing pulley (2 / 3 / 5 mm) | Metric bolt / threaded rod (M3–M20) | Aluminium rail: 20, 30 and 40 mm series, V-slot or T-slot, one to four cells in one or two rows (2020, 2040, 4040, 3030, 3060, 6060, 4080...) | Straight pipe or duct | Raspberry Pi 5, 4, 3, Zero 2 W, Pico |
+| Helical gear | HTD timing pulley (3M / 5M / 8M) | Metric nut | | Elbow (any angle and bend radius, legs either side) | Arduino Uno R3/R4, Mega 2560, Nano |
+| Herringbone gear | T-series timing pulley (T2.5 / T5 / T10) | Trapezoidal lead screw (multi-start) | | Reducer (in line or eccentric) | ESP32-DevKitC V4, DevKit V1, NodeMCU-32S |
+| Internal ring gear | MXL / XL timing pulley | Lead screw nut (flanged) | | Tee / wye (branch at any angle) | |
+| Gear rack (straight, helical, herringbone) | Chain sprocket (#25–#41, 05B–08B, bicycle) | | | | |
+| Bevel gear (90° shafts) | | | | | |
+| Worm | | | | | |
 
 Rotating parts share the same options for the shaft: round, D-shaft, hex or
 keyed bore with a fit clearance, plus an optional hub with set-screw holes.
 Pipes and ducts are round or rectangular (with rounded corners), hollow with a
 wall or solid, and the bends are true arcs, the tapers true frustums; a solid
 elbow makes a good hole to cut a curved channel with.
+A dev board part knows the board's outline and mounting holes from its
+maker's drawing and makes one of four things from them: standoffs at the holes,
+drilled for the screw to cut its thread, for a clearance fit or for a heat-set
+insert, on an optional base plate; the holes alone, as pins to group with a
+floor or lid as a hole; a blank the shape of the board, to check fit or, grown
+by a gap, to pocket a floor; or corner stops, which hold the ESP32 dev kits and
+anything else without holes. The ESP32 figures are the least certain: only
+Espressif's own DevKitC has a published drawing, so the part says so.
 The rail is there to design around: make it a hole and group it with a block
 to get a bracket that fits the real thing. It comes in as a 20 mm stub; its
 height is its length, so pull the top grip or type the H size to make it as

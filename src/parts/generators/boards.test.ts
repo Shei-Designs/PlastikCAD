@@ -1,0 +1,113 @@
+import { beforeAll, describe, expect, it } from 'vitest';
+import { evaluate, initKernel } from '../evaluate';
+import { QUALITY } from '../types';
+import { ALL_BOARDS, BOARDS, arduino, esp32, raspberryPi } from './boards';
+import { defaultParams } from './types';
+import type { GeneratorDef, Params } from './types';
+
+beforeAll(async () => {
+  await initKernel();
+});
+
+const q = QUALITY.normal;
+const params = (def: GeneratorDef, over: Params = {}): Params => ({ ...defaultParams(def), ...over });
+const made = (def: GeneratorDef, over: Params = {}) => {
+  const r = def.build(params(def, over), q);
+  return { ...r, stats: evaluate(r.solid).stats };
+};
+const extent = (s: { min: number[]; max: number[] }, axis: number) => s.max[axis] - s.min[axis];
+const disc = (d: number) => (Math.PI / 4) * d * d;
+
+describe('dev board mounts', () => {
+  it('builds every board in every form', () => {
+    for (const def of BOARDS)
+      for (const board of ALL_BOARDS.filter((b) => def.groups[0].params[0].type === 'select' && def.groups[0].params[0].options.some((o) => o.value === b.id)))
+        for (const form of ['standoffs', 'holes', 'blank', 'corners']) {
+          const r = made(def, { board: board.id, form });
+          expect(r.stats.volume, `${board.id} ${form}`).toBeGreaterThan(0);
+        }
+  });
+
+  it('every board has its holes inside its outline and an M-size the drills know', () => {
+    for (const b of ALL_BOARDS) {
+      for (const [x, y] of b.holes) {
+        expect(x, b.id).toBeGreaterThan(0);
+        expect(x, b.id).toBeLessThan(b.length);
+        expect(y, b.id).toBeGreaterThan(0);
+        expect(y, b.id).toBeLessThan(b.width);
+      }
+      if (b.holes.length) expect(b.holeDiameter, b.id).toBeGreaterThan(0);
+    }
+  });
+
+  it('puts Pi standoffs 58 × 49 mm apart, drilled for the screw', () => {
+    const r = made(raspberryPi, { board: 'pi4', form: 'standoffs', postHeight: 6, postDiameter: 6, holeKind: 'tap' });
+    expect(r.warnings).toEqual([]);
+    // Four posts: their centres span 58 × 49, plus a radius each side.
+    expect(extent(r.stats, 0)).toBeCloseTo(58 + 6, 1);
+    expect(extent(r.stats, 1)).toBeCloseTo(49 + 6, 1);
+    expect(extent(r.stats, 2)).toBeCloseTo(6, 6);
+    const tap = 2.1;
+    expect(r.stats.volume / (4 * (disc(6) - disc(tap)) * 6)).toBeGreaterThan(0.99);
+    expect(r.info.find((i) => i.label === 'Hole spacing')?.value).toBe('58.00 × 49.00 mm');
+    // A base plate under them keeps its floor: the holes stop at the plate.
+    const based = made(raspberryPi, { board: 'pi4', form: 'standoffs', base: 'plate', baseMargin: 3, baseThickness: 2 });
+    expect(extent(based.stats, 0)).toBeCloseTo(85 + 6, 1);
+    expect(extent(based.stats, 1)).toBeCloseTo(56 + 6, 1);
+    expect(extent(based.stats, 2)).toBeCloseTo(8, 6);
+    expect(based.stats.volume).toBeGreaterThan(r.stats.volume + 0.98 * (85 + 6) * (56 + 6) * 2 * 0.98);
+  });
+
+  it('widens posts that would leave no wall round the hole', () => {
+    const r = made(arduino, { board: 'uno', form: 'standoffs', postDiameter: 3, holeKind: 'insert' });
+    expect(r.warnings.some((w) => w.includes('widened'))).toBe(true);
+    expect(extent(r.stats, 2)).toBeCloseTo(6, 6);
+  });
+
+  it('makes a hole template of clearance pins', () => {
+    const r = made(raspberryPi, { board: 'pico', form: 'holes', holeKind: 'clearance', holeLength: 20 });
+    expect(extent(r.stats, 0)).toBeCloseTo(47 + 2.4, 1);
+    expect(extent(r.stats, 1)).toBeCloseTo(11.4 + 2.4, 1);
+    expect(r.stats.volume / (4 * disc(2.4) * 20)).toBeGreaterThan(0.99);
+  });
+
+  it('makes a blank the size of the board, or a pocket cutter grown by the gap', () => {
+    const board = made(raspberryPi, { board: 'pi-zero-2', form: 'blank', blankGap: 0, blankThickness: 1.6 });
+    expect(extent(board.stats, 0)).toBeCloseTo(65, 3);
+    expect(extent(board.stats, 1)).toBeCloseTo(30, 3);
+    expect(extent(board.stats, 2)).toBeCloseTo(1.6, 6);
+    // The corners are rounded and the holes are through it.
+    expect(board.stats.volume).toBeLessThan(65 * 30 * 1.6 - 4 * disc(2.75) * 1.6 * 0.99);
+    const pocket = made(raspberryPi, { board: 'pi-zero-2', form: 'blank', blankGap: 0.5, blankThickness: 3 });
+    expect(extent(pocket.stats, 0)).toBeCloseTo(66, 3);
+    expect(extent(pocket.stats, 1)).toBeCloseTo(31, 3);
+    expect(pocket.stats.volume).toBeGreaterThan(66 * 31 * 3 * 0.99);
+  });
+
+  it('holds a board without holes between corner stops, and says so when standoffs were asked for', () => {
+    const r = made(esp32, { board: 'nodemcu-32s', form: 'standoffs' });
+    expect(r.warnings.some((w) => w.includes('no mounting holes'))).toBe(true);
+    const stops = made(esp32, { board: 'nodemcu-32s', form: 'corners', stopGap: 0.3, stopThickness: 2, stopLength: 8, stopHeight: 5 });
+    expect(extent(stops.stats, 0)).toBeCloseTo(48.3 + 2 * 0.3 + 2 * 2, 6);
+    expect(extent(stops.stats, 1)).toBeCloseTo(25.4 + 2 * 0.3 + 2 * 2, 6);
+    expect(extent(stops.stats, 2)).toBeCloseTo(5, 6);
+    // Eight legs of 2 × (8 + 2) less the four shared corners.
+    expect(stops.stats.volume).toBeCloseTo((8 * 2 * 10 - 4 * 2 * 2) * 5, 3);
+  });
+
+  it('allows for the antenna that reaches past the end of a DevKitC', () => {
+    // The blank and the pocket run on to the end of the module.
+    const blank = made(esp32, { board: 'esp32-devkitc', form: 'blank', blankGap: 0 });
+    expect(extent(blank.stats, 0)).toBeCloseTo(48.26 + 6.04, 3);
+    expect(extent(blank.stats, 1)).toBeCloseTo(27.94, 3);
+    const pocket = made(esp32, { board: 'esp32-devkitc', form: 'blank', blankGap: 0.5, blankThickness: 4 });
+    expect(extent(pocket.stats, 0)).toBeCloseTo(48.26 + 6.04 + 1, 3);
+    expect(pocket.stats.volume).toBeGreaterThan((49.26 * 28.94 + 6.54 * 19) * 4 * 0.99);
+    // The stops across the antenna end keep out of the module's way.
+    const stops = made(esp32, { board: 'esp32-devkitc', form: 'corners', stopGap: 0.3, stopThickness: 2, stopLength: 8, stopHeight: 5 });
+    expect(stops.warnings.some((w) => w.includes('antenna end'))).toBe(true);
+    expect(extent(stops.stats, 0)).toBeCloseTo(48.26 + 2 * 0.3 + 2 * 2, 6);
+    const endLeg = (27.94 - 18) / 2 - 0.3 - 0.5;
+    expect(stops.stats.volume).toBeCloseTo((6 * 2 * 10 + 2 * 2 * (endLeg + 2) - 4 * 2 * 2) * 5, 3);
+  });
+});
