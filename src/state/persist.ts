@@ -37,7 +37,7 @@ export function loadPrefs(): Prefs {
     edges: saved.edges ?? true,
     grid: saved.grid ?? true,
     snap: SNAP_STEPS.includes(saved.snap as number) ? (saved.snap as number) : 1,
-    format: (['stl', '3mf', 'obj', 'svg', 'dxf'] as const).find((f) => f === saved.format) ?? 'stl',
+    format: (['stl', '3mf', 'obj', 'glb', 'svg', 'dxf'] as const).find((f) => f === saved.format) ?? 'stl',
     panel: saved.panel === 'versions' ? 'versions' : 'design',
     sidebar: saved.sidebar === 'objects' ? 'objects' : 'library',
     recent: Array.isArray(saved.recent) ? saved.recent.filter((p): p is string => typeof p === 'string').slice(0, 8) : [],

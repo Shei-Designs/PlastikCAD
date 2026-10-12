@@ -283,8 +283,8 @@ export function Viewport() {
   }, [scene, selection, placing, revision]);
 
   useEffect(() => {
-    viewer.current?.setItems(items);
-  }, [items]);
+    viewer.current?.setItems(items, assets);
+  }, [items, assets]);
 
   // A different design (or version) on screen: frame it.
   const shownKey = `${state.epoch}:${viewing ?? ''}`;

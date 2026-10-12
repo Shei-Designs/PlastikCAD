@@ -3,8 +3,8 @@ import { emptyDoc, parseDoc, serializeDoc } from './file';
 import { geomKey } from './geomKey';
 import { apply, axisRotation, determinant, eulerOf, multiply, nodeMatrix, rotation } from './math';
 import type { Mat } from './math';
-import { alignNodes, arrayNodes, arrayPlaces, boxBoundsOf, cloneNode, diffScenes, dissolve, frameAlong, makeGroup, makeShape, mirrorNodes, nodeAt, rotateNodes, ungroup } from './ops';
-import type { Doc, GroupNode, SceneNode, Vec3 } from './types';
+import { alignNodes, arrayNodes, arrayPlaces, boxBoundsOf, cloneNode, diffScenes, dissolve, frameAlong, makeGroup, makeShape, mirrorNodes, nodeAt, picturesOf, rotateNodes, ungroup, usedAssets } from './ops';
+import type { Doc, GroupNode, PictureNode, SceneNode, Vec3 } from './types';
 
 const close = (a: number[], b: number[], eps = 1e-6) => {
   expect(a.length).toBe(b.length);
@@ -372,6 +372,49 @@ describe('design files', () => {
     expect(text).toContain('"text": "M8\\nleft"');
     const [label] = parseDoc(text.replace('"font": "stencil"', '"font": "comic"')).scene.slice(-1);
     expect(label.type === 'text' && label.font).toBe('sans');
+  });
+});
+
+describe('pictures and textures', () => {
+  const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  const picture = (over: Partial<PictureNode> = {}): PictureNode => ({ id: 'pic', type: 'picture', name: 'Pun', asset: 'img', mapping: 'wrap', angle: 140, natural: [1, 1, 1], pos: [0, 0, 5], rot: [0, 0, -90], size: [82, 82, 40], hole: false, color: '#ffffff', ...over });
+  const doc = (): Doc => {
+    const mug = makeGroup([shape('cylinder', { color: '#f2f2f0' }), picture()], { min: [-10, -10, 0], max: [10, 10, 20] }, 'Mug');
+    const crate = shape('box', { texture: { asset: 'img', mode: 'tile', scale: 25, turn: 0 } });
+    return { name: 'Pun', scene: [mug, crate], versions: [], head: null, assets: { img: { kind: 'image', name: 'pun.png', mime: 'image/png', data: PNG, width: 1, height: 1 } } };
+  };
+
+  it('round-trips pictures, textures and the images they use', () => {
+    const d = doc();
+    const back = parseDoc(serializeDoc(d));
+    expect(back.scene).toEqual(d.scene);
+    expect(back.assets).toEqual(d.assets);
+    expect(serializeDoc(back)).toBe(serializeDoc(d));
+  });
+
+  it('counts the images pictures and textures use as live', () => {
+    expect([...usedAssets(doc().scene)]).toEqual(['img']);
+    expect(Object.keys(parseDoc(serializeDoc(doc())).assets)).toEqual(['img']);
+  });
+
+  it('drops a picture or texture whose image is gone, and never makes a picture a hole', () => {
+    const d = doc();
+    delete d.assets.img;
+    const text = serializeDoc({ ...d, assets: { img: { kind: 'image', name: 'x', mime: 'image/png', data: PNG, width: 1, height: 1 } } }).replace('"kind": "image"', '"kind": "nothing"');
+    const back = parseDoc(text);
+    expect(picturesOf(back.scene[0])).toEqual([]);
+    expect(back.scene[1].texture).toBeUndefined();
+    const holed = parseDoc(serializeDoc({ ...doc(), scene: [picture({ hole: true })] }));
+    expect(holed.scene[0].hole).toBe(false);
+  });
+
+  it('keeps a picture out of the group\'s geometry key and out of its color', () => {
+    const plain = makeGroup([shape('cylinder', { color: '#f2f2f0' })], { min: [-10, -10, 0], max: [10, 10, 20] }, 'Mug');
+    const withPicture = makeGroup([picture(), shape('cylinder', { color: '#f2f2f0' })], { min: [-10, -10, 0], max: [10, 10, 20] }, 'Mug');
+    expect(geomKey(withPicture)).toBe(geomKey(plain));
+    expect(geomKey(picture({ angle: 90 }))).not.toBe(geomKey(picture()));
+    expect(withPicture.color).toBe('#f2f2f0');
+    expect(picturesOf(withPicture).map((p) => p.id)).toEqual(['pic']);
   });
 });
 

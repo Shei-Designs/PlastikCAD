@@ -6,7 +6,7 @@ import { writeStl } from './stl';
 import { writeSvg } from './svg';
 import { write3mf } from './threemf';
 
-export type FormatId = 'stl' | '3mf' | 'obj' | 'svg' | 'dxf';
+export type FormatId = 'stl' | '3mf' | 'obj' | 'glb' | 'svg' | 'dxf';
 
 export interface ExportFormat {
   id: FormatId;
@@ -41,6 +41,14 @@ export const FORMATS: ExportFormat[] = [
     description: 'Text mesh for modeling and rendering tools',
     kind: '3d',
     mime: 'model/obj',
+  },
+  {
+    id: 'glb',
+    label: 'GLB',
+    extension: 'glb',
+    description: 'Mesh with colors, textures and pictures, for Blender, Godot, Unity and renderers',
+    kind: '3d',
+    mime: 'model/gltf-binary',
   },
   {
     id: 'svg',

@@ -6,10 +6,10 @@ import type { CrossSection, Manifold, ManifoldToplevel, Mat4 } from 'manifold-3d
 import { geomKey, textAssetKey } from '../model/geomKey';
 import { apply, determinant, emptyBounds, expandBounds, isEmptyBounds, nodeMatrix, unionBounds } from '../model/math';
 import type { Bounds, Mat } from '../model/math';
-import type { Asset, GroupNode, ImportNode, MeshAsset, OutlineAsset, PartNode, Polygon, SceneNode } from '../model/types';
+import type { Asset, GroupNode, ImportNode, MeshAsset, OutlineAsset, PartNode, PictureNode, Polygon, SceneNode } from '../model/types';
 import type { BuildResult, ExportResult } from '../worker/protocol';
-import { CREASE_ANGLE } from './mesh';
-import type { MeshData, RenderMesh } from './mesh';
+import { CREASE_ANGLE, creasedNormals } from './mesh';
+import type { MeshData } from './mesh';
 import { buildSolid } from '../parts/evaluate';
 import { getGenerator } from '../parts/generators';
 import { sanitizeParams } from '../parts/generators/types';
@@ -30,77 +30,6 @@ export function initKernel(wasmUrl?: string): Promise<ManifoldToplevel> {
   return loading;
 }
 
-
-/**
- * Per-corner normals: each corner averages the faces around its vertex that
- * lie within `angle` degrees of its own face. Linear in the triangle count
- * (Manifold's calculateNormals takes seconds on finely detailed surfaces).
- */
-export function creasedNormals(positions: Float32Array, triangles: Uint32Array, angle: number): RenderMesh {
-  const nTri = triangles.length / 3;
-  const nVert = positions.length / 3;
-  // Face normals scaled by twice the face area, and their unit versions.
-  const scaled = new Float32Array(nTri * 3);
-  const unit = new Float32Array(nTri * 3);
-  const first = new Uint32Array(nVert + 1);
-  for (let t = 0; t < nTri; t++) {
-    const a = triangles[t * 3] * 3;
-    const b = triangles[t * 3 + 1] * 3;
-    const c = triangles[t * 3 + 2] * 3;
-    const ux = positions[b] - positions[a];
-    const uy = positions[b + 1] - positions[a + 1];
-    const uz = positions[b + 2] - positions[a + 2];
-    const vx = positions[c] - positions[a];
-    const vy = positions[c + 1] - positions[a + 1];
-    const vz = positions[c + 2] - positions[a + 2];
-    const nx = uy * vz - uz * vy;
-    const ny = uz * vx - ux * vz;
-    const nz = ux * vy - uy * vx;
-    const len = Math.hypot(nx, ny, nz) || 1;
-    scaled.set([nx, ny, nz], t * 3);
-    unit.set([nx / len, ny / len, nz / len], t * 3);
-    first[triangles[t * 3] + 1]++;
-    first[triangles[t * 3 + 1] + 1]++;
-    first[triangles[t * 3 + 2] + 1]++;
-  }
-  // Faces around each vertex, stored back to back.
-  for (let v = 0; v < nVert; v++) first[v + 1] += first[v];
-  const fill = first.slice(0, nVert);
-  const around = new Uint32Array(nTri * 3);
-  for (let t = 0; t < nTri; t++) for (let k = 0; k < 3; k++) around[fill[triangles[t * 3 + k]]++] = t;
-
-  const limit = Math.cos((angle * Math.PI) / 180);
-  const outPositions = new Float32Array(nTri * 9);
-  const outNormals = new Float32Array(nTri * 9);
-  for (let t = 0; t < nTri; t++) {
-    const fx = unit[t * 3];
-    const fy = unit[t * 3 + 1];
-    const fz = unit[t * 3 + 2];
-    for (let k = 0; k < 3; k++) {
-      const v = triangles[t * 3 + k];
-      let nx = 0;
-      let ny = 0;
-      let nz = 0;
-      for (let i = first[v]; i < first[v + 1]; i++) {
-        const f = around[i] * 3;
-        if (f === t * 3 || unit[f] * fx + unit[f + 1] * fy + unit[f + 2] * fz >= limit) {
-          nx += scaled[f];
-          ny += scaled[f + 1];
-          nz += scaled[f + 2];
-        }
-      }
-      const len = Math.hypot(nx, ny, nz) || 1;
-      const o = t * 9 + k * 3;
-      outPositions[o] = positions[v * 3];
-      outPositions[o + 1] = positions[v * 3 + 1];
-      outPositions[o + 2] = positions[v * 3 + 2];
-      outNormals[o] = nx / len;
-      outNormals[o + 1] = ny / len;
-      outNormals[o + 2] = nz / len;
-    }
-  }
-  return { positions: outPositions, normals: outNormals };
-}
 
 // ---------------------------------------------------------------------------
 // Imported data
@@ -123,6 +52,7 @@ export function setAssets(incoming: Record<string, Asset>): void {
 function sameAsset(a: Asset, b: Asset): boolean {
   if (a === b) return true;
   if (a.kind === 'mesh') return b.kind === 'mesh' && a.positions === b.positions && a.triangles === b.triangles;
+  if (a.kind === 'image') return b.kind === 'image' && a.data === b.data;
   return b.kind === 'outline' && JSON.stringify(a.shapes) === JSON.stringify(b.shapes);
 }
 
@@ -265,7 +195,7 @@ function construct(k: ManifoldToplevel, node: SceneNode): Built {
       return solidEntry(scoped((keep) => groupSolid(k, node, keep)));
     case 'import': {
       const asset = assets.get(node.asset);
-      if (!asset) throw new Error(`The imported data of "${node.name}" is missing from this design.`);
+      if (!asset || asset.kind === 'image') throw new Error(`The imported data of "${node.name}" is missing from this design.`);
       return asset.kind === 'mesh' ? meshEntry(k, node, asset) : solidEntry(outlineSolid(k, node, asset));
     }
     case 'part':
@@ -276,7 +206,33 @@ function construct(k: ManifoldToplevel, node: SceneNode): Built {
       if (asset?.kind !== 'outline') throw new Error(`"${node.name}" has no letters that can be drawn.`);
       return solidEntry(outlineSolid(k, node, asset));
     }
+    case 'picture':
+      return solidEntry(scoped((keep) => pictureSheet(k, node, keep)));
   }
+}
+
+/** How thick the sheet of a picture is, in units of its size: thin enough to sit against a surface, thick enough to pick. */
+export const SHEET = 0.02;
+
+/**
+ * The sheet a picture is shown on, at unit size: a flat square facing +Z, or a
+ * band around Z of radius 1/2 covering `angle` degrees, its middle facing the
+ * front (-Y).
+ */
+function pictureSheet(k: ManifoldToplevel, node: PictureNode, keep: Keep): Manifold {
+  if (node.mapping === 'flat') return checked(keep(k.Manifold.cube([1, 1, SHEET], true)));
+  const span = (Math.min(360, Math.max(1, node.angle)) * Math.PI) / 180;
+  const n = Math.max(2, Math.ceil((span / (2 * Math.PI)) * 96));
+  const outer: [number, number][] = [];
+  const inner: [number, number][] = [];
+  for (let i = 0; i <= n; i++) {
+    const a = -Math.PI / 2 - span / 2 + (span * i) / n;
+    outer.push([0.5 * Math.cos(a), 0.5 * Math.sin(a)]);
+    inner.push([(0.5 - SHEET) * Math.cos(a), (0.5 - SHEET) * Math.sin(a)]);
+  }
+  const contours = span >= 2 * Math.PI - 1e-9 ? [outer.slice(0, n), inner.slice(0, n).reverse()] : [[...outer, ...inner.reverse()]];
+  const section = keep(new k.CrossSection(contours, 'EvenOdd'));
+  return checked(keep(keep(section.extrude(1, 0, 0, [1, 1])).translate([0, 0, -0.5])));
 }
 
 const solidEntry = (solid: Manifold): Built => ({ solid, triangles: solid.numTri() });
@@ -295,7 +251,8 @@ function placed(k: ManifoldToplevel, node: SceneNode, keep: Keep): Manifold {
 function combine(k: ManifoldToplevel, nodes: SceneNode[], keep: Keep): Manifold | null {
   const solids: Manifold[] = [];
   const holes: Manifold[] = [];
-  for (const node of nodes) (node.hole ? holes : solids).push(placed(k, node, keep));
+  // Pictures lie on the surface; they are neither added nor cut.
+  for (const node of nodes) if (node.type !== 'picture') (node.hole ? holes : solids).push(placed(k, node, keep));
   if (solids.length === 0) return null;
   const body = solids.length === 1 ? solids[0] : keep(k.Manifold.union(solids));
   return holes.length === 0 ? body : keep(k.Manifold.difference([body, ...holes]));
@@ -476,7 +433,7 @@ export function build(key: string, node: SceneNode): BuildResult {
 export function measure(nodes: SceneNode[]): Bounds | null {
   return operation((k) =>
     scoped((keep) => {
-      const visible = nodes.filter((n) => !n.hidden);
+      const visible = nodes.filter((n) => !n.hidden && n.type !== 'picture');
       if (!visible.some((n) => n.hole)) {
         // Nothing is cut away, so the boxes of the parts say it all; no need to merge them.
         const bounds = unionBounds(visible.map((n) => toBounds(placed(k, n, keep).boundingBox())));
@@ -494,29 +451,31 @@ export function measure(nodes: SceneNode[]): Bounds | null {
  * imported mesh that is not watertight cannot be merged; its triangles are
  * passed through unchanged, with a warning.
  */
-export function exportNodes(nodes: SceneNode[], outline: boolean, fine = false): ExportResult {
+export function exportNodes(nodes: SceneNode[], outline: boolean, fine = false, local = false): ExportResult {
   refining = fine;
   try {
-    return exportAt(nodes, outline);
+    return exportAt(nodes, outline, local);
   } finally {
     refining = false;
   }
 }
 
-function exportAt(nodes: SceneNode[], outline: boolean): ExportResult {
+/** With `local`, the nodes' geometry is left in their own built frames (see `builtSize`) instead of being placed. */
+function exportAt(nodes: SceneNode[], outline: boolean, local: boolean): ExportResult {
   return operation((k) =>
     scoped((keep): ExportResult => {
       const warnings: string[] = [];
       const solids: Manifold[] = [];
       const parts: MeshData[] = [];
       for (const node of nodes) {
-        if (node.hole || node.hidden) continue;
+        // A picture on its own is a sheet with nothing solid about it; the pictures on an object go out with the object's skin.
+        if (node.hole || node.hidden || (node.type === 'picture' && !local)) continue;
         const entry = builtOf(k, node);
         if (entry.solid) {
-          solids.push(keep(entry.solid.transform(mat4(nodeMatrix(node)))));
+          solids.push(local ? entry.solid : keep(entry.solid.transform(mat4(nodeMatrix(node)))));
           continue;
         }
-        parts.push(transformed(entry.open, nodeMatrix(node)));
+        parts.push(local ? entry.open : transformed(entry.open, nodeMatrix(node)));
         warnings.push(
           outline
             ? `"${node.name}" is not watertight: it was exported as-is and is missing from the outline.`

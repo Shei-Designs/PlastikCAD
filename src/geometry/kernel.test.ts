@@ -3,8 +3,8 @@ import { geomKey, textAssetKey } from '../model/geomKey';
 import { add, apply, emptyBounds, expandBounds, nodeMatrix } from '../model/math';
 import type { Bounds } from '../model/math';
 import { alignNodes, makeGroup } from '../model/ops';
-import type { Asset, GroupNode, ImportNode, Polygon, SceneNode, ShapeKind, ShapeNode, TextNode, Vec3 } from '../model/types';
-import { build, cacheSize, clearCache, decodeBase64, exportNodes, initKernel, measure, setAssets } from './kernel';
+import type { Asset, GroupNode, ImportNode, PictureNode, Polygon, SceneNode, ShapeKind, ShapeNode, TextNode, Vec3 } from '../model/types';
+import { build, cacheSize, clearCache, decodeBase64, exportNodes, initKernel, measure, SHEET, setAssets } from './kernel';
 import type { MeshData } from './mesh';
 import { defaultParams, shapeDef } from './shapes';
 
@@ -168,6 +168,37 @@ describe('groups', () => {
     expect(() => make(group([20, 20, 20], [shape('box', { hole: true })]))).toThrow(/only contains holes/);
     const all = group([20, 20, 20], [shape('box'), shape('box', { size: [30, 30, 30], hole: true })]);
     expect(() => make(all)).toThrow(/holes remove everything/);
+  });
+});
+
+describe('pictures', () => {
+  const picture = (over: Partial<PictureNode> = {}): PictureNode => ({ ...base('Picture'), type: 'picture', asset: 'img', mapping: 'flat', angle: 120, natural: [1, 1, 1], size: [40, 20, 1], ...over });
+
+  it('builds a flat picture as a thin unit sheet and a wrapped one as a band', () => {
+    const flat = make(picture());
+    expectBounds(flat.bounds, [-0.5, -0.5, -SHEET / 2], [0.5, 0.5, SHEET / 2]);
+    expect(flat.volume).toBeCloseTo(SHEET, 6);
+    const band = make(picture({ mapping: 'wrap', angle: 180 }));
+    // Half a ring of radius 1/2, SHEET thick, facing the front: the full way across X, from the axis to -Y.
+    expectBounds(band.bounds, [-0.5, -0.5, -0.5], [0.5, 0, 0.5], 2);
+    expect(band.volume).toBeCloseTo((Math.PI / 2) * (0.25 - (0.5 - SHEET) ** 2), 2);
+    const full = make(picture({ mapping: 'wrap', angle: 360 }));
+    expect(full.volume).toBeCloseTo(Math.PI * (0.25 - (0.5 - SHEET) ** 2), 2);
+  });
+
+  it('leaves the solid of a group alone and stays out of its measure and its export', () => {
+    const plain = make(drilled());
+    const g = drilled();
+    g.children.push(picture({ pos: [0, -12, 0], rot: [90, 0, 0] }));
+    const withPicture = make(g);
+    expect(withPicture.volume).toBeCloseTo(plain.volume, 6);
+    expectBounds(withPicture.bounds, [-10, -10, -10], [10, 10, 10]);
+    expectBounds(measure(g.children), [-10, -10, -10], [10, 10, 10]);
+    // A lone picture is nothing to export; alongside a solid it is simply left out.
+    expect(() => exportNodes([picture()], false)).toThrow(/nothing to export/);
+    expect(exportNodes([g, picture()], false).volume).toBeCloseTo(plain.volume, 6);
+    // Except in its own frame, where its sheet is what a GLB shows.
+    expect(exportNodes([picture()], false, false, true).volume).toBeCloseTo(SHEET, 6);
   });
 });
 

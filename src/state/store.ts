@@ -7,10 +7,12 @@ import { clampParams } from '../geometry/shapes';
 import { encodeFloat32, encodeUint32 } from '../io/base64';
 import { exportMesh, exportOutline, FORMATS } from '../io/export';
 import type { FormatId } from '../io/export';
-import { centerMesh, centerOutline, IMPORT_EXTENSIONS, importFile } from '../io/import';
+import { centerMesh, centerOutline, IMAGE_EXTENSIONS, IMPORT_EXTENSIONS, importFile } from '../io/import';
+import { bytesToBase64 } from '../io/base64';
+import { exportGlb } from './glbExport';
 import { emptyDoc, parseDoc, serializeDoc } from '../model/file';
 import { hashString } from '../model/geomKey';
-import { apply, boundsCenter, boundsSize, boxBounds, rotation, tidyVec, unionBounds } from '../model/math';
+import { apply, axisRotation, boundsCenter, boundsSize, boxBounds, eulerOf, multiply, rotation, tidyVec, unionBounds } from '../model/math';
 import type { Bounds, Mat } from '../model/math';
 import {
   alignNodes,
@@ -31,7 +33,7 @@ import {
   usedAssets,
 } from '../model/ops';
 import type { AlignMode, ArraySpec, GridArray, Layer, RingArray } from '../model/ops';
-import type { Asset, Doc, GroupNode, ImportNode, PartNode, PartParamValue, Scene, SceneNode, ShapeKind, TextNode, Vec2, Vec3, Version } from '../model/types';
+import type { Asset, Doc, GroupNode, ImageAsset, ImportNode, PartNode, PartParamValue, PictureNode, Scene, SceneNode, ShapeKind, TextNode, Texture, Vec2, Vec3, Version } from '../model/types';
 import { GENERATORS, getGenerator } from '../parts/generators';
 import { sanitizeParams } from '../parts/generators/types';
 import { mateOf } from '../parts/mates';
@@ -721,7 +723,55 @@ export function nudgeSelected(delta: Vec3): void {
 }
 
 export function setHole(hole: boolean): void {
-  updateSelected((n) => (n.hole === hole ? n : { ...n, hole }));
+  // A picture lies on a surface; it is neither solid nor hole.
+  updateSelected((n) => (n.hole === hole || n.type === 'picture' ? n : { ...n, hole }));
+}
+
+/** Put a texture over the selected objects' surfaces, or take it off. */
+export function setTexture(texture: Texture | null): void {
+  updateSelected((n) => {
+    if (n.type === 'picture') return n;
+    if (!texture) {
+      if (!n.texture) return n;
+      const { texture: _off, ...plain } = n;
+      return plain as SceneNode;
+    }
+    return { ...n, texture };
+  }, 'texture');
+}
+
+/**
+ * Change how a picture is laid on. Switching between flat and wrapped keeps
+ * the picture facing the way it did, with its middle where it was: the sheet
+ * curves back around an axis behind it, or the band flattens out again.
+ */
+export function editPicture(id: string, change: Partial<Pick<PictureNode, 'mapping' | 'angle'>>): void {
+  const node = state.doc.scene.find((n) => n.id === id);
+  if (node?.type !== 'picture' || node.locked || state.viewing) return;
+  let next: PictureNode = { ...node, ...change };
+  if (change.mapping && change.mapping !== node.mapping) {
+    const [w, d, h] = node.size;
+    const toWrap = change.mapping === 'wrap';
+    // A flat sheet lies facing +Z; a band stands facing -Y. A quarter turn about X between the two
+    // keeps the picture's face and its up the same, whatever way the node is turned.
+    const rot = eulerOf(multiply(rotation(node.rot), axisRotation(0, toWrap ? -90 : 90)));
+    // The sheet's face is at the node's middle; the band's middle face is half its diameter out from its axis.
+    const facing = apply(rotation(toWrap ? node.rot : rot), [0, 0, 1]);
+    const reach = w / 2;
+    const pos = tidyVec(toWrap ? [node.pos[0] - reach * facing[0], node.pos[1] - reach * facing[1], node.pos[2] - reach * facing[2]] : [node.pos[0] + reach * facing[0], node.pos[1] + reach * facing[1], node.pos[2] + reach * facing[2]]);
+    // Flat, the picture is w across and d up; wrapped, a band w in diameter and d tall with the same reach around.
+    const size = tidyVec(toWrap ? [w, w, d] : [(Math.PI * w * node.angle) / 360, h, 1]);
+    next = { ...next, rot, pos, size };
+  }
+  commit(
+    state.doc.scene.map((n) => (n.id === id ? next : n)),
+    { merge: change.angle !== undefined ? `angle:${id}` : undefined },
+  );
+}
+
+/** The pictures in the design, for the texture picker. */
+export function imageAssets(doc: Doc = state.doc): { key: string; asset: ImageAsset }[] {
+  return Object.entries(doc.assets).flatMap(([key, asset]) => (asset.kind === 'image' ? [{ key, asset }] : []));
 }
 
 export function setColor(color: string): void {
@@ -984,8 +1034,8 @@ export function ungroupSelected(): void {
       continue;
     }
     for (const child of ungroup(node)) {
-      // A hole group hands its role down; otherwise children keep their own.
-      const freed = node.hole ? { ...child, hole: true } : child;
+      // A hole group hands its role down (not to a picture, which is neither); otherwise children keep their own.
+      const freed = node.hole && child.type !== 'picture' ? { ...child, hole: true } : child;
       scene.push(freed);
       selection.push(freed.id);
     }
@@ -1211,7 +1261,101 @@ function importModels(files: PickedFile[]): void {
   commit(scene, { selection: nodes.map((n) => n.id) });
 }
 
-/** Files picked or dropped: designs are opened, models and drawings are imported into the current design. */
+/** Pixel size of an image file, by decoding it. */
+async function imageSize(bytes: Uint8Array, mime: ImageAsset['mime']): Promise<{ width: number; height: number }> {
+  const bitmap = await createImageBitmap(new Blob([bytes as BlobPart], { type: mime }));
+  const size = { width: bitmap.width, height: bitmap.height };
+  bitmap.close();
+  return size;
+}
+
+/** Keep a picture file in the design. Returns its key (an identical picture already there is reused). */
+async function addImage(file: PickedFile): Promise<string> {
+  const mime = extension(file.name) === 'png' ? 'image/png' : 'image/jpeg';
+  const data = bytesToBase64(file.bytes);
+  const key = `image-${hashString(data)}-${data.length.toString(36)}`;
+  if (state.doc.assets[key]) return key;
+  const { width, height } = await imageSize(file.bytes, mime);
+  const asset: ImageAsset = { kind: 'image', name: file.name, mime, data, width, height };
+  state = { ...state, doc: { ...state.doc, assets: { ...state.doc.assets, [key]: asset } } };
+  return key;
+}
+
+/** A flat picture sheet showing the image, 60 mm across its longer side, not yet placed. */
+function makePicture(key: string): PictureNode {
+  const image = state.doc.assets[key] as ImageAsset;
+  const s = 60 / Math.max(image.width, image.height);
+  return {
+    id: newId(),
+    type: 'picture',
+    name: baseName(image.name),
+    asset: key,
+    mapping: 'flat',
+    angle: 120,
+    natural: [1, 1, 1],
+    pos: [0, 0, -1e6],
+    rot: [0, 0, 0],
+    size: tidyVec([image.width * s, image.height * s, 1]),
+    hole: false,
+    color: '#ffffff',
+  };
+}
+
+/** Start carrying a new picture, to be put down like a shape: the picture file is asked for first. */
+export async function startPlacingPicture(): Promise<void> {
+  if (state.viewing) return;
+  const key = await pickImage();
+  if (key && !state.viewing) set({ placing: makePicture(key), selection: [] });
+}
+
+/** Add a picture at the middle of the plate straight away (keyboard route, double-click). */
+export async function addPicture(): Promise<void> {
+  if (state.viewing) return;
+  const key = await pickImage();
+  if (!key || state.viewing) return;
+  const node = makePicture(key);
+  node.pos = [0, 0, node.size[2] / 2];
+  node.name = uniqueName(state.doc.scene, node.name);
+  state = { ...state, placing: null };
+  commit([...state.doc.scene, node], { selection: [node.id] });
+}
+
+/** Turn picture files into picture sheets lying on the plate, side by side, 60 mm across. */
+async function importPictures(files: PickedFile[]): Promise<void> {
+  const nodes: PictureNode[] = [];
+  let scene = state.doc.scene;
+  let x = 0;
+  for (const file of files) {
+    const node = makePicture(await addImage(file));
+    node.name = uniqueName(scene, node.name);
+    node.pos = tidyVec([x + node.size[0] / 2, 0, node.size[2] / 2]);
+    x += node.size[0] + 5;
+    nodes.push(node);
+    scene = [...scene, node];
+  }
+  const shift = (x - 5) / 2;
+  for (const n of nodes) n.pos = tidyVec([n.pos[0] - shift, n.pos[1], n.pos[2]]);
+  state = { ...state, placing: null };
+  commit(scene, { selection: nodes.map((n) => n.id) });
+}
+
+/** Pick a picture file for a texture and keep it in the design. Returns its key, or null if canceled. */
+export async function pickImage(): Promise<string | null> {
+  try {
+    const files = await platform.pickFiles({ filters: [{ name: 'Pictures', extensions: IMAGE_EXTENSIONS }] });
+    if (!files.length || state.viewing) return null;
+    const key = await addImage(files[0]);
+    set({});
+    return key;
+  } catch (e) {
+    fail(e);
+    return null;
+  }
+}
+
+const IMPORTABLE = [...IMPORT_EXTENSIONS, ...IMAGE_EXTENSIONS];
+
+/** Files picked or dropped: designs are opened, models, drawings and pictures are imported into the current design. */
 export async function receiveFiles(files: PickedFile[]): Promise<void> {
   try {
     const design = files.find((f) => extension(f.name) === FILE_EXTENSION);
@@ -1220,15 +1364,17 @@ export async function receiveFiles(files: PickedFile[]): Promise<void> {
       return;
     }
     const models = files.filter((f) => IMPORT_EXTENSIONS.includes(extension(f.name)));
-    if (models.length === 0) {
-      if (files.length) notify(`Cannot import that. Supported: ${IMPORT_EXTENSIONS.map((e) => e.toUpperCase()).join(', ')}.`, 'error');
+    const pictures = files.filter((f) => IMAGE_EXTENSIONS.includes(extension(f.name)));
+    if (models.length === 0 && pictures.length === 0) {
+      if (files.length) notify(`Cannot import that. Supported: ${IMPORTABLE.map((e) => e.toUpperCase()).join(', ')}.`, 'error');
       return;
     }
     if (state.viewing) return notify('Go back to the working design before importing.', 'error');
     set({ busy: 'Importing…' });
     // Let the "Importing…" badge paint before the parser blocks the thread.
     await new Promise((r) => setTimeout(r, 30));
-    importModels(models);
+    if (models.length) importModels(models);
+    if (pictures.length) await importPictures(pictures);
   } catch (e) {
     fail(e);
   } finally {
@@ -1239,7 +1385,7 @@ export async function receiveFiles(files: PickedFile[]): Promise<void> {
 export async function importModel(): Promise<void> {
   try {
     const files = await platform.pickFiles({
-      filters: [{ name: 'Models and drawings', extensions: IMPORT_EXTENSIONS }],
+      filters: [{ name: 'Models, drawings and pictures', extensions: IMPORTABLE }],
       multiple: true,
     });
     if (files.length) await receiveFiles(files);
@@ -1253,15 +1399,21 @@ export async function exportDesign(formatId: FormatId, selectionOnly: boolean): 
   const format = FORMATS.find((f) => f.id === formatId)!;
   const shown = state.viewing ? (state.doc.versions.find((v) => v.id === state.viewing)?.scene ?? []) : state.doc.scene;
   const nodes = selectionOnly && !state.viewing ? selectedNodes() : shown;
-  const worker = await geometry.prepare(nodes, state.doc.assets);
-  // Exports are always made at fine detail: curves get more facets than are drawn on screen.
-  const result = await worker.export(nodes, format.kind === '2d', true);
   const name = state.doc.name;
-  const bytes =
-    format.id === 'svg' || format.id === 'dxf' ? exportOutline(format.id, result.outline ?? [], name) : exportMesh(format.id, result.mesh, name);
+  let bytes: Uint8Array;
+  let warnings: string[] = [];
+  if (format.id === 'glb') {
+    bytes = await exportGlb(nodes, state.doc.assets, name);
+  } else {
+    const worker = await geometry.prepare(nodes, state.doc.assets);
+    // Exports are always made at fine detail: curves get more facets than are drawn on screen.
+    const result = await worker.export(nodes, format.kind === '2d', true);
+    bytes = format.id === 'svg' || format.id === 'dxf' ? exportOutline(format.id, result.outline ?? [], name) : exportMesh(format.id, result.mesh, name);
+    warnings = result.warnings;
+  }
   const where = await platform.saveAs(`${name}.${format.extension}`, [{ name: format.label, extensions: [format.extension] }], bytes, format.mime);
   if (!where) return null;
-  for (const w of result.warnings) notify(w, 'error');
+  for (const w of warnings) notify(w, 'error');
   return where.path ?? where.name;
 }
 

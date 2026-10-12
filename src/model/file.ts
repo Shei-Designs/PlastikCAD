@@ -8,7 +8,7 @@ import { GENERATORS, RENAMED_PARTS, getGenerator } from '../parts/generators';
 import { sanitizeParams } from '../parts/generators/types';
 import { usedAssets } from './ops';
 import { TEXT_FONTS } from './types';
-import type { Asset, Doc, OutlineShape, PartParamValue, Scene, SceneNode, ShapeKind, Vec3, Version } from './types';
+import type { Asset, Doc, OutlineShape, PartParamValue, Scene, SceneNode, ShapeKind, Texture, Vec3, Version } from './types';
 
 export function emptyDoc(): Doc {
   return { name: 'Untitled', scene: [], versions: [], head: null, assets: {} };
@@ -43,7 +43,9 @@ function canonical(node: SceneNode): Record<string, unknown> {
     type: node.type,
     name: node.name,
     shape: node.type === 'shape' ? node.shape : undefined,
-    asset: node.type === 'import' ? node.asset : undefined,
+    asset: node.type === 'import' || node.type === 'picture' ? node.asset : undefined,
+    mapping: node.type === 'picture' ? node.mapping : undefined,
+    angle: node.type === 'picture' ? node.angle : undefined,
     part: node.type === 'part' ? node.part : undefined,
     params: node.type === 'part' ? sortKeys(node.params) : node.type === 'shape' && Object.keys(node.params).length ? sortKeys(node.params) : undefined,
     text: node.type === 'text' ? node.text : undefined,
@@ -56,6 +58,7 @@ function canonical(node: SceneNode): Record<string, unknown> {
     flip: node.flip?.some(Boolean) ? node.flip : undefined,
     hole: node.hole || undefined,
     color: node.color,
+    texture: node.texture ? { asset: node.texture.asset, mode: node.texture.mode, scale: node.texture.scale, turn: node.texture.turn || undefined } : undefined,
     hidden: node.hidden || undefined,
     locked: node.locked || undefined,
     children: node.type === 'group' ? node.children.map(canonical) : undefined,
@@ -118,6 +121,7 @@ function readNode(raw: unknown, assets: Record<string, Asset>): SceneNode | null
       : {}),
     ...(raw.hidden === true ? { hidden: true } : {}),
     ...(raw.locked === true ? { locked: true } : {}),
+    ...(readTexture(raw.texture, assets) ?? {}),
   };
   if (raw.type === 'shape' && raw.shape === 'tube') {
     // The tube shape is gone; an old one becomes what it always was: a cylinder with a cylinder cut out.
@@ -149,8 +153,14 @@ function readNode(raw: unknown, assets: Record<string, Asset>): SceneNode | null
     return { ...base, type: 'shape', shape, params: clampParams({ shape, params, size: base.size }) };
   }
   if (raw.type === 'import') {
-    if (typeof raw.asset !== 'string' || !assets[raw.asset]) return null;
+    if (typeof raw.asset !== 'string' || assets[raw.asset]?.kind === undefined || assets[raw.asset].kind === 'image') return null;
     return { ...base, type: 'import', asset: raw.asset, natural: vec3(raw.natural, base.size, true) };
+  }
+  if (raw.type === 'picture') {
+    if (typeof raw.asset !== 'string' || assets[raw.asset]?.kind !== 'image') return null;
+    const angle = typeof raw.angle === 'number' && Number.isFinite(raw.angle) ? Math.min(360, Math.max(1, raw.angle)) : 120;
+    const { texture: _dropped, ...plain } = base;
+    return { ...plain, type: 'picture', asset: raw.asset, mapping: raw.mapping === 'wrap' ? 'wrap' : 'flat', angle, hole: false, natural: [1, 1, 1] };
   }
   if (raw.type === 'part') {
     if (typeof raw.part !== 'string') return null;
@@ -190,6 +200,14 @@ function readNode(raw: unknown, assets: Record<string, Asset>): SceneNode | null
   return null;
 }
 
+/** A texture whose image is in the design; anything else is left off. */
+function readTexture(raw: unknown, assets: Record<string, Asset>): { texture: Texture } | null {
+  if (!isRecord(raw) || typeof raw.asset !== 'string' || assets[raw.asset]?.kind !== 'image') return null;
+  const scale = typeof raw.scale === 'number' && Number.isFinite(raw.scale) && raw.scale > 0 ? raw.scale : 50;
+  const turn = typeof raw.turn === 'number' && Number.isFinite(raw.turn) ? raw.turn : 0;
+  return { texture: { asset: raw.asset, mode: raw.mode === 'tile' ? 'tile' : 'wrap', scale, turn } };
+}
+
 function readScene(raw: unknown, assets: Record<string, Asset>): Scene {
   if (!Array.isArray(raw)) return [];
   const seen = new Set<string>();
@@ -221,6 +239,9 @@ function readAssets(raw: unknown): Record<string, Asset> {
         if (contours.length) shapes.push({ contours, evenodd: s.evenodd === true });
       }
       if (shapes.length) out[key] = { kind: 'outline', shapes };
+    } else if (value.kind === 'image' && typeof value.data === 'string' && (value.mime === 'image/png' || value.mime === 'image/jpeg')) {
+      const px = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 1 ? Math.round(v) : 0);
+      if (px(value.width) && px(value.height)) out[key] = { kind: 'image', name: typeof value.name === 'string' ? value.name : 'Picture', mime: value.mime, data: value.data, width: px(value.width), height: px(value.height) };
     }
   }
   return out;

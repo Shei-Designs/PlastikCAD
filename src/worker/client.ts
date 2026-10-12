@@ -31,7 +31,8 @@ export class GeometryClient {
     const fresh: Record<string, Asset> = {};
     let any = false;
     for (const key of Object.keys(assets)) {
-      if (this.sentAssets.has(key)) continue;
+      // Pictures are drawn on the main thread; the kernel never needs their pixels.
+      if (this.sentAssets.has(key) || assets[key].kind === 'image') continue;
       this.sentAssets.add(key);
       fresh[key] = assets[key];
       any = true;
@@ -52,8 +53,8 @@ export class GeometryClient {
     return this.send({ type: 'partBox', node });
   }
 
-  export(nodes: SceneNode[], outline: boolean, fine: boolean): Promise<ExportResult> {
-    return this.send({ type: 'export', nodes, outline, fine });
+  export(nodes: SceneNode[], outline: boolean, fine: boolean, local = false): Promise<ExportResult> {
+    return this.send({ type: 'export', nodes, outline, fine, local });
   }
 
   dispose(): void {

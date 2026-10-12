@@ -37,7 +37,10 @@ export function geomKey(node: SceneNode): string {
     case 'part':
       return `p:${partKey(node)}`;
     case 'group':
-      return `g:${hashString(node.children.map(placedKey).join('|'))}`;
+      // Pictures do not shape the group: moving one must not rebuild it.
+      return `g:${hashString(node.children.filter((c) => c.type !== 'picture').map(placedKey).join('|'))}`;
+    case 'picture':
+      return `pic:${node.mapping}:${node.angle}`;
   }
 }
 

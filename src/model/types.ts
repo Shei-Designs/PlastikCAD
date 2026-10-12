@@ -38,7 +38,23 @@ interface NodeBase {
   color: string;
   hidden?: boolean;
   locked?: boolean;
+  /** A picture stretched over the whole surface (see `Texture`); not shown while the object carries pictures of its own. */
+  texture?: Texture;
 }
+
+/** A picture over an object's whole surface: wrapped once around its vertical axis, or tiled every `scale` mm. */
+export interface Texture {
+  /** Key of an image in `Doc.assets`. */
+  asset: string;
+  mode: 'wrap' | 'tile';
+  /** Millimeters per repeat of a tiled picture. */
+  scale: number;
+  /** Degrees a wrapped picture is turned round the object; 0 puts its middle on the +X side. */
+  turn: number;
+}
+
+/** How a picture is laid onto the surfaces it is grouped with. */
+export type PictureMapping = 'flat' | 'wrap';
 
 export interface ShapeNode extends NodeBase {
   type: 'shape';
@@ -95,7 +111,25 @@ export interface PartNode extends NodeBase {
   natural: Vec3;
 }
 
-export type SceneNode = ShapeNode | GroupNode | ImportNode | TextNode | PartNode;
+/**
+ * A picture: a sheet showing an image, which prints onto the surfaces of
+ * whatever it is grouped with. Flat, it is a square sheet facing +Z that
+ * projects onto what is behind it; wrapped, a band around its own Z axis,
+ * `angle` degrees of the way round, that projects outwards. Built as a unit
+ * sheet; `size` is its width, depth and height (the band's diameter and height).
+ */
+export interface PictureNode extends NodeBase {
+  type: 'picture';
+  /** Key of an image in `Doc.assets`. */
+  asset: string;
+  mapping: PictureMapping;
+  /** Degrees of the circumference a wrapped picture covers. */
+  angle: number;
+  /** Always [1, 1, 1]: the sheet is built at unit size and scaled to `size`. */
+  natural: Vec3;
+}
+
+export type SceneNode = ShapeNode | GroupNode | ImportNode | TextNode | PartNode | PictureNode;
 
 /** The fonts lettering can be set in. All are bold or heavy cuts: thin strokes do not print. */
 export const TEXT_FONTS: { id: string; name: string }[] = [
@@ -127,7 +161,20 @@ export interface OutlineShape {
   evenodd: boolean;
 }
 
-export type Asset = MeshAsset | OutlineAsset;
+/** An imported PNG or JPEG, for pictures and textures. */
+export interface ImageAsset {
+  kind: 'image';
+  /** The file's name, to tell images apart in the inspector. */
+  name: string;
+  mime: 'image/png' | 'image/jpeg';
+  /** The file's bytes, base64. */
+  data: string;
+  /** Pixel size. */
+  width: number;
+  height: number;
+}
+
+export type Asset = MeshAsset | OutlineAsset | ImageAsset;
 
 /** A saved point in the design's history. */
 export interface Version {

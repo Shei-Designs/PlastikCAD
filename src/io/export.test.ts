@@ -52,9 +52,9 @@ const outline: Polygon[] = [circle(10, 24), circle(3, 12).reverse()];
 
 describe('formats', () => {
   it('lists STL first and has unique ids', () => {
-    expect(FORMATS.map((f) => f.id)).toEqual(['stl', '3mf', 'obj', 'svg', 'dxf']);
+    expect(FORMATS.map((f) => f.id)).toEqual(['stl', '3mf', 'obj', 'glb', 'svg', 'dxf']);
     expect(FORMATS.filter((f) => f.kind === '2d').map((f) => f.id)).toEqual(['svg', 'dxf']);
-    expect(FORMATS.map((f) => f.extension)).toEqual(['stl', '3mf', 'obj', 'svg', 'dxf']);
+    expect(FORMATS.map((f) => f.extension)).toEqual(['stl', '3mf', 'obj', 'glb', 'svg', 'dxf']);
   });
 });
 

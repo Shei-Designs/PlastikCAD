@@ -18,7 +18,9 @@ const kindOf = (node: SceneNode): string =>
         ? 'Text'
         : node.type === 'part'
           ? getGenerator(node.part).name
-          : shapeDef(node.shape).name;
+          : node.type === 'picture'
+            ? 'Picture'
+            : shapeDef(node.shape).name;
 
 const countLeaves = (node: SceneNode): number => (node.type === 'group' ? node.children.reduce((n, c) => n + countLeaves(c), 0) : 1);
 const depthOf = (node: SceneNode): number => (node.type === 'group' ? 1 + Math.max(...node.children.map(depthOf)) : 0);

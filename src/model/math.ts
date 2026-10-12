@@ -112,6 +112,22 @@ export function apply(m: Mat, p: Vec3): Vec3 {
   ];
 }
 
+/** Inverse of an affine matrix (the linear part must be invertible). */
+export function invert(m: Mat): Mat {
+  const [a, b, c, d, e, f, g, h, i] = m;
+  const A = e * i - f * h;
+  const B = f * g - d * i;
+  const C = d * h - e * g;
+  const det = a * A + b * B + c * C;
+  const s = 1 / (det || 1e-300);
+  const r: Mat = [A * s, (c * h - b * i) * s, (b * f - c * e) * s, B * s, (a * i - c * g) * s, (c * d - a * f) * s, C * s, (b * g - a * h) * s, (a * e - b * d) * s, 0, 0, 0];
+  const t = apply(r, [m[9], m[10], m[11]]);
+  r[9] = -t[0];
+  r[10] = -t[1];
+  r[11] = -t[2];
+  return r;
+}
+
 export function determinant(m: Mat): number {
   return (
     m[0] * (m[4] * m[8] - m[5] * m[7]) - m[3] * (m[1] * m[8] - m[2] * m[7]) + m[6] * (m[1] * m[5] - m[2] * m[4])

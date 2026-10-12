@@ -20,6 +20,8 @@ export interface ImportedOutline {
 export type Imported = ImportedMesh | ImportedOutline;
 
 export const IMPORT_EXTENSIONS = ['stl', 'obj', '3mf', 'svg'];
+/** Pictures, which come in as picture sheets rather than solids. */
+export const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg'];
 
 /** Reads a file by its extension. Throws an Error with a message fit to show the user. */
 export function importFile(fileName: string, bytes: Uint8Array): Imported {

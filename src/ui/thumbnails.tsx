@@ -178,6 +178,14 @@ export const PART_THUMBNAILS: Record<string, ReactNode> = {
   ),
 };
 
+export const pictureThumbnail: ReactNode = glyph(
+  <>
+    <rect x="4" y="7" width="28" height="22" rx="2" />
+    <circle cx="12" cy="14" r="2.5" />
+    <path d="M4 25l8-7 6 5 5-4 9 7" />
+  </>,
+);
+
 export const textThumbnail: ReactNode = glyph(
   <>
     <path d="M7 8h17v5.5h-5.5V27h-6V13.5H7z" />

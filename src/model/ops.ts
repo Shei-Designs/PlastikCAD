@@ -21,7 +21,7 @@ import {
 } from './math';
 import { boxBounds } from './math';
 import type { Bounds, Mat } from './math';
-import type { GroupNode, Scene, SceneNode, ShapeKind, ShapeNode, Vec2, Vec3 } from './types';
+import type { GroupNode, PictureNode, Scene, SceneNode, ShapeKind, ShapeNode, Vec2, Vec3 } from './types';
 
 export const HOLE_COLOR = '#9aa3b2';
 
@@ -71,11 +71,15 @@ export function countShapes(nodes: Scene): number {
 
 export function usedAssets(nodes: Scene, into = new Set<string>()): Set<string> {
   for (const node of nodes) {
-    if (node.type === 'import') into.add(node.asset);
+    if (node.texture) into.add(node.texture.asset);
+    if (node.type === 'import' || node.type === 'picture') into.add(node.asset);
     else if (node.type === 'group') usedAssets(node.children, into);
   }
   return into;
 }
+
+/** The pictures grouped onto an object, in the order they come. */
+export const picturesOf = (node: SceneNode): PictureNode[] => (node.type === 'group' ? node.children.filter((c): c is PictureNode => c.type === 'picture') : []);
 
 const normaliseFlip = (flip: [boolean, boolean, boolean]): SceneNode['flip'] => (flip.some(Boolean) ? flip : undefined);
 
@@ -211,7 +215,7 @@ export function makeGroup(nodes: SceneNode[], bounds: Bounds, name: string, over
   ];
   // Measured, so kept exact: rounding would scale the contents by a hair (size over natural).
   const size: Vec3 = [bounds.max[0] - bounds.min[0], bounds.max[1] - bounds.min[1], bounds.max[2] - bounds.min[2]];
-  const solids = nodes.filter((n) => !n.hole);
+  const solids = nodes.filter((n) => !n.hole && n.type !== 'picture');
   return {
     id: over.id ?? newId(),
     type: 'group',

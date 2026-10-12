@@ -1,11 +1,11 @@
 import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { PALETTE, paramMax, polygonExtent, shapeDef } from '../geometry/shapes';
 import { boundsSize, tidyVec, unionBounds } from '../model/math';
-import { countShapes } from '../model/ops';
+import { countShapes, picturesOf } from '../model/ops';
 import { TEXT_FONTS } from '../model/types';
-import type { SceneNode, ShapeNode, TextAlign, TextNode } from '../model/types';
+import type { ImageAsset, PictureMapping, PictureNode, SceneNode, ShapeNode, TextAlign, TextNode } from '../model/types';
 import { geometry } from '../state/geometry';
-import { editText, setColor, setHole, setPrefs, shownScene, updateNode, updateSelected, useEditor } from '../state/store';
+import { editPicture, editText, imageAssets, pickImage, setColor, setHole, setPrefs, setTexture, shownScene, updateNode, updateSelected, useEditor } from '../state/store';
 import { ExportPanel } from './ExportPanel';
 import { formatNumber, SliderField } from './Fields';
 import { getGenerator } from '../parts/generators';
@@ -44,7 +44,9 @@ const kindOf = (node: SceneNode): string =>
         ? 'Lettering: solid to emboss, hole to engrave'
         : node.type === 'part'
           ? getGenerator(node.part).summary
-          : shapeDef(node.shape).summary;
+          : node.type === 'picture'
+            ? 'A picture: group it with an object to put it on its surface'
+            : shapeDef(node.shape).summary;
 
 function NameField({ node }: { node: SceneNode }) {
   const [text, setText] = useState(node.name);
@@ -218,6 +220,116 @@ function TextFields({ node }: { node: TextNode }) {
   );
 }
 
+const MAPPINGS: { id: PictureMapping; label: string; title: string }[] = [
+  { id: 'flat', label: 'Flat', title: 'A flat sheet: the picture prints straight through it onto whatever faces it from behind' },
+  { id: 'wrap', label: 'Wrap', title: 'A band around its own axis, facing the front: the picture prints inwards onto the first surface that faces outwards' },
+];
+
+function PictureFields({ node }: { node: PictureNode }) {
+  const asset = useEditor((s) => s.doc.assets[node.asset]);
+  const image = asset?.kind === 'image' ? asset : null;
+  const locked = Boolean(node.locked);
+  const [w, d, h] = node.size;
+  const shows = node.mapping === 'flat' ? `${formatNumber(w, 1)} × ${formatNumber(d, 1)} mm` : `${formatNumber((Math.PI * w * node.angle) / 360, 1)} × ${formatNumber(h, 1)} mm, ${formatNumber(w, 1)} mm across`;
+  return (
+    <fieldset className="group">
+      <legend>Picture</legend>
+      <div className="field">
+        <div className="segmented" role="radiogroup" aria-label="How the picture is laid on">
+          {MAPPINGS.map((m) => (
+            <button key={m.id} type="button" role="radio" aria-checked={m.id === node.mapping} className={m.id === node.mapping ? 'on' : ''} title={m.title} disabled={locked} onClick={() => editPicture(node.id, { mapping: m.id })}>
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {node.mapping === 'wrap' && (
+        <SliderField label="Reach around" help="How far round the band the picture goes, in degrees of the circumference. The band's diameter and height are its size." value={node.angle} min={5} max={360} step={1} integer unit="°" onChange={(v) => editPicture(node.id, { angle: v })} />
+      )}
+      <dl className="facts">
+        {image && (
+          <div>
+            <dt>Image</dt>
+            <dd>
+              {image.width} × {image.height} px
+            </dd>
+          </div>
+        )}
+        <div>
+          <dt>Shows</dt>
+          <dd>{shows}</dd>
+        </div>
+      </dl>
+      <p className="field-note">{node.mapping === 'flat' ? 'Starts facing up: turn it 90° about X to face the front. Grouped with an object, it prints onto the first surface behind it.' : 'Curves back around an axis behind it. Put that axis on the object\'s and match the diameter (a touch bigger is fine): grouped, it prints inwards onto the first surface within the band, and leaves alone what sticks out past it, like a handle.'}</p>
+    </fieldset>
+  );
+}
+
+const TEXTURE_MODES: { id: 'none' | 'wrap' | 'tile'; label: string; title: string }[] = [
+  { id: 'none', label: 'None', title: 'Plain color' },
+  { id: 'wrap', label: 'Wrap', title: 'The picture once around the object, bottom to top, like a label' },
+  { id: 'tile', label: 'Tile', title: 'The picture repeated over every side, for patterns and materials' },
+];
+
+function TextureFields({ node }: { node: SceneNode }) {
+  const id = useId();
+  const doc = useEditor((s) => s.doc);
+  const images = useMemo(() => imageAssets(doc), [doc]);
+  const locked = Boolean(node.locked);
+  const pictures = picturesOf(node).length;
+  const texture = node.texture ?? null;
+  const mode = texture?.mode ?? 'none';
+  const choose = async (key: string | null) => {
+    if (key === 'new') key = await pickImage();
+    if (key) setTexture({ asset: key, mode: texture?.mode ?? 'wrap', scale: texture?.scale ?? 50, turn: texture?.turn ?? 0 });
+  };
+  const setMode = async (m: 'none' | 'wrap' | 'tile') => {
+    if (m === 'none') return setTexture(null);
+    if (texture) return setTexture({ ...texture, mode: m });
+    const key = images[0]?.key ?? (await pickImage());
+    if (key) setTexture({ asset: key, mode: m, scale: 50, turn: 0 });
+  };
+  return (
+    <fieldset className="group">
+      <legend>Texture</legend>
+      {pictures > 0 ? (
+        <p className="field-note">
+          Carries {pictures} picture{pictures === 1 ? '' : 's'}, which cover the surface instead of a texture.
+        </p>
+      ) : (
+        <>
+          <div className="field">
+            <div className="segmented" role="radiogroup" aria-label="Texture">
+              {TEXTURE_MODES.map((m) => (
+                <button key={m.id} type="button" role="radio" aria-checked={m.id === mode} className={m.id === mode ? 'on' : ''} title={m.title} disabled={locked} onClick={() => void setMode(m.id)}>
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {texture && (
+            <div className="field">
+              <label htmlFor={id}>Picture</label>
+              <select id={id} value={texture.asset} disabled={locked} onChange={(e) => void choose(e.target.value)}>
+                {images.map((i) => (
+                  <option key={i.key} value={i.key}>
+                    {imageLabel(i.asset)}
+                  </option>
+                ))}
+                <option value="new">Another picture…</option>
+              </select>
+            </div>
+          )}
+          {texture?.mode === 'wrap' && <SliderField label="Turn" help="Turns the picture round the object. At 0° its middle faces the front; 90° turns it to the right side, 180° to the back." value={texture.turn} min={-180} max={180} step={1} integer unit="°" onChange={(v) => setTexture({ ...texture, turn: v })} />}
+          {texture?.mode === 'tile' && <SliderField label="Tile size" help="How many millimeters one repeat of the picture covers." value={texture.scale} min={2} max={500} step={1} unit="mm" onChange={(v) => setTexture({ ...texture, scale: v })} />}
+        </>
+      )}
+    </fieldset>
+  );
+}
+
+const imageLabel = (image: ImageAsset) => `${image.name} (${image.width} × ${image.height})`;
+
 function Overview() {
   const scene = useEditor(shownScene);
   useSyncExternalStore(geometry.subscribe, geometry.getRevision);
@@ -292,9 +404,10 @@ function Design() {
         </div>
       </header>
       {node.type === 'text' && <TextFields node={node} />}
-      <Appearance nodes={nodes} />
+      {node.type === 'picture' ? <PictureFields node={node} /> : <Appearance nodes={nodes} />}
       <ShapeParams node={node} />
       {node.type === 'part' && <PartFields node={node} />}
+      {node.type !== 'picture' && !node.hole && <TextureFields node={node} />}
     </>
   );
 }

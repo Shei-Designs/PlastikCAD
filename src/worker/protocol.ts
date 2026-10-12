@@ -11,8 +11,11 @@ export type WorkerRequest =
   | { type: 'measure'; id: number; nodes: SceneNode[] }
   /** Bounds of a part as its generator makes it, before it is centered: where its origin sits in its box. */
   | { type: 'partBox'; id: number; node: PartNode }
-  /** Merge the nodes (holes are ignored at the top level) into one mesh for export; `fine` rebuilds curves with more facets. */
-  | { type: 'export'; id: number; nodes: SceneNode[]; outline: boolean; fine: boolean };
+  /**
+   * Merge the nodes (holes are ignored at the top level) into one mesh for export; `fine` rebuilds curves with
+   * more facets. With `local` the geometry stays in the nodes' own built frames, unplaced (one node at a time).
+   */
+  | { type: 'export'; id: number; nodes: SceneNode[]; outline: boolean; fine: boolean; local?: boolean };
 
 export interface BuildResult {
   key: string;

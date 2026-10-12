@@ -6,6 +6,7 @@ import type { SceneNode } from '../model/types';
 import { isDesktop } from '../platform';
 import {
   addPart,
+  addPicture,
   addShape,
   addText,
   importModel,
@@ -20,6 +21,7 @@ import {
   setPrefs,
   startPlacing,
   startPlacingPart,
+  startPlacingPicture,
   startPlacingText,
   toggleHidden,
   toggleLocked,
@@ -31,7 +33,7 @@ import { Popover } from './Popover';
 import { CATEGORIES, GENERATORS, getGenerator } from '../parts/generators';
 import { partThumbnail } from './partThumbnails';
 import { Structure } from './Structure';
-import { PART_THUMBNAILS, shapeThumbnail, textThumbnail } from './thumbnails';
+import { PART_THUMBNAILS, pictureThumbnail, shapeThumbnail, textThumbnail } from './thumbnails';
 
 const MOD = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform) ? '⌘' : 'Ctrl+';
 
@@ -90,7 +92,7 @@ function FileBar() {
             {item('Save', `${MOD}S`, () => void saveDesign(), close)}
             {item('Save as…', `${MOD}Shift+S`, () => void saveDesignAs(), close)}
             <hr />
-            {item('Import model…', `${MOD}I`, () => void importModel(), close)}
+            {item('Import model or picture…', `${MOD}I`, () => void importModel(), close)}
             {isDesktop() && recent.length > 0 && (
               <>
                 <hr />
@@ -170,6 +172,24 @@ function Shapes() {
             <span className="shape-name">Text</span>
           </button>
         </li>
+        <li>
+          <button
+            type="button"
+            className={placing?.type === 'picture' ? 'shape selected' : 'shape'}
+            title={'A picture (PNG or JPEG) on a sheet: group it with an object and it prints onto the surface\nClick, pick the file, then click on the plate to place it. Double-click to drop it in the middle.'}
+            disabled={Boolean(viewing)}
+            onPointerDown={(e) => {
+              if (e.button === 0) void startPlacingPicture();
+            }}
+            onDoubleClick={() => void addPicture()}
+            onClick={(e) => {
+              if (e.detail === 0) void addPicture();
+            }}
+          >
+            <span className="thumb">{pictureThumbnail}</span>
+            <span className="shape-name">Picture</span>
+          </button>
+        </li>
       </ul>
       <h2>Parts</h2>
       <ul className="shape-grid">
@@ -202,11 +222,11 @@ function ImportRow() {
   const viewing = useEditor((s) => s.viewing);
   return (
     <div className="import-row">
-      <button type="button" className="part" title="Import an STL, OBJ or 3MF mesh, or an SVG drawing" disabled={Boolean(viewing)} onClick={() => void importModel()}>
+      <button type="button" className="part" title="Import an STL, OBJ or 3MF mesh, an SVG drawing, or a PNG or JPEG picture" disabled={Boolean(viewing)} onClick={() => void importModel()}>
         <span className="thumb small">
           <ImportIcon />
         </span>
-        <span className="part-name">Import model…</span>
+        <span className="part-name">Import…</span>
       </button>
     </div>
   );
@@ -221,7 +241,9 @@ const describe = (node: SceneNode): string =>
         ? 'Text'
         : node.type === 'part'
           ? getGenerator(node.part).name
-          : (SHAPES.find((s) => s.kind === node.shape)?.name ?? '');
+          : node.type === 'picture'
+            ? 'Picture'
+            : (SHAPES.find((s) => s.kind === node.shape)?.name ?? '');
 
 function Objects() {
   const scene = useEditor((s) => s.doc.scene);

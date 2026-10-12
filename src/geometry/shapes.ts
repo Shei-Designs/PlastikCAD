@@ -225,7 +225,19 @@ export const SHAPES: ShapeDef[] = [
     name: 'Torus',
     summary: 'A ring; its height is the thickness of the ring',
     defaultSize: [30, 30, 8],
-    params: [sidesParam(8, 128, 48, 'Segments', 'Number of segments around the ring.')],
+    params: [
+      sidesParam(8, 128, 48, 'Segments', 'Number of segments around the ring.'),
+      {
+        key: 'ring',
+        label: 'Ring width',
+        min: 0,
+        max: 500,
+        step: 0.5,
+        unit: 'mm',
+        default: 0,
+        help: 'How wide the ring is from the hole out to the rim, so the hole is the width less twice this. 0 makes the section round, as wide as the ring is tall. Limited to half the width.',
+      },
+    ],
     defaultColor: ORANGE,
   },
   {
@@ -271,6 +283,7 @@ export function paramMax(kind: ShapeKind, key: string, size: Vec3): number {
   const def = shapeDef(kind).params.find((p) => p.key === key);
   if (!def) throw new Error(`Shape "${kind}" has no parameter "${key}"`);
   if ((kind === 'box' || kind === 'cylinder') && key === 'radius') return Math.min(def.max, Math.min(size[0], size[1], size[2]) / 2);
+  if (kind === 'torus' && key === 'ring') return Math.min(def.max, Math.min(size[0], size[1]) / 2);
   return def.max;
 }
 
@@ -444,9 +457,9 @@ const BUILDERS: Record<ShapeKind, (c: BuildContext) => Manifold> = {
   torus(c) {
     const { size, p } = c;
     const r = size[2] / 2;
-    // Radial half-width of the ring's section: round, unless the hole would close up - then it is
-    // squeezed so that the hole just does.
-    const a = Math.min(r, size[0] / 4);
+    // Radial half-width of the ring's section: the ring width when one is set, else round, unless
+    // the hole would close up - then it is squeezed so that the hole just does.
+    const a = p.ring > 0 ? Math.min(p.ring / 2, size[0] / 4) : Math.min(r, size[0] / 4);
     const center = size[0] / 2 - a;
     const closed = center - a < 1e-9;
     const rings = p.sides;

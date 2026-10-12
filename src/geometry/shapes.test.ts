@@ -264,6 +264,19 @@ describe('shapes', () => {
     expect(oval).toBeCloseTo((v * 2) / 3, 3);
   });
 
+  it('sets the width of the ring, and so the hole, by the ring width', () => {
+    // Pappus: a 4 wide by 8 tall ellipse swept at radius 13, so the hole is 30 - 2 * 4 = 22 across.
+    const thin = volumeOf(shape('torus', { params: { ring: 4 } }));
+    const exact = 2 * Math.PI * 13 * Math.PI * 2 * 4;
+    expect(thin / exact).toBeGreaterThan(0.97);
+    expect(thin).toBeLessThan(exact);
+    // A ring wider than half the width closes the hole and is clamped there.
+    expect(paramMax('torus', 'ring', [30, 30, 8])).toBe(15);
+    const closed = volumeOf(shape('torus', { params: { ring: 15 } }));
+    expect(closed).toBeCloseTo(volumeOf(shape('torus', { params: { ring: 40 } })), 6);
+    expect(closed).toBeGreaterThan(thin);
+  });
+
   it('closes the hole of a torus that is too tall for its width', () => {
     const tall = volumeOf(shape('torus', { size: [20, 20, 16] }));
     // Pappus: an ellipse (5 by 8) swept around at radius 5.

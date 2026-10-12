@@ -162,7 +162,7 @@ export function PartFields({ node }: { node: PartNode }) {
           </dl>
         )}
       </fieldset>
-      {canMate && (
+      {canMate && current === tabs[0] && (
         <button type="button" className="primary mate-button" disabled={mating} onClick={() => startMate(node.id)}>
           Add mating gear…
         </button>

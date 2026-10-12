@@ -7,6 +7,7 @@ import {
   BufferAttribute,
   BufferGeometry,
   CanvasTexture,
+  ClampToEdgeWrapping,
   Color,
   ConeGeometry,
   CylinderGeometry,
@@ -27,14 +28,15 @@ import {
   PerspectiveCamera,
   Plane,
   PMREMGenerator,
+  Quaternion,
   Raycaster,
+  RepeatWrapping,
   Scene,
   Sprite,
   SpriteMaterial,
   SRGBColorSpace,
   TorusGeometry,
   Vector2,
-  Quaternion,
   Vector3,
   WebGLRenderer,
 } from 'three';
@@ -43,11 +45,13 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { CREASE_ANGLE } from '../geometry/mesh';
 import { clampParams } from '../geometry/shapes';
+import { skinKey, skinOf, skinRepeats, skinUVs } from '../geometry/skin';
 import { boundsCenter, builtSize, flipSigns, frameMatrix, isEmptyBounds, rotation, tidy, tidyVec, unionBounds } from '../model/math';
 import type { Bounds, Mat } from '../model/math';
 import { HOLE_COLOR, rotateNodes } from '../model/ops';
-import type { SceneNode, Vec3 } from '../model/types';
+import type { Asset, SceneNode, Vec3 } from '../model/types';
 import type { BuildResult } from '../worker/protocol';
+import { SkinPainter } from './skin';
 
 export type ViewPreset = 'iso' | 'top' | 'front' | 'side';
 
@@ -202,6 +206,8 @@ interface Drawn {
   /** Geometry currently shown, and the size it was built at (it may lag behind the node during a resize). */
   shown: BuildResult | null;
   built: Vec3;
+  /** The picture on the surface, if any: the geometry with its texture coordinates and the pixels. */
+  skin: { key: string; geometry: BufferGeometry; map: CanvasTexture } | null;
 }
 
 interface SharedGeometry {
@@ -354,8 +360,17 @@ export class Viewer {
   private environment!: WebGLRenderTarget;
 
   private items: ViewItem[] = [];
+  private assets: Record<string, Asset> = {};
   private drawn = new Map<string, Drawn>();
   private shared = new Map<BuildResult, SharedGeometry>();
+  /** Tells one build result from another in a skin's key. */
+  private serials = new WeakMap<BuildResult, number>();
+  private nextSerial = 1;
+  private readonly painter = new SkinPainter(() => {
+    if (!this.ok || this.disposed) return;
+    this.sync();
+    this.requestRender();
+  });
   /** Stands in until a node's geometry arrives. */
   private readonly empty = new BufferGeometry();
   private readonly center = new Vector3();
@@ -410,9 +425,10 @@ export class Viewer {
     this.requestRender();
   }
 
-  /** The scene to draw. Cheap to call often: only what changed is touched. */
-  setItems(items: ViewItem[]): void {
+  /** The scene to draw, and the images its pictures are made of. Cheap to call often: only what changed is touched. */
+  setItems(items: ViewItem[], assets: Record<string, Asset> = this.assets): void {
     this.items = items;
+    this.assets = assets;
     if (!this.ok || this.disposed) return;
     this.sync();
     this.requestRender();
@@ -530,6 +546,7 @@ export class Viewer {
 
     for (const d of this.drawn.values()) this.discard(d);
     this.drawn.clear();
+    this.painter.dispose();
     this.empty.dispose();
     for (const s of this.shared.values()) {
       s.geometry.dispose();
@@ -761,7 +778,7 @@ export class Viewer {
         mesh.visible = false;
         mesh.userData.id = node.id;
         this.scene.add(mesh);
-        d = { item, mesh, edges: null, shown: null, built: [1, 1, 1] };
+        d = { item, mesh, edges: null, shown: null, built: [1, 1, 1], skin: null };
         this.drawn.set(node.id, d);
       }
       const before = d.item;
@@ -782,8 +799,10 @@ export class Viewer {
       }
       d.mesh.visible = Boolean(d.shown) && !node.hidden;
       this.place(d);
+      const reskinned = this.applySkin(d);
       const same =
         !fresh &&
+        !reskinned &&
         before.selected === item.selected &&
         before.ghost === item.ghost &&
         before.node.color === node.color &&
@@ -829,6 +848,68 @@ export class Viewer {
     return s;
   }
 
+  /**
+   * Gives the node the picture on its surface, or takes it away: its own
+   * geometry carrying texture coordinates, over the shared corners, and the
+   * pixels as a texture. True when anything about it changed.
+   */
+  private applySkin(d: Drawn): boolean {
+    const { node, ghost } = d.item;
+    const skin = d.shown && !node.hole && !ghost ? skinOf(node) : null;
+    if (!skin || !d.shown) {
+      if (!d.skin) return false;
+      this.dropSkin(d);
+      return true;
+    }
+    let serial = this.serials.get(d.shown);
+    if (serial === undefined) {
+      serial = this.nextSerial++;
+      this.serials.set(d.shown, serial);
+    }
+    const pixels = skinKey(skin);
+    // The coordinates follow the mesh and, for a tiled texture, the size in millimeters.
+    const key = `${pixels}|${serial}|${node.size.join(',')}`;
+    if (d.skin?.key === key) return false;
+    let painted: ReturnType<SkinPainter['paint']> = null;
+    try {
+      painted = this.painter.paint(pixels, skin, this.assets);
+    } catch (e) {
+      console.warn(e);
+    }
+    if (!painted) {
+      // Still decoding: plain color meanwhile, and the painter calls back.
+      if (!d.skin) return false;
+      this.dropSkin(d);
+      return true;
+    }
+    const uv = skinUVs(skin, node, d.shown.render.positions, d.shown.bounds, painted.rects);
+    const shared = this.share(d.shown);
+    const geometry = new BufferGeometry();
+    geometry.setAttribute('position', shared.geometry.getAttribute('position'));
+    geometry.setAttribute('normal', shared.geometry.getAttribute('normal'));
+    geometry.setAttribute('uv', new BufferAttribute(uv, 2));
+    geometry.boundingSphere = shared.geometry.boundingSphere;
+    const map = new CanvasTexture(painted.canvas);
+    map.colorSpace = SRGBColorSpace;
+    map.wrapS = map.wrapT = skinRepeats(skin) ? RepeatWrapping : ClampToEdgeWrapping;
+    map.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
+    if (d.skin) this.dropSkin(d);
+    d.skin = { key, geometry, map };
+    d.mesh.geometry = geometry;
+    return true;
+  }
+
+  private dropSkin(d: Drawn): void {
+    if (!d.skin) return;
+    d.skin.map.dispose();
+    // The corners are the shared geometry's, which stays; only the coordinates go.
+    d.skin.geometry.deleteAttribute('position');
+    d.skin.geometry.deleteAttribute('normal');
+    d.skin.geometry.dispose();
+    d.skin = null;
+    if (d.shown) d.mesh.geometry = this.share(d.shown).geometry;
+  }
+
   /** Matrix from the geometry as built to where the node is (and how big it is by now). */
   private place(d: Drawn): void {
     const { node } = d.item;
@@ -857,7 +938,19 @@ export class Viewer {
     const t = THEMES[this.options.theme];
     const material = d.mesh.material;
     const color = node.hole ? HOLE_COLOR : node.color;
-    material.color.set(color);
+    // A picture carries the object's own color in its pixels, so the material shows it as it is.
+    const map = d.skin?.map ?? null;
+    if (material.map !== map) {
+      material.map = map;
+      material.needsUpdate = true;
+    }
+    // A picture sheet is see-through where its picture is transparent.
+    const alphaTest = map && node.type === 'picture' ? 0.5 : 0;
+    if (material.alphaTest !== alphaTest) {
+      material.alphaTest = alphaTest;
+      material.needsUpdate = true;
+    }
+    material.color.set(map ? '#ffffff' : color);
     const faint = node.hole || ghost;
     if (material.transparent !== Boolean(faint)) {
       material.transparent = Boolean(faint);
@@ -900,6 +993,7 @@ export class Viewer {
 
   private discard(d: Drawn): void {
     this.scene.remove(d.mesh);
+    this.dropSkin(d);
     d.mesh.material.dispose();
     if (d.edges) {
       this.scene.remove(d.edges);
