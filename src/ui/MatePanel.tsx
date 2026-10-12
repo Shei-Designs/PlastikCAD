@@ -122,18 +122,16 @@ export function MatePanel() {
           {w}
         </p>
       ))}
-      <div className="array-foot">
-        <span className="field-note">
-          {current === 'rack' ? 'Pitch line' : current === 'bevel' ? 'Cone distance' : 'Center distance'} {formatNumber(mate.center, 3)} mm
-        </span>
-        <span className="actions">
-          <button type="button" className="chip" onClick={() => finish(false)}>
-            Cancel
-          </button>
-          <button type="button" className="primary" disabled={busy} onClick={() => finish(true)}>
-            Accept
-          </button>
-        </span>
+      <p className="field-note mate-figure">
+        {current === 'rack' ? 'Pitch line' : current === 'bevel' ? 'Cone distance' : 'Center distance'} {formatNumber(mate.center, 3)} mm
+      </p>
+      <div className="mate-actions">
+        <button type="button" className="chip" onClick={() => finish(false)}>
+          Cancel
+        </button>
+        <button type="button" className="primary" disabled={busy} onClick={() => finish(true)}>
+          Accept
+        </button>
       </div>
     </div>
   );

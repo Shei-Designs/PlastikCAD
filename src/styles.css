@@ -1600,13 +1600,26 @@ kbd {
   min-width: 0;
 }
 
-.mate-panel .array-foot {
+.mate-figure {
+  margin: 0;
+}
+
+.mate-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
   margin-top: 2px;
 }
 
-.mate-panel .array-foot .chip {
+.mate-actions .chip {
   height: 30px;
   padding: 0 14px;
+}
+
+.mate-actions .primary {
+  width: auto;
+  height: 30px;
+  padding: 0 20px;
 }
 
 .align-row > span {
