@@ -10,7 +10,7 @@ import type { FormatId } from '../io/export';
 import { centerMesh, centerOutline, IMPORT_EXTENSIONS, importFile } from '../io/import';
 import { emptyDoc, parseDoc, serializeDoc } from '../model/file';
 import { hashString } from '../model/geomKey';
-import { boundsCenter, boundsSize, boxBounds, tidyVec, unionBounds } from '../model/math';
+import { apply, boundsCenter, boundsSize, boxBounds, rotation, tidyVec, unionBounds } from '../model/math';
 import type { Bounds, Mat } from '../model/math';
 import {
   alignNodes,
@@ -482,23 +482,19 @@ export async function addPart(category: string): Promise<void> {
 async function placeMate(source: PartNode, request: MateRequest): Promise<{ node: PartNode; warnings: string[] }> {
   const mate = mateOf(source, request);
   const node = makePart(mate.part, mate.params);
+  if (mate.name) node.name = mate.name;
   const [box, sourceBox] = await Promise.all([partBox(node), partBox(source)]);
   node.natural = boundsSize(box);
   node.size = [...node.natural];
-  node.rot = [0, 0, mate.rotation];
+  node.rot = mate.rotation;
   // Both parts are placed by their box centers, which sit off their generators' origins (the gear's
   // axis, the rack's corner); the mate is laid out between origins and then moved by its own box.
-  const spin = (deg: number, v: Vec3): [number, number] => {
-    const a = (deg * Math.PI) / 180;
-    return [v[0] * Math.cos(a) - v[1] * Math.sin(a), v[0] * Math.sin(a) + v[1] * Math.cos(a)];
-  };
   const c1 = boundsCenter(sourceBox).map((c, i) => (c * source.size[i]) / source.natural[i]) as Vec3;
   const c2 = boundsCenter(box);
-  const [ax, ay] = spin(source.rot[2], c1);
-  const axis = [source.pos[0] - ax, source.pos[1] - ay];
-  const [bx, by] = spin(mate.rotation, c2);
-  const base = source.pos[2] - source.size[2] / 2;
-  node.pos = tidyVec([axis[0] + mate.offset[0] + bx, axis[1] + mate.offset[1] + by, base + node.size[2] / 2]);
+  const [ax, ay, az] = apply(rotation(source.rot), c1);
+  const origin: Vec3 = [source.pos[0] - ax, source.pos[1] - ay, source.pos[2] - az];
+  const [bx, by, bz] = apply(rotation(mate.rotation), c2);
+  node.pos = tidyVec([origin[0] + mate.offset[0] + bx, origin[1] + mate.offset[1] + by, origin[2] + mate.offset[2] + bz]);
   node.color = source.color;
   return { node, warnings: mate.warnings };
 }

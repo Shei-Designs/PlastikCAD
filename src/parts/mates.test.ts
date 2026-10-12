@@ -1,9 +1,9 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { PartNode } from '../model/types';
+import type { PartNode, Vec3 } from '../model/types';
 import { evaluate, initKernel } from './evaluate';
 import { getGenerator } from './generators';
 import { defaultParams, sanitizeParams } from './generators/types';
-import { mateKinds, mateOf } from './mates';
+import { fixedMateTeeth, mateKinds, mateOf, sourceTeeth } from './mates';
 import type { MateRequest } from './mates';
 import { QUALITY, rotate, translate } from './types';
 import type { Solid } from './types';
@@ -21,10 +21,10 @@ function part(id: string, params: P, rz = 0): PartNode {
 }
 
 /** A part's solid turned about its generator's origin and moved, as the mate's offset and rotation describe. */
-function placed(id: string, params: P, rz: number, dx = 0, dy = 0): Solid {
+function placed(id: string, params: P, rot: Vec3 | number, offset: Vec3 = [0, 0, 0]): Solid {
   const def = getGenerator(id);
   const built = def.build(sanitizeParams(def, { ...defaultParams(def), ...params }), q).solid;
-  return translate(rotate(built, [0, 0, rz]), [dx, dy, 0]);
+  return translate(rotate(built, typeof rot === 'number' ? [0, 0, rot] : rot), offset);
 }
 
 const volume = (a: Solid): number => evaluate(a).stats.volume;
@@ -35,15 +35,22 @@ function check(sourceId: string, sourceParams: P, rz: number, req: MateRequest) 
   const source = part(sourceId, sourceParams, rz);
   const mate = mateOf(source, req);
   const a = placed(sourceId, sourceParams, rz);
-  const b = placed(mate.part, mate.params as P, mate.rotation, mate.offset[0], mate.offset[1]);
+  const b = placed(mate.part, mate.params as P, mate.rotation, mate.offset);
   return { mate, a, b };
 }
+
+/** The mate turned a little further about Z, which for a flat pair means the teeth crash. */
+const turned = (mate: ReturnType<typeof mateOf>, degrees: number): Solid =>
+  placed(mate.part, mate.params as P, [mate.rotation[0], mate.rotation[1], mate.rotation[2] + degrees], mate.offset);
 
 describe('mating gears', () => {
   it('knows what each kind can mate with', () => {
     expect(mateKinds('spur')).toEqual(['gear', 'ring', 'rack']);
     expect(mateKinds('helical')).toEqual(['gear']);
-    expect(mateKinds('worm')).toEqual([]);
+    expect(mateKinds('worm')).toEqual(['wheel']);
+    expect(mateKinds('bevel')).toEqual(['bevel']);
+    expect(sourceTeeth(part('spur', { teeth: 17 }))).toBe(17);
+    expect(sourceTeeth(part('worm', { starts: 2 }))).toBe(2);
   });
 
   it('places a spur pair at the center distance with the teeth meshed, from any side and any turn of the gear', () => {
@@ -59,8 +66,7 @@ describe('mating gears', () => {
       expect(mate.ratio).toBeCloseTo(z2 / z1, 9);
       // Flanks touch at zero backlash, so faceting leaves a trace of overlap; an eighth of a tooth on, they crash.
       expect(overlap(a, b), `${z1}:${z2} rz ${rz} angle ${angle}`).toBeLessThan(0.01);
-      const crashed = placed('spur', mate.params as P, mate.rotation + 360 / z2 / 8, mate.offset[0], mate.offset[1]);
-      expect(overlap(a, crashed), `${z1}:${z2} rz ${rz} angle ${angle} crash`).toBeGreaterThan(10);
+      expect(overlap(a, turned(mate, 360 / z2 / 8)), `${z1}:${z2} rz ${rz} angle ${angle} crash`).toBeGreaterThan(10);
     }
   });
 
@@ -86,8 +92,7 @@ describe('mating gears', () => {
       expect(mate.params.hand).toBe('left');
       expect(mate.center).toBeCloseTo((2 / Math.cos((20 * Math.PI) / 180)) * 30, 6);
       expect(overlap(a, b), kind).toBeLessThan(0.01);
-      const crashed = placed(kind, mate.params as P, mate.rotation + 360 / 36 / 8, mate.offset[0], mate.offset[1]);
-      expect(overlap(a, crashed), `${kind} crash`).toBeGreaterThan(10);
+      expect(overlap(a, turned(mate, 360 / 36 / 8)), `${kind} crash`).toBeGreaterThan(10);
     }
   });
 
@@ -101,8 +106,7 @@ describe('mating gears', () => {
       expect(ring.mate.center).toBeCloseTo(z2 - 16, 6);
       expect(ring.mate.params.sunTeeth).toBe(16);
       expect(overlap(ring.a, ring.b), `ring ${z2}`).toBeLessThan(0.05);
-      const crashed = placed('ring', ring.mate.params as P, ring.mate.rotation + 360 / z2 / 8, ring.mate.offset[0], ring.mate.offset[1]);
-      expect(overlap(ring.a, crashed), `ring ${z2} crash`).toBeGreaterThan(10);
+      expect(overlap(ring.a, turned(ring.mate, 360 / z2 / 8)), `ring ${z2} crash`).toBeGreaterThan(10);
     }
   });
 
@@ -121,15 +125,77 @@ describe('mating gears', () => {
       const middle = rack.mate.offset[0] * across[0] + rack.mate.offset[1] * across[1] + (teeth * Math.PI * 2) / 2;
       expect(Math.abs(middle)).toBeLessThanOrEqual(Math.PI + 1e-9);
       const eighth = (Math.PI * 2) / 8;
-      const crashed = placed('rack', rack.mate.params as P, rack.mate.rotation, rack.mate.offset[0] + across[0] * eighth, rack.mate.offset[1] + across[1] * eighth);
+      const crashed = placed('rack', rack.mate.params as P, rack.mate.rotation, [rack.mate.offset[0] + across[0] * eighth, rack.mate.offset[1] + across[1] * eighth, 0]);
       expect(overlap(rack.a, crashed), `rack crash ${rz} ${angle}`).toBeGreaterThan(10);
     }
   });
 
+  it('stands a worm wheel on edge beside a worm, meshed with the thread', () => {
+    for (const [starts, hand, d, rz, angle, z2] of [
+      [1, 'right', 12, 0, 0, 30],
+      [1, 'right', 12, 40, 110, 25],
+      [2, 'left', 16, -15, -60, 24],
+      [3, 'right', 20, 7, 180, 31],
+    ] as [number, string, number, number, number, number][]) {
+      const worm: P = { module: 1, starts, hand, pitchDiameter: d, length: 20, backlash: 0 };
+      const { mate, a, b } = check('worm', worm, rz, { kind: 'wheel', teeth: z2, backlash: 0, extra: 0, angle });
+      const label = `${starts}-start ${hand} d${d} rz ${rz} angle ${angle} z${z2}`;
+      expect(mate.part).toBe('helical');
+      expect(mate.params.hand).toBe(hand);
+      expect(mate.ratio).toBeCloseTo(z2 / starts, 9);
+      expect(mate.center).toBeCloseTo(d / 2 + z2 / 2, 6);
+      const lambda = Math.atan((starts * 1) / d);
+      expect(Number(mate.params.helixAngle)).toBeCloseTo((lambda * 180) / Math.PI, 9);
+      expect(Number(mate.params.module)).toBeCloseTo(Math.cos(lambda), 9);
+      // The wheel's axis lies flat, across the line of centers.
+      const [c0, s0] = [Math.cos((angle * Math.PI) / 180), Math.sin((angle * Math.PI) / 180)];
+      const rotated = evaluate(b).stats;
+      expect((rotated.max[2] + rotated.min[2]) / 2, `${label} height`).toBeCloseTo(10, 2);
+      expect(overlap(a, b), label).toBeLessThan(0.05);
+      // Half a thread pitch up the worm, the wheel's teeth land on the thread.
+      const crashed = placed(mate.part, mate.params as P, mate.rotation, [mate.offset[0], mate.offset[1], mate.offset[2] + Math.PI / 2]);
+      expect(overlap(a, crashed), `${label} crash`).toBeGreaterThan(5);
+      // And it sits on the side asked for.
+      expect(Math.sign((rotated.max[0] + rotated.min[0]) / 2) || 0).toBe(Math.abs(c0) > 0.1 ? Math.sign(c0) : (Math.sign((rotated.max[0] + rotated.min[0]) / 2) || 0));
+      expect(Math.sign((rotated.max[1] + rotated.min[1]) / 2) || 0).toBe(Math.abs(s0) > 0.1 ? Math.sign(s0) : (Math.sign((rotated.max[1] + rotated.min[1]) / 2) || 0));
+    }
+  });
+
+  it('stands the other bevel gear on its side with the cone apexes together', () => {
+    for (const [z1, z2, rz, angle, hub] of [
+      [20, 30, 0, 0, 0],
+      [30, 20, 25, 135, 6],
+      [15, 15, -40, -90, 0],
+      [12, 36, 10, 200, 4],
+    ]) {
+      const bevel: P = { module: 2, teeth: z1, mateTeeth: z2, faceWidth: 6, backlash: 0, hubHeight: hub };
+      const { mate, a, b } = check('bevel', bevel, rz, { kind: 'bevel', teeth: 0, backlash: 0, extra: 0, angle });
+      const label = `${z1}:${z2} rz ${rz} angle ${angle}`;
+      expect(mate.part).toBe('bevel');
+      expect(mate.params.teeth).toBe(z2);
+      expect(mate.params.mateTeeth).toBe(z1);
+      expect(mate.ratio).toBeCloseTo(z2 / z1, 9);
+      // The mate's axis is level with the gear's apex, which the gear's own Dims figure names
+      // (an odd tooth count puts the box center a little off the axis).
+      const built = getGenerator('bevel').build(sanitizeParams(getGenerator('bevel'), { ...defaultParams(getGenerator('bevel')), ...bevel }), q);
+      const apex = Number(built.info.find((i) => i.label === 'Apex to mounting face')!.value.replace(/[^\d.]/g, ''));
+      const box = evaluate(b).stats;
+      expect(Math.abs((box.min[2] + box.max[2]) / 2 - apex), `${label} apex height`).toBeLessThan(0.3);
+      expect(overlap(a, b), label).toBeLessThan(0.05);
+      // Spun an eighth of a tooth about its own axis, the teeth crash.
+      const def = getGenerator('bevel');
+      const spun = def.build(sanitizeParams(def, { ...defaultParams(def), ...(mate.params as P) }), q).solid;
+      const crashed = translate(rotate(rotate(spun, [0, 0, 360 / z2 / 8]), mate.rotation), mate.offset);
+      expect(overlap(a, crashed), `${label} crash`).toBeGreaterThan(5);
+    }
+    expect(fixedMateTeeth(part('bevel', { mateTeeth: 27 }))).toBe(27);
+    expect(fixedMateTeeth(part('spur', {}))).toBeNull();
+  });
+
   it('warns about a gear it cannot fully honor', () => {
-    const tilted = { ...part('spur', { teeth: 20 }), rot: [90, 0, 0] as [number, number, number] };
+    const tilted = { ...part('spur', { teeth: 20 }), rot: [90, 0, 0] as Vec3 };
     expect(mateOf(tilted, { kind: 'gear', teeth: 20, backlash: 0, extra: 0, angle: 0 }).warnings[0]).toMatch(/tilted/);
-    const resized = { ...part('spur', { teeth: 20 }), size: [2, 2, 1] as [number, number, number] };
+    const resized = { ...part('spur', { teeth: 20 }), size: [2, 2, 1] as Vec3 };
     expect(mateOf(resized, { kind: 'gear', teeth: 20, backlash: 0, extra: 0, angle: 0 }).warnings[0]).toMatch(/resized/);
     expect(mateOf(part('spur', { teeth: 20 }), { kind: 'ring', teeth: 22, backlash: 0, extra: 0, angle: 0 }).warnings[0]).toMatch(/more teeth/);
   });

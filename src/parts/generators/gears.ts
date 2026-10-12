@@ -109,7 +109,7 @@ function involuteGear(kind: GearKind): GeneratorDef {
       label: 'Helix angle',
       help: 'Angle of the teeth to the axis. Meshing gears need the same angle and opposite hands.',
       default: kind === 'helical' ? 20 : 30,
-      min: 5,
+      min: 1,
       max: 45,
       step: 1,
       unit: '°',
