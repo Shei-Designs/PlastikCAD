@@ -331,16 +331,17 @@ describe('design files', () => {
     expect(Object.keys(parseDoc(serializeDoc(sample())).assets)).toEqual(['outline-1']);
   });
 
-  it('drops a part of a kind the app no longer has, and keeps the rest', () => {
+  it('drops a part of a kind the app no longer has, keeps the rest, and carries a renamed one over', () => {
     const doc = sample();
     const gone: SceneNode = { ...shape('box'), type: 'part', part: 'port-cutout', params: { port: 'usb-c' }, natural: [10, 10, 10] } as unknown as SceneNode;
     delete (gone as { shape?: unknown }).shape;
-    const kept: SceneNode = { ...shape('box'), type: 'part', part: 'fan-cutout', params: { size: '80' }, natural: [80, 80, 20] } as unknown as SceneNode;
+    const kept: SceneNode = { ...shape('box'), type: 'part', part: 'fan-cutout', params: { size: '80', opening: 'guard' }, natural: [80, 80, 20] } as unknown as SceneNode;
     delete (kept as { shape?: unknown }).shape;
     const back = parseDoc(serializeDoc({ ...doc, scene: [...doc.scene, gone, kept] }));
     expect(back.scene.length).toBe(doc.scene.length + 1);
     expect(back.scene.some((n) => n.type === 'part' && n.part === 'port-cutout')).toBe(false);
-    expect(back.scene.some((n) => n.type === 'part' && n.part === 'fan-cutout')).toBe(true);
+    const fan = back.scene.find((n) => n.type === 'part' && n.part === 'fan');
+    expect(fan && fan.type === 'part' ? fan.params : null).toMatchObject({ size: '80', form: 'cutout', pattern: 'rings' });
   });
 
   it('writes the same text for the same design, with vectors on one line', () => {

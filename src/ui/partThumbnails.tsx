@@ -115,7 +115,7 @@ const GLYPHS: Record<string, ReactNode> = {
       <circle cx="18" cy="27.5" r="1.3" />
     </>,
   ),
-  'fan-cutout': glyph(
+  fan: glyph(
     <>
       <rect x="4" y="4" width="28" height="28" rx="2" />
       <circle cx="18" cy="18" r="11" />

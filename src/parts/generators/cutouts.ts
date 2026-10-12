@@ -1,15 +1,15 @@
 // Panel cutouts: the openings an enclosure wall needs that are worth looking
-// up rather than drawing. A fan is its opening with its screw pattern; a
-// connector that bolts to a panel is its cutout with its screw holes, as the
-// maker draws them. (A dev board's sockets live with the board, in boards.ts,
-// where they come placed on the board itself.) Each is a prism, grown by a
+// up rather than drawing: a connector that bolts to a panel is its cutout with
+// its screw holes, as the maker draws them. (A dev board's sockets live with
+// the board, in boards.ts, where they come placed on the board itself; fans
+// have their own family in fans.ts.) Each is a prism, grown by a
 // clearance and long enough to pass through a wall: make it a hole and group
-// it with the wall. Parts are made lying through a wall across Y, a case
-// front, and can be turned to a side wall or the floor.
+// it with the wall. Parts lie flat, centered on the wall; turn them to face
+// through a side.
 import { arc, circle } from '../math2d';
-import { extrude, rotate, translate } from '../types';
+import { extrude, translate } from '../types';
 import type { Polygon, Quality, Shape2D, Solid, Vec2 } from '../types';
-import { bool, mm, num, str } from './types';
+import { bool, num, str } from './types';
 import type { BuildResult, GeneratorDef } from './types';
 
 // --- 2D -------------------------------------------------------------------------------
@@ -56,33 +56,15 @@ function outline(o: Opening, grow: number, q: Quality, cx = 0, cy = 0): Polygon 
   ];
 }
 
-// --- shared parameters ---------------------------------------------------------------------
+// --- shared ----------------------------------------------------------------------------------
 
-type Through = 'y' | 'x' | 'z';
+/** Every cutout is this long: it lies flat, centered on the wall, and can be stretched along its axis for a thicker one. */
+export const CUTOUT_LENGTH = 20;
 
-const throughParam = {
-  key: 'through',
-  label: 'Through',
-  type: 'select' as const,
-  default: 'y',
-  help: 'Which way the cut runs: through a wall that stands across Y (a case front), across X (a side), or through the floor or lid.',
-  options: [
-    { value: 'y', label: 'A wall across Y (front or back)' },
-    { value: 'x', label: 'A wall across X (a side)' },
-    { value: 'z', label: 'The floor or lid' },
-  ],
-};
 const clearanceParam = { key: 'clearance', label: 'Clearance', type: 'number' as const, default: 0.3, min: 0, max: 3, step: 0.05, unit: 'mm', help: 'Added all round every opening and hole. 0.3 mm suits most printers; more for a loose fit.' };
-const depthParam = { key: 'depth', label: 'Length', type: 'number' as const, default: 20, min: 1, max: 200, step: 0.5, unit: 'mm', help: 'How far the cut reaches: anything longer than the wall is thick.' };
-const cutGroup = { title: 'Cut', params: [throughParam, depthParam] };
 
-/** A prism of the shapes along Z, centered on the wall, laid through the chosen wall. */
-function prism(shapes: Shape2D, depth: number, through: Through): Solid {
-  const solid = translate(extrude(shapes, depth), [0, 0, -depth / 2]);
-  if (through === 'z') return solid;
-  // Stand the opening up (its height along Z), then turn it to face along X for a side wall.
-  return rotate(solid, through === 'y' ? [90, 0, 0] : [90, 0, 90]);
-}
+/** A prism of the shapes along Z, centered on the wall. */
+const prism = (shapes: Shape2D): Solid => translate(extrude(shapes, CUTOUT_LENGTH), [0, 0, -CUTOUT_LENGTH / 2]);
 
 const sizeText = (w: number, h: number) => `${w.toFixed(2)} × ${h.toFixed(2)} mm`;
 
@@ -165,13 +147,11 @@ export const panelConnector: GeneratorDef = {
         { key: 'holes', label: 'Screw holes', type: 'boolean', default: true, visible: (p) => Boolean(PANEL_CONNECTORS.find((c) => c.id === str(p, 'connector'))?.holes) },
       ],
     },
-    cutGroup,
   ],
   build(p, q): BuildResult {
     const warnings: string[] = [];
     const c = PANEL_CONNECTORS.find((x) => x.id === str(p, 'connector')) ?? PANEL_CONNECTORS[0];
     const grow = num(p, 'clearance');
-    const depth = num(p, 'depth');
     const shapes: Shape2D = [c.wings ? stepped(c.cutout, c.wings, grow) : outline(c.cutout, grow, q)];
     if (c.holes && bool(p, 'holes')) shapes.push(...holeShapes(c.holes, grow, q).shapes);
     if (c.note) warnings.push(c.note);
@@ -179,118 +159,12 @@ export const panelConnector: GeneratorDef = {
       { label: 'Cutout', value: sizeText((c.wings ? Math.max(c.wings.w, c.cutout.w) : c.cutout.w) + 2 * grow, c.cutout.h + 2 * grow) },
       { label: 'Nominal', value: sizeText(c.cutout.w, c.cutout.h) },
       ...(c.holes ? [{ label: 'Holes', value: `${holeShapes(c.holes, 0, q).at.length} × Ø${c.holes.d} mm, ${[c.holes.across && `${c.holes.across} mm across`, c.holes.up && `${c.holes.up} mm up`].filter(Boolean).join(c.holes.diagonal ? ' and ' : ', ')}${c.holes.diagonal ? ', at opposite corners' : ''}` }] : []),
-      { label: 'Length', value: mm(depth, 1) },
     ];
-    return { solid: prism(shapes, depth, str(p, 'through') as Through), outline: shapes, info, warnings };
+    return { solid: prism(shapes), outline: shapes, info, warnings };
   },
 };
 
-// --- fans ------------------------------------------------------------------------------------
-
-export interface Fan {
-  size: number;
-  /** Screw hole center spacing (square pattern) and hole diameter. */
-  spacing: number;
-  hole: number;
-  /** Opening diameter, a little under the frame. */
-  opening: number;
-}
-
-// Hole patterns from Delta's and Sunon's drawings and Noctua's spec; the opening is the frame less 2 mm.
-export const FANS: Fan[] = [
-  { size: 25, spacing: 20, hole: 2.8, opening: 23 },
-  { size: 30, spacing: 24, hole: 3.2, opening: 28 },
-  { size: 40, spacing: 32, hole: 3.5, opening: 38 },
-  { size: 50, spacing: 40, hole: 4.3, opening: 48 },
-  { size: 60, spacing: 50, hole: 4.5, opening: 58 },
-  { size: 70, spacing: 61.5, hole: 4.3, opening: 68 },
-  { size: 80, spacing: 71.5, hole: 4.5, opening: 78 },
-  { size: 92, spacing: 82.5, hole: 4.5, opening: 90 },
-  { size: 120, spacing: 105, hole: 4.5, opening: 118 },
-  { size: 140, spacing: 124.5, hole: 4.5, opening: 138 },
-];
-
-export const fan: GeneratorDef = {
-  id: 'fan-cutout',
-  name: 'Fan',
-  category: 'cutouts',
-  summary: 'The round opening and four screw holes for an axial fan, 25 to 140 mm.',
-  groups: [
-    {
-      title: 'Fan',
-      params: [
-        { key: 'size', label: 'Fan', type: 'select', default: '40', options: FANS.map((f) => ({ value: String(f.size), label: `${f.size} mm` })) },
-        {
-          key: 'opening',
-          label: 'Opening',
-          type: 'select',
-          default: 'round',
-          help: 'Round: one clear hole. Guard: the hole with concentric rings left across it, so fingers and cables stay out. Holes only: just the screw holes, for a grille of your own.',
-          options: [
-            { value: 'round', label: 'Round' },
-            { value: 'guard', label: 'Round with a guard' },
-            { value: 'none', label: 'Screw holes only' },
-          ],
-        },
-        { key: 'bar', label: 'Guard bar width', type: 'number', default: 2, min: 0.8, max: 10, step: 0.1, unit: 'mm', visible: (p) => str(p, 'opening') === 'guard' },
-        { key: 'gap', label: 'Guard gap', type: 'number', default: 6, min: 2, max: 30, step: 0.5, unit: 'mm', help: 'Width of the open rings between the bars.', visible: (p) => str(p, 'opening') === 'guard' },
-        clearanceParam,
-      ],
-    },
-    cutGroup,
-  ],
-  build(p, q): BuildResult {
-    const f = FANS.find((x) => String(x.size) === str(p, 'size')) ?? FANS[2];
-    const grow = num(p, 'clearance');
-    const depth = num(p, 'depth');
-    const through = str(p, 'through') as Through;
-    const opening = str(p, 'opening');
-    const shapes: Shape2D = [];
-    const holes: Polygon[] = [];
-    for (const sx of [-1, 1]) for (const sy of [-1, 1]) holes.push(circle((f.hole + 2 * grow) / 2, q.circle, (sx * f.spacing) / 2, (sy * f.spacing) / 2));
-    const R = f.opening / 2 + grow;
-    if (opening === 'round') shapes.push(circle(R, q.circle));
-    else if (opening === 'guard') {
-      // Rings of open air between bars, from the rim inwards, and a disc in the middle if one fits; the
-      // bars are joined by four spokes, which hold the rings together when the cutter is subtracted.
-      const bar = num(p, 'bar');
-      const gap = num(p, 'gap');
-      const rings: Polygon[] = [];
-      for (let outer = R; outer > bar; outer -= gap + bar) {
-        const inner = Math.max(0, outer - gap);
-        if (inner < bar) {
-          rings.push(circle(outer, q.circle));
-          break;
-        }
-        rings.push(circle(outer, q.circle), circle(inner, q.circle).reverse());
-      }
-      // Even-odd fill: each ring is an outer circle minus an inner one, and the spokes are taken off as solids below.
-      shapes.push(...rings);
-    }
-    const info = [
-      { label: 'Fan', value: `${f.size} mm` },
-      { label: 'Screw holes', value: `4 × Ø${f.hole} mm, ${f.spacing} mm apart` },
-      ...(opening !== 'none' ? [{ label: 'Opening', value: `Ø${(2 * R).toFixed(1)} mm` }] : []),
-      { label: 'Length', value: mm(depth, 1) },
-    ];
-    let solid = prism([...shapes, ...holes], depth, through);
-    if (opening === 'guard') {
-      // The spokes: four bars across the opening, taken out of the cutter so that they stay in the wall.
-      const bar = num(p, 'bar');
-      const spoke = (a: number): Polygon => [
-        [-R - 1, -bar / 2],
-        [R + 1, -bar / 2],
-        [R + 1, bar / 2],
-        [-R - 1, bar / 2],
-      ].map(([x, y]) => [x * Math.cos(a) - y * Math.sin(a), x * Math.sin(a) + y * Math.cos(a)] as Vec2);
-      const spokes = prism([spoke(0), spoke(Math.PI / 2)].map((s) => s), depth + 2, through);
-      solid = { op: 'difference', children: [solid, spokes] };
-    }
-    return { solid, outline: [...shapes, ...holes], info, warnings: [] };
-  },
-};
-
-export const CUTOUTS: GeneratorDef[] = [fan, panelConnector];
+export const CUTOUTS: GeneratorDef[] = [panelConnector];
 
 /** For the tests. */
 export const cutoutOutline = outline;

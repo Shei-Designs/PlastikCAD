@@ -4,7 +4,7 @@
 // come in a fixed order, one node property per line, numbers kept short.
 import { FILE_FORMAT, FILE_VERSION } from '../app';
 import { SHAPES, clampParams, defaultParams } from '../geometry/shapes';
-import { GENERATORS, getGenerator } from '../parts/generators';
+import { GENERATORS, RENAMED_PARTS, getGenerator } from '../parts/generators';
 import { sanitizeParams } from '../parts/generators/types';
 import { usedAssets } from './ops';
 import { TEXT_FONTS } from './types';
@@ -153,13 +153,21 @@ function readNode(raw: unknown, assets: Record<string, Asset>): SceneNode | null
     return { ...base, type: 'import', asset: raw.asset, natural: vec3(raw.natural, base.size, true) };
   }
   if (raw.type === 'part') {
-    if (typeof raw.part !== 'string' || !GENERATORS.some((g) => g.id === raw.part)) return null;
-    const def = getGenerator(raw.part);
+    if (typeof raw.part !== 'string') return null;
+    let rawParams = isRecord(raw.params) ? (raw.params as Record<string, PartParamValue>) : undefined;
+    let part = raw.part;
+    const renamed = RENAMED_PARTS[part];
+    if (renamed) {
+      rawParams = renamed.params(rawParams ?? {});
+      part = renamed.part;
+    }
+    if (!GENERATORS.some((g) => g.id === part)) return null;
+    const def = getGenerator(part);
     return {
       ...base,
       type: 'part',
-      part: raw.part,
-      params: sanitizeParams(def, isRecord(raw.params) ? (raw.params as Record<string, PartParamValue>) : undefined),
+      part,
+      params: sanitizeParams(def, rawParams),
       natural: vec3(raw.natural, base.size, true),
     };
   }

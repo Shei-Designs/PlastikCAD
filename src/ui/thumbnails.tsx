@@ -135,6 +135,18 @@ export const PART_THUMBNAILS: Record<string, ReactNode> = {
       <path d="M14 12v19h8V12M14 17l8-2M14 21l8-2M14 25l8-2M14 29l8-2" />
     </>,
   ),
+  fans: glyph(
+    <>
+      <rect x="4" y="4" width="28" height="28" rx="4" />
+      <circle cx="18" cy="18" r="12" />
+      <circle cx="18" cy="18" r="3.5" />
+      <path d="M18 14.5c3-4 7-5 9.5-3M21 19.5c5 0.5 8 3.5 8 7M15.5 20.5c-2 4.5-5.5 7-9 6M14.6 16.5c-4.5-1.5-7-4.5-6.5-8" />
+      <circle cx="7.5" cy="7.5" r="1.2" />
+      <circle cx="28.5" cy="7.5" r="1.2" />
+      <circle cx="7.5" cy="28.5" r="1.2" />
+      <circle cx="28.5" cy="28.5" r="1.2" />
+    </>,
+  ),
   cutouts: glyph(
     <>
       <rect x="3" y="6" width="30" height="24" rx="2" />

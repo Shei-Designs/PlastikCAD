@@ -63,15 +63,15 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
 
 ## Parts
 
-| Gears | Pulleys & sprockets | Screws & threads | Rails & frames | Pipes & ducts | Dev boards | Panel cutouts | Motor mounts |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| Spur gear | GT2 timing pulley (2 / 3 / 5 mm) | Metric bolt / threaded rod (M3–M20) | Aluminum rail: 20, 30 and 40 mm series, V-slot or T-slot, one to four cells in one or two rows (2020, 2040, 4040, 3030, 3060, 6060, 4080...) | Straight pipe or duct | Raspberry Pi 5, 4, 3, Zero 2 W, Pico | Fan: 25–140 mm, round opening, guard rings or holes only | Stepper: NEMA 8, 11, 14, 17, 23 and the 28BYJ-48 |
-| Helical gear | HTD timing pulley (3M / 5M / 8M) | Metric nut | | Elbow (any angle and bend radius, legs either side) | Arduino Uno R3/R4, Mega 2560, Nano | Panel connector: Neutrik D-series, IEC C14 / C13 / C8, D-sub 9 / 15 / 25, XT60, with their screw holes | Gearmotor: N20, TT, 25 mm (JGA25), 37 mm (JGB37) |
-| Herringbone gear | T-series timing pulley (T2.5 / T5 / T10) | Trapezoidal lead screw (multi-start) | | Reducer (in line or eccentric) | ESP32-DevKitC V4, DevKit V1, NodeMCU-32S | | Servo: SG90, MG996R |
-| Internal ring gear | MXL / XL timing pulley | Lead screw nut (flanged) | | Tee / wye (branch at any angle) | | | DC motor: 775, 130 |
-| Gear rack (straight, helical, herringbone) | Chain sprocket (#25–#41, 05B–08B, bicycle) | | | | | | |
-| Bevel gear (90° shafts) | | | | | | | |
-| Worm | | | | | | | |
+| Gears | Pulleys & sprockets | Screws & threads | Rails & frames | Pipes & ducts | Dev boards | Fans | Panel cutouts | Motor mounts |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Spur gear | GT2 timing pulley (2 / 3 / 5 mm) | Metric bolt / threaded rod (M3–M20) | Aluminum rail: 20, 30 and 40 mm series, V-slot or T-slot, one to four cells in one or two rows (2020, 2040, 4040, 3030, 3060, 6060, 4080...) | Straight pipe or duct | Raspberry Pi 5, 4, 3, Zero 2 W, Pico | Fan, 25–140 mm: the cutout (clear, or with a guard pattern of rings, slots, honeycomb or grid cut into the wall) | Panel connector: Neutrik D-series, IEC C14 / C13 / C8, D-sub 9 / 15 / 25, XT60, with their screw holes | Stepper: NEMA 8, 11, 14, 17, 23 and the 28BYJ-48 |
+| Helical gear | HTD timing pulley (3M / 5M / 8M) | Metric nut | | Elbow (any angle and bend radius, legs either side) | Arduino Uno R3/R4, Mega 2560, Nano | Screw holes only, for an opening of your own | | Gearmotor: N20, TT, 25 mm (JGA25), 37 mm (JGB37) |
+| Herringbone gear | T-series timing pulley (T2.5 / T5 / T10) | Trapezoidal lead screw (multi-start) | | Reducer (in line or eccentric) | ESP32-DevKitC V4, DevKit V1, NodeMCU-32S | Printed grill with the same patterns, to screw over the fan | | Servo: SG90, MG996R |
+| Internal ring gear | MXL / XL timing pulley | Lead screw nut (flanged) | | Tee / wye (branch at any angle) | | The fan itself: frame, hub and blades of a typical fan, to check clearance | | DC motor: 775, 130 |
+| Gear rack (straight, helical, herringbone) | Chain sprocket (#25–#41, 05B–08B, bicycle) | | | | | | | |
+| Bevel gear (90° shafts) | | | | | | | | |
+| Worm | | | | | | | | |
 
 Rotating parts share the same options for the shaft: round, D-shaft, hex or
 keyed bore with a fit clearance, plus an optional hub with set-screw holes.
@@ -93,11 +93,19 @@ bolt pattern, the pilot boss or the body that drops through, and the shaft.
 It makes a plate with the holes and the bore, the holes alone as a cutter, the
 motor itself as a body to design round (or, made a hole, to pocket for), or an
 L-bracket standing the plate on a slotted, gusseted foot.
+A fan part knows the frame, screw pattern and opening of an axial fan from
+25 to 140 mm and makes one of four things: the cutout, clear or filled with a
+guard pattern (rings on spokes, slots, honeycomb or a grid, with the bar and
+opening widths yours to set) that is cut straight into the wall when the part
+is made a hole; the screw holes alone; a printed grill the size of the fan
+with the same patterns, to screw over it; or the fan itself, a stand-in with
+the frame, hub and blades of a typical fan that size, to check clearance and
+design round.
 A panel cutout is an opening a wall needs that is worth looking up rather
-than drawing: a fan's opening with its screw pattern, or a connector's cutout
-with its screw holes as its maker draws it. Each is grown by a clearance and
-comes lying through a wall across Y, a case front; turn it to a side or the
-floor, make it a hole and group it with the wall.
+than drawing: a connector's cutout with its screw holes as its maker draws
+it, grown by a clearance. Fans and cutouts come lying flat, centered on the
+wall, and are turned like anything else to face through a side; make the
+cutout a hole and group it with the wall.
 The rail is there to design around: make it a hole and group it with a block
 to get a bracket that fits the real thing. It comes in as a 20 mm stub; its
 height is its length, so pull the top grip or type the H size to make it as
