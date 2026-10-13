@@ -4,7 +4,8 @@ import { FORMATS } from '../io/export';
 import { skinOf } from '../geometry/skin';
 import { confirm } from '../platform';
 import { exportDesign, setPrefs, shownScene, useEditor } from '../state/store';
-import { DownloadIcon } from './icons';
+import { ChevronIcon, DownloadIcon } from './icons';
+import { Popover } from './Popover';
 
 export function ExportPanel() {
   const format = useEditor((s) => s.prefs.format);
@@ -51,19 +52,44 @@ export function ExportPanel() {
       <section className="export" aria-label="Export">
         <div className="export-row">
           <span className="export-label">Format</span>
-          <div className="segmented" role="radiogroup" aria-label="File format">
-            {FORMATS.map((f) => (
-              <button key={f.id} type="button" role="radio" aria-checked={f.id === format} className={f.id === format ? 'on' : ''} title={f.description} onClick={() => setPrefs({ format: f.id })}>
-                {f.label}
-              </button>
-            ))}
-          </div>
+          {/* Opens upwards: the panel sits at the bottom of the window, where a native select's list would run off the screen. */}
+          <Popover
+            className="select-button"
+            title="File format"
+            align="left"
+            side="up"
+            fill
+            button={
+              <>
+                <span>{active.label}</span>
+                <ChevronIcon />
+              </>
+            }
+          >
+            {(close) => (
+              <div className="menu" role="listbox" aria-label="File format">
+                {FORMATS.map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    role="option"
+                    aria-selected={f.id === format}
+                    className={f.id === format ? 'menu-item format on' : 'menu-item format'}
+                    onClick={() => {
+                      close();
+                      setPrefs({ format: f.id });
+                    }}
+                  >
+                    <span>{f.label}</span>
+                    <small>{f.description}</small>
+                  </button>
+                ))}
+              </div>
+            )}
+          </Popover>
         </div>
         <p className="export-note">
-          {active.description}
-          {count === 0
-            ? ' · nothing to export yet'
-            : ` · ${count} ${partial ? 'selected ' : ''}object${count === 1 ? '' : 's'}${count > 1 ? (format === 'glb' ? ', each its own' : ', merged') : ''}`}
+          {count === 0 ? 'Nothing to export yet' : `${partial ? `${count} selected` : count === 1 ? '1' : `All ${count}`} object${count === 1 ? '' : 's'}${count > 1 ? (format === 'glb' ? ', separate' : ', merged') : ''}`}
         </p>
         <button type="button" className="primary" disabled={saving || count === 0} onClick={run}>
           <DownloadIcon />

@@ -6,10 +6,11 @@ import { TEXT_FONTS } from '../model/types';
 import type { ImageAsset, PictureMapping, PictureNode, SceneNode, ShapeNode, TextAlign, TextNode } from '../model/types';
 import { geometry } from '../state/geometry';
 import { editPicture, editText, imageAssets, pickImage, setColor, setHole, setPrefs, setTexture, shownScene, updateNode, updateSelected, useEditor } from '../state/store';
-import { ExportPanel } from './ExportPanel';
 import { formatNumber, SliderField } from './Fields';
 import { getGenerator } from '../parts/generators';
 import { PartFields } from './PartFields';
+import { Sections } from './Sections';
+import type { Section } from './Sections';
 import { Versions } from './Versions';
 
 const MOD = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform) ? '⌘' : 'Ctrl+';
@@ -32,6 +33,7 @@ const SHORTCUTS: [string, string][] = [
   ['Center on X and Y', 'Alt+C'],
   ['Drop onto the plate', 'D'],
   ['Fit to view', 'F'],
+  ['Import model or picture', `${MOD}I`],
   ['Save a version', `${MOD}Shift+V`],
 ];
 
@@ -140,13 +142,10 @@ function withParam(node: ShapeNode, key: string, value: number): ShapeNode {
   return { ...next, size: tidyVec([node.size[0], (node.size[0] * after[1]) / after[0], node.size[2]]) };
 }
 
-function ShapeParams({ node }: { node: SceneNode }) {
-  if (node.type !== 'shape') return null;
+function ShapeParams({ node }: { node: ShapeNode }) {
   const def = shapeDef(node.shape);
-  if (def.params.length === 0) return null;
   return (
-    <fieldset className="group">
-      <legend>{def.name}</legend>
+    <>
       {def.params.map((p) => (
         <SliderField
           key={p.key}
@@ -161,7 +160,7 @@ function ShapeParams({ node }: { node: SceneNode }) {
           onChange={(v) => updateSelected((n) => (n.type === 'shape' ? withParam(n, p.key, v) : n), `param:${node.id}:${p.key}`)}
         />
       ))}
-    </fieldset>
+    </>
   );
 }
 
@@ -178,8 +177,7 @@ function TextFields({ node }: { node: TextNode }) {
   useEffect(() => setDraft(node.text), [node.id, node.text]);
   const locked = Boolean(node.locked);
   return (
-    <fieldset className="group">
-      <legend>Text</legend>
+    <>
       <div className="field">
         <textarea
           className="text-input area"
@@ -216,7 +214,7 @@ function TextFields({ node }: { node: TextNode }) {
           </div>
         </div>
       )}
-    </fieldset>
+    </>
   );
 }
 
@@ -290,8 +288,7 @@ function TextureFields({ node }: { node: SceneNode }) {
     if (key) setTexture({ asset: key, mode: m, scale: 50, turn: 0 });
   };
   return (
-    <fieldset className="group">
-      <legend>Texture</legend>
+    <>
       {pictures > 0 ? (
         <p className="field-note">
           Carries {pictures} picture{pictures === 1 ? '' : 's'}, which cover the surface instead of a texture.
@@ -324,7 +321,7 @@ function TextureFields({ node }: { node: SceneNode }) {
           {texture?.mode === 'tile' && <SliderField label="Tile size" help="How many millimeters one repeat of the picture covers." value={texture.scale} min={2} max={500} step={1} unit="mm" onChange={(v) => setTexture({ ...texture, scale: v })} />}
         </>
       )}
-    </fieldset>
+    </>
   );
 }
 
@@ -340,7 +337,7 @@ function Overview() {
       <header className="params-head">
         <div>
           <h1>Nothing selected</h1>
-          <p>{scene.length === 0 ? 'Pick a shape on the left and click on the plate.' : 'Click an object to edit it, or drag a box around several.'}</p>
+          <p>{scene.length === 0 ? 'Pick a shape on the left and click on the plate.' : 'Click on an object to select it.'}</p>
         </div>
       </header>
       {size && (
@@ -395,6 +392,14 @@ function Design() {
     );
   }
   const node = nodes[0];
+  // The texture follows the object's own settings as one more tab; a hole has no surface to show it on.
+  const texture: Section[] = node.type !== 'picture' && !node.hole ? [{ title: 'Texture', content: <TextureFields node={node} /> }] : [];
+  const own: Section[] =
+    node.type === 'shape' && shapeDef(node.shape).params.length > 0
+      ? [{ title: shapeDef(node.shape).name, content: <ShapeParams node={node} /> }]
+      : node.type === 'text'
+        ? [{ title: 'Text', content: <TextFields node={node} /> }]
+        : [];
   return (
     <>
       <header className="params-head">
@@ -403,11 +408,8 @@ function Design() {
           <p>{kindOf(node)}{node.locked ? ' · locked' : ''}</p>
         </div>
       </header>
-      {node.type === 'text' && <TextFields node={node} />}
       {node.type === 'picture' ? <PictureFields node={node} /> : <Appearance nodes={nodes} />}
-      <ShapeParams node={node} />
-      {node.type === 'part' && <PartFields node={node} />}
-      {node.type !== 'picture' && !node.hole && <TextureFields node={node} />}
+      {node.type === 'part' ? <PartFields node={node} more={texture} /> : <Sections legend="Settings" reset={node.id} sections={[...own, ...texture]} />}
     </>
   );
 }
@@ -428,7 +430,6 @@ export function Inspector() {
         </div>
       </div>
       <div className="params">{panel === 'design' ? <Design /> : <Versions />}</div>
-      <ExportPanel />
     </aside>
   );
 }

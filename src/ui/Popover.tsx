@@ -9,11 +9,15 @@ interface Props {
   disabled?: boolean;
   /** Which edge of the button the panel lines up with. */
   align?: 'left' | 'right';
+  /** Whether the panel opens below the button or above it (for a button near the bottom of the window). */
+  side?: 'down' | 'up';
+  /** Stretch the button to its row's width and make the panel as wide. */
+  fill?: boolean;
   children: (close: () => void) => ReactNode;
 }
 
-/** Button with a small panel that drops down below it; closes on Escape or a click elsewhere. */
-export function Popover({ button, title, className = 'chip', disabled, align = 'left', children }: Props) {
+/** Button with a small panel that drops down below it (or up from it); closes on Escape or a click elsewhere. */
+export function Popover({ button, title, className = 'chip', disabled, align = 'left', side = 'down', fill = false, children }: Props) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
 
@@ -37,11 +41,11 @@ export function Popover({ button, title, className = 'chip', disabled, align = '
   }, [open]);
 
   return (
-    <div className={open ? 'popover open' : 'popover'} ref={root}>
+    <div className={`popover${open ? ' open' : ''}${fill ? ' fill' : ''}`} ref={root}>
       <button type="button" className={open ? `${className} on` : className} title={title} aria-label={title} aria-expanded={open} disabled={disabled} onClick={() => setOpen((o) => !o)}>
         {button}
       </button>
-      {open && <div className={`popover-panel ${align}`}>{children(() => setOpen(false))}</div>}
+      {open && <div className={`popover-panel ${align} ${side}`}>{children(() => setOpen(false))}</div>}
     </div>
   );
 }

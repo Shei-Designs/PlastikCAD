@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { APP_NAME, APP_VERSION } from '../app';
+import { APP_NAME } from '../app';
 import { SHAPES } from '../geometry/shapes';
 import { HOLE_COLOR } from '../model/ops';
 import type { SceneNode } from '../model/types';
@@ -28,6 +28,8 @@ import {
   toggleSelected,
   useEditor,
 } from '../state/store';
+import { About } from './About';
+import { ExportPanel } from './ExportPanel';
 import { EyeIcon, EyeOffIcon, ImportIcon, LockIcon, Logo, MenuIcon, MoonIcon, SaveIcon, SunIcon, UnlockIcon } from './icons';
 import { Popover } from './Popover';
 import { CATEGORIES, GENERATORS, getGenerator } from '../parts/generators';
@@ -44,6 +46,7 @@ function FileBar() {
   const filePath = useEditor((s) => s.filePath);
   const [text, setText] = useState(name);
   useEffect(() => setText(name), [name]);
+  const [about, setAbout] = useState(false);
 
   const item = (label: string, keys: string, run: () => void, close: () => void) => (
     <button
@@ -55,7 +58,7 @@ function FileBar() {
       }}
     >
       <span>{label}</span>
-      <kbd>{keys}</kbd>
+      {keys && <kbd>{keys}</kbd>}
     </button>
   );
 
@@ -91,8 +94,6 @@ function FileBar() {
             {item('Open…', `${MOD}O`, () => void openDesign(), close)}
             {item('Save', `${MOD}S`, () => void saveDesign(), close)}
             {item('Save as…', `${MOD}Shift+S`, () => void saveDesignAs(), close)}
-            <hr />
-            {item('Import model or picture…', `${MOD}I`, () => void importModel(), close)}
             {isDesktop() && recent.length > 0 && (
               <>
                 <hr />
@@ -113,9 +114,12 @@ function FileBar() {
                 ))}
               </>
             )}
+            <hr />
+            {item(`About ${APP_NAME}…`, '', () => setAbout(true), close)}
           </div>
         )}
       </Popover>
+      <About open={about} onClose={() => setAbout(false)} />
     </div>
   );
 }
@@ -222,11 +226,9 @@ function ImportRow() {
   const viewing = useEditor((s) => s.viewing);
   return (
     <div className="import-row">
-      <button type="button" className="part" title="Import an STL, OBJ or 3MF mesh, an SVG drawing, or a PNG or JPEG picture" disabled={Boolean(viewing)} onClick={() => void importModel()}>
-        <span className="thumb small">
-          <ImportIcon />
-        </span>
-        <span className="part-name">Import…</span>
+      <button type="button" className="import-button" title={`Import an STL, OBJ or 3MF mesh, an SVG drawing, or a PNG or JPEG picture (${MOD}I)`} disabled={Boolean(viewing)} onClick={() => void importModel()}>
+        <ImportIcon />
+        Import model or picture…
       </button>
     </div>
   );
@@ -335,6 +337,15 @@ export function Sidebar() {
       <div className="brand">
         <Logo />
         <span>{APP_NAME}</span>
+        <button
+          type="button"
+          className="icon-button"
+          title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+          aria-label="Toggle theme"
+          onClick={() => setPrefs({ theme: theme === 'dark' ? 'light' : 'dark' })}
+        >
+          {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
+        </button>
       </div>
       <FileBar />
       <div className="tabs">
@@ -358,18 +369,7 @@ export function Sidebar() {
           <SelectedStructure />
         </nav>
       )}
-      <footer className="sidebar-foot">
-        <span>v{APP_VERSION} · GPL-3.0</span>
-        <button
-          type="button"
-          className="icon-button"
-          title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-          aria-label="Toggle theme"
-          onClick={() => setPrefs({ theme: theme === 'dark' ? 'light' : 'dark' })}
-        >
-          {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
-        </button>
-      </footer>
+      <ExportPanel />
     </aside>
   );
 }

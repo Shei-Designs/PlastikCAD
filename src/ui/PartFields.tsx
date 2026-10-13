@@ -1,6 +1,6 @@
 // The settings of a parametric part: a picker for the kind, its parameter
 // groups as tabs, and the dimensions it works out (pitch diameter and the like).
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useId, useMemo } from 'react';
 import { CATEGORIES, GENERATORS, getGenerator } from '../parts/generators';
 import { defaultParams, sanitizeParams } from '../parts/generators/types';
 import type { BooleanParam, ParamDef, Params, SelectParam } from '../parts/generators/types';
@@ -12,6 +12,8 @@ import { SliderField } from './Fields';
 import { Hint } from './Hint';
 import { ResetIcon } from './icons';
 import { partThumbnail } from './partThumbnails';
+import { Sections } from './Sections';
+import type { Section } from './Sections';
 
 function SelectField({ def, value, onChange }: { def: SelectParam; value: string; onChange: (v: string) => void }) {
   const id = useId();
@@ -68,9 +70,8 @@ function Field({ def, params, onChange }: { def: ParamDef; params: Params; onCha
   }
 }
 
-const DIMENSIONS = 'Dimensions';
-
-export function PartFields({ node }: { node: PartNode }) {
+/** `more` are sections that follow the part's own, such as its texture. */
+export function PartFields({ node, more }: { node: PartNode; more: Section[] }) {
   const def = getGenerator(node.part);
   const family = CATEGORIES.find((c) => c.id === def.category)!;
   const kin = GENERATORS.filter((g) => g.category === def.category);
@@ -84,15 +85,37 @@ export function PartFields({ node }: { node: PartNode }) {
     }
   }, [def, node.params]);
   const groups = def.groups.filter((g) => g.params.some((d) => !d.visible || d.visible(node.params)));
-  const tabs = [...groups.map((g) => g.title), ...(built?.info.length ? [DIMENSIONS] : [])];
-  const [tab, setTab] = useState(tabs[0]);
-  // Another part, or another kind: back to the first tab.
-  useEffect(() => setTab(tabs[0]), [node.id, def.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  const current = tabs.includes(tab) ? tab : tabs[0];
-  const group = groups.find((g) => g.title === current);
   const change = (key: string, v: Params[string]) => void editPart(node.id, { params: { [key]: v } });
   const canMate = mateKinds(def.id).length > 0;
   const mating = useEditor((s) => s.mating !== null);
+  const sections: Section[] = groups.map((g) => ({
+    title: g.title,
+    content: g.params.filter((d) => !d.visible || d.visible(node.params)).map((d) => <Field key={d.key} def={d} params={node.params} onChange={change} />),
+  }));
+  if (built?.info.length) {
+    sections.push({
+      title: 'Dimensions',
+      tab: 'Dims',
+      content: (
+        <dl className="facts">
+          {built.info.map((item) => (
+            <div key={item.label}>
+              <dt>{item.label}</dt>
+              <dd>{item.value}</dd>
+            </div>
+          ))}
+        </dl>
+      ),
+    });
+  }
+  if (canMate && sections.length) {
+    sections[0].after = (
+      <button type="button" className="primary mate-button" disabled={mating} onClick={() => startMate(node.id)}>
+        Add mating gear…
+      </button>
+    );
+  }
+  sections.push(...more);
 
   const reset = (
     <button type="button" className="legend-button" title="Reset to defaults" aria-label="Reset to defaults" disabled={locked} onClick={() => void editPart(node.id, { part: def.id, params: defaultParams(def) })}>
@@ -130,43 +153,17 @@ export function PartFields({ node }: { node: PartNode }) {
         </fieldset>
       )}
 
-      <fieldset className="group">
-        <legend>
-          Settings
-          {kin.length === 1 && reset}
-        </legend>
-        {built?.warnings.map((w) => (
+      <Sections
+        legend="Settings"
+        extra={kin.length === 1 ? reset : undefined}
+        reset={`${node.id}:${def.id}`}
+        note={built?.warnings.map((w) => (
           <p key={w} className="field-note warn">
             {w}
           </p>
         ))}
-        {tabs.length > 1 && (
-          <div className="segmented tabs-row" role="tablist">
-            {tabs.map((t) => (
-              <button key={t} type="button" role="tab" aria-selected={t === current} className={t === current ? 'on' : ''} onClick={() => setTab(t)}>
-                {t === DIMENSIONS ? 'Dims' : t}
-              </button>
-            ))}
-          </div>
-        )}
-        {group &&
-          group.params.filter((d) => !d.visible || d.visible(node.params)).map((d) => <Field key={d.key} def={d} params={node.params} onChange={change} />)}
-        {current === DIMENSIONS && built && (
-          <dl className="facts">
-            {built.info.map((item) => (
-              <div key={item.label}>
-                <dt>{item.label}</dt>
-                <dd>{item.value}</dd>
-              </div>
-            ))}
-          </dl>
-        )}
-      </fieldset>
-      {canMate && current === tabs[0] && (
-        <button type="button" className="primary mate-button" disabled={mating} onClick={() => startMate(node.id)}>
-          Add mating gear…
-        </button>
-      )}
+        sections={sections}
+      />
     </>
   );
 }

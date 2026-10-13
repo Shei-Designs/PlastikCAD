@@ -38,7 +38,12 @@ const RED = '#d8605a';
 const BLUE = '#5b8fd9';
 const YELLOW = '#e5c04b';
 
-/** The colors offered for nodes: two rows of eight, muted enough that edges and shading still read. Any other color can be picked by hand. */
+/**
+ * The colors offered for nodes, muted enough that edges and shading still
+ * read. Any other color can be picked by hand, from a twelfth swatch after
+ * these: the inspector lays all twelve out in one row, so the count here goes
+ * with the width of that panel (see .swatch-row in styles.css).
+ */
 export const PALETTE: { name: string; value: string }[] = [
   { name: 'Steel', value: STEEL },
   { name: 'Orange', value: ORANGE },
@@ -51,11 +56,6 @@ export const PALETTE: { name: string; value: string }[] = [
   { name: 'White', value: '#f2f2f0' },
   { name: 'Black', value: '#2a2d33' },
   { name: 'Teal', value: '#3fa9a3' },
-  { name: 'Purple', value: '#8b6fd0' },
-  { name: 'Pink', value: '#df7fa6' },
-  { name: 'Lime', value: '#a3c24a' },
-  { name: 'Brown', value: '#9a6b4c' },
-  { name: 'Sky', value: '#7fbfe3' },
 ];
 
 const TAU = Math.PI * 2;

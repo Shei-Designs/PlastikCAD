@@ -58,8 +58,10 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
   it, the colored arcs to turn it. Click a grip instead of dragging it and a
   box appears on that edge to type the value. Or type exact numbers in the
   panel on the right.
-- **Import** – STL, OBJ and 3MF meshes, and SVG drawings (extruded into a
-  plate), which then behave like any other object. Drop files on the window.
+- **Import** – the button at the bottom of the library (or Ctrl+I) takes STL,
+  OBJ and 3MF meshes, SVG drawings (extruded into a plate) and PNG or JPEG
+  pictures; meshes and drawings then behave like any other object. Drop files
+  on the window.
 - **Pictures** – the Picture tile in the library (or importing a PNG or JPEG)
   puts the picture on a sheet. Flat, it prints straight through onto the first
   surface behind it that faces it; wrapped, it is a band around its own axis,
@@ -69,7 +71,8 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
   Surfaces hidden behind others stay clean, so the far wall of a cup does not
   get the picture through the near one. The object's own color shows
   everywhere the picture does not reach. An object can also wear a
-  **texture** over its whole surface instead: a picture wrapped once around
+  **texture** over its whole surface instead (the Texture tab of its
+  settings): a picture wrapped once around
   it, bottom to top, turned to any side, or tiled every so many millimeters
   from every side, for patterns and materials. Pictures and textures are for
   scenes and renders, not printing: they travel in GLB exports and are left
@@ -195,7 +198,7 @@ design is still there after a restart.
 | SVG | Outline of the design seen from above, for laser cutters and vector editors |
 | DXF | The same outline, to extrude in CAD or cut on a laser / CNC |
 
-The button reads *Export selection* when something is selected and exports just
+The export button, at the bottom of the left panel, reads *Export selection* when something is selected and exports just
 that; otherwise *Export* merges everything visible that is not a hole into one
 watertight mesh (after asking, when there are several objects). Units are
 millimeters, Z is up. A GLB keeps every object separate, each with its color
