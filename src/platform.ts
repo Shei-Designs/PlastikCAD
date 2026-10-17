@@ -130,6 +130,48 @@ export async function writePath(path: string, bytes: Uint8Array): Promise<void> 
   await command<void>('write_file', bytes, { path: encodeURIComponent(path) });
 }
 
+/** A design in the projects folder, as the desktop app lists them. */
+export interface DesignEntry {
+  name: string;
+  path: string;
+  size: number;
+  /** Milliseconds since the epoch. */
+  modified: number;
+}
+
+/** Desktop only: the designs directly inside a folder, which is created if missing. */
+export async function listDesigns(dir: string): Promise<DesignEntry[]> {
+  return command<DesignEntry[]>('list_designs', { dir });
+}
+
+/** Desktop only: the first `limit` bytes of a file. */
+export async function readHead(path: string, limit: number): Promise<Uint8Array> {
+  const data = await command<ArrayBuffer | number[]>('read_head', { path, limit });
+  return data instanceof ArrayBuffer ? new Uint8Array(data) : Uint8Array.from(data);
+}
+
+/** Desktop only. */
+export async function removeFile(path: string): Promise<void> {
+  await command<void>('remove_file', { path });
+}
+
+/** Desktop only: renames or moves a file; fails rather than replace an existing one. */
+export async function moveFile(from: string, to: string): Promise<void> {
+  await command<void>('move_file', { from, to });
+}
+
+/** Desktop only: where projects go unless the user picked a folder; `fixed` where no other folder can be chosen (Android). */
+export async function defaultProjectsDir(): Promise<{ path: string; fixed: boolean }> {
+  return command<{ path: string; fixed: boolean }>('default_projects_dir');
+}
+
+/** Desktop only: native folder picker. Null if canceled. */
+export async function pickFolder(defaultPath?: string): Promise<string | null> {
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const picked = await open({ directory: true, multiple: false, defaultPath });
+  return typeof picked === 'string' ? picked : null;
+}
+
 /** Desktop only: path of a design file passed on the command line, else null (always null in the browser). */
 export async function startupFile(): Promise<string | null> {
   return isTauri() ? command<string | null>('startup_file') : null;
@@ -181,27 +223,37 @@ export async function confirm(
   return ask(message, { title: options.title ?? APP_NAME, okLabel: options.okLabel, cancelLabel: options.cancelLabel });
 }
 
-/** Ask before the window closes while `isDirty()` is true (desktop: intercept the close request and `confirm`; browser: beforeunload). Returns an unsubscribe function. */
-export function guardClose(isDirty: () => boolean): () => void {
+/**
+ * Saves before the window closes while `isDirty()` is true. On desktop the
+ * close request is held while `flush` writes; if that fails the user is asked
+ * whether to close anyway. In a browser only the standard prompt can be shown.
+ * Returns an unsubscribe function.
+ */
+export function guardClose(isDirty: () => boolean, flush: () => Promise<boolean>): () => void {
   if (isTauri()) {
-    let asking = false;
+    let closing = false;
     return listen(async () => {
       const { getCurrentWindow } = await import('@tauri-apps/api/window');
+      const window = getCurrentWindow();
       // Tauri closes the window once this handler settles, unless it called preventDefault.
-      return getCurrentWindow().onCloseRequested(async (event) => {
+      return window.onCloseRequested(async (event) => {
         if (!isDirty()) return;
-        // A second click on the close button must not stack another dialog.
-        if (asking) return event.preventDefault();
-        asking = true;
+        event.preventDefault();
+        // A second click on the close button must not stack another save or dialog.
+        if (closing) return;
+        closing = true;
         try {
-          const discard = await confirm('This design has unsaved changes. Close without saving?', {
-            title: 'Unsaved changes',
-            okLabel: 'Close without saving',
-            cancelLabel: 'Cancel',
-          });
-          if (!discard) event.preventDefault();
+          const saved = await flush();
+          const close =
+            saved ||
+            (await confirm('The latest changes could not be saved. Close anyway and lose them?', {
+              title: 'Unsaved changes',
+              okLabel: 'Close anyway',
+              cancelLabel: 'Keep editing',
+            }));
+          if (close) await window.destroy();
         } finally {
-          asking = false;
+          closing = false;
         }
       });
     });
@@ -212,4 +264,17 @@ export function guardClose(isDirty: () => boolean): () => void {
   };
   window.addEventListener('beforeunload', warn);
   return () => window.removeEventListener('beforeunload', warn);
+}
+
+/** Runs `handler` when the page is hidden (another app in front, the tab switched), the moment to write out what is pending. Returns an unsubscribe function. */
+export function onHidden(handler: () => void): () => void {
+  const check = () => {
+    if (document.visibilityState === 'hidden') handler();
+  };
+  document.addEventListener('visibilitychange', check);
+  window.addEventListener('pagehide', handler);
+  return () => {
+    document.removeEventListener('visibilitychange', check);
+    window.removeEventListener('pagehide', handler);
+  };
 }

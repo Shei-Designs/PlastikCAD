@@ -17,6 +17,7 @@ import {
   mirrorSelected,
   movePlacing,
   previewAlign,
+  provideThumbnail,
   redo,
   replaceNodes,
   select,
@@ -256,7 +257,9 @@ export function Viewport() {
       { theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap },
     );
     viewer.current = viewerRef.current = v;
+    provideThumbnail(() => v.capture(320, 200));
     return () => {
+      provideThumbnail(null);
       v.dispose();
       viewer.current = viewerRef.current = null;
     };

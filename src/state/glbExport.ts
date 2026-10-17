@@ -1,14 +1,16 @@
 // The GLB export: every object as its own mesh with its color and, when it has
-// one, its skin painted and embedded. Runs on the main thread, where the
+// one, its skin painted and embedded; a group whose parts have colors of their
+// own as one mesh of a primitive per color. Runs on the main thread, where the
 // pictures can be decoded and drawn; the kernel merges each object in the
 // worker as for any other export.
 import { CREASE_ANGLE, creasedNormals } from '../geometry/mesh';
+import type { RenderMesh } from '../geometry/mesh';
 import { skinMesh, skinOf, skinRepeats } from '../geometry/skin';
 import type { Skin } from '../geometry/skin';
-import { cornerColors, underPicture } from '../geometry/tint';
 import { writeGlb } from '../io/glb';
 import type { GlbObject } from '../io/glb';
-import { nodeMatrix } from '../model/math';
+import { emptyBounds, expandBounds, nodeMatrix } from '../model/math';
+import type { Bounds } from '../model/math';
 import type { Asset, SceneNode } from '../model/types';
 import { SkinPainter } from '../viewer/skin';
 import type { Painted } from '../viewer/skin';
@@ -27,33 +29,40 @@ export async function exportGlb(nodes: SceneNode[], assets: Record<string, Asset
       });
     }
   };
+  /** One glTF primitive: the mesh (in the node's built frame) with its color and, if the node wears one, its skin. */
+  const object = async (node: SceneNode, render: RenderMesh, bounds: Bounds, color: string, skin: Skin | null): Promise<GlbObject> => {
+    const out: GlbObject = { name: node.name, of: node.id, positions: render.positions, normals: render.normals, matrix: nodeMatrix(node), color };
+    if (!skin) return out;
+    // The fill around and under the pictures is this part's color (a part is one color, whatever its group is).
+    const painted = await paint(skin.kind === 'stickers' ? { ...skin, color, mixed: false } : { ...skin, color });
+    // Stickers smaller than the triangles under them are cut out, so their atlas cells do not bleed into each other.
+    const mesh = skinMesh(skin, node, render, bounds, painted.rects);
+    out.positions = mesh.positions;
+    out.normals = mesh.normals;
+    const asset = skin.kind === 'stickers' ? null : assets[skin.asset];
+    // A JPEG has no transparency, so it goes out as it is; anything else is flattened onto the object's color.
+    if (asset?.kind === 'image' && asset.mime === 'image/jpeg') out.skin = { uv: mesh.uv, image: SkinPainter.bytes(asset), mime: asset.mime, repeat: skinRepeats(skin) };
+    else out.skin = { uv: mesh.uv, image: await SkinPainter.png(painted), mime: 'image/png', repeat: skinRepeats(skin) };
+    return out;
+  };
   try {
     const objects: GlbObject[] = [];
     for (const node of nodes) {
       if (node.hole || node.hidden) continue;
+      const skin = skinOf(node);
+      // A texture over the whole covers the parts of a mixed group, which then keeps its one color.
+      if (node.type === 'group' && node.mixed && skin?.kind !== 'texture') {
+        const colored = await worker.exportColored([node], true, true);
+        const parts = colored.objects[0]?.parts ?? [];
+        const bounds = emptyBounds();
+        for (const part of parts) for (let i = 0; i < part.mesh.positions.length; i += 3) expandBounds(bounds, [part.mesh.positions[i], part.mesh.positions[i + 1], part.mesh.positions[i + 2]]);
+        for (const part of parts) objects.push(await object(node, creasedNormals(part.mesh.positions, part.mesh.triangles, CREASE_ANGLE), bounds, part.color, skin));
+        continue;
+      }
       const result = await worker.export([node], false, true, true);
       const render = creasedNormals(result.mesh.positions, result.mesh.triangles, CREASE_ANGLE);
-      const object: GlbObject = { name: node.name, positions: render.positions, normals: render.normals, matrix: nodeMatrix(node), color: node.color };
-      const skin = skinOf(node);
-      let mesh: ReturnType<typeof skinMesh> | null = null;
-      if (skin) {
-        const painted = await paint(skin);
-        // Stickers smaller than the triangles under them are cut out, so their atlas cells do not bleed into each other.
-        mesh = skinMesh(skin, node, render, result.bounds, painted.rects);
-        object.positions = mesh.positions;
-        object.normals = mesh.normals;
-        const uv = mesh.uv;
-        const asset = skin.kind === 'stickers' ? null : assets[skin.asset];
-        // A JPEG has no transparency, so it goes out as it is; anything else is flattened onto the object's color.
-        if (asset?.kind === 'image' && asset.mime === 'image/jpeg') object.skin = { uv, image: SkinPainter.bytes(asset), mime: asset.mime, repeat: skinRepeats(skin) };
-        else object.skin = { uv, image: await SkinPainter.png(painted), mime: 'image/png', repeat: skinRepeats(skin) };
-      }
-      // The parts of a mixed group keep their colors (a texture over the whole covers them anyway).
-      if (node.type === 'group' && node.mixed && result.faces && skin?.kind !== 'texture') {
-        const uv = mesh?.uv;
-        object.colors = cornerColors(node, result.faces, object.positions.length / 9, { origin: mesh?.faces, covered: uv ? (t) => underPicture(uv, t) : undefined });
-      }
-      objects.push(object);
+      if (result.uv) render.uv = result.uv;
+      objects.push(await object(node, render, result.bounds, node.color, skin));
     }
     if (objects.length === 0) throw new Error('There is nothing to export.');
     return writeGlb(objects, name);

@@ -4,12 +4,13 @@
 import Module from 'manifold-3d';
 import type { CrossSection, Manifold, ManifoldToplevel, Mat4, Mesh } from 'manifold-3d';
 import { geomKey, textAssetKey } from '../model/geomKey';
+import { paintOf } from '../model/ops';
 import { apply, determinant, emptyBounds, expandBounds, isEmptyBounds, nodeMatrix, unionBounds } from '../model/math';
 import type { Bounds, Mat } from '../model/math';
 import type { Asset, GroupNode, ImportNode, MeshAsset, OutlineAsset, PartNode, PictureNode, Polygon, SceneNode } from '../model/types';
-import type { BuildResult, ExportResult } from '../worker/protocol';
+import type { BuildResult, ColoredExport, ColoredObject, ColoredPart, ExportResult } from '../worker/protocol';
 import { CREASE_ANGLE, creasedNormals, NO_SOURCE } from './mesh';
-import type { Faces, MeshData } from './mesh';
+import type { Faces, MeshData, MeshWithUV } from './mesh';
 import { buildSolid } from '../parts/evaluate';
 import { getGenerator } from '../parts/generators';
 import { sanitizeParams } from '../parts/generators/types';
@@ -145,13 +146,20 @@ export function decodeBase64(text: string): Uint8Array {
 // Design files store typed arrays little-endian, which is also the byte order
 // of every platform this app runs on, so the bytes are reinterpreted in place.
 // The buffer is freshly made, hence always aligned.
-function decodeMesh(asset: MeshAsset): MeshData {
+function decodeMesh(asset: MeshAsset): MeshWithUV {
   const p = decodeBase64(asset.positions);
   const t = decodeBase64(asset.triangles);
-  return {
+  const mesh: MeshWithUV = {
     positions: new Float32Array(p.buffer, 0, Math.floor(p.length / 12) * 3),
     triangles: new Uint32Array(t.buffer, 0, Math.floor(t.length / 12) * 3),
   };
+  if (asset.uv) {
+    const u = decodeBase64(asset.uv);
+    const uv = new Float32Array(u.buffer, 0, Math.floor(u.length / 8) * 2);
+    // Only coordinates that cover every corner are of use.
+    if (uv.length === mesh.triangles.length * 2 && uv.every(Number.isFinite)) mesh.uv = uv;
+  }
+  return mesh;
 }
 
 // ---------------------------------------------------------------------------
@@ -170,7 +178,7 @@ type Built =
   /** `sources` for a group: the parts its faces came from, so each can be shown in its own color. */
   | { solid: Manifold; triangles: number; sources?: Source[] }
   /** An imported mesh that is not watertight. It can be shown and exported as it is, but not combined. */
-  | { solid: null; open: MeshData; triangles: number };
+  | { solid: null; open: MeshWithUV; triangles: number };
 
 // Least recently used first (a Map iterates in insertion order; using an entry re-inserts it).
 const cache = new Map<string, Built>();
@@ -411,23 +419,47 @@ function meshEntry(k: ManifoldToplevel, node: ImportNode, asset: MeshAsset): Bui
   if (data.triangles.some((v) => v >= count)) throw new Error(`The mesh of "${node.name}" is damaged.`);
   // NaN or infinite coordinates would get through the kernel and poison every normal around them.
   if (!data.positions.every(Number.isFinite)) throw new Error(`The mesh of "${node.name}" is damaged: some points have no position.`);
-  const solid = meshSolid(k, data.positions, data.triangles);
+  const solid = meshSolid(k, data.positions, data.triangles, data.uv);
   if (!solid) return { solid: null, open: data, triangles: data.triangles.length / 3 };
   if (solid.volume() >= 0) return solidEntry(solid);
   // Closed, but inside out (the file lists its triangles clockwise): turn every triangle over.
   solid.delete();
   const turned = data.triangles.slice();
+  const uv = data.uv?.slice();
   for (let i = 0; i < turned.length; i += 3) {
     turned[i + 1] = data.triangles[i + 2];
     turned[i + 2] = data.triangles[i + 1];
+    if (uv && data.uv) {
+      uv.set(data.uv.subarray((i + 2) * 2, (i + 3) * 2), (i + 1) * 2);
+      uv.set(data.uv.subarray((i + 1) * 2, (i + 2) * 2), (i + 2) * 2);
+    }
   }
-  const fixed = meshSolid(k, data.positions, turned);
+  const fixed = meshSolid(k, data.positions, turned, uv);
   return fixed ? solidEntry(fixed) : { solid: null, open: data, triangles: data.triangles.length / 3 };
 }
 
-/** A solid from an indexed triangle mesh, or null if the mesh is not watertight. */
-function meshSolid(k: ManifoldToplevel, positions: Float32Array, triangles: Uint32Array): Manifold | null {
-  const mesh = new k.Mesh({ numProp: 3, vertProperties: positions, triVerts: triangles });
+/** Properties per vertex of a solid made from a mesh with texture coordinates: xyz and uv. */
+const UV_PROPS = 5;
+
+/**
+ * A solid from an indexed triangle mesh, or null if the mesh is not
+ * watertight. Texture coordinates (per corner) ride along as vertex
+ * properties: every corner becomes a vertex of its own, and the kernel joins
+ * those at one place into one, so the coordinates survive anything it does.
+ */
+function meshSolid(k: ManifoldToplevel, positions: Float32Array, triangles: Uint32Array, uv?: Float32Array): Manifold | null {
+  let mesh: Mesh;
+  if (uv) {
+    const props = new Float32Array(triangles.length * UV_PROPS);
+    for (let c = 0; c < triangles.length; c++) {
+      props.set(positions.subarray(triangles[c] * 3, triangles[c] * 3 + 3), c * UV_PROPS);
+      props[c * UV_PROPS + 3] = uv[c * 2];
+      props[c * UV_PROPS + 4] = uv[c * 2 + 1];
+    }
+    mesh = new k.Mesh({ numProp: UV_PROPS, vertProperties: props, triVerts: Uint32Array.from({ length: triangles.length }, (_, i) => i) });
+  } else {
+    mesh = new k.Mesh({ numProp: 3, vertProperties: positions, triVerts: triangles });
+  }
   // Files rarely share vertices between faces; this joins the ones that coincide. (It leaves our arrays alone.)
   mesh.merge();
   // A mesh with open or over-shared edges comes out with an error status (and would leak if the wrapper threw).
@@ -457,8 +489,8 @@ interface Runs {
   ids: Uint32Array;
 }
 
-/** Indexed triangles of a solid, in arrays of their own (safe to transfer out of the worker). */
-function meshOf(solid: Manifold): MeshData & { runs: Runs } {
+/** Indexed triangles of a solid, in arrays of their own (safe to transfer out of the worker), with any texture coordinates per corner. */
+function meshOf(solid: Manifold): MeshWithUV & { runs: Runs } {
   const raw = solid.getMesh();
   const n = raw.numProp;
   const positions =
@@ -467,7 +499,17 @@ function meshOf(solid: Manifold): MeshData & { runs: Runs } {
       : Float32Array.from({ length: (raw.vertProperties.length / n) * 3 }, (_, i) => {
           return raw.vertProperties[Math.floor(i / 3) * n + (i % 3)];
         });
-  return { positions, triangles: raw.triVerts.slice(), runs: { index: raw.runIndex.slice(), ids: raw.runOriginalID.slice() } };
+  const triangles = raw.triVerts.slice();
+  const out: MeshWithUV & { runs: Runs } = { positions, triangles, runs: { index: raw.runIndex.slice(), ids: raw.runOriginalID.slice() } };
+  if (n >= UV_PROPS) {
+    const uv = new Float32Array(triangles.length * 2);
+    for (let c = 0; c < triangles.length; c++) {
+      uv[c * 2] = raw.vertProperties[triangles[c] * n + 3];
+      uv[c * 2 + 1] = raw.vertProperties[triangles[c] * n + 4];
+    }
+    out.uv = uv;
+  }
+  return out;
 }
 
 /** Which part each triangle came from, given the runs of a group's mesh and the ids its parts went in under. */
@@ -524,10 +566,12 @@ export function build(key: string, node: SceneNode): BuildResult {
   return operation((k) => {
     const entry = builtOf(k, node, key);
     if (!entry.solid) {
-      const { positions, triangles } = entry.open;
+      const { positions, triangles, uv } = entry.open;
+      const render = creasedNormals(positions, triangles, CREASE_ANGLE);
+      if (uv) render.uv = uv.slice();
       return {
         key,
-        render: creasedNormals(positions, triangles, CREASE_ANGLE),
+        render,
         bounds: boundsOfPositions(positions),
         triangles: entry.triangles,
         volume: 0,
@@ -535,9 +579,12 @@ export function build(key: string, node: SceneNode): BuildResult {
       };
     }
     const mesh = meshOf(entry.solid);
+    const render = creasedNormals(mesh.positions, mesh.triangles, CREASE_ANGLE);
+    // Only an imported mesh's own coordinates mean anything; a group's are a jumble of its parts'.
+    if (mesh.uv && node.type === 'import') render.uv = mesh.uv;
     const result: BuildResult = {
       key,
-      render: creasedNormals(mesh.positions, mesh.triangles, CREASE_ANGLE),
+      render,
       bounds: toBounds(entry.solid.boundingBox()),
       triangles: entry.triangles,
       volume: entry.solid.volume(),
@@ -583,6 +630,79 @@ export function exportNodes(nodes: SceneNode[], outline: boolean, fine = false, 
   }
 }
 
+/**
+ * The nodes placed in the design, each as one closed part per color: a
+ * painted object is one part; a mixed group is one per color, its holes cut
+ * from all of them and the parts kept from overlapping (the first color wins
+ * where they would), so that a slicer can give each its own material. Holes,
+ * hidden nodes and pictures are left out. An open mesh goes out as it is.
+ * With `local` the parts stay in the nodes' own built frames (see `builtSize`).
+ */
+export function exportColored(nodes: SceneNode[], fine = false, local = false): ColoredExport {
+  refining = fine;
+  try {
+    return operation((k) =>
+      scoped((keep): ColoredExport => {
+        const warnings: string[] = [];
+        const objects: ColoredObject[] = [];
+        for (const node of nodes) {
+          if (node.hole || node.hidden || node.type === 'picture') continue;
+          const entry = builtOf(k, node);
+          if (!entry.solid) {
+            const mesh = local ? { positions: entry.open.positions.slice(), triangles: entry.open.triangles.slice() } : transformed(entry.open, nodeMatrix(node));
+            objects.push({ name: node.name, parts: [{ color: node.color, mesh }] });
+            warnings.push(`"${node.name}" is not watertight and was exported as-is.`);
+            continue;
+          }
+          const matrix = mat4(nodeMatrix(node));
+          const parts: ColoredPart[] = coloredParts(k, node, keep).map((p) => ({ color: p.color, mesh: meshOf(local ? p.solid : keep(p.solid.transform(matrix))) }));
+          if (parts.length) objects.push({ name: node.name, parts });
+        }
+        if (objects.length === 0) throw new Error('There is nothing to export.');
+        return { objects, warnings };
+      }),
+    );
+  } finally {
+    refining = false;
+  }
+}
+
+/** A node's solid in its built frame, split by color (see `exportColored`); the solids are the cache's own or kept. */
+function coloredParts(k: ManifoldToplevel, node: SceneNode, keep: Keep): { color: string; solid: Manifold }[] {
+  if (node.type !== 'group' || !node.mixed) {
+    const { solid } = builtOf(k, node);
+    if (!solid) throw new Error(`"${node.name}" is not a watertight mesh, so it cannot be combined with other shapes.`);
+    return [{ color: paintOf(node), solid }];
+  }
+  // In the order their colors first appear: the first solid's color wins where parts overlap.
+  const regions = new Map<string, Manifold[]>();
+  const holes: Manifold[] = [];
+  for (const child of node.children) {
+    if (child.type === 'picture') continue;
+    if (child.hole) {
+      holes.push(placed(k, child, keep));
+      continue;
+    }
+    const matrix = mat4(nodeMatrix(child));
+    for (const part of coloredParts(k, child, keep)) {
+      const list = regions.get(part.color) ?? [];
+      list.push(keep(part.solid.transform(matrix)));
+      regions.set(part.color, list);
+    }
+  }
+  const out: { color: string; solid: Manifold }[] = [];
+  let taken: Manifold | null = null;
+  for (const [color, solids] of regions) {
+    let solid = solids.length === 1 ? solids[0] : keep(k.Manifold.union(solids));
+    if (holes.length) solid = keep(k.Manifold.difference([solid, ...holes]));
+    if (taken) solid = keep(k.Manifold.difference([solid, taken]));
+    if (checked(solid).isEmpty()) continue;
+    out.push({ color, solid });
+    taken = taken ? keep(k.Manifold.union([taken, solid])) : solid;
+  }
+  return out;
+}
+
 /** With `local`, the nodes' geometry is left in their own built frames (see `builtSize`) instead of being placed. */
 function exportAt(nodes: SceneNode[], outline: boolean, local: boolean): ExportResult {
   return operation((k) =>
@@ -590,8 +710,9 @@ function exportAt(nodes: SceneNode[], outline: boolean, local: boolean): ExportR
       const warnings: string[] = [];
       const solids: Manifold[] = [];
       const parts: MeshData[] = [];
-      // The parts of a group exported on its own, in place, can keep their colors.
+      // The parts of a group exported on its own, in place, can keep their colors; an imported mesh its coordinates.
       let sources: Source[] | undefined;
+      let uv: Float32Array | undefined;
       for (const node of nodes) {
         // A picture on its own is a sheet with nothing solid about it; the pictures on an object go out with the object's skin.
         if (node.hole || node.hidden || (node.type === 'picture' && !local)) continue;
@@ -604,6 +725,7 @@ function exportAt(nodes: SceneNode[], outline: boolean, local: boolean): ExportR
         // A copy even when left in place: the worker hands the result's arrays over to the main thread,
         // which would strip the cache's own.
         parts.push(local ? { positions: entry.open.positions.slice(), triangles: entry.open.triangles.slice() } : transformed(entry.open, nodeMatrix(node)));
+        if (local && nodes.length === 1 && entry.open.uv) uv = entry.open.uv.slice();
         warnings.push(
           outline
             ? `"${node.name}" is not watertight: it was exported as-is and is missing from the outline.`
@@ -621,6 +743,7 @@ function exportAt(nodes: SceneNode[], outline: boolean, local: boolean): ExportR
         const mesh = meshOf(merged);
         parts.unshift(mesh);
         if (sources) faces = facesOf(mesh, sources);
+        if (local && nodes.length === 1 && nodes[0].type === 'import' && mesh.uv) uv = mesh.uv;
         boxes.push(toBounds(merged.boundingBox()));
         volume = merged.volume();
         if (outline) {
@@ -632,6 +755,7 @@ function exportAt(nodes: SceneNode[], outline: boolean, local: boolean): ExportR
       const result: ExportResult = { mesh: concatenate(parts), bounds: unionBounds(boxes), volume, warnings };
       if (outline) result.outline = contours;
       if (faces) result.faces = faces;
+      if (uv) result.uv = uv;
       return result;
     }),
   );

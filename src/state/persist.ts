@@ -1,8 +1,7 @@
-// What survives a restart: preferences (localStorage) and the design that was
-// open (IndexedDB, since imported meshes can be far larger than localStorage allows).
+// Preferences, kept in localStorage. Projects themselves live in the projects
+// store (see projects.ts), not here.
 import { FILE_FORMAT } from '../app';
 import type { FormatId } from '../io/export';
-import type { Doc } from '../model/types';
 
 export type Theme = 'dark' | 'light';
 
@@ -15,8 +14,10 @@ export interface Prefs {
   format: FormatId;
   /** Which tab the left panel shows: the library of shapes and parts, or the design's objects. */
   sidebar: 'library' | 'objects';
-  /** Recently used design files (desktop app). */
-  recent: string[];
+  /** The folder projects are kept in, when the user picked one (desktop app); null for the default. */
+  projectsDir: string | null;
+  /** Key of the project that was open last, to open it again at start-up. */
+  lastProject: string | null;
 }
 
 export const SNAP_STEPS = [0, 0.1, 0.25, 0.5, 1, 2, 5, 10];
@@ -38,7 +39,8 @@ export function loadPrefs(): Prefs {
     snap: SNAP_STEPS.includes(saved.snap as number) ? (saved.snap as number) : 1,
     format: (['stl', '3mf', 'obj', 'glb', 'svg', 'dxf'] as const).find((f) => f === saved.format) ?? 'stl',
     sidebar: saved.sidebar === 'objects' ? 'objects' : 'library',
-    recent: Array.isArray(saved.recent) ? saved.recent.filter((p): p is string => typeof p === 'string').slice(0, 8) : [],
+    projectsDir: typeof saved.projectsDir === 'string' && saved.projectsDir ? saved.projectsDir : null,
+    lastProject: typeof saved.lastProject === 'string' && saved.lastProject ? saved.lastProject : null,
   };
 }
 
@@ -48,48 +50,4 @@ export function savePrefs(prefs: Prefs): void {
   } catch {
     // Storage full or blocked; preferences just won't persist.
   }
-}
-
-export interface Session {
-  doc: Doc;
-  filePath: string | null;
-  dirty: boolean;
-}
-
-const DB_NAME = FILE_FORMAT;
-const STORE = 'session';
-
-function withStore<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const open = indexedDB.open(DB_NAME, 1);
-    open.onupgradeneeded = () => open.result.createObjectStore(STORE);
-    open.onerror = () => reject(open.error);
-    open.onsuccess = () => {
-      const db = open.result;
-      const tx = db.transaction(STORE, mode);
-      const request = run(tx.objectStore(STORE));
-      tx.oncomplete = () => {
-        db.close();
-        resolve(request.result);
-      };
-      tx.onerror = tx.onabort = () => {
-        db.close();
-        reject(tx.error);
-      };
-    };
-  });
-}
-
-export async function loadSession(): Promise<Session | null> {
-  try {
-    const session = await withStore<Session | undefined>('readonly', (s) => s.get('current'));
-    return session && Array.isArray(session.doc?.scene) ? session : null;
-  } catch {
-    return null;
-  }
-}
-
-export function saveSession(session: Session): void {
-  // Losing the session copy is not worth interrupting anyone for.
-  withStore('readwrite', (s) => s.put(session, 'current')).catch(() => {});
 }

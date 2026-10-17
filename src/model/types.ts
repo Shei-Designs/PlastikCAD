@@ -44,11 +44,15 @@ interface NodeBase {
   note?: string;
 }
 
-/** A picture over an object's whole surface: wrapped once around its vertical axis, or tiled every `scale` mm. */
+/**
+ * A picture over an object's whole surface: wrapped once around its vertical
+ * axis, tiled every `scale` mm, or, on an imported mesh that brought its own
+ * texture coordinates, laid out as the file had it (`own`).
+ */
 export interface Texture {
   /** Key of an image in `Doc.assets`. */
   asset: string;
-  mode: 'wrap' | 'tile';
+  mode: 'wrap' | 'tile' | 'own';
   /** Millimeters per repeat of a tiled picture. */
   scale: number;
   /** Degrees a wrapped picture is turned round the object; 0 puts its middle on the +X side. */
@@ -154,6 +158,8 @@ export interface MeshAsset {
   positions: string;
   /** Uint32 vertex indices, three per triangle. */
   triangles: string;
+  /** Float32 texture coordinates per corner (two per corner, three corners per triangle, v up), when the file had them. */
+  uv?: string;
 }
 
 /** Imported 2D artwork, centered on its bounding box; extruded 1 mm along Z (then scaled by the node). */
@@ -184,7 +190,11 @@ export interface ImageAsset {
 export type Asset = MeshAsset | OutlineAsset | ImageAsset;
 
 export interface Doc {
+  /** Identifies the project across renames, copies to other devices and sync. */
+  id: string;
   name: string;
   scene: Scene;
   assets: Record<string, Asset>;
+  /** Small picture of the design (a JPEG data URL), shown by the projects browser. */
+  thumb?: string;
 }

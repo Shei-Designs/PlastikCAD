@@ -4,7 +4,6 @@ import { writeDxf } from './dxf';
 import { writeObj } from './obj';
 import { writeStl } from './stl';
 import { writeSvg } from './svg';
-import { write3mf } from './threemf';
 
 export type FormatId = 'stl' | '3mf' | 'obj' | 'glb' | 'svg' | 'dxf';
 
@@ -30,7 +29,7 @@ export const FORMATS: ExportFormat[] = [
     id: '3mf',
     label: '3MF',
     extension: '3mf',
-    description: 'Mesh with units for slicers',
+    description: 'Mesh with colors and units for slicers',
     kind: '3d',
     mime: 'model/3mf',
   },
@@ -38,7 +37,7 @@ export const FORMATS: ExportFormat[] = [
     id: 'obj',
     label: 'OBJ',
     extension: 'obj',
-    description: 'Text mesh for modeling tools',
+    description: 'Text mesh with colors for modeling tools',
     kind: '3d',
     mime: 'model/obj',
   },
@@ -68,14 +67,13 @@ export const FORMATS: ExportFormat[] = [
   },
 ];
 
-export function exportMesh(id: 'stl' | '3mf' | 'obj', mesh: MeshData, name: string): Uint8Array {
+/** The single-mesh, colorless formats; a 3MF or OBJ with colors is written from colored parts instead (see `write3mf`, `writeObj`). */
+export function exportMesh(id: 'stl' | 'obj', mesh: MeshData, name: string): Uint8Array {
   switch (id) {
     case 'stl':
       return writeStl(mesh, name);
-    case '3mf':
-      return write3mf(mesh, name);
     case 'obj':
-      return writeObj(mesh, name);
+      return writeObj([{ name, parts: [{ color: '', mesh }] }], name).obj;
   }
 }
 

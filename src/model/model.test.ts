@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { emptyDoc, legacyVersions, parseDoc, serializeDoc } from './file';
+import { emptyDoc, legacyVersions, parseDoc, readHeader, serializeDoc } from './file';
 import { geomKey } from './geomKey';
 import { apply, axisRotation, determinant, eulerOf, multiply, nodeMatrix, rotation } from './math';
 import type { Mat } from './math';
@@ -431,6 +431,7 @@ describe('design files', () => {
     delete (label as { shape?: unknown }).shape;
     delete (label as { params?: unknown }).params;
     return {
+      id: 'bracket01',
       name: 'Bracket',
       scene: [box, group, { ...drawing, hidden: true }, { ...label, note: 'Engrave 0.6 mm deep' }],
       assets: {
@@ -475,7 +476,9 @@ describe('design files', () => {
       assets: {},
     };
     const doc = parseDoc(JSON.stringify(old));
-    expect(doc).toEqual({ name: 'Bracket', scene: [box], assets: {} });
+    // A file from before projects had ids gets one.
+    expect(doc.id).toMatch(/^[a-z0-9]{8}$/);
+    expect(doc).toEqual({ id: doc.id, name: 'Bracket', scene: [box], assets: {} });
     expect(serializeDoc(doc)).not.toContain('versions');
     const kept = legacyVersions(JSON.stringify(old));
     expect(kept.map((d) => d.name)).toEqual(['Bracket - First', 'Bracket - Taller']);
@@ -509,7 +512,10 @@ describe('design files', () => {
   });
 
   it('round-trips an empty design', () => {
-    expect(parseDoc(serializeDoc(emptyDoc()))).toEqual(emptyDoc());
+    const empty = emptyDoc();
+    expect(parseDoc(serializeDoc(empty))).toEqual(empty);
+    // Every new design gets an id of its own.
+    expect(emptyDoc().id).not.toBe(empty.id);
   });
 
   it('rejects things that are not designs', () => {
@@ -601,13 +607,48 @@ describe('design files', () => {
   });
 });
 
+describe('file headers', () => {
+  const THUMB = 'data:image/jpeg;base64,/9j/4AAQSkZJRg==';
+  const body = { ...makeShape('box'), id: 'body0001', name: 'Body' };
+  const doc = (): Doc => ({ id: 'proj0001', name: 'Hinge "left"', scene: [body], assets: {}, thumb: THUMB });
+
+  it('writes the header before the scene and reads it back from the start of the file', () => {
+    const text = serializeDoc(doc());
+    expect(text.indexOf('"id": "proj0001"')).toBeLessThan(text.indexOf('"scene"'));
+    expect(text.indexOf('"thumb"')).toBeLessThan(text.indexOf('"scene"'));
+    expect(readHeader(text)).toEqual({ id: 'proj0001', name: 'Hinge "left"', thumb: THUMB });
+    // Only the start of the file, cut off inside the scene.
+    expect(readHeader(text.slice(0, text.indexOf('"scene"') + 40))).toEqual({ id: 'proj0001', name: 'Hinge "left"', thumb: THUMB });
+    expect(parseDoc(text)).toEqual(doc());
+  });
+
+  it('does not mistake an object for the header of a file without an id', () => {
+    const text = serializeDoc(doc()).replace('  "id": "proj0001",\n', '').replace(`  "thumb": "${THUMB}",\n`, '');
+    expect(readHeader(text)).toEqual({ id: null, name: 'Hinge "left"', thumb: null });
+    // Cut off before the scene: the objects' names and ids are nowhere near.
+    const head = text.slice(0, text.indexOf('"scene"'));
+    expect(readHeader(head)).toEqual({ id: null, name: 'Hinge "left"', thumb: null });
+  });
+
+  it('refuses what is not a design laid out by the app', () => {
+    expect(readHeader('{"format":"bashcad","version":2,"name":"Flat"}')).toBeNull();
+    expect(readHeader('<svg/>')).toBeNull();
+    expect(readHeader('{\n  "format": "bashcad",\n  "version": 2')).toBeNull();
+  });
+
+  it('drops a thumbnail that is not a small picture', () => {
+    expect(parseDoc(serializeDoc({ ...doc(), thumb: 'javascript:alert(1)' })).thumb).toBeUndefined();
+    expect(parseDoc(serializeDoc({ ...doc(), thumb: `data:image/jpeg;base64,${'A'.repeat(300_000)}` })).thumb).toBeUndefined();
+  });
+});
+
 describe('pictures and textures', () => {
   const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
   const picture = (over: Partial<PictureNode> = {}): PictureNode => ({ id: 'pic', type: 'picture', name: 'Pun', asset: 'img', mapping: 'wrap', angle: 140, natural: [1, 1, 1], pos: [0, 0, 5], rot: [0, 0, -90], size: [82, 82, 40], hole: false, color: '#ffffff', ...over });
   const doc = (): Doc => {
     const mug = makeGroup([shape('cylinder', { color: '#f2f2f0' }), picture()], { min: [-10, -10, 0], max: [10, 10, 20] }, 'Mug');
     const crate = shape('box', { texture: { asset: 'img', mode: 'tile', scale: 25, turn: 0 } });
-    return { name: 'Pun', scene: [mug, crate], assets: { img: { kind: 'image', name: 'pun.png', mime: 'image/png', data: PNG, width: 1, height: 1 } } };
+    return { id: 'pun00001', name: 'Pun', scene: [mug, crate], assets: { img: { kind: 'image', name: 'pun.png', mime: 'image/png', data: PNG, width: 1, height: 1 } } };
   };
 
   it('round-trips pictures, textures and the images they use', () => {

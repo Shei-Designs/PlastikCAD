@@ -4,6 +4,8 @@ import { APP_NAME } from '../app';
 import type { MeshData } from '../geometry/mesh';
 import type { Polygon } from '../model/types';
 import { exportMesh, exportOutline, FORMATS } from './export';
+import { writeObj } from './obj';
+import { write3mf } from './threemf';
 
 const text = (b: Uint8Array) => new TextDecoder().decode(b);
 
@@ -108,7 +110,7 @@ describe('STL', () => {
 
 describe('3MF', () => {
   it('is a zip with the three core parts', () => {
-    const files = unzipSync(exportMesh('3mf', ring, 'ring <1> & "co"'));
+    const files = unzipSync(write3mf([{ name: 'Ring', parts: [{ color: '#d8605a', mesh: ring }] }], 'ring <1> & "co"'));
     expect(Object.keys(files)).toEqual(['[Content_Types].xml', '_rels/.rels', '3D/3dmodel.model']);
     expect(strFromU8(files['_rels/.rels'])).toContain('Target="/3D/3dmodel.model"');
     expect(strFromU8(files['[Content_Types].xml'])).toContain('Extension="model"');
@@ -119,11 +121,53 @@ describe('3MF', () => {
     expect(xml.match(/<vertex /g)?.length).toBe(ring.positions.length / 3);
     expect(xml.match(/<triangle /g)?.length).toBe(ringTriangles);
     expect(xml.match(/<object /g)?.length).toBe(1);
-    expect(xml).toContain('<item objectid="1"/>');
+    expect(xml).toContain('<item objectid="2"/>');
+  });
+
+  it('gives every object its color as a base material, and a multicolored one a part per color', () => {
+    const objects = [
+      { name: 'Plate', parts: [{ color: '#d8605a', mesh: tetra }] },
+      { name: 'Knob', parts: [{ color: '#5fa777', mesh: tetra }, { color: '#d8605a', mesh: ring }] },
+    ];
+    const xml = strFromU8(unzipSync(write3mf(objects, 'two'))['3D/3dmodel.model']);
+    expect(xml).toContain('<basematerials id="1">');
+    expect(xml).toContain('<base name="Red" displaycolor="#D8605AFF"/>');
+    expect(xml).toContain('<base name="Green" displaycolor="#5FA777FF"/>');
+    expect(xml.match(/<base /g)?.length).toBe(2);
+    expect(xml).toContain('<object id="2" type="model" name="Plate" pid="1" pindex="0">');
+    expect(xml).toContain('<object id="3" type="model" name="Knob (Green)" pid="1" pindex="1">');
+    expect(xml).toContain('<object id="4" type="model" name="Knob (Red)" pid="1" pindex="0">');
+    expect(xml).toContain('<object id="5" type="model" name="Knob">');
+    expect(xml).toContain('<component objectid="3"/>');
+    expect(xml).toContain('<component objectid="4"/>');
+    expect(xml).toContain('<item objectid="2"/>');
+    expect(xml).toContain('<item objectid="5"/>');
+    expect(xml.match(/<item /g)?.length).toBe(2);
+    // A color off the palette is named by its value.
+    expect(strFromU8(unzipSync(write3mf([{ name: 'X', parts: [{ color: '#123456', mesh: tetra }] }], 'x'))['3D/3dmodel.model'])).toContain('<base name="#123456" displaycolor="#123456FF"/>');
   });
 });
 
 describe('OBJ', () => {
+  it('writes a material library for colored parts, and none for plain ones', () => {
+    const { obj, mtl, mtlName } = writeObj([{ name: 'Plate', parts: [{ color: '#d8605a', mesh: tetra }] }, { name: 'Knob', parts: [{ color: '#5fa777', mesh: tetra }, { color: '#d8605a', mesh: tetra }] }], 'my part');
+    const lines = text(obj).split('\n');
+    expect(mtlName).toBe('my_part.mtl');
+    expect(lines).toContain('mtllib my_part.mtl');
+    expect(lines).toContain('o Plate');
+    expect(lines).toContain('o Knob');
+    expect(lines).toContain('g Knob_Green');
+    expect(lines.filter((l) => l === 'usemtl Red')).toHaveLength(2);
+    expect(lines.filter((l) => l.startsWith('v '))).toHaveLength(12);
+    // Faces of the third part count on from the vertices before them.
+    expect(lines.filter((l) => l.startsWith('f ')).pop()).toBe('f 9 12 11');
+    const library = text(mtl!).split('\n');
+    expect(library).toContain('newmtl Red');
+    expect(library).toContain('Kd 0.847059 0.376471 0.352941');
+    expect(library.filter((l) => l.startsWith('newmtl'))).toEqual(['newmtl Red', 'newmtl Green']);
+    expect(writeObj([{ name: 'x', parts: [{ color: '', mesh: tetra }] }], 'x').mtl).toBeNull();
+  });
+
   it('writes vertices and 1-based faces', () => {
     const lines = text(exportMesh('obj', tetra, 'my part')).split('\n');
     expect(lines[0]).toContain(APP_NAME);
@@ -140,7 +184,7 @@ describe('open meshes', () => {
   it('are written by every mesh format', () => {
     expect(exportMesh('stl', open, 'open').length).toBe(84 + 50);
     expect(text(exportMesh('obj', open, 'open'))).toContain('f 1 2 3');
-    const xml = strFromU8(unzipSync(exportMesh('3mf', open, 'open'))['3D/3dmodel.model']);
+    const xml = strFromU8(unzipSync(write3mf([{ name: 'open', parts: [{ color: '#8fa3bf', mesh: open }] }], 'open'))['3D/3dmodel.model']);
     expect(xml).toContain('<triangle v1="0" v2="1" v3="2"/>');
   });
 });

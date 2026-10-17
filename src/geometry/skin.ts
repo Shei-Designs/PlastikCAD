@@ -21,8 +21,8 @@ export interface Sticker {
 export type Skin =
   /** A picture node: its own picture on its sheet, see-through where the picture is. */
   | { kind: 'picture'; asset: string; mapping: PictureMapping; angle: number; color: string }
-  /** A texture over the whole surface, over the object's own color where the picture is transparent. */
-  | { kind: 'texture'; asset: string; mode: 'wrap' | 'tile'; scale: number; turn: number; color: string }
+  /** A texture over the whole surface, over the object's own color where the picture is transparent; `own` as the imported file laid it out. */
+  | { kind: 'texture'; asset: string; mode: 'wrap' | 'tile' | 'own'; scale: number; turn: number; color: string }
   /**
    * Pictures projected onto the object, over its own color. On a mixed group the parts around the
    * pictures keep their own colors (which the surface carries as corner colors), so the atlas is
@@ -90,7 +90,9 @@ export function skinUVs(skin: Skin, node: SceneNode, positions: Float32Array, bo
       return sheetUVs(positions, skin.mapping, skin.angle);
     case 'texture': {
       const scale = localScale(node);
-      return coverSurface(positions, { mode: skin.mode, scale: skin.scale, turn: skin.turn, mm: [Math.abs(scale[0]), Math.abs(scale[1]), Math.abs(scale[2])], z: [bounds.min[2], bounds.max[2]] });
+      // The file's own coordinates come with the mesh (see `skinMesh`); a mesh without them is wrapped.
+      const mode = skin.mode === 'own' ? 'wrap' : skin.mode;
+      return coverSurface(positions, { mode, scale: skin.scale, turn: skin.turn, mm: [Math.abs(scale[0]), Math.abs(scale[1]), Math.abs(scale[2])], z: [bounds.min[2], bounds.max[2]] });
     }
     case 'stickers':
       return projectPictures(positions, projectors(skin.stickers, rects));
@@ -109,6 +111,7 @@ const projectors = (stickers: Sticker[], rects: [number, number, number, number]
  */
 export function skinMesh(skin: Skin, node: SceneNode, render: RenderMesh, bounds: Bounds, rects: [number, number, number, number][]): SkinMesh {
   if (skin.kind === 'stickers') return clipPictures(render.positions, render.normals, projectors(skin.stickers, rects));
+  if (skin.kind === 'texture' && skin.mode === 'own' && render.uv) return { positions: render.positions, normals: render.normals, uv: render.uv };
   return { positions: render.positions, normals: render.normals, uv: skinUVs(skin, node, render.positions, bounds, rects) };
 }
 

@@ -271,11 +271,16 @@ function PictureFields({ node }: { node: PictureNode }) {
   );
 }
 
-const TEXTURE_MODES: { id: 'none' | 'wrap' | 'tile'; label: string; title: string }[] = [
+type TextureMode = 'none' | 'wrap' | 'tile' | 'own';
+
+const TEXTURE_MODES: { id: TextureMode; label: string; title: string }[] = [
   { id: 'none', label: 'None', title: 'Plain color' },
   { id: 'wrap', label: 'Wrap', title: 'The picture once around the object, bottom to top, like a label' },
   { id: 'tile', label: 'Tile', title: 'The picture repeated over every side, for patterns and materials' },
 ];
+
+/** For an imported mesh that brought texture coordinates: the picture laid out as the file had it. */
+const OWN_MODE: (typeof TEXTURE_MODES)[number] = { id: 'own', label: 'Imported', title: 'Lays the picture out as the imported file had it' };
 
 function TextureFields({ node }: { node: SceneNode }) {
   const id = useId();
@@ -285,11 +290,13 @@ function TextureFields({ node }: { node: SceneNode }) {
   const pictures = picturesOf(node).length;
   const texture = node.texture ?? null;
   const mode = texture?.mode ?? 'none';
+  const asset = node.type === 'import' ? doc.assets[node.asset] : undefined;
+  const modes = asset?.kind === 'mesh' && asset.uv ? [...TEXTURE_MODES, OWN_MODE] : TEXTURE_MODES;
   const choose = async (key: string | null) => {
     if (key === 'new') key = await pickImage();
     if (key) setTexture({ asset: key, mode: texture?.mode ?? 'wrap', scale: texture?.scale ?? 50, turn: texture?.turn ?? 0 });
   };
-  const setMode = async (m: 'none' | 'wrap' | 'tile') => {
+  const setMode = async (m: TextureMode) => {
     if (m === 'none') return setTexture(null);
     if (texture) return setTexture({ ...texture, mode: m });
     const key = images[0]?.key ?? (await pickImage());
@@ -305,7 +312,7 @@ function TextureFields({ node }: { node: SceneNode }) {
         <>
           <div className="field">
             <div className="segmented" role="radiogroup" aria-label="Texture">
-              {TEXTURE_MODES.map((m) => (
+              {modes.map((m) => (
                 <button key={m.id} type="button" role="radio" aria-checked={m.id === mode} className={m.id === mode ? 'on' : ''} title={m.title} disabled={locked} onClick={() => void setMode(m.id)}>
                   {m.label}
                 </button>

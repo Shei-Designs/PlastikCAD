@@ -6,11 +6,13 @@ import { APP_NAME, FILE_EXTENSION } from '../app';
 import { clampParams } from '../geometry/shapes';
 import { encodeFloat32, encodeUint32 } from '../io/base64';
 import { exportMesh, exportOutline, FORMATS } from '../io/export';
+import { writeObj } from '../io/obj';
+import { write3mf } from '../io/threemf';
 import type { FormatId } from '../io/export';
 import { centerMesh, centerOutline, IMAGE_EXTENSIONS, IMPORT_EXTENSIONS, importFile } from '../io/import';
 import { bytesToBase64 } from '../io/base64';
 import { exportGlb } from './glbExport';
-import { emptyDoc, legacyVersions, MAX_NOTE, parseDoc, serializeDoc } from '../model/file';
+import { emptyDoc, HEAD_BYTES, legacyVersions, MAX_NOTE, parseDoc, readHeader, serializeDoc } from '../model/file';
 import { hashString } from '../model/geomKey';
 import { apply, axisRotation, boundsCenter, boundsSize, boxBounds, eulerOf, multiply, rotation, tidyVec, unionBounds } from '../model/math';
 import type { Bounds, Mat } from '../model/math';
@@ -44,8 +46,10 @@ import * as platform from '../platform';
 import type { PickedFile } from '../platform';
 import { DEFAULT_FONT, loadFont, outlineOf } from '../text/fonts';
 import { geometry } from './geometry';
-import { loadPrefs, loadSession, savePrefs, saveSession } from './persist';
+import { loadPrefs, savePrefs } from './persist';
 import type { Prefs } from './persist';
+import { DiskProjects, fileNameFor, hasProjectStore, openProjectStore, projectStore, useProjectStore } from './projects';
+import type { ProjectInfo } from './projects';
 
 export interface Notice {
   kind: 'error' | 'info';
@@ -56,10 +60,16 @@ export interface EditorState {
   doc: Doc;
   /** Ids of selected top-level nodes. */
   selection: string[];
-  /** Where the design is saved, if it has been (desktop app only). */
-  filePath: string | null;
-  /** The design as last saved or opened, to tell whether there are unsaved changes. */
+  /** Where the project is kept (its key in the project store), once it has been written. */
+  projectKey: string | null;
+  /** The design as last saved or opened, to tell whether there are changes still to write. */
   saved: { scene: Scene; name: string } | null;
+  /** A write to the project store is under way. */
+  saving: boolean;
+  /** The projects browser is open. */
+  browsing: boolean;
+  /** Where projects are kept, once start-up has looked: the folder (null in a browser) and whether another can be chosen. */
+  storage: { location: string | null; fixed: boolean; defaultDir: string | null } | null;
   /** New shape following the pointer until it is put down. */
   placing: SceneNode | null;
   /**
@@ -101,7 +111,10 @@ const UNDO_LIMIT = 200;
 let state: EditorState = {
   doc: emptyDoc(),
   selection: [],
-  filePath: null,
+  projectKey: null,
+  saving: false,
+  browsing: false,
+  storage: null,
   saved: null,
   placing: null,
   mating: null,
@@ -126,7 +139,7 @@ let alignPreview = false;
 let lastMerge: { key: string; time: number } | null = null;
 let clipboard: SceneNode[] = [];
 let noticeTimer: ReturnType<typeof setTimeout> | undefined;
-let sessionTimer: ReturnType<typeof setTimeout> | undefined;
+let autosaveTimer: ReturnType<typeof setTimeout> | undefined;
 
 function set(patch: Partial<EditorState>): void {
   const before = state;
@@ -134,7 +147,7 @@ function set(patch: Partial<EditorState>): void {
   if (state.aligning && patch.selection && patch.aligning === undefined && !sameIds(patch.selection, state.selection)) patch = { ...patch, aligning: null };
   state = { ...state, ...patch, canUndo: past.length > 0, canRedo: future.length > 0 };
   if (state.prefs !== before.prefs) savePrefs(state.prefs);
-  if (state.doc !== before.doc || state.filePath !== before.filePath || state.saved !== before.saved) scheduleSession();
+  if (state.doc !== before.doc && isDirty()) scheduleAutosave();
   for (const l of listeners) l();
 }
 
@@ -154,9 +167,12 @@ export function useEditor<T>(selector: (s: EditorState) => T): T {
 export const isDirty = (s: EditorState = state): boolean =>
   !s.saved || s.doc.scene !== s.saved.scene || s.doc.name !== s.saved.name;
 
-function scheduleSession(): void {
-  clearTimeout(sessionTimer);
-  sessionTimer = setTimeout(() => saveSession({ doc: docToSave(), filePath: state.filePath, dirty: isDirty() }), 600);
+/** How long after the last change the project is written. */
+const AUTOSAVE_MS = 1000;
+
+function scheduleAutosave(): void {
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(() => void saveProject(), AUTOSAVE_MS);
 }
 
 /**
@@ -1181,15 +1197,92 @@ export function cancelEditing(): void {
   commit(session.before, { selection: [session.root] });
 }
 
-// --- documents ----------------------------------------------------------------
+// --- projects -----------------------------------------------------------------
+//
+// A project is saved as it changes: a second after the last edit, when the
+// window is hidden or closed, and before another project is opened. There is
+// no Save; "Save a copy" writes the design somewhere else, "Open project file"
+// brings an outside file in as a project.
 
-function adopt(doc: Doc, filePath: string | null, dirty = false): void {
+/** Picture of the design for the projects browser, given by the viewer when there is one. */
+let thumbSource: (() => string | null) | null = null;
+/** Taking the picture means drawing the scene again, so it is not done on every save. */
+const THUMB_EVERY_MS = 10_000;
+let thumbTakenAt = 0;
+let writing: Promise<boolean> | null = null;
+let lastSaveError: string | null = null;
+
+export function provideThumbnail(source: (() => string | null) | null): void {
+  thumbSource = source;
+}
+
+function thumbFor(doc: Doc, fresh: boolean): string | undefined {
+  if (doc.scene.length === 0) return undefined;
+  if (!thumbSource) return doc.thumb;
+  const now = Date.now();
+  if (!fresh && doc.thumb && now - thumbTakenAt < THUMB_EVERY_MS) return doc.thumb;
+  const shot = thumbSource();
+  if (!shot) return doc.thumb;
+  thumbTakenAt = now;
+  return shot;
+}
+
+/** Whether the project is worth a file yet: it has one already, something was put in it, or it was named. */
+const worthSaving = (): boolean => state.projectKey !== null || state.doc.scene.length > 0 || state.doc.name !== 'Untitled';
+
+/**
+ * Writes the project to the store now, if anything changed. Resolves true once
+ * it is saved (or there was nothing to save), false when the write failed; the
+ * changes are then still pending and the next edit tries again.
+ */
+export function saveProject(fresh = false): Promise<boolean> {
+  clearTimeout(autosaveTimer);
+  if (writing) return writing.then(() => saveProject(fresh));
+  if (!isDirty() || !worthSaving()) return Promise.resolve(true);
+  if (!hasProjectStore()) return Promise.resolve(false);
+  writing = write(fresh).finally(() => {
+    writing = null;
+  });
+  return writing;
+}
+
+async function write(fresh: boolean): Promise<boolean> {
+  // What is being written counts as saved once it is, even if more changed meanwhile.
+  const base = { scene: state.doc.scene, name: state.doc.name };
+  const doc = docToSave();
+  const thumb = thumbFor(doc, fresh);
+  set({ saving: true });
+  try {
+    const key = await projectStore().write(state.projectKey, doc.name, serializeDoc({ ...doc, thumb }));
+    set({ projectKey: key, saved: base, saving: false, doc: thumb === state.doc.thumb ? state.doc : { ...state.doc, thumb } });
+    if (state.prefs.lastProject !== key) setPrefs({ lastProject: key });
+    lastSaveError = null;
+    return true;
+  } catch (e) {
+    set({ saving: false });
+    const message = e instanceof Error ? e.message : String(e);
+    // The same failure on every keystroke is reported once.
+    if (message !== lastSaveError) notify(`Could not save: ${message}`, 'error');
+    lastSaveError = message;
+    return false;
+  }
+}
+
+/** Ctrl+S: there is nothing to do but write what autosave would have a moment later, and say so. */
+export async function saveNow(): Promise<void> {
+  if (await saveProject(true)) notify(state.doc.scene.length || state.projectKey ? 'Saved' : 'Nothing to save yet');
+}
+
+function adopt(doc: Doc, key: string | null): void {
   abortAlignPreview();
   resetHistory();
+  clearTimeout(autosaveTimer);
+  thumbTakenAt = 0;
   set({
     doc,
-    filePath,
-    saved: dirty ? null : { scene: doc.scene, name: doc.name },
+    projectKey: key,
+    saved: { scene: doc.scene, name: doc.name },
+    saving: false,
     selection: [],
     placing: null,
     mating: null,
@@ -1197,99 +1290,107 @@ function adopt(doc: Doc, filePath: string | null, dirty = false): void {
     highlight: null,
     epoch: state.epoch + 1,
   });
-  if (filePath) rememberRecent(filePath);
+  setPrefs({ lastProject: key });
   // Lettering outlines are sent again as the fonts come back; imported meshes of the closed design are dropped.
   geometry.forgetAssets(Object.keys(doc.assets));
 }
 
-function rememberRecent(path: string): void {
-  setPrefs({ recent: [path, ...state.prefs.recent.filter((p) => p !== path)].slice(0, 8) });
-}
-
-async function okToDiscard(): Promise<boolean> {
-  if (!isDirty() || state.doc.scene.length === 0) return true;
-  return platform.confirm(`"${state.doc.name}" has unsaved changes. Discard them?`, {
+/** Writes what is pending before another project takes the screen; asks whether to go on if that fails. */
+async function leaveProject(): Promise<boolean> {
+  if (await saveProject(true)) return true;
+  return platform.confirm(`The latest changes to "${state.doc.name}" could not be saved. Leave anyway and lose them?`, {
     title: APP_NAME,
-    okLabel: 'Discard',
+    okLabel: 'Leave anyway',
     cancelLabel: 'Keep editing',
   });
 }
 
-export async function newDesign(): Promise<void> {
-  if (await okToDiscard()) adopt(emptyDoc(), null);
+export const openProjects = (): void => set({ browsing: true });
+export const closeProjects = (): void => set({ browsing: false });
+
+export async function newProject(): Promise<void> {
+  if (!(await leaveProject())) return;
+  adopt(emptyDoc(), null);
+  set({ browsing: false });
+}
+
+export async function openProject(key: string): Promise<void> {
+  try {
+    if (key === state.projectKey) return set({ browsing: false });
+    if (!(await leaveProject())) return;
+    const text = await projectStore().read(key);
+    adopt(parseDoc(text), key);
+    set({ browsing: false });
+    // A file saved before projects had ids was just given one: written back, so the folder knows it too.
+    if (!readHeader(text.slice(0, HEAD_BYTES))?.id) {
+      set({ saved: null });
+      scheduleAutosave();
+    }
+  } catch (e) {
+    fail(e);
+  }
 }
 
 const baseName = (fileName: string): string => fileName.replace(/\.[^.]+$/, '');
 const extension = (fileName: string): string => fileName.split('.').pop()?.toLowerCase() ?? '';
+const folderOf = (path: string): string => path.slice(0, Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1).replace(/[\\/]+$/, '');
 
-async function openFile(file: PickedFile): Promise<void> {
+/**
+ * A design file from outside: picked, dropped or double-clicked. It becomes a
+ * project of its own, with a fresh id so that it never passes for the one it
+ * was copied from. A file that is already in the projects folder is just opened.
+ */
+async function importProjectFile(file: PickedFile): Promise<void> {
   const text = new TextDecoder().decode(file.bytes);
   const doc = parseDoc(text);
   if (doc.name === 'Untitled') doc.name = baseName(file.name);
-  adopt(doc, file.path);
-  await offerLegacyVersions(text, file);
+  const store = projectStore();
+  if (file.path && store.location && folderOf(file.path) === store.location.replace(/[\\/]+$/, '')) return openProject(file.path);
+  if (!(await leaveProject())) return;
+  doc.id = newId();
+  const key = await store.write(null, doc.name, serializeDoc(doc));
+  adopt(doc, key);
+  set({ browsing: false });
+  notify(`Added "${doc.name}" to your projects.`);
+  await offerLegacyVersions(text, doc.name);
 }
 
 /**
  * Files from before format version 2 may carry saved versions, which the app
- * no longer keeps: each can be written out as a design of its own, next to the
- * file, before the first save drops them.
+ * no longer keeps: each can become a project of its own before they are dropped.
  */
-async function offerLegacyVersions(text: string, file: PickedFile): Promise<void> {
+async function offerLegacyVersions(text: string, name: string): Promise<void> {
   const versions = legacyVersions(text);
   if (versions.length === 0) return;
   const count = `${versions.length} saved version${versions.length === 1 ? '' : 's'}`;
-  if (!file.path) return notify(`The ${count} in this file are no longer kept and will be dropped when it is saved.`);
-  const keep = await platform.confirm(`This design carries ${count} from an older version of the app, which no longer keeps them. Save each as a design file next to it?`, {
+  const keep = await platform.confirm(`"${name}" carries ${count} from an older version of the app, which no longer keeps them. Add each as a project of its own?`, {
     title: APP_NAME,
-    okLabel: 'Save them',
+    okLabel: 'Add them',
     cancelLabel: 'Drop them',
   });
   if (!keep) return;
-  const folder = file.path.slice(0, file.path.length - file.name.length);
-  const taken = new Set<string>();
-  for (const version of versions) {
-    let name = version.name.replace(/[\\/:*?"<>|]/g, '-');
-    for (let n = 2; taken.has(name); n++) name = `${version.name} (${n})`;
-    taken.add(name);
-    await platform.writePath(`${folder}${name}.${FILE_EXTENSION}`, new TextEncoder().encode(serializeDoc(version)));
-  }
-  notify(`Saved ${count} next to "${file.name}".`);
+  for (const version of versions) await projectStore().write(null, version.name, serializeDoc(version));
+  notify(`Added ${count} as projects.`);
 }
 
-export async function openDesign(): Promise<void> {
+/** "Open project file…": brings a design file from anywhere in as a project. */
+export async function openProjectFile(): Promise<void> {
   try {
-    if (!(await okToDiscard())) return;
     const [file] = await platform.pickFiles({ filters: DESIGN_FILTER });
-    if (file) await openFile(file);
+    if (file) await importProjectFile(file);
   } catch (e) {
     fail(e);
   }
 }
 
-export async function openPath(path: string, ask = true): Promise<void> {
+/** "Save a copy…": writes the design to a place of the user's choosing, to share or keep. The project itself stays where it is. */
+export async function saveCopy(): Promise<boolean> {
   try {
-    if (ask && !(await okToDiscard())) return;
-    await openFile(await platform.readPath(path));
-  } catch (e) {
-    setPrefs({ recent: state.prefs.recent.filter((p) => p !== path) });
-    fail(e);
-  }
-}
-
-function markSaved(filePath: string | null): void {
-  set({ filePath, saved: { scene: state.doc.scene, name: state.doc.name } });
-  if (filePath) rememberRecent(filePath);
-}
-
-export async function saveDesignAs(): Promise<boolean> {
-  try {
+    await saveProject(true);
     const bytes = new TextEncoder().encode(serializeDoc(docToSave()));
-    const where = await platform.saveAs(`${state.doc.name}.${FILE_EXTENSION}`, DESIGN_FILTER, bytes, 'application/json');
+    const where = await platform.saveAs(fileNameFor(state.doc.name), DESIGN_FILTER, bytes, 'application/json');
     if (!where) return false;
-    if (state.doc.name === 'Untitled') set({ doc: { ...state.doc, name: baseName(where.name) } });
-    markSaved(where.path);
-    notify(`Saved ${where.path ?? where.name}`);
+    notify(`Saved a copy to ${where.path ?? where.name}`);
     return true;
   } catch (e) {
     fail(e);
@@ -1297,73 +1398,223 @@ export async function saveDesignAs(): Promise<boolean> {
   }
 }
 
-export async function saveDesign(): Promise<boolean> {
-  if (!state.filePath) return saveDesignAs();
-  try {
-    await platform.writePath(state.filePath, new TextEncoder().encode(serializeDoc(docToSave())));
-    markSaved(state.filePath);
-    return true;
-  } catch (e) {
-    fail(e);
-    return false;
-  }
-}
-
-export function renameDesign(name: string): void {
+export function renameProject(name: string): void {
   const clean = name.trim();
   if (clean && clean !== state.doc.name) set({ doc: { ...state.doc, name: clean } });
 }
 
-/** Turn imported files into objects standing on the plate, side by side. */
-function importModels(files: PickedFile[]): void {
+/** The projects in the store, newest first. */
+export async function listProjects(): Promise<ProjectInfo[]> {
+  try {
+    const items = await projectStore().list();
+    return items.sort((a, b) => b.modified - a.modified || a.name.localeCompare(b.name));
+  } catch (e) {
+    fail(e);
+    return [];
+  }
+}
+
+export async function deleteProject(key: string, name: string): Promise<boolean> {
+  try {
+    const sure = await platform.confirm(`Delete "${name}"? This cannot be undone.`, { title: APP_NAME, okLabel: 'Delete', cancelLabel: 'Keep' });
+    if (!sure) return false;
+    if (key === state.projectKey) {
+      // Nothing pending may write it back after it is gone.
+      clearTimeout(autosaveTimer);
+      await writing;
+    }
+    await projectStore().remove(key);
+    if (key === state.projectKey) adopt(emptyDoc(), null);
+    return true;
+  } catch (e) {
+    fail(e);
+    return false;
+  }
+}
+
+/** A copy of a project, as a project of its own. Returns its key. */
+export async function duplicateProject(key: string): Promise<string | null> {
+  try {
+    if (key === state.projectKey) await saveProject(true);
+    const store = projectStore();
+    const doc = parseDoc(await store.read(key));
+    doc.id = newId();
+    doc.name = `${doc.name} copy`;
+    return await store.write(null, doc.name, serializeDoc(doc));
+  } catch (e) {
+    fail(e);
+    return null;
+  }
+}
+
+/** Renames a project from the browser, open or not. */
+export async function renameProjectAt(key: string, name: string): Promise<void> {
+  const clean = name.trim();
+  if (!clean) return;
+  if (key === state.projectKey) return renameProject(clean);
+  try {
+    const store = projectStore();
+    const doc = parseDoc(await store.read(key));
+    if (doc.name === clean) return;
+    doc.name = clean;
+    await store.write(key, clean, serializeDoc(doc));
+  } catch (e) {
+    fail(e);
+  }
+}
+
+/**
+ * Desktop: keeps projects in another folder from now on, moving the existing
+ * ones there if the user wants. `dir` null asks for the folder.
+ */
+export async function chooseProjectsFolder(dir: string | null = null): Promise<void> {
+  const storage = state.storage;
+  if (!storage || storage.fixed || !storage.location) return;
+  try {
+    const picked = dir ?? (await platform.pickFolder(storage.location));
+    if (!picked || picked === storage.location) return;
+    if (!(await leaveProject())) return;
+    const old = projectStore();
+    const items = await old.list();
+    const fresh = new DiskProjects(picked);
+    let move = false;
+    if (items.length) {
+      const count = `${items.length} project${items.length === 1 ? '' : 's'}`;
+      move = await platform.confirm(`Move your ${count} to the new folder? Otherwise they stay where they are and only new projects go there.`, {
+        title: APP_NAME,
+        okLabel: 'Move them',
+        cancelLabel: 'Leave them',
+      });
+    }
+    let openKey = state.projectKey;
+    if (move) {
+      for (const item of items) {
+        const text = await old.read(item.key);
+        const key = await fresh.write(null, item.name, text);
+        await old.remove(item.key);
+        if (item.key === state.projectKey) openKey = key;
+      }
+    }
+    useProjectStore(fresh);
+    setPrefs({ projectsDir: picked === storage.defaultDir ? null : picked });
+    set({ storage: { ...storage, location: picked }, projectKey: openKey });
+    setPrefs({ lastProject: openKey });
+  } catch (e) {
+    fail(e);
+  }
+}
+
+/** The default color of an imported object that brought none. */
+const IMPORT_COLOR = '#8fa3bf';
+
+/**
+ * Turn imported files into objects standing on the plate, side by side. A
+ * file of several parts (the objects of a 3MF, the materials of an OBJ or
+ * GLB) becomes one group, its parts where the file put them, each in its own
+ * color. Returns the names of the companion files the models used up.
+ */
+async function importModels(files: PickedFile[], companions: PickedFile[]): Promise<Set<string>> {
+  const used = new Set<string>();
   const assets = { ...state.doc.assets };
-  const nodes: ImportNode[] = [];
+  const placed: SceneNode[] = [];
   let scene = state.doc.scene;
   let x = 0;
-  for (const file of files) {
-    const data = importFile(file.name, file.bytes);
-    let asset: Asset;
-    let natural: Vec3;
-    let size: Vec3;
-    if (data.kind === 'mesh') {
-      natural = centerMesh(data).size;
-      size = natural;
-      asset = { kind: 'mesh', positions: encodeFloat32(data.positions), triangles: encodeUint32(data.triangles) };
-    } else {
-      const flat = centerOutline(data).size;
-      natural = [flat[0], flat[1], 1];
-      // Flat artwork comes in as a plate a few millimeters thick.
-      size = [flat[0], flat[1], 3];
-      asset = { kind: 'outline', shapes: data.shapes };
-    }
-    // Checked as stored: a hair of an extent rounds away to nothing.
-    natural = tidyVec(natural);
-    size = tidyVec(size);
-    if (!natural.every((v) => v > 0)) throw new Error(`"${file.name}" is flat or empty, so it cannot be made into a solid.`);
-    const text = asset.kind === 'mesh' ? asset.positions + asset.triangles : JSON.stringify(asset.shapes);
-    const key = `${asset.kind}-${hashString(text)}-${text.length.toString(36)}`;
-    assets[key] = asset;
-    const node: ImportNode = {
-      id: newId(),
-      type: 'import',
-      name: uniqueName(scene, baseName(file.name)),
-      asset: key,
-      natural,
-      pos: tidyVec([x + size[0] / 2, 0, size[2] / 2]),
-      rot: [0, 0, 0],
-      size,
-      hole: false,
-      color: '#8fa3bf',
-    };
-    x += size[0] + 5;
-    nodes.push(node);
+  const put = (node: SceneNode) => {
+    node.pos = tidyVec([x + node.size[0] / 2, 0, node.size[2] / 2]);
+    x += node.size[0] + 5;
+    placed.push(node);
     scene = [...scene, node];
+  };
+  for (const file of files) {
+    const data = importFile(file.name, file.bytes, companions);
+    const name = uniqueName(scene, baseName(file.name));
+    const members: ImportNode[] = [];
+    if (data.kind === 'model') {
+      for (const n of data.used) used.add(n);
+      for (const part of data.parts) {
+        const { size, center } = centerMesh(part.mesh);
+        const asset: Asset = { kind: 'mesh', positions: encodeFloat32(part.mesh.positions), triangles: encodeUint32(part.mesh.triangles) };
+        if (part.mesh.uv) asset.uv = encodeFloat32(part.mesh.uv);
+        const node = importNode(assets, asset, part.name, tidyVec(size), tidyVec(size), part.color);
+        if (!node) continue;
+        node.pos = tidyVec(center);
+        if (part.image) {
+          const key = await addImage({ name: part.image.name, path: null, bytes: part.image.bytes }, part.image.mime);
+          assets[key] = state.doc.assets[key];
+          node.texture = { asset: key, mode: part.mesh.uv ? 'own' : 'wrap', scale: 50, turn: 0 };
+          // A textured part with no color of its own shows its picture's fill, which is what its corner holds.
+          if (!part.color) node.color = (await cornerColor(part.image.bytes, part.image.mime)) ?? node.color;
+        }
+        members.push(node);
+      }
+    } else {
+      for (const part of data.parts) {
+        const { size, center } = centerOutline(part);
+        // Flat artwork comes in as a plate a few millimeters thick.
+        const node = importNode(assets, { kind: 'outline', shapes: part.shapes }, name, tidyVec([size[0], size[1], 1]), tidyVec([size[0], size[1], 3]), part.color);
+        if (!node) continue;
+        node.pos = tidyVec([center[0], center[1], 1.5]);
+        members.push(node);
+      }
+    }
+    if (members.length === 0) throw new Error(`"${file.name}" is flat or empty, so it cannot be made into a solid.`);
+    if (members.length === 1) {
+      members[0].name = name;
+      put(members[0]);
+      continue;
+    }
+    // The assets must be in the design before the kernel can measure the parts.
+    state = { ...state, doc: { ...state.doc, assets } };
+    const group = await buildGroup(members, false, name).catch(() => null);
+    // Parts that cannot be combined (an open mesh among them) stand on their own.
+    if (group) put(group);
+    else for (const node of members) put(node);
   }
   // Center the row on the plate.
   const shift = (x - 5) / 2;
-  for (const n of nodes) n.pos = tidyVec([n.pos[0] - shift, n.pos[1], n.pos[2]]);
+  for (const n of placed) n.pos = tidyVec([n.pos[0] - shift, n.pos[1], n.pos[2]]);
   state = { ...state, doc: { ...state.doc, assets }, placing: null };
-  commit(scene, { selection: nodes.map((n) => n.id) });
+  commit(scene, { selection: placed.map((n) => n.id) });
+  return used;
+}
+
+/** An imported object over an asset, which is kept in `assets` under a key made from its contents; null if it has no extent. */
+function importNode(assets: Record<string, Asset>, asset: Asset, name: string, natural: Vec3, size: Vec3, color: string | undefined): ImportNode | null {
+  // Checked as stored: a hair of an extent rounds away to nothing.
+  if (!natural.every((v) => v > 0)) return null;
+  const text = asset.kind === 'mesh' ? asset.positions + asset.triangles + (asset.uv ?? '') : JSON.stringify(asset);
+  const key = `${asset.kind}-${hashString(text)}-${text.length.toString(36)}`;
+  assets[key] = asset;
+  return {
+    id: newId(),
+    type: 'import',
+    name,
+    asset: key,
+    natural,
+    pos: [0, 0, 0],
+    rot: [0, 0, 0],
+    size,
+    hole: false,
+    color: color ?? IMPORT_COLOR,
+  };
+}
+
+/** The color of an image's top-left pixel, as hex; null if it cannot be read or is transparent there. */
+async function cornerColor(bytes: Uint8Array, mime: ImageAsset['mime']): Promise<string | null> {
+  try {
+    const bitmap = await createImageBitmap(new Blob([bytes as BlobPart], { type: mime }));
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 1;
+    const g = canvas.getContext('2d');
+    if (!g) return null;
+    g.drawImage(bitmap, 0, 0, 1, 1, 0, 0, 1, 1);
+    bitmap.close();
+    const [r, gr, b, a] = g.getImageData(0, 0, 1, 1).data;
+    if (a < 128) return null;
+    return `#${[r, gr, b].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+  } catch {
+    return null;
+  }
 }
 
 /** Pixel size of an image file, by decoding it. */
@@ -1375,8 +1626,7 @@ async function imageSize(bytes: Uint8Array, mime: ImageAsset['mime']): Promise<{
 }
 
 /** Keep a picture file in the design. Returns its key (an identical picture already there is reused). */
-async function addImage(file: PickedFile): Promise<string> {
-  const mime = extension(file.name) === 'png' ? 'image/png' : 'image/jpeg';
+async function addImage(file: PickedFile, mime: ImageAsset['mime'] = extension(file.name) === 'png' ? 'image/png' : 'image/jpeg'): Promise<string> {
   const data = bytesToBase64(file.bytes);
   const key = `image-${hashString(data)}-${data.length.toString(36)}`;
   if (state.doc.assets[key]) return key;
@@ -1464,10 +1714,7 @@ const IMPORTABLE = [...IMPORT_EXTENSIONS, ...IMAGE_EXTENSIONS];
 export async function receiveFiles(files: PickedFile[]): Promise<void> {
   try {
     const design = files.find((f) => extension(f.name) === FILE_EXTENSION);
-    if (design) {
-      if (await okToDiscard()) await openFile(design);
-      return;
-    }
+    if (design) return await importProjectFile(design);
     const models = files.filter((f) => IMPORT_EXTENSIONS.includes(extension(f.name)));
     const pictures = files.filter((f) => IMAGE_EXTENSIONS.includes(extension(f.name)));
     if (models.length === 0 && pictures.length === 0) {
@@ -1477,8 +1724,10 @@ export async function receiveFiles(files: PickedFile[]): Promise<void> {
     set({ busy: 'Importing…' });
     // Let the "Importing…" badge paint before the parser blocks the thread.
     await new Promise((r) => setTimeout(r, 30));
-    if (models.length) importModels(models);
-    if (pictures.length) await importPictures(pictures);
+    // A picture a model used for its texture is not also a picture sheet.
+    const used = models.length ? await importModels(models, files) : new Set<string>();
+    const sheets = pictures.filter((f) => !used.has(f.name));
+    if (sheets.length) await importPictures(sheets);
   } catch (e) {
     fail(e);
   } finally {
@@ -1505,8 +1754,23 @@ export async function exportDesign(formatId: FormatId, selectionOnly: boolean): 
   const name = state.doc.name;
   let bytes: Uint8Array;
   let warnings: string[] = [];
+  let sidecar: { name: string; bytes: Uint8Array; mime: string } | null = null;
   if (format.id === 'glb') {
     bytes = await exportGlb(nodes, state.doc.assets, name);
+  } else if (format.id === '3mf') {
+    // Objects stay apart, each in its colors, so a slicer can print them in their materials.
+    const worker = await geometry.prepare(nodes, state.doc.assets);
+    const result = await worker.exportColored(nodes, true);
+    bytes = write3mf(result.objects, name);
+    warnings = result.warnings;
+  } else if (format.id === 'obj') {
+    const worker = await geometry.prepare(nodes, state.doc.assets);
+    const result = await worker.exportColored(nodes, true);
+    const written = writeObj(result.objects, name);
+    bytes = written.obj;
+    warnings = result.warnings;
+    // The colors live in a material library beside the file.
+    if (written.mtl) sidecar = { name: written.mtlName, bytes: written.mtl, mime: 'text/plain' };
   } else {
     const worker = await geometry.prepare(nodes, state.doc.assets);
     // Exports are always made at fine detail: curves get more facets than are drawn on screen.
@@ -1516,21 +1780,34 @@ export async function exportDesign(formatId: FormatId, selectionOnly: boolean): 
   }
   const where = await platform.saveAs(`${name}.${format.extension}`, [{ name: format.label, extensions: [format.extension] }], bytes, format.mime);
   if (!where) return null;
+  if (sidecar) {
+    // Next to the file on disk; a second download in the browser, and a second pick on Android, whose documents have no folder paths.
+    if (where.path && !where.path.includes('://')) await platform.writePath(where.path.slice(0, where.path.length - where.name.length) + sidecar.name, sidecar.bytes);
+    else await platform.saveAs(sidecar.name, [], sidecar.bytes, sidecar.mime);
+  }
   for (const w of warnings) notify(w, 'error');
   return where.path ?? where.name;
 }
 
 // --- start-up -------------------------------------------------------------------
 
-/** Open the file the app was started with, or pick up where the last session stopped. */
+/** Opens the project store, then the file the app was started with, or else the project that was open last. */
 export async function restoreSession(): Promise<void> {
   try {
+    const { fixed, defaultDir } = await openProjectStore(state.prefs.projectsDir);
+    set({ storage: { location: projectStore().location, fixed, defaultDir } });
+    // Edits made before the store was ready are written now.
+    if (isDirty()) scheduleAutosave();
     const path = await platform.startupFile();
-    if (path) return void (await openPath(path, false));
-    const session = await loadSession();
-    // The stored copy is read back the way a file is, so that anything the app no longer knows (a
-    // part kind that has since gone, say) is dropped rather than breaking the first render.
-    if (session) adopt(parseDoc(serializeDoc(session.doc)), session.filePath, session.dirty);
+    if (path) return void (await importProjectFile(await platform.readPath(path)));
+    const last = state.prefs.lastProject;
+    if (!last || isDirty()) return;
+    try {
+      adopt(parseDoc(await projectStore().read(last)), last);
+    } catch {
+      // Deleted or moved since: start fresh.
+      setPrefs({ lastProject: null });
+    }
   } catch (e) {
     fail(e);
   }

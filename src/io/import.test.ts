@@ -1,25 +1,39 @@
 import { strToU8, zipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
-import type { MeshData } from '../geometry/mesh';
+import type { MeshData, MeshWithUV } from '../geometry/mesh';
 import type { Polygon } from '../model/types';
 import { exportMesh, exportOutline } from './export';
+import { writeGlb } from './glb';
+import { write3mf } from './threemf';
+import { scaling, translation } from '../model/math';
 import { centerMesh, centerOutline, checkedMesh, checkedOutline, IMPORT_EXTENSIONS, importFile } from './import';
-import type { ImportedMesh, ImportedOutline } from './import';
+import type { Companion, ImportedModel } from './import';
+import type { OutlineShape } from '../model/types';
 import { signedArea } from './outline';
 import { ByteReader } from './scan';
 
 const bytes = (s: string) => new TextEncoder().encode(s);
 
-function mesh(name: string, data: Uint8Array | string): ImportedMesh {
+/** The one mesh a single-part model file holds. */
+function mesh(name: string, data: Uint8Array | string): MeshWithUV {
   const result = importFile(name, typeof data === 'string' ? bytes(data) : data);
-  if (result.kind !== 'mesh') throw new Error('expected a mesh');
+  if (result.kind !== 'model') throw new Error('expected a model');
+  if (result.parts.length !== 1) throw new Error(`expected one part, got ${result.parts.length}`);
+  return result.parts[0].mesh;
+}
+
+/** A model file with all its parts. */
+function modelOf(name: string, data: Uint8Array | string, companions: Companion[] = []): ImportedModel {
+  const result = importFile(name, typeof data === 'string' ? bytes(data) : data, companions);
+  if (result.kind !== 'model') throw new Error('expected a model');
   return result;
 }
 
-function outlineOf(data: Uint8Array | string): ImportedOutline {
+/** All the shapes of a drawing, whatever their colors. */
+function outlineOf(data: Uint8Array | string): { shapes: OutlineShape[] } {
   const result = importFile('drawing.svg', typeof data === 'string' ? bytes(data) : data);
   if (result.kind !== 'outline') throw new Error('expected an outline');
-  return result;
+  return { shapes: result.parts.flatMap((p) => p.shapes) };
 }
 
 /** Volume enclosed by a closed mesh; positive when its triangles face outwards. */
@@ -107,14 +121,14 @@ function asciiStl(facets: number[][], number = (v: number) => v.toExponential(6)
 
 describe('importFile', () => {
   it('dispatches on the extension, whatever its case', () => {
-    expect(IMPORT_EXTENSIONS).toEqual(['stl', 'obj', '3mf', 'svg']);
-    expect(importFile('Part.STL', binaryStl(cubeFacets())).kind).toBe('mesh');
-    expect(importFile('C:\\models\\my.part.Obj', bytes('v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n')).kind).toBe('mesh');
+    expect(IMPORT_EXTENSIONS).toEqual(['stl', 'obj', '3mf', 'glb', 'gltf', 'svg']);
+    expect(importFile('Part.STL', binaryStl(cubeFacets())).kind).toBe('model');
+    expect(importFile('C:\\models\\my.part.Obj', bytes('v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n')).kind).toBe('model');
     expect(importFile('a.SVG', bytes('<svg><rect width="1" height="1"/></svg>')).kind).toBe('outline');
   });
 
   it('names the formats it can read when given another', () => {
-    expect(() => importFile('part.step', new Uint8Array(4))).toThrow(/\.step files can't be imported.*STL, OBJ, 3MF, SVG/);
+    expect(() => importFile('part.step', new Uint8Array(4))).toThrow(/\.step files can't be imported.*STL, OBJ, 3MF, GLB, GLTF, SVG/);
     expect(() => importFile('README', new Uint8Array(4))).toThrow(/can't be imported/);
   });
 });
@@ -287,6 +301,33 @@ describe('OBJ import', () => {
     expect([...m.triangles]).toEqual([0, 1, 2]);
   });
 
+  it('splits the file by material, with the color, picture and texture coordinates each brings', () => {
+    const obj = ['mtllib stuff.mtl', 'v 0 0 0', 'v 10 0 0', 'v 0 10 0', 'v 0 0 10', 'vt 0 0', 'vt 1 0', 'vt 0 1', 'usemtl Red', 'f 1/1 2/2 3/3', 'usemtl Skin', 'f 1/1 2/2 4/3', 'f 2/2 3/3 4/1', 'usemtl Red', 'f 1/1 4/2 3/3', ''].join('\n');
+    const mtl = ['newmtl Red', 'Kd 1 0 0', 'newmtl Skin', 'Kd 0.5 0.5 0.5', 'map_Kd -s 1 1 1 textures/skin.PNG', ''].join('\n');
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    const got = modelOf('thing.obj', obj, [
+      { name: 'STUFF.mtl', bytes: bytes(mtl) },
+      { name: 'skin.png', bytes: png },
+      { name: 'other.png', bytes: png },
+    ]);
+    expect(got.parts.map((p) => [p.name, p.color, p.mesh.triangles.length / 3])).toEqual([
+      ['Red', '#ff0000', 2],
+      ['Skin', '#808080', 2],
+    ]);
+    expect(got.parts[1].image).toEqual({ name: 'skin.png', mime: 'image/png', bytes: png });
+    expect(got.parts[0].image).toBeUndefined();
+    expect([...got.parts[0].mesh.uv!]).toEqual([0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1]);
+    expect(got.used.sort()).toEqual(['STUFF.mtl', 'skin.png']);
+  });
+
+  it('keeps a file with no material library whole, and without texture coordinates where it has none', () => {
+    const got = modelOf('a.obj', 'v 0 0 0\nv 1 0 0\nv 0 1 0\nusemtl x\nf 1 2 3\nusemtl y\nf 1 3 2\n');
+    expect(got.parts.map((p) => p.name)).toEqual(['x', 'y']);
+    expect(got.parts.every((p) => p.color === undefined && p.mesh.uv === undefined)).toBe(true);
+    expect(got.used).toEqual([]);
+    expect(mesh('b.obj', 'v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1// 2// 3//\n').uv).toBeUndefined();
+  });
+
   it('round-trips through the OBJ writer', () => {
     const m = mesh('tetra.obj', exportMesh('obj', tetra, 'tetra'));
     expect([...m.positions]).toEqual([...tetra.positions]);
@@ -364,9 +405,38 @@ describe('3MF import', () => {
     zipSync(Object.fromEntries(Object.entries(files).map(([name, text]) => [name, strToU8(text)])));
 
   it('round-trips through the 3MF writer', () => {
-    const m = mesh('tetra.3mf', exportMesh('3mf', tetra, 'tetra'));
+    const m = mesh('tetra.3mf', write3mf([{ name: 'tetra', parts: [{ color: '#8fa3bf', mesh: tetra }] }], 'tetra'));
     expect([...m.positions]).toEqual([...tetra.positions]);
     expect([...m.triangles]).toEqual([...tetra.triangles]);
+    // An object of several colored parts comes back as those parts, each in its color.
+    const two = modelOf('two.3mf', write3mf([{ name: 'two', parts: [{ color: '#ff0000', mesh: tetra }, { color: '#00ff00', mesh: tetra }] }], 'two'));
+    expect(two.parts.map((p) => [p.name, p.color, p.mesh.triangles.length])).toEqual([
+      ['two', '#ff0000', tetra.triangles.length],
+      ['two', '#00ff00', tetra.triangles.length],
+    ]);
+  });
+
+  it('reads colors from base materials and color groups, splitting an object whose triangles differ', () => {
+    const resources = `
+      <basematerials id="1"><base name="Red" displaycolor="#FF0000"/><base name="Green" displaycolor="#00ff00ff"/></basematerials>
+      <m:colorgroup id="2"><m:color color="#0000FF"/></m:colorgroup>
+      <object id="10" type="model" name="Plain" pid="1" pindex="1">${TETRA}</object>
+      <object id="11" type="model" name="Mixed" pid="1" pindex="0"><mesh>
+        <vertices><vertex x="0" y="0" z="0"/><vertex x="1" y="0" z="0"/><vertex x="0" y="1" z="0"/><vertex x="0" y="0" z="1"/></vertices>
+        <triangles><triangle v1="0" v2="2" v3="1"/><triangle v1="0" v2="1" v3="3" p1="1"/><triangle v1="1" v2="2" v3="3" pid="2" p1="0"/><triangle v1="0" v2="3" v3="2"/></triangles>
+      </mesh></object>
+      <object id="12" type="model"><components><component objectid="10" transform="1 0 0 0 1 0 0 0 1 5 0 0"/></components></object>`;
+    const file = pack({ '_rels/.rels': RELS, '3D/3dmodel.model': model('unit="millimeter"', resources, '<item objectid="11"/><item objectid="12"/>') });
+    const got = importFile('colors.3mf', file);
+    if (got.kind !== 'model') throw new Error('expected a model');
+    expect(got.parts.map((p) => [p.name, p.color, p.mesh.triangles.length / 3])).toEqual([
+      ['Mixed', '#ff0000', 2],
+      ['Mixed', '#00ff00', 1],
+      ['Mixed', '#0000ff', 1],
+      ['colors', '#00ff00', 4],
+    ]);
+    // The component's transform moved the plain tetra along.
+    expect(meshBounds(got.parts[3].mesh).min[0]).toBe(5);
   });
 
   it('converts the unit of the model to millimeters', () => {
@@ -400,11 +470,15 @@ describe('3MF import', () => {
     const build = `
       <item objectid="1" transform="2 0 0 0 2 0 0 0 2 10 0 0"/>
       <item objectid="2" transform="0 1 0 -1 0 0 0 0 1 0 0 0"/>`;
-    const m = mesh('a.3mf', pack({ '_rels/.rels': RELS, '3D/3dmodel.model': model('unit="millimeter"', resources, build) }));
-    expect(m.triangles.length).toBe(3 * 4 * 3);
-    expect(m.positions.length).toBe(3 * 4 * 3);
-    expect(meshBounds(m)).toEqual({ min: [-1, 0, 0], max: [12, 2, 6] });
-    expect(volume(m)).toBeCloseTo(8 / 6 + 1 / 6 + 1 / 6, 5);
+    // Each build item is a part of its own; a pair of components stays one part.
+    const got = importFile('a.3mf', pack({ '_rels/.rels': RELS, '3D/3dmodel.model': model('unit="millimeter"', resources, build) }));
+    if (got.kind !== 'model') throw new Error('expected a model');
+    expect(got.parts.map((p) => p.mesh.triangles.length / 3)).toEqual([4, 8]);
+    expect(got.parts.map((p) => p.mesh.positions.length / 3)).toEqual([4, 8]);
+    expect(meshBounds(got.parts[0].mesh)).toEqual({ min: [10, 0, 0], max: [12, 2, 2] });
+    expect(meshBounds(got.parts[1].mesh)).toEqual({ min: [-1, 0, 0], max: [0, 1, 6] });
+    expect(volume(got.parts[0].mesh)).toBeCloseTo(8 / 6, 5);
+    expect(volume(got.parts[1].mesh)).toBeCloseTo(1 / 6 + 1 / 6, 5);
   });
 
   it('turns the triangles of a mirrored item the right way out', () => {
@@ -485,12 +559,90 @@ describe('3MF import', () => {
   }
 });
 
+describe('glTF import', () => {
+  // One triangle in the XY plane facing +Z at z = 5 mm, as the writer's tests use.
+  const positions = new Float32Array([0, 0, 5, 10, 0, 5, 0, 10, 5]);
+  const normals = new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]);
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+
+  it('round-trips through the GLB writer: millimeters, Z up, colors, pictures and texture coordinates', () => {
+    const objects = [
+      { name: 'Tri', positions, normals, matrix: translation([0, 0, 0]), color: '#d8605a' },
+      { name: 'Sheet', positions, normals, matrix: translation([20, 0, 0]), color: '#ffffff', skin: { uv: new Float32Array([0, 0, 1, 0, 0, 1]), image: png, mime: 'image/png' as const, repeat: false } },
+    ];
+    const got = modelOf('scene.glb', writeGlb(objects, 'scene'));
+    expect(got.parts.map((p) => [p.name, p.color])).toEqual([
+      ['Tri', '#d8605a'],
+      ['Sheet', undefined],
+    ]);
+    expect([...got.parts[0].mesh.positions]).toEqual([0, 0, 5, 10, 0, 5, 0, 10, 5]);
+    expect([...got.parts[0].mesh.triangles]).toEqual([0, 1, 2]);
+    expect(got.parts[0].mesh.uv).toBeUndefined();
+    expect(meshBounds(got.parts[1].mesh).min[0]).toBeCloseTo(20, 4);
+    expect([...got.parts[1].mesh.uv!]).toEqual([0, 0, 1, 0, 0, 1]);
+    expect(got.parts[1].image).toEqual({ name: 'Sheet', mime: 'image/png', bytes: png });
+  });
+
+  it('places meshes by their nodes, turns a mirrored one the right way out, and names the parts of a mesh', () => {
+    const mirrored = modelOf('m.glb', writeGlb([{ name: 'M', positions, normals, matrix: scaling([-1, 1, 1]), color: '#000000' }], 'D'));
+    expect(volumeSign(mirrored.parts[0].mesh)).toBeGreaterThan(0);
+    const gltf = {
+      asset: { version: '2.0' },
+      scene: 0,
+      scenes: [{ nodes: [0] }],
+      nodes: [{ name: 'Root', translation: [0, 0, 0], scale: [2, 2, 2], children: [1] }, { name: 'Leaf', mesh: 0, translation: [0, 0.001, 0], rotation: [0, 0, 0, 1] }],
+      meshes: [{ name: 'Mesh', primitives: [{ attributes: { POSITION: 0 }, material: 0 }, { attributes: { POSITION: 0 }, material: 1, mode: 4 }] }],
+      materials: [{ name: 'Lin', pbrMetallicRoughness: { baseColorFactor: [1, 0, 0, 1] } }, { pbrMetallicRoughness: { baseColorFactor: [0.2158605, 0.2158605, 0.2158605, 1] } }],
+      accessors: [{ bufferView: 0, componentType: 5126, count: 3, type: 'VEC3' }],
+      bufferViews: [{ buffer: 0, byteLength: 36 }],
+      buffers: [{ byteLength: 36, uri: `data:application/octet-stream;base64,${btoa(String.fromCharCode(...new Uint8Array(new Float32Array([0, 0, 0, 0.01, 0, 0, 0, 0, -0.01]).buffer)))}` }],
+    };
+    const got = modelOf('t.gltf', JSON.stringify(gltf));
+    expect(got.parts.map((p) => [p.name, p.color])).toEqual([
+      ['Leaf (Lin)', '#ff0000'],
+      ['Leaf (2)', '#808080'],
+    ]);
+    // The leaf sits 1 mm up in glTF's Y, scaled twice by its parent: 2 mm up in Z here; its corner at -0.01 along glTF's Z lands at +20 in Y.
+    expect(meshBounds(got.parts[0].mesh)).toEqual({ min: [0, 0, 2], max: [20, 20, 2] });
+  });
+
+  it('rejects what it cannot read', () => {
+    expect(() => modelOf('x.glb', new Uint8Array(0))).toThrow('empty');
+    expect(() => modelOf('x.gltf', '{"asset":{"version":"2.0"},"buffers":[{"byteLength":4,"uri":"data.bin"}],"meshes":[{"primitives":[{"attributes":{"POSITION":0}}]}],"accessors":[{"bufferView":0,"componentType":5126,"count":1,"type":"VEC3"}],"bufferViews":[{"buffer":0,"byteLength":12}]}')).toThrow(/separate files/);
+    expect(() => modelOf('x.gltf', 'nope')).toThrow(/JSON/);
+    expect(() => modelOf('x.gltf', '{"asset":{"version":"2.0"},"extensionsRequired":["KHR_draco_mesh_compression"],"meshes":[{"primitives":[{"attributes":{"POSITION":0}}]}]}')).toThrow(/compressed/);
+    expect(() => modelOf('x.gltf', '{"asset":{"version":"2.0"}}')).toThrow(/no meshes/);
+  });
+
+  /** Sign of the volume a closed mesh (or here, the orientation of one triangle against +Z) encloses. */
+  function volumeSign(m: MeshData): number {
+    const { positions: p, triangles: t } = m;
+    const [a, b, c] = [t[0] * 3, t[1] * 3, t[2] * 3];
+    const ux = p[b] - p[a];
+    const uy = p[b + 1] - p[a + 1];
+    const vx = p[c] - p[a];
+    const vy = p[c + 1] - p[a + 1];
+    return ux * vy - uy * vx;
+  }
+});
+
 describe('SVG import', () => {
   /** A drawing whose user unit is 1 mm. */
   const mm = (body: string) =>
     `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" viewBox="0 0 100 100">${body}</svg>`;
 
   const shapesOf = (svg: string) => outlineOf(svg).shapes;
+
+  it('groups shapes by fill color, inherited and in any CSS form', () => {
+    const got = importFile('d.svg', bytes(mm('<g fill="#F00"><rect width="10" height="10"/><rect x="20" width="10" height="10" style="fill: rgb(0, 0, 255)"/></g><circle cx="50" cy="50" r="5" fill="none"/><rect x="40" width="4" height="4" fill="GOLD"/><rect x="60" width="4" height="4" fill="#ff0000"/>')));
+    if (got.kind !== 'outline') throw new Error('expected an outline');
+    expect(got.parts.map((p) => [p.color, p.shapes.length])).toEqual([
+      ['#ff0000', 2],
+      ['#0000ff', 1],
+      [undefined, 1],
+      ['#ffd700', 1],
+    ]);
+  });
   /** The contours of a drawing that should hold exactly one shape. */
   const contoursOf = (svg: string): Polygon[] => {
     const shapes = shapesOf(svg);
@@ -1061,8 +1213,8 @@ describe('centering', () => {
   });
 
   it('leaves empty input alone', () => {
-    const empty: ImportedMesh = { kind: 'mesh', positions: new Float32Array(0), triangles: new Uint32Array(0) };
+    const empty: MeshData = { positions: new Float32Array(0), triangles: new Uint32Array(0) };
     expect(centerMesh(empty)).toEqual({ size: [0, 0, 0], center: [0, 0, 0] });
-    expect(centerOutline({ kind: 'outline', shapes: [] })).toEqual({ size: [0, 0], center: [0, 0] });
+    expect(centerOutline({ shapes: [] })).toEqual({ size: [0, 0], center: [0, 0] });
   });
 });

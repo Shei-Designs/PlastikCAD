@@ -49,6 +49,8 @@ interface Frame {
   visible: boolean;
   /** `display: none`, or inside an element like <defs>: nothing below is drawn. */
   skip: boolean;
+  /** The `fill` in force, as written. */
+  fill?: string;
 }
 
 /** Above the outermost element: CSS pixels to millimeters, and SVG's Y axis (down) to ours (up). */
@@ -63,10 +65,12 @@ const ROOT: Frame = { transform: [PX, 0, 0, -PX, 0, 0], evenodd: false, visible:
  * Not supported: <use>, <text>, <image>, CSS in <style> blocks (only
  * presentation attributes and `style="..."`), and stroke widths.
  */
-export function parseSvg(bytes: Uint8Array): OutlineShape[] {
+export function parseSvg(bytes: Uint8Array): { shapes: OutlineShape[]; color?: string }[] {
   const scan = new XmlScanner(toUtf8(bytes));
   const stack: Frame[] = [];
-  const shapes: OutlineShape[] = [];
+  // Shapes by fill color, in the order the colors first appear; a shape without one goes under undefined.
+  const parts = new Map<string | undefined, OutlineShape[]>();
+  let count = 0;
   let sawRoot = false;
 
   while (scan.next()) {
@@ -87,7 +91,13 @@ export function parseSvg(bytes: Uint8Array): OutlineShape[] {
           sawRoot = true;
         } else if (sawRoot && frame.visible && !frame.skip) {
           const contours = outline(name, attrs, frame.transform);
-          if (contours.length) shapes.push({ contours, evenodd: frame.evenodd });
+          if (contours.length) {
+            const color = cssColor(frame.fill);
+            const list = parts.get(color) ?? [];
+            list.push({ contours, evenodd: frame.evenodd });
+            parts.set(color, list);
+            count++;
+          }
         }
       }
     }
@@ -95,8 +105,50 @@ export function parseSvg(bytes: Uint8Array): OutlineShape[] {
   }
 
   if (!sawRoot) throw new Error('This is not an SVG file.');
-  if (shapes.length === 0) throw new Error('This SVG has no shapes that can be extruded.');
-  return shapes;
+  if (count === 0) throw new Error('This SVG has no shapes that can be extruded.');
+  return [...parts].map(([color, shapes]) => (color ? { shapes, color } : { shapes }));
+}
+
+const NAMED_COLORS: Record<string, string> = {
+  black: '#000000',
+  white: '#ffffff',
+  red: '#ff0000',
+  lime: '#00ff00',
+  green: '#008000',
+  blue: '#0000ff',
+  yellow: '#ffff00',
+  cyan: '#00ffff',
+  aqua: '#00ffff',
+  magenta: '#ff00ff',
+  fuchsia: '#ff00ff',
+  orange: '#ffa500',
+  purple: '#800080',
+  gray: '#808080',
+  grey: '#808080',
+  silver: '#c0c0c0',
+  maroon: '#800000',
+  navy: '#000080',
+  teal: '#008080',
+  olive: '#808000',
+  brown: '#a52a2a',
+  pink: '#ffc0cb',
+  gold: '#ffd700',
+};
+
+/** `#rrggbb` from a CSS fill (`#rgb`, `#rrggbb`, `rgb(...)` or a common name); undefined for none, or anything else. */
+export function cssColor(fill: string | undefined): string | undefined {
+  if (!fill || fill === 'none' || fill === 'transparent') return undefined;
+  const s = fill.trim().toLowerCase();
+  let m = /^#([0-9a-f]{3})$/.exec(s);
+  if (m) return `#${[...m[1]].map((c) => c + c).join('')}`;
+  m = /^#([0-9a-f]{6})([0-9a-f]{2})?$/.exec(s);
+  if (m) return `#${m[1]}`;
+  m = /^rgba?\(\s*([\d.]+%?)\s*[, ]\s*([\d.]+%?)\s*[, ]\s*([\d.]+%?)/.exec(s);
+  if (m) {
+    const channel = (v: string) => Math.round(Math.min(255, Math.max(0, v.endsWith('%') ? (parseFloat(v) * 255) / 100 : parseFloat(v))));
+    return `#${[m[1], m[2], m[3]].map((v) => channel(v).toString(16).padStart(2, '0')).join('')}`;
+  }
+  return NAMED_COLORS[s];
 }
 
 /** The scanner reads UTF-8; the occasional UTF-16 file announces itself with a byte order mark. */
@@ -149,6 +201,8 @@ function inherit(parent: Frame, attrs: Record<string, string>): Frame {
   if (visibility === 'hidden' || visibility === 'collapse') frame.visible = false;
   else if (visibility === 'visible') frame.visible = true;
   if (property(attrs, 'display') === 'none') frame.skip = true;
+  const fill = property(attrs, 'fill');
+  if (fill !== undefined && fill !== 'inherit') frame.fill = fill;
   return frame;
 }
 

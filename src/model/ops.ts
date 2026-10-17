@@ -420,7 +420,7 @@ export function regroup(scene: Scene, layers: Layer[], boundsOf: (node: SceneNod
 }
 
 /** The color a node is painted: its own, or, for a mixed group, that of its first solid part. */
-function paintOf(node: SceneNode): string {
+export function paintOf(node: SceneNode): string {
   if (node.type !== 'group' || !node.mixed) return node.color;
   const solid = node.children.find((c) => !c.hole && c.type !== 'picture');
   return solid ? paintOf(solid) : node.color;

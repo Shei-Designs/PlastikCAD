@@ -15,16 +15,17 @@ import {
   importModel,
   isDirty,
   mirrorSelected,
-  newDesign,
+  newProject,
   nudgeSelected,
-  openDesign,
+  openProjects,
   paste,
   receiveFiles,
   redo,
   restoreSession,
   rotateSelected,
-  saveDesign,
-  saveDesignAs,
+  saveCopy,
+  saveNow,
+  saveProject,
   select,
   selectAll,
   setHole,
@@ -35,6 +36,7 @@ import {
   useEditor,
 } from './state/store';
 import { Inspector } from './ui/Inspector';
+import { Projects } from './ui/Projects';
 import { Sidebar } from './ui/Sidebar';
 import { Viewport, viewerRef } from './ui/Viewport';
 
@@ -59,8 +61,7 @@ function onKeyDown(e: KeyboardEvent): void {
 
   // File commands work everywhere, including from inside a text box.
   if (mod && !e.altKey) {
-    const command =
-      key === 's' ? (e.shiftKey ? saveDesignAs : saveDesign) : key === 'o' ? openDesign : key === 'n' ? newDesign : key === 'i' ? importModel : null;
+    const command = key === 's' ? (e.shiftKey ? saveCopy : saveNow) : key === 'o' ? openProjects : key === 'n' ? newProject : key === 'i' ? importModel : null;
     if (command) {
       e.preventDefault();
       commitTyping();
@@ -192,8 +193,9 @@ export default function App() {
     void restoreSession();
     window.addEventListener('keydown', onKeyDown);
     const stopDrops = platform.onFilesDropped((files) => void receiveFiles(files));
-    // In a browser the session copy already survives a reload; only the desktop window needs to ask.
-    const stopGuard = platform.isDesktop() ? platform.guardClose(() => isDirty() && getState().doc.scene.length > 0) : () => {};
+    // Changes are written as they happen; closing or hiding the window writes whatever is still pending.
+    const stopGuard = platform.guardClose(isDirty, () => saveProject(true));
+    const stopHidden = platform.onHidden(() => void saveProject(true));
     // The browser's own menu has nothing to offer here, and right-drag orbits.
     const noMenu = (e: MouseEvent) => {
       if (!typing(e.target)) e.preventDefault();
@@ -204,6 +206,7 @@ export default function App() {
       window.removeEventListener('contextmenu', noMenu);
       stopDrops();
       stopGuard();
+      stopHidden();
     };
   }, []);
 
@@ -214,6 +217,7 @@ export default function App() {
         <Viewport />
       </main>
       <Inspector />
+      <Projects />
     </div>
   );
 }

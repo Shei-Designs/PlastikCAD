@@ -6,16 +6,20 @@ import { FILE_FORMAT, FILE_VERSION } from '../app';
 import { SHAPES, clampParams, defaultParams } from '../geometry/shapes';
 import { GENERATORS, RENAMED_PARTS, getGenerator } from '../parts/generators';
 import { sanitizeParams } from '../parts/generators/types';
-import { usedAssets } from './ops';
+import { newId, usedAssets } from './ops';
 import { TEXT_FONTS } from './types';
 import type { Asset, Doc, OutlineShape, PartParamValue, Scene, SceneNode, ShapeKind, Texture, Vec3 } from './types';
 
 export function emptyDoc(): Doc {
-  return { name: 'Untitled', scene: [], assets: {} };
+  return { id: newId(), name: 'Untitled', scene: [], assets: {} };
 }
 
 /** Longest note kept on an object. */
 export const MAX_NOTE = 2000;
+/** Longest thumbnail written into a file. */
+export const MAX_THUMB = 200_000;
+/** How much of a file holds its header: everything before the scene, the thumbnail included. */
+export const HEAD_BYTES = 256 * 1024;
 
 const INDENT = '  ';
 
@@ -78,12 +82,18 @@ export function liveAssets(doc: Doc): Record<string, Asset> {
   return sortKeys(Object.fromEntries(Object.entries(doc.assets).filter(([key]) => used.has(key))));
 }
 
+/**
+ * The header comes first, each field on a line of its own, so that a projects
+ * folder can be listed by reading the start of each file (`readHeader`).
+ */
 export function serializeDoc(doc: Doc): string {
   const file = {
     format: FILE_FORMAT,
     version: FILE_VERSION,
     units: 'mm',
+    id: doc.id,
     name: doc.name,
+    thumb: doc.thumb,
     scene: doc.scene.map(canonical),
     assets: liveAssets(doc),
   };
@@ -203,7 +213,7 @@ function readTexture(raw: unknown, assets: Record<string, Asset>): { texture: Te
   if (!isRecord(raw) || typeof raw.asset !== 'string' || assets[raw.asset]?.kind !== 'image') return null;
   const scale = typeof raw.scale === 'number' && Number.isFinite(raw.scale) && raw.scale > 0 ? raw.scale : 50;
   const turn = typeof raw.turn === 'number' && Number.isFinite(raw.turn) ? raw.turn : 0;
-  return { texture: { asset: raw.asset, mode: raw.mode === 'tile' ? 'tile' : 'wrap', scale, turn } };
+  return { texture: { asset: raw.asset, mode: raw.mode === 'tile' || raw.mode === 'own' ? raw.mode : 'wrap', scale, turn } };
 }
 
 function readScene(raw: unknown, assets: Record<string, Asset>, depth = 0): Scene {
@@ -226,7 +236,7 @@ function readAssets(raw: unknown): Record<string, Asset> {
     // Assigning this key would swap the prototype of `out` rather than add an asset.
     if (key === '__proto__' || !isRecord(value)) continue;
     if (value.kind === 'mesh' && typeof value.positions === 'string' && typeof value.triangles === 'string') {
-      out[key] = { kind: 'mesh', positions: value.positions, triangles: value.triangles };
+      out[key] = { kind: 'mesh', positions: value.positions, triangles: value.triangles, ...(typeof value.uv === 'string' && value.uv ? { uv: value.uv } : {}) };
     } else if (value.kind === 'outline' && Array.isArray(value.shapes)) {
       const shapes: OutlineShape[] = [];
       for (const s of value.shapes) {
@@ -261,12 +271,49 @@ function parseFile(text: string): Record<string, unknown> {
 }
 
 const readName = (raw: unknown, fallback: string): string => (typeof raw === 'string' && raw.trim() ? raw : fallback);
+/** Files from before projects had ids get a fresh one. */
+const readId = (raw: unknown): string => (typeof raw === 'string' && /^[a-z0-9]{8,32}$/.test(raw) ? raw : newId());
+const readThumb = (raw: unknown): string | undefined =>
+  typeof raw === 'string' && raw.length <= MAX_THUMB && /^data:image\/(jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(raw) ? raw : undefined;
 
 /** Throws an Error fit to show the user when the text is not a design file. */
 export function parseDoc(text: string): Doc {
   const raw = parseFile(text);
   const assets = readAssets(raw.assets);
-  return { name: readName(raw.name, 'Untitled'), scene: readScene(raw.scene, assets), assets };
+  const thumb = readThumb(raw.thumb);
+  return { id: readId(raw.id), name: readName(raw.name, 'Untitled'), scene: readScene(raw.scene, assets), assets, ...(thumb ? { thumb } : {}) };
+}
+
+export interface DocHeader {
+  /** Null when the file carries no id (saved before projects had them). */
+  id: string | null;
+  name: string;
+  thumb: string | null;
+}
+
+/**
+ * The header of a design from the start of its text, which need not be the
+ * whole file: `serializeDoc` puts each header field on its own line before
+ * the scene. Null when the text is not the start of a design file.
+ */
+export function readHeader(head: string): DocHeader | null {
+  if (!/^\{\s*\n\s*"format": "bashcad",/.test(head)) return null;
+  // Only what comes before the scene is the header: the objects in it have ids and names of their own.
+  const sceneAt = head.search(/^\s*"scene":/m);
+  const header = sceneAt < 0 ? head : head.slice(0, sceneAt);
+  const field = (name: string): string | null => {
+    const match = new RegExp(`^\\s*"${name}": ("(?:[^"\\\\]|\\\\.)*")\\s*,?$`, 'm').exec(header);
+    if (!match) return null;
+    try {
+      return JSON.parse(match[1]) as string;
+    } catch {
+      return null;
+    }
+  };
+  const id = field('id');
+  const name = field('name');
+  if (name === null && sceneAt < 0) return null;
+  return { id: id && /^[a-z0-9]{8,32}$/.test(id) ? id : null, name: readName(name, 'Untitled'), thumb: readThumb(field('thumb') ?? undefined) ?? null };
 }
 
 /**
@@ -285,7 +332,7 @@ export function legacyVersions(text: string): Doc[] {
     const scene = readScene(v.scene, assets);
     if (scene.length === 0) continue;
     const label = readName(v.label, `Version ${out.length + 1}`);
-    out.push({ name: `${name} - ${label}`, scene, assets });
+    out.push({ id: newId(), name: `${name} - ${label}`, scene, assets });
   }
   return out;
 }

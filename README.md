@@ -135,11 +135,29 @@ long as you need.
 Only the kind and its parameters are stored in the design; the geometry is
 made from them.
 
-## Design files
+## Projects
+
+Designs are projects, and a project is saved as you work: a second after the
+last change, and when the window is hidden or closed. There is no Save. The
+dot by the project name shows while a change is still being written.
+
+On desktop, projects are `.bashcad` files in a projects folder, `BashCAD` in
+your Documents folder unless you pick another in the projects browser (Ctrl+O).
+The browser lists every project with a thumbnail, newest first, to open,
+rename, duplicate or delete them; renaming a project renames its file. On
+Android, projects live in the app's own storage. In a plain browser they are
+kept by the browser itself, per profile.
+
+Two commands move designs in and out of the projects folder. **Open project
+file…** (also dropping or double-clicking a `.bashcad` file) brings a copy in
+as a project of its own, with a fresh id, so a file someone sent you never
+passes for one of your own. **Save a copy…** (Ctrl+Shift+S) writes the design
+wherever you like, to share or keep; the project itself stays where it is.
 
 A `.bashcad` file is plain JSON, written to diff well: keys in a fixed order,
-one property per line, vectors on a single line. If you keep designs in git,
-a change to one object shows up as a change to a few lines.
+one property per line, vectors on a single line. If you keep the projects
+folder in git, a change to one object shows up as a change to a few lines,
+plus the thumbnail line at the top.
 
 ```json
 {
@@ -153,9 +171,6 @@ a change to one object shows up as a change to a few lines.
   "color": "#8fa3bf"
 }
 ```
-
-The app also keeps a copy of the open design between sessions, so an unsaved
-design is still there after a restart.
 
 ## Mouse and keyboard
 
@@ -178,7 +193,7 @@ design is still there after a restart.
 | Align by key | Alt+← / → / ↓ / ↑ (left / right / front / back), Alt+PgDn / PgUp (bottom / top); add Shift to center on that axis; Alt+C centers on X and Y |
 | Fit to view | F |
 | Undo / redo | Ctrl+Z / Ctrl+Y |
-| Save / save as / open / new | Ctrl+S / Ctrl+Shift+S / Ctrl+O / Ctrl+N |
+| Projects / new project / save a copy | Ctrl+O / Ctrl+N / Ctrl+Shift+S (Ctrl+S writes pending changes at once) |
 | Import | Ctrl+I |
 
 ## Export formats
@@ -186,8 +201,8 @@ design is still there after a restart.
 | Format | Use |
 | --- | --- |
 | STL | 3D mesh for any slicer |
-| 3MF | 3D mesh with units, preferred by modern slicers |
-| OBJ | 3D mesh for modeling tools |
+| 3MF | 3D mesh with units and colors, preferred by modern slicers; a part per color for multi-material printing |
+| OBJ | 3D mesh for modeling tools, with the colors in a material library beside it |
 | GLB | 3D scene with colors, textures and pictures, for Blender, Godot, Unity and renderers |
 | SVG | Outline of the design seen from above, for laser cutters and vector editors |
 | DXF | The same outline, to extrude in CAD or cut on a laser / CNC |
@@ -195,9 +210,15 @@ design is still there after a restart.
 The export button, at the bottom of the left panel, reads *Export selection* when something is selected and exports just
 that; otherwise *Export* merges everything visible that is not a hole into one
 watertight mesh (after asking, when there are several objects). Units are
-millimeters, Z is up. A GLB keeps every object separate, each with its color
+millimeters, Z is up. A 3MF keeps every object separate, each with its color
+as a base material; a group whose parts have colors of their own goes out as
+one object made of a closed part per color, with nothing overlapping, which
+slicers such as PrusaSlicer, OrcaSlicer, Bambu Studio and Cura can map to
+filaments. A GLB keeps every object separate, each with its color
 and, if it has one, its texture or pictures embedded as the image files they
-came from; it is written Y up in meters, as glTF wants. The other formats
+came from; a group whose parts have colors of their own is one mesh with a
+primitive per color. It is written Y up in meters, as glTF wants. An OBJ
+carries its colors in a material library written beside it. The other formats
 carry the shapes alone and say so before exporting a design that has pictures
 on it.
 
@@ -211,8 +232,28 @@ left alone, since that is its shape.
 - **STL / OBJ** carry no units; coordinates are taken as millimeters.
 - A mesh that is not watertight can be placed, scaled and exported as it is,
   but cannot be grouped: there is no telling its inside from its outside.
-- **3MF**: all objects on the build plate come in as one mesh; colors and
-  slicer settings are ignored.
+- A file of several parts (the objects of a 3MF, the materials of an OBJ, the
+  meshes of a GLB) comes in as one group, its parts where the file put them,
+  each in its own color, so it looks as it did where it came from. Parts that
+  are not watertight cannot be grouped, so they come in side by side instead;
+  a GLB with pictures printed on it is one such, since the pictures' edges cut
+  its triangles.
+- **3MF**: every build item is a part, split further where its triangles
+  carry different colors; colors come from the base materials and color
+  groups. Textures and slicer settings are ignored.
+- **OBJ**: pick or drop the `.mtl` and the pictures it names along with the
+  `.obj`, and each material comes in with its color (`Kd`) and picture
+  (`map_Kd`), laid out by the file's texture coordinates. On its own, an OBJ
+  comes in plain.
+- **GLB / glTF**: meshes are placed by the scene's nodes and turned from Y up
+  in meters to Z up in millimeters; each material brings its base color and
+  picture, laid out by the file's texture coordinates. A `.gltf` must embed
+  its buffers; one that keeps them in separate files should be saved as a
+  `.glb` first. Files with Draco or meshopt compression are refused; export
+  them again without compression.
+- An imported picture shows on the mesh in the **Imported** texture mode; the
+  mesh can still be given any other texture, wrapped or tiled.
+- **SVG**: shapes are grouped by fill color, each group a part of its own.
 - **SVG**: every closed outline is filled and extruded, whatever its stroke or
   fill, so laser-cutter drawings work (including a gear profile exported from
   BashCAD as SVG). Convert text to paths first; `<use>`, images and CSS

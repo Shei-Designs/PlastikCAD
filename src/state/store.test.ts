@@ -46,13 +46,11 @@ vi.mock('../platform', () => ({
   startupFile: async () => null,
 }));
 
-vi.mock('./persist', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('./persist')>()),
-  saveSession: vi.fn(),
-}));
 
 const store = await import('./store');
-const persist = await import('./persist');
+const projects = await import('./projects');
+/** The in-memory project store the editor writes to during a test. */
+let kept: InstanceType<typeof projects.MemoryProjects>;
 
 const scene = () => store.getState().doc.scene;
 const selected = () => store.getState().selection;
@@ -77,7 +75,10 @@ const posOf = (id: string) => scene().find((n) => n.id === id)!.pos;
 beforeEach(async () => {
   gate = Promise.resolve();
   saved.length = 0;
-  await store.newDesign();
+  // Leaving the previous test's project writes it to that test's store, not this one's.
+  await store.newProject();
+  kept = new projects.MemoryProjects();
+  projects.useProjectStore(kept);
 });
 
 afterEach(() => {
@@ -296,12 +297,13 @@ describe('editing inside a group', () => {
     expect(flags(back)).toEqual([[c, false], [d, true]]);
   });
 
-  it('saves the design with the group put back together, without leaving the edit', async () => {
+  it('saves a copy with the group put back together, without leaving the edit', async () => {
     const { box, bore, group } = await cutter();
     store.editInside([group.id, box]);
     store.nudgeSelected([5, 0, 0]);
-    expect(await store.saveDesignAs()).toBe(true);
+    expect(await store.saveCopy()).toBe(true);
     expect(saved.length).toBe(1);
+    expect(saved[0].name).toBe('Untitled.bashcad');
     const file = parseDoc(new TextDecoder().decode(saved[0].bytes));
     expect(file.scene.length).toBe(1);
     const written = file.scene[0] as GroupNode;
@@ -312,22 +314,134 @@ describe('editing inside a group', () => {
     // Still editing, on the scene taken apart.
     expect(store.getState().editing?.root).toBe(group.id);
     expect(scene().length).toBe(2);
-    expect(store.getState().filePath).toBe('/designs/Untitled.bashcad');
+    // The copy went out; the project itself was written to the store first.
+    expect(store.getState().projectKey).toBe('mem:1');
     await store.finishEditing();
     expect(flags(scene()[0] as GroupNode)).toEqual([[box, false], [bore, true]]);
   });
 
-  it('keeps the session copy whole while a group is being edited inside', async () => {
+  it('autosaves the project whole while a group is being edited inside', async () => {
     const { group } = await cutter();
-    vi.useFakeTimers();
+    await store.saveProject();
     store.editInside([group.id, group.children[0].id]);
+    store.nudgeSelected([1, 0, 0]);
     expect(scene().length).toBe(2);
-    vi.advanceTimersByTime(700);
-    const calls = vi.mocked(persist.saveSession).mock.calls;
-    const session = calls[calls.length - 1][0];
-    expect(session.doc.scene.length).toBe(1);
-    expect(session.doc.scene[0]).toMatchObject({ id: group.id, type: 'group', hole: true });
-    expect(store.docToSave().scene).toEqual(session.doc.scene);
+    expect(store.isDirty()).toBe(true);
+    expect(await store.saveProject()).toBe(true);
+    expect(store.isDirty()).toBe(false);
+    const written = parseDoc(await kept.read(store.getState().projectKey!));
+    expect(written.scene.length).toBe(1);
+    expect(written.scene[0]).toMatchObject({ id: group.id, type: 'group', hole: true });
+    expect(store.docToSave().scene).toEqual(written.scene);
+  });
+});
+
+describe('projects', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('writes an empty untitled project only once something is in it', async () => {
+    vi.useFakeTimers();
+    expect(store.getState().projectKey).toBeNull();
+    store.renameProject('Untitled');
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(kept.records.size).toBe(0);
+    store.addShape('box');
+    expect(store.isDirty()).toBe(true);
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(store.isDirty()).toBe(false);
+    expect(store.getState().projectKey).toBe('mem:1');
+    const [info] = await kept.list();
+    expect(info).toMatchObject({ key: 'mem:1', name: 'Untitled', id: store.getState().doc.id });
+    expect(store.getState().prefs.lastProject).toBe('mem:1');
+  });
+
+  it('autosaves a second after the last change, once', async () => {
+    vi.useFakeTimers();
+    const writes = vi.spyOn(kept, 'write');
+    store.addShape('box');
+    await vi.advanceTimersByTimeAsync(600);
+    store.nudgeSelected([1, 0, 0]);
+    await vi.advanceTimersByTimeAsync(600);
+    expect(writes).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(600);
+    expect(writes).toHaveBeenCalledTimes(1);
+    expect(parseDoc(await kept.read('mem:1')).scene[0].pos[0]).toBe(1);
+  });
+
+  it('renames the project with the file following, and keeps the id', async () => {
+    store.addShape('box');
+    await store.saveProject();
+    const id = store.getState().doc.id;
+    store.renameProject('  Bracket ');
+    expect(store.getState().doc.name).toBe('Bracket');
+    await store.saveProject();
+    const [info] = await kept.list();
+    expect(info).toMatchObject({ name: 'Bracket', id });
+  });
+
+  it('opens, duplicates and deletes projects from the browser', async () => {
+    store.addShape('box');
+    store.renameProject('First');
+    await store.saveProject();
+    const first = store.getState().projectKey!;
+    await store.newProject();
+    expect(store.getState().projectKey).toBeNull();
+    store.addShape('sphere');
+    store.renameProject('Second');
+    await store.saveProject();
+    expect((await store.listProjects()).map((p) => p.name)).toEqual(['Second', 'First']);
+
+    const copy = await store.duplicateProject(first);
+    expect(copy).not.toBeNull();
+    const copied = parseDoc(await kept.read(copy!));
+    const original = parseDoc(await kept.read(first));
+    expect(copied.name).toBe('First copy');
+    expect(copied.id).not.toBe(original.id);
+    expect(copied.scene).toEqual(original.scene);
+
+    await store.openProject(first);
+    expect(store.getState().doc.name).toBe('First');
+    expect(store.getState().projectKey).toBe(first);
+    expect(store.getState().canUndo).toBe(false);
+
+    await store.renameProjectAt(copy!, 'Third');
+    expect(parseDoc(await kept.read(copy!)).name).toBe('Third');
+
+    expect(await store.deleteProject(first, 'First')).toBe(true);
+    expect(kept.records.has(first)).toBe(false);
+    // The open project was deleted: the editor starts afresh and does not write it back.
+    expect(store.getState().projectKey).toBeNull();
+    expect(scene()).toEqual([]);
+    expect(await store.saveProject()).toBe(true);
+    expect(kept.records.size).toBe(2);
+  });
+
+  it('brings an outside design file in as a project of its own, with a fresh id', async () => {
+    store.addShape('box');
+    await store.saveProject();
+    const text = await kept.read('mem:1');
+    const file: PickedFile = { name: 'shared.bashcad', path: '/elsewhere/shared.bashcad', bytes: new TextEncoder().encode(text) };
+    await store.receiveFiles([file]);
+    expect(kept.records.size).toBe(2);
+    expect(store.getState().projectKey).toBe('mem:2');
+    const [a, b] = [parseDoc(await kept.read('mem:1')), parseDoc(await kept.read('mem:2'))];
+    expect(b.id).not.toBe(a.id);
+    expect(b.scene).toEqual(a.scene);
+    // An untitled design takes its file's name.
+    expect(b.name).toBe('shared');
+    expect(store.getState().notice?.text).toMatch(/Added "shared"/);
+  });
+
+  it('reports a failed save once and keeps the changes pending', async () => {
+    vi.spyOn(kept, 'write').mockRejectedValue(new Error('disk full'));
+    store.addShape('box');
+    expect(await store.saveProject()).toBe(false);
+    expect(store.isDirty()).toBe(true);
+    expect(store.getState().notice).toMatchObject({ kind: 'error', text: 'Could not save: disk full' });
+    store.dismissNotice();
+    store.nudgeSelected([1, 0, 0]);
+    expect(await store.saveProject()).toBe(false);
+    expect(store.getState().notice).toBeNull();
   });
 });
 

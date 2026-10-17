@@ -8,6 +8,8 @@ import type { Mat } from '../model/math';
 
 export interface GlbObject {
   name: string;
+  /** Objects with the same key are the parts of one thing: they become the primitives of one mesh, under one node. */
+  of?: string;
   /** Unindexed corners, three per triangle, in the object's built frame; `matrix` places them (mm, Z up). */
   positions: Float32Array;
   normals: Float32Array;
@@ -43,6 +45,8 @@ const pad = (n: number, to = 4) => (to - (n % to)) % to;
 
 export function writeGlb(objects: GlbObject[], name: string): Uint8Array {
   const views: { bytes: Uint8Array; target?: number }[] = [];
+  // The same picture (by its bytes) is embedded once however many parts wear it.
+  const embedded = new Map<Uint8Array, number>();
   const accessors: Record<string, unknown>[] = [];
   const images: Record<string, unknown>[] = [];
   const textures: Record<string, unknown>[] = [];
@@ -93,17 +97,29 @@ export function writeGlb(objects: GlbObject[], name: string): Uint8Array {
         }
       }
       attributes.TEXCOORD_0 = accessor(uv, 2, false);
-      images.push({ bufferView: view(o.skin.image), mimeType: o.skin.mime, name: o.name });
+      let image = embedded.get(o.skin.image);
+      if (image === undefined) {
+        images.push({ bufferView: view(o.skin.image), mimeType: o.skin.mime, name: o.name });
+        image = images.length - 1;
+        embedded.set(o.skin.image, image);
+      }
       const wrap = o.skin.repeat ? REPEAT : CLAMP_TO_EDGE;
       samplers.push({ magFilter: LINEAR, minFilter: LINEAR_MIPMAP_LINEAR, wrapS: wrap, wrapT: wrap });
-      textures.push({ sampler: samplers.length - 1, source: images.length - 1 });
+      textures.push({ sampler: samplers.length - 1, source: image });
       (material.pbrMetallicRoughness as Record<string, unknown>).baseColorFactor = [1, 1, 1, 1];
       (material.pbrMetallicRoughness as Record<string, unknown>).baseColorTexture = { index: textures.length - 1 };
     }
     materials.push(material);
-    meshes.push({ name: o.name, primitives: [{ attributes, material: materials.length - 1 }] });
+    const primitive = { attributes, material: materials.length - 1 };
+    const last = meshes[meshes.length - 1] as { primitives: unknown[]; of?: string } | undefined;
+    if (o.of !== undefined && last && last.of === o.of) {
+      last.primitives.push(primitive);
+      continue;
+    }
+    meshes.push({ name: o.name, primitives: [primitive], ...(o.of !== undefined ? { of: o.of } : {}) });
     nodes.push({ name: o.name, mesh: meshes.length - 1 });
   }
+  for (const mesh of meshes) delete mesh.of;
 
   // The binary chunk: every view four-byte aligned.
   let offset = 0;

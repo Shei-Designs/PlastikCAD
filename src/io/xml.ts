@@ -98,6 +98,15 @@ export class XmlScanner {
     return true;
   }
 
+  /** Whether the current tag's name is `name` (ASCII) under any namespace prefix: `m:color` and `color` alike. */
+  localIs(name: string): boolean {
+    let start = this.nameStart;
+    for (let i = start; i < this.nameEnd; i++) if (this.bytes[i] === 58) start = i + 1;
+    if (this.nameEnd - start !== name.length) return false;
+    for (let i = 0; i < name.length; i++) if (this.bytes[start + i] !== name.charCodeAt(i)) return false;
+    return true;
+  }
+
   name(): string {
     return decoder.decode(this.bytes.subarray(this.nameStart, this.nameEnd));
   }
@@ -115,9 +124,9 @@ export class XmlScanner {
   }
 
   /**
-   * Reads numeric attributes with one- or two-letter names without decoding
+   * Reads numeric attributes with names of up to three letters without decoding
    * the tag, for the elements a mesh has millions of. `out[i]` receives the
-   * attribute whose name has the character codes `keys[i]` (first | second << 8),
+   * attribute whose name has the character codes `keys[i]` (first | second << 8 | third << 16),
    * or NaN if it is missing.
    */
   numbers(keys: number[], out: Float64Array): void {
@@ -135,8 +144,8 @@ export class XmlScanner {
       while (i < end && b[i] !== QUOTE && b[i] !== APOSTROPHE) i++;
       if (i >= end) break;
       const quote = b[i++];
-      if (length === 1 || length === 2) {
-        const k = keys.indexOf(length === 1 ? b[start] : b[start] | (b[start + 1] << 8));
+      if (length >= 1 && length <= 3) {
+        const k = keys.indexOf(length === 1 ? b[start] : length === 2 ? b[start] | (b[start + 1] << 8) : b[start] | (b[start + 1] << 8) | (b[start + 2] << 16));
         if (k >= 0) {
           reader.pos = i;
           out[k] = reader.number();

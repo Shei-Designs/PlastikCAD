@@ -152,6 +152,21 @@ export const SaveIcon = () => (
     <path d="M8 4v5h7V4M8 20v-6h8v6" />
   </Icon>
 );
+export const ProjectsIcon = () => (
+  <Icon>
+    <rect x="4" y="4" width="7" height="7" rx="1.2" />
+    <rect x="13" y="4" width="7" height="7" rx="1.2" />
+    <rect x="4" y="13" width="7" height="7" rx="1.2" />
+    <rect x="13" y="13" width="7" height="7" rx="1.2" />
+  </Icon>
+);
+export const MoreIcon = () => (
+  <Icon>
+    <circle cx="6" cy="12" r="1.3" fill="currentColor" />
+    <circle cx="12" cy="12" r="1.3" fill="currentColor" />
+    <circle cx="18" cy="12" r="1.3" fill="currentColor" />
+  </Icon>
+);
 export const MenuIcon = () => (
   <Icon>
     <path d="M4 7h16M4 12h16M4 17h16" />

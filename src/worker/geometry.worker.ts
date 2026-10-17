@@ -1,6 +1,6 @@
 // Runs all solid modeling off the UI thread so the viewport stays responsive.
 import wasmUrl from 'manifold-3d/manifold.wasm?url';
-import { build, exportNodes, forgetAssets, initKernel, measure, partBox, setAssets } from '../geometry/kernel';
+import { build, exportColored, exportNodes, forgetAssets, initKernel, measure, partBox, setAssets } from '../geometry/kernel';
 import type { WorkerRequest, WorkerResponse } from './protocol';
 
 const ctx = self as unknown as {
@@ -24,6 +24,7 @@ function handle(req: WorkerRequest): void {
         result.render.positions.buffer,
         result.render.normals.buffer,
         ...(result.faces ? [result.faces.source.buffer] : []),
+        ...(result.render.uv ? [result.render.uv.buffer] : []),
       ]);
       break;
     }
@@ -33,12 +34,18 @@ function handle(req: WorkerRequest): void {
     case 'partBox':
       ctx.postMessage({ type: 'partBoxed', id: req.id, bounds: partBox(req.node) });
       break;
+    case 'exportColored': {
+      const result = exportColored(req.nodes, req.fine, req.local);
+      ctx.postMessage({ type: 'exportedColored', id: req.id, result }, result.objects.flatMap((o) => o.parts.flatMap((p) => [p.mesh.positions.buffer, p.mesh.triangles.buffer])));
+      break;
+    }
     case 'export': {
       const result = exportNodes(req.nodes, req.outline, req.fine, req.local);
       ctx.postMessage({ type: 'exported', id: req.id, result }, [
         result.mesh.positions.buffer,
         result.mesh.triangles.buffer,
         ...(result.faces ? [result.faces.source.buffer] : []),
+        ...(result.uv ? [result.uv.buffer] : []),
       ]);
       break;
     }

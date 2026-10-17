@@ -3,7 +3,6 @@ import { APP_NAME } from '../app';
 import { SHAPES } from '../geometry/shapes';
 import { HOLE_COLOR } from '../model/ops';
 import type { SceneNode } from '../model/types';
-import { isDesktop } from '../platform';
 import {
   addPart,
   addPicture,
@@ -11,12 +10,11 @@ import {
   addText,
   importModel,
   isDirty,
-  newDesign,
-  openDesign,
-  openPath,
-  renameDesign,
-  saveDesign,
-  saveDesignAs,
+  newProject,
+  openProjectFile,
+  openProjects,
+  renameProject,
+  saveCopy,
   select,
   setPrefs,
   startPlacing,
@@ -30,7 +28,7 @@ import {
 } from '../state/store';
 import { About } from './About';
 import { ExportPanel } from './ExportPanel';
-import { EyeIcon, EyeOffIcon, ImportIcon, LockIcon, Logo, MenuIcon, MoonIcon, SaveIcon, SunIcon, UnlockIcon } from './icons';
+import { EyeIcon, EyeOffIcon, ImportIcon, LockIcon, Logo, MenuIcon, MoonIcon, ProjectsIcon, SunIcon, UnlockIcon } from './icons';
 import { Popover } from './Popover';
 import { CATEGORIES, GENERATORS, getGenerator } from '../parts/generators';
 import { partThumbnail } from './partThumbnails';
@@ -42,11 +40,11 @@ const MOD = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform) ?
 function FileBar() {
   const name = useEditor((s) => s.doc.name);
   const dirty = useEditor(isDirty);
-  const recent = useEditor((s) => s.prefs.recent);
-  const filePath = useEditor((s) => s.filePath);
+  const saving = useEditor((s) => s.saving);
   const [text, setText] = useState(name);
   useEffect(() => setText(name), [name]);
   const [about, setAbout] = useState(false);
+  const status = saving ? 'Saving…' : dirty ? 'Changes not saved yet' : 'All changes saved';
 
   const item = (label: string, keys: string, run: () => void, close: () => void) => (
     <button
@@ -64,16 +62,16 @@ function FileBar() {
 
   return (
     <div className="file-bar">
-      <span className={dirty ? 'dirty-dot on' : 'dirty-dot'} title={dirty ? 'Unsaved changes' : 'All changes saved'} />
+      <span className={dirty || saving ? 'dirty-dot on' : 'dirty-dot'} title={status} role="status" aria-label={status} />
       <input
         className="doc-name"
-        aria-label="Design name"
-        title={filePath ?? 'Design name'}
+        aria-label="Project name"
+        title="Project name"
         spellCheck={false}
         value={text}
         onChange={(e) => setText(e.target.value)}
         onBlur={() => {
-          renameDesign(text);
+          renameProject(text);
           setText((t) => t.trim() || name);
         }}
         onKeyDown={(e) => {
@@ -84,36 +82,16 @@ function FileBar() {
           }
         }}
       />
-      <button type="button" className="icon-button" title={`Save (${MOD}S)`} aria-label="Save" onClick={() => void saveDesign()}>
-        <SaveIcon />
+      <button type="button" className="icon-button" title={`Projects (${MOD}O)`} aria-label="Projects" onClick={openProjects}>
+        <ProjectsIcon />
       </button>
       <Popover className="icon-button" title="File" button={<MenuIcon />} align="right">
         {(close) => (
           <div className="menu" role="menu">
-            {item('New design', `${MOD}N`, () => void newDesign(), close)}
-            {item('Open…', `${MOD}O`, () => void openDesign(), close)}
-            {item('Save', `${MOD}S`, () => void saveDesign(), close)}
-            {item('Save as…', `${MOD}Shift+S`, () => void saveDesignAs(), close)}
-            {isDesktop() && recent.length > 0 && (
-              <>
-                <hr />
-                <div className="menu-title">Recent</div>
-                {recent.map((path) => (
-                  <button
-                    key={path}
-                    type="button"
-                    className="menu-item"
-                    title={path}
-                    onClick={() => {
-                      close();
-                      void openPath(path);
-                    }}
-                  >
-                    <span className="clip">{path.replace(/^.*[\\/]/, '')}</span>
-                  </button>
-                ))}
-              </>
-            )}
+            {item('New project', `${MOD}N`, () => void newProject(), close)}
+            {item('Projects…', `${MOD}O`, openProjects, close)}
+            {item('Open project file…', '', () => void openProjectFile(), close)}
+            {item('Save a copy…', `${MOD}Shift+S`, () => void saveCopy(), close)}
             <hr />
             {item(`About ${APP_NAME}…`, '', () => setAbout(true), close)}
           </div>

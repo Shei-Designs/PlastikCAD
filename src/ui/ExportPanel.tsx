@@ -28,8 +28,8 @@ export function ExportPanel() {
       const ok = await confirm(`${active.label} does not support pictures or textures. Export the plain shapes anyway?`, { title: APP_NAME, okLabel: 'Export' });
       if (!ok) return;
     }
-    // Nothing selected: everything goes out as one part, which is worth a moment's pause.
-    if (!partial && count > 1 && format !== 'glb') {
+    // Nothing selected: everything goes out as one part, which is worth a moment's pause (a GLB or 3MF keeps the objects apart).
+    if (!partial && count > 1 && format !== 'glb' && format !== '3mf') {
       const ok = await confirm(`Export all ${count} objects together as one ${active.label}?`, { title: APP_NAME, okLabel: 'Export' });
       if (!ok) return;
     }

@@ -4,7 +4,7 @@ import { add, apply, emptyBounds, expandBounds, nodeMatrix } from '../model/math
 import type { Bounds } from '../model/math';
 import { alignNodes, makeGroup } from '../model/ops';
 import type { Asset, GroupNode, ImportNode, PictureNode, Polygon, SceneNode, ShapeKind, ShapeNode, TextNode, Vec3 } from '../model/types';
-import { build, cacheSize, clearCache, decodeBase64, exportNodes, forgetAssets, initKernel, measure, rawManifold, SHEET, setAssets } from './kernel';
+import { build, cacheSize, clearCache, decodeBase64, exportColored, exportNodes, forgetAssets, initKernel, measure, rawManifold, SHEET, setAssets } from './kernel';
 import type { MeshData } from './mesh';
 import { defaultParams, shapeDef } from './shapes';
 
@@ -285,7 +285,7 @@ describe('the parts a group was made from', () => {
     const inner = makeGroup([a, b], measure([a, b])!, 'Inner');
     const c = shape('box', { id: 'C', size: [10, 10, 10], pos: [20, 0, 5] });
     const mixed = makeGroup([inner, c], measure([inner, c])!, 'Outer');
-    expect(Object.keys(share(mixed)).sort()).toEqual(['C', `${inner.id}/A`, `${inner.id}/Bs`]);
+    expect(Object.keys(share(mixed)).sort()).toEqual(['C', `${inner.id}/A`, `${inner.id}/Bs`].sort());
     // Whether the inner group is painted is for the viewer to settle; the kernel's answer is the same.
     const painted = makeGroup([{ ...inner, mixed: undefined }, c], measure([inner, c])!, 'Outer');
     expect(share(painted)).toEqual(share(mixed));
@@ -300,6 +300,75 @@ describe('the parts a group was made from', () => {
     expect(local.faces!.source.length).toBe(local.mesh.triangles.length / 3);
     expect(exportNodes([g], false, false, false).faces).toBeUndefined();
     expect(exportNodes([a], false, false, true).faces).toBeUndefined();
+  });
+});
+
+describe('colored export', () => {
+  /** Volume of an indexed mesh (closed, outward), by the divergence theorem. */
+  const volumeOf = (m: MeshData): number => {
+    let v = 0;
+    const { positions: p, triangles: t } = m;
+    for (let i = 0; i < t.length; i += 3) {
+      const [a, b, c] = [t[i] * 3, t[i + 1] * 3, t[i + 2] * 3];
+      v += (p[a] * (p[b + 1] * p[c + 2] - p[b + 2] * p[c + 1]) - p[a + 1] * (p[b] * p[c + 2] - p[b + 2] * p[c]) + p[a + 2] * (p[b] * p[c + 1] - p[b + 1] * p[c])) / 6;
+    }
+    return v;
+  };
+
+  it('writes a painted object as one part in its color, placed', () => {
+    const box = shape('box', { size: [10, 20, 30], pos: [5, 0, 15], color: '#ff0000' });
+    const { objects, warnings } = exportColored([box]);
+    expect(warnings).toEqual([]);
+    expect(objects).toHaveLength(1);
+    expect(objects[0].parts.map((p) => p.color)).toEqual(['#ff0000']);
+    expect(volumeOf(objects[0].parts[0].mesh)).toBeCloseTo(6000, 3);
+    const xs = objects[0].parts[0].mesh.positions.filter((_, i) => i % 3 === 0);
+    expect(Math.min(...xs)).toBeCloseTo(0, 5);
+    expect(Math.max(...xs)).toBeCloseTo(10, 5);
+  });
+
+  it('splits a mixed group by color into parts that do not overlap, with the holes cut from each', () => {
+    // A red box overlapped by a green box, with a bore through the overlap.
+    const red = shape('box', { id: 'r', size: [20, 20, 20], pos: [0, 0, 10], color: '#ff0000' });
+    const green = shape('box', { id: 'g', size: [20, 20, 20], pos: [10, 0, 10], color: '#00ff00' });
+    const bore = shape('box', { id: 'h', size: [4, 4, 30], pos: [5, 0, 10], hole: true });
+    const g = makeGroup([red, green, bore], measure([red, green, bore])!, 'Pair');
+    const { objects } = exportColored([g]);
+    expect(objects).toHaveLength(1);
+    const parts = objects[0].parts;
+    expect(parts.map((p) => p.color)).toEqual(['#ff0000', '#00ff00']);
+    // Red keeps the overlap; green is what is left of its box; the bore is gone from both.
+    expect(volumeOf(parts[0].mesh)).toBeCloseTo(20 * 20 * 20 - 4 * 4 * 20, 3);
+    expect(volumeOf(parts[1].mesh)).toBeCloseTo(10 * 20 * 20, 3);
+    expect(volumeOf(parts[0].mesh) + volumeOf(parts[1].mesh)).toBeCloseTo(make(g).volume, 3);
+    // Painted, the same group is one part in its color.
+    const painted = exportColored([{ ...g, mixed: undefined, color: '#0000ff' }]);
+    expect(painted.objects[0].parts.map((p) => p.color)).toEqual(['#0000ff']);
+    expect(volumeOf(painted.objects[0].parts[0].mesh)).toBeCloseTo(make(g).volume, 3);
+  });
+
+  it('carries the colors of a mixed group inside a mixed group, and merges parts of one color', () => {
+    const a = shape('box', { id: 'a', size: [10, 10, 10], pos: [0, 0, 5], color: '#ff0000' });
+    const b = shape('box', { id: 'b', size: [10, 10, 10], pos: [20, 0, 5], color: '#00ff00' });
+    const inner = makeGroup([a, b], measure([a, b])!, 'Inner');
+    const c = shape('box', { id: 'c', size: [10, 10, 10], pos: [40, 0, 5], color: '#ff0000' });
+    const outer = makeGroup([inner, c], measure([inner, c])!, 'Outer');
+    const { objects } = exportColored([outer]);
+    const parts = objects[0].parts;
+    expect(parts.map((p) => p.color)).toEqual(['#ff0000', '#00ff00']);
+    expect(volumeOf(parts[0].mesh)).toBeCloseTo(2000, 3);
+    expect(volumeOf(parts[1].mesh)).toBeCloseTo(1000, 3);
+  });
+
+  it('leaves out holes, hidden objects and pictures, and passes an open mesh through with a warning', () => {
+    setAssets({ soup: meshAsset([0, 0, 0, 10, 0, 0, 0, 10, 0], [0, 1, 2]) });
+    const open = imported('soup', [10, 10, 1], { color: '#123456' });
+    const hole = shape('box', { hole: true });
+    const hidden = shape('box', { hidden: true });
+    const { objects, warnings } = exportColored([open, hole, hidden]);
+    expect(objects.map((o) => o.parts[0].color)).toEqual(['#123456']);
+    expect(warnings).toHaveLength(1);
+    expect(() => exportColored([hole])).toThrow(/nothing to export/);
   });
 });
 

@@ -1,40 +1,73 @@
+import type { MeshData, MeshWithUV } from '../geometry/mesh';
 import type { OutlineShape, Vec2, Vec3 } from '../model/types';
 import { parse3mf } from './import3mf';
+import { parseGlb } from './importGlb';
 import { parseObj } from './importObj';
 import { parseStl } from './importStl';
 import { parseSvg } from './importSvg';
 
-/** Indexed triangles in millimeters; vertices at the same position are shared. Not necessarily watertight. */
-export interface ImportedMesh {
-  kind: 'mesh';
-  positions: Float32Array;
-  triangles: Uint32Array;
+/** A picture file that came with a model, for its texture. */
+export interface ImportedImage {
+  name: string;
+  mime: 'image/png' | 'image/jpeg';
+  bytes: Uint8Array;
 }
 
-/** Filled 2D shapes in millimeters, Y up. */
+/**
+ * One solid of a model: indexed triangles in millimeters, vertices at the
+ * same position shared, not necessarily watertight; with the color and the
+ * picture the file gave it, if any. Parts of one file sit where the file put
+ * them, relative to each other.
+ */
+export interface ImportedPart {
+  name: string;
+  mesh: MeshWithUV;
+  /** Hex sRGB, as a node's `color`. */
+  color?: string;
+  image?: ImportedImage;
+}
+
+/** A model file: its parts, and the names of the files that came with it and were used (a material library, its pictures). */
+export interface ImportedModel {
+  kind: 'model';
+  parts: ImportedPart[];
+  used: string[];
+}
+
+/** Filled 2D shapes in millimeters, Y up, in groups of one fill color. */
 export interface ImportedOutline {
   kind: 'outline';
-  shapes: OutlineShape[];
+  parts: { shapes: OutlineShape[]; color?: string }[];
 }
 
-export type Imported = ImportedMesh | ImportedOutline;
+export type Imported = ImportedModel | ImportedOutline;
 
-export const IMPORT_EXTENSIONS = ['stl', 'obj', '3mf', 'svg'];
+/** A file picked or dropped along with the one being read. */
+export interface Companion {
+  name: string;
+  bytes: Uint8Array;
+}
+
+export const IMPORT_EXTENSIONS = ['stl', 'obj', '3mf', 'glb', 'gltf', 'svg'];
 /** Pictures, which come in as picture sheets rather than solids. */
 export const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg'];
 
-/** Reads a file by its extension. Throws an Error with a message fit to show the user. */
-export function importFile(fileName: string, bytes: Uint8Array): Imported {
+/** Reads a file by its extension. Throws an Error with a message fit to show the user. `companions` are the other files picked with it. */
+export function importFile(fileName: string, bytes: Uint8Array, companions: Companion[] = []): Imported {
   const extension = /\.([^./\\]+)$/.exec(fileName)?.[1].toLowerCase() ?? '';
+  const name = fileName.slice(Math.max(fileName.lastIndexOf('/'), fileName.lastIndexOf('\\')) + 1).replace(/\.[^.]+$/, '');
   switch (extension) {
     case 'stl':
-      return { kind: 'mesh', ...checkedMesh(parseStl(bytes)) };
+      return { kind: 'model', parts: [{ name, mesh: checkedMesh(parseStl(bytes)) }], used: [] };
     case 'obj':
-      return { kind: 'mesh', ...checkedMesh(parseObj(bytes)) };
+      return checkedModel(parseObj(bytes, name, companions));
     case '3mf':
-      return { kind: 'mesh', ...checkedMesh(parse3mf(bytes)) };
+      return checkedModel(parse3mf(bytes, name));
+    case 'glb':
+    case 'gltf':
+      return checkedModel(parseGlb(bytes, name));
     case 'svg':
-      return { kind: 'outline', shapes: checkedOutline(parseSvg(bytes)) };
+      return { kind: 'outline', parts: parseSvg(bytes).map((part) => ({ ...part, shapes: checkedOutline(part.shapes) })) };
     default: {
       const what = extension ? `.${extension} files` : 'Files of this type';
       const supported = IMPORT_EXTENSIONS.map((e) => e.toUpperCase()).join(', ');
@@ -56,6 +89,11 @@ export function checkedMesh<T extends { positions: Float32Array; triangles: Uint
   return mesh;
 }
 
+function checkedModel(model: ImportedModel): ImportedModel {
+  for (const part of model.parts) checkedMesh(part.mesh);
+  return model;
+}
+
 /** As `checkedMesh`, for the contours of an outline. */
 export function checkedOutline(shapes: OutlineShape[]): OutlineShape[] {
   for (const shape of shapes)
@@ -67,7 +105,7 @@ export function checkedOutline(shapes: OutlineShape[]): OutlineShape[] {
 }
 
 /** Recenters the mesh on the center of its bounding box, in place. Returns the box's size and where its center was. */
-export function centerMesh(mesh: ImportedMesh): { size: Vec3; center: Vec3 } {
+export function centerMesh(mesh: MeshData): { size: Vec3; center: Vec3 } {
   const p = mesh.positions;
   if (p.length < 3) return { size: [0, 0, 0], center: [0, 0, 0] };
   const min: Vec3 = [Infinity, Infinity, Infinity];
@@ -89,7 +127,7 @@ export function centerMesh(mesh: ImportedMesh): { size: Vec3; center: Vec3 } {
 }
 
 /** As `centerMesh`, for the contours of an outline. */
-export function centerOutline(outline: ImportedOutline): { size: Vec2; center: Vec2 } {
+export function centerOutline(outline: { shapes: OutlineShape[] }): { size: Vec2; center: Vec2 } {
   const min: Vec2 = [Infinity, Infinity];
   const max: Vec2 = [-Infinity, -Infinity];
   for (const shape of outline.shapes)

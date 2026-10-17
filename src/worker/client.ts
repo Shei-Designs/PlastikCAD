@@ -1,6 +1,6 @@
 import type { Bounds } from '../model/math';
 import type { Asset, PartNode, SceneNode } from '../model/types';
-import type { BuildResult, ExportResult, WorkerRequest, WorkerResponse } from './protocol';
+import type { BuildResult, ColoredExport, ExportResult, WorkerRequest, WorkerResponse } from './protocol';
 
 interface Waiting {
   resolve: (value: never) => void;
@@ -67,6 +67,11 @@ export class GeometryClient {
 
   export(nodes: SceneNode[], outline: boolean, fine: boolean, local = false): Promise<ExportResult> {
     return this.send({ type: 'export', nodes, outline, fine, local });
+  }
+
+  /** Every node placed, one closed part per color: what a colored mesh format carries. */
+  exportColored(nodes: SceneNode[], fine: boolean, local = false): Promise<ColoredExport> {
+    return this.send({ type: 'exportColored', nodes, fine, local });
   }
 
   dispose(): void {

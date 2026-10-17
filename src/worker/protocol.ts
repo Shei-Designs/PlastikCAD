@@ -17,7 +17,12 @@ export type WorkerRequest =
    * Merge the nodes (holes are ignored at the top level) into one mesh for export; `fine` rebuilds curves with
    * more facets. With `local` the geometry stays in the nodes' own built frames, unplaced (one node at a time).
    */
-  | { type: 'export'; id: number; nodes: SceneNode[]; outline: boolean; fine: boolean; local?: boolean };
+  | { type: 'export'; id: number; nodes: SceneNode[]; outline: boolean; fine: boolean; local?: boolean }
+  /**
+   * Every node placed, as one closed part per color (holes cut, the parts of a mixed group kept apart), for a
+   * colored export. With `local` the parts stay in the nodes' own built frames, unplaced (one node at a time).
+   */
+  | { type: 'exportColored'; id: number; nodes: SceneNode[]; fine: boolean; local?: boolean };
 
 export interface BuildResult {
   key: string;
@@ -37,10 +42,29 @@ export interface ExportResult {
   mesh: MeshData;
   /** A single group exported in place: which child each triangle came from (see `BuildResult`). */
   faces?: Faces;
+  /** A single imported mesh exported in place: the texture coordinates it brought, per corner of `mesh`. */
+  uv?: Float32Array;
   /** Outline of the design seen from above, when requested. Even-odd contours. */
   outline?: Polygon[];
   bounds: Bounds;
   volume: number;
+  warnings: string[];
+}
+
+/** A closed mesh of one color, placed in the design (mm, Z up). */
+export interface ColoredPart {
+  color: string;
+  mesh: MeshData;
+}
+
+/** A top-level node as exported: its parts by color, disjoint, together making up the object. */
+export interface ColoredObject {
+  name: string;
+  parts: ColoredPart[];
+}
+
+export interface ColoredExport {
+  objects: ColoredObject[];
   warnings: string[];
 }
 
@@ -49,4 +73,5 @@ export type WorkerResponse =
   | { type: 'measured'; id: number; bounds: Bounds | null }
   | { type: 'partBoxed'; id: number; bounds: Bounds | null }
   | { type: 'exported'; id: number; result: ExportResult }
+  | { type: 'exportedColored'; id: number; result: ColoredExport }
   | { type: 'error'; id: number; message: string };

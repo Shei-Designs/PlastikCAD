@@ -15,6 +15,13 @@ export interface RenderMesh {
   /** Unindexed triangles (9 floats each); corners carry their own normal so sharp edges shade crisply. */
   positions: Float32Array;
   normals: Float32Array;
+  /** Texture coordinates per corner (v up) that an imported mesh brought with it. */
+  uv?: Float32Array;
+}
+
+/** An indexed mesh that may carry texture coordinates, two per corner (not per vertex: a seam has two). */
+export interface MeshWithUV extends MeshData {
+  uv?: Float32Array;
 }
 
 /**

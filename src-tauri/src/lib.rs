@@ -1,17 +1,24 @@
 // All modelling runs in the webview; the Rust side only provides the native
-// window, the file dialogs and reading and writing files.
+// window, the file dialogs, the projects folder and reading and writing files.
 //
-// Files go through the commands below rather than the fs plugin, whose scope
-// would refuse a recently used design or one passed on the command line: the
-// app is a document editor, and may open whatever the user points it at.
+// Files go through the commands below rather than the fs plugin's own, whose
+// scope would refuse a design passed on the command line: the app is a
+// document editor, and may open whatever the user points it at. The fs plugin
+// is still used from here to open what the Android pickers hand back, which
+// are content URIs rather than paths.
 use std::borrow::Cow;
 use std::ffi::OsString;
 use std::fs;
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::UNIX_EPOCH;
 
+use serde::Serialize;
 use tauri::ipc::{InvokeBody, Request, Response};
+use tauri::{AppHandle, Manager};
+use tauri_plugin_fs::{FilePath, FsExt, OpenOptions};
 
 /// WebKitGTK's DMA-BUF renderer crashes ("Error 71 (Protocol error) dispatching
 /// to Wayland display") or shows a blank window with the proprietary NVIDIA
@@ -84,17 +91,50 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     result
 }
 
+/// A path or, from the Android pickers, a `content://` URI.
+fn file_path(path: &str) -> FilePath {
+    let Ok(parsed) = FilePath::from_str(path);
+    parsed
+}
+
 #[tauri::command]
-async fn read_file(path: String) -> Result<Response, String> {
-    fs::read(&path)
+async fn read_file(app: AppHandle, path: String) -> Result<Response, String> {
+    app.fs()
+        .read(file_path(&path))
         .map(Response::new)
         .map_err(|err| format!("Could not read {path}: {err}"))
+}
+
+/// The first `limit` bytes of a file: enough of a design to read its header
+/// without loading the meshes it may carry.
+#[tauri::command]
+async fn read_head(path: String, limit: u64) -> Result<Response, String> {
+    let mut bytes = Vec::new();
+    fs::File::open(&path)
+        .and_then(|file| file.take(limit).read_to_end(&mut bytes))
+        .map(|_| Response::new(bytes))
+        .map_err(|err| format!("Could not read {path}: {err}"))
+}
+
+fn write_bytes(app: &AppHandle, path: &str, bytes: &[u8]) -> io::Result<()> {
+    let parsed = file_path(path);
+    match parsed.clone().into_path() {
+        Ok(path) => write_atomic(&path, bytes),
+        Err(_) => {
+            // A document picked on Android: written through the descriptor its provider hands out.
+            let mut options = OpenOptions::new();
+            options.read(false).write(true).truncate(true).create(true);
+            let mut file = app.fs().open(parsed, options)?;
+            file.write_all(bytes)?;
+            file.sync_all()
+        }
+    }
 }
 
 /// The file's bytes are the request body and its path is in the `path` header,
 /// which spares a multi-megabyte design a round trip through JSON.
 #[tauri::command]
-async fn write_file(request: Request<'_>) -> Result<(), String> {
+async fn write_file(app: AppHandle, request: Request<'_>) -> Result<(), String> {
     let path = request
         .headers()
         .get("path")
@@ -115,7 +155,102 @@ async fn write_file(request: Request<'_>) -> Result<(), String> {
             .map(Cow::Owned)
             .ok_or_else(|| format!("Could not write {path}: the data was not bytes"))?,
     };
-    write_atomic(Path::new(&path), &bytes).map_err(|err| format!("Could not write {path}: {err}"))
+    write_bytes(&app, &path, &bytes).map_err(|err| format!("Could not write {path}: {err}"))
+}
+
+/// A design in the projects folder, as the projects browser lists it.
+#[derive(Serialize, Debug, PartialEq)]
+struct DesignEntry {
+    name: String,
+    path: String,
+    size: u64,
+    /// Milliseconds since the epoch; 0 where the file system keeps no time.
+    modified: f64,
+}
+
+/// The designs directly inside `dir`, which is created if it does not exist.
+/// Hidden files (the temporaries of writes under way among them) are left out.
+fn designs_in(dir: &Path) -> io::Result<Vec<DesignEntry>> {
+    fs::create_dir_all(dir)?;
+    let mut out = Vec::new();
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with('.') || !is_design_path(&path) {
+            continue;
+        }
+        // Follows symlinks, so a linked design counts and a linked folder does not.
+        let Ok(meta) = fs::metadata(&path) else { continue };
+        if !meta.is_file() {
+            continue;
+        }
+        let modified = meta
+            .modified()
+            .ok()
+            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+            .map_or(0.0, |since| since.as_millis() as f64);
+        out.push(DesignEntry { name, path: path.to_string_lossy().into_owned(), size: meta.len(), modified });
+    }
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(out)
+}
+
+#[tauri::command]
+async fn list_designs(dir: String) -> Result<Vec<DesignEntry>, String> {
+    designs_in(Path::new(&dir)).map_err(|err| format!("Could not read the projects folder {dir}: {err}"))
+}
+
+#[tauri::command]
+async fn remove_file(path: String) -> Result<(), String> {
+    fs::remove_file(&path).map_err(|err| format!("Could not delete {path}: {err}"))
+}
+
+/// Moves a file, within a folder or to another one, never over an existing file.
+fn move_path(from: &Path, to: &Path) -> io::Result<()> {
+    if to.exists() {
+        return Err(io::Error::new(io::ErrorKind::AlreadyExists, "a file of that name already exists"));
+    }
+    if fs::rename(from, to).is_ok() {
+        return Ok(());
+    }
+    // Another file system: copy, then remove the original once the copy is whole.
+    if let Some(parent) = to.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::copy(from, to)?;
+    fs::remove_file(from)
+}
+
+#[tauri::command]
+async fn move_file(from: String, to: String) -> Result<(), String> {
+    move_path(Path::new(&from), Path::new(&to)).map_err(|err| format!("Could not move {from} to {to}: {err}"))
+}
+
+/// Where projects live unless the user chose another folder.
+#[derive(Serialize)]
+struct ProjectsHome {
+    path: String,
+    /// Whether the folder can be changed: on Android projects stay in the app's own storage.
+    fixed: bool,
+}
+
+#[tauri::command]
+fn default_projects_dir(app: AppHandle) -> Result<ProjectsHome, String> {
+    let paths = app.path();
+    #[cfg(mobile)]
+    let (dir, fixed) = (paths.app_data_dir().map(|dir| dir.join("projects")), true);
+    #[cfg(not(mobile))]
+    let (dir, fixed) = (
+        paths
+            .document_dir()
+            .map(|dir| dir.join("BashCAD"))
+            .or_else(|_| paths.app_data_dir().map(|dir| dir.join("projects"))),
+        false,
+    );
+    dir.map_err(|err| format!("Could not find a place for projects: {err}"))
+        .and_then(|dir| dir.into_os_string().into_string().map_err(|_| "The projects folder has an unreadable name".to_owned()))
+        .map(|path| ProjectsHome { path, fixed })
 }
 
 /// Only a design may be opened from the command line: a `.bashcad` file,
@@ -149,9 +284,15 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .invoke_handler(tauri::generate_handler![
             read_file,
+            read_head,
             write_file,
+            list_designs,
+            remove_file,
+            move_file,
+            default_projects_dir,
             startup_file
         ])
         .run(tauri::generate_context!())
@@ -286,6 +427,48 @@ mod tests {
     #[test]
     fn write_atomic_rejects_a_bare_root() {
         assert!(write_atomic(Path::new("/"), b"x").is_err());
+    }
+
+    #[test]
+    fn designs_in_lists_designs_only() {
+        let dir = TempDir::new();
+        fs::write(dir.path("b.bashcad"), b"{}").unwrap();
+        fs::write(dir.path("A.BashCAD"), b"{}").unwrap();
+        fs::write(dir.path("notes.txt"), b"").unwrap();
+        fs::write(dir.path(".a.bashcad.123.0.tmp"), b"").unwrap();
+        fs::create_dir(dir.path("folder.bashcad")).unwrap();
+        let listed = designs_in(&dir.0).unwrap();
+        let names: Vec<&str> = listed.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, vec!["A.BashCAD", "b.bashcad"]);
+        assert_eq!(listed[1].size, 2);
+        assert!(listed[1].modified > 0.0);
+        assert_eq!(Path::new(&listed[1].path), dir.path("b.bashcad"));
+    }
+
+    #[test]
+    fn designs_in_creates_a_missing_folder() {
+        let dir = TempDir::new();
+        let nested = dir.path("new").join("projects");
+        assert_eq!(designs_in(&nested).unwrap(), vec![]);
+        assert!(nested.is_dir());
+    }
+
+    #[test]
+    fn move_path_renames_but_never_overwrites() {
+        let dir = TempDir::new();
+        let from = dir.path("a.bashcad");
+        let to = dir.path("b.bashcad");
+        fs::write(&from, b"a").unwrap();
+        move_path(&from, &to).unwrap();
+        assert_eq!(dir.names(), vec!["b.bashcad"]);
+        fs::write(&from, b"again").unwrap();
+        let err = move_path(&from, &to).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(fs::read(&to).unwrap(), b"a");
+        // Into a folder that does not exist yet.
+        let deep = dir.path("sub").join("c.bashcad");
+        move_path(&from, &deep).unwrap();
+        assert_eq!(fs::read(&deep).unwrap(), b"again");
     }
 
     #[test]
