@@ -117,7 +117,7 @@ export const SHAPES: ShapeDef[] = [
   {
     kind: 'box',
     name: 'Box',
-    summary: 'A block, optionally with rounded edges',
+    summary: 'Block with optional rounded edges.',
     defaultSize: [20, 20, 20],
     params: [
       {
@@ -136,7 +136,7 @@ export const SHAPES: ShapeDef[] = [
   {
     kind: 'cylinder',
     name: 'Cylinder',
-    summary: 'A round bar or disc, optionally with rounded rims',
+    summary: 'Round bar or disc with optional rounded rims.',
     defaultSize: [20, 20, 20],
     params: [
       sidesParam(3, 128, 64, 'Sides', ROUND_HELP),
@@ -156,7 +156,7 @@ export const SHAPES: ShapeDef[] = [
   {
     kind: 'sphere',
     name: 'Sphere',
-    summary: 'A ball; stretch it into an egg',
+    summary: 'Ball or stretched ellipsoid.',
     defaultSize: [20, 20, 20],
     params: [sidesParam(8, 128, 48, 'Segments', 'Number of segments around the equator, in steps of four.')],
     defaultColor: BLUE,
@@ -164,7 +164,7 @@ export const SHAPES: ShapeDef[] = [
   {
     kind: 'cone',
     name: 'Cone',
-    summary: 'A cone, or a tapered plug with a flat top',
+    summary: 'Cone or tapered plug with a flat top.',
     defaultSize: [20, 20, 20],
     params: [
       sidesParam(3, 128, 64, 'Sides', ROUND_HELP),
@@ -183,7 +183,7 @@ export const SHAPES: ShapeDef[] = [
   {
     kind: 'pyramid',
     name: 'Pyramid',
-    summary: 'Flat sides rising to a point',
+    summary: 'Pyramid with any number of sides.',
     defaultSize: [20, 20, 20],
     params: [sidesParam(3, 12, 4)],
     defaultColor: YELLOW,
@@ -191,7 +191,7 @@ export const SHAPES: ShapeDef[] = [
   {
     kind: 'wedge',
     name: 'Wedge',
-    summary: 'A ramp: full height at one end, nothing at the other',
+    summary: 'Ramp sloping from full height to zero.',
     defaultSize: [20, 20, 20],
     params: [],
     defaultColor: RED,
@@ -199,7 +199,7 @@ export const SHAPES: ShapeDef[] = [
   {
     kind: 'roof',
     name: 'Roof',
-    summary: 'A triangular prism lying on its side',
+    summary: 'Triangular prism lying on its side.',
     defaultSize: [20, 20, 20],
     params: [],
     defaultColor: IVORY,
@@ -207,7 +207,7 @@ export const SHAPES: ShapeDef[] = [
   {
     kind: 'roundroof',
     name: 'Round roof',
-    summary: 'Half a cylinder lying on its flat side',
+    summary: 'Half cylinder lying on its flat side.',
     defaultSize: [20, 20, 10],
     params: [sidesParam(2, 64, 32, 'Steps', 'Number of flat faces over the curve.')],
     defaultColor: ORANGE,
@@ -215,7 +215,7 @@ export const SHAPES: ShapeDef[] = [
   {
     kind: 'prism',
     name: 'Prism',
-    summary: 'A bar with a polygon cross-section, such as a hexagon',
+    summary: 'Bar with a polygon cross-section.',
     defaultSize: [...regularFootprint(PRISM_SIDES, 20), 20],
     params: [sidesParam(3, 12, PRISM_SIDES)],
     defaultColor: GREEN,
@@ -223,7 +223,7 @@ export const SHAPES: ShapeDef[] = [
   {
     kind: 'torus',
     name: 'Torus',
-    summary: 'A ring; its height is the thickness of the ring',
+    summary: 'Ring with a round or flattened section.',
     defaultSize: [30, 30, 8],
     params: [
       sidesParam(8, 128, 48, 'Segments', 'Number of segments around the ring.'),
@@ -243,7 +243,7 @@ export const SHAPES: ShapeDef[] = [
   {
     kind: 'dome',
     name: 'Dome',
-    summary: 'Half a sphere, flat side down',
+    summary: 'Half sphere, flat side down.',
     defaultSize: [20, 20, 10],
     params: [sidesParam(8, 128, 48, 'Segments', 'Number of segments around the base, in steps of four.')],
     defaultColor: BLUE,
@@ -251,7 +251,7 @@ export const SHAPES: ShapeDef[] = [
   {
     kind: 'fillet',
     name: 'Fillet',
-    summary: 'An edge cutter: as a hole along an edge it rounds it off, or chamfers it',
+    summary: 'Edge cutter for rounding or chamfering as a hole.',
     defaultSize: [5, 20, 5],
     params: [sidesParam(1, 64, 16, 'Steps', 'Number of flat faces along the curve. One step cuts a straight chamfer.')],
     defaultColor: GRAPHITE,
