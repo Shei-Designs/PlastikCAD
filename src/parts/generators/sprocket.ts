@@ -159,7 +159,7 @@ export const sprocket: GeneratorDef = {
           type: 'number',
           key: 'thickness',
           label: 'Thickness',
-          help: 'Set to 0 to use 93 % of the chain\'s inner width automatically.',
+          help: 'Sets the tooth width. 0 fits the chain automatically.',
           default: 0,
           min: 0,
           max: 30,

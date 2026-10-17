@@ -66,7 +66,7 @@ function Row({ version, parent, previous, current, viewing }: { version: Version
         <button type="button" className="mini" title="Rename" aria-label="Rename" onClick={() => setEditing(true)}>
           <PencilIcon />
         </button>
-        <button type="button" className="mini" title="Restore: make this the working design" aria-label="Restore" onClick={() => restoreVersion(version.id)}>
+        <button type="button" className="mini" title="Restore this version" aria-label="Restore" onClick={() => restoreVersion(version.id)}>
           <RestoreIcon />
         </button>
         <button type="button" className="mini" title="Delete this version" aria-label="Delete version" onClick={() => deleteVersion(version.id)}>
@@ -96,7 +96,7 @@ export function Versions() {
       <header className="params-head">
         <div>
           <h1>Versions</h1>
-          <p>Save the design as it is now; look at or restore any version later. Versions are kept inside the design file.</p>
+          <p>Saves a snapshot of the design to view or restore later.</p>
         </div>
       </header>
       <div className="commit">

@@ -350,7 +350,7 @@ export const extrusion: GeneratorDef = {
   id: 'extrusion',
   name: 'Aluminum rail',
   category: 'frames',
-  summary: 'Slotted aluminum profile in 20, 30 and 40 mm cells (2020, 2040, 4040, 3030, 3060, 4080...), V-slot or T-slot.',
+  summary: 'Slotted aluminum extrusion in standard profile sizes.',
   groups: [
     {
       title: 'Profile',

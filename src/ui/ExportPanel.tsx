@@ -27,7 +27,7 @@ export function ExportPanel() {
     const going = partial ? picked : all;
     // Pictures and textures only travel in a GLB; the other formats carry the shapes alone.
     if (format !== 'glb' && going.some((n) => skinOf(n) !== null)) {
-      const ok = await confirm(`${active.label} files carry no pictures or textures, so the plain shapes are exported. Pick GLB to keep them. Export anyway?`, { title: APP_NAME, okLabel: 'Export' });
+      const ok = await confirm(`${active.label} does not support pictures or textures. Export the plain shapes anyway?`, { title: APP_NAME, okLabel: 'Export' });
       if (!ok) return;
     }
     // Nothing selected: everything goes out as one part, which is worth a moment's pause.

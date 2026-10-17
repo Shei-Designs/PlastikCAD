@@ -90,7 +90,7 @@ function Actions() {
         <button type="button" className="chip icon" title="Duplicate in place (Ctrl+D)" aria-label="Duplicate" disabled={none} onClick={duplicateSelected}>
           <DuplicateIcon />
         </button>
-        <Popover className="chip icon" title="Array: copies in a grid or around a ring" button={<ArrayIcon />} disabled={none} align="right">
+        <Popover className="chip icon" title="Array (grid or ring)" button={<ArrayIcon />} disabled={none} align="right">
           {(close) => <ArrayPanel close={close} />}
         </Popover>
         <button type="button" className="chip icon" title="Delete (Del)" aria-label="Delete" disabled={none} onClick={deleteSelected}>
@@ -98,7 +98,7 @@ function Actions() {
         </button>
       </div>
       <div className="chip-group">
-        <button type="button" className="chip icon" title="Group: merge solids, cut holes (Ctrl+G)" aria-label="Group" disabled={picked.length < 2} onClick={() => void groupSelected()}>
+        <button type="button" className="chip icon" title="Group (Ctrl+G)" aria-label="Group" disabled={picked.length < 2} onClick={() => void groupSelected()}>
           <GroupIcon />
         </button>
         <button type="button" className="chip icon" title="Ungroup (Ctrl+Shift+G)" aria-label="Ungroup" disabled={!hasGroup} onClick={ungroupSelected}>
@@ -109,7 +109,7 @@ function Actions() {
         <button
           type="button"
           className={aligning ? 'chip icon on' : 'chip icon'}
-          title="Align: anchor dots on the selection (L)"
+          title="Align (L)"
           aria-label="Align"
           aria-pressed={Boolean(aligning)}
           disabled={picked.length < 2 && !aligning}
@@ -120,7 +120,7 @@ function Actions() {
         <Popover className="chip icon" title="Mirror (X / Y / Z)" button={<MirrorIcon />} disabled={none} align="right">
           {() => (
             <div className="align-panel">
-              <p>Flip the selection, as in a mirror standing across the chosen axis</p>
+              <p>Mirrors the selection across the chosen axis.</p>
               <div className="segmented">
                 {(['X', 'Y', 'Z'] as const).map((label, axis) => (
                   <button key={label} type="button" title={`Press ${label}`} onClick={() => mirrorSelected(axis as 0 | 1 | 2)}>
@@ -372,7 +372,7 @@ export function Viewport() {
       {placing && <div className="hint-bar">Click on the plate to place the {placing.name.toLowerCase()} · Esc to cancel</div>}
       {aligning && !placing && (
         <div className="hint-bar">
-          {aligning.anchor ? 'Lining up with the chosen object' : 'Click a dot to line the objects up'} · click an object to make it the anchor · Esc to finish
+          {aligning.anchor ? 'Aligning to the anchor' : 'Click a dot to align'} · click an object to set the anchor · Esc to finish
         </div>
       )}
 

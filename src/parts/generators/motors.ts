@@ -284,7 +284,7 @@ function groups(motors: Motor[]): ParamGroup[] {
           label: 'Make',
           type: 'select',
           default: 'plate',
-          help: 'A plate with the bolt holes and the bore, to build into a part. Holes are pins to cut the pattern with. The motor itself is a body to design round or, made a hole, to pocket for. The bracket stands the plate up on a slotted foot.',
+          help: 'Selects the build target for the chosen motor.',
           options: [
             { value: 'plate', label: 'Mounting plate' },
             { value: 'holes', label: 'Mounting holes' },
@@ -309,11 +309,11 @@ function groups(motors: Motor[]): ParamGroup[] {
           help: 'Clearance lets the motor screws pass through the plate. Tap makes them cut their own thread, for a plate the motor screws into.',
           options: [
             { value: 'clearance', label: 'Clearance' },
-            { value: 'tap', label: 'Screw cuts its thread' },
+            { value: 'tap', label: 'Tapped' },
           ],
           visible: is('plate', 'holes', 'bracket'),
         },
-        { key: 'holeLength', label: 'Length', type: 'number', default: 20, min: 1, max: 100, step: 0.5, unit: 'mm', help: 'Long enough to pass right through what it cuts.', visible: is('holes') },
+        { key: 'holeLength', label: 'Length', type: 'number', default: 20, min: 1, max: 100, step: 0.5, unit: 'mm', help: 'Sets the length of the hole cutters.', visible: is('holes') },
       ],
     },
     {
@@ -450,10 +450,10 @@ function family(id: string, name: string, summary: string, motors: Motor[]): Gen
   return { id, name, category: 'motors', summary, groups: groups(motors), build: (p, q) => build(motors, p, q) };
 }
 
-export const stepper = family('stepper-mount', 'Stepper', 'NEMA 8 to 23 steppers and the 28BYJ-48: a mounting plate, the hole pattern, the motor itself, or an L-bracket.', STEPPERS);
-export const gearmotor = family('gearmotor-mount', 'Gearmotor', 'N20, TT, 25 mm and 37 mm gearmotors: a plate, the hole pattern, the motor itself, or a bracket.', GEARMOTORS);
-export const servo = family('servo-mount', 'Servo', 'SG90 and MG996R servos: a plate the body drops through, the cutout and holes, or the servo itself.', SERVOS);
-export const dcMotor = family('dc-motor-mount', 'DC motor', '775 and 130 brushed motors: a plate, the hole pattern, the motor itself, or a bracket.', DC_MOTORS);
+export const stepper = family('stepper-mount', 'Stepper', 'Mounting plate, holes or bracket for a stepper motor.', STEPPERS);
+export const gearmotor = family('gearmotor-mount', 'Gearmotor', 'Mounting plate, holes or bracket for a gearmotor.', GEARMOTORS);
+export const servo = family('servo-mount', 'Servo', 'Mounting plate, holes or bracket for a servo.', SERVOS);
+export const dcMotor = family('dc-motor-mount', 'DC motor', 'Mounting plate, holes or bracket for a DC motor.', DC_MOTORS);
 
 export const MOTORS: GeneratorDef[] = [stepper, gearmotor, servo, dcMotor];
 export const ALL_MOTORS: Motor[] = [...STEPPERS, ...GEARMOTORS, ...SERVOS, ...DC_MOTORS];

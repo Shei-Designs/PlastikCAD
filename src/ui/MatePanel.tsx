@@ -83,11 +83,11 @@ export function MatePanel() {
         </div>
       )}
       <div className="mate-pair">
-        <Figure label="Teeth" help={fixed !== null ? 'Set by this gear’s own "Mating gear teeth".' : undefined} value={teeth} min={current === 'rack' ? 2 : 5} max={400} integer disabled={fixed !== null} onChange={setCount} />
+        <Figure label="Teeth" help={fixed !== null ? 'Taken from the bevel gear’s mating tooth count.' : undefined} value={teeth} min={current === 'rack' ? 2 : 5} max={400} integer disabled={fixed !== null} onChange={setCount} />
         {current !== 'rack' && (
           <Figure
             label="Ratio"
-            help={worm ? 'Wheel teeth over worm starts. Typing a ratio picks the nearest whole number of teeth.' : "Mate teeth over this gear's teeth. Typing a ratio picks the nearest whole number of teeth."}
+            help={worm ? 'Sets the ratio of wheel teeth to worm starts.' : "Sets the ratio of mate teeth to this gear's teeth."}
             value={Number(formatNumber(mate.ratio, 3))}
             min={0.05}
             max={100}

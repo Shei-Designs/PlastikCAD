@@ -185,7 +185,7 @@ export const fan: GeneratorDef = {
   id: 'fan',
   name: 'Fan',
   category: 'fans',
-  summary: 'An axial fan, 25 to 140 mm: its cutout, with a guard pattern or clear, the screw holes, a printed grill, or the fan itself to design round.',
+  summary: 'Cutout, grill or mounting holes for a standard axial fan.',
   groups: [
     {
       title: 'Fan',
@@ -196,7 +196,7 @@ export const fan: GeneratorDef = {
           label: 'Make',
           type: 'select',
           default: 'cutout',
-          help: 'The panel cutout is the opening and screw holes, 20 mm long (stretch it for a thicker wall): make it a hole and group it with the wall. Screw holes alone, for an opening of your own. The frame and grill is a printed guard that screws over the fan. The fan is a stand-in with the frame, hub and blades of a typical fan this size, to check clearance and design round.',
+          help: 'Selects the build target for the chosen fan.',
           options: [
             { value: 'cutout', label: 'Panel cutout' },
             { value: 'holes', label: 'Screw holes' },
@@ -210,7 +210,7 @@ export const fan: GeneratorDef = {
           label: 'Pattern',
           type: 'select',
           default: 'open',
-          help: 'What the opening is filled with. Open: one clear hole. Rings: concentric bars held by spokes. Slots: straight bars across. Honeycomb: hexagonal cells. Grid: square cells. Cut into the wall as a cutout, the pattern is the guard; as a grill it is the grill.',
+          help: 'Selects the guard pattern across the opening.',
           options: [
             { value: 'open', label: 'Open' },
             { value: 'rings', label: 'Rings' },
@@ -221,9 +221,9 @@ export const fan: GeneratorDef = {
           visible: is('cutout', 'grill'),
         },
         { key: 'bar', label: 'Bar width', type: 'number', default: 2, min: 0.8, max: 10, step: 0.1, unit: 'mm', help: 'The material left between the openings. Two nozzle widths prints cleanly.', visible: patterned },
-        { key: 'gap', label: 'Opening width', type: 'number', default: 6, min: 2, max: 30, step: 0.5, unit: 'mm', help: 'The width of each opening: a ring, a slot, or a cell across its flats. Under 8 mm keeps fingers out; under 5 mm keeps most cables out.', visible: patterned },
+        { key: 'gap', label: 'Opening width', type: 'number', default: 6, min: 2, max: 30, step: 0.5, unit: 'mm', help: 'Sets the width of each opening in the pattern.', visible: patterned },
         { key: 'spokes', label: 'Spokes', type: 'number', default: 4, min: 2, max: 8, step: 1, integer: true, help: 'Bars from the middle out that hold the rings together.', visible: (p) => patterned(p) && str(p, 'pattern') === 'rings' },
-        { key: 'thickness', label: 'Thickness', type: 'number', default: 2, min: 0.8, max: 10, step: 0.2, unit: 'mm', help: 'Of the grill plate. 2 mm is stiff enough up to 92 mm; 3 mm for the big fans.', visible: is('grill') },
+        { key: 'thickness', label: 'Thickness', type: 'number', default: 2, min: 0.8, max: 10, step: 0.2, unit: 'mm', help: 'Sets the grill plate thickness.', visible: is('grill') },
         { key: 'rim', label: 'Rim', type: 'number', default: 3, min: 1, max: 15, step: 0.5, unit: 'mm', help: 'Solid border between the pattern and the edge of the grill, which the screws pass through.', visible: is('grill') },
         { key: 'grillHoles', label: 'Screw holes', type: 'boolean', default: true, help: 'The four fan screw holes in the frame. Off for a grill that is glued or built into something else.', visible: is('grill') },
         { key: 'grillCorners', label: 'Rounded corners', type: 'boolean', default: true, help: 'Corners rounded like the fan frame, or square.', visible: is('grill') },

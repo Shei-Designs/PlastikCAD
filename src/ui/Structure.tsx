@@ -74,13 +74,13 @@ export function Structure({ root }: { root: GroupNode }) {
 
   return (
     <fieldset className="group structure">
-      <legend title="Hover a part to find it on the plate; pick one to edit the object at that layer">
+      <legend title="Hover to highlight a part; click to edit it.">
         Structure tree
         <span className="count">
           {leaves} part{leaves === 1 ? '' : 's'}, {levels} level{levels === 1 ? '' : 's'}
         </span>
       </legend>
-      <ul className="outline" role="tree" aria-label="How the object was put together">
+      <ul className="outline" role="tree" aria-label="Structure tree">
         {row(root, [root.id])}
       </ul>
       {chosenNode && picked && picked.length > 1 && (
@@ -93,7 +93,7 @@ export function Structure({ root }: { root: GroupNode }) {
           </button>
         </div>
       )}
-      {chosenNode && picked && picked.length === 1 && <p className="field-note">That is the whole object. Pick a part or a grouping inside it.</p>}
+      {chosenNode && picked && picked.length === 1 && <p className="field-note">Select a part or group inside the object.</p>}
     </fieldset>
   );
 }

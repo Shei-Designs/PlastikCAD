@@ -235,7 +235,7 @@ export const SHAPES: ShapeDef[] = [
         step: 0.5,
         unit: 'mm',
         default: 0,
-        help: 'How wide the ring is from the hole out to the rim, so the hole is the width less twice this. 0 makes the section round, as wide as the ring is tall. Limited to half the width.',
+        help: 'Sets the ring width from the hole to the outer rim. 0 gives a round cross-section.',
       },
     ],
     defaultColor: ORANGE,

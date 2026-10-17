@@ -141,7 +141,7 @@ function Shapes() {
             <button
               type="button"
               className={def.kind === active ? 'shape selected' : 'shape'}
-              title={`${def.summary}\nClick, then click on the plate to place it. Double-click to drop it in the middle.`}
+              title={def.summary}
               disabled={Boolean(viewing)}
               // Pressing starts carrying the shape, so it can also be dragged straight onto the plate.
               onPointerDown={(e) => {
@@ -162,7 +162,7 @@ function Shapes() {
           <button
             type="button"
             className={placing?.type === 'text' ? 'shape selected' : 'shape'}
-            title={'Lettering to emboss on an object or, as a hole, to engrave in it\nClick, then click on the plate or on top of an object to place it.'}
+            title="Places lettering to emboss, or engrave as a hole."
             disabled={Boolean(viewing)}
             onPointerDown={(e) => {
               if (e.button === 0) void startPlacingText();
@@ -180,7 +180,7 @@ function Shapes() {
           <button
             type="button"
             className={placing?.type === 'picture' ? 'shape selected' : 'shape'}
-            title={'A picture (PNG or JPEG) on a sheet: group it with an object and it prints onto the surface\nClick, pick the file, then click on the plate to place it. Double-click to drop it in the middle.'}
+            title="Places a picture that prints onto the object it is grouped with."
             disabled={Boolean(viewing)}
             onPointerDown={(e) => {
               if (e.button === 0) void startPlacingPicture();
@@ -202,7 +202,7 @@ function Shapes() {
             <button
               type="button"
               className={placing?.type === 'part' && placingFamily === c.id ? 'shape selected' : 'shape'}
-              title={`${c.label}: pick the kind and the numbers once it is placed.\nClick, then click on the plate to place it. Double-click to drop it in the middle.`}
+              title={c.summary}
               disabled={Boolean(viewing)}
               onPointerDown={(e) => {
                 if (e.button === 0) void startPlacingPart(c.id);
@@ -226,7 +226,7 @@ function ImportRow() {
   const viewing = useEditor((s) => s.viewing);
   return (
     <div className="import-row">
-      <button type="button" className="import-button" title={`Import an STL, OBJ or 3MF mesh, an SVG drawing, or a PNG or JPEG picture (${MOD}I)`} disabled={Boolean(viewing)} onClick={() => void importModel()}>
+      <button type="button" className="import-button" title={`Import a model, drawing or picture (${MOD}I)`} disabled={Boolean(viewing)} onClick={() => void importModel()}>
         <ImportIcon />
         Import model or picture…
       </button>
@@ -281,7 +281,7 @@ function Objects() {
                 <button
                   type="button"
                   className={node.locked ? 'mini on' : 'mini'}
-                  title={node.locked ? 'Unlock' : 'Lock (protect from changes)'}
+                  title={node.locked ? 'Unlock' : 'Lock'}
                   aria-label={node.locked ? 'Unlock' : 'Lock'}
                   aria-pressed={Boolean(node.locked)}
                   onClick={() => toggleLocked(node.id)}
@@ -291,7 +291,7 @@ function Objects() {
                 <button
                   type="button"
                   className={node.hidden ? 'mini on' : 'mini'}
-                  title={node.hidden ? 'Show' : 'Hide (hidden objects are not exported)'}
+                  title={node.hidden ? 'Show' : 'Hide'}
                   aria-label={node.hidden ? 'Show' : 'Hide'}
                   aria-pressed={Boolean(node.hidden)}
                   onClick={() => toggleHidden(node.id)}

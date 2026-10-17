@@ -131,15 +131,15 @@ export function ArrayPanel({ close }: { close: () => void }) {
           {frame && (
             <>
               <div className="field inline">
-                <label htmlFor={fitId} title={`${frame.name} stays put; the copies spread over it`}>
+                <label htmlFor={fitId} title={`Spreads the copies over ${frame.name}`}>
                   Fit inside {frame.name}
                 </label>
                 <input id={fitId} className="switch" type="checkbox" role="switch" checked={fit} onChange={(e) => setFit(e.target.checked)} />
               </div>
               {fit && (
                 <div className="field inline">
-                  <label>Centers in from its edges</label>
-                  <NumberBox label="Distance from the edges to the centers of the first and last copies" value={inset} unit="mm" min={-BIG} max={BIG} onChange={setInset} />
+                  <label>Edge inset</label>
+                  <NumberBox label="Edge inset" value={inset} unit="mm" min={-BIG} max={BIG} onChange={setInset} />
                 </div>
               )}
             </>
@@ -189,7 +189,7 @@ export function ArrayPanel({ close }: { close: () => void }) {
             </>
           )}
           <div className="field inline">
-            <label htmlFor={turnId} title="Each copy turns to face its place on the ring; off, they all keep the original's heading">
+            <label htmlFor={turnId} title="Rotates each copy to follow the ring">
               Rotate copies around the ring
             </label>
             <input id={turnId} className="switch" type="checkbox" role="switch" checked={turn} onChange={(e) => setTurn(e.target.checked)} />

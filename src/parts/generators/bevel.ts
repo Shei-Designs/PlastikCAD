@@ -39,7 +39,7 @@ export const bevelGear: GeneratorDef = {
           type: 'number',
           key: 'mateTeeth',
           label: 'Mating gear teeth',
-          help: 'Sets the cone angle. Generate the mate by swapping the two tooth counts.',
+          help: 'Sets the mating gear\'s tooth count, which determines the cone angle.',
           default: 20,
           min: 8,
           max: 200,

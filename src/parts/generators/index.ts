@@ -37,16 +37,16 @@ export const GENERATORS: GeneratorDef[] = [
   ...MOTORS,
 ];
 
-export const CATEGORIES: { id: Category; label: string }[] = [
-  { id: 'gears', label: 'Gears' },
-  { id: 'pulleys', label: 'Pulleys & sprockets' },
-  { id: 'screws', label: 'Screws & threads' },
-  { id: 'frames', label: 'Rails & frames' },
-  { id: 'ducts', label: 'Pipes & ducts' },
-  { id: 'boards', label: 'Dev boards' },
-  { id: 'fans', label: 'Fans' },
-  { id: 'cutouts', label: 'Panel cutouts' },
-  { id: 'motors', label: 'Motor mounts' },
+export const CATEGORIES: { id: Category; label: string; summary: string }[] = [
+  { id: 'gears', label: 'Gears', summary: 'Spur, helical, bevel, worm and other common gear types.' },
+  { id: 'pulleys', label: 'Pulleys & sprockets', summary: 'Pulleys & sprockets used for belt and chain driven systems.' },
+  { id: 'screws', label: 'Screws & threads', summary: 'Screws, bolts, nuts and threaded parts.' },
+  { id: 'frames', label: 'Rails & frames', summary: 'Aluminum extrusion rails for frames and structures.' },
+  { id: 'ducts', label: 'Pipes & ducts', summary: 'Pipe and duct sections for routing air or cables.' },
+  { id: 'boards', label: 'Dev boards', summary: 'Mounts and cutouts for common dev boards.' },
+  { id: 'fans', label: 'Fans', summary: 'Cutouts, grills and mounting holes for axial fans.' },
+  { id: 'cutouts', label: 'Panel cutouts', summary: 'Panel cutouts for common connectors and switches.' },
+  { id: 'motors', label: 'Motor mounts', summary: 'Mounting plates and brackets for steppers, gearmotors, servos and DC motors.' },
 ];
 
 /**

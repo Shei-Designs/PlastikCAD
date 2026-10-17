@@ -21,16 +21,17 @@ const SHORTCUTS: [string, string][] = [
   ['Zoom', 'Wheel'],
   ['Move', 'Drag · arrow keys'],
   ['Raise or lower', `Arrow handle · ${MOD}↑↓`],
-  ['Height', 'Top grip pulls up, bottom grip pulls down'],
-  ['Type a value', 'Click a grip instead of dragging it'],
+  ['Resize height', 'Drag top or bottom grip'],
+  ['Type a size', 'Click a grip'],
   ['Duplicate', `${MOD}D`],
   ['Group / ungroup', `${MOD}G / ${MOD}Shift+G`],
   ['Solid / hole', 'S / H'],
-  ['Flip on an axis', 'X / Y / Z'],
-  ['Turn 90° about an axis', 'Shift+X / Y / Z (Alt: the other way)'],
-  ['Align (anchor dots)', 'L · click an object to anchor'],
-  ['Align by key', 'Alt+arrows / PgUp / PgDn; +Shift centers'],
-  ['Center on X and Y', 'Alt+C'],
+  ['Mirror', 'X / Y / Z'],
+  ['Rotate 90°', 'Shift+X / Y / Z · Alt reverses'],
+  ['Align', 'L'],
+  ['Align to edge', 'Alt+arrows / PgUp / PgDn'],
+  ['Align centers', 'Alt+Shift+arrows'],
+  ['Center on plate', 'Alt+C'],
   ['Drop onto the plate', 'D'],
   ['Fit to view', 'F'],
   ['Import model or picture', `${MOD}I`],
@@ -43,11 +44,11 @@ const kindOf = (node: SceneNode): string =>
     : node.type === 'import'
       ? 'Imported model'
       : node.type === 'text'
-        ? 'Lettering: solid to emboss, hole to engrave'
+        ? 'Lettering to emboss, or engrave as a hole.'
         : node.type === 'part'
           ? getGenerator(node.part).summary
           : node.type === 'picture'
-            ? 'A picture: group it with an object to put it on its surface'
+            ? 'Picture that prints onto the object it is grouped with.'
             : shapeDef(node.shape).summary;
 
 function NameField({ node }: { node: SceneNode }) {
@@ -219,8 +220,8 @@ function TextFields({ node }: { node: TextNode }) {
 }
 
 const MAPPINGS: { id: PictureMapping; label: string; title: string }[] = [
-  { id: 'flat', label: 'Flat', title: 'A flat sheet: the picture prints straight through it onto whatever faces it from behind' },
-  { id: 'wrap', label: 'Wrap', title: 'A band around its own axis, facing the front: the picture prints inwards onto the first surface that faces outwards' },
+  { id: 'flat', label: 'Flat', title: 'Projects the picture from a flat sheet.' },
+  { id: 'wrap', label: 'Wrap', title: 'Projects the picture from a curved band.' },
 ];
 
 function PictureFields({ node }: { node: PictureNode }) {
@@ -242,7 +243,7 @@ function PictureFields({ node }: { node: PictureNode }) {
         </div>
       </div>
       {node.mapping === 'wrap' && (
-        <SliderField label="Reach around" help="How far round the band the picture goes, in degrees of the circumference. The band's diameter and height are its size." value={node.angle} min={5} max={360} step={1} integer unit="°" onChange={(v) => editPicture(node.id, { angle: v })} />
+        <SliderField label="Reach around" help="Sets how far around the band the picture wraps." value={node.angle} min={5} max={360} step={1} integer unit="°" onChange={(v) => editPicture(node.id, { angle: v })} />
       )}
       <dl className="facts">
         {image && (

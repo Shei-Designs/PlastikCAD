@@ -225,7 +225,7 @@ export const ringGear: GeneratorDef = {
           type: 'number',
           key: 'sunTeeth',
           label: 'Sun gear teeth',
-          help: 'Only used to work out the planet size and ratio shown under Dimensions.',
+          help: 'Sets the sun gear size for the planet and ratio readouts.',
           default: 16,
           min: 5,
           max: 200,
@@ -263,7 +263,7 @@ export const ringGear: GeneratorDef = {
       // Planets can be evenly spaced when (ring + sun) divides by their count, and they must not touch.
       const counts = [2, 3, 4, 5, 6].filter((k) => (z + sun) % k === 0 && (sun + planet) * Math.sin(Math.PI / k) > planet + 2);
       info.push({ label: 'Evenly spaced planets', value: counts.length ? counts.join(', ') : 'none' });
-      info.push({ label: 'Ratio (ring fixed, sun → carrier)', value: `${(1 + z / sun).toFixed(3).replace(/\.?0+$/, '')} : 1` });
+      info.push({ label: 'Ratio, sun to carrier', value: `${(1 + z / sun).toFixed(3).replace(/\.?0+$/, '')} : 1` });
     }
     info.push({ label: 'Total height', value: mm(height) });
     return { solid: extrude(shape, height), outline: shape, info, warnings };

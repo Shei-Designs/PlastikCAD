@@ -36,7 +36,7 @@ export function boreGroup(d: BoreDefaults = {}): ParamGroup {
         label: 'Shape',
         default: d.type ?? 'round',
         options: [
-          { value: 'none', label: 'None (solid)' },
+          { value: 'none', label: 'None' },
           { value: 'round', label: 'Round' },
           { value: 'd', label: 'D-shaft' },
           { value: 'hex', label: 'Hex' },

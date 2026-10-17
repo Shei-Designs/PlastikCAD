@@ -259,7 +259,7 @@ function makePulley(f: PulleyFamily): GeneratorDef {
             type: 'number',
             key: 'beltWidth',
             label: 'Belt width',
-            help: `The toothed section is made ${BELT_MARGIN} mm taller than the belt.`,
+            help: 'Sets the belt width the toothed section is cut for.',
             default: f.beltWidth,
             min: 2,
             max: 100,

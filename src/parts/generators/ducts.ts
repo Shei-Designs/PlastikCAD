@@ -151,7 +151,7 @@ function sectionGroup(): ParamGroup {
       { key: 'width', label: 'Width', type: 'number', default: 50, min: 2, max: 600, step: 0.5, unit: 'mm', help: 'Outside width, across the plane of a bend.', visible: isRect },
       { key: 'height', label: 'Height', type: 'number', default: 30, min: 2, max: 600, step: 0.5, unit: 'mm', help: 'Outside height.', visible: isRect },
       { key: 'corner', label: 'Corner radius', type: 'number', default: 5, min: 0, max: 100, step: 0.5, unit: 'mm', help: 'Rounds the four corners. 0 for a sharp box.', visible: isRect },
-      { key: 'wall', label: 'Wall', type: 'number', default: 2, min: 0, max: 50, step: 0.1, unit: 'mm', help: 'Thickness of the wall around the bore. 0 makes it solid, which is what a hole wants.' },
+      { key: 'wall', label: 'Wall', type: 'number', default: 2, min: 0, max: 50, step: 0.1, unit: 'mm', help: 'Sets the wall thickness. 0 makes the pipe solid.' },
     ],
   };
 }
@@ -229,7 +229,7 @@ export const elbow: GeneratorDef = {
       title: 'Bend',
       params: [
         { key: 'angle', label: 'Angle', type: 'number', default: 90, min: 1, max: 180, step: 1, unit: '°', help: 'How far the run turns. 90° is a square corner.' },
-        { key: 'bendRadius', label: 'Bend radius', type: 'number', default: 30, min: 1, max: 500, step: 1, unit: 'mm', help: 'Radius of the bend along the center line. It cannot be less than half the width, or the inside of the bend would fold over.' },
+        { key: 'bendRadius', label: 'Bend radius', type: 'number', default: 30, min: 1, max: 500, step: 1, unit: 'mm', help: 'Sets the bend radius along the center line.' },
         { key: 'legA', label: 'Leg before', type: 'number', default: 10, min: 0, max: 500, step: 1, unit: 'mm', help: 'Straight length before the bend.' },
         { key: 'legB', label: 'Leg after', type: 'number', default: 10, min: 0, max: 500, step: 1, unit: 'mm', help: 'Straight length after the bend.' },
       ],

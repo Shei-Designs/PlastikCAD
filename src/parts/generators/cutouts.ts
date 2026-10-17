@@ -137,7 +137,7 @@ export const panelConnector: GeneratorDef = {
   id: 'panel-connector',
   name: 'Panel connector',
   category: 'cutouts',
-  summary: 'The cutout and screw holes for a connector that bolts to a panel: Neutrik D-series, IEC mains, D-sub, XT60.',
+  summary: 'Cutout and screw holes for a panel-mount connector.',
   groups: [
     {
       title: 'Connector',

@@ -337,12 +337,12 @@ function groups(boards: Board[], defaultForm: Form): ParamGroup[] {
           label: 'Make',
           type: 'select',
           default: defaultForm,
-          help: 'Standoffs are posts at the mounting holes. Holes are pins to cut the holes with. The blank is a slab the shape of the board, for checking fit or, grown by a gap and made a hole, for a pocket. Corner stops hold a board that has no holes. The board with its connectors is the blank with every socket in its place, reaching out past the edge: a reference to design round, or, made a hole, the cutter for the wall openings.',
+          help: 'Selects the build target for the chosen board.',
           options: [
             { value: 'standoffs', label: 'Standoffs' },
             { value: 'holes', label: 'Mounting holes' },
             { value: 'blank', label: 'Board blank' },
-            { value: 'connectors', label: 'Board with connectors' },
+            { value: 'connectors', label: 'Board & connectors' },
             { value: 'corners', label: 'Corner stops' },
           ],
         },
@@ -351,17 +351,17 @@ function groups(boards: Board[], defaultForm: Form): ParamGroup[] {
     {
       title: 'Standoffs',
       params: [
-        { key: 'postHeight', label: 'Height', type: 'number', default: 6, min: 1, max: 60, step: 0.5, unit: 'mm', help: 'From the base, or from whatever the posts stand on, to the underside of the board.', visible: is('standoffs') },
+        { key: 'postHeight', label: 'Height', type: 'number', default: 6, min: 1, max: 60, step: 0.5, unit: 'mm', help: 'Sets the standoff height to the underside of the board.', visible: is('standoffs') },
         { key: 'postDiameter', label: 'Diameter', type: 'number', default: 6, min: 2, max: 20, step: 0.5, unit: 'mm', visible: is('standoffs') },
       ],
     },
     {
       title: 'Stops',
       params: [
-        { key: 'stopHeight', label: 'Height', type: 'number', default: 5, min: 1, max: 60, step: 0.5, unit: 'mm', help: 'How far the stops rise above the base, or above whatever they stand on.', visible: is('corners') },
+        { key: 'stopHeight', label: 'Height', type: 'number', default: 5, min: 1, max: 60, step: 0.5, unit: 'mm', help: 'Sets the height of the corner stops.', visible: is('corners') },
         { key: 'stopThickness', label: 'Thickness', type: 'number', default: 2, min: 0.8, max: 10, step: 0.1, unit: 'mm', visible: is('corners') },
         { key: 'stopLength', label: 'Leg length', type: 'number', default: 8, min: 2, max: 40, step: 0.5, unit: 'mm', help: 'How far each stop runs along the two edges it holds.', visible: is('corners') },
-        { key: 'stopGap', label: 'Gap to the board', type: 'number', default: 0.3, min: 0, max: 3, step: 0.05, unit: 'mm', help: 'Room between the board and the stops. 0.3 mm suits most printers.', visible: is('corners') },
+        { key: 'stopGap', label: 'Gap', type: 'number', default: 0.3, min: 0, max: 3, step: 0.05, unit: 'mm', help: 'Room between the board and the stops. 0.3 mm suits most printers.', visible: is('corners') },
       ],
     },
     {
@@ -372,9 +372,9 @@ function groups(boards: Board[], defaultForm: Form): ParamGroup[] {
           label: 'Hole',
           type: 'select',
           default: 'tap',
-          help: 'Tap: the screw cuts its own thread in the plastic. Clearance: the screw passes through, for a nut or a threaded post. Insert: a heat-set brass insert. The size follows the screw the board takes.',
+          help: 'Selects how the mounting holes are sized for the board\'s screws.',
           options: [
-            { value: 'tap', label: 'Screw cuts its thread' },
+            { value: 'tap', label: 'Tapped' },
             { value: 'clearance', label: 'Clearance' },
             { value: 'insert', label: 'Heat-set insert' },
             { value: 'custom', label: 'Custom diameter' },
@@ -383,29 +383,29 @@ function groups(boards: Board[], defaultForm: Form): ParamGroup[] {
           visible: is('standoffs', 'holes'),
         },
         { key: 'holeDiameter', label: 'Diameter', type: 'number', default: 2.8, min: 0.5, max: 12, step: 0.05, unit: 'mm', visible: (p) => is('standoffs', 'holes')(p) && str(p, 'holeKind') === 'custom' },
-        { key: 'holeLength', label: 'Length', type: 'number', default: 20, min: 1, max: 100, step: 0.5, unit: 'mm', help: 'Long enough to pass right through what it cuts.', visible: is('holes') },
+        { key: 'holeLength', label: 'Length', type: 'number', default: 20, min: 1, max: 100, step: 0.5, unit: 'mm', help: 'Sets the length of the hole cutters.', visible: is('holes') },
       ],
     },
     {
       title: 'Blank',
       params: [
-        { key: 'blankGap', label: 'Gap all round', type: 'number', default: 0, min: 0, max: 3, step: 0.05, unit: 'mm', help: '0 is the board itself, holes included. A gap makes it a pocket cutter: the holes are left out so that the pocket is clear.', visible: is('blank') },
+        { key: 'blankGap', label: 'Gap all round', type: 'number', default: 0, min: 0, max: 3, step: 0.05, unit: 'mm', help: 'Adds clearance around the board blank. Any gap makes it a pocket cutter and removes the holes.', visible: is('blank') },
         { key: 'blankThickness', label: 'Thickness', type: 'number', default: 1.6, min: 0.5, max: 60, step: 0.1, unit: 'mm', help: '1.6 mm is the board. For a pocket, the depth of the pocket.', visible: is('blank') },
       ],
     },
     {
       title: 'Connectors',
       params: [
-        { key: 'reach', label: 'Reach past the edge', type: 'number', default: 15, min: 0, max: 60, step: 0.5, unit: 'mm', help: 'How far every connector reaches out beyond the board edge: enough to pass right through the wall it faces.', visible: is('connectors') },
+        { key: 'reach', label: 'Reach', type: 'number', default: 15, min: 0, max: 60, step: 0.5, unit: 'mm', help: 'How far every connector reaches out beyond the board edge: enough to pass right through the wall it faces.', visible: is('connectors') },
         {
           key: 'fit',
           label: 'Past the edge',
           type: 'select',
           default: 'plug',
-          help: 'What reaches out past the edge. The plugs: the molded plug bodies, so that as a hole the part cuts openings the plugs fit through (the sockets themselves stop at the edge, as on a Pi). The socket bodies: the sockets carried straight on out, for ones that poke through the wall.',
+          help: 'Selects whether the plugs or the socket bodies extend past the board edge.',
           options: [
-            { value: 'plug', label: 'The plugs' },
-            { value: 'body', label: 'The socket bodies' },
+            { value: 'plug', label: 'Plugs' },
+            { value: 'body', label: 'Socket bodies' },
           ],
           visible: is('connectors'),
         },
@@ -422,7 +422,7 @@ function groups(boards: Board[], defaultForm: Form): ParamGroup[] {
           help: 'A plate under the posts or stops, the shape of the board with a margin, so the mount is one printable piece.',
           options: [
             { value: 'none', label: 'None' },
-            { value: 'plate', label: 'Plate under the board' },
+            { value: 'plate', label: 'Base plate' },
           ],
           visible: is('standoffs', 'corners'),
         },
@@ -593,9 +593,9 @@ function family(id: string, name: string, summary: string, boards: Board[], defa
   };
 }
 
-export const raspberryPi = family('raspberry-pi', 'Raspberry Pi', 'The Raspberry Pi 5, 4, 3, Zero 2 W and Pico: standoffs, hole templates, a blank, corner stops, or the board with its connectors in place to design round and cut the wall with.', RASPBERRY_PI, 'standoffs');
-export const arduino = family('arduino', 'Arduino', 'The Arduino Uno, Mega and Nano: standoffs, hole templates, a blank, corner stops, or the board with its connectors in place.', ARDUINO, 'standoffs');
-export const esp32 = family('esp32', 'ESP32', 'The ESP32 dev kits: corner stops or a pocket for the ones without holes, standoffs for the DevKit V1, or the board with its USB socket in place.', ESP32, 'corners');
+export const raspberryPi = family('raspberry-pi', 'Raspberry Pi', 'Mounts and cutouts for Raspberry Pi boards.', RASPBERRY_PI, 'standoffs');
+export const arduino = family('arduino', 'Arduino', 'Mounts and cutouts for Arduino boards.', ARDUINO, 'standoffs');
+export const esp32 = family('esp32', 'ESP32', 'Mounts and cutouts for ESP32 dev kits.', ESP32, 'corners');
 
 export const BOARDS: GeneratorDef[] = [raspberryPi, arduino, esp32];
 export const ALL_BOARDS: Board[] = [...RASPBERRY_PI, ...ARDUINO, ...ESP32];

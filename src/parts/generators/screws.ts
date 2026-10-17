@@ -410,7 +410,7 @@ export const leadScrewNut: GeneratorDef = {
   id: 'lead-screw-nut',
   name: 'Lead screw nut',
   category: 'screws',
-  summary: 'Flanged nut for a trapezoidal lead screw (defaults match the common T8 nut).',
+  summary: 'Flanged nut for a trapezoidal lead screw.',
   groups: [
     {
       title: 'Thread',
