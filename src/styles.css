@@ -2234,8 +2234,8 @@ kbd {
 
 .projects-foot {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
   margin-top: auto;
   padding: 10px 16px;
   border-top: 1px solid var(--border);
@@ -2243,10 +2243,21 @@ kbd {
   font-size: 12.5px;
 }
 
+.projects-foot-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+}
+
 .projects-foot .clip {
   flex: 1;
   user-select: text;
   -webkit-user-select: text;
+}
+
+.projects-foot .sync-error {
+  color: #e5636a;
 }
 
 .menu-item.danger {

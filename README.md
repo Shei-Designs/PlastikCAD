@@ -154,6 +154,29 @@ as a project of its own, with a fresh id, so a file someone sent you never
 passes for one of your own. **Save a copy…** (Ctrl+Shift+S) writes the design
 wherever you like, to share or keep; the project itself stays where it is.
 
+### Google Drive
+
+Projects can be kept in step across devices through Google Drive. In the
+projects browser, **Link Google Drive…** signs you in with Google in your
+browser; from then on BashCAD keeps a copy of every project in a `BashCAD`
+folder at the top of your Drive and syncs a few seconds after each save, when
+the app starts or comes back online, every few minutes, and on **Sync now**.
+Exports are never synced.
+
+BashCAD asks only for access to files it created itself (Google's
+`drive.file` permission), so it cannot read the rest of your Drive. The flip
+side is that it also cannot see a project file you drop into that folder by
+hand; bring such a file in with **Open project file…** instead.
+
+A project edited on two devices before they sync is merged object by object.
+When the same object was changed on both, both versions are kept: the other
+device's copy appears as a project of its own, named "… (other device)", on
+both devices. A project deleted on one device is deleted on the others,
+unless it was changed there since, in which case it comes back.
+
+Unlinking stops the syncing and leaves the projects where they are, here and
+in the Drive.
+
 A `.bashcad` file is plain JSON, written to diff well: keys in a fixed order,
 one property per line, vectors on a single line. If you keep the projects
 folder in git, a change to one object shows up as a change to a few lines,
@@ -336,6 +359,25 @@ After editing them, regenerate the bitmaps with `pnpm tauri icon` — see
 Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds installers
 for all three platforms and attaches them to a draft GitHub release.
 
+### Google Drive sync in your own build
+
+Sync talks to Google as an installed app and needs an OAuth client of your
+own; without one the projects browser says sync is not set up. In the
+[Google Cloud console](https://console.cloud.google.com/) create a project,
+enable the Google Drive API, set up the OAuth consent screen (external, in
+production; the only scope used is `drive.file`, which needs no
+verification), and create an OAuth client of type **Desktop app**. Then build
+with its id and secret in the environment:
+
+```sh
+VITE_GOOGLE_CLIENT_ID=…apps.googleusercontent.com VITE_GOOGLE_CLIENT_SECRET=… pnpm tauri build
+```
+
+(or put them in a `.env.local`, which git ignores). For an installed app
+Google does not treat the secret as secret. The sign-in opens the system
+browser and comes back to a loopback port on the device, on desktop and
+Android alike, so one client serves both.
+
 ### How it is put together
 
 ```
@@ -349,6 +391,7 @@ src/
   viewer/             three.js view: drawing, picking, handles
   parts/              the gear, pulley, sprocket and thread generators
   io/                 STL, 3MF, OBJ, GLB, SVG, DXF writers; STL, OBJ, 3MF, GLB, SVG, DXF readers
+  sync/               Google sign-in (PKCE, loopback), Drive remote, three-way merge, sync engine
   text/               fonts, and laying words out as outlines
   ui/                 React components
   platform.ts         desktop app or plain browser: dialogs, files, drops

@@ -3,19 +3,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { APP_NAME } from '../app';
+import { isDesktop } from '../platform';
 import type { ProjectInfo } from '../state/projects';
 import {
   chooseProjectsFolder,
   closeProjects,
   deleteProject,
   duplicateProject,
+  linkGoogleDrive,
   listProjects,
   newProject,
   openProject,
   openProjectFile,
   renameProjectAt,
+  unlinkGoogleDrive,
   useEditor,
 } from '../state/store';
+import { syncNow, useSyncStatus } from '../sync/sync';
 import { CloseIcon, Logo, MoreIcon } from './icons';
 import { Popover } from './Popover';
 
@@ -91,6 +95,37 @@ function Card({ item, current, refresh }: { item: ProjectInfo; current: boolean;
   );
 }
 
+/** The Google Drive line of the footer: link, or the account and when it last synced. */
+function DriveRow() {
+  const sync = useSyncStatus();
+  if (!sync.configured) return <span className="clip">Google Drive sync is not set up in this build.</span>;
+  if (!isDesktop()) return <span className="clip">Google Drive sync works in the desktop and Android apps.</span>;
+  if (!sync.linked) {
+    return (
+      <>
+        <span className="clip">Google Drive: not linked{sync.error ? ` · ${sync.error}` : ''}</span>
+        <button type="button" className="chip" disabled={sync.busy} title="Keeps your projects in step across devices through your Google Drive" onClick={() => void linkGoogleDrive()}>
+          {sync.busy ? 'Signing in…' : 'Link Google Drive…'}
+        </button>
+      </>
+    );
+  }
+  const state = sync.busy ? 'Syncing…' : sync.offline ? 'Offline' : sync.error ? sync.error : sync.lastSync ? `Synced ${when(sync.lastSync).toLowerCase()}` : 'Not synced yet';
+  return (
+    <>
+      <span className={sync.error && !sync.busy ? 'clip sync-error' : 'clip'}>
+        Google Drive: {sync.email ?? 'linked'} · {state}
+      </span>
+      <button type="button" className="chip" disabled={sync.busy} title="Syncs with Google Drive now" onClick={() => void syncNow()}>
+        Sync now
+      </button>
+      <button type="button" className="chip" disabled={sync.busy} title="Stops syncing with Google Drive" onClick={() => void unlinkGoogleDrive()}>
+        Unlink
+      </button>
+    </>
+  );
+}
+
 export function Projects() {
   const open = useEditor((s) => s.browsing);
   const currentKey = useEditor((s) => s.projectKey);
@@ -106,6 +141,11 @@ export function Projects() {
     setQuery('');
     refresh();
   }, [open, refresh]);
+  // A sync pass may have brought projects in or taken them away.
+  const synced = useSyncStatus().lastSync;
+  useEffect(() => {
+    if (open) refresh();
+  }, [synced, open, refresh]);
 
   useEffect(() => {
     const d = dialog.current;
@@ -166,23 +206,28 @@ export function Projects() {
             ))}
           </ul>
         )}
-        {storage?.location && (
-          <footer className="projects-foot">
-            <span className="clip" title={storage.location}>
-              Saved in {storage.location}
-            </span>
-            {!storage.fixed && (
-              <button type="button" className="chip" onClick={() => void chooseProjectsFolder()}>
-                Change folder…
-              </button>
-            )}
-            {!storage.fixed && storage.defaultDir && storage.location !== storage.defaultDir && (
-              <button type="button" className="chip" onClick={() => void chooseProjectsFolder(storage.defaultDir)}>
-                Use default
-              </button>
-            )}
-          </footer>
-        )}
+        <footer className="projects-foot">
+          {storage?.location && (
+            <div className="projects-foot-row">
+              <span className="clip" title={storage.location}>
+                Saved in {storage.location}
+              </span>
+              {!storage.fixed && (
+                <button type="button" className="chip" onClick={() => void chooseProjectsFolder()}>
+                  Change folder…
+                </button>
+              )}
+              {!storage.fixed && storage.defaultDir && storage.location !== storage.defaultDir && (
+                <button type="button" className="chip" onClick={() => void chooseProjectsFolder(storage.defaultDir)}>
+                  Use default
+                </button>
+              )}
+            </div>
+          )}
+          <div className="projects-foot-row">
+            <DriveRow />
+          </div>
+        </footer>
       </div>
     </dialog>
   );

@@ -7,18 +7,22 @@
 // is still used from here to open what the Android pickers hand back, which
 // are content URIs rather than paths.
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs;
 use std::io::{self, Read, Write};
+use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::UNIX_EPOCH;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use serde::Serialize;
 use tauri::ipc::{InvokeBody, Request, Response};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_fs::{FilePath, FsExt, OpenOptions};
+use tauri_plugin_opener::OpenerExt;
 
 /// WebKitGTK's DMA-BUF renderer crashes ("Error 71 (Protocol error) dispatching
 /// to Wayland display") or shows a blank window with the proprietary NVIDIA
@@ -253,6 +257,110 @@ fn default_projects_dir(app: AppHandle) -> Result<ProjectsHome, String> {
         .map(|path| ProjectsHome { path, fixed })
 }
 
+// --- signing in to a cloud account -------------------------------------------
+//
+// OAuth for an installed app: the sign-in page opens in the system browser and
+// sends the browser back to a loopback address the app listens on for a
+// moment. The webview does the rest (token exchange, PKCE) over HTTPS.
+
+/// Sign-ins waiting for the browser to come back, by port.
+#[derive(Default)]
+struct SignIns(Mutex<HashMap<u16, (TcpListener, Arc<AtomicBool>)>>);
+
+/// How long the browser is given before the sign-in is abandoned.
+const SIGN_IN_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// Listens on a free loopback port and returns it, for the redirect address.
+#[tauri::command]
+fn oauth_start(app: AppHandle) -> Result<u16, String> {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(|err| format!("Could not listen for the sign-in: {err}"))?;
+    listener.set_nonblocking(true).map_err(|err| err.to_string())?;
+    let port = listener.local_addr().map_err(|err| err.to_string())?.port();
+    app.state::<SignIns>().0.lock().unwrap().insert(port, (listener, Arc::new(AtomicBool::new(false))));
+    Ok(port)
+}
+
+/// Opens the sign-in page and waits for the browser to be sent back to the port; returns that request's query string.
+#[tauri::command]
+async fn oauth_wait(app: AppHandle, port: u16, url: String) -> Result<String, String> {
+    let (listener, cancelled) = app
+        .state::<SignIns>()
+        .0
+        .lock()
+        .unwrap()
+        .remove(&port)
+        .ok_or("No sign-in is waiting on that port")?;
+    // Cancel can still reach it while it waits.
+    app.state::<SignIns>().0.lock().unwrap().insert(port, (listener.try_clone().map_err(|err| err.to_string())?, cancelled.clone()));
+    app.opener().open_url(&url, None::<&str>).map_err(|err| format!("Could not open the browser: {err}"))?;
+    let result = tauri::async_runtime::spawn_blocking(move || wait_for_redirect(&listener, &cancelled, SIGN_IN_TIMEOUT))
+        .await
+        .map_err(|err| err.to_string())?;
+    app.state::<SignIns>().0.lock().unwrap().remove(&port);
+    result.map_err(|err| err.to_string())
+}
+
+/// Gives up a sign-in that is waiting.
+#[tauri::command]
+fn oauth_cancel(app: AppHandle, port: u16) {
+    if let Some((_, cancelled)) = app.state::<SignIns>().0.lock().unwrap().get(&port) {
+        cancelled.store(true, Ordering::Relaxed);
+    }
+}
+
+/// Accepts connections until one is the browser coming back with a query (a `code` or an `error`), the cancel flag is set, or the time is up.
+fn wait_for_redirect(listener: &TcpListener, cancelled: &AtomicBool, timeout: Duration) -> io::Result<String> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        match listener.accept() {
+            Ok((stream, _)) => {
+                if let Some(query) = answer_browser(stream)? {
+                    return Ok(query);
+                }
+            }
+            Err(err) if err.kind() == io::ErrorKind::WouldBlock => {
+                if cancelled.load(Ordering::Relaxed) {
+                    return Err(io::Error::new(io::ErrorKind::Interrupted, "The sign-in was cancelled"));
+                }
+                if Instant::now() >= deadline {
+                    return Err(io::Error::new(io::ErrorKind::TimedOut, "The sign-in took too long. Try again."));
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Err(err) => return Err(err),
+        }
+    }
+}
+
+/// Reads one request; answers with a page to close when it carries the sign-in's query, 404 otherwise (a favicon request, say).
+fn answer_browser(mut stream: TcpStream) -> io::Result<Option<String>> {
+    stream.set_read_timeout(Some(Duration::from_secs(2)))?;
+    stream.set_nonblocking(false)?;
+    let mut buffer = Vec::new();
+    let mut chunk = [0u8; 1024];
+    while !buffer.windows(4).any(|w| w == b"\r\n\r\n") && buffer.len() < 16 * 1024 {
+        let n = match stream.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(err) if err.kind() == io::ErrorKind::WouldBlock || err.kind() == io::ErrorKind::TimedOut => break,
+            Err(err) => return Err(err),
+        };
+        buffer.extend_from_slice(&chunk[..n]);
+    }
+    let request = String::from_utf8_lossy(&buffer);
+    let target = request.lines().next().and_then(|line| line.split_whitespace().nth(1)).unwrap_or("");
+    let query = target.split_once('?').map(|(_, q)| q.to_owned());
+    let ours = query.as_deref().is_some_and(|q| q.split('&').any(|p| p.starts_with("code=") || p.starts_with("error=")));
+    let (status, body) = if ours {
+        ("200 OK", "<!doctype html><meta charset=utf-8><title>BashCAD</title><body style=\"font-family:sans-serif;padding:2em\"><h2>Signed in</h2><p>You can close this page and go back to BashCAD.</p>")
+    } else {
+        ("404 Not Found", "")
+    };
+    let _ = write!(stream, "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+    let _ = stream.flush();
+    Ok(if ours { query } else { None })
+}
+
 /// Only a design may be opened from the command line: a `.bashcad` file,
 /// whatever its case. Anything else on the command line (a flag, a stray
 /// document) is ignored.
@@ -285,6 +393,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_opener::init())
+        .manage(SignIns::default())
         .invoke_handler(tauri::generate_handler![
             read_file,
             read_head,
@@ -293,6 +403,9 @@ pub fn run() {
             remove_file,
             move_file,
             default_projects_dir,
+            oauth_start,
+            oauth_wait,
+            oauth_cancel,
             startup_file
         ])
         .run(tauri::generate_context!())
@@ -469,6 +582,46 @@ mod tests {
         let deep = dir.path("sub").join("c.bashcad");
         move_path(&from, &deep).unwrap();
         assert_eq!(fs::read(&deep).unwrap(), b"again");
+    }
+
+    #[test]
+    fn sign_in_redirect_is_read_and_strays_ignored() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let browser = std::thread::spawn(move || {
+            let send = |request: &str| {
+                let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
+                s.write_all(request.as_bytes()).unwrap();
+                let mut reply = String::new();
+                s.read_to_string(&mut reply).unwrap();
+                reply
+            };
+            let stray = send("GET /favicon.ico HTTP/1.1\r\nHost: x\r\n\r\n");
+            let ours = send("GET /?state=abc&code=4%2Fxyz HTTP/1.1\r\nHost: x\r\n\r\n");
+            (stray, ours)
+        });
+        let query = wait_for_redirect(&listener, &AtomicBool::new(false), Duration::from_secs(5)).unwrap();
+        assert_eq!(query, "state=abc&code=4%2Fxyz");
+        let (stray, ours) = browser.join().unwrap();
+        assert!(stray.starts_with("HTTP/1.1 404"));
+        assert!(ours.starts_with("HTTP/1.1 200") && ours.contains("go back to BashCAD"));
+    }
+
+    #[test]
+    fn sign_in_wait_can_be_cancelled_and_times_out() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let flag = cancelled.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(150));
+            flag.store(true, Ordering::Relaxed);
+        });
+        let err = wait_for_redirect(&listener, &cancelled, Duration::from_secs(5)).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::Interrupted);
+        let err = wait_for_redirect(&listener, &AtomicBool::new(false), Duration::from_millis(50)).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::TimedOut);
     }
 
     #[test]

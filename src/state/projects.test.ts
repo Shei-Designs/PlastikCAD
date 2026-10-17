@@ -74,7 +74,7 @@ describe('the projects folder', () => {
     files.set(`${DIR}/other.txt`, encoder.encode('x'));
     const store = new DiskProjects(DIR);
     const listed = await store.list();
-    expect(listed).toEqual([{ key: `${DIR}/Bracket.bashcad`, id: 'bracket1', name: 'Bracket', modified: 1000, size: files.get(`${DIR}/Bracket.bashcad`)!.length, thumb: null }]);
+    expect(listed).toEqual([{ key: `${DIR}/Bracket.bashcad`, id: 'bracket1', name: 'Bracket', revision: null, modified: 1000, size: files.get(`${DIR}/Bracket.bashcad`)!.length, thumb: null }]);
   });
 
   it('reads a whole file whose header is laid out some other way', async () => {

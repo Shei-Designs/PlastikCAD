@@ -197,4 +197,9 @@ export interface Doc {
   assets: Record<string, Asset>;
   /** Small picture of the design (a JPEG data URL), shown by the projects browser. */
   thumb?: string;
+  /** Stamped on every save: this revision, the one it followed, the device that made it and when. Sync tells changes apart by them. */
+  revision?: string;
+  parent?: string;
+  device?: string;
+  saved?: string;
 }

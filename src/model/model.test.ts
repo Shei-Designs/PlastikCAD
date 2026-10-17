@@ -616,18 +616,18 @@ describe('file headers', () => {
     const text = serializeDoc(doc());
     expect(text.indexOf('"id": "proj0001"')).toBeLessThan(text.indexOf('"scene"'));
     expect(text.indexOf('"thumb"')).toBeLessThan(text.indexOf('"scene"'));
-    expect(readHeader(text)).toEqual({ id: 'proj0001', name: 'Hinge "left"', thumb: THUMB });
+    expect(readHeader(text)).toEqual({ id: 'proj0001', name: 'Hinge "left"', revision: null, thumb: THUMB });
     // Only the start of the file, cut off inside the scene.
-    expect(readHeader(text.slice(0, text.indexOf('"scene"') + 40))).toEqual({ id: 'proj0001', name: 'Hinge "left"', thumb: THUMB });
+    expect(readHeader(text.slice(0, text.indexOf('"scene"') + 40))).toEqual({ id: 'proj0001', name: 'Hinge "left"', revision: null, thumb: THUMB });
     expect(parseDoc(text)).toEqual(doc());
   });
 
   it('does not mistake an object for the header of a file without an id', () => {
     const text = serializeDoc(doc()).replace('  "id": "proj0001",\n', '').replace(`  "thumb": "${THUMB}",\n`, '');
-    expect(readHeader(text)).toEqual({ id: null, name: 'Hinge "left"', thumb: null });
+    expect(readHeader(text)).toEqual({ id: null, name: 'Hinge "left"', revision: null, thumb: null });
     // Cut off before the scene: the objects' names and ids are nowhere near.
     const head = text.slice(0, text.indexOf('"scene"'));
-    expect(readHeader(head)).toEqual({ id: null, name: 'Hinge "left"', thumb: null });
+    expect(readHeader(head)).toEqual({ id: null, name: 'Hinge "left"', revision: null, thumb: null });
   });
 
   it('refuses what is not a design laid out by the app', () => {

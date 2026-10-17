@@ -2,6 +2,7 @@
 // store (see projects.ts), not here.
 import { FILE_FORMAT } from '../app';
 import type { FormatId } from '../io/export';
+import { newId } from '../model/ops';
 
 export type Theme = 'dark' | 'light';
 
@@ -18,6 +19,8 @@ export interface Prefs {
   projectsDir: string | null;
   /** Key of the project that was open last, to open it again at start-up. */
   lastProject: string | null;
+  /** This installation, stamped into saves so that sync can tell devices apart. */
+  device: string;
 }
 
 export const SNAP_STEPS = [0, 0.1, 0.25, 0.5, 1, 2, 5, 10];
@@ -32,7 +35,8 @@ export function loadPrefs(): Prefs {
     // Corrupt or unavailable storage: start from defaults.
   }
   const prefersLight = typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: light)').matches;
-  return {
+  const device = typeof saved.device === 'string' && /^[a-z0-9]{8,32}$/.test(saved.device) ? saved.device : newId();
+  const prefs: Prefs = {
     theme: saved.theme === 'light' || saved.theme === 'dark' ? saved.theme : prefersLight ? 'light' : 'dark',
     edges: saved.edges ?? true,
     grid: saved.grid ?? true,
@@ -41,7 +45,11 @@ export function loadPrefs(): Prefs {
     sidebar: saved.sidebar === 'objects' ? 'objects' : 'library',
     projectsDir: typeof saved.projectsDir === 'string' && saved.projectsDir ? saved.projectsDir : null,
     lastProject: typeof saved.lastProject === 'string' && saved.lastProject ? saved.lastProject : null,
+    device,
   };
+  // A device id just made is kept at once, so that it never changes.
+  if (device !== saved.device) savePrefs(prefs);
+  return prefs;
 }
 
 export function savePrefs(prefs: Prefs): void {

@@ -16,6 +16,8 @@ export interface ProjectInfo {
   /** Null when the file was saved before projects had ids; it gets one when opened. */
   id: string | null;
   name: string;
+  /** The revision stamped in the file; null for files from before revisions. */
+  revision: string | null;
   /** Milliseconds since the epoch. */
   modified: number;
   size: number;
@@ -44,7 +46,7 @@ function headerOf(text: string): DocHeader {
   const header = readHeader(text.slice(0, HEAD_BYTES));
   if (header) return header;
   const doc = parseDoc(text);
-  return { id: doc.id, name: doc.name, thumb: doc.thumb ?? null };
+  return { id: doc.id, name: doc.name, revision: doc.revision ?? null, thumb: doc.thumb ?? null };
 }
 
 /** A file name for a project name: no path separators or characters some file systems refuse, not too long. */
@@ -98,7 +100,7 @@ export class DiskProjects implements ProjectStore {
         cached = { modified: entry.modified, size: entry.size, header };
         this.heads.set(entry.path, cached);
       }
-      out.push({ key: entry.path, id: cached.header.id, name: cached.header.name, modified: entry.modified, size: entry.size, thumb: cached.header.thumb });
+      out.push({ key: entry.path, id: cached.header.id, name: cached.header.name, revision: cached.header.revision, modified: entry.modified, size: entry.size, thumb: cached.header.thumb });
     }
     for (const path of this.heads.keys()) if (!entries.some((e) => e.path === path)) this.heads.delete(path);
     return out;
@@ -150,7 +152,7 @@ export class MemoryProjects implements ProjectStore {
   async list(): Promise<ProjectInfo[]> {
     return Array.from(this.records, ([key, r]) => {
       const header = headerOf(r.text);
-      return { key, id: header.id, name: r.name, modified: r.modified, size: r.text.length, thumb: header.thumb };
+      return { key, id: header.id, name: r.name, revision: header.revision, modified: r.modified, size: r.text.length, thumb: header.thumb };
     });
   }
 
@@ -186,6 +188,7 @@ interface MetaRecord {
   key: string;
   id: string | null;
   name: string;
+  revision?: string | null;
   modified: number;
   size: number;
   thumb: string | null;
@@ -210,7 +213,7 @@ function openDb(): Promise<IDBDatabase> {
               const text = serializeDoc({ ...doc, id: typeof doc.id === 'string' ? doc.id : newId() });
               const header = headerOf(text);
               const key = newId();
-              meta.put({ key, id: header.id, name: header.name, modified: Date.now(), size: text.length, thumb: header.thumb } satisfies MetaRecord);
+              meta.put({ key, id: header.id, name: header.name, revision: header.revision, modified: Date.now(), size: text.length, thumb: header.thumb } satisfies MetaRecord);
               tx.objectStore(TEXTS).put(text, key);
             } catch {
               // A session copy the current app cannot read is let go.
@@ -250,7 +253,7 @@ export class DbProjects implements ProjectStore {
 
   async list(): Promise<ProjectInfo[]> {
     const rows = await transact<MetaRecord[]>('readonly', (tx) => tx.objectStore(META).getAll());
-    return rows.map((r) => ({ key: r.key, id: r.id, name: r.name, modified: r.modified, size: r.size, thumb: r.thumb }));
+    return rows.map((r) => ({ key: r.key, id: r.id, name: r.name, revision: r.revision ?? null, modified: r.modified, size: r.size, thumb: r.thumb }));
   }
 
   async read(key: string): Promise<string> {
@@ -263,7 +266,7 @@ export class DbProjects implements ProjectStore {
     const at = key ?? newId();
     const header = headerOf(text);
     await transact<void>('readwrite', (tx) => {
-      tx.objectStore(META).put({ key: at, id: header.id, name, modified: Date.now(), size: text.length, thumb: header.thumb } satisfies MetaRecord);
+      tx.objectStore(META).put({ key: at, id: header.id, name, revision: header.revision, modified: Date.now(), size: text.length, thumb: header.thumb } satisfies MetaRecord);
       tx.objectStore(TEXTS).put(text, at);
     });
     return at;

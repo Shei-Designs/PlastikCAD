@@ -1,7 +1,7 @@
 // The editor driven without a browser: the geometry kernel is stood in for by
 // box bounds, and the platform by stubs that hand back what each test wants.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { parseDoc } from '../model/file';
+import { parseDoc, serializeDoc } from '../model/file';
 import { boxBounds, unionBounds } from '../model/math';
 import type { Bounds } from '../model/math';
 import type { GroupNode, PartNode, SceneNode } from '../model/types';
@@ -430,6 +430,48 @@ describe('projects', () => {
     // An untitled design takes its file's name.
     expect(b.name).toBe('shared');
     expect(store.getState().notice?.text).toMatch(/Added "shared"/);
+  });
+
+  it('takes in what a sync pass changed under the open project, merging edits not yet saved', async () => {
+    store.addShape('box');
+    store.renameProject('Plate');
+    await store.saveProject();
+    const key = store.getState().projectKey!;
+    const box = scene()[0].id;
+    const report = { uploaded: [], downloaded: ['Plate'], merged: [], kept: [], deletedLocally: [], deletedRemotely: [], changedKeys: [key], removedKeys: [], movedKeys: [] };
+    // Clean editor: the incoming version replaces what is on screen.
+    const incoming = parseDoc(await kept.read(key));
+    incoming.scene = [{ ...incoming.scene[0], pos: [5, 0, 10] as [number, number, number] }, { ...incoming.scene[0], id: 'remote01', name: 'From afar' }];
+    incoming.revision = 'remoterev1';
+    await kept.write(key, incoming.name, serializeDoc(incoming));
+    await store.applySyncReport(report);
+    expect(scene().map((n) => [n.id, n.pos[0]])).toEqual([
+      [box, 5],
+      ['remote01', 0],
+    ]);
+    expect(store.isDirty()).toBe(false);
+    expect(store.getState().doc.revision).toBe('remoterev1');
+    // Dirty editor: the unsaved edit (a third object) is merged onto the incoming version.
+    store.addShape('sphere');
+    const sphere = scene()[2].id;
+    const next = { ...incoming, scene: [incoming.scene[0], { ...incoming.scene[1], pos: [-3, 0, 10] as [number, number, number] }], revision: 'remoterev2' };
+    await kept.write(key, next.name, serializeDoc(next));
+    await store.applySyncReport(report);
+    expect(scene().map((n) => [n.id, n.pos[0]])).toEqual([
+      [box, 5],
+      ['remote01', -3],
+      [sphere, 0],
+    ]);
+    expect(store.isDirty()).toBe(true);
+    // The open project renamed on the other side: the editor follows the file.
+    const moved = await kept.write(null, 'Plate 2', serializeDoc({ ...next, name: 'Plate 2' }));
+    await store.applySyncReport({ ...report, changedKeys: [moved], movedKeys: [{ from: key, to: moved }] });
+    expect(store.getState().projectKey).toBe(moved);
+    expect(store.getState().doc.name).toBe('Plate 2');
+    // Deleted on the other side: the editor starts afresh.
+    await store.applySyncReport({ ...report, changedKeys: [], removedKeys: [moved] });
+    expect(store.getState().projectKey).toBeNull();
+    expect(scene()).toEqual([]);
   });
 
   it('reports a failed save once and keeps the changes pending', async () => {

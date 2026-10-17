@@ -50,6 +50,9 @@ import { loadPrefs, savePrefs } from './persist';
 import type { Prefs } from './persist';
 import { DiskProjects, fileNameFor, hasProjectStore, openProjectStore, projectStore, useProjectStore } from './projects';
 import type { ProjectInfo } from './projects';
+import { initSync, linkAccount, requestSync, unlinkAccount } from '../sync/sync';
+import type { SyncReport } from '../sync/engine';
+import { mergeDocs } from '../sync/merge';
 
 export interface Notice {
   kind: 'error' | 'info';
@@ -1251,12 +1254,15 @@ async function write(fresh: boolean): Promise<boolean> {
   const base = { scene: state.doc.scene, name: state.doc.name };
   const doc = docToSave();
   const thumb = thumbFor(doc, fresh);
+  // Every save is a revision following the one before it, so that sync can tell what changed where.
+  const stamp = { revision: newId(), parent: doc.revision, device: state.prefs.device, saved: new Date().toISOString() };
   set({ saving: true });
   try {
-    const key = await projectStore().write(state.projectKey, doc.name, serializeDoc({ ...doc, thumb }));
-    set({ projectKey: key, saved: base, saving: false, doc: thumb === state.doc.thumb ? state.doc : { ...state.doc, thumb } });
+    const key = await projectStore().write(state.projectKey, doc.name, serializeDoc({ ...doc, ...stamp, thumb }));
+    set({ projectKey: key, saved: base, saving: false, doc: { ...state.doc, ...stamp, thumb } });
     if (state.prefs.lastProject !== key) setPrefs({ lastProject: key });
     lastSaveError = null;
+    requestSync();
     return true;
   } catch (e) {
     set({ saving: false });
@@ -1458,6 +1464,72 @@ export async function renameProjectAt(key: string, name: string): Promise<void> 
     if (doc.name === clean) return;
     doc.name = clean;
     await store.write(key, clean, serializeDoc(doc));
+  } catch (e) {
+    fail(e);
+  }
+}
+
+// --- cloud sync -----------------------------------------------------------------
+
+/** What a sync pass wrote or removed, taken into the editor: the open project above all. */
+export async function applySyncReport(report: SyncReport): Promise<void> {
+  let key = state.projectKey;
+  const moved = key && report.movedKeys.find((m) => m.from === key);
+  if (moved) {
+    key = moved.to;
+    set({ projectKey: key });
+    setPrefs({ lastProject: key });
+  }
+  if (key && report.removedKeys.includes(key)) {
+    adopt(emptyDoc(), null);
+    notify('The open project was deleted on another device.');
+  } else if (key && report.changedKeys.includes(key)) {
+    await reloadOpenProject(key);
+  }
+  for (const name of report.kept) notify(`"${name}" was changed on two devices at once; both versions were kept.`);
+  if (report.downloaded.length) notify(`Synced ${report.downloaded.length === 1 ? `"${report.downloaded[0]}"` : `${report.downloaded.length} projects`} from Google Drive.`);
+}
+
+/** The open project changed on disk under the editor: taken in whole, or merged with edits not yet saved. */
+async function reloadOpenProject(key: string): Promise<void> {
+  try {
+    const incoming = parseDoc(await projectStore().read(key));
+    if (!isDirty()) {
+      const ids = new Set(incoming.scene.map((n) => n.id));
+      resetHistory();
+      set({ doc: incoming, saved: { scene: incoming.scene, name: incoming.name }, selection: state.selection.filter((id) => ids.has(id)), editing: null, mating: null, placing: null });
+      return;
+    }
+    // Edits since the last save are merged onto what came in; the next save writes the result.
+    const base = state.saved ? { ...state.doc, scene: state.saved.scene, name: state.saved.name } : null;
+    const { doc } = mergeDocs(base, state.doc, incoming);
+    set({ doc: { ...doc, revision: incoming.revision }, saved: { scene: incoming.scene, name: incoming.name } });
+  } catch (e) {
+    fail(e);
+  }
+}
+
+/** Links a Google account, after saying what that means. */
+export async function linkGoogleDrive(): Promise<void> {
+  const go = await platform.confirm(
+    `${APP_NAME} will keep a copy of your projects in a "BashCAD" folder in your Google Drive and keep them in step with your other devices. It can see only the files it put there itself: a project file dropped into that folder by hand will not show up here. Sign in with Google now?`,
+    { title: 'Link Google Drive', okLabel: 'Sign in', cancelLabel: 'Not now' },
+  );
+  if (!go) return;
+  try {
+    await linkAccount();
+    notify('Google Drive linked.');
+  } catch (e) {
+    fail(e);
+  }
+}
+
+export async function unlinkGoogleDrive(): Promise<void> {
+  const go = await platform.confirm('Unlink Google Drive? Your projects stay here and in your Drive, but changes no longer sync.', { title: APP_NAME, okLabel: 'Unlink', cancelLabel: 'Keep linked' });
+  if (!go) return;
+  try {
+    await unlinkAccount();
+    notify('Google Drive unlinked.');
   } catch (e) {
     fail(e);
   }
@@ -1798,6 +1870,7 @@ export async function restoreSession(): Promise<void> {
     set({ storage: { location: projectStore().location, fixed, defaultDir } });
     // Edits made before the store was ready are written now.
     if (isDirty()) scheduleAutosave();
+    initSync({ device: state.prefs.device, flush: () => saveProject(true), changed: (report) => void applySyncReport(report) });
     const path = await platform.startupFile();
     if (path) return void (await importProjectFile(await platform.readPath(path)));
     const last = state.prefs.lastProject;

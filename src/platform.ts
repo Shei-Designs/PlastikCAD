@@ -172,6 +172,20 @@ export async function pickFolder(defaultPath?: string): Promise<string | null> {
   return typeof picked === 'string' ? picked : null;
 }
 
+/** Desktop and Android: listens on a loopback port for a sign-in to come back to. Returns the port. */
+export async function oauthStart(): Promise<number> {
+  return command<number>('oauth_start');
+}
+
+/** Opens the sign-in page in the system browser and resolves with the query string the browser is sent back with. */
+export async function oauthWait(port: number, url: string): Promise<string> {
+  return command<string>('oauth_wait', { port, url });
+}
+
+export async function oauthCancel(port: number): Promise<void> {
+  await command<void>('oauth_cancel', { port });
+}
+
 /** Desktop only: path of a design file passed on the command line, else null (always null in the browser). */
 export async function startupFile(): Promise<string | null> {
   return isTauri() ? command<string | null>('startup_file') : null;

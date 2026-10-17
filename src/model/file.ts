@@ -44,7 +44,7 @@ function isPlain(value: unknown): boolean {
 }
 
 /** Fixed key order, so that the same node always serializes to the same text. */
-function canonical(node: SceneNode): Record<string, unknown> {
+export function canonical(node: SceneNode): Record<string, unknown> {
   return {
     id: node.id,
     type: node.type,
@@ -93,6 +93,10 @@ export function serializeDoc(doc: Doc): string {
     units: 'mm',
     id: doc.id,
     name: doc.name,
+    revision: doc.revision,
+    parent: doc.parent,
+    device: doc.device,
+    saved: doc.saved,
     thumb: doc.thumb,
     scene: doc.scene.map(canonical),
     assets: liveAssets(doc),
@@ -281,13 +285,26 @@ export function parseDoc(text: string): Doc {
   const raw = parseFile(text);
   const assets = readAssets(raw.assets);
   const thumb = readThumb(raw.thumb);
-  return { id: readId(raw.id), name: readName(raw.name, 'Untitled'), scene: readScene(raw.scene, assets), assets, ...(thumb ? { thumb } : {}) };
+  const doc: Doc = { id: readId(raw.id), name: readName(raw.name, 'Untitled'), scene: readScene(raw.scene, assets), assets };
+  if (thumb) doc.thumb = thumb;
+  const revision = readRevision(raw.revision);
+  if (revision) doc.revision = revision;
+  const parent = readRevision(raw.parent);
+  if (parent) doc.parent = parent;
+  const device = readRevision(raw.device);
+  if (device) doc.device = device;
+  if (typeof raw.saved === 'string' && !Number.isNaN(Date.parse(raw.saved))) doc.saved = raw.saved;
+  return doc;
 }
+
+const readRevision = (raw: unknown): string | null => (typeof raw === 'string' && /^[a-z0-9]{8,32}$/.test(raw) ? raw : null);
 
 export interface DocHeader {
   /** Null when the file carries no id (saved before projects had them). */
   id: string | null;
   name: string;
+  /** Null when the file was saved before revisions were stamped. */
+  revision: string | null;
   thumb: string | null;
 }
 
@@ -313,7 +330,7 @@ export function readHeader(head: string): DocHeader | null {
   const id = field('id');
   const name = field('name');
   if (name === null && sceneAt < 0) return null;
-  return { id: id && /^[a-z0-9]{8,32}$/.test(id) ? id : null, name: readName(name, 'Untitled'), thumb: readThumb(field('thumb') ?? undefined) ?? null };
+  return { id: readRevision(id), name: readName(name, 'Untitled'), revision: readRevision(field('revision')), thumb: readThumb(field('thumb') ?? undefined) ?? null };
 }
 
 /**
