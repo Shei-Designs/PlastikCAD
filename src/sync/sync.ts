@@ -7,7 +7,7 @@ import { hasProjectStore, projectStore } from '../state/projects';
 import { DriveRemote } from './drive';
 import { synchronize } from './engine';
 import type { SyncReport } from './engine';
-import { authorizedFetch, isConfigured, loadTokens, NeedsSignIn, saveTokens, signIn } from './google';
+import { authorizedFetch, isConfigured, loadTokens, NeedsSignIn, revoke, saveTokens, signIn } from './google';
 import type { Tokens } from './google';
 import { DbSyncState } from './state';
 
@@ -34,6 +34,7 @@ let remote: DriveRemote | null = null;
 const state = typeof indexedDB === 'undefined' ? null : new DbSyncState();
 let device = '';
 let onChanged: ((report: SyncReport) => void) | null = null;
+let onNotice: ((text: string) => void) | null = null;
 let beforeSync: (() => Promise<unknown>) | null = null;
 let timer: ReturnType<typeof setTimeout> | undefined;
 let interval: ReturnType<typeof setInterval> | undefined;
@@ -65,9 +66,10 @@ function useTokens(next: Tokens | null): void {
  * told what each pass wrote or removed; `flush` runs before a pass so that
  * pending edits are on disk first.
  */
-export function initSync(options: { device: string; changed: (report: SyncReport) => void; flush: () => Promise<unknown> }): void {
+export function initSync(options: { device: string; changed: (report: SyncReport) => void; notice: (text: string) => void; flush: () => Promise<unknown> }): void {
   device = options.device;
   onChanged = options.changed;
+  onNotice = options.notice;
   beforeSync = options.flush;
   useTokens(loadTokens());
   clearInterval(interval);
@@ -94,13 +96,15 @@ export async function linkAccount(): Promise<void> {
   await syncNow();
 }
 
-/** Forgets the account and what was agreed with it; the local projects stay. */
+/** Forgets the account, tells Google so, and drops what was agreed with it; the local projects stay. */
 export async function unlinkAccount(): Promise<void> {
   clearTimeout(timer);
   await running;
+  const old = tokens;
   useTokens(null);
   await state?.clear();
   publish({ lastSync: null, error: null });
+  if (old) await revoke(old);
 }
 
 /** Syncs once the dust has settled; a pass already waiting is pushed back. */
@@ -142,8 +146,10 @@ async function pass(): Promise<SyncReport | null> {
     return report;
   } catch (e) {
     if (e instanceof NeedsSignIn) {
+      // The grant is gone (revoked from the Google account, say): said once, here and in the projects browser.
       useTokens(null);
       publish({ busy: false, error: e.message });
+      onNotice?.(`Google Drive sync stopped: ${e.message}`);
       return null;
     }
     const message = e instanceof Error ? e.message : String(e);

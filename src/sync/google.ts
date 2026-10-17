@@ -15,6 +15,7 @@ export const GOOGLE_CLIENT = {
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const REVOKE_URL = 'https://oauth2.googleapis.com/revoke';
 const TOKENS_KEY = 'bashcad:google:v1';
 
 export interface Tokens {
@@ -115,6 +116,16 @@ export async function signIn(): Promise<Tokens> {
   const json = await tokenRequest({ grant_type: 'authorization_code', code: query.get('code')!, code_verifier: verifier, redirect_uri: redirect });
   if (!json.refresh_token) throw new NeedsSignIn('Google gave no lasting access. Try signing in again.');
   return { access: json.access_token!, refresh: json.refresh_token, expires: Date.now() + (json.expires_in ?? 3600) * 1000, email: null };
+}
+
+/** Tells Google the grant is over, so that it no longer shows among the account's connected apps. Failing that is no reason to stay linked. */
+export async function revoke(tokens: Tokens): Promise<boolean> {
+  try {
+    const response = await fetch(REVOKE_URL, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token: tokens.refresh }) });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
 
 export async function refresh(tokens: Tokens): Promise<Tokens> {

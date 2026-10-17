@@ -174,8 +174,10 @@ device's copy appears as a project of its own, named "… (other device)", on
 both devices. A project deleted on one device is deleted on the others,
 unless it was changed there since, in which case it comes back.
 
-Unlinking stops the syncing and leaves the projects where they are, here and
-in the Drive.
+Unlinking stops the syncing, tells Google the app no longer has access, and
+leaves the projects where they are, here and in the Drive. While linked, the
+sign-in tokens are kept in the app's own browser storage on the device, in
+plain text like most desktop apps keep them; do not link on a shared account.
 
 A `.bashcad` file is plain JSON, written to diff well: keys in a fixed order,
 one property per line, vectors on a single line. If you keep the projects

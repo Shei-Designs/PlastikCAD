@@ -498,7 +498,7 @@ export class Viewer {
     return true;
   }
 
-  /** Small picture of the whole design from the current angle (JPEG data URL), for the version list. */
+  /** Small picture of the whole design from the current angle (JPEG data URL): the project's thumbnail. */
   capture(width = 320, height = 200): string | null {
     if (!this.ok || this.disposed || !this.width || !this.height) return null;
     const visible = this.items.filter((i) => !i.ghost && !i.node.hidden);

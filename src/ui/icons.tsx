@@ -146,12 +146,6 @@ export const UnlockIcon = () => (
     <path d="M8 10.5V8a4 4 0 0 1 7.5-2" />
   </Icon>
 );
-export const SaveIcon = () => (
-  <Icon>
-    <path d="M5 4h11l4 4v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" />
-    <path d="M8 4v5h7V4M8 20v-6h8v6" />
-  </Icon>
-);
 export const ProjectsIcon = () => (
   <Icon>
     <rect x="4" y="4" width="7" height="7" rx="1.2" />
@@ -170,17 +164,6 @@ export const MoreIcon = () => (
 export const MenuIcon = () => (
   <Icon>
     <path d="M4 7h16M4 12h16M4 17h16" />
-  </Icon>
-);
-export const RestoreIcon = () => (
-  <Icon width="14" height="14">
-    <path d="M3 12a9 9 0 1 0 3-6.7" />
-    <path d="M3 4v5h5M12 8v4.5l3 2" />
-  </Icon>
-);
-export const PencilIcon = () => (
-  <Icon width="14" height="14">
-    <path d="M4 20l1-4.5L16.5 4a2.1 2.1 0 0 1 3 3L8 18.5 4 20z" />
   </Icon>
 );
 export const CloseIcon = () => (

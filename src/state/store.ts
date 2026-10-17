@@ -1870,7 +1870,7 @@ export async function restoreSession(): Promise<void> {
     set({ storage: { location: projectStore().location, fixed, defaultDir } });
     // Edits made before the store was ready are written now.
     if (isDirty()) scheduleAutosave();
-    initSync({ device: state.prefs.device, flush: () => saveProject(true), changed: (report) => void applySyncReport(report) });
+    initSync({ device: state.prefs.device, flush: () => saveProject(true), changed: (report) => void applySyncReport(report), notice: (text) => notify(text, 'error') });
     const path = await platform.startupFile();
     if (path) return void (await importProjectFile(await platform.readPath(path)));
     const last = state.prefs.lastProject;

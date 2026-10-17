@@ -8,7 +8,7 @@ import { MemoryProjects } from '../state/projects';
 import { DriveRemote } from './drive';
 import { MemorySyncState, synchronize } from './engine';
 import type { Remote, RemoteFile, SyncReport } from './engine';
-import { authUrl, challengeOf } from './google';
+import { authUrl, challengeOf, revoke } from './google';
 import { mergeDocs } from './merge';
 
 vi.mock('../platform', () => ({ isDesktop: () => false, oauthStart: async () => 0, oauthWait: async () => '', oauthCancel: async () => {} }));
@@ -274,6 +274,26 @@ describe('Google sign-in pieces', () => {
     expect(url.searchParams.get('scope')).toBe('https://www.googleapis.com/auth/drive.file');
     expect(url.searchParams.get('code_challenge_method')).toBe('S256');
     expect(url.searchParams.get('redirect_uri')).toBe('http://127.0.0.1:1234/');
+  });
+});
+
+describe('revoking the grant', () => {
+  it('posts the refresh token to Google and shrugs off failure', async () => {
+    const calls: { url: string; body: string }[] = [];
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(url), body: String(init?.body) });
+      if (calls.length === 1) return new Response('{}', { status: 200 });
+      throw new Error('offline');
+    }) as typeof fetch;
+    try {
+      const tokens = { access: 'a', refresh: 'r-token', expires: 0, email: null };
+      expect(await revoke(tokens)).toBe(true);
+      expect(calls[0]).toEqual({ url: 'https://oauth2.googleapis.com/revoke', body: 'token=r-token' });
+      expect(await revoke(tokens)).toBe(false);
+    } finally {
+      globalThis.fetch = original;
+    }
   });
 });
 
