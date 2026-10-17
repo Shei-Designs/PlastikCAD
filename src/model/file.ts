@@ -1,18 +1,21 @@
 // Reading and writing design files. A design is a single JSON document that
-// holds the working scene, every saved version and any imported data. It is
-// laid out to diff well, so designs can also live in a git repository: keys
-// come in a fixed order, one node property per line, numbers kept short.
+// holds the scene and any imported data. It is laid out to diff well, so
+// designs can also live in a git repository: keys come in a fixed order, one
+// node property per line, numbers kept short.
 import { FILE_FORMAT, FILE_VERSION } from '../app';
 import { SHAPES, clampParams, defaultParams } from '../geometry/shapes';
 import { GENERATORS, RENAMED_PARTS, getGenerator } from '../parts/generators';
 import { sanitizeParams } from '../parts/generators/types';
 import { usedAssets } from './ops';
 import { TEXT_FONTS } from './types';
-import type { Asset, Doc, OutlineShape, PartParamValue, Scene, SceneNode, ShapeKind, Texture, Vec3, Version } from './types';
+import type { Asset, Doc, OutlineShape, PartParamValue, Scene, SceneNode, ShapeKind, Texture, Vec3 } from './types';
 
 export function emptyDoc(): Doc {
-  return { name: 'Untitled', scene: [], versions: [], head: null, assets: {} };
+  return { name: 'Untitled', scene: [], assets: {} };
 }
+
+/** Longest note kept on an object. */
+export const MAX_NOTE = 2000;
 
 const INDENT = '  ';
 
@@ -61,16 +64,17 @@ function canonical(node: SceneNode): Record<string, unknown> {
     texture: node.texture ? { asset: node.texture.asset, mode: node.texture.mode, scale: node.texture.scale, turn: node.texture.turn || undefined } : undefined,
     hidden: node.hidden || undefined,
     locked: node.locked || undefined,
+    note: node.note || undefined,
+    mixed: node.type === 'group' && node.mixed ? true : undefined,
     children: node.type === 'group' ? node.children.map(canonical) : undefined,
   };
 }
 
 const sortKeys = <T>(o: Record<string, T>): Record<string, T> => Object.fromEntries(Object.keys(o).sort().map((k) => [k, o[k]]));
 
-/** Imported data that nothing refers to any more (in the scene or any version) is not written. */
+/** Imported data that nothing in the scene refers to any more is not written. */
 export function liveAssets(doc: Doc): Record<string, Asset> {
   const used = usedAssets(doc.scene);
-  for (const v of doc.versions) usedAssets(v.scene, used);
   return sortKeys(Object.fromEntries(Object.entries(doc.assets).filter(([key]) => used.has(key))));
 }
 
@@ -80,16 +84,7 @@ export function serializeDoc(doc: Doc): string {
     version: FILE_VERSION,
     units: 'mm',
     name: doc.name,
-    head: doc.head,
     scene: doc.scene.map(canonical),
-    versions: doc.versions.map((v) => ({
-      id: v.id,
-      parent: v.parent,
-      label: v.label,
-      time: v.time,
-      scene: v.scene.map(canonical),
-      thumb: v.thumb,
-    })),
     assets: liveAssets(doc),
   };
   return pretty(file, 0) + '\n';
@@ -126,6 +121,7 @@ function readNode(raw: unknown, assets: Record<string, Asset>, depth: number): S
     ...(raw.hidden === true ? { hidden: true } : {}),
     ...(raw.locked === true ? { locked: true } : {}),
     ...(readTexture(raw.texture, assets) ?? {}),
+    ...(typeof raw.note === 'string' && raw.note.trim() ? { note: raw.note.slice(0, MAX_NOTE) } : {}),
   };
   if (raw.type === 'shape' && raw.shape === 'tube') {
     // The tube shape is gone; an old one becomes what it always was: a cylinder with a cylinder cut out.
@@ -196,7 +192,8 @@ function readNode(raw: unknown, assets: Record<string, Asset>, depth: number): S
   if (raw.type === 'group') {
     const children = readScene(raw.children, assets, depth + 1);
     if (children.length === 0) return null;
-    return { ...base, type: 'group', natural: vec3(raw.natural, base.size, true), children };
+    // Groups from before `mixed` existed were drawn in one color, and still are.
+    return { ...base, type: 'group', ...(raw.mixed === true ? { mixed: true } : {}), natural: vec3(raw.natural, base.size, true), children };
   }
   return null;
 }
@@ -249,8 +246,7 @@ function readAssets(raw: unknown): Record<string, Asset> {
   return out;
 }
 
-/** Throws an Error fit to show the user when the text is not a design file. */
-export function parseDoc(text: string): Doc {
+function parseFile(text: string): Record<string, unknown> {
   let raw: unknown;
   try {
     raw = JSON.parse(text);
@@ -261,29 +257,35 @@ export function parseDoc(text: string): Doc {
   if (typeof raw.version !== 'number' || raw.version > FILE_VERSION) {
     throw new Error('This design was saved by a newer version of the app. Update to open it.');
   }
+  return raw;
+}
+
+const readName = (raw: unknown, fallback: string): string => (typeof raw === 'string' && raw.trim() ? raw : fallback);
+
+/** Throws an Error fit to show the user when the text is not a design file. */
+export function parseDoc(text: string): Doc {
+  const raw = parseFile(text);
   const assets = readAssets(raw.assets);
-  const versions: Version[] = [];
-  const ids = new Set<string>();
-  if (Array.isArray(raw.versions)) {
-    for (const v of raw.versions) {
-      if (!isRecord(v) || typeof v.id !== 'string' || ids.has(v.id)) continue;
-      ids.add(v.id);
-      versions.push({
-        id: v.id,
-        parent: typeof v.parent === 'string' ? v.parent : null,
-        label: typeof v.label === 'string' ? v.label : '',
-        time: typeof v.time === 'string' ? v.time : new Date(0).toISOString(),
-        scene: readScene(v.scene, assets),
-        ...(typeof v.thumb === 'string' && v.thumb.startsWith('data:image/') ? { thumb: v.thumb } : {}),
-      });
-    }
+  return { name: readName(raw.name, 'Untitled'), scene: readScene(raw.scene, assets), assets };
+}
+
+/**
+ * The versions a design saved by version 1 of the format carries, each as a
+ * design of its own, oldest first. Version 2 stopped keeping them; this is
+ * how what an old file holds can be saved out before it is dropped.
+ */
+export function legacyVersions(text: string): Doc[] {
+  const raw = parseFile(text);
+  if (raw.version !== 1 || !Array.isArray(raw.versions)) return [];
+  const assets = readAssets(raw.assets);
+  const name = readName(raw.name, 'Untitled');
+  const out: Doc[] = [];
+  for (const v of raw.versions) {
+    if (!isRecord(v)) continue;
+    const scene = readScene(v.scene, assets);
+    if (scene.length === 0) continue;
+    const label = readName(v.label, `Version ${out.length + 1}`);
+    out.push({ name: `${name} - ${label}`, scene, assets });
   }
-  for (const v of versions) if (v.parent && !ids.has(v.parent)) v.parent = null;
-  return {
-    name: typeof raw.name === 'string' && raw.name.trim() ? raw.name : 'Untitled',
-    scene: readScene(raw.scene, assets),
-    versions,
-    head: typeof raw.head === 'string' && ids.has(raw.head) ? raw.head : null,
-    assets,
-  };
+  return out;
 }

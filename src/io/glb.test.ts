@@ -46,6 +46,19 @@ describe('glb', () => {
     expect(floats(bin, views[1]).slice(0, 3)).toEqual([0, 1, 0]);
   });
 
+  it('writes corner colors as COLOR_0 under a white base color', () => {
+    const colors = new Float32Array([1, 0, 0, 1, 0, 0, 1, 0, 0]);
+    const { json, bin } = readGlb(writeGlb([{ name: 'C', positions, normals, matrix: translation([0, 0, 0]), color: '#000000', colors }], 'D'));
+    const views = json.bufferViews as { byteOffset: number; byteLength: number }[];
+    const accessors = json.accessors as { bufferView: number; count: number; type: string }[];
+    const primitive = (json.meshes as { primitives: { attributes: Record<string, number> }[] }[])[0].primitives[0];
+    const color = accessors[primitive.attributes.COLOR_0];
+    expect(color.type).toBe('VEC3');
+    expect(color.count).toBe(3);
+    expect(floats(bin, views[color.bufferView])).toEqual([1, 0, 0, 1, 0, 0, 1, 0, 0]);
+    expect((json.materials as { pbrMetallicRoughness: { baseColorFactor: number[] } }[])[0].pbrMetallicRoughness.baseColorFactor).toEqual([1, 1, 1, 1]);
+  });
+
   it('turns mirrored objects back outwards', () => {
     const matrix = scaling([-1, 1, 1]);
     const { json, bin } = readGlb(writeGlb([{ name: 'M', positions, normals, matrix, color: '#000000', skin: { uv: new Float32Array([0, 0, 1, 0, 0, 1]), image: png, mime: 'image/png', repeat: false } }], 'D'));

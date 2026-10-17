@@ -25,17 +25,14 @@ import {
   rotateSelected,
   saveDesign,
   saveDesignAs,
-  saveVersion,
   select,
   selectAll,
   setHole,
-  setPrefs,
   stopAligning,
   toggleAligning,
   undo,
   ungroupSelected,
   useEditor,
-  viewVersion,
 } from './state/store';
 import { Inspector } from './ui/Inspector';
 import { Sidebar } from './ui/Sidebar';
@@ -79,11 +76,9 @@ function onKeyDown(e: KeyboardEvent): void {
     if (s.mating) cancelMate();
     else if (s.aligning) stopAligning();
     else if (s.placing) cancelPlacing();
-    else if (s.viewing) viewVersion(null);
     else select([]);
     return;
   }
-  if (getState().viewing) return;
 
   // Shift + X / Y / Z turn the selection a quarter turn about that axis; with Alt, the other way.
   if (e.shiftKey && !mod && (key === 'x' || key === 'y' || key === 'z')) {
@@ -120,12 +115,7 @@ function onKeyDown(e: KeyboardEvent): void {
             : key === 'c'
               ? copySelected
               : key === 'v'
-                ? e.shiftKey
-                  ? () => {
-                      setPrefs({ panel: 'versions' });
-                      saveVersion('');
-                    }
-                  : paste
+                ? paste
                 : key === 'x'
                   ? () => {
                       copySelected();

@@ -163,6 +163,63 @@ describe('align mode previews', () => {
   });
 });
 
+describe('notes and colors', () => {
+  it('keeps a note on a part through grouping, and edits one inside a group', async () => {
+    const { a, b } = twoBoxes();
+    store.setNote([a], '  Tap M3  ');
+    expect(scene().find((n) => n.id === a)!.note).toBe('Tap M3');
+    store.select([a, b]);
+    await store.groupSelected();
+    const group = scene()[0] as GroupNode;
+    expect(group.children.find((c) => c.id === a)!.note).toBe('Tap M3');
+    expect(group.note).toBeUndefined();
+    store.setNote([group.id, b], 'Spacer');
+    store.setNote([group.id], 'Bracket');
+    const after = scene()[0] as GroupNode;
+    expect(after.note).toBe('Bracket');
+    expect(after.children.find((c) => c.id === b)!.note).toBe('Spacer');
+    store.setNote([group.id, b], '');
+    expect((scene()[0] as GroupNode).children.find((c) => c.id === b)!.note).toBeUndefined();
+    store.ungroupSelected();
+    expect(scene().find((n) => n.id === a)!.note).toBe('Tap M3');
+  });
+
+  it('groups mixed, paints the whole on a color pick, and gives the parts their colors back on ungroup', async () => {
+    const { a, b } = twoBoxes();
+    store.select([a]);
+    store.setColor('#ff0000');
+    store.select([b]);
+    store.setColor('#0000ff');
+    store.select([a, b]);
+    await store.groupSelected();
+    let group = scene()[0] as GroupNode;
+    expect(group.mixed).toBe(true);
+    expect(group.color).toBe('#ff0000');
+    store.setColor('#00ff00');
+    group = scene()[0] as GroupNode;
+    expect(group.mixed).toBeUndefined();
+    expect(group.color).toBe('#00ff00');
+    expect(group.children.map((c) => c.color)).toEqual(['#ff0000', '#0000ff']);
+    store.ungroupSelected();
+    expect(scene().map((n) => n.color).sort()).toEqual(['#0000ff', '#ff0000']);
+  });
+
+  it('keeps a group painted when it is edited inside and put back together', async () => {
+    const { a, b } = twoBoxes();
+    await store.groupSelected();
+    const group = scene()[0] as GroupNode;
+    store.setColor('#00ff00');
+    store.editInside([group.id, a]);
+    await store.finishEditing();
+    expect((scene()[0] as GroupNode).mixed).toBeUndefined();
+    store.select([group.id]);
+    store.ungroupSelected();
+    store.select([a, b]);
+    await store.groupSelected();
+    expect((scene()[0] as GroupNode).mixed).toBe(true);
+  });
+});
+
 describe('editing inside a group', () => {
   /** A box with a cylinder cut out of it, the whole marked as a hole: a cutter with a cavity. */
   async function cutter(): Promise<{ box: string; bore: string; group: GroupNode }> {

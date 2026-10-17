@@ -6,7 +6,7 @@ Fast solid modeling for 3D printing: a desktop app for bashing out a part from
 a few simple shapes.
 Drop boxes, cylinders and wedges on the plate, add a gear, a pulley or a
 threaded rod made to your numbers, turn some of it into holes, group, and
-export a file for your slicer. Every design keeps its own version history.
+export a file for your slicer.
 
 Runs locally on Linux, Windows and macOS; nothing leaves your machine. Free
 software under the GPL-3.0.
@@ -26,8 +26,8 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
   panel shows what it is for, a picture menu of the kinds in that family, the
   parameters in tabs (gear, tooth form, hub, bore; thread, head; and so on),
   the dimensions that follow from them (pitch diameter, outside diameter,
-  center distance...). A part is just an object: group it, cut it, scale it,
-  version it. See
+  center distance...). A part is just an object: group it, cut it, scale it.
+  See
   [Parts](#parts) for the list.
 - **Text** – lettering in four print-friendly fonts (sans, slab serif,
   monospace, stencil), on one line or several. Put it on a face and group it
@@ -40,7 +40,9 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
   can be grouped again, turned into holes themselves, and taken apart at any
   time: nothing is ever baked in. Grouping only holes gives one hole: a
   connector cut-out with its screw holes becomes a single template to drop
-  into any panel.
+  into any panel. A group keeps each part in its own color until a color is
+  picked for it, which paints the whole; ungrouping gives the parts their
+  colors back. The colors go out with a GLB export.
 - **Array** – copies of the selection in a row, a grid or a stack at a set
   spacing, or around a ring. Select a hole together with the plate it goes in and
   *Fit* spreads the copies over the plate, a set distance in from its edges:
@@ -53,6 +55,9 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
   where things were grouped together. Hover a node to see that part on the
   plate; pick one and *Edit here* takes the groupings apart down to it, so the
   part can be changed, and *Done* puts them back together in the same order.
+- **Notes** – words attached to an object, from the Note button in the
+  toolbar or from a row of the tree. A note stays with its part through
+  grouping and ungrouping; a part with one shows an info mark in the tree.
 - **Handles** – drag an object to move it, the corner and edge grips to size
   it (the top and bottom grips pull the height either way), the arrow to lift
   it, the colored arcs to turn it. Click a grip instead of dragging it and a
@@ -130,17 +135,7 @@ long as you need.
 Only the kind and its parameters are stored in the design; the geometry is
 made from them.
 
-## Versions
-
-A design remembers where it has been.
-
-- **Save version** keeps the design as it is now, with a name and a thumbnail.
-- Click a version to look at it, **restore** it to carry on from there (the
-  state you left is one undo away), or export it directly.
-- Saving after restoring an old version starts a branch: every version records
-  which one it was made from.
-- Versions live inside the design file, so they travel with it. No account, no
-  server, no folder of `bracket-v3-final-2.stl`.
+## Design files
 
 A `.bashcad` file is plain JSON, written to diff well: keys in a fixed order,
 one property per line, vectors on a single line. If you keep designs in git,
@@ -185,7 +180,6 @@ design is still there after a restart.
 | Undo / redo | Ctrl+Z / Ctrl+Y |
 | Save / save as / open / new | Ctrl+S / Ctrl+Shift+S / Ctrl+O / Ctrl+N |
 | Import | Ctrl+I |
-| Save a version | Ctrl+Shift+V |
 
 ## Export formats
 
@@ -305,7 +299,7 @@ src/
     shapes.ts         the basic shapes: their parameters and how each is built
     kernel.ts         turns nodes into meshes (Manifold kernel), with caching
   worker/             runs the kernel off the UI thread
-  state/              the editor: selection, undo, versions, files, preferences
+  state/              the editor: selection, undo, files, preferences
   viewer/             three.js view: drawing, picking, handles
   parts/              the gear, pulley, sprocket and thread generators
   io/                 STL, 3MF, OBJ, GLB, SVG, DXF writers; STL, OBJ, 3MF, SVG readers
@@ -327,7 +321,7 @@ What keeps it fast: the geometry of a node is cached under a key that leaves
 out where the node is, how it is turned and (for most shapes) how big it is.
 Moving, turning and resizing therefore only change a matrix on the graphics
 card; the kernel runs when a shape's form changes or a group is made, and then
-only for that node. Undo, redo and switching versions reuse the same cache.
+only for that node. Undo and redo reuse the same cache.
 
 ### Adding a shape
 

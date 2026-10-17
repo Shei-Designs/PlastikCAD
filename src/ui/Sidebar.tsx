@@ -129,7 +129,6 @@ const FAMILY_NAMES: Record<string, string> = { gears: 'Gear', pulleys: 'Pulley',
 
 function Shapes() {
   const placing = useEditor((s) => s.placing);
-  const viewing = useEditor((s) => s.viewing);
   const active = placing?.type === 'shape' ? placing.shape : null;
   const placingFamily = placing?.type === 'part' ? getGenerator(placing.part).category : null;
   return (
@@ -142,7 +141,6 @@ function Shapes() {
               type="button"
               className={def.kind === active ? 'shape selected' : 'shape'}
               title={def.summary}
-              disabled={Boolean(viewing)}
               // Pressing starts carrying the shape, so it can also be dragged straight onto the plate.
               onPointerDown={(e) => {
                 if (e.button === 0) startPlacing(def.kind);
@@ -163,7 +161,6 @@ function Shapes() {
             type="button"
             className={placing?.type === 'text' ? 'shape selected' : 'shape'}
             title="Places lettering to emboss, or engrave as a hole."
-            disabled={Boolean(viewing)}
             onPointerDown={(e) => {
               if (e.button === 0) void startPlacingText();
             }}
@@ -181,7 +178,6 @@ function Shapes() {
             type="button"
             className={placing?.type === 'picture' ? 'shape selected' : 'shape'}
             title="Places a picture that prints onto the object it is grouped with."
-            disabled={Boolean(viewing)}
             onPointerDown={(e) => {
               if (e.button === 0) void startPlacingPicture();
             }}
@@ -203,7 +199,6 @@ function Shapes() {
               type="button"
               className={placing?.type === 'part' && placingFamily === c.id ? 'shape selected' : 'shape'}
               title={c.summary}
-              disabled={Boolean(viewing)}
               onPointerDown={(e) => {
                 if (e.button === 0) void startPlacingPart(c.id);
               }}
@@ -223,10 +218,9 @@ function Shapes() {
 }
 
 function ImportRow() {
-  const viewing = useEditor((s) => s.viewing);
   return (
     <div className="import-row">
-      <button type="button" className="import-button" title={`Import a model, drawing or picture (${MOD}I)`} disabled={Boolean(viewing)} onClick={() => void importModel()}>
+      <button type="button" className="import-button" title={`Import a model, drawing or picture (${MOD}I)`} onClick={() => void importModel()}>
         <ImportIcon />
         Import model or picture…
       </button>
@@ -250,8 +244,6 @@ const describe = (node: SceneNode): string =>
 function Objects() {
   const scene = useEditor((s) => s.doc.scene);
   const selection = useEditor((s) => s.selection);
-  const viewing = useEditor((s) => s.viewing);
-  if (viewing) return null;
   return (
     <section className="objects">
       <h2>
@@ -311,10 +303,8 @@ function Objects() {
 function SelectedStructure() {
   const scene = useEditor((s) => s.doc.scene);
   const selection = useEditor((s) => s.selection);
-  const viewing = useEditor((s) => s.viewing);
   const nodes = scene.filter((n) => selection.includes(n.id));
   const group = nodes.length === 1 && nodes[0].type === 'group' ? nodes[0] : null;
-  if (viewing) return null;
   return (
     <section className="structure-pane">
       {group ? (

@@ -8,8 +8,8 @@ import { apply, determinant, emptyBounds, expandBounds, isEmptyBounds, nodeMatri
 import type { Bounds, Mat } from '../model/math';
 import type { Asset, GroupNode, ImportNode, MeshAsset, OutlineAsset, PartNode, PictureNode, Polygon, SceneNode } from '../model/types';
 import type { BuildResult, ExportResult } from '../worker/protocol';
-import { CREASE_ANGLE, creasedNormals } from './mesh';
-import type { MeshData } from './mesh';
+import { CREASE_ANGLE, creasedNormals, NO_SOURCE } from './mesh';
+import type { Faces, MeshData } from './mesh';
 import { buildSolid } from '../parts/evaluate';
 import { getGenerator } from '../parts/generators';
 import { sanitizeParams } from '../parts/generators/types';
@@ -159,9 +159,16 @@ function decodeMesh(asset: MeshAsset): MeshData {
 
 type Deletable = { delete(): void };
 
+/** A part of a group, by the kernel's id for its faces and the path of ids (from the group's children down) to it. */
+interface Source {
+  id: number;
+  path: string[];
+}
+
 /** The geometry of a node as built: at its built size, centered on the origin. */
 type Built =
-  | { solid: Manifold; triangles: number }
+  /** `sources` for a group: the parts its faces came from, so each can be shown in its own color. */
+  | { solid: Manifold; triangles: number; sources?: Source[] }
   /** An imported mesh that is not watertight. It can be shown and exported as it is, but not combined. */
   | { solid: null; open: MeshData; triangles: number };
 
@@ -261,8 +268,11 @@ function construct(k: ManifoldToplevel, node: SceneNode): Built {
   switch (node.type) {
     case 'shape':
       return solidEntry(scoped((keep) => checked(buildShape(k, node, keep, refining))));
-    case 'group':
-      return solidEntry(scoped((keep) => groupSolid(k, node, keep)));
+    case 'group': {
+      const sources: Source[] = [];
+      const solid = scoped((keep) => groupSolid(k, node, keep, sources));
+      return { solid, triangles: solid.numTri(), sources };
+    }
     case 'import': {
       const asset = assets.get(node.asset);
       if (!asset || asset.kind === 'image') throw new Error(`The imported data of "${node.name}" is missing from this design.`);
@@ -317,19 +327,39 @@ function placed(k: ManifoldToplevel, node: SceneNode, keep: Keep): Manifold {
   return keep(solid.transform(mat4(nodeMatrix(node))));
 }
 
-/** The solid nodes merged, minus the holes; null if there are no solid nodes. Hidden nodes take part too. */
-function combine(k: ManifoldToplevel, nodes: SceneNode[], keep: Keep): Manifold | null {
+/**
+ * The solid nodes merged, minus the holes; null if there are no solid nodes.
+ * Hidden nodes take part too. With `sources`, every node goes in under an id
+ * of its own, which the kernel carries through to the faces of the result; a
+ * group keeps the ids of its own parts instead, so that they can be told
+ * apart all the way down (whoever colors the faces decides where to stop).
+ */
+function combine(k: ManifoldToplevel, nodes: SceneNode[], keep: Keep, sources?: Source[]): Manifold | null {
   const solids: Manifold[] = [];
   const holes: Manifold[] = [];
   // Pictures lie on the surface; they are neither added nor cut.
-  for (const node of nodes) if (node.type !== 'picture') (node.hole ? holes : solids).push(placed(k, node, keep));
+  for (const node of nodes) {
+    if (node.type === 'picture') continue;
+    let solid = placed(k, node, keep);
+    if (sources) {
+      const entry = node.type === 'group' ? builtOf(k, node) : null;
+      const inner = entry?.solid ? entry.sources : undefined;
+      if (inner) {
+        for (const s of inner) sources.push({ id: s.id, path: [node.id, ...s.path] });
+      } else {
+        solid = keep(solid.asOriginal());
+        sources.push({ id: solid.originalID(), path: [node.id] });
+      }
+    }
+    (node.hole ? holes : solids).push(solid);
+  }
   if (solids.length === 0) return null;
   const body = solids.length === 1 ? solids[0] : keep(k.Manifold.union(solids));
   return holes.length === 0 ? body : keep(k.Manifold.difference([body, ...holes]));
 }
 
-function groupSolid(k: ManifoldToplevel, node: GroupNode, keep: Keep): Manifold {
-  const result = combine(k, node.children, keep);
+function groupSolid(k: ManifoldToplevel, node: GroupNode, keep: Keep, sources?: Source[]): Manifold {
+  const result = combine(k, node.children, keep, sources);
   if (!result) throw new Error('This group has nothing left: it only contains holes.');
   if (checked(result).isEmpty()) throw new Error('This group has nothing left: its holes remove everything.');
   return result;
@@ -421,8 +451,14 @@ function boundsOfPositions(positions: Float32Array): Bounds {
   return b;
 }
 
+/** A solid's triangles in runs that share an origin: run `r` is triangles `index[r] / 3` up to `index[r + 1] / 3`. */
+interface Runs {
+  index: Uint32Array;
+  ids: Uint32Array;
+}
+
 /** Indexed triangles of a solid, in arrays of their own (safe to transfer out of the worker). */
-function meshOf(solid: Manifold): MeshData {
+function meshOf(solid: Manifold): MeshData & { runs: Runs } {
   const raw = solid.getMesh();
   const n = raw.numProp;
   const positions =
@@ -431,7 +467,23 @@ function meshOf(solid: Manifold): MeshData {
       : Float32Array.from({ length: (raw.vertProperties.length / n) * 3 }, (_, i) => {
           return raw.vertProperties[Math.floor(i / 3) * n + (i % 3)];
         });
-  return { positions, triangles: raw.triVerts.slice() };
+  return { positions, triangles: raw.triVerts.slice(), runs: { index: raw.runIndex.slice(), ids: raw.runOriginalID.slice() } };
+}
+
+/** Which part each triangle came from, given the runs of a group's mesh and the ids its parts went in under. */
+function facesOf(mesh: MeshData & { runs: Runs }, sources: Source[]): Faces | undefined {
+  if (sources.length === 0 || sources.length >= NO_SOURCE) return undefined;
+  const byId = new Map(sources.map((s, i) => [s.id, i]));
+  const count = mesh.triangles.length / 3;
+  const source = new Uint16Array(count).fill(NO_SOURCE);
+  const { index, ids } = mesh.runs;
+  for (let r = 0; r < ids.length; r++) {
+    const i = byId.get(ids[r]);
+    if (i === undefined) continue;
+    const to = r + 1 < index.length ? index[r + 1] / 3 : count;
+    source.fill(i, index[r] / 3, Math.min(to, count));
+  }
+  return { source, sources: sources.map((s) => s.path) };
 }
 
 /** A copy of an open mesh, moved to where its node is. Mirroring turns the triangles over, so they are turned back. */
@@ -483,7 +535,7 @@ export function build(key: string, node: SceneNode): BuildResult {
       };
     }
     const mesh = meshOf(entry.solid);
-    return {
+    const result: BuildResult = {
       key,
       render: creasedNormals(mesh.positions, mesh.triangles, CREASE_ANGLE),
       bounds: toBounds(entry.solid.boundingBox()),
@@ -491,6 +543,9 @@ export function build(key: string, node: SceneNode): BuildResult {
       volume: entry.solid.volume(),
       watertight: true,
     };
+    const faces = entry.sources && facesOf(mesh, entry.sources);
+    if (faces) result.faces = faces;
+    return result;
   });
 }
 
@@ -535,12 +590,15 @@ function exportAt(nodes: SceneNode[], outline: boolean, local: boolean): ExportR
       const warnings: string[] = [];
       const solids: Manifold[] = [];
       const parts: MeshData[] = [];
+      // The parts of a group exported on its own, in place, can keep their colors.
+      let sources: Source[] | undefined;
       for (const node of nodes) {
         // A picture on its own is a sheet with nothing solid about it; the pictures on an object go out with the object's skin.
         if (node.hole || node.hidden || (node.type === 'picture' && !local)) continue;
         const entry = builtOf(k, node);
         if (entry.solid) {
           solids.push(local ? entry.solid : keep(entry.solid.transform(mat4(nodeMatrix(node)))));
+          sources = local && nodes.length === 1 && entry.solid ? entry.sources : undefined;
           continue;
         }
         // A copy even when left in place: the worker hands the result's arrays over to the main thread,
@@ -557,9 +615,12 @@ function exportAt(nodes: SceneNode[], outline: boolean, local: boolean): ExportR
       const boxes = parts.map((p) => boundsOfPositions(p.positions));
       let volume = 0;
       let contours: Polygon[] = [];
+      let faces: Faces | undefined;
       if (solids.length > 0) {
         const merged = checked(solids.length === 1 ? solids[0] : keep(k.Manifold.union(solids)));
-        parts.unshift(meshOf(merged));
+        const mesh = meshOf(merged);
+        parts.unshift(mesh);
+        if (sources) faces = facesOf(mesh, sources);
         boxes.push(toBounds(merged.boundingBox()));
         volume = merged.volume();
         if (outline) {
@@ -570,6 +631,7 @@ function exportAt(nodes: SceneNode[], outline: boolean, local: boolean): ExportR
       }
       const result: ExportResult = { mesh: concatenate(parts), bounds: unionBounds(boxes), volume, warnings };
       if (outline) result.outline = contours;
+      if (faces) result.faces = faces;
       return result;
     }),
   );

@@ -17,11 +17,10 @@ const SIZE_TAGS = ['W', 'D', 'H'] as const;
 export function TransformBox() {
   const scene = useEditor((s) => s.doc.scene);
   const selection = useEditor((s) => s.selection);
-  const viewing = useEditor((s) => s.viewing);
   const placing = useEditor((s) => s.placing);
   const nodes = useMemo(() => scene.filter((n) => selection.includes(n.id)), [scene, selection]);
   useSyncExternalStore(geometry.subscribe, geometry.getRevision);
-  if (viewing || placing || nodes.length === 0) return null;
+  if (placing || nodes.length === 0) return null;
   if (nodes.length > 1) {
     const size = boundsSize(unionBounds(nodes.map((n) => geometry.bounds(n))));
     return (

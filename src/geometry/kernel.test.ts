@@ -253,6 +253,56 @@ describe('hole groups', () => {
   });
 });
 
+describe('the parts a group was made from', () => {
+  /** How many triangles of the result each source part made, by its path. */
+  const share = (node: SceneNode): Record<string, number> => {
+    const faces = make(node).faces!;
+    const out: Record<string, number> = {};
+    for (const s of faces.source) {
+      const key = s === 0xffff ? '?' : faces.sources[s].join('/');
+      out[key] = (out[key] ?? 0) + 1;
+    }
+    return out;
+  };
+
+  it('tells which part made each face, through a union and a cut', () => {
+    const left = shape('box', { id: 'L', size: [20, 20, 20], pos: [-10, 0, 10] });
+    const right = shape('box', { id: 'R', size: [20, 20, 20], pos: [10, 0, 10] });
+    const bore = shape('cylinder', { id: 'B', size: [8, 8, 30], pos: [10, 0, 10], hole: true });
+    const g = makeGroup([left, right, bore], measure([left, right, bore])!, 'Pair');
+    const got = share(g);
+    expect(Object.keys(got).sort()).toEqual(['B', 'L', 'R']);
+    // The bore's wall is the only thing the hole contributes; the two boxes keep their outsides.
+    expect(got.B).toBeGreaterThanOrEqual(64 * 2);
+    expect(got.L).toBeGreaterThanOrEqual(10);
+    expect(got.R).toBeGreaterThanOrEqual(10);
+    expect(make(g).faces!.source.length).toBe(make(g).render.positions.length / 9);
+  });
+
+  it('tells the parts of a group inside a group apart, all the way down', () => {
+    const a = shape('box', { id: 'A', size: [10, 10, 10], pos: [-5, 0, 5] });
+    const b = shape('sphere', { id: 'Bs', size: [10, 10, 10], pos: [5, 0, 5] });
+    const inner = makeGroup([a, b], measure([a, b])!, 'Inner');
+    const c = shape('box', { id: 'C', size: [10, 10, 10], pos: [20, 0, 5] });
+    const mixed = makeGroup([inner, c], measure([inner, c])!, 'Outer');
+    expect(Object.keys(share(mixed)).sort()).toEqual(['C', `${inner.id}/A`, `${inner.id}/Bs`]);
+    // Whether the inner group is painted is for the viewer to settle; the kernel's answer is the same.
+    const painted = makeGroup([{ ...inner, mixed: undefined }, c], measure([inner, c])!, 'Outer');
+    expect(share(painted)).toEqual(share(mixed));
+  });
+
+  it('exports a group in place with the same face origins, and other things without', () => {
+    const a = shape('box', { id: 'A', size: [10, 10, 10], pos: [-5, 0, 5] });
+    const b = shape('box', { id: 'Bx', size: [10, 10, 10], pos: [5, 0, 5] });
+    const g = makeGroup([a, b], measure([a, b])!, 'Two');
+    const local = exportNodes([g], false, false, true);
+    expect(local.faces?.sources).toEqual([['A'], ['Bx']]);
+    expect(local.faces!.source.length).toBe(local.mesh.triangles.length / 3);
+    expect(exportNodes([g], false, false, false).faces).toBeUndefined();
+    expect(exportNodes([a], false, false, true).faces).toBeUndefined();
+  });
+});
+
 describe('faces that are meant to meet', () => {
   /** Coordinates of result vertices that lie within a hair of `value` on `axis` without being exactly there. */
   const nearMisses = (node: SceneNode, axis: number, value: number): number[] => {

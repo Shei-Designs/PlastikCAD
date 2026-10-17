@@ -80,6 +80,8 @@ export interface SkinMesh {
   positions: Float32Array;
   normals: Float32Array;
   uv: Float32Array;
+  /** When triangles were cut: for each, the triangle of the mesh it came from. Absent, they are the mesh's own. */
+  faces?: Uint32Array;
 }
 
 /** A triangle in a picture's own space: where each corner lands (0..1 across and up) and how deep it lies. */
@@ -215,9 +217,12 @@ export function clipPictures(positions: Float32Array, normals: Float32Array, pic
   const outP: number[] = [];
   const outN: number[] = [];
   const outUV: number[] = [];
+  const outFace: number[] = [];
+  let from = 0;
   // A convex polygon goes out as a fan of triangles, in the order it came so that it keeps facing outwards.
   const emit = (poly: Cut[], rect: Projector['rect'] | null) => {
     for (let k = 1; k + 1 < poly.length; k++) {
+      outFace.push(from);
       for (const c of [poly[0], poly[k], poly[k + 1]]) {
         outP.push(c.p[0], c.p[1], c.p[2]);
         outN.push(c.n[0], c.n[1], c.n[2]);
@@ -229,6 +234,7 @@ export function clipPictures(positions: Float32Array, normals: Float32Array, pic
   for (let t = 0; t < taken.length; t++) {
     const got = taken[t];
     const i = t * 9;
+    from = t;
     const poly: Cut[] = [0, 1, 2].map((c) => ({
       u: got ? got.uv[c][0] : 0,
       v: got ? got.uv[c][1] : 0,
@@ -248,7 +254,7 @@ export function clipPictures(positions: Float32Array, normals: Float32Array, pic
     }
     emit(kept, pictures[got.pic].rect);
   }
-  return { positions: Float32Array.from(outP), normals: Float32Array.from(outN), uv: Float32Array.from(outUV) };
+  return { positions: Float32Array.from(outP), normals: Float32Array.from(outN), uv: Float32Array.from(outUV), faces: Uint32Array.from(outFace) };
 }
 
 /** Where a triangle lands on a flat sheet's picture, or null if it lies wholly beside it. */

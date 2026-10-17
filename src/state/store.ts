@@ -10,7 +10,7 @@ import type { FormatId } from '../io/export';
 import { centerMesh, centerOutline, IMAGE_EXTENSIONS, IMPORT_EXTENSIONS, importFile } from '../io/import';
 import { bytesToBase64 } from '../io/base64';
 import { exportGlb } from './glbExport';
-import { emptyDoc, parseDoc, serializeDoc } from '../model/file';
+import { emptyDoc, legacyVersions, MAX_NOTE, parseDoc, serializeDoc } from '../model/file';
 import { hashString } from '../model/geomKey';
 import { apply, axisRotation, boundsCenter, boundsSize, boxBounds, eulerOf, multiply, rotation, tidyVec, unionBounds } from '../model/math';
 import type { Bounds, Mat } from '../model/math';
@@ -19,7 +19,6 @@ import {
   arrayNodes,
   arrayPlaces,
   cloneNode,
-  diffScenes,
   dissolve,
   frameAlong,
   holeGroup,
@@ -35,8 +34,8 @@ import {
   uniqueName,
   usedAssets,
 } from '../model/ops';
-import type { AlignMode, ArraySpec, GridArray, Layer, RingArray } from '../model/ops';
-import type { Asset, Doc, GroupNode, ImageAsset, ImportNode, PartNode, PartParamValue, PictureNode, Scene, SceneNode, ShapeKind, TextNode, Texture, Vec2, Vec3, Version } from '../model/types';
+import type { AlignMode, ArraySpec, GridArray, GroupOver, Layer, RingArray } from '../model/ops';
+import type { Asset, Doc, GroupNode, ImageAsset, ImportNode, PartNode, PartParamValue, PictureNode, Scene, SceneNode, ShapeKind, TextNode, Texture, Vec2, Vec3 } from '../model/types';
 import { GENERATORS, getGenerator } from '../parts/generators';
 import { sanitizeParams } from '../parts/generators/types';
 import { mateOf } from '../parts/mates';
@@ -60,9 +59,7 @@ export interface EditorState {
   /** Where the design is saved, if it has been (desktop app only). */
   filePath: string | null;
   /** The design as last saved or opened, to tell whether there are unsaved changes. */
-  saved: { scene: Scene; versions: Version[]; name: string } | null;
-  /** Version being looked at instead of the working scene. */
-  viewing: string | null;
+  saved: { scene: Scene; name: string } | null;
   /** New shape following the pointer until it is put down. */
   placing: SceneNode | null;
   /**
@@ -95,7 +92,6 @@ export interface EditorState {
 interface Step {
   scene: Scene;
   selection: string[];
-  head: string | null;
 }
 
 const DESIGN_FILTER = [{ name: `${APP_NAME} design`, extensions: [FILE_EXTENSION] }];
@@ -107,7 +103,6 @@ let state: EditorState = {
   selection: [],
   filePath: null,
   saved: null,
-  viewing: null,
   placing: null,
   mating: null,
   aligning: null,
@@ -120,7 +115,7 @@ let state: EditorState = {
   canRedo: false,
   epoch: 0,
 };
-state.saved = { scene: state.doc.scene, versions: state.doc.versions, name: state.doc.name };
+state.saved = { scene: state.doc.scene, name: state.doc.name };
 
 const listeners = new Set<() => void>();
 let past: Step[] = [];
@@ -132,8 +127,6 @@ let lastMerge: { key: string; time: number } | null = null;
 let clipboard: SceneNode[] = [];
 let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 let sessionTimer: ReturnType<typeof setTimeout> | undefined;
-/** Set by the viewport: renders a small picture of the design for the version list. */
-let thumbnailer: (() => string | null) | null = null;
 
 function set(patch: Partial<EditorState>): void {
   const before = state;
@@ -159,7 +152,7 @@ export function useEditor<T>(selector: (s: EditorState) => T): T {
 }
 
 export const isDirty = (s: EditorState = state): boolean =>
-  !s.saved || s.doc.scene !== s.saved.scene || s.doc.versions !== s.saved.versions || s.doc.name !== s.saved.name;
+  !s.saved || s.doc.scene !== s.saved.scene || s.doc.name !== s.saved.name;
 
 function scheduleSession(): void {
   clearTimeout(sessionTimer);
@@ -191,20 +184,15 @@ export function setPrefs(patch: Partial<Prefs>): void {
   set({ prefs: { ...state.prefs, ...patch } });
 }
 
-export function setThumbnailer(fn: (() => string | null) | null): void {
-  thumbnailer = fn;
-}
-
 // --- scene edits and undo -------------------------------------------------
 
-const step = (): Step => ({ scene: state.doc.scene, selection: state.selection, head: state.doc.head });
+const step = (): Step => ({ scene: state.doc.scene, selection: state.selection });
 
 /**
  * Replace the scene as one undoable step. Edits with the same `merge` key in
  * quick succession (typing in a field, holding an arrow key) count as one.
  */
-function commit(scene: Scene, options: { selection?: string[]; merge?: string; head?: string | null } = {}): void {
-  if (state.viewing) return;
+function commit(scene: Scene, options: { selection?: string[]; merge?: string } = {}): void {
   abortAlignPreview();
   const selection = options.selection ?? state.selection;
   if (!gesture) {
@@ -217,8 +205,7 @@ function commit(scene: Scene, options: { selection?: string[]; merge?: string; h
     future = [];
     lastMerge = options.merge ? { key: options.merge, time: now } : null;
   }
-  const head = options.head === undefined ? state.doc.head : options.head;
-  set({ doc: { ...state.doc, scene, head }, selection });
+  set({ doc: { ...state.doc, scene }, selection });
 }
 
 /** Start of a drag: everything until `endGesture` is a single undo step. */
@@ -248,11 +235,11 @@ function restore(from: Step[], to: Step[]): void {
   abortAlignPreview();
   if (state.mating) cancelMate();
   const target = from.pop();
-  if (!target || state.viewing) return;
+  if (!target) return;
   to.push(step());
   lastMerge = null;
   const ids = new Set(target.scene.map((n) => n.id));
-  set({ doc: { ...state.doc, scene: target.scene, head: target.head }, selection: target.selection.filter((id) => ids.has(id)) });
+  set({ doc: { ...state.doc, scene: target.scene }, selection: target.selection.filter((id) => ids.has(id)) });
   // The dots follow the objects back.
   if (state.aligning) refreshAlignBounds();
 }
@@ -277,7 +264,6 @@ export function selectedNodes(s: EditorState = state): SceneNode[] {
 }
 
 export function select(ids: string[]): void {
-  if (state.viewing) return;
   abortAlignPreview();
   set({ selection: ids });
 }
@@ -341,7 +327,6 @@ export function resizeNode(node: SceneNode, axis: 0 | 1 | 2, value: number, unif
 }
 
 export function startPlacing(kind: ShapeKind): void {
-  if (state.viewing) return;
   abortAlignPreview();
   // Parked far below the plate until the pointer reaches the viewport.
   const node = makeShape(kind, [0, 0, -1e6]);
@@ -374,11 +359,10 @@ function makeText(text: string, font: string): TextNode | null {
 
 /** Start carrying new lettering, to be put down like a shape. */
 export async function startPlacingText(): Promise<void> {
-  if (state.viewing) return;
   try {
     await loadFont(DEFAULT_FONT);
     const node = makeText('Text', DEFAULT_FONT);
-    if (!node || state.viewing) return;
+    if (!node) return;
     abortAlignPreview();
     set({ placing: node, selection: [] });
   } catch (e) {
@@ -388,11 +372,10 @@ export async function startPlacingText(): Promise<void> {
 
 /** Add lettering at the middle of the plate straight away (keyboard route, double-click). */
 export async function addText(): Promise<void> {
-  if (state.viewing) return;
   try {
     await loadFont(DEFAULT_FONT);
     const node = makeText('Text', DEFAULT_FONT);
-    if (!node || state.viewing) return;
+    if (!node) return;
     node.pos = [0, 0, node.size[2] / 2];
     node.name = uniqueName(state.doc.scene, node.name);
     state = { ...state, placing: null };
@@ -414,7 +397,7 @@ export async function editText(id: string, change: Partial<Pick<TextNode, 'text'
     await loadFont(change.font ?? before.font);
     // Typing is faster than fonts load: work from the node as it is by now.
     const node = state.doc.scene.find((n) => n.id === id);
-    if (node?.type !== 'text' || node.locked || state.viewing) return false;
+    if (node?.type !== 'text' || node.locked) return false;
     const next = { text: node.text, font: node.font, align: node.align, ...change };
     const outline = outlineOf(next);
     if (!outline) return false;
@@ -474,13 +457,11 @@ async function sizePart(node: PartNode): Promise<PartNode> {
 
 /** Start carrying a new part of this kind (gears, pulleys, screws), to be put down like a shape. */
 export async function startPlacingPart(category: string): Promise<void> {
-  if (state.viewing) return;
   const def = GENERATORS.find((g) => g.category === category);
   if (!def) return;
   set({ busy: 'Making the part…' });
   try {
     const node = await sizePart(makePart(def.id));
-    if (state.viewing) return;
     abortAlignPreview();
     set({ placing: node, selection: [] });
   } catch (e) {
@@ -492,13 +473,11 @@ export async function startPlacingPart(category: string): Promise<void> {
 
 /** Add a part at the middle of the plate straight away (keyboard route, double-click). */
 export async function addPart(category: string): Promise<void> {
-  if (state.viewing) return;
   const def = GENERATORS.find((g) => g.category === category);
   if (!def) return;
   set({ busy: 'Making the part…' });
   try {
     const node = await sizePart(makePart(def.id));
-    if (state.viewing) return;
     node.pos = [0, 0, node.size[2] / 2];
     node.name = uniqueName(state.doc.scene, node.name);
     state = { ...state, placing: null };
@@ -547,7 +526,7 @@ let mateDone: Promise<void> = Promise.resolve();
  */
 export function startMate(sourceId: string): void {
   const source = state.doc.scene.find((n) => n.id === sourceId);
-  if (source?.type !== 'part' || state.viewing) return;
+  if (source?.type !== 'part') return;
   cancelMate();
   cancelArray();
   if (state.aligning) stopAligning();
@@ -623,7 +602,7 @@ export async function commitMate(): Promise<void> {
   const before = state.doc.scene.filter((n) => n.id !== mating.id);
   scrubMate(mating.id);
   if (node) {
-    past.push({ scene: before, selection: state.selection, head: state.doc.head });
+    past.push({ scene: before, selection: state.selection });
     if (past.length > UNDO_LIMIT) past.shift();
     future = [];
     lastMerge = null;
@@ -682,7 +661,7 @@ export async function editPart(id: string, change: PartChange): Promise<void> {
 
 async function applyPartChange(id: string, change: PartChange): Promise<void> {
   const node = state.doc.scene.find((n) => n.id === id);
-  if (node?.type !== 'part' || node.locked || state.viewing) return;
+  if (node?.type !== 'part' || node.locked) return;
   const def = getGenerator(change.part ?? node.part);
   const params = change.part && change.part !== node.part ? sanitizeParams(def, change.params) : sanitizeParams(def, { ...node.params, ...change.params });
   // A part still carrying its kind's own name (or that plus a number) takes the new kind's name with it.
@@ -728,7 +707,6 @@ export const cancelPlacing = (): void => {
 
 /** Add a shape at the middle of the plate straight away (keyboard route, double-click). */
 export function addShape(kind: ShapeKind): void {
-  if (state.viewing) return;
   const node = makeShape(kind);
   node.name = uniqueName(state.doc.scene, node.name);
   state = { ...state, placing: null };
@@ -746,7 +724,7 @@ export function deleteSelected(): void {
 }
 
 function addCopies(sources: SceneNode[], offset: Vec3): void {
-  if (sources.length === 0 || state.viewing) return;
+  if (sources.length === 0) return;
   abortAlignPreview();
   let scene = state.doc.scene;
   const copies = sources.map((source) => {
@@ -808,7 +786,7 @@ export function setTexture(texture: Texture | null): void {
  */
 export function editPicture(id: string, change: Partial<Pick<PictureNode, 'mapping' | 'angle'>>): void {
   const node = state.doc.scene.find((n) => n.id === id);
-  if (node?.type !== 'picture' || node.locked || state.viewing) return;
+  if (node?.type !== 'picture' || node.locked) return;
   let next: PictureNode = { ...node, ...change };
   if (change.mapping && change.mapping !== node.mapping) {
     const [w, d, h] = node.size;
@@ -835,8 +813,31 @@ export function imageAssets(doc: Doc = state.doc): { key: string; asset: ImageAs
   return Object.entries(doc.assets).flatMap(([key, asset]) => (asset.kind === 'image' ? [{ key, asset }] : []));
 }
 
+/** Paint the selection. A group's parts stop showing their own colors: the whole takes this one. */
 export function setColor(color: string): void {
-  updateSelected((n) => (n.color === color && !n.hole ? n : { ...n, color, hole: false }), 'color');
+  updateSelected((n) => {
+    if (n.color === color && !n.hole && !(n.type === 'group' && n.mixed)) return n;
+    const next = { ...n, color, hole: false };
+    if (next.type === 'group') delete next.mixed;
+    return next;
+  }, 'color');
+}
+
+/** Attach words to the object at `path` (one inside a group too); an empty note takes them off. */
+export function setNote(path: string[], note: string): void {
+  const clean = note.trim().slice(0, MAX_NOTE);
+  const patch = (nodes: Scene, depth: number): Scene =>
+    nodes.map((n) => {
+      if (n.id !== path[depth]) return n;
+      if (depth < path.length - 1) return n.type === 'group' ? { ...n, children: patch(n.children, depth + 1) } : n;
+      if ((n.note ?? '') === clean) return n;
+      const next = { ...n };
+      if (clean) next.note = clean;
+      else delete next.note;
+      return next;
+    });
+  const scene = patch(state.doc.scene, 0);
+  if (scene.some((n, i) => n !== state.doc.scene[i])) commit(scene, { merge: `note:${path.join('/')}` });
 }
 
 export function alignSelected(axis: 0 | 1 | 2, mode: AlignMode): void {
@@ -875,7 +876,7 @@ function refreshAlignBounds(): void {
 
 /** Show the anchor dots around the selection (two or more objects). */
 export function startAligning(): void {
-  if (state.viewing || state.aligning) return;
+  if (state.aligning) return;
   if (state.selection.length < 2) return notify('Select two or more objects to line them up.');
   const bounds = alignBounds(null);
   if (bounds) set({ aligning: { anchor: null, bounds }, placing: null });
@@ -974,7 +975,6 @@ export function arrayFrame(nodes: SceneNode[] = selectedNodes()): SceneNode | nu
  * one gesture, so nothing reaches the history.
  */
 export function previewArray(request: ArrayRequest): void {
-  if (state.viewing) return;
   if (state.aligning) stopAligning();
   // Always from the scene and selection the preview started from.
   const base = gesture ?? step();
@@ -1064,7 +1064,7 @@ export function toggleLocked(id: string): void {
 }
 
 /** Measure and build a group of the given members (their hole flags as they are to be inside it); null if nothing solid would be left. */
-async function buildGroup(members: SceneNode[], hole: boolean, name: string, over: Partial<Pick<GroupNode, 'id' | 'color' | 'hidden' | 'locked'>> = {}): Promise<GroupNode | null> {
+async function buildGroup(members: SceneNode[], hole: boolean, name: string, over: GroupOver = {}): Promise<GroupNode | null> {
   const worker = await geometry.prepare(members, state.doc.assets);
   const bounds = await worker.measure(members);
   return bounds ? makeGroup(members, bounds, name, { ...over, hole }) : null;
@@ -1073,7 +1073,7 @@ async function buildGroup(members: SceneNode[], hole: boolean, name: string, ove
 export async function groupSelected(): Promise<void> {
   abortAlignPreview();
   const nodes = selectedNodes();
-  if (state.viewing || nodes.length < 2) return;
+  if (nodes.length < 2) return;
   if (nodes.some((n) => n.locked)) return notify('Unlock the selected objects before grouping them.', 'error');
   set({ busy: 'Grouping…' });
   try {
@@ -1126,7 +1126,7 @@ export function setHighlight(path: string[] | null): void {
  * changed, remembering how to put them back together (see `finishEditing`).
  */
 export function editInside(path: string[]): void {
-  if (state.viewing || state.editing || path.length < 2) return;
+  if (state.editing || path.length < 2) return;
   abortAlignPreview();
   const root = state.doc.scene.find((n) => n.id === path[0]);
   if (root?.type !== 'group') return;
@@ -1189,9 +1189,8 @@ function adopt(doc: Doc, filePath: string | null, dirty = false): void {
   set({
     doc,
     filePath,
-    saved: dirty ? null : { scene: doc.scene, versions: doc.versions, name: doc.name },
+    saved: dirty ? null : { scene: doc.scene, name: doc.name },
     selection: [],
-    viewing: null,
     placing: null,
     mating: null,
     editing: null,
@@ -1208,7 +1207,7 @@ function rememberRecent(path: string): void {
 }
 
 async function okToDiscard(): Promise<boolean> {
-  if (!isDirty() || (state.doc.scene.length === 0 && state.doc.versions.length === 0)) return true;
+  if (!isDirty() || state.doc.scene.length === 0) return true;
   return platform.confirm(`"${state.doc.name}" has unsaved changes. Discard them?`, {
     title: APP_NAME,
     okLabel: 'Discard',
@@ -1223,17 +1222,46 @@ export async function newDesign(): Promise<void> {
 const baseName = (fileName: string): string => fileName.replace(/\.[^.]+$/, '');
 const extension = (fileName: string): string => fileName.split('.').pop()?.toLowerCase() ?? '';
 
-function openFile(file: PickedFile): void {
-  const doc = parseDoc(new TextDecoder().decode(file.bytes));
+async function openFile(file: PickedFile): Promise<void> {
+  const text = new TextDecoder().decode(file.bytes);
+  const doc = parseDoc(text);
   if (doc.name === 'Untitled') doc.name = baseName(file.name);
   adopt(doc, file.path);
+  await offerLegacyVersions(text, file);
+}
+
+/**
+ * Files from before format version 2 may carry saved versions, which the app
+ * no longer keeps: each can be written out as a design of its own, next to the
+ * file, before the first save drops them.
+ */
+async function offerLegacyVersions(text: string, file: PickedFile): Promise<void> {
+  const versions = legacyVersions(text);
+  if (versions.length === 0) return;
+  const count = `${versions.length} saved version${versions.length === 1 ? '' : 's'}`;
+  if (!file.path) return notify(`The ${count} in this file are no longer kept and will be dropped when it is saved.`);
+  const keep = await platform.confirm(`This design carries ${count} from an older version of the app, which no longer keeps them. Save each as a design file next to it?`, {
+    title: APP_NAME,
+    okLabel: 'Save them',
+    cancelLabel: 'Drop them',
+  });
+  if (!keep) return;
+  const folder = file.path.slice(0, file.path.length - file.name.length);
+  const taken = new Set<string>();
+  for (const version of versions) {
+    let name = version.name.replace(/[\\/:*?"<>|]/g, '-');
+    for (let n = 2; taken.has(name); n++) name = `${version.name} (${n})`;
+    taken.add(name);
+    await platform.writePath(`${folder}${name}.${FILE_EXTENSION}`, new TextEncoder().encode(serializeDoc(version)));
+  }
+  notify(`Saved ${count} next to "${file.name}".`);
 }
 
 export async function openDesign(): Promise<void> {
   try {
     if (!(await okToDiscard())) return;
     const [file] = await platform.pickFiles({ filters: DESIGN_FILTER });
-    if (file) openFile(file);
+    if (file) await openFile(file);
   } catch (e) {
     fail(e);
   }
@@ -1242,7 +1270,7 @@ export async function openDesign(): Promise<void> {
 export async function openPath(path: string, ask = true): Promise<void> {
   try {
     if (ask && !(await okToDiscard())) return;
-    openFile(await platform.readPath(path));
+    await openFile(await platform.readPath(path));
   } catch (e) {
     setPrefs({ recent: state.prefs.recent.filter((p) => p !== path) });
     fail(e);
@@ -1250,7 +1278,7 @@ export async function openPath(path: string, ask = true): Promise<void> {
 }
 
 function markSaved(filePath: string | null): void {
-  set({ filePath, saved: { scene: state.doc.scene, versions: state.doc.versions, name: state.doc.name } });
+  set({ filePath, saved: { scene: state.doc.scene, name: state.doc.name } });
   if (filePath) rememberRecent(filePath);
 }
 
@@ -1380,18 +1408,16 @@ function makePicture(key: string): PictureNode {
 
 /** Start carrying a new picture, to be put down like a shape: the picture file is asked for first. */
 export async function startPlacingPicture(): Promise<void> {
-  if (state.viewing) return;
   const key = await pickImage();
-  if (!key || state.viewing) return;
+  if (!key) return;
   abortAlignPreview();
   set({ placing: makePicture(key), selection: [] });
 }
 
 /** Add a picture at the middle of the plate straight away (keyboard route, double-click). */
 export async function addPicture(): Promise<void> {
-  if (state.viewing) return;
   const key = await pickImage();
-  if (!key || state.viewing) return;
+  if (!key) return;
   const node = makePicture(key);
   node.pos = [0, 0, node.size[2] / 2];
   node.name = uniqueName(state.doc.scene, node.name);
@@ -1422,7 +1448,7 @@ async function importPictures(files: PickedFile[]): Promise<void> {
 export async function pickImage(): Promise<string | null> {
   try {
     const files = await platform.pickFiles({ filters: [{ name: 'Pictures', extensions: IMAGE_EXTENSIONS }] });
-    if (!files.length || state.viewing) return null;
+    if (!files.length) return null;
     const key = await addImage(files[0]);
     set({});
     return key;
@@ -1439,7 +1465,7 @@ export async function receiveFiles(files: PickedFile[]): Promise<void> {
   try {
     const design = files.find((f) => extension(f.name) === FILE_EXTENSION);
     if (design) {
-      if (await okToDiscard()) openFile(design);
+      if (await okToDiscard()) await openFile(design);
       return;
     }
     const models = files.filter((f) => IMPORT_EXTENSIONS.includes(extension(f.name)));
@@ -1448,7 +1474,6 @@ export async function receiveFiles(files: PickedFile[]): Promise<void> {
       if (files.length) notify(`Cannot import that. Supported: ${IMPORTABLE.map((e) => e.toUpperCase()).join(', ')}.`, 'error');
       return;
     }
-    if (state.viewing) return notify('Go back to the working design before importing.', 'error');
     set({ busy: 'Importing…' });
     // Let the "Importing…" badge paint before the parser blocks the thread.
     await new Promise((r) => setTimeout(r, 30));
@@ -1476,8 +1501,7 @@ export async function importModel(): Promise<void> {
 /** Write the design (or just the selection) in an exchange format. Returns where it went, or null if canceled. */
 export async function exportDesign(formatId: FormatId, selectionOnly: boolean): Promise<string | null> {
   const format = FORMATS.find((f) => f.id === formatId)!;
-  const shown = state.viewing ? (state.doc.versions.find((v) => v.id === state.viewing)?.scene ?? []) : state.doc.scene;
-  const nodes = selectionOnly && !state.viewing ? selectedNodes() : shown;
+  const nodes = selectionOnly ? selectedNodes() : state.doc.scene;
   const name = state.doc.name;
   let bytes: Uint8Array;
   let warnings: string[] = [];
@@ -1494,72 +1518,6 @@ export async function exportDesign(formatId: FormatId, selectionOnly: boolean): 
   if (!where) return null;
   for (const w of warnings) notify(w, 'error');
   return where.path ?? where.name;
-}
-
-// --- versions -------------------------------------------------------------------
-
-/** Keep the design as it is now, so it can be looked at or brought back later. */
-export function saveVersion(label: string): void {
-  if (state.viewing) return;
-  const doc = state.doc;
-  const scene = docToSave().scene;
-  const head = doc.versions.find((v) => v.id === doc.head);
-  const diff = diffScenes(head?.scene ?? [], scene);
-  if (diff.added + diff.changed + diff.removed === 0) {
-    return notify(head ? `Nothing has changed since "${head.label}".` : 'There is nothing to save yet.');
-  }
-  const version: Version = {
-    id: newId(),
-    parent: doc.head,
-    label: label.trim() || `Version ${doc.versions.length + 1}`,
-    time: new Date().toISOString(),
-    scene,
-  };
-  const thumb = thumbnailer?.();
-  if (thumb) version.thumb = thumb;
-  set({ doc: { ...doc, versions: [...doc.versions, version], head: version.id } });
-  // A version is meant to be safe: write it to disk right away when the design has a file.
-  if (state.filePath) void saveDesign();
-}
-
-export function viewVersion(id: string | null): void {
-  if (id && !state.doc.versions.some((v) => v.id === id)) return;
-  cancelMate();
-  abortAlignPreview();
-  set({ viewing: id, selection: [], placing: null });
-}
-
-/** Make an old version the working design. The current state stays reachable through undo. */
-export function restoreVersion(id: string): void {
-  const version = state.doc.versions.find((v) => v.id === id);
-  if (!version) return;
-  state = { ...state, viewing: null };
-  commit(version.scene, { selection: [], head: version.id });
-  notify(`Restored "${version.label}"`);
-}
-
-export function renameVersion(id: string, label: string): void {
-  const clean = label.trim();
-  if (!clean) return;
-  set({ doc: { ...state.doc, versions: state.doc.versions.map((v) => (v.id === id ? { ...v, label: clean } : v)) } });
-}
-
-export function deleteVersion(id: string): void {
-  const doc = state.doc;
-  const gone = doc.versions.find((v) => v.id === id);
-  if (!gone) return;
-  // Versions made from the deleted one now descend from its parent.
-  const versions = doc.versions.filter((v) => v.id !== id).map((v) => (v.parent === id ? { ...v, parent: gone.parent } : v));
-  set({
-    doc: { ...doc, versions, head: doc.head === id ? gone.parent : doc.head },
-    viewing: state.viewing === id ? null : state.viewing,
-  });
-}
-
-/** The scene on screen: the working one, or the version being looked at. */
-export function shownScene(s: EditorState = state): Scene {
-  if (!s.viewing) return s.doc.scene;
-  return s.doc.versions.find((v) => v.id === s.viewing)?.scene ?? s.doc.scene;
 }
 
 // --- start-up -------------------------------------------------------------------

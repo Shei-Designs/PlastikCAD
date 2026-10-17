@@ -160,6 +160,24 @@ describe('cut pictures', () => {
     }
   });
 
+  it('says which triangle of the mesh each cut triangle came from', () => {
+    const mesh = cube(100);
+    const normals = normalsOf(mesh);
+    const matrix: Mat = multiply(translation([0, 0, 52]), scaling([10, 10, 1]));
+    const cut = clipPictures(mesh, normals, [{ matrix, mapping: 'flat', angle: 0, rect: upper }]);
+    const faces = cut.faces!;
+    expect(faces.length).toBe(cut.positions.length / 9);
+    // Triangles come out in the order of the ones they were cut from, each from one of the twelve.
+    for (let t = 1; t < faces.length; t++) expect(faces[t]).toBeGreaterThanOrEqual(faces[t - 1]);
+    expect(new Set(faces).size).toBe(12);
+    // The pieces of a face lie on it: same z as the top for pieces of the two top triangles.
+    for (let t = 0; t < faces.length; t++) {
+      const z = [cut.positions[t * 9 + 2], cut.positions[t * 9 + 5], cut.positions[t * 9 + 8]];
+      const top = mesh[faces[t] * 9 + 2] === 50 && mesh[faces[t] * 9 + 5] === 50 && mesh[faces[t] * 9 + 8] === 50;
+      if (top) expect(z).toEqual([50, 50, 50]);
+    }
+  });
+
   it('leaves the corners alone when no picture reaches past a triangle', () => {
     // A sheet the size of the face: the face's corners land exactly on the picture's edges, so nothing is cut.
     const mesh = cube(10);
@@ -168,6 +186,7 @@ describe('cut pictures', () => {
     const cut = clipPictures(mesh, normals, [{ matrix, mapping: 'flat', angle: 0, rect: upper }]);
     expect(cut.positions).toBe(mesh);
     expect(cut.normals).toBe(normals);
+    expect(cut.faces).toBeUndefined();
     expect(cut.uv).toEqual(projectPictures(mesh, [{ matrix, mapping: 'flat', angle: 0, rect: upper }]));
   });
 

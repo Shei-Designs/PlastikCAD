@@ -16,6 +16,8 @@ export interface GlbObject {
   color: string;
   /** Texture coordinates per corner (v up), with the picture to sample. */
   skin?: { uv: Float32Array; image: Uint8Array; mime: 'image/png' | 'image/jpeg'; repeat: boolean };
+  /** Linear RGB per corner, for an object whose parts have colors of their own; the base color is then white. */
+  colors?: Float32Array;
 }
 
 const MAGIC = 0x46546c67;
@@ -75,6 +77,11 @@ export function writeGlb(objects: GlbObject[], name: string): Uint8Array {
     const { positions, normals, flipped } = placed(o);
     const attributes: Record<string, number> = { POSITION: accessor(positions, 3, true), NORMAL: accessor(normals, 3, false) };
     const material: Record<string, unknown> = { name: o.name, pbrMetallicRoughness: { baseColorFactor: [...linearColor(o.color), 1], metallicFactor: 0, roughnessFactor: 0.6 } };
+    if (o.colors) {
+      // Every corner of a triangle has the same color, so a mirrored placement turning the corners round changes nothing.
+      attributes.COLOR_0 = accessor(o.colors, 3, false);
+      (material.pbrMetallicRoughness as Record<string, unknown>).baseColorFactor = [1, 1, 1, 1];
+    }
     if (o.skin) {
       // v runs up in our coordinates and down in glTF's; a mirrored placement has turned the corners round too.
       const uv = new Float32Array(o.skin.uv.length);

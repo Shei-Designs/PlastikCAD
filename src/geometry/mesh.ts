@@ -18,6 +18,19 @@ export interface RenderMesh {
 }
 
 /**
+ * Where the faces of a group came from: for each triangle, an index into
+ * `sources`, the path of ids (from the group's children down) of the part
+ * that made it. `NO_SOURCE` for a face of unknown origin. A triangle of a
+ * RenderMesh and the indexed mesh it was made from share a number.
+ */
+export interface Faces {
+  source: Uint16Array;
+  sources: string[][];
+}
+
+export const NO_SOURCE = 0xffff;
+
+/**
  * Per-corner normals: each corner averages the faces around its vertex that
  * lie within `angle` degrees of its own face. Linear in the triangle count
  * (Manifold's calculateNormals takes seconds on finely detailed surfaces).

@@ -1,4 +1,4 @@
-BashCAD is a desktop app for fast solid modelling for 3D printing: combine simple shapes into a part, and keep every version of the design.
+BashCAD is a desktop app for fast solid modelling for 3D printing: combine simple shapes into a part and export it for your slicer.
 
 ## Download
 

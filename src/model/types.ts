@@ -40,6 +40,8 @@ interface NodeBase {
   locked?: boolean;
   /** A picture stretched over the whole surface (see `Texture`); not shown while the object carries pictures of its own. */
   texture?: Texture;
+  /** Words the user attached to the object. They stay with it through grouping: a group's children keep their own. */
+  note?: string;
 }
 
 /** A picture over an object's whole surface: wrapped once around its vertical axis, or tiled every `scale` mm. */
@@ -65,6 +67,11 @@ export interface ShapeNode extends NodeBase {
 
 export interface GroupNode extends NodeBase {
   type: 'group';
+  /**
+   * The children show their own colors (the group's `color` then only stands for it in lists and
+   * on selection). Choosing a color for the group paints the whole and clears this.
+   */
+  mixed?: boolean;
   /** Bounding box of the combined children when the group was made; `size / natural` is its scale. */
   natural: Vec3;
   /** Positioned relative to the center of the group. */
@@ -176,24 +183,8 @@ export interface ImageAsset {
 
 export type Asset = MeshAsset | OutlineAsset | ImageAsset;
 
-/** A saved point in the design's history. */
-export interface Version {
-  id: string;
-  /** Version this one was made from; null for the first. Restoring an old version and saving again branches. */
-  parent: string | null;
-  label: string;
-  /** ISO 8601 timestamp. */
-  time: string;
-  scene: Scene;
-  /** Small preview image (data URL). */
-  thumb?: string;
-}
-
 export interface Doc {
   name: string;
   scene: Scene;
-  versions: Version[];
-  /** Version the working scene descends from. */
-  head: string | null;
   assets: Record<string, Asset>;
 }

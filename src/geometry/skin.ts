@@ -23,14 +23,21 @@ export type Skin =
   | { kind: 'picture'; asset: string; mapping: PictureMapping; angle: number; color: string }
   /** A texture over the whole surface, over the object's own color where the picture is transparent. */
   | { kind: 'texture'; asset: string; mode: 'wrap' | 'tile'; scale: number; turn: number; color: string }
-  /** Pictures projected onto the object, over its own color. */
-  | { kind: 'stickers'; color: string; stickers: Sticker[] };
+  /**
+   * Pictures projected onto the object, over its own color. On a mixed group the parts around the
+   * pictures keep their own colors (which the surface carries as corner colors), so the atlas is
+   * white where nothing is painted; under a transparent picture the group's color shows.
+   */
+  | { kind: 'stickers'; color: string; mixed?: boolean; stickers: Sticker[] };
 
 /** The skin of a node, or null for a plain colored surface. Pictures grouped onto an object take precedence over its texture. */
 export function skinOf(node: SceneNode): Skin | null {
   if (node.type === 'picture') return { kind: 'picture', asset: node.asset, mapping: node.mapping, angle: node.angle, color: node.color };
   const pictures = picturesOf(node).filter((p) => !p.hidden);
-  if (pictures.length) return { kind: 'stickers', color: node.color, stickers: pictures.map((p) => ({ asset: p.asset, mapping: p.mapping, angle: p.angle, matrix: nodeMatrix(p) })) };
+  if (pictures.length) {
+    const stickers = pictures.map((p) => ({ asset: p.asset, mapping: p.mapping, angle: p.angle, matrix: nodeMatrix(p) }));
+    return { kind: 'stickers', color: node.color, ...(node.type === 'group' && node.mixed ? { mixed: true } : {}), stickers };
+  }
   if (node.texture) return { kind: 'texture', asset: node.texture.asset, mode: node.texture.mode, scale: node.texture.scale, turn: node.texture.turn, color: node.color };
   return null;
 }

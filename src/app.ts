@@ -5,5 +5,6 @@ export const APP_VERSION = '0.1.0';
 export const APP_URL = 'https://github.com/AOShei/bashcad';
 /** Marker written into design files, and their extension. */
 export const FILE_FORMAT = 'bashcad';
-export const FILE_VERSION = 1;
+/** 2 dropped the saved versions a file used to carry. */
+export const FILE_VERSION = 2;
 export const FILE_EXTENSION = 'bashcad';

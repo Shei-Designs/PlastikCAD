@@ -1424,7 +1424,6 @@ kbd {
 
 .mini.on,
 .object:hover .mini,
-.version:hover .mini,
 .mini:focus-visible {
   opacity: 1;
 }
@@ -1539,7 +1538,7 @@ kbd {
   font-variant-numeric: tabular-nums;
 }
 
-.version-banner,
+.mode-banner,
 .hint-bar {
   position: absolute;
   left: 50%;
@@ -1924,110 +1923,6 @@ kbd {
   font-size: 12px;
 }
 
-/* ---------- versions ---------- */
-
-.commit {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.commit .field-note {
-  margin: 0;
-}
-
-.versions {
-  margin: 14px -8px 0;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
-}
-
-.version {
-  position: relative;
-  border-radius: 8px;
-}
-
-.version:hover {
-  background: var(--panel-raised);
-}
-
-.version.viewing {
-  background: var(--control);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 60%, var(--border));
-}
-
-.version-main {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 6px 8px;
-  border: 0;
-  background: none;
-  text-align: left;
-}
-
-.version-thumb {
-  flex: none;
-  width: 64px;
-  height: 40px;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: var(--stage-outer);
-}
-
-.version-thumb img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.version-text {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-width: 0;
-}
-
-.version-label {
-  overflow: hidden;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.version.current .version-label {
-  color: var(--accent-strong);
-}
-
-.version-meta {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.version-actions {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  display: flex;
-  border-radius: 6px;
-  background: var(--panel-raised);
-}
-
-.version.viewing .version-actions {
-  background: var(--control);
-}
-
-.version:not(:hover):not(:focus-within) .version-actions {
-  visibility: hidden;
-}
-
 /* ---------- structure graph ---------- */
 
 /* The structure outline: rows with a colour dot, each grouping's parts indented beneath it on a guide line. */
@@ -2093,6 +1988,55 @@ kbd {
 
 .structure-actions .chip {
   flex: none;
+}
+
+.structure-actions .buttons {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
+.outline-note {
+  display: inline-flex;
+  flex: none;
+  color: var(--faint);
+}
+
+.outline-row:hover .outline-note,
+.outline-row.on .outline-note {
+  color: var(--text);
+}
+
+/* ---------- notes ---------- */
+
+.note-panel {
+  width: 260px;
+  padding: 4px;
+}
+
+.structure .note-panel {
+  width: auto;
+  padding: 6px 0 0;
+}
+
+.note-panel .text-input.area {
+  min-height: 72px;
+}
+
+/* A dot on the Note button when the selected object has one. */
+.chip.noted {
+  position: relative;
+}
+
+.chip.noted::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
 }
 
 

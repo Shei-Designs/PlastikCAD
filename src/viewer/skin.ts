@@ -76,8 +76,13 @@ export class SkinPainter {
       canvas.width = width;
       canvas.height = height;
       const g = canvas.getContext('2d')!;
-      g.fillStyle = skin.color;
+      // Around the pictures a mixed group's surface shows its parts' own colors, which the corners carry; white leaves them as they are.
+      g.fillStyle = skin.mixed ? '#ffffff' : skin.color;
       g.fillRect(0, 0, width, height);
+      if (skin.mixed) {
+        g.fillStyle = skin.color;
+        for (const c of cells) g.fillRect(c.x, c.y, c.w, c.h);
+      }
       cells.forEach((c, i) => g.drawImage(ready[i], c.x, c.y, c.w, c.h));
       rects = cells.map((c) => cellRect(c, width, height));
     } else {

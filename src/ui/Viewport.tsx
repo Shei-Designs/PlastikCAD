@@ -19,18 +19,14 @@ import {
   previewAlign,
   redo,
   replaceNodes,
-  restoreVersion,
   select,
   setAlignAnchor,
   setPrefs,
-  setThumbnailer,
-  shownScene,
   toggleAligning,
   toggleSelected,
   undo,
   ungroupSelected,
   useEditor,
-  viewVersion,
 } from '../state/store';
 import { Viewer } from '../viewer/Viewer';
 import type { HandlePrompt, ViewItem, ViewPreset } from '../viewer/Viewer';
@@ -44,12 +40,14 @@ import {
   FitIcon,
   GroupIcon,
   MirrorIcon,
+  NoteIcon,
   RedoIcon,
   TrashIcon,
   UndoIcon,
   UngroupIcon,
   WarningIcon,
 } from './icons';
+import { NotePanel } from './NotePanel';
 import { ArrayPanel } from './ArrayPanel';
 import { Popover } from './Popover';
 import { MatePanel } from './MatePanel';
@@ -135,6 +133,11 @@ function Actions() {
           <DropIcon />
         </button>
       </div>
+      <div className="chip-group">
+        <Popover className={picked.length === 1 && picked[0].note ? 'chip icon noted' : 'chip icon'} title="Note" button={<NoteIcon />} disabled={picked.length !== 1} align="right">
+          {() => <NotePanel path={[picked[0].id]} note={picked[0].note ?? ''} />}
+        </Popover>
+      </div>
     </div>
   );
 }
@@ -212,12 +215,12 @@ export function Viewport() {
   const viewer = useRef<Viewer | null>(null);
 
   const state = useEditor((s) => s);
-  const { prefs, placing, selection, viewing, notice, busy, aligning, editing, highlight, mating } = state;
+  const { prefs, placing, selection, notice, busy, aligning, editing, highlight, mating } = state;
   // Another selection, or an edit from elsewhere, and the typing boxes no longer belong to anything.
   useEffect(() => {
     viewer.current?.dismissPrompt();
   }, [selection, editing]);
-  const scene = shownScene(state);
+  const scene = state.doc.scene;
   const assets = state.doc.assets;
   const revision = useSyncExternalStore(geometry.subscribe, geometry.getRevision);
 
@@ -253,9 +256,7 @@ export function Viewport() {
       { theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap },
     );
     viewer.current = viewerRef.current = v;
-    setThumbnailer(() => v.capture());
     return () => {
-      setThumbnailer(null);
       v.dispose();
       viewer.current = viewerRef.current = null;
     };
@@ -263,8 +264,8 @@ export function Viewport() {
   }, []);
 
   useEffect(() => {
-    viewer.current?.setOptions({ theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap, interactive: !viewing, align: aligning, highlight });
-  }, [prefs.theme, prefs.edges, prefs.grid, prefs.snap, viewing, aligning, highlight]);
+    viewer.current?.setOptions({ theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap, interactive: true, align: aligning, highlight });
+  }, [prefs.theme, prefs.edges, prefs.grid, prefs.snap, aligning, highlight]);
 
   useEffect(() => {
     viewer.current?.setPlacing(Boolean(placing));
@@ -290,9 +291,9 @@ export function Viewport() {
     viewer.current?.setItems(items, assets);
   }, [items, assets]);
 
-  // A different design (or version) on screen: frame it.
-  const shownKey = `${state.epoch}:${viewing ?? ''}`;
-  const framed = useRef('');
+  // A different design on screen: frame it.
+  const shownKey = state.epoch;
+  const framed = useRef(-1);
   useEffect(() => {
     if (framed.current === shownKey) return;
     framed.current = shownKey;
@@ -307,8 +308,6 @@ export function Viewport() {
     }
     return out;
   }, [scene, revision]);
-
-  const version = viewing ? state.doc.versions.find((v) => v.id === viewing) : null;
 
   return (
     <div className="viewport">
@@ -343,25 +342,11 @@ export function Viewport() {
           </select>
           <ChevronIcon />
         </label>
-        {!viewing && <Actions />}
+        <Actions />
       </div>
 
-      {version && (
-        <div className="version-banner" role="status">
-          <span>
-            Viewing <strong>{version.label}</strong>
-          </span>
-          <button type="button" className="chip on" onClick={() => restoreVersion(version.id)}>
-            Restore this version
-          </button>
-          <button type="button" className="chip" onClick={() => viewVersion(null)}>
-            Back to current
-          </button>
-        </div>
-      )}
-
-      {editing && !viewing && (
-        <div className="version-banner" role="status">
+      {editing && (
+        <div className="mode-banner" role="status">
           <span>
             Editing inside <strong>{editing.layers[0]?.name}</strong>
           </span>

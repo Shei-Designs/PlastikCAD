@@ -5,13 +5,12 @@ import { countShapes, picturesOf } from '../model/ops';
 import { TEXT_FONTS } from '../model/types';
 import type { ImageAsset, PictureMapping, PictureNode, SceneNode, ShapeNode, TextAlign, TextNode } from '../model/types';
 import { geometry } from '../state/geometry';
-import { editPicture, editText, imageAssets, pickImage, setColor, setHole, setPrefs, setTexture, shownScene, updateNode, updateSelected, useEditor } from '../state/store';
+import { editPicture, editText, imageAssets, pickImage, setColor, setHole, setTexture, updateNode, updateSelected, useEditor } from '../state/store';
 import { formatNumber, SliderField } from './Fields';
 import { getGenerator } from '../parts/generators';
 import { PartFields } from './PartFields';
 import { Sections } from './Sections';
 import type { Section } from './Sections';
-import { Versions } from './Versions';
 
 const MOD = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform) ? '⌘' : 'Ctrl+';
 
@@ -35,7 +34,6 @@ const SHORTCUTS: [string, string][] = [
   ['Drop onto the plate', 'D'],
   ['Fit to view', 'F'],
   ['Import model or picture', `${MOD}I`],
-  ['Save a version', `${MOD}Shift+V`],
 ];
 
 const kindOf = (node: SceneNode): string =>
@@ -80,7 +78,9 @@ function NameField({ node }: { node: SceneNode }) {
 function Appearance({ nodes }: { nodes: SceneNode[] }) {
   const hole = nodes.every((n) => n.hole);
   const solid = nodes.every((n) => !n.hole);
-  const color = solid && nodes.every((n) => n.color === nodes[0].color) ? nodes[0].color : null;
+  // A mixed group has no one color to show as its own.
+  const mixed = nodes.some((n) => n.type === 'group' && n.mixed && !n.hole);
+  const color = solid && !mixed && nodes.every((n) => n.color === nodes[0].color) ? nodes[0].color : null;
   // Edits skip locked objects, so the controls only go quiet once none of the selection takes them.
   const locked = nodes.every((n) => n.locked);
   return (
@@ -112,6 +112,7 @@ function Appearance({ nodes }: { nodes: SceneNode[] }) {
         ))}
         <CustomColor color={color} custom={color !== null && !PALETTE.some((c) => c.value === color)} disabled={locked} />
       </div>
+      {mixed && <p className="field-note">Each part keeps its own color. Picking one paints the whole.</p>}
     </fieldset>
   );
 }
@@ -335,7 +336,7 @@ function TextureFields({ node }: { node: SceneNode }) {
 const imageLabel = (image: ImageAsset) => `${image.name} (${image.width} × ${image.height})`;
 
 function Overview() {
-  const scene = useEditor(shownScene);
+  const scene = useEditor((s) => s.doc.scene);
   useSyncExternalStore(geometry.subscribe, geometry.getRevision);
   const visible = scene.filter((n) => !n.hidden && !n.hole);
   const size = visible.length ? boundsSize(unionBounds(visible.map((n) => geometry.bounds(n)))) : null;
@@ -380,11 +381,10 @@ function Overview() {
 function Design() {
   const scene = useEditor((s) => s.doc.scene);
   const selection = useEditor((s) => s.selection);
-  const viewing = useEditor((s) => s.viewing);
   const nodes = useMemo(() => scene.filter((n) => selection.includes(n.id)), [scene, selection]);
   useSyncExternalStore(geometry.subscribe, geometry.getRevision);
 
-  if (viewing || nodes.length === 0) return <Overview />;
+  if (nodes.length === 0) return <Overview />;
   if (nodes.length > 1) {
     return (
       <>
@@ -422,21 +422,11 @@ function Design() {
 }
 
 export function Inspector() {
-  const panel = useEditor((s) => s.prefs.panel);
-  const versions = useEditor((s) => s.doc.versions.length);
   return (
     <aside className="inspector">
-      <div className="tabs">
-        <div className="segmented" role="tablist">
-          <button type="button" role="tab" aria-selected={panel === 'design'} className={panel === 'design' ? 'on' : ''} onClick={() => setPrefs({ panel: 'design' })}>
-            Design
-          </button>
-          <button type="button" role="tab" aria-selected={panel === 'versions'} className={panel === 'versions' ? 'on' : ''} onClick={() => setPrefs({ panel: 'versions' })}>
-            Versions{versions ? ` · ${versions}` : ''}
-          </button>
-        </div>
+      <div className="params">
+        <Design />
       </div>
-      <div className="params">{panel === 'design' ? <Design /> : <Versions />}</div>
     </aside>
   );
 }

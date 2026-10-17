@@ -8,6 +8,8 @@ import { getGenerator } from '../parts/generators';
 import { HOLE_COLOR } from '../model/ops';
 import type { GroupNode, SceneNode } from '../model/types';
 import { editInside, setHighlight } from '../state/store';
+import { InfoIcon } from './icons';
+import { NotePanel } from './NotePanel';
 
 const kindOf = (node: SceneNode): string =>
   node.type === 'group'
@@ -27,6 +29,8 @@ const depthOf = (node: SceneNode): number => (node.type === 'group' ? 1 + Math.m
 
 export function Structure({ root }: { root: GroupNode }) {
   const [picked, setPicked] = useState<string[] | null>(null);
+  /** The row whose note is open for editing, by path. */
+  const [noting, setNoting] = useState<string | null>(null);
   // A row still hovered when the panel goes away (the selection changes under the pointer, say) must not leave its ghost on the plate.
   useEffect(() => () => setHighlight(null), []);
   const leaves = countLeaves(root);
@@ -65,6 +69,11 @@ export function Structure({ root }: { root: GroupNode }) {
         >
           <span className={node.hole ? 'dot hole' : 'dot'} style={{ background: node.hole ? undefined : node.color, borderColor: node.hole ? HOLE_COLOR : undefined }} />
           <span className="clip">{node.name}</span>
+          {node.note && (
+            <span className="outline-note" title={node.note} aria-label={`Note: ${node.note}`}>
+              <InfoIcon />
+            </span>
+          )}
           <span className="outline-kind">{kindOf(node)}</span>
         </div>
         {node.type === 'group' && (
@@ -87,17 +96,32 @@ export function Structure({ root }: { root: GroupNode }) {
       <ul className="outline" role="tree" aria-label="Structure tree">
         {row(root, [root.id])}
       </ul>
-      {chosenNode && picked && picked.length > 1 && (
-        <div className="structure-actions">
-          <span className="clip">
-            <strong>{chosenNode.name}</strong> · {kindOf(chosenNode)}
-          </span>
-          <button type="button" className="chip" onClick={() => editInside(picked)}>
-            Edit here
-          </button>
-        </div>
+      {chosenNode && picked && (
+        <>
+          <div className="structure-actions">
+            <span className="clip">
+              <strong>{chosenNode.name}</strong> · {kindOf(chosenNode)}
+            </span>
+            <span className="buttons">
+              <button
+                type="button"
+                className={noting === picked.join('/') ? 'chip on' : 'chip'}
+                aria-pressed={noting === picked.join('/')}
+                title={chosenNode.note ? 'Edit the note' : 'Add a note'}
+                onClick={() => setNoting(noting === picked.join('/') ? null : picked.join('/'))}
+              >
+                Note
+              </button>
+              {picked.length > 1 && (
+                <button type="button" className="chip" title="Edit this part inside the object" onClick={() => editInside(picked)}>
+                  Edit here
+                </button>
+              )}
+            </span>
+          </div>
+          {noting === picked.join('/') && <NotePanel path={picked} note={chosenNode.note ?? ''} />}
+        </>
       )}
-      {chosenNode && picked && picked.length === 1 && <p className="field-note">Select a part or group inside the object.</p>}
     </fieldset>
   );
 }

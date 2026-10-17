@@ -5,6 +5,7 @@
 import { CREASE_ANGLE, creasedNormals } from '../geometry/mesh';
 import { skinMesh, skinOf, skinRepeats } from '../geometry/skin';
 import type { Skin } from '../geometry/skin';
+import { cornerColors, underPicture } from '../geometry/tint';
 import { writeGlb } from '../io/glb';
 import type { GlbObject } from '../io/glb';
 import { nodeMatrix } from '../model/math';
@@ -34,10 +35,11 @@ export async function exportGlb(nodes: SceneNode[], assets: Record<string, Asset
       const render = creasedNormals(result.mesh.positions, result.mesh.triangles, CREASE_ANGLE);
       const object: GlbObject = { name: node.name, positions: render.positions, normals: render.normals, matrix: nodeMatrix(node), color: node.color };
       const skin = skinOf(node);
+      let mesh: ReturnType<typeof skinMesh> | null = null;
       if (skin) {
         const painted = await paint(skin);
         // Stickers smaller than the triangles under them are cut out, so their atlas cells do not bleed into each other.
-        const mesh = skinMesh(skin, node, render, result.bounds, painted.rects);
+        mesh = skinMesh(skin, node, render, result.bounds, painted.rects);
         object.positions = mesh.positions;
         object.normals = mesh.normals;
         const uv = mesh.uv;
@@ -45,6 +47,11 @@ export async function exportGlb(nodes: SceneNode[], assets: Record<string, Asset
         // A JPEG has no transparency, so it goes out as it is; anything else is flattened onto the object's color.
         if (asset?.kind === 'image' && asset.mime === 'image/jpeg') object.skin = { uv, image: SkinPainter.bytes(asset), mime: asset.mime, repeat: skinRepeats(skin) };
         else object.skin = { uv, image: await SkinPainter.png(painted), mime: 'image/png', repeat: skinRepeats(skin) };
+      }
+      // The parts of a mixed group keep their colors (a texture over the whole covers them anyway).
+      if (node.type === 'group' && node.mixed && result.faces && skin?.kind !== 'texture') {
+        const uv = mesh?.uv;
+        object.colors = cornerColors(node, result.faces, object.positions.length / 9, { origin: mesh?.faces, covered: uv ? (t) => underPicture(uv, t) : undefined });
       }
       objects.push(object);
     }

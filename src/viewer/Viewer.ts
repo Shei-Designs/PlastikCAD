@@ -46,10 +46,12 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { CREASE_ANGLE } from '../geometry/mesh';
 import { clampParams } from '../geometry/shapes';
 import { skinKey, skinMesh, skinOf, skinRepeats } from '../geometry/skin';
+import type { Skin } from '../geometry/skin';
+import { cornerColors, tintKey, underPicture } from '../geometry/tint';
 import { boundsCenter, builtSize, flipSigns, frameMatrix, isEmptyBounds, rotation, tidy, tidyVec, unionBounds } from '../model/math';
 import type { Bounds, Mat } from '../model/math';
 import { HOLE_COLOR, rotateNodes } from '../model/ops';
-import type { Asset, SceneNode, Vec3 } from '../model/types';
+import type { Asset, GroupNode, SceneNode, Vec3 } from '../model/types';
 import type { BuildResult } from '../worker/protocol';
 import { SkinPainter } from './skin';
 
@@ -211,8 +213,15 @@ interface Drawn {
    * coordinates and the pixels. `pixels` tells the painting, `shape` the mesh
    * and size the coordinates were made for; `own` when the geometry has
    * corners of its own (cut along a picture's edge) rather than the shared ones.
+   * `faces` maps cut triangles back to the mesh's.
    */
-  skin: { pixels: string; shape: string; geometry: BufferGeometry; own: boolean; map: CanvasTexture } | null;
+  skin: { kind: Skin['kind']; pixels: string; shape: string; geometry: BufferGeometry; own: boolean; faces?: Uint32Array; map: CanvasTexture } | null;
+  /**
+   * The parts of a mixed group in their own colors: a geometry over the
+   * corners of `base` (the shared or the skinned geometry) with a color per
+   * corner. `key` tells the colors it was made with.
+   */
+  tint: { key: string; base: BufferGeometry; geometry: BufferGeometry } | null;
 }
 
 interface SharedGeometry {
@@ -783,7 +792,7 @@ export class Viewer {
         mesh.visible = false;
         mesh.userData.id = node.id;
         this.scene.add(mesh);
-        d = { item, mesh, edges: null, shown: null, built: [1, 1, 1], skin: null };
+        d = { item, mesh, edges: null, shown: null, built: [1, 1, 1], skin: null, tint: null };
         this.drawn.set(node.id, d);
       }
       const before = d.item;
@@ -805,9 +814,11 @@ export class Viewer {
       d.mesh.visible = Boolean(d.shown) && !node.hidden;
       this.place(d);
       const reskinned = this.applySkin(d);
+      const retinted = this.applyTint(d);
       const same =
         !fresh &&
         !reskinned &&
+        !retinted &&
         before.selected === item.selected &&
         before.ghost === item.ghost &&
         before.node.color === node.color &&
@@ -909,9 +920,53 @@ export class Viewer {
       map.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
     }
     if (d.skin) this.dropSkin(d, map);
-    d.skin = { pixels, shape, geometry, own, map };
+    d.skin = { kind: skin.kind, pixels, shape, geometry, own, map };
+    if (mesh.faces) d.skin.faces = mesh.faces;
     d.mesh.geometry = geometry;
     return true;
+  }
+
+  /**
+   * Gives a mixed group its parts' colors, or takes them off: a geometry over
+   * whatever corners the node is drawn with (shared, or its skin's) and a
+   * color per corner. The parts under a picture are left white, so the picture
+   * shows as it is; a texture over the whole covers the parts, so it keeps the
+   * group's one color. True when anything about it changed.
+   */
+  private applyTint(d: Drawn): boolean {
+    const { node, ghost } = d.item;
+    const faces = d.shown?.faces;
+    const wanted = node.type === 'group' && node.mixed && !node.hole && !ghost && faces && d.skin?.kind !== 'texture';
+    if (!wanted || !d.shown) {
+      if (!d.tint) return false;
+      this.dropTint(d);
+      return true;
+    }
+    const base = d.skin?.geometry ?? this.share(d.shown).geometry;
+    const key = tintKey(node as GroupNode, faces);
+    if (d.tint && d.tint.base === base && d.tint.key === key) return false;
+    const uv = d.skin ? ((base.getAttribute('uv') as BufferAttribute).array as Float32Array) : null;
+    const triangles = base.getAttribute('position').count / 3;
+    const colors = cornerColors(node as GroupNode, faces, triangles, { origin: d.skin?.faces, covered: uv ? (t) => underPicture(uv, t) : undefined });
+    const geometry = new BufferGeometry();
+    geometry.setAttribute('position', base.getAttribute('position'));
+    geometry.setAttribute('normal', base.getAttribute('normal'));
+    if (uv) geometry.setAttribute('uv', base.getAttribute('uv'));
+    geometry.setAttribute('color', new BufferAttribute(colors, 3));
+    geometry.boundingSphere = base.boundingSphere;
+    if (d.tint) this.dropTint(d);
+    d.tint = { key, base, geometry };
+    d.mesh.geometry = geometry;
+    return true;
+  }
+
+  /** Takes the corner colors off; the corners themselves stay with the geometry they belong to. */
+  private dropTint(d: Drawn): void {
+    if (!d.tint) return;
+    for (const name of ['position', 'normal', 'uv']) d.tint.geometry.deleteAttribute(name);
+    d.tint.geometry.dispose();
+    d.tint = null;
+    if (d.shown) d.mesh.geometry = d.skin?.geometry ?? this.share(d.shown).geometry;
   }
 
   /** Takes the skin off; `keep` is a texture the next skin carries on with, which stays. */
@@ -925,6 +980,8 @@ export class Viewer {
     }
     d.skin.geometry.dispose();
     d.skin = null;
+    // Colors laid over the skin's corners are made again over the shared ones (see applyTint).
+    if (d.tint) this.dropTint(d);
     if (d.shown) d.mesh.geometry = this.share(d.shown).geometry;
   }
 
@@ -962,13 +1019,19 @@ export class Viewer {
       material.map = map;
       material.needsUpdate = true;
     }
+    // The parts of a mixed group carry their colors on the corners.
+    const tinted = Boolean(d.tint);
+    if (material.vertexColors !== tinted) {
+      material.vertexColors = tinted;
+      material.needsUpdate = true;
+    }
     // A picture sheet is see-through where its picture is transparent.
     const alphaTest = map && node.type === 'picture' ? 0.5 : 0;
     if (material.alphaTest !== alphaTest) {
       material.alphaTest = alphaTest;
       material.needsUpdate = true;
     }
-    material.color.set(map ? '#ffffff' : color);
+    material.color.set(map || tinted ? '#ffffff' : color);
     const faint = node.hole || ghost;
     if (material.transparent !== Boolean(faint)) {
       material.transparent = Boolean(faint);
@@ -1011,6 +1074,7 @@ export class Viewer {
 
   private discard(d: Drawn): void {
     this.scene.remove(d.mesh);
+    this.dropTint(d);
     this.dropSkin(d);
     d.mesh.material.dispose();
     if (d.edges) {

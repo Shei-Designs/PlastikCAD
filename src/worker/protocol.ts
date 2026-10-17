@@ -1,4 +1,4 @@
-import type { MeshData, RenderMesh } from '../geometry/mesh';
+import type { Faces, MeshData, RenderMesh } from '../geometry/mesh';
 import type { Bounds } from '../model/math';
 import type { Asset, PartNode, Polygon, SceneNode } from '../model/types';
 
@@ -22,6 +22,8 @@ export type WorkerRequest =
 export interface BuildResult {
   key: string;
   render: RenderMesh;
+  /** For a group: which child each triangle came from, so its parts can be shown in their own colors. */
+  faces?: Faces;
   /** Bounds of the built geometry (at built size, centered on the origin). */
   bounds: Bounds;
   triangles: number;
@@ -33,6 +35,8 @@ export interface BuildResult {
 
 export interface ExportResult {
   mesh: MeshData;
+  /** A single group exported in place: which child each triangle came from (see `BuildResult`). */
+  faces?: Faces;
   /** Outline of the design seen from above, when requested. Even-odd contours. */
   outline?: Polygon[];
   bounds: Bounds;

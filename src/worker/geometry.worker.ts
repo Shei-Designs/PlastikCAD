@@ -23,6 +23,7 @@ function handle(req: WorkerRequest): void {
       ctx.postMessage({ type: 'built', id: req.id, result }, [
         result.render.positions.buffer,
         result.render.normals.buffer,
+        ...(result.faces ? [result.faces.source.buffer] : []),
       ]);
       break;
     }
@@ -37,6 +38,7 @@ function handle(req: WorkerRequest): void {
       ctx.postMessage({ type: 'exported', id: req.id, result }, [
         result.mesh.positions.buffer,
         result.mesh.triangles.buffer,
+        ...(result.faces ? [result.faces.source.buffer] : []),
       ]);
       break;
     }

@@ -1,7 +1,7 @@
 [package]
 name = "bashcad"
 version = "0.1.0"
-description = "Fast solid modelling for 3D printing: combine simple shapes, keep every version"
+description = "Fast solid modelling for 3D printing: combine simple shapes into parts"
 authors = ["Andrew O'Shei"]
 license = "GPL-3.0-or-later"
 edition = "2021"

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { emptyDoc, parseDoc, serializeDoc } from './file';
+import { emptyDoc, legacyVersions, parseDoc, serializeDoc } from './file';
 import { geomKey } from './geomKey';
 import { apply, axisRotation, determinant, eulerOf, multiply, nodeMatrix, rotation } from './math';
 import type { Mat } from './math';
-import { alignNodes, arrayNodes, arrayPlaces, boxBoundsOf, cloneNode, diffScenes, dissolve, frameAlong, layerMembers, makeGroup, makeShape, mirrorNodes, nodeAt, picturesOf, regroup, rotateNodes, ungroup, usedAssets } from './ops';
+import { alignNodes, arrayNodes, arrayPlaces, boxBoundsOf, cloneNode, dissolve, frameAlong, layerMembers, makeGroup, makeShape, mirrorNodes, nodeAt, picturesOf, regroup, rotateNodes, sourceColor, ungroup, usedAssets } from './ops';
 import type { Doc, GroupNode, PictureNode, SceneNode, Vec3 } from './types';
 
 const close = (a: number[], b: number[], eps = 1e-6) => {
@@ -206,6 +206,53 @@ describe('groups', () => {
   });
 });
 
+describe('the colors of a group', () => {
+  const bounds = { min: [-10, -10, 0] as Vec3, max: [10, 10, 20] as Vec3 };
+  const red = shape('box', { id: 'r', color: '#ff0000' });
+  const blue = shape('sphere', { id: 'b', color: '#0000ff' });
+  const bore = shape('cylinder', { id: 'h', color: '#00ff00', hole: true });
+
+  it('starts mixed, standing for its first solid, unless told otherwise', () => {
+    const group = makeGroup([bore, red, blue], bounds, 'G');
+    expect(group.mixed).toBe(true);
+    expect(group.color).toBe('#ff0000');
+    expect(makeGroup([red, blue], bounds, 'G', { mixed: false }).mixed).toBeUndefined();
+    expect(makeGroup([red, blue], bounds, 'G', { color: '#123456', mixed: false })).toMatchObject({ color: '#123456' });
+  });
+
+  it('colors each face by the part it came from, cut faces by the first solid beside the hole', () => {
+    const group = makeGroup([red, blue, bore], bounds, 'G');
+    expect(sourceColor(group, ['r'])).toBe('#ff0000');
+    expect(sourceColor(group, ['b'])).toBe('#0000ff');
+    expect(sourceColor(group, ['h'])).toBe('#ff0000');
+    expect(sourceColor(group, ['nope'])).toBe(group.color);
+  });
+
+  it('lets a painted group inside color everything beneath it, and a mixed one show through', () => {
+    const inner = makeGroup([red, blue], bounds, 'Inner');
+    const outer = makeGroup([inner, bore], bounds, 'Outer');
+    expect(sourceColor(outer, [inner.id, 'b'])).toBe('#0000ff');
+    const painted = makeGroup([{ ...inner, mixed: undefined, color: '#abcdef' }, bore], bounds, 'Outer');
+    expect(sourceColor(painted, [inner.id, 'b'])).toBe('#abcdef');
+    // The hole's cut faces take the first solid's paint, through a mixed group to its first solid.
+    expect(sourceColor(outer, ['h'])).toBe('#ff0000');
+    expect(sourceColor(painted, ['h'])).toBe('#abcdef');
+  });
+
+  it('remembers through dissolving and regrouping whether a group was mixed', () => {
+    const mixed = makeGroup([red, blue], bounds, 'M');
+    const painted = makeGroup([{ ...red, id: 'r2' }, { ...blue, id: 'b2' }], bounds, 'P', { mixed: false });
+    const scene = [mixed, painted];
+    const apart = dissolve(scene, [mixed.id, 'r']);
+    expect(apart.layers[0].mixed).toBe(true);
+    expect(dissolve(scene, [painted.id, 'r2']).layers[0].mixed).toBe(false);
+    const back = regroup(apart.scene, apart.layers, boxBoundsOf);
+    expect((back[0] as GroupNode).mixed).toBe(true);
+    const together = dissolve(scene, [painted.id, 'r2']);
+    expect((regroup(together.scene, together.layers, boxBoundsOf)[1] as GroupNode).mixed).toBeUndefined();
+  });
+});
+
 describe('taking groups apart and finding parts', () => {
   const nested = () => {
     const a = shape('box', { pos: [0, 0, 10] });
@@ -342,13 +389,6 @@ describe('alignment and bookkeeping', () => {
     expect(copy.children[0].id).not.toBe(group.children[0].id);
   });
 
-  it('counts what changed between scenes', () => {
-    const a = shape('box');
-    const b = shape('sphere');
-    const c = shape('cone');
-    expect(diffScenes([a, b], [{ ...a, pos: [1, 2, 3] }, c])).toEqual({ added: 1, removed: 1, changed: 1 });
-    expect(diffScenes([a, b], [{ ...a }, b])).toEqual({ added: 0, removed: 0, changed: 0 });
-  });
 });
 
 describe('geometry keys', () => {
@@ -392,9 +432,7 @@ describe('design files', () => {
     delete (label as { params?: unknown }).params;
     return {
       name: 'Bracket',
-      scene: [box, group, { ...drawing, hidden: true }, label],
-      versions: [{ id: 'v1', parent: null, label: 'First', time: '2026-01-02T03:04:05.000Z', scene: [box], thumb: 'data:image/jpeg;base64,AAAA' }],
-      head: 'v1',
+      scene: [box, group, { ...drawing, hidden: true }, { ...label, note: 'Engrave 0.6 mm deep' }],
       assets: {
         'outline-1': { kind: 'outline', shapes: [{ contours: [[[0, 0], [10, 0], [10, 10], [0, 10]]], evenodd: true }] },
         unused: { kind: 'mesh', positions: '', triangles: '' },
@@ -406,9 +444,43 @@ describe('design files', () => {
     const doc = sample();
     const back = parseDoc(serializeDoc(doc));
     expect(back.scene).toEqual(doc.scene);
-    expect(back.versions).toEqual(doc.versions);
-    expect(back.head).toBe('v1');
     expect(back.name).toBe('Bracket');
+    // Notes travel; a group made now is mixed, and says so.
+    expect(back.scene[3].note).toBe('Engrave 0.6 mm deep');
+    expect((back.scene[1] as GroupNode).mixed).toBe(true);
+    expect(serializeDoc(doc)).toContain('"mixed": true');
+  });
+
+  it('reads a group from before mixed groups as painted, and ignores a blank note', () => {
+    const doc = sample();
+    const text = serializeDoc(doc).replace('"mixed": true,\n', '').replace('"note": "Engrave 0.6 mm deep"', '"note": "   "');
+    const back = parseDoc(text);
+    expect((back.scene[1] as GroupNode).mixed).toBeUndefined();
+    expect(back.scene[3].note).toBeUndefined();
+  });
+
+  it('reads the versions an old file carries as designs of their own, and drops them from the design', () => {
+    const box = shape('box');
+    const old = {
+      format: 'bashcad',
+      version: 1,
+      name: 'Bracket',
+      head: 'v2',
+      scene: [box],
+      versions: [
+        { id: 'v1', parent: null, label: 'First', time: '2026-01-02T03:04:05.000Z', scene: [box, shape('cone')] },
+        { id: 'v2', parent: 'v1', label: '', time: '2026-01-03T03:04:05.000Z', scene: [] },
+        { id: 'v3', parent: 'v1', label: 'Taller', time: '2026-01-04T03:04:05.000Z', scene: [{ ...box, size: [20, 20, 40] }] },
+      ],
+      assets: {},
+    };
+    const doc = parseDoc(JSON.stringify(old));
+    expect(doc).toEqual({ name: 'Bracket', scene: [box], assets: {} });
+    expect(serializeDoc(doc)).not.toContain('versions');
+    const kept = legacyVersions(JSON.stringify(old));
+    expect(kept.map((d) => d.name)).toEqual(['Bracket - First', 'Bracket - Taller']);
+    expect(kept[0].scene).toHaveLength(2);
+    expect(legacyVersions(serializeDoc(doc))).toEqual([]);
   });
 
   it('drops imported data nothing uses', () => {
@@ -443,7 +515,7 @@ describe('design files', () => {
   it('rejects things that are not designs', () => {
     expect(() => parseDoc('not json')).toThrow(/JSON/);
     expect(() => parseDoc('{"format":"something-else"}')).toThrow(/not a design/);
-    expect(() => parseDoc(serializeDoc(emptyDoc()).replace('"version": 1', '"version": 99'))).toThrow(/newer/);
+    expect(() => parseDoc(serializeDoc(emptyDoc()).replace('"version": 2', '"version": 99'))).toThrow(/newer/);
   });
 
   it('skips nodes it cannot make sense of', () => {
@@ -471,7 +543,7 @@ describe('design files', () => {
   });
 
   it('does not let an asset called __proto__ change the asset table itself', () => {
-    const text = `{"format":"bashcad","version":1,"name":"x","scene":[],"versions":[],"head":null,"assets":{"__proto__":{"kind":"mesh","positions":"","triangles":""},"constructor":{"kind":"mesh","positions":"AA","triangles":"AA"}}}`;
+    const text = `{"format":"bashcad","version":1,"name":"x","scene":[],"assets":{"__proto__":{"kind":"mesh","positions":"","triangles":""},"constructor":{"kind":"mesh","positions":"AA","triangles":"AA"}}}`;
     const doc = parseDoc(text);
     expect(Object.getPrototypeOf(doc.assets)).toBe(Object.prototype);
     expect(Object.keys(doc.assets)).toEqual(['constructor']);
@@ -482,7 +554,7 @@ describe('design files', () => {
     const nest = (depth: number): string => {
       let inner = `{"id":"leaf","type":"shape","shape":"box"}`;
       for (let i = 0; i < depth; i++) inner = `{"id":"g${i}","type":"group","children":[${inner}]}`;
-      return `{"format":"bashcad","version":1,"name":"x","scene":[${inner}],"versions":[],"head":null,"assets":{}}`;
+      return `{"format":"bashcad","version":1,"name":"x","scene":[${inner}],"assets":{}}`;
     };
     expect(parseDoc(nest(10)).scene.length).toBe(1);
     expect(() => parseDoc(nest(2000))).toThrow('This design is nested too deeply.');
@@ -504,7 +576,7 @@ describe('design files', () => {
       params: { wall: 3, sides: 100000, radius: 50 },
     };
     const image = { kind: 'image', name: 'P', mime: 'image/png', data: 'AAAA', width: 2, height: 2 };
-    const text = JSON.stringify({ format: 'bashcad', version: 1, name: 'x', scene: [tube], versions: [], head: null, assets: { img: image } });
+    const text = JSON.stringify({ format: 'bashcad', version: 1, name: 'x', scene: [tube], assets: { img: image } });
     const [group] = parseDoc(text).scene;
     expect(group.type).toBe('group');
     if (group.type !== 'group') return;
@@ -535,7 +607,7 @@ describe('pictures and textures', () => {
   const doc = (): Doc => {
     const mug = makeGroup([shape('cylinder', { color: '#f2f2f0' }), picture()], { min: [-10, -10, 0], max: [10, 10, 20] }, 'Mug');
     const crate = shape('box', { texture: { asset: 'img', mode: 'tile', scale: 25, turn: 0 } });
-    return { name: 'Pun', scene: [mug, crate], versions: [], head: null, assets: { img: { kind: 'image', name: 'pun.png', mime: 'image/png', data: PNG, width: 1, height: 1 } } };
+    return { name: 'Pun', scene: [mug, crate], assets: { img: { kind: 'image', name: 'pun.png', mime: 'image/png', data: PNG, width: 1, height: 1 } } };
   };
 
   it('round-trips pictures, textures and the images they use', () => {

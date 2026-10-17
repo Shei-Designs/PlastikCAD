@@ -1,5 +1,5 @@
 // Pure editing operations on scene nodes. Nodes are immutable: every
-// operation returns new objects, which is what makes undo and versions cheap.
+// operation returns new objects, which is what makes undo cheap.
 import { defaultParams, shapeDef } from '../geometry/shapes';
 import {
   add,
@@ -206,8 +206,15 @@ export function arrayNodes<T extends SceneNode>(nodes: T[], boundsOf: (n: T) => 
   return { originals, copies };
 }
 
-/** Combine nodes into a group whose result has the given bounds (measured by the geometry kernel). */
-export function makeGroup(nodes: SceneNode[], bounds: Bounds, name: string, over: Partial<Pick<GroupNode, 'id' | 'color' | 'hole' | 'hidden' | 'locked'>> = {}): GroupNode {
+/** What `makeGroup` takes over from a group being remade, instead of starting afresh. */
+export type GroupOver = Partial<Pick<GroupNode, 'id' | 'color' | 'hole' | 'hidden' | 'locked' | 'mixed'>>;
+
+/**
+ * Combine nodes into a group whose result has the given bounds (measured by
+ * the geometry kernel). A new group shows its parts in their own colors
+ * (`mixed`) until a color is chosen for it.
+ */
+export function makeGroup(nodes: SceneNode[], bounds: Bounds, name: string, over: GroupOver = {}): GroupNode {
   const center: Vec3 = [
     (bounds.min[0] + bounds.max[0]) / 2,
     (bounds.min[1] + bounds.max[1]) / 2,
@@ -226,6 +233,7 @@ export function makeGroup(nodes: SceneNode[], bounds: Bounds, name: string, over
     natural: size,
     hole: over.hole ?? false,
     color: over.color ?? (solids[0] ?? nodes[0]).color,
+    ...((over.mixed ?? true) ? { mixed: true } : {}),
     ...(over.hidden ? { hidden: true } : {}),
     ...(over.locked ? { locked: true } : {}),
     children: nodes.map((n) => {
@@ -315,6 +323,8 @@ export interface Layer {
   name: string;
   color: string;
   hole: boolean;
+  /** Whether its parts showed their own colors. Explicit: a group left unset would come back mixed. */
+  mixed: boolean;
   hidden?: boolean;
   locked?: boolean;
   /** Ids of what was inside it. */
@@ -351,6 +361,7 @@ export function dissolve(scene: Scene, path: string[]): { scene: Scene; layers: 
       name: group.name,
       color: group.color,
       hole: group.hole,
+      mixed: Boolean(group.mixed),
       ...(group.hidden ? { hidden: true } : {}),
       ...(group.locked ? { locked: true } : {}),
       children: group.children.map((c) => c.id),
@@ -408,6 +419,36 @@ export function regroup(scene: Scene, layers: Layer[], boundsOf: (node: SceneNod
   return out;
 }
 
+/** The color a node is painted: its own, or, for a mixed group, that of its first solid part. */
+function paintOf(node: SceneNode): string {
+  if (node.type !== 'group' || !node.mixed) return node.color;
+  const solid = node.children.find((c) => !c.hole && c.type !== 'picture');
+  return solid ? paintOf(solid) : node.color;
+}
+
+/**
+ * The color a mixed group shows on the faces that came from the part at
+ * `path` (ids from its children down). A painted group inside it colors
+ * everything beneath it; a hole has no color of its own, so the faces it cut
+ * take the color of the first solid beside it.
+ */
+export function sourceColor(group: GroupNode, path: string[]): string {
+  let nodes: SceneNode[] = group.children;
+  let fallback = group.color;
+  for (const id of path) {
+    const node = nodes.find((n) => n.id === id);
+    if (!node) return fallback;
+    if (node.hole) {
+      const solid = nodes.find((n) => !n.hole && n.type !== 'picture');
+      return solid ? paintOf(solid) : fallback;
+    }
+    if (node.type !== 'group' || !node.mixed) return node.color;
+    nodes = node.children;
+    fallback = node.color;
+  }
+  return fallback;
+}
+
 /** World transform of a node's own box (centered, `size` wide) reached through `path`. */
 export function frameAlong(scene: Scene, path: string[]): Mat | null {
   let m: Mat = IDENTITY;
@@ -440,32 +481,4 @@ export function alignNodes<T extends SceneNode>(
     pos[axis] = pos[axis] + shift;
     return { ...node, pos };
   });
-}
-
-export interface SceneDiff {
-  added: number;
-  removed: number;
-  changed: number;
-}
-
-/** What it takes to get from one scene to another, counted in top-level objects. */
-export function diffScenes(from: Scene, to: Scene): SceneDiff {
-  const before = new Map(from.map((n) => [n.id, n]));
-  const diff: SceneDiff = { added: 0, removed: 0, changed: 0 };
-  for (const node of to) {
-    const old = before.get(node.id);
-    if (!old) diff.added++;
-    else if (old !== node && JSON.stringify(old) !== JSON.stringify(node)) diff.changed++;
-    before.delete(node.id);
-  }
-  diff.removed = before.size;
-  return diff;
-}
-
-export function describeDiff(diff: SceneDiff): string {
-  const bits: string[] = [];
-  if (diff.added) bits.push(`${diff.added} added`);
-  if (diff.changed) bits.push(`${diff.changed} changed`);
-  if (diff.removed) bits.push(`${diff.removed} removed`);
-  return bits.join(' · ') || 'No changes';
 }
