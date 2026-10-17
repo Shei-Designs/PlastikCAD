@@ -78,7 +78,7 @@ function Card({ item, current, refresh }: { item: ProjectInfo; current: boolean;
             {item.name}
           </button>
         )}
-        <Popover className="icon-button" title="Actions" button={<MoreIcon />} align="right">
+        <Popover className="icon-button" title="Actions" button={<MoreIcon />} align="right" fixed>
           {(close) => (
             <div className="menu" role="menu">
               {action('Open', () => void openProject(item.key), close)}
