@@ -64,7 +64,7 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
   box appears on that edge to type the value. Or type exact numbers in the
   panel on the right.
 - **Import** – the button at the bottom of the library (or Ctrl+I) takes STL,
-  OBJ and 3MF meshes, SVG drawings (extruded into a plate) and PNG or JPEG
+  OBJ, 3MF and GLB meshes, SVG and DXF drawings (extruded into a plate) and PNG or JPEG
   pictures; meshes and drawings then behave like any other object. Drop files
   on the window.
 - **Pictures** – the Picture tile in the library (or importing a PNG or JPEG)
@@ -254,10 +254,15 @@ left alone, since that is its shape.
 - An imported picture shows on the mesh in the **Imported** texture mode; the
   mesh can still be given any other texture, wrapped or tiled.
 - **SVG**: shapes are grouped by fill color, each group a part of its own.
-- **SVG**: every closed outline is filled and extruded, whatever its stroke or
-  fill, so laser-cutter drawings work (including a gear profile exported from
-  BashCAD as SVG). Convert text to paths first; `<use>`, images and CSS
-  classes are not read.
+  Every closed outline is filled and extruded, whatever its stroke or fill, so
+  laser-cutter drawings work (including a gear profile exported from BashCAD
+  as SVG). Convert text to paths first; `<use>`, images and CSS classes are
+  not read.
+- **DXF**: lines, polylines, circles, arcs, ellipses and splines are chained
+  end to end into closed outlines and grouped by color (the entity's, else its
+  layer's); a contour inside another is a hole. Blocks placed with INSERT are
+  expanded, and `$INSUNITS` sets the scale, millimeters when unset. Open
+  chains, text, dimensions and hatches are dropped; binary DXF is refused.
 
 ## How accurate are the parts?
 
@@ -343,7 +348,7 @@ src/
   state/              the editor: selection, undo, files, preferences
   viewer/             three.js view: drawing, picking, handles
   parts/              the gear, pulley, sprocket and thread generators
-  io/                 STL, 3MF, OBJ, GLB, SVG, DXF writers; STL, OBJ, 3MF, SVG readers
+  io/                 STL, 3MF, OBJ, GLB, SVG, DXF writers; STL, OBJ, 3MF, GLB, SVG, DXF readers
   text/               fonts, and laying words out as outlines
   ui/                 React components
   platform.ts         desktop app or plain browser: dialogs, files, drops

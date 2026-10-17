@@ -121,7 +121,7 @@ function asciiStl(facets: number[][], number = (v: number) => v.toExponential(6)
 
 describe('importFile', () => {
   it('dispatches on the extension, whatever its case', () => {
-    expect(IMPORT_EXTENSIONS).toEqual(['stl', 'obj', '3mf', 'glb', 'gltf', 'svg']);
+    expect(IMPORT_EXTENSIONS).toEqual(['stl', 'obj', '3mf', 'glb', 'gltf', 'svg', 'dxf']);
     expect(importFile('Part.STL', binaryStl(cubeFacets())).kind).toBe('model');
     expect(importFile('C:\\models\\my.part.Obj', bytes('v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n')).kind).toBe('model');
     expect(importFile('a.SVG', bytes('<svg><rect width="1" height="1"/></svg>')).kind).toBe('outline');
@@ -624,6 +624,129 @@ describe('glTF import', () => {
     const vy = p[c + 1] - p[a + 1];
     return ux * vy - uy * vx;
   }
+});
+
+describe('DXF import', () => {
+  /** A drawing: header variables, blocks and entities given as (code, value) pairs, one per line. */
+  const dxf = (entities: string, { header = '', blocks = '', layers = '' } = {}) =>
+    [
+      '0\nSECTION\n2\nHEADER',
+      header,
+      '0\nENDSEC',
+      '0\nSECTION\n2\nTABLES\n0\nTABLE\n2\nLAYER',
+      layers,
+      '0\nENDTAB\n0\nENDSEC',
+      '0\nSECTION\n2\nBLOCKS',
+      blocks,
+      '0\nENDSEC',
+      '0\nSECTION\n2\nENTITIES',
+      entities,
+      '0\nENDSEC\n0\nEOF\n',
+    ]
+      .filter(Boolean)
+      .join('\n');
+  const line = (x0: number, y0: number, x1: number, y1: number, extra = '') => `0\nLINE\n8\n0${extra}\n10\n${x0}\n20\n${y0}\n11\n${x1}\n21\n${y1}`;
+  /** Four lines of a square, in no particular order or direction. */
+  const square = (x: number, y: number, size: number, extra = '') =>
+    [line(x + size, y, x + size, y + size, extra), line(x, y, x + size, y, extra), line(x, y + size, x, y, extra), line(x, y + size, x + size, y + size, extra)].join('\n');
+  const partsOf = (text: string | Uint8Array) => {
+    const got = importFile('d.dxf', typeof text === 'string' ? bytes(text) : text);
+    if (got.kind !== 'outline') throw new Error('expected an outline');
+    return got.parts;
+  };
+  const contoursOf = (text: string | Uint8Array): Polygon[] => {
+    const parts = partsOf(text);
+    expect(parts.length).toBe(1);
+    expect(parts[0].shapes.length).toBe(1);
+    return parts[0].shapes[0].contours;
+  };
+  const area = (contours: Polygon[]) => contours.reduce((sum, c) => sum + Math.abs(signedArea(c)), 0);
+
+  it('chains lines into a closed contour, in millimeters by default', () => {
+    const [contour] = contoursOf(dxf(square(5, 5, 10)));
+    expect(contour.length).toBe(4);
+    expect(Math.abs(signedArea(contour))).toBeCloseTo(100, 6);
+    expect(contour.every(([x, y]) => x >= 5 && x <= 15 && y >= 5 && y <= 15)).toBe(true);
+  });
+
+  it('scales by $INSUNITS', () => {
+    const [contour] = contoursOf(dxf(square(0, 0, 1), { header: '9\n$INSUNITS\n70\n1' }));
+    expect(Math.abs(signedArea(contour))).toBeCloseTo(25.4 * 25.4, 6);
+  });
+
+  it('reads polylines with bulged sides and circles, nesting one inside another as a hole', () => {
+    // A 20 x 10 rectangle whose right side bows out as a half circle, with a circle of radius 2 inside.
+    const poly = '0\nLWPOLYLINE\n8\n0\n90\n4\n70\n1\n10\n0\n20\n0\n42\n0\n10\n20\n20\n0\n42\n1\n10\n20\n20\n10\n42\n0\n10\n0\n20\n10\n42\n0';
+    const circle = '0\nCIRCLE\n8\n0\n10\n10\n20\n5\n40\n2';
+    const contours = contoursOf(dxf(`${poly}\n${circle}`));
+    expect(contours.length).toBe(2);
+    const outer = contours.find((c) => Math.abs(signedArea(c)) > 100)!;
+    expect(Math.abs(signedArea(outer))).toBeCloseTo(200 + (Math.PI * 25) / 2, 0);
+    // The bulge bows outwards, to x = 25.
+    expect(Math.max(...outer.map((p) => p[0]))).toBeCloseTo(25, 1);
+    const inner = contours.find((c) => c !== outer)!;
+    // A small circle gets the fewest segments allowed, 24, which clip a little of its area.
+    expect(Math.abs(signedArea(inner))).toBeCloseTo(Math.PI * 4, 0);
+    expect(inner.length).toBe(24);
+  });
+
+  it('closes an arc with the line across its ends, and drops a lone line', () => {
+    const arc = '0\nARC\n8\n0\n10\n0\n20\n0\n40\n10\n50\n0\n51\n180';
+    const contours = contoursOf(dxf(`${arc}\n${line(-10, 0, 10, 0)}\n${line(50, 50, 60, 60)}`));
+    expect(contours.length).toBe(1);
+    expect(Math.abs(signedArea(contours[0]))).toBeCloseTo((Math.PI * 100) / 2, 0);
+  });
+
+  it('reads an ellipse and a spline', () => {
+    const ellipse = '0\nELLIPSE\n8\n0\n10\n0\n20\n0\n11\n10\n21\n0\n40\n0.5';
+    expect(area(contoursOf(dxf(ellipse)))).toBeCloseTo(Math.PI * 10 * 5, 0);
+    // A cubic Bézier as a spline, closed by a line along its chord.
+    const spline = '0\nSPLINE\n8\n0\n70\n8\n71\n3\n72\n8\n73\n4\n40\n0\n40\n0\n40\n0\n40\n0\n40\n1\n40\n1\n40\n1\n40\n1\n10\n0\n20\n0\n10\n0\n20\n10\n10\n10\n20\n10\n10\n10\n20\n0';
+    const [contour] = contoursOf(dxf(`${spline}\n${line(10, 0, 0, 0)}`));
+    expect(Math.max(...contour.map((p) => p[1]))).toBeCloseTo(7.5, 2);
+    expect(Math.abs(signedArea(contour))).toBeCloseTo(60, 0);
+  });
+
+  it('places blocks where INSERT puts them, scaled, turned and repeated', () => {
+    const blocks = '0\nBLOCK\n8\n0\n2\nUNIT\n10\n0\n20\n0\n' + square(0, 0, 1) + '\n0\nENDBLK';
+    const insert = '0\nINSERT\n8\n0\n2\nUNIT\n10\n100\n20\n0\n41\n10\n42\n5\n50\n90\n70\n2\n44\n2';
+    const contours = contoursOf(dxf(insert, { blocks }));
+    expect(contours.length).toBe(2);
+    // Turned a quarter turn: the 10 x 5 block stands 5 wide and 10 tall, from x = 95 to 100.
+    const xs = contours[0].map((p) => p[0]);
+    expect([Math.min(...xs), Math.max(...xs)]).toEqual([95, 100]);
+    expect(area(contours)).toBeCloseTo(100, 6);
+    // The second column sits two units further along the block's X, which points up.
+    const ys = contours.map((c) => Math.min(...c.map((p) => p[1]))).sort((a, b) => a - b);
+    expect(ys).toEqual([0, 2]);
+  });
+
+  it('groups by color: the entity, its layer, a true color, with 7 as no color', () => {
+    const layers = '0\nLAYER\n2\nCUT\n70\n0\n62\n5\n0\nLAYER\n2\nPLAIN\n70\n0\n62\n7';
+    const parts = partsOf(dxf([square(0, 0, 1, '\n62\n1'), square(5, 0, 1).replace(/8\n0/g, '8\nCUT'), square(10, 0, 1, '\n420\n65280'), square(15, 0, 1).replace(/8\n0/g, '8\nPLAIN')].join('\n'), { layers }));
+    expect(parts.map((p) => [p.color, p.shapes[0].contours.length])).toEqual([
+      ['#ff0000', 1],
+      ['#0000ff', 1],
+      ['#00ff00', 1],
+      [undefined, 1],
+    ]);
+  });
+
+  it('reads back what the DXF export writes', () => {
+    const outline: Polygon[] = [
+      [[0, 0], [30, 0], [30, 20], [0, 20]],
+      [[10, 5], [20, 5], [20, 15], [10, 15]],
+    ];
+    const contours = contoursOf(exportOutline('dxf', outline, 'Plate'));
+    expect(contours.length).toBe(2);
+    expect(area(contours)).toBeCloseTo(600 + 100, 6);
+  });
+
+  it('refuses what is not a drawing, or has nothing closed', () => {
+    expect(() => importFile('d.dxf', bytes('hello'))).toThrow(/not a DXF/);
+    expect(() => importFile('d.dxf', bytes(dxf(line(0, 0, 10, 10))))).toThrow(/no closed outlines/);
+    expect(IMPORT_EXTENSIONS).toContain('dxf');
+  });
 });
 
 describe('SVG import', () => {

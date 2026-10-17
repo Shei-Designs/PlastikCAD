@@ -1,6 +1,7 @@
 import type { MeshData, MeshWithUV } from '../geometry/mesh';
 import type { OutlineShape, Vec2, Vec3 } from '../model/types';
 import { parse3mf } from './import3mf';
+import { parseDxf } from './importDxf';
 import { parseGlb } from './importGlb';
 import { parseObj } from './importObj';
 import { parseStl } from './importStl';
@@ -48,7 +49,7 @@ export interface Companion {
   bytes: Uint8Array;
 }
 
-export const IMPORT_EXTENSIONS = ['stl', 'obj', '3mf', 'glb', 'gltf', 'svg'];
+export const IMPORT_EXTENSIONS = ['stl', 'obj', '3mf', 'glb', 'gltf', 'svg', 'dxf'];
 /** Pictures, which come in as picture sheets rather than solids. */
 export const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg'];
 
@@ -68,6 +69,8 @@ export function importFile(fileName: string, bytes: Uint8Array, companions: Comp
       return checkedModel(parseGlb(bytes, name));
     case 'svg':
       return { kind: 'outline', parts: parseSvg(bytes).map((part) => ({ ...part, shapes: checkedOutline(part.shapes) })) };
+    case 'dxf':
+      return { kind: 'outline', parts: parseDxf(bytes).map((part) => ({ ...part, shapes: checkedOutline(part.shapes) })) };
     default: {
       const what = extension ? `.${extension} files` : 'Files of this type';
       const supported = IMPORT_EXTENSIONS.map((e) => e.toUpperCase()).join(', ');
