@@ -41,8 +41,20 @@ import { Inspector } from './ui/Inspector';
 import { Sidebar } from './ui/Sidebar';
 import { Viewport, viewerRef } from './ui/Viewport';
 
-const typing = (target: EventTarget | null): boolean =>
-  target instanceof HTMLElement && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable);
+// Inputs that take no typing: clicking one of these must not put the shortcuts to sleep.
+const CLICK_INPUTS = new Set(['checkbox', 'radio', 'color', 'button', 'submit', 'reset', 'file']);
+
+const typing = (target: EventTarget | null): boolean => {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target instanceof HTMLInputElement) return !CLICK_INPUTS.has(target.type);
+  return target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable;
+};
+
+/** Lets a box being typed in commit its value first, so a save takes the number on screen. */
+const commitTyping = (): void => {
+  const active = document.activeElement;
+  if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement) active.blur();
+};
 
 function onKeyDown(e: KeyboardEvent): void {
   const mod = e.ctrlKey || e.metaKey;
@@ -54,6 +66,7 @@ function onKeyDown(e: KeyboardEvent): void {
       key === 's' ? (e.shiftKey ? saveDesignAs : saveDesign) : key === 'o' ? openDesign : key === 'n' ? newDesign : key === 'i' ? importModel : null;
     if (command) {
       e.preventDefault();
+      commitTyping();
       void command();
       return;
     }

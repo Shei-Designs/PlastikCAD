@@ -129,6 +129,19 @@ ul {
   height: 100%;
 }
 
+/* Below the desktop window's minimum (a scaled-up PWA, a tablet) the stage gives way instead, so the inspector stays on screen. */
+@media (max-width: 1315px) {
+  .app {
+    grid-template-columns: minmax(180px, 232px) minmax(0, 1fr) minmax(260px, 300px);
+  }
+
+  /* With the stage narrower than the toolbar's one firm row, the row wraps rather than running under the inspector. */
+  .view-toolbar {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+}
+
 .sidebar,
 .inspector {
   background: var(--panel);

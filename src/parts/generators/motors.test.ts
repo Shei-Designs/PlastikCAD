@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { evaluate, initKernel } from '../evaluate';
 import { QUALITY } from '../types';
-import { ALL_MOTORS, MOTORS, dcMotor, servo, stepper } from './motors';
+import { ALL_MOTORS, MOTORS, dcMotor, gearmotor, servo, stepper } from './motors';
 import { defaultParams } from './types';
 import type { GeneratorDef, Params } from './types';
 
@@ -97,5 +97,28 @@ describe('motor mounts', () => {
     expect(mabuchi.warnings.some((w) => w.includes('no screw holes'))).toBe(true);
     const b = made(dcMotor, { motor: '130', form: 'bracket' });
     expect(b.warnings.some((w) => w.includes('bracket'))).toBe(true);
+  });
+});
+
+describe('motor edge cases', () => {
+  it('leaves the shaft out when it is shorter than the pilot boss', () => {
+    for (const [def, motor, pilotTop] of [
+      [stepper, 'nema17', 2],
+      [gearmotor, '37d', 6],
+    ] as const) {
+      const r = made(def, { motor, form: 'body', shaftLength: 0.5 });
+      expect([...r.stats.min, ...r.stats.max].every(Number.isFinite), motor).toBe(true);
+      expect(r.stats.volume).toBeGreaterThan(0);
+      expect(r.stats.max[2], motor).toBeCloseTo(pilotTop, 6);
+      expect(r.warnings.some((w) => w.includes('shaft'))).toBe(true);
+    }
+    expect(made(stepper, { motor: 'nema17', form: 'body', shaftLength: 2.5 }).stats.max[2]).toBeCloseTo(2.5, 6);
+  });
+
+  it('keeps the foot slots inside a short foot', () => {
+    const r = made(stepper, { motor: 'nema17', form: 'bracket', thickness: 4, footLength: 5, slotLength: 10 });
+    expect(r.stats.max[1]).toBeLessThanOrEqual(5 + 1e-6);
+    expect(r.stats.min[1]).toBeGreaterThanOrEqual(-4 - 1e-6);
+    expect(r.warnings.some((w) => w.includes('slots'))).toBe(true);
   });
 });

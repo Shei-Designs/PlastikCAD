@@ -2,7 +2,7 @@
 // kernel, which guarantees watertight (printable) output from boolean
 // operations. Runs inside the geometry worker (and directly under vitest).
 import Module from 'manifold-3d';
-import type { CrossSection, Manifold, ManifoldToplevel, Mat4 } from 'manifold-3d';
+import type { CrossSection, Manifold, ManifoldToplevel, Mat4, Mesh } from 'manifold-3d';
 import { geomKey, textAssetKey } from '../model/geomKey';
 import { apply, determinant, emptyBounds, expandBounds, isEmptyBounds, nodeMatrix, unionBounds } from '../model/math';
 import type { Bounds, Mat } from '../model/math';
@@ -22,12 +22,70 @@ let loading: Promise<ManifoldToplevel> | null = null;
 
 /** Load the WASM kernel. `wasmUrl` is only needed in the browser, where the bundler relocates the file. */
 export function initKernel(wasmUrl?: string): Promise<ManifoldToplevel> {
-  loading ??= Module(wasmUrl ? { locateFile: () => wasmUrl } : undefined).then((m) => {
-    m.setup();
-    kernel = m;
-    return m;
-  });
+  loading ??= Module(wasmUrl ? { locateFile: () => wasmUrl } : undefined)
+    .then((m) => {
+      m.setup();
+      patchBinding(m);
+      kernel = m;
+      return m;
+    })
+    .catch((e: unknown) => {
+      // So that the next call tries again instead of handing out the same failure.
+      loading = null;
+      throw e;
+    });
   return loading;
+}
+
+type Vec2Arg = number | [number, number];
+type PolygonsVec = { delete(): void };
+type RawCrossSection = { _ToPolygons(): PolygonsVec };
+type RawModule = {
+  _Extrude(polygons: PolygonsVec, height: number, divisions: number, twist: number, scaleTop: { x: number; y: number }): Manifold;
+  _Revolve(polygons: PolygonsVec, segments: number, degrees: number): Manifold;
+};
+
+/**
+ * Mends the JS binding: its `extrude` and `revolve` copy the section's polygons
+ * into a kernel vector that they never free, some bytes a point on every call,
+ * which adds up over the rebuilds of a part. (Its `CrossSection` constructor
+ * and `toPolygons` leak a little too; those are only used once per asset.)
+ */
+export function patchBinding(m: ManifoldToplevel): void {
+  const raw = m as unknown as RawModule;
+  // `m.CrossSection` is a wrapper function whose prototype merely inherits from the class's own,
+  // where the methods live (and where the instances look them up).
+  const proto = Object.getPrototypeOf(m.CrossSection.prototype) as RawCrossSection & Record<string, unknown>;
+  const vec2 = (v: Vec2Arg) => (typeof v === 'number' ? { x: v, y: v } : { x: v[0], y: v[1] });
+  proto.extrude = function (this: RawCrossSection, height: number, divisions = 0, twist = 0, scaleTop: Vec2Arg = [1, 1], center = false) {
+    const polygons = this._ToPolygons();
+    try {
+      const solid = raw._Extrude(polygons, height, divisions, twist, vec2(scaleTop));
+      if (!center) return solid;
+      const centered = solid.translate([0, 0, -height / 2]);
+      solid.delete();
+      return centered;
+    } finally {
+      polygons.delete();
+    }
+  };
+  proto.revolve = function (this: RawCrossSection, segments = 0, degrees = 360) {
+    const polygons = this._ToPolygons();
+    try {
+      return raw._Revolve(polygons, segments, degrees);
+    } finally {
+      polygons.delete();
+    }
+  };
+}
+
+/**
+ * The class behind `k.Manifold`. The wrapper around it throws when a mesh is
+ * not manifold, without freeing the solid it made; this one makes it anyway,
+ * and `status()` says what is wrong with it.
+ */
+export function rawManifold(k: ManifoldToplevel): new (mesh: Mesh) => Manifold {
+  return (Object.getPrototypeOf(k.Manifold.prototype) as { constructor: new (mesh: Mesh) => Manifold }).constructor;
 }
 
 
@@ -47,6 +105,18 @@ export function setAssets(incoming: Record<string, Asset>): void {
   // Keys of import nodes (and of the groups around them) only name the asset, so
   // anything built from the old data would be stale.
   if (replaced) clearCache();
+}
+
+/** Drops the imported data of designs that are no longer open, and anything built from it. */
+export function forgetAssets(keep: Iterable<string>): void {
+  const wanted = new Set(keep);
+  let dropped = false;
+  for (const id of [...assets.keys()]) {
+    if (wanted.has(id)) continue;
+    assets.delete(id);
+    dropped = true;
+  }
+  if (dropped) clearCache();
 }
 
 function sameAsset(a: Asset, b: Asset): boolean {
@@ -309,6 +379,8 @@ function meshEntry(k: ManifoldToplevel, node: ImportNode, asset: MeshAsset): Bui
   const count = data.positions.length / 3;
   if (data.triangles.length === 0) throw new Error(`"${node.name}" contains no triangles.`);
   if (data.triangles.some((v) => v >= count)) throw new Error(`The mesh of "${node.name}" is damaged.`);
+  // NaN or infinite coordinates would get through the kernel and poison every normal around them.
+  if (!data.positions.every(Number.isFinite)) throw new Error(`The mesh of "${node.name}" is damaged: some points have no position.`);
   const solid = meshSolid(k, data.positions, data.triangles);
   if (!solid) return { solid: null, open: data, triangles: data.triangles.length / 3 };
   if (solid.volume() >= 0) return solidEntry(solid);
@@ -325,17 +397,13 @@ function meshEntry(k: ManifoldToplevel, node: ImportNode, asset: MeshAsset): Bui
 
 /** A solid from an indexed triangle mesh, or null if the mesh is not watertight. */
 function meshSolid(k: ManifoldToplevel, positions: Float32Array, triangles: Uint32Array): Manifold | null {
-  let solid: Manifold | null = null;
-  try {
-    const mesh = new k.Mesh({ numProp: 3, vertProperties: positions, triVerts: triangles });
-    // Files rarely share vertices between faces; this joins the ones that coincide. (It leaves our arrays alone.)
-    mesh.merge();
-    solid = new k.Manifold(mesh);
-    if (solid.status() === 'NoError' && !solid.isEmpty()) return solid;
-  } catch {
-    // The kernel rejects meshes with open or over-shared edges by throwing.
-  }
-  solid?.delete();
+  const mesh = new k.Mesh({ numProp: 3, vertProperties: positions, triVerts: triangles });
+  // Files rarely share vertices between faces; this joins the ones that coincide. (It leaves our arrays alone.)
+  mesh.merge();
+  // A mesh with open or over-shared edges comes out with an error status (and would leak if the wrapper threw).
+  const solid = new (rawManifold(k))(mesh);
+  if (solid.status() === 'NoError' && !solid.isEmpty()) return solid;
+  solid.delete();
   return null;
 }
 
@@ -475,7 +543,9 @@ function exportAt(nodes: SceneNode[], outline: boolean, local: boolean): ExportR
           solids.push(local ? entry.solid : keep(entry.solid.transform(mat4(nodeMatrix(node)))));
           continue;
         }
-        parts.push(local ? entry.open : transformed(entry.open, nodeMatrix(node)));
+        // A copy even when left in place: the worker hands the result's arrays over to the main thread,
+        // which would strip the cache's own.
+        parts.push(local ? { positions: entry.open.positions.slice(), triangles: entry.open.triangles.slice() } : transformed(entry.open, nodeMatrix(node)));
         warnings.push(
           outline
             ? `"${node.name}" is not watertight: it was exported as-is and is missing from the outline.`

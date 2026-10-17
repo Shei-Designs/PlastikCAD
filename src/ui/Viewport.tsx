@@ -147,8 +147,12 @@ function HandleInput({ prompt, onClose }: { prompt: HandlePrompt; onClose: () =>
   const [texts, setTexts] = useState(prompt.fields.map((f) => String(Number(f.value.toFixed(3)))));
   const host = useRef<HTMLFormElement>(null);
   const submit = () => {
-    const values = texts.map((t) => Number(t.trim().replace(',', '.')));
-    if (values.every((v) => Number.isFinite(v))) viewerRef.current?.applyTyped(prompt.kind, values);
+    // A box left empty keeps the value it showed; with every box empty there is nothing to apply.
+    const blank = texts.map((t) => t.trim() === '');
+    if (!blank.every(Boolean)) {
+      const values = texts.map((t, i) => (blank[i] ? prompt.fields[i].value : Number(t.trim().replace(',', '.'))));
+      if (values.every((v) => Number.isFinite(v))) viewerRef.current?.applyTyped(prompt.kind, values);
+    }
     onClose();
   };
   // The fields carry screen coordinates; the boxes are placed within the viewport, so its

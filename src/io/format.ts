@@ -1,7 +1,7 @@
 /** Fixed-point number with trailing zeros trimmed ("12.5", "-0.333333", "0"). */
 export function fmt(v: number, decimals = 6): string {
   let s = v.toFixed(decimals);
-  if (s.includes('.')) s = s.replace(/\.?0+$/, '');
+  if (s.includes('.') && !s.includes('e')) s = s.replace(/\.?0+$/, '');
   return s === '-0' ? '0' : s;
 }
 

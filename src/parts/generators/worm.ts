@@ -113,7 +113,8 @@ export const worm: GeneratorDef = {
       chamferTop: chamfer,
     });
     const bore = boreShape(p, q);
-    if (bore) solid = difference(solid, translate(extrude(bore, length + 2), [0, 0, -1]));
+    if (bore && boreRadius(p) >= rMax) warnings.push('The bore is wider than the worm, so it was left out.');
+    else if (bore) solid = difference(solid, translate(extrude(bore, length + 2), [0, 0, -1]));
 
     return {
       solid,

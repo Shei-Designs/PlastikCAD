@@ -3,9 +3,10 @@ import { describe, expect, it } from 'vitest';
 import type { MeshData } from '../geometry/mesh';
 import type { Polygon } from '../model/types';
 import { exportMesh, exportOutline } from './export';
-import { centerMesh, centerOutline, IMPORT_EXTENSIONS, importFile } from './import';
+import { centerMesh, centerOutline, checkedMesh, checkedOutline, IMPORT_EXTENSIONS, importFile } from './import';
 import type { ImportedMesh, ImportedOutline } from './import';
 import { signedArea } from './outline';
+import { ByteReader } from './scan';
 
 const bytes = (s: string) => new TextEncoder().encode(s);
 
@@ -297,6 +298,41 @@ describe('OBJ import', () => {
     expect(() => mesh('a.obj', 'v 0 0 0\nv 1 0 0\nv 0 1 0\n')).toThrow('This OBJ file has no faces.');
     expect(() => mesh('a.obj', 'v 0 0 0\nf 1 1 1\n')).toThrow('This OBJ file has no usable faces.');
   });
+
+  it('skips a byte order mark', () => {
+    const text = 'v 0 0 0\nv 10 0 0\nv 0 10 0\nf 1 2 3\n';
+    const plain = mesh('a.obj', text);
+    const marked = mesh('a.obj', new Uint8Array([0xef, 0xbb, 0xbf, ...bytes(text)]));
+    expect(Array.from(marked.positions)).toEqual(Array.from(plain.positions));
+    expect(Array.from(marked.triangles)).toEqual(Array.from(plain.triangles));
+  });
+
+  it('reads numbers written with hundreds of thousands of digits', () => {
+    const third = '0.' + '3'.repeat(300_000);
+    expect(new ByteReader(bytes(third)).number()).toBeCloseTo(1 / 3, 15);
+    const m = mesh('a.obj', `v ${third} 0 0\nv 10 0 0\nv 0 10 0\nf 1 2 3\n`);
+    expect(m.positions[0]).toBeCloseTo(1 / 3, 6);
+  });
+});
+
+describe('coordinates that are not numbers', () => {
+  it('are refused on the way in', () => {
+    const good = { positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]), triangles: new Uint32Array([0, 1, 2]) };
+    expect(checkedMesh(good)).toBe(good);
+    const bad = { positions: new Float32Array([0, 0, 0, NaN, 0, 0, 0, 1, 0]), triangles: new Uint32Array([0, 1, 2]) };
+    expect(() => checkedMesh(bad)).toThrow(/not numbers/);
+    const far = { positions: new Float32Array([0, 0, 0, Infinity, 0, 0, 0, 1, 0]), triangles: new Uint32Array([0, 1, 2]) };
+    expect(() => checkedMesh(far)).toThrow(/not numbers/);
+    expect(() => checkedOutline([{ contours: [[[0, 0], [1, NaN], [1, 1]]], evenodd: false }])).toThrow(/not numbers/);
+  });
+
+  it('never reach the mesh a file reader returns', () => {
+    // A vertex that is not finite takes its triangles with it; what is left is sound.
+    const m = mesh('a.obj', 'v 0 0 0\nv 1e999 0 0\nv 0 10 0\nv 10 0 0\nf 1 2 3\nf 1 4 3\n');
+    expect(m.triangles.length).toBe(3);
+    expect(Array.from(m.positions).every(Number.isFinite)).toBe(true);
+    expect(() => mesh('a.obj', 'v 0 0 0\nv 1e999 0 0\nv 0 10 0\nf 1 2 3\n')).toThrow('This OBJ file has no usable faces.');
+  });
 });
 
 describe('3MF import', () => {
@@ -410,6 +446,43 @@ describe('3MF import', () => {
     expect(() => mesh('a.3mf', pack({ 'readme.txt': 'hello' }))).toThrow('This 3MF file has no 3D model in it.');
     expect(() => mesh('a.3mf', pack({ '3D/3dmodel.model': model('', '', '') }))).toThrow('This 3MF file has no meshes.');
   });
+
+  it('takes a unit it does not know, even one named like an object method, as millimeters', () => {
+    const file = (unit: string) => pack({ '3D/3dmodel.model': model(unit, `<object id="1">${TETRA}</object>`, '<item objectid="1"/>') });
+    expect(meshBounds(mesh('a.3mf', file('unit="toString"'))).max).toEqual([1, 1, 1]);
+    expect(meshBounds(mesh('a.3mf', file('unit="constructor"'))).max).toEqual([1, 1, 1]);
+    expect(meshBounds(mesh('a.3mf', file('unit="furlong"'))).max).toEqual([1, 1, 1]);
+  });
+
+  it(
+    'gives up on a small file whose components multiply into a model that would never fit',
+    () => {
+      // Object 1 is a tetrahedron; each object above it holds ten copies of the one below.
+      const fanOut = (id: number) => Array.from({ length: 10 }, () => `<component objectid="${id - 1}"/>`).join('');
+      let resources = `<object id="1">${TETRA}</object>`;
+      for (let id = 2; id <= 13; id++) resources += `<object id="${id}"><components>${fanOut(id)}</components></object>`;
+      const bomb = pack({ '3D/3dmodel.model': model('', resources, '<item objectid="13"/>') });
+      expect(bomb.length).toBeLessThan(4096);
+      expect(() => mesh('a.3mf', bomb)).toThrow(/too many/);
+    },
+    10_000,
+  );
+
+  it('refuses an archive whose model parts unpack to more than it will hold', () => {
+    // The central directory says the part is enormous; it is never inflated.
+    const archive = pack({ '3D/3dmodel.model': model('', `<object id="1">${TETRA}</object>`, '<item objectid="1"/>') });
+    // Patch the uncompressed size fields (local header at 22, central directory at 24 past its signature).
+    const view = new DataView(archive.buffer, archive.byteOffset, archive.byteLength);
+    const central = findSignature(archive, 0x02014b50);
+    view.setUint32(central + 24, 0xffffff00, true);
+    expect(() => mesh('a.3mf', archive)).toThrow('This 3MF file is too large to open.');
+  });
+
+  function findSignature(bytes: Uint8Array, signature: number): number {
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    for (let i = 0; i + 4 <= bytes.length; i++) if (view.getUint32(i, true) === signature) return i;
+    throw new Error('signature not found');
+  }
 });
 
 describe('SVG import', () => {
@@ -762,6 +835,20 @@ describe('SVG import', () => {
       // Path data that does not begin with a move draws nothing.
       expect(() => shapesOf(mm('<path d="L10 0 L10 10 L0 10 Z"/>'))).toThrow();
     });
+
+    it(
+      'finishes an arc whose endpoints differ by less than a rounding error',
+      () => {
+        // The sweep rounds to exactly zero, which once made the arc step zero and the loop endless.
+        const svg = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M 0 0 A 1 1 0 1 1 2e-17 2e-17 L 10 0 L 10 10 Z"/></svg>';
+        const shapes = shapesOf(svg);
+        expect(shapes.length).toBe(1);
+        expect(shapes[0].contours[0].every((p) => p.every(Number.isFinite))).toBe(true);
+        // One of the endpoints alone, with nothing else to draw, is no shape at all.
+        expect(() => shapesOf('<svg xmlns="http://www.w3.org/2000/svg"><path d="M 0 0 A 1 1 0 1 1 2e-17 2e-17"/></svg>')).toThrow();
+      },
+      5_000,
+    );
   });
 
   describe('transforms', () => {

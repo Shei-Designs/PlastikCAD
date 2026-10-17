@@ -60,6 +60,33 @@ describe('glb', () => {
     expect(uv).toEqual([0, 1, 0, 0, 1, 1]);
   });
 
+  it('keeps the normals pointing the way the corners wind, mirrored or not', () => {
+    // Expected normals are in glTF's frame, where the model's +Z is +Y.
+    const cases: [number[], number[]][] = [
+      [[-1, 1, 1], [0, 1, 0]],
+      [[1, -1, 1], [0, 1, 0]],
+      [[1, 1, -1], [0, -1, 0]],
+      [[-1, -1, -1], [0, -1, 0]],
+      [[-1, -1, 1], [0, 1, 0]],
+      [[2, 2, 2], [0, 1, 0]],
+    ];
+    for (const [scale, expected] of cases) {
+      const { json, bin } = readGlb(writeGlb([{ name: 'M', positions, normals, matrix: scaling(scale as [number, number, number]), color: '#000000' }], 'D'));
+      const views = json.bufferViews as { byteOffset: number; byteLength: number }[];
+      const p = floats(bin, views[0]);
+      const n = floats(bin, views[1]);
+      // The normal the winding gives, from the corners as written.
+      const [ax, ay, az, bx, by, bz, cx, cy, cz] = p;
+      const u = [bx - ax, by - ay, bz - az];
+      const v = [cx - ax, cy - ay, cz - az];
+      const w = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+      const len = Math.hypot(...w);
+      const winding = w.map((x) => Math.round((x / len) * 1e6) / 1e6 || 0);
+      expect(winding, `winding for scale ${scale}`).toEqual(expected);
+      for (let corner = 0; corner < 3; corner++) expect(n.slice(corner * 3, corner * 3 + 3), `normal for scale ${scale}`).toEqual(expected);
+    }
+  });
+
   it('embeds the picture and points the material at it', () => {
     const { json, bin } = readGlb(writeGlb([{ name: 'P', positions, normals, matrix: translation([0, 0, 0]), color: '#ff0000', skin: { uv: new Float32Array(6), image: png, mime: 'image/png', repeat: true } }], 'D'));
     expect(json.images).toEqual([{ bufferView: 3, mimeType: 'image/png', name: 'P' }]);

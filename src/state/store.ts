@@ -22,11 +22,14 @@ import {
   diffScenes,
   dissolve,
   frameAlong,
+  holeGroup,
+  layerMembers,
   makeGroup,
   makeShape,
   mirrorNodes,
   newId,
   nodeAt,
+  regroup,
   rotateNodes,
   ungroup,
   uniqueName,
@@ -62,8 +65,11 @@ export interface EditorState {
   viewing: string | null;
   /** New shape following the pointer until it is put down. */
   placing: SceneNode | null;
-  /** The gear a mate is being made for while the wizard is open; the previewed mate carries `id`. */
-  mating: { source: string; id: string } | null;
+  /**
+   * The gear a mate is being made for while the wizard is open; the previewed mate carries
+   * `id`. `building` while the preview the panel asks for is not in the scene yet.
+   */
+  mating: { source: string; id: string; building: boolean } | null;
   /**
    * Align mode: anchor dots sit on `bounds`, the box of the anchor object or,
    * without one, of the whole selection. Frozen while a dot is being previewed.
@@ -120,6 +126,8 @@ const listeners = new Set<() => void>();
 let past: Step[] = [];
 let future: Step[] = [];
 let gesture: Step | null = null;
+/** Set while a hovered align dot holds the scene in a gesture (see `previewAlign`). */
+let alignPreview = false;
 let lastMerge: { key: string; time: number } | null = null;
 let clipboard: SceneNode[] = [];
 let noticeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -155,7 +163,18 @@ export const isDirty = (s: EditorState = state): boolean =>
 
 function scheduleSession(): void {
   clearTimeout(sessionTimer);
-  sessionTimer = setTimeout(() => saveSession({ doc: state.doc, filePath: state.filePath, dirty: isDirty() }), 600);
+  sessionTimer = setTimeout(() => saveSession({ doc: docToSave(), filePath: state.filePath, dirty: isDirty() }), 600);
+}
+
+/**
+ * The design as it goes to disk. While a group is being edited inside, the
+ * scene on screen has it taken apart; what is written has it put back
+ * together, so that a save or a reload mid-edit never flattens it. Editing
+ * carries on regardless.
+ */
+export function docToSave(s: EditorState = state): Doc {
+  if (!s.editing) return s.doc;
+  return { ...s.doc, scene: regroup(s.doc.scene, s.editing.layers, (n) => geometry.bounds(n)) };
 }
 
 export function notify(text: string, kind: Notice['kind'] = 'info'): void {
@@ -186,6 +205,7 @@ const step = (): Step => ({ scene: state.doc.scene, selection: state.selection, 
  */
 function commit(scene: Scene, options: { selection?: string[]; merge?: string; head?: string | null } = {}): void {
   if (state.viewing) return;
+  abortAlignPreview();
   const selection = options.selection ?? state.selection;
   if (!gesture) {
     const now = Date.now();
@@ -203,12 +223,15 @@ function commit(scene: Scene, options: { selection?: string[]; merge?: string; h
 
 /** Start of a drag: everything until `endGesture` is a single undo step. */
 export function beginGesture(): void {
+  // A dot still being hovered is let go of first, so the drag never inherits its snapshot.
+  abortAlignPreview();
   gesture ??= step();
 }
 
 export function endGesture(cancel = false): void {
   const base = gesture;
   gesture = null;
+  alignPreview = false;
   if (!base) return;
   if (cancel) {
     set({ doc: { ...state.doc, scene: base.scene }, selection: base.selection });
@@ -222,6 +245,7 @@ export function endGesture(cancel = false): void {
 }
 
 function restore(from: Step[], to: Step[]): void {
+  abortAlignPreview();
   if (state.mating) cancelMate();
   const target = from.pop();
   if (!target || state.viewing) return;
@@ -240,6 +264,7 @@ function resetHistory(): void {
   past = [];
   future = [];
   gesture = null;
+  alignPreview = false;
   lastMerge = null;
 }
 
@@ -253,6 +278,7 @@ export function selectedNodes(s: EditorState = state): SceneNode[] {
 
 export function select(ids: string[]): void {
   if (state.viewing) return;
+  abortAlignPreview();
   set({ selection: ids });
 }
 
@@ -271,6 +297,7 @@ export function selectionBounds(nodes: SceneNode[] = selectedNodes()): Bounds | 
 
 /** Apply `change` to the selected nodes that are not locked. */
 export function updateSelected(change: (node: SceneNode) => SceneNode, merge?: string): void {
+  abortAlignPreview();
   const ids = new Set(state.selection);
   let touched = false;
   const scene = state.doc.scene.map((n) => {
@@ -315,6 +342,7 @@ export function resizeNode(node: SceneNode, axis: 0 | 1 | 2, value: number, unif
 
 export function startPlacing(kind: ShapeKind): void {
   if (state.viewing) return;
+  abortAlignPreview();
   // Parked far below the plate until the pointer reaches the viewport.
   const node = makeShape(kind, [0, 0, -1e6]);
   set({ placing: node, selection: [] });
@@ -350,7 +378,9 @@ export async function startPlacingText(): Promise<void> {
   try {
     await loadFont(DEFAULT_FONT);
     const node = makeText('Text', DEFAULT_FONT);
-    if (node && !state.viewing) set({ placing: node, selection: [] });
+    if (!node || state.viewing) return;
+    abortAlignPreview();
+    set({ placing: node, selection: [] });
   } catch (e) {
     fail(e);
   }
@@ -450,7 +480,9 @@ export async function startPlacingPart(category: string): Promise<void> {
   set({ busy: 'Making the part…' });
   try {
     const node = await sizePart(makePart(def.id));
-    if (!state.viewing) set({ placing: node, selection: [] });
+    if (state.viewing) return;
+    abortAlignPreview();
+    set({ placing: node, selection: [] });
   } catch (e) {
     fail(e);
   } finally {
@@ -505,6 +537,8 @@ async function placeMate(source: PartNode, request: MateRequest): Promise<{ node
 let mateNext: MateRequest | null = null;
 let mateBuilding = false;
 let mateBuilds = 0;
+/** Settles when the build under way is over and the next one, if a request was waiting, has begun. */
+let mateDone: Promise<void> = Promise.resolve();
 
 /**
  * Open the mating gear wizard for this gear. The panel then shows the mate it asks for, live,
@@ -517,7 +551,12 @@ export function startMate(sourceId: string): void {
   cancelMate();
   cancelArray();
   if (state.aligning) stopAligning();
-  set({ mating: { source: sourceId, id: newId() }, selection: [sourceId], placing: null });
+  set({ mating: { source: sourceId, id: newId(), building: false }, selection: [sourceId], placing: null });
+}
+
+/** Tell the panel whether the mate it asks for is still on its way (Accept waits for it). */
+function setMateBuilding(building: boolean): void {
+  if (state.mating && state.mating.building !== building) set({ mating: { ...state.mating, building } });
 }
 
 /** Show the mate as the panel now asks for it. Rapid requests fold together: only the latest is built. */
@@ -527,6 +566,11 @@ export async function previewMate(request: MateRequest): Promise<void> {
     return;
   }
   mateBuilding = true;
+  setMateBuilding(true);
+  let done!: () => void;
+  mateDone = new Promise<void>((resolve) => {
+    done = resolve;
+  });
   try {
     await buildMatePreview(request);
   } finally {
@@ -534,7 +578,14 @@ export async function previewMate(request: MateRequest): Promise<void> {
     const next = mateNext;
     mateNext = null;
     if (next && state.mating) void previewMate(next);
+    else setMateBuilding(false);
+    done();
   }
+}
+
+/** Resolves once no preview is being built (right away if none is). */
+async function mateSettled(): Promise<void> {
+  while (mateBuilding) await mateDone;
 }
 
 async function buildMatePreview(request: MateRequest): Promise<void> {
@@ -549,7 +600,7 @@ async function buildMatePreview(request: MateRequest): Promise<void> {
     const others = state.doc.scene.filter((n) => n.id !== mating.id);
     node.name = uniqueName(others, node.name);
     await geometry.ready(node, state.doc.assets);
-    if (build !== mateBuilds || state.mating !== mating) return;
+    if (build !== mateBuilds || state.mating?.id !== mating.id) return;
     // The preview is no step of its own: the whole wizard becomes one on Accept.
     set({ doc: { ...state.doc, scene: [...state.doc.scene.filter((n) => n.id !== mating.id), node] } });
     if (warnings.length) notify(warnings[0]);
@@ -558,10 +609,14 @@ async function buildMatePreview(request: MateRequest): Promise<void> {
   }
 }
 
-/** Keep the previewed mate, selected, as one undo step. */
-export function commitMate(): void {
+/** Keep the previewed mate, selected, as one undo step. Waits for the preview the panel last asked for. */
+export async function commitMate(): Promise<void> {
+  const opened = state.mating;
+  if (!opened) return;
+  await mateSettled();
+  // Canceled, or closed and opened again, meanwhile.
   const mating = state.mating;
-  if (!mating) return;
+  if (!mating || mating.id !== opened.id) return;
   mateNext = null;
   mateBuilds++;
   const node = state.doc.scene.find((n) => n.id === mating.id);
@@ -681,6 +736,7 @@ export function addShape(kind: ShapeKind): void {
 }
 
 export function deleteSelected(): void {
+  abortAlignPreview();
   const ids = new Set(selectedNodes().filter((n) => !n.locked).map((n) => n.id));
   if (ids.size === 0) return;
   commit(
@@ -691,6 +747,7 @@ export function deleteSelected(): void {
 
 function addCopies(sources: SceneNode[], offset: Vec3): void {
   if (sources.length === 0 || state.viewing) return;
+  abortAlignPreview();
   let scene = state.doc.scene;
   const copies = sources.map((source) => {
     const copy = cloneNode(source);
@@ -704,9 +761,13 @@ function addCopies(sources: SceneNode[], offset: Vec3): void {
 }
 
 /** Copies appear exactly on top of the originals, selected, ready to be dragged away. */
-export const duplicateSelected = (): void => addCopies(selectedNodes(), [0, 0, 0]);
+export function duplicateSelected(): void {
+  abortAlignPreview();
+  addCopies(selectedNodes(), [0, 0, 0]);
+}
 
 export function copySelected(): void {
+  abortAlignPreview();
   const nodes = selectedNodes();
   if (nodes.length) clipboard = nodes;
 }
@@ -784,6 +845,7 @@ export function alignSelected(axis: 0 | 1 | 2, mode: AlignMode): void {
 
 /** Several alignments as one step (center on X and Y, say). */
 export function alignSelectedOn(steps: [0 | 1 | 2, AlignMode][]): void {
+  abortAlignPreview();
   const nodes = selectedNodes();
   // In align mode the dots' box is the reference; otherwise a single object is aligned to
   // the plate's center lines, and several to their common box.
@@ -822,8 +884,20 @@ export function startAligning(): void {
 export function stopAligning(): void {
   if (!state.aligning) return;
   // A dot being previewed is let go of first.
-  if (gesture) endGesture(true);
+  abortAlignPreview();
   set({ aligning: null });
+}
+
+/**
+ * Let go of a hovered dot's preview: the scene goes back to how it was before
+ * the hover. Everything else that reads or changes the scene or selection does
+ * this first, so it works on the real scene and never inherits the gesture
+ * (whose end would otherwise throw its own edit away).
+ */
+function abortAlignPreview(): void {
+  if (!alignPreview) return;
+  alignPreview = false;
+  endGesture(true);
 }
 
 export const toggleAligning = (): void => (state.aligning ? stopAligning() : startAligning());
@@ -850,23 +924,23 @@ function aligned(axis: 0 | 1 | 2, mode: AlignMode): SceneNode[] | null {
 /** Hovering a dot moves the objects there for a look; null puts them back. */
 export function previewAlign(axis: 0 | 1 | 2 | null, mode: AlignMode = 'center'): void {
   if (!state.aligning) return;
-  if (axis === null) {
-    if (gesture) endGesture(true);
-    return;
-  }
+  if (axis === null) return abortAlignPreview();
   const nodes = aligned(axis, mode);
   if (!nodes) return;
-  beginGesture();
-  replaceNodes(nodes);
+  // Not through commit, which would take the preview for an edit and let go of it.
+  gesture ??= step();
+  alignPreview = true;
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  set({ doc: { ...state.doc, scene: state.doc.scene.map((n) => byId.get(n.id) ?? n) } });
 }
 
 /** Clicking a dot keeps the objects where the preview put them. */
 export function commitAlign(axis: 0 | 1 | 2, mode: AlignMode): void {
   const nodes = aligned(axis, mode);
   if (!nodes) return;
-  beginGesture();
+  // From the scene before the hover, as one step of its own.
+  abortAlignPreview();
   replaceNodes(nodes);
-  endGesture(false);
   refreshAlignBounds();
 }
 
@@ -943,6 +1017,7 @@ export function cancelArray(): void {
 }
 
 export function mirrorSelected(axis: 0 | 1 | 2): void {
+  abortAlignPreview();
   const nodes = selectedNodes().filter((n) => !n.locked);
   const bounds = selectionBounds(nodes);
   if (!bounds) return;
@@ -951,6 +1026,7 @@ export function mirrorSelected(axis: 0 | 1 | 2): void {
 
 /** Turn the selection by `degrees` about a fixed axis through its center (a single object turns about its own). */
 export function rotateSelected(axis: 0 | 1 | 2, degrees: number): void {
+  abortAlignPreview();
   const nodes = selectedNodes().filter((n) => !n.locked);
   if (nodes.length === 0) return;
   const bounds = selectionBounds(nodes);
@@ -987,30 +1063,22 @@ export function toggleLocked(id: string): void {
   commit(state.doc.scene.map((n) => (n.id === id ? next : n)));
 }
 
-/**
- * Holes grouped on their own become one hole: inside, they merge like solids,
- * and the group cuts as a whole (a connector cut-out with its screw holes, say).
- */
-function holeGroup(nodes: SceneNode[]): { members: SceneNode[]; hole: boolean } {
-  if (nodes.length === 0 || !nodes.every((n) => n.hole)) return { members: nodes, hole: false };
-  return { members: nodes.map((n) => ({ ...n, hole: false })), hole: true };
-}
-
-/** Measure and build a group of the given nodes; null if nothing solid would be left. */
-async function buildGroup(nodes: SceneNode[], name: string, over: Partial<Pick<GroupNode, 'id' | 'color' | 'hidden' | 'locked'>> = {}): Promise<GroupNode | null> {
-  const { members, hole } = holeGroup(nodes);
+/** Measure and build a group of the given members (their hole flags as they are to be inside it); null if nothing solid would be left. */
+async function buildGroup(members: SceneNode[], hole: boolean, name: string, over: Partial<Pick<GroupNode, 'id' | 'color' | 'hidden' | 'locked'>> = {}): Promise<GroupNode | null> {
   const worker = await geometry.prepare(members, state.doc.assets);
   const bounds = await worker.measure(members);
   return bounds ? makeGroup(members, bounds, name, { ...over, hole }) : null;
 }
 
 export async function groupSelected(): Promise<void> {
+  abortAlignPreview();
   const nodes = selectedNodes();
   if (state.viewing || nodes.length < 2) return;
   if (nodes.some((n) => n.locked)) return notify('Unlock the selected objects before grouping them.', 'error');
   set({ busy: 'Grouping…' });
   try {
-    const group = await buildGroup(nodes, uniqueName(state.doc.scene, 'Group'));
+    const { members, hole } = holeGroup(nodes);
+    const group = await buildGroup(members, hole, uniqueName(state.doc.scene, 'Group'));
     if (!group) return notify('Nothing would be left: the holes remove everything.', 'error');
     // The scene may have moved on while the worker was measuring.
     const ids = new Set(nodes.map((n) => n.id));
@@ -1024,6 +1092,7 @@ export async function groupSelected(): Promise<void> {
 }
 
 export function ungroupSelected(): void {
+  abortAlignPreview();
   const groups = selectedNodes().filter((n) => n.type === 'group' && !n.locked);
   if (groups.length === 0) return;
   const selection = state.selection.filter((id) => !groups.some((g) => g.id === id));
@@ -1058,6 +1127,7 @@ export function setHighlight(path: string[] | null): void {
  */
 export function editInside(path: string[]): void {
   if (state.viewing || state.editing || path.length < 2) return;
+  abortAlignPreview();
   const root = state.doc.scene.find((n) => n.id === path[0]);
   if (root?.type !== 'group') return;
   if (root.locked) return notify('Unlock the object before editing inside it.', 'error');
@@ -1081,16 +1151,17 @@ export async function finishEditing(): Promise<void> {
         outermost = layer.id;
         continue;
       }
-      const members = scene.filter((n) => layer.children.includes(n.id));
-      if (members.length === 0) continue;
-      // A dissolved hole group handed its role to its parts; grouped again, they fold back into one hole.
-      const group = await buildGroup(layer.hole ? members.map((n) => ({ ...n, hole: true })) : members, layer.name, layer);
+      const found = scene.filter((n) => layer.children.includes(n.id));
+      if (found.length === 0) continue;
+      // A dissolved hole group showed its parts as holes; each takes its own flag back inside it.
+      const { members, hole } = layerMembers(layer, found);
+      const group = await buildGroup(members, hole, layer.name, layer);
       if (!group) {
         notify(`"${layer.name}" could not be put back together: nothing solid is left in it.`, 'error');
         continue;
       }
-      const at = scene.indexOf(members[0]);
-      scene = [...scene.filter((n) => !members.includes(n)).slice(0, at), group, ...scene.filter((n) => !members.includes(n)).slice(at)];
+      const at = scene.indexOf(found[0]);
+      scene = [...scene.filter((n) => !found.includes(n)).slice(0, at), group, ...scene.filter((n) => !found.includes(n)).slice(at)];
       outermost = group.id;
     }
     state = { ...state, editing: null };
@@ -1113,6 +1184,7 @@ export function cancelEditing(): void {
 // --- documents ----------------------------------------------------------------
 
 function adopt(doc: Doc, filePath: string | null, dirty = false): void {
+  abortAlignPreview();
   resetHistory();
   set({
     doc,
@@ -1127,6 +1199,8 @@ function adopt(doc: Doc, filePath: string | null, dirty = false): void {
     epoch: state.epoch + 1,
   });
   if (filePath) rememberRecent(filePath);
+  // Lettering outlines are sent again as the fonts come back; imported meshes of the closed design are dropped.
+  geometry.forgetAssets(Object.keys(doc.assets));
 }
 
 function rememberRecent(path: string): void {
@@ -1182,7 +1256,7 @@ function markSaved(filePath: string | null): void {
 
 export async function saveDesignAs(): Promise<boolean> {
   try {
-    const bytes = new TextEncoder().encode(serializeDoc(state.doc));
+    const bytes = new TextEncoder().encode(serializeDoc(docToSave()));
     const where = await platform.saveAs(`${state.doc.name}.${FILE_EXTENSION}`, DESIGN_FILTER, bytes, 'application/json');
     if (!where) return false;
     if (state.doc.name === 'Untitled') set({ doc: { ...state.doc, name: baseName(where.name) } });
@@ -1198,7 +1272,7 @@ export async function saveDesignAs(): Promise<boolean> {
 export async function saveDesign(): Promise<boolean> {
   if (!state.filePath) return saveDesignAs();
   try {
-    await platform.writePath(state.filePath, new TextEncoder().encode(serializeDoc(state.doc)));
+    await platform.writePath(state.filePath, new TextEncoder().encode(serializeDoc(docToSave())));
     markSaved(state.filePath);
     return true;
   } catch (e) {
@@ -1234,7 +1308,10 @@ function importModels(files: PickedFile[]): void {
       size = [flat[0], flat[1], 3];
       asset = { kind: 'outline', shapes: data.shapes };
     }
-    if (!natural.every((v) => v > 1e-6)) throw new Error(`"${file.name}" is flat or empty, so it cannot be made into a solid.`);
+    // Checked as stored: a hair of an extent rounds away to nothing.
+    natural = tidyVec(natural);
+    size = tidyVec(size);
+    if (!natural.every((v) => v > 0)) throw new Error(`"${file.name}" is flat or empty, so it cannot be made into a solid.`);
     const text = asset.kind === 'mesh' ? asset.positions + asset.triangles : JSON.stringify(asset.shapes);
     const key = `${asset.kind}-${hashString(text)}-${text.length.toString(36)}`;
     assets[key] = asset;
@@ -1243,10 +1320,10 @@ function importModels(files: PickedFile[]): void {
       type: 'import',
       name: uniqueName(scene, baseName(file.name)),
       asset: key,
-      natural: tidyVec(natural),
+      natural,
       pos: tidyVec([x + size[0] / 2, 0, size[2] / 2]),
       rot: [0, 0, 0],
-      size: tidyVec(size),
+      size,
       hole: false,
       color: '#8fa3bf',
     };
@@ -1305,7 +1382,9 @@ function makePicture(key: string): PictureNode {
 export async function startPlacingPicture(): Promise<void> {
   if (state.viewing) return;
   const key = await pickImage();
-  if (key && !state.viewing) set({ placing: makePicture(key), selection: [] });
+  if (!key || state.viewing) return;
+  abortAlignPreview();
+  set({ placing: makePicture(key), selection: [] });
 }
 
 /** Add a picture at the middle of the plate straight away (keyboard route, double-click). */
@@ -1423,8 +1502,9 @@ export async function exportDesign(formatId: FormatId, selectionOnly: boolean): 
 export function saveVersion(label: string): void {
   if (state.viewing) return;
   const doc = state.doc;
+  const scene = docToSave().scene;
   const head = doc.versions.find((v) => v.id === doc.head);
-  const diff = diffScenes(head?.scene ?? [], doc.scene);
+  const diff = diffScenes(head?.scene ?? [], scene);
   if (diff.added + diff.changed + diff.removed === 0) {
     return notify(head ? `Nothing has changed since "${head.label}".` : 'There is nothing to save yet.');
   }
@@ -1433,7 +1513,7 @@ export function saveVersion(label: string): void {
     parent: doc.head,
     label: label.trim() || `Version ${doc.versions.length + 1}`,
     time: new Date().toISOString(),
-    scene: doc.scene,
+    scene,
   };
   const thumb = thumbnailer?.();
   if (thumb) version.thumb = thumb;
@@ -1445,6 +1525,7 @@ export function saveVersion(label: string): void {
 export function viewVersion(id: string | null): void {
   if (id && !state.doc.versions.some((v) => v.id === id)) return;
   cancelMate();
+  abortAlignPreview();
   set({ viewing: id, selection: [], placing: null });
 }
 

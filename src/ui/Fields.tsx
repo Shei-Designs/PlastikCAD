@@ -91,11 +91,12 @@ interface SliderFieldProps {
   step: number;
   integer?: boolean;
   unit?: string;
+  disabled?: boolean;
   onChange: (v: number) => void;
 }
 
 /** Labeled slider with a number box, for the handful of numbers a shape has besides its size. */
-export function SliderField({ label, help, value, min, max, step, integer, unit, onChange }: SliderFieldProps) {
+export function SliderField({ label, help, value, min, max, step, integer, unit, disabled, onChange }: SliderFieldProps) {
   const id = useId();
   const span = max - min || 1;
   return (
@@ -113,10 +114,11 @@ export function SliderField({ label, help, value, min, max, step, integer, unit,
           max={max}
           step={step}
           value={Math.min(max, value)}
+          disabled={disabled}
           style={{ '--fill': `${(Math.min(1, Math.max(0, (value - min) / span)) * 100).toFixed(2)}%` } as CSSProperties}
           onChange={(e) => onChange(Number(e.target.value))}
         />
-        <NumberBox id={id} label={label} value={value} min={min} max={max} step={step} integer={integer} unit={unit} places={Math.min(4, decimals(step) + (integer ? 0 : 1))} onChange={onChange} />
+        <NumberBox id={id} label={label} value={value} min={min} max={max} step={step} integer={integer} unit={unit} places={Math.min(4, decimals(step) + (integer ? 0 : 1))} disabled={disabled} onChange={onChange} />
       </div>
     </div>
   );

@@ -6,7 +6,9 @@ import { localScale, nodeMatrix } from '../model/math';
 import type { Bounds, Mat } from '../model/math';
 import { picturesOf } from '../model/ops';
 import type { PictureMapping, SceneNode } from '../model/types';
-import { coverSurface, projectPictures, sheetUVs } from './uv';
+import type { RenderMesh } from './mesh';
+import { clipPictures, coverSurface, projectPictures, sheetUVs } from './uv';
+import type { Projector, SkinMesh } from './uv';
 
 export interface Sticker {
   asset: string;
@@ -84,11 +86,23 @@ export function skinUVs(skin: Skin, node: SceneNode, positions: Float32Array, bo
       return coverSurface(positions, { mode: skin.mode, scale: skin.scale, turn: skin.turn, mm: [Math.abs(scale[0]), Math.abs(scale[1]), Math.abs(scale[2])], z: [bounds.min[2], bounds.max[2]] });
     }
     case 'stickers':
-      return projectPictures(
-        positions,
-        skin.stickers.map((s, i) => ({ matrix: s.matrix, mapping: s.mapping, angle: s.angle, rect: rects[i] ?? [0, 0, 1, 1] })),
-      );
+      return projectPictures(positions, projectors(skin.stickers, rects));
   }
+}
+
+/** The stickers as projectors, each in its own place in the atlas. */
+const projectors = (stickers: Sticker[], rects: [number, number, number, number][]): Projector[] =>
+  stickers.map((s, i) => ({ matrix: s.matrix, mapping: s.mapping, angle: s.angle, rect: rects[i] ?? [0, 0, 1, 1] }));
+
+/**
+ * The mesh with its skin's texture coordinates, as `skinUVs`, except that a
+ * triangle reaching past a sticker's edge is cut there, so that the rest of it
+ * samples the fill and not the next picture in the atlas. The corners are the
+ * render mesh's own when nothing had to be cut.
+ */
+export function skinMesh(skin: Skin, node: SceneNode, render: RenderMesh, bounds: Bounds, rects: [number, number, number, number][]): SkinMesh {
+  if (skin.kind === 'stickers') return clipPictures(render.positions, render.normals, projectors(skin.stickers, rects));
+  return { positions: render.positions, normals: render.normals, uv: skinUVs(skin, node, render.positions, bounds, rects) };
 }
 
 /** Whether the picture repeats beyond its edges (a texture) or clamps to its border (pictures on a fill). */

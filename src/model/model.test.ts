@@ -3,7 +3,7 @@ import { emptyDoc, parseDoc, serializeDoc } from './file';
 import { geomKey } from './geomKey';
 import { apply, axisRotation, determinant, eulerOf, multiply, nodeMatrix, rotation } from './math';
 import type { Mat } from './math';
-import { alignNodes, arrayNodes, arrayPlaces, boxBoundsOf, cloneNode, diffScenes, dissolve, frameAlong, makeGroup, makeShape, mirrorNodes, nodeAt, picturesOf, rotateNodes, ungroup, usedAssets } from './ops';
+import { alignNodes, arrayNodes, arrayPlaces, boxBoundsOf, cloneNode, diffScenes, dissolve, frameAlong, layerMembers, makeGroup, makeShape, mirrorNodes, nodeAt, picturesOf, regroup, rotateNodes, ungroup, usedAssets } from './ops';
 import type { Doc, GroupNode, PictureNode, SceneNode, Vec3 } from './types';
 
 const close = (a: number[], b: number[], eps = 1e-6) => {
@@ -191,6 +191,19 @@ describe('groups', () => {
     expect(out.type === 'shape' && out.params.radius).toBe(4);
     close(out.size, [40, 40, 40]);
   });
+
+  it('scales the ring of a torus and the pitch of a tiled picture with the group, and nothing else', () => {
+    const ring = shape('torus', { pos: [0, 0, 10], texture: { asset: 'img', mode: 'tile', scale: 15, turn: 0 } });
+    if (ring.type === 'shape') ring.params = { sides: 48, ring: 3 };
+    const base = makeGroup([ring], { min: [-10, -10, 0], max: [10, 10, 20] }, 'Group');
+    const [out] = ungroup({ ...base, size: [40, 40, 40] });
+    expect(out.type === 'shape' && out.params).toEqual({ sides: 48, ring: 6 });
+    expect(out.texture).toEqual({ asset: 'img', mode: 'tile', scale: 30, turn: 0 });
+    // An unevenly scaled group leaves them alone: there is no one factor to grow them by.
+    const [stretched] = ungroup({ ...base, size: [40, 20, 20] });
+    expect(stretched.type === 'shape' && stretched.params.ring).toBe(3);
+    expect(stretched.texture?.scale).toBe(15);
+  });
 });
 
 describe('taking groups apart and finding parts', () => {
@@ -239,6 +252,77 @@ describe('taking groups apart and finding parts', () => {
     const { scene: out, layers } = dissolve(scene, [outer.id, a.id, 'nothing']);
     expect(layers.map((l) => l.id)).toEqual([outer.id]);
     expect(out.length).toBe(3);
+  });
+
+  // A cutter with a cavity: a solid box with a cylinder cut out of it, the whole marked as a hole.
+  const cutter = () => {
+    const box = shape('box', { pos: [0, 0, 10] });
+    const bore = shape('cylinder', { pos: [0, 0, 10], size: [5, 5, 20], hole: true });
+    const label: PictureNode = { id: 'pic', type: 'picture', name: 'Label', asset: 'img', mapping: 'flat', angle: 120, natural: [1, 1, 1], pos: [0, 0, 21], rot: [0, 0, 0], size: [10, 10, 1], hole: false, color: '#ffffff' };
+    const group = makeGroup([box, bore, label], { min: [-10, -10, 0], max: [10, 10, 20] }, 'Cutter', { hole: true });
+    return { box, bore, label, group };
+  };
+
+  it('shows the parts of a dissolved hole group as holes, but remembers which really were', () => {
+    const { box, bore, label, group } = cutter();
+    const { scene, layers } = dissolve([group], [group.id, box.id]);
+    expect(scene.map((n) => n.hole)).toEqual([true, true, false]);
+    expect(layers[0].hole).toBe(true);
+    expect(layers[0].children).toEqual([box.id, bore.id, label.id]);
+    expect(layers[0].holes).toEqual([bore.id]);
+  });
+
+  it('gives the parts of a hole group their own flags back when it is put together again', () => {
+    const { box, bore, group } = cutter();
+    const { scene, layers } = dissolve([group], [group.id, box.id]);
+    const back = layerMembers(layers[0], scene);
+    expect(back.hole).toBe(true);
+    expect(back.members.map((n) => n.hole)).toEqual([false, true, false]);
+    // A part made solid meanwhile stays solid.
+    const freed = scene.map((n) => (n.id === bore.id ? { ...n, hole: false } : n));
+    expect(layerMembers(layers[0], freed).members.map((n) => n.hole)).toEqual([false, false, false]);
+  });
+
+  it('keeps a group of holes one hole, and a solid group as its members are', () => {
+    const a = shape('cylinder', { pos: [0, 0, 10], hole: true });
+    const b = shape('cylinder', { pos: [10, 0, 10], hole: true });
+    // Grouped on their own, holes fold into one hole group with solid parts.
+    const holes = makeGroup([{ ...a, hole: false }, { ...b, hole: false }], { min: [-10, -10, 0], max: [20, 10, 20] }, 'Holes', { hole: true });
+    const apart = dissolve([holes], [holes.id, a.id]);
+    expect(apart.scene.map((n) => n.hole)).toEqual([true, true]);
+    const back = layerMembers(apart.layers[0], apart.scene);
+    expect(back.hole).toBe(true);
+    expect(back.members.map((n) => n.hole)).toEqual([false, false]);
+    // A solid group takes its members as they are now, holes included.
+    const { inner, outer, a: box, scene } = nested();
+    const { scene: out, layers } = dissolve(scene, [outer.id, inner.id, box.id]);
+    const members = layerMembers(layers[1], out.filter((n) => layers[1].children.includes(n.id)));
+    expect(members.hole).toBe(false);
+    expect(members.members.map((n) => n.hole)).toEqual([false, true]);
+  });
+
+  it('puts the layers back together around what is left, in place', () => {
+    const { a, b, c, inner, outer, scene } = nested();
+    const { scene: apart, layers } = dissolve(scene, [outer.id, inner.id, a.id]);
+    const moved = apart.map((n) => (n.id === a.id ? { ...n, pos: [n.pos[0], n.pos[1], n.pos[2] + 5] as Vec3 } : n));
+    const back = regroup(moved, layers, boxBoundsOf);
+    expect(back.map((n) => n.id)).toEqual([outer.id, scene[1].id]);
+    const top = back[0] as GroupNode;
+    expect(top.hole).toBe(false);
+    expect(top.children.map((n) => n.id)).toEqual([inner.id, c.id]);
+    const mid = top.children[0] as GroupNode;
+    expect(mid.children.map((n) => n.id)).toEqual([a.id, b.id]);
+    expect(mid.children[1].hole).toBe(true);
+    // The moved part is where it was moved to, seen from the top.
+    const place = (path: string[]) => apply(frameAlong(back, path)!, [0, 0, 0]);
+    close(place([outer.id, inner.id, a.id]), [a.pos[0], a.pos[1], a.pos[2] + 5]);
+    close(place([outer.id, c.id]), c.pos);
+    // A layer whose contents are all gone is left out; a hole group's parts come back as they were.
+    expect(regroup(apart.filter((n) => n.id !== a.id && n.id !== b.id), layers, boxBoundsOf).map((n) => n.id)).toEqual([outer.id, scene[1].id]);
+    const { box, bore, group } = cutter();
+    const whole = regroup(dissolve([group], [group.id, box.id]).scene, dissolve([group], [group.id, box.id]).layers, boxBoundsOf)[0] as GroupNode;
+    expect(whole.hole).toBe(true);
+    expect(whole.children.map((n) => [n.id, n.hole])).toEqual([[box.id, false], [bore.id, true], ['pic', false]]);
   });
 });
 
@@ -372,6 +456,76 @@ describe('design files', () => {
     expect(text).toContain('"text": "M8\\nleft"');
     const [label] = parseDoc(text.replace('"font": "stencil"', '"font": "comic"')).scene.slice(-1);
     expect(label.type === 'text' && label.font).toBe('sans');
+  });
+
+  it('drops a part named like an object method instead of choking on it', () => {
+    const doc = sample();
+    const parts = ['toString', 'constructor', '__proto__', 'hasOwnProperty'].map((part, i) => {
+      const node = { ...shape('box'), id: `p${i}`, type: 'part', part, params: {}, natural: [10, 10, 10] } as unknown as SceneNode;
+      delete (node as { shape?: unknown }).shape;
+      return node;
+    });
+    const back = parseDoc(serializeDoc({ ...doc, scene: [...doc.scene, ...parts] }));
+    expect(back.scene.length).toBe(doc.scene.length);
+    expect(back.scene.some((n) => n.type === 'part')).toBe(false);
+  });
+
+  it('does not let an asset called __proto__ change the asset table itself', () => {
+    const text = `{"format":"bashcad","version":1,"name":"x","scene":[],"versions":[],"head":null,"assets":{"__proto__":{"kind":"mesh","positions":"","triangles":""},"constructor":{"kind":"mesh","positions":"AA","triangles":"AA"}}}`;
+    const doc = parseDoc(text);
+    expect(Object.getPrototypeOf(doc.assets)).toBe(Object.prototype);
+    expect(Object.keys(doc.assets)).toEqual(['constructor']);
+    expect(Object.prototype.hasOwnProperty.call(doc.assets, '__proto__')).toBe(false);
+  });
+
+  it('refuses a design nested too deeply to read', () => {
+    const nest = (depth: number): string => {
+      let inner = `{"id":"leaf","type":"shape","shape":"box"}`;
+      for (let i = 0; i < depth; i++) inner = `{"id":"g${i}","type":"group","children":[${inner}]}`;
+      return `{"format":"bashcad","version":1,"name":"x","scene":[${inner}],"versions":[],"head":null,"assets":{}}`;
+    };
+    expect(parseDoc(nest(10)).scene.length).toBe(1);
+    expect(() => parseDoc(nest(2000))).toThrow('This design is nested too deeply.');
+  });
+
+  it('turns an old tube into a group of two cylinders, keeping its flags on the group', () => {
+    const tube = {
+      id: 't',
+      type: 'shape',
+      shape: 'tube',
+      name: 'Pipe',
+      size: [20, 20, 30],
+      pos: [1, 2, 3],
+      rot: [0, 0, 45],
+      flip: [true, false, false],
+      hidden: true,
+      locked: true,
+      texture: { asset: 'img', mode: 'tile', scale: 10, turn: 0 },
+      params: { wall: 3, sides: 100000, radius: 50 },
+    };
+    const image = { kind: 'image', name: 'P', mime: 'image/png', data: 'AAAA', width: 2, height: 2 };
+    const text = JSON.stringify({ format: 'bashcad', version: 1, name: 'x', scene: [tube], versions: [], head: null, assets: { img: image } });
+    const [group] = parseDoc(text).scene;
+    expect(group.type).toBe('group');
+    if (group.type !== 'group') return;
+    expect(group.hidden).toBe(true);
+    expect(group.locked).toBe(true);
+    expect(group.flip).toEqual([true, false, false]);
+    expect(group.texture?.asset).toBe('img');
+    expect(group.children.length).toBe(2);
+    const [outer, inner] = group.children;
+    for (const child of [outer, inner]) {
+      expect(child.type).toBe('shape');
+      expect(child.hidden).toBeUndefined();
+      expect(child.locked).toBeUndefined();
+      expect(child.texture).toBeUndefined();
+      expect(child.flip).toBeUndefined();
+      // Clamped like any cylinder: at most 128 sides, no edge radius.
+      if (child.type === 'shape') expect(child.params).toEqual({ sides: 128, radius: 0 });
+    }
+    expect(outer.hole).toBe(false);
+    expect(inner.hole).toBe(true);
+    expect(inner.size).toEqual([14, 14, 60]);
   });
 });
 

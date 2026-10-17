@@ -95,9 +95,10 @@ describe('timing pulleys', () => {
     expect(loose.e.stats.volume).toBeLessThan(tight.e.stats.volume);
   });
 
-  it('rejects grooves that cannot fit', () => {
-    expect(() => tPulley.build({ ...defaultParams(tPulley), profile: 'T2.5', teeth: 10, toothClearance: 0.5 }, q)).toThrow(
-      /overlap/,
-    );
+  it('backs the tooth clearance off when the grooves would overlap', () => {
+    const r = tPulley.build({ ...defaultParams(tPulley), profile: 'T2.5', teeth: 10, toothClearance: 0.5 }, q);
+    expect(r.warnings.join(' ')).toMatch(/clearance was reduced/);
+    expect(evaluate(r.solid).stats.volume).toBeGreaterThan(0);
+    expect(selfIntersects(r.outline![0])).toBe(false);
   });
 });

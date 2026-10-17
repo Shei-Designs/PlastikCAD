@@ -645,6 +645,12 @@ function arc(
   const step = (TAU / turnSegments(Math.max(rx, ry), tolerance)) * Math.sign(delta);
   const first = Math.floor(start / step + 1e-9) + 1;
   const last = Math.ceil((start + delta) / step - 1e-9) - 1;
+  // Endpoints a rounding error apart leave no angle to sweep: the step is then
+  // zero and the bounds infinite, and the loop would never end.
+  if (!(Math.abs(delta) > 0) || !Number.isFinite(step) || step === 0 || !Number.isFinite(first) || !Number.isFinite(last)) {
+    out.push([x1, y1]);
+    return;
+  }
   for (let i = first; i <= last; i++) {
     const ex = rx * Math.cos(i * step);
     const ey = ry * Math.sin(i * step);

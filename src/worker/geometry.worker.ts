@@ -1,6 +1,6 @@
 // Runs all solid modeling off the UI thread so the viewport stays responsive.
 import wasmUrl from 'manifold-3d/manifold.wasm?url';
-import { build, exportNodes, initKernel, measure, partBox, setAssets } from '../geometry/kernel';
+import { build, exportNodes, forgetAssets, initKernel, measure, partBox, setAssets } from '../geometry/kernel';
 import type { WorkerRequest, WorkerResponse } from './protocol';
 
 const ctx = self as unknown as {
@@ -14,6 +14,9 @@ function handle(req: WorkerRequest): void {
   switch (req.type) {
     case 'assets':
       setAssets(req.assets);
+      break;
+    case 'forgetAssets':
+      forgetAssets(req.keep);
       break;
     case 'build': {
       const result = build(req.key, req.node);
@@ -48,8 +51,8 @@ ctx.onmessage = async (e) => {
     await ready;
     handle(req);
   } catch (err) {
-    // An 'assets' message has no reply; a problem with its data surfaces when a node uses it.
-    if (req.type === 'assets') return;
+    // Asset messages have no reply; a problem with their data surfaces when a node uses it.
+    if (req.type === 'assets' || req.type === 'forgetAssets') return;
     ctx.postMessage({ type: 'error', id: req.id, message: err instanceof Error ? err.message : String(err) });
   }
 };

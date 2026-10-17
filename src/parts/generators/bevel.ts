@@ -1,8 +1,8 @@
 import { addHubAndBore, boreGroup, boreRadius, hubGroup } from '../features';
-import { gearOutline, standardTooth, toothProfile } from '../involute';
+import { clampBacklash, gearOutline, standardTooth, toothProfile } from '../involute';
 import { arcSegments, toDeg, TAU } from '../math2d';
 import { triangulate } from '../meshUtil';
-import { intersection, revolve, rotate, translate } from '../types';
+import { intersection, mirror, revolve, translate } from '../types';
 import type { Polygon, Quality, Solid, Vec2 } from '../types';
 import { degrees, mm, num } from './types';
 import type { GeneratorDef, InfoItem, Params } from './types';
@@ -114,7 +114,7 @@ export const bevelGear: GeneratorDef = {
       teeth: z / cosD,
       module: m,
       pressureAngle: num(p, 'pressureAngle'),
-      backlash: num(p, 'backlash'),
+      backlash: clampBacklash(num(p, 'backlash'), m, warnings),
       clearance: num(p, 'clearance'),
     });
     const profile = toothProfile(spec, q);
@@ -168,24 +168,26 @@ export const bevelGear: GeneratorDef = {
     // back and front faces inside the tooth roots.
     const blank: Polygon = [backCone(tOut), back, [0, back[1]], [0, front[1]], front, backCone(tOut, k)];
     const segments = Math.max(48, arcSegments(q, TAU));
-    const top = front[1] - back[1];
+    // Height of the tooth tips at the front, which rise above the flat front face.
+    const peak = backCone(addendum, k)[1] - back[1];
     const gear = translate(intersection(teeth, revolve(blank, segments)), [0, 0, -back[1]]);
 
     if (boreRadius(p) > front[0] - 0.5 * m) warnings.push('The bore breaks into the teeth at the small end.');
     if (num(p, 'hubHeight') > 0 && num(p, 'hubDiameter') / 2 > back[0]) warnings.push('The hub is wider than the back face of the gear.');
 
-    // The hub goes on the back (large) face so it cannot foul the mating gear:
-    // flip, add hub and bore, flip back so the part rests on the hub.
-    const flipped = translate(rotate(gear, [180, 0, 0]), [0, 0, top]);
-    const withHub = addHubAndBore(flipped, 0, top, p, q, warnings);
-    const solid = translate(rotate(withHub.solid, [180, 0, 0]), [0, 0, withHub.height]);
+    // The hub goes on the back (large) face so it cannot foul the mating gear: turn the gear over
+    // (a mirror, so the D-flat and set screws keep their sides), add hub and bore, turn it back so
+    // the part rests on the hub.
+    const flipped = translate(mirror(gear, [0, 0, 1]), [0, 0, peak]);
+    const withHub = addHubAndBore(flipped, 0, peak, p, q, warnings, backCone(tOut)[0]);
+    const solid = translate(mirror(withHub.solid, [0, 0, 1]), [0, 0, withHub.height]);
 
     const info: InfoItem[] = [
       { label: 'Pitch diameter', value: mm(2 * r) },
       { label: 'Outside diameter', value: mm(2 * (r + addendum * cosD)) },
       { label: 'Pitch cone angle', value: degrees(toDeg(delta)) },
       { label: 'Cone distance', value: mm(coneDistance) },
-      { label: 'Apex to mounting face', value: mm(-back[1] + (withHub.height - top)) },
+      { label: 'Apex to mounting face', value: mm(-back[1] + (withHub.height - peak)) },
       { label: 'Ratio', value: `1 : ${(zMate / z).toFixed(3).replace(/\.?0+$/, '')}` },
       { label: 'Total height', value: mm(withHub.height) },
     ];

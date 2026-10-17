@@ -142,7 +142,13 @@ export function buildSolid(k: ManifoldToplevel, solid: Solid, keep: <T extends {
           triVerts: Uint32Array.from(s.triangles),
         });
         mesh.merge();
-        return keep(new k.Manifold(mesh));
+        // Through the class behind `k.Manifold`: the wrapper throws on a mesh that is not manifold
+        // without freeing the solid it made. Made this way it is kept, so it is freed with the rest.
+        const Raw = Object.getPrototypeOf(k.Manifold.prototype).constructor as new (mesh: unknown) => Manifold;
+        const made = keep(new Raw(mesh));
+        const status = made.status();
+        if (status !== 'NoError') throw new Error(`Geometry kernel error: ${status}`);
+        return made;
       }
       case 'union':
         return keep(k.Manifold.union(s.children.map(build)));

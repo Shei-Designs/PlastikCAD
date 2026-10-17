@@ -5,6 +5,8 @@ import type { Asset, PartNode, Polygon, SceneNode } from '../model/types';
 export type WorkerRequest =
   /** Imported data that later requests may refer to. Sent before any node that uses it. */
   | { type: 'assets'; assets: Record<string, Asset> }
+  /** Drop every asset not named in `keep` (a design was closed); the cache built from them goes too. */
+  | { type: 'forgetAssets'; keep: string[] }
   /** Build the geometry of one node at its built size, centered on the origin (see `builtSize`, `geomKey`). */
   | { type: 'build'; id: number; key: string; node: SceneNode }
   /** Bounds of what the nodes would produce as a group (solids merged, holes cut), in the nodes' own coordinates. */

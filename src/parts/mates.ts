@@ -83,6 +83,7 @@ const num = (p: Params, key: string, fallback = 0): number => {
 
 /** Newton's method for the inverse of the involute function. */
 function invInverse(value: number): number {
+  if (Math.abs(value) < 1e-12) return 0;
   let a = Math.cbrt(3 * value);
   for (let i = 0; i < 8; i++) a -= (inv(a) - value) / Math.tan(a) ** 2;
   return a;
@@ -119,7 +120,8 @@ export function mateOf(source: PartNode, req: MateRequest): Mate {
     // Working center distance of an external pair, the mate unshifted.
     const nominal = (mt * (z1 + z2)) / 2;
     const invW = inv(at) + (2 * x1 * Math.tan(at)) / (z1 + z2);
-    const working = Math.abs(x1) < 1e-9 ? nominal : (nominal * Math.cos(at)) / Math.cos(invInverse(invW));
+    if (invW <= 0) warnings.push('The profile shift is too negative for the pair to mesh; the mate is placed at the nominal center distance.');
+    const working = Math.abs(x1) < 1e-9 || invW <= 0 ? nominal : (nominal * Math.cos(at)) / Math.cos(invInverse(invW));
     const center = working + req.extra;
     const p2 = 360 / z2;
     // A tooth space of the mate faces the gear; turning the gear back by delta turned the mate on by delta at the ratio.
@@ -158,9 +160,10 @@ export function mateOf(source: PartNode, req: MateRequest): Mate {
   const length = z2 * pitch;
   const pitchLine = base + (1 + c) * mn;
   // Tooth spaces sit at whole pitches from the rack's end. Turning the gear back by delta carried the
-  // rack back along with it, so the space that faces the gear's nearest tooth is that far off the line of
-  // centers; the rack is then centered on the gear as nearly as whole pitches allow.
-  const carried = -r1 * ((delta * Math.PI) / 180);
+  // rack back along with it (a rack rolls on the gear's reference circle, whatever the profile shift),
+  // so the space that faces the gear's nearest tooth is that far off the line of centers; the rack is
+  // then centered on the gear as nearly as whole pitches allow.
+  const carried = -((mt * z1) / 2) * ((delta * Math.PI) / 180);
   const along = -length / 2 + wrap(carried + length / 2, pitch);
   const rotation = theta + 90;
   const across: [number, number] = [-dir[1], dir[0]];

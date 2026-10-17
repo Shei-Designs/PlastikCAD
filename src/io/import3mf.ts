@@ -18,6 +18,13 @@ const UNITS: Record<string, number> = {
 const DEFAULT_MODEL = '3D/3dmodel.model';
 // Components may nest; this only stops a file whose objects contain each other.
 const MAX_DEPTH = 16;
+// A small file can still name a huge model: every component is a copy of all the
+// objects below it. These stop one that would never fit in memory.
+const MAX_COMPONENTS = 100_000;
+const MAX_TRIANGLES = 20_000_000;
+/** Unpacked size of the model parts, in bytes, past which the archive is not read. */
+const MAX_UNPACKED = 512 * 1024 * 1024;
+const TOO_BIG = 'This 3MF file is too large to open.';
 
 // Attribute names of <vertex> and <triangle>, as XmlScanner.numbers() wants them.
 const XYZ = ['x', 'y', 'z'].map((s) => s.charCodeAt(0));
@@ -52,10 +59,19 @@ export function parse3mf(bytes: Uint8Array): MeshData {
   if (bytes.length === 0) throw new Error('This 3MF file is empty.');
   // Lower-case part names: OPC part names are case-insensitive.
   const files = new Map<string, Uint8Array>();
+  let unpacked = 0;
   try {
-    const unzipped = unzipSync(bytes, { filter: (file) => /\.(model|rels)$/i.test(file.name) });
+    const unzipped = unzipSync(bytes, {
+      filter: (file) => {
+        if (!/\.(model|rels)$/i.test(file.name)) return false;
+        unpacked += file.originalSize;
+        if (unpacked > MAX_UNPACKED) throw new Error(TOO_BIG);
+        return true;
+      },
+    });
     for (const name in unzipped) files.set(partName(name), unzipped[name]);
-  } catch {
+  } catch (e) {
+    if (e instanceof Error && e.message === TOO_BIG) throw e;
     throw new Error('This 3MF file is damaged, or is not a 3MF file.');
   }
 
@@ -85,11 +101,16 @@ export function parse3mf(bytes: Uint8Array): MeshData {
   }
 
   const builder = new MeshBuilder();
+  let visits = 0;
+  let emitted = 0;
   const emit = (path: string, id: string, transform: Mat, depth: number) => {
     const object = load(path)?.objects.get(id);
     if (!object || depth > MAX_DEPTH) return;
+    if (++visits > MAX_COMPONENTS) throw new Error('This 3MF file has too many components to open.');
     const { vertices, triangles } = object;
     if (triangles.length) {
+      emitted += triangles.length / 3;
+      if (emitted > MAX_TRIANGLES) throw new Error('This 3MF file has too many triangles to open.');
       const m = transform;
       const index = new Int32Array(vertices.length / 3);
       for (let v = 0; v < index.length; v++) {
@@ -202,7 +223,9 @@ function parseModel(xml: Uint8Array): Model {
     } else if (scan.is('item')) {
       pushPart(model.items, scan.attrs());
     } else if (scan.is('model')) {
-      model.unit = UNITS[scan.attrs().unit ?? 'millimeter'] ?? 1;
+      // Looked up as an own key only: "toString" is not a unit.
+      const unit = scan.attrs().unit ?? 'millimeter';
+      model.unit = Object.prototype.hasOwnProperty.call(UNITS, unit) ? UNITS[unit] : 1;
     }
   }
   endObject();

@@ -45,7 +45,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { CREASE_ANGLE } from '../geometry/mesh';
 import { clampParams } from '../geometry/shapes';
-import { skinKey, skinOf, skinRepeats, skinUVs } from '../geometry/skin';
+import { skinKey, skinMesh, skinOf, skinRepeats } from '../geometry/skin';
 import { boundsCenter, builtSize, flipSigns, frameMatrix, isEmptyBounds, rotation, tidy, tidyVec, unionBounds } from '../model/math';
 import type { Bounds, Mat } from '../model/math';
 import { HOLE_COLOR, rotateNodes } from '../model/ops';
@@ -206,8 +206,13 @@ interface Drawn {
   /** Geometry currently shown, and the size it was built at (it may lag behind the node during a resize). */
   shown: BuildResult | null;
   built: Vec3;
-  /** The picture on the surface, if any: the geometry with its texture coordinates and the pixels. */
-  skin: { key: string; geometry: BufferGeometry; map: CanvasTexture } | null;
+  /**
+   * The picture on the surface, if any: the geometry with its texture
+   * coordinates and the pixels. `pixels` tells the painting, `shape` the mesh
+   * and size the coordinates were made for; `own` when the geometry has
+   * corners of its own (cut along a picture's edge) rather than the shared ones.
+   */
+  skin: { pixels: string; shape: string; geometry: BufferGeometry; own: boolean; map: CanvasTexture } | null;
 }
 
 interface SharedGeometry {
@@ -867,9 +872,9 @@ export class Viewer {
       this.serials.set(d.shown, serial);
     }
     const pixels = skinKey(skin);
-    // The coordinates follow the mesh and, for a tiled texture, the size in millimeters.
-    const key = `${pixels}|${serial}|${node.size.join(',')}`;
-    if (d.skin?.key === key) return false;
+    // The coordinates follow the mesh and, for a tiled texture, the size in millimeters; the pixels only the skin.
+    const shape = `${serial}|${node.size.join(',')}`;
+    if (d.skin?.pixels === pixels && d.skin.shape === shape) return false;
     let painted: ReturnType<SkinPainter['paint']> = null;
     try {
       painted = this.painter.paint(pixels, skin, this.assets);
@@ -882,29 +887,42 @@ export class Viewer {
       this.dropSkin(d);
       return true;
     }
-    const uv = skinUVs(skin, node, d.shown.render.positions, d.shown.bounds, painted.rects);
+    const mesh = skinMesh(skin, node, d.shown.render, d.shown.bounds, painted.rects);
     const shared = this.share(d.shown);
+    const own = mesh.positions !== d.shown.render.positions;
     const geometry = new BufferGeometry();
-    geometry.setAttribute('position', shared.geometry.getAttribute('position'));
-    geometry.setAttribute('normal', shared.geometry.getAttribute('normal'));
-    geometry.setAttribute('uv', new BufferAttribute(uv, 2));
+    if (own) {
+      geometry.setAttribute('position', new BufferAttribute(mesh.positions, 3));
+      geometry.setAttribute('normal', new BufferAttribute(mesh.normals, 3));
+    } else {
+      geometry.setAttribute('position', shared.geometry.getAttribute('position'));
+      geometry.setAttribute('normal', shared.geometry.getAttribute('normal'));
+    }
+    geometry.setAttribute('uv', new BufferAttribute(mesh.uv, 2));
     geometry.boundingSphere = shared.geometry.boundingSphere;
-    const map = new CanvasTexture(painted.canvas);
-    map.colorSpace = SRGBColorSpace;
-    map.wrapS = map.wrapT = skinRepeats(skin) ? RepeatWrapping : ClampToEdgeWrapping;
-    map.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
-    if (d.skin) this.dropSkin(d);
-    d.skin = { key, geometry, map };
+    // The same pixels stay on the GPU while the shape changes under them (a resize rebuilds only the coordinates).
+    let map = d.skin && d.skin.pixels === pixels && d.skin.map.image === painted.canvas ? d.skin.map : null;
+    if (!map) {
+      map = new CanvasTexture(painted.canvas);
+      map.colorSpace = SRGBColorSpace;
+      map.wrapS = map.wrapT = skinRepeats(skin) ? RepeatWrapping : ClampToEdgeWrapping;
+      map.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
+    }
+    if (d.skin) this.dropSkin(d, map);
+    d.skin = { pixels, shape, geometry, own, map };
     d.mesh.geometry = geometry;
     return true;
   }
 
-  private dropSkin(d: Drawn): void {
+  /** Takes the skin off; `keep` is a texture the next skin carries on with, which stays. */
+  private dropSkin(d: Drawn, keep: CanvasTexture | null = null): void {
     if (!d.skin) return;
-    d.skin.map.dispose();
-    // The corners are the shared geometry's, which stays; only the coordinates go.
-    d.skin.geometry.deleteAttribute('position');
-    d.skin.geometry.deleteAttribute('normal');
+    if (d.skin.map !== keep) d.skin.map.dispose();
+    // Shared corners stay with the shared geometry; only the coordinates go.
+    if (!d.skin.own) {
+      d.skin.geometry.deleteAttribute('position');
+      d.skin.geometry.deleteAttribute('normal');
+    }
     d.skin.geometry.dispose();
     d.skin = null;
     if (d.shown) d.mesh.geometry = this.share(d.shown).geometry;
@@ -1040,6 +1058,8 @@ export class Viewer {
       });
     }
     this.handles = [];
+    // A look at an anchor dot ends with the dot: the objects come back from where it showed them.
+    if (this.hovered?.kind.type === 'align') this.events.onAlignHover(null, 'center');
     this.hovered = null;
     this.handleMode = 'none';
     this.alignLines.visible = false;
@@ -1257,13 +1277,19 @@ export class Viewer {
   private readonly onPointerDown = (event: PointerEvent): void => {
     // A camera button must not take the focus off a typing box: a pan keeps the boxes.
     if (event.button !== 0 && this.prompt) event.preventDefault();
-    if (event.button !== 0 || this.drag) return;
+    if (this.drag) {
+      // A second finger during a drag is neither ours nor the camera's.
+      if (event.pointerId !== this.dragPointer) event.stopImmediatePropagation();
+      return;
+    }
+    if (event.button !== 0) return;
     // Whatever the press does next, the boxes from the last click are stale.
     this.dismissPrompt();
     this.animation = null;
     this.controls.enabled = true;
     const canvas = this.renderer.domElement;
     canvas.setPointerCapture(event.pointerId);
+    this.dragPointer = event.pointerId;
     this.setRay(event);
 
     // Whatever starts here is ours alone: the camera does not get the press as well.
@@ -1352,6 +1378,15 @@ export class Viewer {
 
   /** The handle just pressed, until the pointer has moved far enough to count as a drag. */
   private press: { handle: Handle; x: number; y: number } | null = null;
+  /** The pointer the current drag was started with: another finger neither steers it nor ends it. */
+  private dragPointer = -1;
+
+  /** True for a pointer other than the one dragging, which is kept from the camera as well. */
+  private otherPointer(event: PointerEvent): boolean {
+    if (!this.drag || event.pointerId === this.dragPointer) return false;
+    event.stopImmediatePropagation();
+    return true;
+  }
   /** The typing boxes on show, with the camera's heading when they appeared: a turn takes them away, a zoom or pan moves them. */
   private prompt: { prompt: HandlePrompt; heading: Quaternion } | null = null;
 
@@ -1670,6 +1705,7 @@ export class Viewer {
   }
 
   private readonly onPointerMove = (event: PointerEvent): void => {
+    if (this.otherPointer(event)) return;
     this.setRay(event);
     const drag = this.drag;
 
@@ -1721,6 +1757,7 @@ export class Viewer {
   };
 
   private readonly onPointerUp = (event: PointerEvent): void => {
+    if (this.otherPointer(event)) return;
     const drag = this.drag;
     this.drag = null;
     const canvas = this.renderer.domElement;

@@ -16,6 +16,8 @@ export function parseObj(bytes: Uint8Array): MeshData {
   const n = bytes.length;
   if (n === 0) throw new Error('This OBJ file is empty.');
   const reader = new ByteReader(bytes);
+  // UTF-8 byte order mark
+  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) reader.pos = 3;
   const estimate = Math.ceil(n / 100);
   const builder = new MeshBuilder(estimate, estimate * 2);
   // Welded index of each `v` line, in file order, which is how faces refer to them.

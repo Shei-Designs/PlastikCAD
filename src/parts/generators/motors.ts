@@ -385,7 +385,11 @@ function build(motors: Motor[], p: Params, q: Quality): BuildResult {
     const upright = translate(rotate(extrude(shape, t), [90, 0, 0]), [0, 0, H / 2]);
     const footLen = num(p, 'footLength');
     const foot = SCREWS[str(p, 'footScrew')].clearance;
-    const slotLen = num(p, 'slotLength');
+    let slotLen = num(p, 'slotLength');
+    if (slotLen > footLen - foot) {
+      slotLen = Math.max(0, footLen - foot);
+      warnings.push(`The slots were shortened to ${slotLen.toFixed(1)} mm to stay inside the foot.`);
+    }
     const footShape: Shape2D = [roundedRect(0, footLen / 2, W, footLen, Math.min(num(p, 'corner'), footLen / 2 - 0.1), q)];
     const sx = W / 2 - num(p, 'margin');
     const sy = footLen / 2;
@@ -427,8 +431,9 @@ function build(motors: Motor[], p: Params, q: Quality): BuildResult {
   if (m.tabs) pieces.push(extrude([roundedRect(...(m.tabs.at ?? [0, 0]), m.tabs.w, m.tabs.h, Math.min(3.5, m.tabs.h / 2), q)], m.tabs.t));
   const top = m.body.above ?? 0;
   if (m.pilot) pieces.push(translate(cylinder(m.pilot.d / 2, m.pilot.h, n), [...(m.pilot.at ?? [0, 0]), top]));
-  const base = top + (m.pilot?.h ?? 0);
-  pieces.push(translate(extrude([shaftSection(m.shaft.d, m.shaft.flat, q)], shaftLen - (m.pilot?.h ?? 0)), [...(m.shaft.at ?? [0, 0]), base]));
+  const pilotH = m.pilot?.h ?? 0;
+  if (shaftLen > pilotH) pieces.push(translate(extrude([shaftSection(m.shaft.d, m.shaft.flat, q)], shaftLen - pilotH), [...(m.shaft.at ?? [0, 0]), top + pilotH]));
+  else warnings.push('The shaft is shorter than the pilot boss, so no shaft is shown.');
   info.push({ label: 'Body', value: `${m.body.round ? `Ø${m.body.w}` : `${m.body.w} × ${m.body.h}`} × ${below} mm behind the face` });
   return { solid: union(...pieces), outline, info, warnings };
 }

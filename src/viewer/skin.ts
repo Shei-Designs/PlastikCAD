@@ -18,6 +18,7 @@ type Decoded = { state: 'loading' } | { state: 'ready'; image: ImageBitmap } | {
 export class SkinPainter {
   private images = new Map<string, Decoded>();
   private painted = new Map<string, Painted>();
+  private disposed = false;
 
   constructor(private readonly onReady: () => void) {}
 
@@ -37,12 +38,18 @@ export class SkinPainter {
       return null;
     }
     this.images.set(key, { state: 'loading' });
+    // Either way whoever is waiting is told, so that a failed picture is reported rather than waited for forever.
     createImageBitmap(new Blob([SkinPainter.bytes(asset) as BlobPart], { type: asset.mime })).then(
       (image) => {
+        if (this.disposed) return image.close();
         this.images.set(key, { state: 'ready', image });
         this.onReady();
       },
-      () => this.images.set(key, { state: 'failed' }),
+      () => {
+        if (this.disposed) return;
+        this.images.set(key, { state: 'failed' });
+        this.onReady();
+      },
     );
     return null;
   }
@@ -104,9 +111,12 @@ export class SkinPainter {
   }
 
   dispose(): void {
+    this.disposed = true;
     for (const d of this.images.values()) if (d.state === 'ready') d.image.close();
     this.images.clear();
     this.painted.clear();
+    // Nothing more is coming: anyone still waiting for a painting is let go.
+    this.onReady();
   }
 }
 

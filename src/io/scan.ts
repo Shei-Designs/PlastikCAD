@@ -9,6 +9,8 @@ const POW10 = [
 
 export const isSpace = (c: number) => c === 32 || (c >= 9 && c <= 13);
 
+const decoder = new TextDecoder();
+
 export class ByteReader {
   pos = 0;
 
@@ -109,6 +111,6 @@ export class ByteReader {
       const v = exponent < 0 ? mantissa / POW10[-exponent] : mantissa * POW10[exponent];
       return negative ? -v : v;
     }
-    return Number(String.fromCharCode.apply(null, b.subarray(start, i) as unknown as number[]));
+    return Number(decoder.decode(b.subarray(start, i)));
   }
 }

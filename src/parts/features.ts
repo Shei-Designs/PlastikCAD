@@ -205,7 +205,8 @@ export function boreRadius(p: Params): number {
 
 /**
  * Adds the hub on top of `body` (which spans zBottom..zTop), then cuts the bore
- * through everything and drills the set screw holes.
+ * through everything and drills the set screw holes. `outerRadius` is the body's
+ * reach from the axis: a bore that would swallow the body and the hub is left out.
  */
 export function addHubAndBore(
   body: Solid,
@@ -214,12 +215,17 @@ export function addHubAndBore(
   p: Params,
   q: Quality,
   warnings: string[],
+  outerRadius = Infinity,
 ): { solid: Solid; height: number } {
   const hubH = num(p, 'hubHeight');
   const hubR = num(p, 'hubDiameter') / 2;
   let solid = body;
   let top = zTop;
   const cuts: Solid[] = [];
+  if (boreRadius(p) >= Math.max(outerRadius, hubH > 0 ? hubR : 0)) {
+    warnings.push('The bore is wider than the part, so it was left out.');
+    p = { ...p, boreType: 'none' };
+  }
 
   if (hubH > 0) {
     const embed = Math.min(0.05, (zTop - zBottom) / 2);

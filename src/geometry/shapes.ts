@@ -388,25 +388,27 @@ const BUILDERS: Record<ShapeKind, (c: BuildContext) => Manifold> = {
     if (!(r > 0)) return taper(c, p.sides, 1);
     // Hull of a tube of radius r run round the rim, at the top and at the bottom. The tube follows
     // the ellipse r inside the outline, so the rounding is r everywhere even when the cylinder is
-    // oval, and the result still fills its box exactly.
+    // oval, and the result still fills its box exactly. The ellipse is stepped through by the
+    // direction of its normal, not by angle: where the radius takes up a whole side it is flat (a
+    // line, or a point), and the tube then has to go round its ends in every direction.
     const a = Math.max(size[0] / 2 - r, 0);
     const b = Math.max(size[1] / 2 - r, 0);
     const lift = Math.max(size[2] / 2 - r, 0);
     const points: Vec3[] = [];
     for (let i = 0; i < p.sides; i++) {
-      const t = (i * TAU) / p.sides;
+      const phi = (i * TAU) / p.sides;
+      const nx = Math.cos(phi);
+      const ny = Math.sin(phi);
+      // The point of the ellipse whose outward normal points this way.
+      const t = Math.atan2(b * ny, a * nx);
       const cx = a * Math.cos(t);
       const cy = b * Math.sin(t);
-      // Outward normal of the ellipse at this point.
-      const nx = b * Math.cos(t);
-      const ny = a * Math.sin(t);
-      const len = Math.hypot(nx, ny) || 1;
       for (let j = 0; j <= RIM_SEGMENTS; j++) {
         // Only the outer half of the tube can show; the rest is inside the hull anyway.
         const f = (j / RIM_SEGMENTS - 0.5) * Math.PI;
         const out = r * Math.cos(f);
         const up = r * Math.sin(f);
-        points.push([cx + (nx / len) * out, cy + (ny / len) * out, lift + up], [cx + (nx / len) * out, cy + (ny / len) * out, -lift - up]);
+        points.push([cx + nx * out, cy + ny * out, lift + up], [cx + nx * out, cy + ny * out, -lift - up]);
       }
     }
     return keep(k.Manifold.hull(points));

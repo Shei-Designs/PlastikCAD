@@ -147,9 +147,12 @@ export function writeGlb(objects: GlbObject[], name: string): Uint8Array {
 function placed(o: GlbObject): { positions: Float32Array; normals: Float32Array; flipped: boolean } {
   const m = o.matrix;
   const flipped = determinant(m) < 0;
-  // Normals go through the inverse transpose of the linear part (which is the cofactor matrix up to scale).
+  // Normals go through the inverse transpose of the linear part, which is the
+  // cofactor matrix divided by the determinant: a mirror's negative determinant
+  // would otherwise turn every normal inside out.
   const [a, b, c, d, e, f, g, h, i] = m;
-  const cof = [e * i - f * h, f * g - d * i, d * h - e * g, c * h - b * i, a * i - c * g, b * g - a * h, b * f - c * e, c * d - a * f, a * e - b * d];
+  const sign = flipped ? -1 : 1;
+  const cof = [e * i - f * h, f * g - d * i, d * h - e * g, c * h - b * i, a * i - c * g, b * g - a * h, b * f - c * e, c * d - a * f, a * e - b * d].map((v) => v * sign);
   const n = o.positions.length / 3;
   const positions = new Float32Array(n * 3);
   const normals = new Float32Array(n * 3);

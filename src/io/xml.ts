@@ -12,7 +12,7 @@ const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"'
 
 const decodeEntities = (s: string) =>
   s.replace(/&(#x[0-9a-fA-F]+|#[0-9]+|[a-zA-Z]+);/g, (whole, name: string) => {
-    if (name[0] !== '#') return ENTITIES[name] ?? whole;
+    if (name[0] !== '#') return Object.prototype.hasOwnProperty.call(ENTITIES, name) ? ENTITIES[name] : whole;
     const code = name[1] === 'x' ? parseInt(name.slice(2), 16) : parseInt(name.slice(1), 10);
     return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
   });

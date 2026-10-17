@@ -200,3 +200,22 @@ describe('mating gears', () => {
     expect(mateOf(part('spur', { teeth: 20 }), { kind: 'ring', teeth: 22, backlash: 0, extra: 0, angle: 0 }).warnings[0]).toMatch(/more teeth/);
   });
 });
+
+describe('mate edge cases', () => {
+  it('rolls the rack on the reference circle of a shifted pinion', () => {
+    const { a, b } = check('spur', { module: 2, teeth: 12, profileShift: 0.5, backlash: 0 }, 14, { kind: 'rack', teeth: 12, backlash: 0, extra: 0, angle: 0 });
+    expect(overlap(a, b)).toBeLessThan(0.05);
+  });
+
+  it('falls back to the nominal center distance when the shift is too negative to mesh', () => {
+    const mate = mateOf(part('spur', { module: 2, teeth: 5, profileShift: -0.5 }), { kind: 'gear', teeth: 5, backlash: 0, extra: 0, angle: 0 });
+    expect(Number.isFinite(mate.center)).toBe(true);
+    expect(mate.center).toBeCloseTo(10, 9);
+    expect(mate.warnings.join(' ')).toMatch(/too negative/);
+    // A small negative shift still gets a proper working distance, a little under the nominal.
+    const mild = mateOf(part('spur', { module: 2, teeth: 20, profileShift: -0.2 }), { kind: 'gear', teeth: 20, backlash: 0, extra: 0, angle: 0 });
+    expect(mild.warnings).toEqual([]);
+    expect(mild.center).toBeLessThan(40);
+    expect(mild.center).toBeGreaterThan(39);
+  });
+});

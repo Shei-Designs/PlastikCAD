@@ -1,5 +1,5 @@
 import { addHubAndBore, boreGroup, boreRadius, boreShape, handParam, hubGroup, isLeftHanded } from '../features';
-import { gearOutline, minShiftWithoutUndercut, ringOutline, standardTooth, toothProfile } from '../involute';
+import { clampBacklash, gearOutline, minShiftWithoutUndercut, ringOutline, standardTooth, toothProfile } from '../involute';
 import { arc, arcSegments, circle, deg, toDeg, TAU } from '../math2d';
 import { shearedPrism } from '../meshUtil';
 import { extrude, intersection, mirror, translate, union } from '../types';
@@ -151,7 +151,7 @@ function involuteGear(kind: GearKind): GeneratorDef {
         pressureAngle: num(p, 'pressureAngle'),
         helixAngle: helix,
         profileShift: x,
-        backlash: num(p, 'backlash'),
+        backlash: clampBacklash(num(p, 'backlash'), mn, warnings),
         clearance: num(p, 'clearance'),
       });
       const profile = toothProfile(spec, q);
@@ -178,7 +178,7 @@ function involuteGear(kind: GearKind): GeneratorDef {
       if (profile.pointed) warnings.push('The teeth come to a point before reaching full height; reduce the profile shift.');
       if (boreRadius(p) > profile.rootRadius - 0.75 * mn) warnings.push('The bore leaves very little material below the teeth.');
 
-      const { solid, height } = addHubAndBore(body, 0, b, p, q, warnings);
+      const { solid, height } = addHubAndBore(body, 0, b, p, q, warnings, profile.outerRadius);
       const bore = boreShape(p, q);
 
       const info: InfoItem[] = [
@@ -241,7 +241,7 @@ export const ringGear: GeneratorDef = {
     const z = Math.round(num(p, 'teeth'));
     const m = num(p, 'module');
     const ring = ringOutline(
-      { teeth: z, module: m, pressureAngle: deg(num(p, 'pressureAngle')), backlash: num(p, 'backlash'), clearance: num(p, 'clearance') },
+      { teeth: z, module: m, pressureAngle: deg(num(p, 'pressureAngle')), backlash: clampBacklash(num(p, 'backlash'), m, warnings), clearance: num(p, 'clearance') },
       q,
     );
     const outer = ring.rootRadius + num(p, 'rimThickness');
@@ -353,10 +353,12 @@ export const rack: GeneratorDef = {
     toothFormGroup(),
   ],
   build(p: Params, q: Quality) {
+    const warnings: string[] = [];
     const mn = num(p, 'module');
     const n = Math.round(num(p, 'teeth'));
     const b = num(p, 'faceWidth');
     const base = num(p, 'baseHeight');
+    const backlash = clampBacklash(num(p, 'backlash'), mn, warnings);
     const helix = deg(num(p, 'helixAngle'));
     const c = num(p, 'clearance');
     const an = deg(num(p, 'pressureAngle'));
@@ -374,7 +376,7 @@ export const rack: GeneratorDef = {
         alpha,
         addendum: mn,
         dedendum: (1 + c) * mn,
-        backlash: num(p, 'backlash'),
+        backlash,
         fillet: (c / (1 - Math.sin(an))) * mn,
         pitchLine,
         q,
@@ -413,7 +415,7 @@ export const rack: GeneratorDef = {
       { label: 'Pitch line height', value: mm(pitchLine) },
       { label: 'Total height', value: mm(top) },
     ];
-    return { solid, outline: [outline], info, warnings: [] };
+    return { solid, outline: [outline], info, warnings };
   },
 };
 

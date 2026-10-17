@@ -4,12 +4,16 @@ import { add, apply, emptyBounds, expandBounds, nodeMatrix } from '../model/math
 import type { Bounds } from '../model/math';
 import { alignNodes, makeGroup } from '../model/ops';
 import type { Asset, GroupNode, ImportNode, PictureNode, Polygon, SceneNode, ShapeKind, ShapeNode, TextNode, Vec3 } from '../model/types';
-import { build, cacheSize, clearCache, decodeBase64, exportNodes, initKernel, measure, SHEET, setAssets } from './kernel';
+import { build, cacheSize, clearCache, decodeBase64, exportNodes, forgetAssets, initKernel, measure, rawManifold, SHEET, setAssets } from './kernel';
 import type { MeshData } from './mesh';
 import { defaultParams, shapeDef } from './shapes';
 
+import type { ManifoldToplevel } from 'manifold-3d';
+
+let k: ManifoldToplevel;
+
 beforeAll(async () => {
-  await initKernel();
+  k = await initKernel();
 });
 
 afterAll(() => clearCache());
@@ -454,6 +458,21 @@ describe('imported meshes', () => {
     expect(half.volume).toBeCloseTo(4000, 3);
   });
 
+  it('forgets the imported data of a closed design, keeping what is still wanted', () => {
+    // Leftovers of earlier tests go first, so that the second call below drops nothing.
+    const these = ['cube', 'soup', 'inverted', 'open'];
+    forgetAssets(these);
+    make(imported('cube', [2, 2, 2]));
+    expect(cacheSize()).toBeGreaterThan(0);
+    forgetAssets(these);
+    // Nothing was dropped, so nothing built needs rebuilding.
+    expect(cacheSize()).toBeGreaterThan(0);
+    forgetAssets(['soup']);
+    expect(cacheSize()).toBe(0);
+    expect(make(imported('soup', [2, 2, 2])).volume).toBeCloseTo(8, 6);
+    expect(() => make(imported('cube', [2, 2, 2]))).toThrow(/missing from this design/);
+  });
+
   it('shows a mesh that is not watertight without treating it as a solid', () => {
     const r = make(imported('open', [2, 2, 2]));
     expect(r.watertight).toBe(false);
@@ -499,6 +518,37 @@ describe('imported meshes', () => {
     const mirrored = signedVolume(exportNodes([{ ...node, flip: [false, true, false], rot: [30, 0, 0] }], false).mesh);
     expect(plain).toBeGreaterThan(0);
     expect(mirrored).toBeCloseTo(plain, 4);
+  });
+
+  it('refuses a mesh whose points have no position', () => {
+    const broken = CUBE_POSITIONS.slice();
+    broken[4] = NaN;
+    setAssets({ broken: meshAsset(broken, CUBE_TRIANGLES), far: meshAsset([...CUBE_POSITIONS.slice(0, 23), Infinity], CUBE_TRIANGLES) });
+    expect(() => make(imported('broken', [2, 2, 2], { name: 'Scan' }))).toThrow('The mesh of "Scan" is damaged: some points have no position.');
+    expect(() => make(imported('far', [2, 2, 2], { name: 'Scan' }))).toThrow(/damaged/);
+  });
+
+  it('exports an open mesh in place as a copy, so handing the copy away leaves the cache whole', () => {
+    const node = imported('open', [2, 2, 2], { name: 'Scan', size: [4, 2, 2], pos: [50, 0, 0] });
+    const first = exportNodes([node], false, false, true);
+    expect(first.mesh.triangles.length).toBe(11 * 3);
+    expectBounds(first.bounds, [-1, -1, -1], [1, 1, 1]);
+    // What the worker does with the result: its arrays go to the main thread, which empties them here.
+    structuredClone(first.mesh, { transfer: [first.mesh.positions.buffer, first.mesh.triangles.buffer] });
+    expect(first.mesh.positions.length).toBe(0);
+    const second = exportNodes([node], false, false, true);
+    expect(second.mesh.positions.length).toBe(8 * 3);
+    expect(second.mesh.triangles.length).toBe(11 * 3);
+    expect(second.mesh.positions === first.mesh.positions).toBe(false);
+    expect(second.mesh.triangles === first.mesh.triangles).toBe(false);
+    expect(signedVolume(second.mesh)).toBeGreaterThan(0);
+    // Placed exports and builds of the same mesh are untouched too.
+    const placed = exportNodes([node], false);
+    expect(placed.mesh.triangles.length).toBe(11 * 3);
+    expectBounds(placed.bounds, [48, -1, -1], [52, 1, 1]);
+    const r = make(node);
+    expect(r.triangles).toBe(11);
+    expect(r.render.positions.length).toBe(11 * 9);
   });
 
   it('rebuilds when an asset is replaced under the same name', () => {
@@ -610,5 +660,71 @@ describe('cache', () => {
     const g = group([20, 20, 10], [{ ...cyl, pos: [0, 0, 0] }]);
     expect(exportNodes([g], false, true).volume).toBeCloseTo(fine.volume, 3);
     expect(exportNodes([g], false).volume).toBeCloseTo(shown.volume, 3);
+  });
+});
+
+describe('the mended binding', () => {
+  /** A gear-like outline: `teeth` bumps around a circle of radius 10. */
+  const gear = (teeth: number): [number, number][] =>
+    Array.from({ length: teeth * 8 }, (_, i) => {
+      const a = (i * 2 * Math.PI) / (teeth * 8);
+      const r = 10 + (i % 8 < 4 ? 1 : -1);
+      return [r * Math.cos(a), r * Math.sin(a)];
+    });
+
+  // The binding as shipped: the polygons handed to the kernel are never freed.
+  type Leaky = {
+    _Extrude(p: unknown, h: number, d: number, t: number, s: { x: number; y: number }): import('manifold-3d').Manifold;
+    _Revolve(p: unknown, s: number, d: number): import('manifold-3d').Manifold;
+  };
+  const polygonsOf = (cs: unknown) => (cs as { _ToPolygons(): unknown })._ToPolygons();
+
+  it('extrudes and revolves exactly as the binding did', () => {
+    const cs = new k.CrossSection(gear(12), 'EvenOdd');
+    const section = new k.CrossSection([gear(12).map(([x, y]) => [x + 15, y])], 'EvenOdd');
+    const leaky = k as unknown as Leaky;
+    const pairs = [
+      [cs.extrude(5, 0, 0, [1, 1]), leaky._Extrude(polygonsOf(cs), 5, 0, 0, { x: 1, y: 1 })],
+      [cs.extrude(5, 10, 30, [0.5, 0.5]), leaky._Extrude(polygonsOf(cs), 5, 10, 30, { x: 0.5, y: 0.5 })],
+      [section.revolve(48), leaky._Revolve(polygonsOf(section), 48, 360)],
+      [section.revolve(48, 90), leaky._Revolve(polygonsOf(section), 48, 90)],
+    ];
+    for (const [ours, theirs] of pairs) {
+      expect(ours.status()).toBe('NoError');
+      expect(ours.numTri()).toBe(theirs.numTri());
+      expect(ours.volume()).toBeCloseTo(theirs.volume(), 9);
+      expect(ours.boundingBox()).toEqual(theirs.boundingBox());
+      ours.delete();
+      theirs.delete();
+    }
+    // Known values as well: the gear outline has the area of a ring of radius 10 and width 2 cut in two.
+    const plain = cs.extrude(5);
+    expect(plain.volume()).toBeCloseTo(cs.area() * 5, 6);
+    expect(cs.area()).toBeGreaterThan(Math.PI * 81);
+    expect(cs.area()).toBeLessThan(Math.PI * 121);
+    plain.delete();
+    // The defaults, a scalar top scale and centering work too.
+    const scaled = cs.extrude(4, 0, 0, 0.5, true);
+    const box = scaled.boundingBox();
+    expect(box.min[2]).toBeCloseTo(-2, 6);
+    expect(box.max[2]).toBeCloseTo(2, 6);
+    expect(box.max[0]).toBeCloseTo(11, 6);
+    expect(scaled.volume()).toBeCloseTo((cs.area() * 4 * (1 + 0.5 + 0.25)) / 3, 6);
+    scaled.delete();
+    cs.delete();
+    section.delete();
+  });
+
+  it('makes a solid from a bad mesh without throwing, so that it can be freed', () => {
+    const mesh = new k.Mesh({ numProp: 3, vertProperties: Float32Array.from(CUBE_POSITIONS), triVerts: Uint32Array.from(CUBE_TRIANGLES.slice(3)) });
+    expect(() => new k.Manifold(mesh)).toThrow();
+    const solid = new (rawManifold(k))(mesh);
+    expect(solid.status()).not.toBe('NoError');
+    solid.delete();
+    const good = new (rawManifold(k))(new k.Mesh({ numProp: 3, vertProperties: Float32Array.from(CUBE_POSITIONS), triVerts: Uint32Array.from(CUBE_TRIANGLES) }));
+    expect(good.status()).toBe('NoError');
+    expect(good.volume()).toBeCloseTo(8, 6);
+    expect(good).toBeInstanceOf(k.Manifold);
+    good.delete();
   });
 });

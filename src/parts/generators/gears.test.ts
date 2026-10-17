@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { evaluate, initKernel } from '../evaluate';
 import { selfIntersects, signedArea } from '../math2d';
-import { QUALITY } from '../types';
+import { QUALITY, extrude } from '../types';
 import { bevelGear } from './bevel';
 import { helicalGear, herringboneGear, rack, ringGear, spurGear } from './gears';
 import { defaultParams } from './types';
@@ -129,5 +129,52 @@ describe('bevel gear', () => {
       expect(mesh.stats.min[2]).toBeCloseTo(0, 3);
       expect(result.info.find((i) => i.label === 'Pitch diameter')!.value).toBe(`${(2 * teeth).toFixed(2)} mm`);
     }
+  });
+});
+
+describe('small modules with large backlash', () => {
+  it('limits the backlash so the teeth keep two flanks', () => {
+    const helicalRack = run(rack, { module: 0.3, backlash: 1, helixAngle: 20 });
+    expect(helicalRack.mesh.stats.volume).toBeGreaterThan(0);
+    expect(helicalRack.result.warnings.join(' ')).toMatch(/Backlash/);
+    expect(run(rack, { module: 0.3, backlash: 1, helixAngle: 20, herringbone: true }).mesh.stats.volume).toBeGreaterThan(0);
+    const straight = run(rack, { module: 0.3, backlash: 1 });
+    expect(selfIntersects(straight.result.outline![0])).toBe(false);
+    expect(straight.mesh.stats.volume).toBeCloseTo(signedArea(straight.result.outline![0]) * 10, 1);
+
+    const bevel = run(bevelGear, { module: 0.3, backlash: 1, pressureAngle: 20 });
+    expect(bevel.mesh.stats.volume).toBeGreaterThan(0);
+    expect(bevel.result.warnings.join(' ')).toMatch(/Backlash/);
+
+    const spur = run(spurGear, { module: 0.3, backlash: 1 });
+    expect(selfIntersects(spur.result.outline![0])).toBe(false);
+    expect(spur.mesh.stats.volume).toBeGreaterThan(0);
+    expect(run(ringGear, { module: 0.3, backlash: 1 }).mesh.stats.volume).toBeGreaterThan(0);
+    // Ordinary backlash is untouched.
+    expect(run(spurGear, { backlash: 0.2 }).result.warnings).toEqual([]);
+  });
+});
+
+describe('bevel gear details', () => {
+  it('reports the height the part actually reaches', () => {
+    for (const over of [{}, { hubHeight: 6 }, { teeth: 12, mateTeeth: 36, faceWidth: 5 }] as Params[]) {
+      const { result, mesh } = run(bevelGear, over);
+      const total = Number(result.info.find((i) => i.label === 'Total height')!.value.replace(' mm', ''));
+      expect(Math.abs(mesh.stats.max[2] - total), JSON.stringify(over)).toBeLessThan(0.05);
+      expect(mesh.stats.min[2]).toBeCloseTo(0, 3);
+    }
+  });
+
+  it('puts the second set screw on +Y like every other hub', () => {
+    const { result } = run(bevelGear, { hubHeight: 6, setScrews: 2, boreType: 'none' });
+    const half = (y0: number, y1: number) => evaluate({ op: 'intersection', children: [result.solid, extrude([[[-30, y0], [30, y0], [30, y1], [-30, y1]]], 6)] }).stats.volume;
+    // The set screw hole takes material out of the side it is on.
+    expect(half(0, 30)).toBeLessThan(half(-30, 0) - 5);
+  });
+
+  it('leaves out a bore wider than the gear', () => {
+    const { result, mesh } = run(bevelGear, { boreDiameter: 100 });
+    expect(mesh.stats.volume).toBeGreaterThan(0);
+    expect(result.warnings.join(' ')).toMatch(/bore is wider/);
   });
 });

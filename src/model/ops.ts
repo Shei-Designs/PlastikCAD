@@ -237,7 +237,8 @@ export function makeGroup(nodes: SceneNode[], bounds: Bounds, name: string, over
   };
 }
 
-const MM_PARAMS = ['radius'];
+/** Shape parameters in millimeters, which grow with a group when it is taken apart (the rest are counts or ratios). */
+const MM_PARAMS = ['radius', 'ring'];
 
 /**
  * The children of a group, placed where the group put them. Exact when the
@@ -269,11 +270,16 @@ export function ungroup(group: GroupNode): SceneNode[] {
       rot: eulerOf(frame),
       size: tidyVec([child.size[0] * lengths[0], child.size[1] * lengths[1], child.size[2] * lengths[2]]),
     };
-    if (next.type === 'shape' && even && Math.abs(Math.abs(scale[0]) - 1) > 1e-9) {
-      // Radii are in millimeters, so they grow with the group.
-      const params = { ...next.params };
-      for (const key of MM_PARAMS) if (key in params) params[key] = tidy(params[key] * Math.abs(scale[0]));
-      next.params = params;
+    if (even && Math.abs(Math.abs(scale[0]) - 1) > 1e-9) {
+      const by = Math.abs(scale[0]);
+      if (next.type === 'shape') {
+        // Radii are in millimeters, so they grow with the group.
+        const params = { ...next.params };
+        for (const key of MM_PARAMS) if (key in params) params[key] = tidy(params[key] * by);
+        next.params = params;
+      }
+      // As is the pitch of a tiled picture.
+      if (next.texture) next.texture = { ...next.texture, scale: tidy(next.texture.scale * by) };
     }
     return withFlip(next, flip);
   });
@@ -313,6 +319,8 @@ export interface Layer {
   locked?: boolean;
   /** Ids of what was inside it. */
   children: string[];
+  /** Of those, the ones that were holes in their own right: taken apart, a hole group shows all its parts as holes. */
+  holes: string[];
 }
 
 /** The node at a path of ids from the top level down, or null. */
@@ -346,12 +354,58 @@ export function dissolve(scene: Scene, path: string[]): { scene: Scene; layers: 
       ...(group.hidden ? { hidden: true } : {}),
       ...(group.locked ? { locked: true } : {}),
       children: group.children.map((c) => c.id),
+      holes: group.children.filter((c) => c.hole).map((c) => c.id),
     });
-    const freed = ungroup(group).map((child) => (group.hole ? { ...child, hole: true } : child));
+    // A hole group hands its role down (not to a picture, which is neither); otherwise children keep their own.
+    const freed = ungroup(group).map((child) => (group.hole && child.type !== 'picture' ? { ...child, hole: true } : child));
     const at = out.indexOf(group);
     out = [...out.slice(0, at), ...freed, ...out.slice(at + 1)];
   }
   return { scene: out, layers };
+}
+
+/**
+ * Holes grouped on their own become one hole: inside, they merge like solids,
+ * and the group cuts as a whole (a connector cut-out with its screw holes, say).
+ */
+export function holeGroup(nodes: SceneNode[]): { members: SceneNode[]; hole: boolean } {
+  if (nodes.length === 0 || !nodes.every((n) => n.hole)) return { members: nodes, hole: false };
+  return { members: nodes.map((n) => ({ ...n, hole: false })), hole: true };
+}
+
+/**
+ * The members of a dissolved layer as they go back into it. A hole group's
+ * parts were all shown as holes while it was apart, so each gets its own flag
+ * back, unless it was made solid meanwhile (a picture is never a hole); a
+ * solid group takes its members as they are now.
+ */
+export function layerMembers(layer: Layer, members: SceneNode[]): { members: SceneNode[]; hole: boolean } {
+  if (!layer.hole) return holeGroup(members);
+  return { members: members.map((n) => ({ ...n, hole: n.hole && n.type !== 'picture' && layer.holes.includes(n.id) })), hole: true };
+}
+
+/**
+ * The scene with its dissolved layers put back together, innermost first,
+ * around whatever is left of their contents, boxed by `boundsOf`. Pure and
+ * immediate, for writing a design out while a group is still being edited
+ * inside; `finishEditing` does the same with the kernel's exact measure.
+ */
+export function regroup(scene: Scene, layers: Layer[], boundsOf: (node: SceneNode) => Bounds): Scene {
+  let out = scene;
+  for (const layer of [...layers].reverse()) {
+    if (out.some((n) => n.id === layer.id)) continue;
+    const found = out.filter((n) => layer.children.includes(n.id));
+    if (found.length === 0) continue;
+    const { members, hole } = layerMembers(layer, found);
+    const solids = members.filter((n) => !n.hole && n.type !== 'picture');
+    if (solids.length === 0) continue;
+    const group = makeGroup(members, unionBounds(solids.map(boundsOf)), layer.name, { ...layer, hole });
+    // Where the first of them stood (nothing of the layer comes before it, so the index holds once they are out).
+    const at = out.indexOf(found[0]);
+    const rest = out.filter((n) => !found.includes(n));
+    out = [...rest.slice(0, at), group, ...rest.slice(at)];
+  }
+  return out;
 }
 
 /** World transform of a node's own box (centered, `size` wide) reached through `path`. */

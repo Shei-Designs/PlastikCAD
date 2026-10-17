@@ -257,8 +257,10 @@ export const fan: GeneratorDef = {
         if (pattern !== 'open' && bar < 1.2) warnings.push('Bars under 1.2 mm are a single extrusion wide and break easily; 2 mm is sturdier.');
       }
       info.push({ label: 'Length', value: mm(CUTOUT_LENGTH, 0) });
+      // The screw holes can reach into a large opening: a union, not one even-odd shape, keeps the overlap cut.
       const shapes: Shape2D = [...openings, ...pins];
-      return { solid: slab(shapes, CUTOUT_LENGTH), outline: shapes, info, warnings };
+      const solid = openings.length ? union(slab(openings, CUTOUT_LENGTH), slab(pins, CUTOUT_LENGTH)) : slab(pins, CUTOUT_LENGTH);
+      return { solid, outline: shapes, info, warnings };
     }
 
     if (make === 'grill') {

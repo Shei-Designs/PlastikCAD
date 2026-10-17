@@ -28,19 +28,42 @@ export function importFile(fileName: string, bytes: Uint8Array): Imported {
   const extension = /\.([^./\\]+)$/.exec(fileName)?.[1].toLowerCase() ?? '';
   switch (extension) {
     case 'stl':
-      return { kind: 'mesh', ...parseStl(bytes) };
+      return { kind: 'mesh', ...checkedMesh(parseStl(bytes)) };
     case 'obj':
-      return { kind: 'mesh', ...parseObj(bytes) };
+      return { kind: 'mesh', ...checkedMesh(parseObj(bytes)) };
     case '3mf':
-      return { kind: 'mesh', ...parse3mf(bytes) };
+      return { kind: 'mesh', ...checkedMesh(parse3mf(bytes)) };
     case 'svg':
-      return { kind: 'outline', shapes: parseSvg(bytes) };
+      return { kind: 'outline', shapes: checkedOutline(parseSvg(bytes)) };
     default: {
       const what = extension ? `.${extension} files` : 'Files of this type';
       const supported = IMPORT_EXTENSIONS.map((e) => e.toUpperCase()).join(', ');
       throw new Error(`${what} can't be imported. Use one of: ${supported}.`);
     }
   }
+}
+
+/**
+ * The mesh, once every coordinate is known to be a finite number. The readers
+ * drop such vertices themselves; this is the last line before the geometry
+ * kernel, which cannot cope with NaN or infinity.
+ */
+export function checkedMesh<T extends { positions: Float32Array; triangles: Uint32Array }>(mesh: T): T {
+  const p = mesh.positions;
+  for (let i = 0; i < p.length; i++) {
+    if (!Number.isFinite(p[i])) throw new Error('This file holds coordinates that are not numbers, and cannot be imported.');
+  }
+  return mesh;
+}
+
+/** As `checkedMesh`, for the contours of an outline. */
+export function checkedOutline(shapes: OutlineShape[]): OutlineShape[] {
+  for (const shape of shapes)
+    for (const contour of shape.contours)
+      for (const [x, y] of contour) {
+        if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('This file holds coordinates that are not numbers, and cannot be imported.');
+      }
+  return shapes;
 }
 
 /** Recenters the mesh on the center of its bounding box, in place. Returns the box's size and where its center was. */

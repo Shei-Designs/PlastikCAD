@@ -1,8 +1,8 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { evaluate, initKernel } from '../evaluate';
-import { signedArea } from '../math2d';
-import { QUALITY } from '../types';
-import type { Polygon } from '../types';
+import { circle, signedArea } from '../math2d';
+import { QUALITY, extrude } from '../types';
+import type { Polygon, Solid } from '../types';
 import { CUTOUT_LENGTH } from './cutouts';
 import { FANS, fan, fanOpenings } from './fans';
 import type { FanPattern } from './fans';
@@ -112,5 +112,19 @@ describe('fans', () => {
     expect(body.stats.volume).toBeLessThan(frame + disc(f40.opening) * f40.depth);
     const grown = made({ size: '40', form: 'body', clearance: 0.5 });
     expect(extent(grown.stats, 0)).toBeCloseTo(41, 2);
+  });
+});
+
+describe('fan cutout with screw holes reaching into the opening', () => {
+  it('cuts the overlap instead of leaving islands', () => {
+    const f = FANS[0];
+    const grow = 3;
+    const r = made({ size: String(f.size), form: 'cutout', pattern: 'open', clearance: grow });
+    const pieces: Solid[] = [extrude([circle(f.opening / 2 + grow, q.circle)], CUTOUT_LENGTH)];
+    for (const sx of [-1, 1]) for (const sy of [-1, 1]) pieces.push(extrude([circle(f.hole / 2 + grow, q.circle, (sx * f.spacing) / 2, (sy * f.spacing) / 2)], CUTOUT_LENGTH));
+    const union = evaluate({ op: 'union', children: pieces }).stats.volume;
+    expect(r.stats.volume / union).toBeCloseTo(1, 2);
+    // The holes do reach in: separate pieces would add up to more than the union.
+    expect(pieces.reduce((a, s) => a + evaluate(s).stats.volume, 0)).toBeGreaterThan(union * 1.05);
   });
 });

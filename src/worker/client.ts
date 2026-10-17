@@ -40,6 +40,18 @@ export class GeometryClient {
     if (any) this.worker.postMessage({ type: 'assets', assets: fresh } satisfies WorkerRequest);
   }
 
+  /** Let the worker drop every asset but these; anything else is sent again when next needed. */
+  forgetAssets(keep: Iterable<string>): void {
+    const wanted = new Set(keep);
+    let any = false;
+    for (const key of [...this.sentAssets]) {
+      if (wanted.has(key)) continue;
+      this.sentAssets.delete(key);
+      any = true;
+    }
+    if (any) this.worker.postMessage({ type: 'forgetAssets', keep: [...wanted] } satisfies WorkerRequest);
+  }
+
   build(key: string, node: SceneNode): Promise<BuildResult> {
     return this.send({ type: 'build', key, node });
   }

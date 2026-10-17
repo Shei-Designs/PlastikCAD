@@ -49,6 +49,17 @@ export interface ToothProfile {
 
 export const inv = (a: number) => Math.tan(a) - a;
 
+/** The most backlash a tooth of this module can give up and still have two flanks: 0.4 of the circular pitch. */
+export const maxBacklash = (module: number) => 0.4 * Math.PI * module;
+
+/** Backlash held to what the module allows, with a warning when it had to be reduced. */
+export function clampBacklash(backlash: number, module: number, warnings: string[]): number {
+  const limit = maxBacklash(module);
+  if (backlash <= limit) return backlash;
+  warnings.push(`Backlash was limited to ${limit.toFixed(2)} mm so the teeth keep two flanks.`);
+  return limit;
+}
+
 export interface StandardToothOptions {
   teeth: number;
   /** Normal module, mm. */

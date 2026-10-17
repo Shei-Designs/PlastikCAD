@@ -494,10 +494,13 @@ export const leadScrewNut: GeneratorDef = {
     const warnings: string[] = [];
     const { diameter, pitch, starts, lead } = trapezoidal(p, warnings);
     const length = num(p, 'length');
-    const bodyR = num(p, 'bodyDiameter') / 2;
+    let bodyR = num(p, 'bodyDiameter') / 2;
     const profile = trapezoidalProfile(diameter, pitch, { internal: true, offset: num(p, 'clearance') });
     const { rMin, rMax } = profileExtent(profile);
-    if (bodyR < rMax + 0.5) warnings.push('The body wall around the thread is very thin.');
+    if (bodyR <= rMax) {
+      bodyR = rMax + 1;
+      warnings.push(`The body was widened to ${(2 * bodyR).toFixed(1)} mm to clear the thread.`);
+    } else if (bodyR < rMax + 0.5) warnings.push('The body wall around the thread is very thin.');
 
     let body = cylinder(bodyR, length, q.circle);
     const cuts: Solid[] = [];

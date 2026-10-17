@@ -32,7 +32,8 @@ function Figure({ label, help, ...box }: { label: string; help?: string } & Omit
 export function MatePanel() {
   const mating = useEditor((s) => s.mating);
   const source = useEditor((s) => s.doc.scene.find((n) => n.id === s.mating?.source) ?? null);
-  const busy = useEditor((s) => s.busy !== null);
+  // The mate the panel asks for is not in the scene yet: Accept would keep the one before it.
+  const busy = useEditor((s) => s.busy !== null || Boolean(s.mating?.building));
   const kinds = source?.type === 'part' ? mateKinds(source.part) : [];
   const teeth1 = source?.type === 'part' ? sourceTeeth(source) : 20;
   const worm = source?.type === 'part' && source.part === 'worm';
@@ -69,7 +70,7 @@ export function MatePanel() {
   if (!mate || !source) return null;
 
   const setCount = (v: number) => setTyped({ ...typed, [current]: v });
-  const finish = (keep: boolean) => (keep ? commitMate() : cancelMate());
+  const finish = (keep: boolean) => (keep ? void commitMate() : cancelMate());
   return (
     <div className="mate-panel" role="dialog" aria-label="Mating gear">
       <div className="array-title">Mating gear for {source.name}</div>

@@ -16,6 +16,8 @@ export function Hint({ text }: { text: string }) {
         tabIndex={0}
         role="note"
         aria-label={text}
+        // Inside a <label>, a click would otherwise reach the labelled control and flip a switch.
+        onClick={(e) => e.preventDefault()}
         onMouseEnter={(e) => show(e.currentTarget)}
         onMouseLeave={() => setPos(null)}
         onFocus={(e) => show(e.currentTarget)}

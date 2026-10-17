@@ -75,6 +75,13 @@ const unit = (v: Vec3): Vec3 => {
   return [v[0] / len, v[1] / len, v[2] / len];
 };
 
+/** A mesh with texture coordinates: unindexed corners with their normals, as a RenderMesh, and two floats per corner. */
+export interface SkinMesh {
+  positions: Float32Array;
+  normals: Float32Array;
+  uv: Float32Array;
+}
+
 /** A triangle in a picture's own space: where each corner lands (0..1 across and up) and how deep it lies. */
 interface Landing {
   uv: [number, number][];
@@ -83,22 +90,25 @@ interface Landing {
   facing: boolean;
 }
 
+/** The picture a triangle took and where its corners land on it (0..1 across and up). */
+interface Taken {
+  pic: number;
+  uv: [number, number][];
+}
+
 /**
- * Texture coordinates from pictures projected onto the mesh. Each triangle
- * takes the first picture it faces, lies under and is not hidden from by a
- * surface in between; the rest of the surface samples the fill.
+ * Which picture each triangle takes: the first one it faces, lies under and is
+ * not hidden from by a surface in between; null where it samples the fill.
  */
-export function projectPictures(positions: Float32Array, pictures: Projector[]): Float32Array {
+function takePictures(positions: Float32Array, pictures: Projector[]): (Taken | null)[] {
   const count = positions.length / 9;
-  const uv = new Float32Array(count * 6);
-  for (let c = 0; c < count * 3; c++) uv.set(FILL_UV, c * 2);
-  const taken = new Uint8Array(count);
+  const taken: (Taken | null)[] = new Array(count).fill(null);
   const corners: Vec3[] = [
     [0, 0, 0],
     [0, 0, 0],
     [0, 0, 0],
   ];
-  for (const pic of pictures) {
+  pictures.forEach((pic, p) => {
     const inv = invert(pic.matrix);
     const landings: (Landing | null)[] = new Array(count);
     for (let t = 0; t < count; t++) {
@@ -109,18 +119,136 @@ export function projectPictures(positions: Float32Array, pictures: Projector[]):
     }
     // Whatever lies under the picture, facing it or not, can hide what is behind it.
     const nearest = depthMap(landings);
-    const [u0, v0, u1, v1] = pic.rect;
     for (let t = 0; t < count; t++) {
       const landing = landings[t];
       if (taken[t] || !landing || !landing.facing || nearest.hidden(landing)) continue;
-      taken[t] = 1;
-      for (let c = 0; c < 3; c++) {
-        uv[(t * 3 + c) * 2] = u0 + landing.uv[c][0] * (u1 - u0);
-        uv[(t * 3 + c) * 2 + 1] = v0 + landing.uv[c][1] * (v1 - v0);
-      }
+      taken[t] = { pic: p, uv: landing.uv };
+    }
+  });
+  return taken;
+}
+
+/** Each corner's place in the atlas: its picture's cell, or the fill. */
+function atlasUVs(taken: (Taken | null)[], pictures: Projector[]): Float32Array {
+  const uv = new Float32Array(taken.length * 6);
+  for (let t = 0; t < taken.length; t++) {
+    const got = taken[t];
+    if (!got) {
+      for (let c = 0; c < 3; c++) uv.set(FILL_UV, (t * 3 + c) * 2);
+      continue;
+    }
+    const [u0, v0, u1, v1] = pictures[got.pic].rect;
+    for (let c = 0; c < 3; c++) {
+      uv[(t * 3 + c) * 2] = u0 + got.uv[c][0] * (u1 - u0);
+      uv[(t * 3 + c) * 2 + 1] = v0 + got.uv[c][1] * (v1 - v0);
     }
   }
   return uv;
+}
+
+/**
+ * Texture coordinates from pictures projected onto the mesh. Each triangle
+ * takes the first picture it faces, lies under and is not hidden from by a
+ * surface in between; the rest of the surface samples the fill. A triangle
+ * that reaches past the picture's edge keeps its coordinates past the edge
+ * (see `clipPictures` for one that stops there).
+ */
+export function projectPictures(positions: Float32Array, pictures: Projector[]): Float32Array {
+  return atlasUVs(takePictures(positions, pictures), pictures);
+}
+
+/** A corner being cut: where it is on the picture, in the mesh, and its normal. */
+interface Cut {
+  u: number;
+  v: number;
+  p: Vec3;
+  n: Vec3;
+}
+
+/** Corners this close to a picture's edge count as on it, so no sliver is cut off. */
+const CUT_EPS = 1e-6;
+
+/** Splits a convex polygon along a line: what lies on the side where `side` is positive, and what lies on the other. */
+function splitPolygon(poly: Cut[], side: (c: Cut) => number): { kept: Cut[]; cut: Cut[] } {
+  const d = poly.map(side);
+  if (d.every((x) => x >= -CUT_EPS)) return { kept: poly, cut: [] };
+  if (d.every((x) => x <= CUT_EPS)) return { kept: [], cut: poly };
+  const kept: Cut[] = [];
+  const cut: Cut[] = [];
+  for (let i = 0; i < poly.length; i++) {
+    const j = (i + 1) % poly.length;
+    const a = poly[i];
+    if (d[i] >= -CUT_EPS) kept.push(a);
+    if (d[i] <= CUT_EPS) cut.push(a);
+    if ((d[i] > CUT_EPS && d[j] < -CUT_EPS) || (d[i] < -CUT_EPS && d[j] > CUT_EPS)) {
+      const b = poly[j];
+      const t = d[i] / (d[i] - d[j]);
+      const mix = (x: number, y: number) => x + (y - x) * t;
+      const m: Cut = {
+        u: mix(a.u, b.u),
+        v: mix(a.v, b.v),
+        p: [mix(a.p[0], b.p[0]), mix(a.p[1], b.p[1]), mix(a.p[2], b.p[2])],
+        n: unit([mix(a.n[0], b.n[0]), mix(a.n[1], b.n[1]), mix(a.n[2], b.n[2])]),
+      };
+      kept.push(m);
+      cut.push(m);
+    }
+  }
+  return { kept, cut };
+}
+
+/** The four edges of a picture, as the side of each a corner lies on (positive inside). */
+const PICTURE_EDGES: ((c: Cut) => number)[] = [(c) => c.u, (c) => 1 - c.u, (c) => c.v, (c) => 1 - c.v];
+
+/**
+ * The mesh with texture coordinates from pictures projected onto it, as
+ * `projectPictures`, but a triangle that reaches past a picture's edge is cut
+ * along the edge: the part under the picture keeps it and the rest samples the
+ * fill, instead of running on into whatever lies next to the picture in the
+ * atlas. The corners come back unchanged when nothing had to be cut.
+ */
+export function clipPictures(positions: Float32Array, normals: Float32Array, pictures: Projector[]): SkinMesh {
+  const taken = takePictures(positions, pictures);
+  const inside = (c: [number, number]) => c[0] >= -CUT_EPS && c[0] <= 1 + CUT_EPS && c[1] >= -CUT_EPS && c[1] <= 1 + CUT_EPS;
+  const whole = taken.every((got) => !got || got.uv.every(inside));
+  if (whole) return { positions, normals, uv: atlasUVs(taken, pictures) };
+  const outP: number[] = [];
+  const outN: number[] = [];
+  const outUV: number[] = [];
+  // A convex polygon goes out as a fan of triangles, in the order it came so that it keeps facing outwards.
+  const emit = (poly: Cut[], rect: Projector['rect'] | null) => {
+    for (let k = 1; k + 1 < poly.length; k++) {
+      for (const c of [poly[0], poly[k], poly[k + 1]]) {
+        outP.push(c.p[0], c.p[1], c.p[2]);
+        outN.push(c.n[0], c.n[1], c.n[2]);
+        if (rect) outUV.push(rect[0] + c.u * (rect[2] - rect[0]), rect[1] + c.v * (rect[3] - rect[1]));
+        else outUV.push(FILL_UV[0], FILL_UV[1]);
+      }
+    }
+  };
+  for (let t = 0; t < taken.length; t++) {
+    const got = taken[t];
+    const i = t * 9;
+    const poly: Cut[] = [0, 1, 2].map((c) => ({
+      u: got ? got.uv[c][0] : 0,
+      v: got ? got.uv[c][1] : 0,
+      p: [positions[i + c * 3], positions[i + c * 3 + 1], positions[i + c * 3 + 2]],
+      n: [normals[i + c * 3], normals[i + c * 3 + 1], normals[i + c * 3 + 2]],
+    }));
+    if (!got) {
+      emit(poly, null);
+      continue;
+    }
+    let kept = poly;
+    for (const edge of PICTURE_EDGES) {
+      const split = splitPolygon(kept, edge);
+      emit(split.cut, null);
+      kept = split.kept;
+      if (kept.length < 3) break;
+    }
+    emit(kept, pictures[got.pic].rect);
+  }
+  return { positions: Float32Array.from(outP), normals: Float32Array.from(outN), uv: Float32Array.from(outUV) };
 }
 
 /** Where a triangle lands on a flat sheet's picture, or null if it lies wholly beside it. */

@@ -98,7 +98,10 @@ export function serializeDoc(doc: Doc): string {
 // --- reading -------------------------------------------------------------
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+const hasOwn = (o: object, key: string) => Object.prototype.hasOwnProperty.call(o, key);
 const KINDS = new Set<string>(SHAPES.map((s) => s.kind));
+/** Groups within groups, past which a design is refused rather than read recursively. */
+const MAX_NESTING = 64;
 
 function vec3(v: unknown, fallback: Vec3, positive = false): Vec3 {
   if (!Array.isArray(v) || v.length !== 3) return fallback;
@@ -106,8 +109,9 @@ function vec3(v: unknown, fallback: Vec3, positive = false): Vec3 {
   return out as Vec3;
 }
 
-function readNode(raw: unknown, assets: Record<string, Asset>): SceneNode | null {
+function readNode(raw: unknown, assets: Record<string, Asset>, depth: number): SceneNode | null {
   if (!isRecord(raw) || typeof raw.id !== 'string') return null;
+  if (depth > MAX_NESTING) throw new Error('This design is nested too deeply.');
   const base = {
     id: raw.id,
     name: typeof raw.name === 'string' ? raw.name : 'Object',
@@ -128,16 +132,12 @@ function readNode(raw: unknown, assets: Record<string, Asset>): SceneNode | null
     const wall = isRecord(raw.params) && typeof raw.params.wall === 'number' ? raw.params.wall : 2;
     const sides = isRecord(raw.params) && typeof raw.params.sides === 'number' ? raw.params.sides : 64;
     const [w, d, h] = base.size;
-    const outer: SceneNode = { ...base, id: `${base.id}o`, name: 'Outer', pos: [0, 0, 0], rot: [0, 0, 0], hole: false, type: 'shape', shape: 'cylinder', params: { sides, radius: 0 } };
-    const inner: SceneNode = {
-      ...outer,
-      id: `${base.id}i`,
-      name: 'Bore',
-      hole: true,
-      size: [Math.max(w - 2 * wall, 0.1), Math.max(d - 2 * wall, 0.1), h * 2],
-    };
-    delete outer.flip;
-    delete inner.flip;
+    // Hidden, locked, textured and flipped belong to the group, as makeGroup would have it, not to its halves.
+    const { flip: _flip, hidden: _hidden, locked: _locked, texture: _texture, ...plain } = base;
+    const cylinder = (size: Vec3) => clampParams({ shape: 'cylinder', params: { sides, radius: 0 }, size });
+    const bore: Vec3 = [Math.max(w - 2 * wall, 0.1), Math.max(d - 2 * wall, 0.1), h * 2];
+    const outer: SceneNode = { ...plain, id: `${base.id}o`, name: 'Outer', pos: [0, 0, 0], rot: [0, 0, 0], hole: false, type: 'shape', shape: 'cylinder', params: cylinder(base.size) };
+    const inner: SceneNode = { ...outer, id: `${base.id}i`, name: 'Bore', hole: true, size: bore, params: cylinder(bore) };
     return { ...base, type: 'group', natural: base.size, children: [outer, inner] };
   }
   if (raw.type === 'shape') {
@@ -166,7 +166,8 @@ function readNode(raw: unknown, assets: Record<string, Asset>): SceneNode | null
     if (typeof raw.part !== 'string') return null;
     let rawParams = isRecord(raw.params) ? (raw.params as Record<string, PartParamValue>) : undefined;
     let part = raw.part;
-    const renamed = RENAMED_PARTS[part];
+    // An own key only: a part called "constructor" is not a renamed one.
+    const renamed = hasOwn(RENAMED_PARTS, part) ? RENAMED_PARTS[part] : undefined;
     if (renamed) {
       rawParams = renamed.params(rawParams ?? {});
       part = renamed.part;
@@ -193,7 +194,7 @@ function readNode(raw: unknown, assets: Record<string, Asset>): SceneNode | null
     };
   }
   if (raw.type === 'group') {
-    const children = readScene(raw.children, assets);
+    const children = readScene(raw.children, assets, depth + 1);
     if (children.length === 0) return null;
     return { ...base, type: 'group', natural: vec3(raw.natural, base.size, true), children };
   }
@@ -208,12 +209,12 @@ function readTexture(raw: unknown, assets: Record<string, Asset>): { texture: Te
   return { texture: { asset: raw.asset, mode: raw.mode === 'tile' ? 'tile' : 'wrap', scale, turn } };
 }
 
-function readScene(raw: unknown, assets: Record<string, Asset>): Scene {
+function readScene(raw: unknown, assets: Record<string, Asset>, depth = 0): Scene {
   if (!Array.isArray(raw)) return [];
   const seen = new Set<string>();
   const out: Scene = [];
   for (const item of raw) {
-    const node = readNode(item, assets);
+    const node = readNode(item, assets, depth);
     if (!node || seen.has(node.id)) continue;
     seen.add(node.id);
     out.push(node);
@@ -225,7 +226,8 @@ function readAssets(raw: unknown): Record<string, Asset> {
   const out: Record<string, Asset> = {};
   if (!isRecord(raw)) return out;
   for (const [key, value] of Object.entries(raw)) {
-    if (!isRecord(value)) continue;
+    // Assigning this key would swap the prototype of `out` rather than add an asset.
+    if (key === '__proto__' || !isRecord(value)) continue;
     if (value.kind === 'mesh' && typeof value.positions === 'string' && typeof value.triangles === 'string') {
       out[key] = { kind: 'mesh', positions: value.positions, triangles: value.triangles };
     } else if (value.kind === 'outline' && Array.isArray(value.shapes)) {

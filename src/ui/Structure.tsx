@@ -2,7 +2,7 @@
 // top, what it was grouped from indented beneath it, grouping by grouping,
 // down to the primitives. Hover a row to see that part on the plate; pick one
 // to edit the object at that layer.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { shapeDef } from '../geometry/shapes';
 import { getGenerator } from '../parts/generators';
 import { HOLE_COLOR } from '../model/ops';
@@ -27,6 +27,8 @@ const depthOf = (node: SceneNode): number => (node.type === 'group' ? 1 + Math.m
 
 export function Structure({ root }: { root: GroupNode }) {
   const [picked, setPicked] = useState<string[] | null>(null);
+  // A row still hovered when the panel goes away (the selection changes under the pointer, say) must not leave its ghost on the plate.
+  useEffect(() => () => setHighlight(null), []);
   const leaves = countLeaves(root);
   const levels = depthOf(root);
   const chosenNode = (() => {
@@ -46,6 +48,8 @@ export function Structure({ root }: { root: GroupNode }) {
           tabIndex={0}
           role="treeitem"
           aria-selected={on}
+          aria-level={path.length}
+          aria-expanded={node.type === 'group' ? true : undefined}
           aria-label={`${node.name}, ${kindOf(node)}`}
           onMouseEnter={() => setHighlight(path)}
           onMouseLeave={() => setHighlight(null)}

@@ -15,7 +15,7 @@ import { partThumbnail } from './partThumbnails';
 import { Sections } from './Sections';
 import type { Section } from './Sections';
 
-function SelectField({ def, value, onChange }: { def: SelectParam; value: string; onChange: (v: string) => void }) {
+function SelectField({ def, value, disabled, onChange }: { def: SelectParam; value: string; disabled?: boolean; onChange: (v: string) => void }) {
   const id = useId();
   const compact = def.options.length <= 3 && def.options.every((o) => o.label.length <= 14);
   return (
@@ -27,13 +27,13 @@ function SelectField({ def, value, onChange }: { def: SelectParam; value: string
       {compact ? (
         <div className="segmented" role="radiogroup" aria-labelledby={`${id}-label`}>
           {def.options.map((o) => (
-            <button key={o.value} type="button" role="radio" aria-checked={o.value === value} className={o.value === value ? 'on' : ''} onClick={() => onChange(o.value)}>
+            <button key={o.value} type="button" role="radio" aria-checked={o.value === value} className={o.value === value ? 'on' : ''} disabled={disabled} onClick={() => onChange(o.value)}>
               {o.label}
             </button>
           ))}
         </div>
       ) : (
-        <select id={id} value={value} onChange={(e) => onChange(e.target.value)}>
+        <select id={id} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}>
           {def.options.map((o) => (
             <option key={o.value} value={o.value}>
               {o.label}
@@ -45,7 +45,7 @@ function SelectField({ def, value, onChange }: { def: SelectParam; value: string
   );
 }
 
-function BooleanField({ def, value, onChange }: { def: BooleanParam; value: boolean; onChange: (v: boolean) => void }) {
+function BooleanField({ def, value, disabled, onChange }: { def: BooleanParam; value: boolean; disabled?: boolean; onChange: (v: boolean) => void }) {
   const id = useId();
   return (
     <div className="field inline">
@@ -53,20 +53,20 @@ function BooleanField({ def, value, onChange }: { def: BooleanParam; value: bool
         {def.label}
         {def.help && <Hint text={def.help} />}
       </label>
-      <input id={id} className="switch" type="checkbox" role="switch" checked={value} onChange={(e) => onChange(e.target.checked)} />
+      <input id={id} className="switch" type="checkbox" role="switch" checked={value} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
     </div>
   );
 }
 
-function Field({ def, params, onChange }: { def: ParamDef; params: Params; onChange: (key: string, v: Params[string]) => void }) {
+function Field({ def, params, disabled, onChange }: { def: ParamDef; params: Params; disabled?: boolean; onChange: (key: string, v: Params[string]) => void }) {
   const value = params[def.key];
   switch (def.type) {
     case 'number':
-      return <SliderField label={def.label} help={def.help} value={Number(value)} min={def.min} max={def.max} step={def.step} integer={def.integer} unit={def.unit} onChange={(v) => onChange(def.key, v)} />;
+      return <SliderField label={def.label} help={def.help} value={Number(value)} min={def.min} max={def.max} step={def.step} integer={def.integer} unit={def.unit} disabled={disabled} onChange={(v) => onChange(def.key, v)} />;
     case 'select':
-      return <SelectField def={def} value={String(value)} onChange={(v) => onChange(def.key, v)} />;
+      return <SelectField def={def} value={String(value)} disabled={disabled} onChange={(v) => onChange(def.key, v)} />;
     case 'boolean':
-      return <BooleanField def={def} value={Boolean(value)} onChange={(v) => onChange(def.key, v)} />;
+      return <BooleanField def={def} value={Boolean(value)} disabled={disabled} onChange={(v) => onChange(def.key, v)} />;
   }
 }
 
@@ -90,7 +90,7 @@ export function PartFields({ node, more }: { node: PartNode; more: Section[] }) 
   const mating = useEditor((s) => s.mating !== null);
   const sections: Section[] = groups.map((g) => ({
     title: g.title,
-    content: g.params.filter((d) => !d.visible || d.visible(node.params)).map((d) => <Field key={d.key} def={d} params={node.params} onChange={change} />),
+    content: g.params.filter((d) => !d.visible || d.visible(node.params)).map((d) => <Field key={d.key} def={d} params={node.params} disabled={locked} onChange={change} />),
   }));
   if (built?.info.length) {
     sections.push({
@@ -110,7 +110,7 @@ export function PartFields({ node, more }: { node: PartNode; more: Section[] }) 
   }
   if (canMate && sections.length) {
     sections[0].after = (
-      <button type="button" className="primary mate-button" disabled={mating} onClick={() => startMate(node.id)}>
+      <button type="button" className="primary mate-button" disabled={mating || locked} onClick={() => startMate(node.id)}>
         Add mating gear…
       </button>
     );

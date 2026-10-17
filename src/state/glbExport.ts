@@ -3,7 +3,7 @@
 // pictures can be decoded and drawn; the kernel merges each object in the
 // worker as for any other export.
 import { CREASE_ANGLE, creasedNormals } from '../geometry/mesh';
-import { skinOf, skinRepeats, skinUVs } from '../geometry/skin';
+import { skinMesh, skinOf, skinRepeats } from '../geometry/skin';
 import type { Skin } from '../geometry/skin';
 import { writeGlb } from '../io/glb';
 import type { GlbObject } from '../io/glb';
@@ -36,7 +36,11 @@ export async function exportGlb(nodes: SceneNode[], assets: Record<string, Asset
       const skin = skinOf(node);
       if (skin) {
         const painted = await paint(skin);
-        const uv = skinUVs(skin, node, render.positions, result.bounds, painted.rects);
+        // Stickers smaller than the triangles under them are cut out, so their atlas cells do not bleed into each other.
+        const mesh = skinMesh(skin, node, render, result.bounds, painted.rects);
+        object.positions = mesh.positions;
+        object.normals = mesh.normals;
+        const uv = mesh.uv;
         const asset = skin.kind === 'stickers' ? null : assets[skin.asset];
         // A JPEG has no transparency, so it goes out as it is; anything else is flattened onto the object's color.
         if (asset?.kind === 'image' && asset.mime === 'image/jpeg') object.skin = { uv, image: SkinPainter.bytes(asset), mime: asset.mime, repeat: skinRepeats(skin) };

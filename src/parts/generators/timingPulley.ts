@@ -76,9 +76,9 @@ function arcN(q: Quality, r: number, sweep: number, min = 2): number {
 /**
  * Half of one groove, for a groove centered on the +X axis: points from the
  * bottom center (on the axis) up the +Y flank to where the tip fillet meets
- * the outside circle of radius `ro`.
+ * the outside circle of radius `ro`. Null when the grooves would overlap.
  */
-function halfGroove(b: BeltProfile, ro: number, clearance: number, halfPitch: number, q: Quality): Vec2[] {
+function halfGroove(b: BeltProfile, ro: number, clearance: number, halfPitch: number, q: Quality): Vec2[] | null {
   const phi = deg(b.flankAngle);
   const dir: Vec2 = [Math.cos(phi), Math.sin(phi)]; // along the flank, outward
   const n: Vec2 = [-Math.sin(phi), Math.cos(phi)]; // flank normal, into the material
@@ -108,7 +108,7 @@ function halfGroove(b: BeltProfile, ro: number, clearance: number, halfPitch: nu
       rootR = 0;
       rootC = center(0);
     }
-    if (rootC[1] < 0) throw new Error('The belt groove is too deep for its width.');
+    if (rootC[1] < 0) return null;
   }
   const flankStart: Vec2 = [rootC[0] + rootR * n[0], rootC[1] + rootR * n[1]];
 
@@ -135,9 +135,7 @@ function halfGroove(b: BeltProfile, ro: number, clearance: number, halfPitch: nu
     rt = 0;
     fillet = tip(0);
   }
-  if (!fillet || fillet.angle >= halfPitch) {
-    throw new Error('The belt grooves overlap: reduce the tooth clearance or use more teeth.');
-  }
+  if (!fillet || fillet.angle >= halfPitch) return null;
 
   const pts: Vec2[] = [[xBottom, 0]];
   const rootEnd = Math.PI / 2 + phi;
@@ -155,11 +153,12 @@ function halfGroove(b: BeltProfile, ro: number, clearance: number, halfPitch: nu
   return dedupe(pts, 1e-6);
 }
 
-/** CCW outline of the toothed section. */
-function pulleyOutline(b: BeltProfile, teeth: number, clearance: number, q: Quality): Polygon {
+/** CCW outline of the toothed section, or null when the grooves would overlap. */
+function pulleyOutline(b: BeltProfile, teeth: number, clearance: number, q: Quality): Polygon | null {
   const ro = (teeth * b.pitch) / Math.PI / 2 - b.plo;
   const step = TAU / teeth;
   const half = halfGroove(b, ro, clearance, step / 2, q);
+  if (!half) return null;
   const last = half[half.length - 1];
   const landStart = Math.atan2(last[1], last[0]);
   const landAngle = step - 2 * landStart;
@@ -179,14 +178,22 @@ function buildPulley(profiles: Record<string, BeltProfile>, p: Params, q: Qualit
   const b = profiles[str(p, 'profile')];
   if (!b) throw new Error(`Unknown belt profile "${str(p, 'profile')}"`);
   const teeth = Math.round(num(p, 'teeth'));
-  const clearance = num(p, 'toothClearance');
+  let clearance = num(p, 'toothClearance');
   const warnings: string[] = [];
+
+  // Grooves grown by the clearance can meet; back the clearance off until a land is left between them.
+  let toothed = pulleyOutline(b, teeth, clearance, q);
+  while (!toothed && clearance > 0) {
+    clearance = Math.max(0, Math.round((clearance - 0.01) * 100) / 100);
+    toothed = pulleyOutline(b, teeth, clearance, q);
+  }
+  if (!toothed) throw new Error('The belt grooves overlap: use more teeth.');
+  if (clearance < num(p, 'toothClearance')) warnings.push(`The tooth clearance was reduced to ${clearance.toFixed(2)} mm so the grooves do not overlap.`);
 
   const pitchD = (teeth * b.pitch) / Math.PI;
   const od = pitchD - 2 * b.plo;
   const ro = od / 2;
   const rootR = ro - b.depth - clearance;
-  const toothed = pulleyOutline(b, teeth, clearance, q);
 
   const mode = str(p, 'flanges');
   const hasBottom = mode === 'both' || mode === 'bottom';
@@ -211,7 +218,7 @@ function buildPulley(profiles: Record<string, BeltProfile>, p: Params, q: Qualit
   }
 
   if (boreRadius(p) > rootR - 1) warnings.push('The bore leaves less than 1 mm of material below the belt grooves.');
-  const { solid, height } = addHubAndBore(union(...parts), 0, zTop, p, q, warnings);
+  const { solid, height } = addHubAndBore(union(...parts), 0, zTop, p, q, warnings, hasBottom || hasTop ? rf : ro);
 
   const info: InfoItem[] = [
     { label: 'Pitch diameter', value: mm(pitchD) },

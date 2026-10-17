@@ -120,7 +120,7 @@ function build(p: Params, q: Quality): BuildResult {
   }
 
   if (boreRadius(p) > rootR - 1) warnings.push('The bore leaves less than 1 mm of material below the teeth.');
-  const { solid, height } = addHubAndBore(body, 0, t, p, q, warnings);
+  const { solid, height } = addHubAndBore(body, 0, t, p, q, warnings, outerR);
 
   return {
     solid,

@@ -52,6 +52,11 @@ class GeometryStore {
     return this.entries.get(geomKey(node));
   }
 
+  /** A design was closed: the worker keeps only the imported data of the one now open. */
+  forgetAssets(keep: Iterable<string>): void {
+    this.client?.forgetAssets(keep);
+  }
+
   /** Request whatever the given top-level nodes need and is not there yet. */
   ensure(nodes: Scene, assets: Record<string, Asset>): void {
     this.wanted = { nodes, assets };

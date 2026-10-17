@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { multiply, rotation, scaling, translation } from '../model/math';
 import type { Mat } from '../model/math';
-import { FILL_UV, azimuth, coverSurface, projectPictures, sheetUVs } from './uv';
+import { FILL_UV, azimuth, clipPictures, coverSurface, projectPictures, sheetUVs } from './uv';
 import type { Projector } from './uv';
 
 /** A unit cube centered on the origin as unindexed, outward-facing corners: twelve triangles. */
@@ -82,6 +82,112 @@ describe('flat pictures', () => {
     const uv = projectPictures(cube(10), [{ matrix, mapping: 'flat', angle: 0, rect: [0.25, 0.5, 0.75, 1] }]);
     expect(corner(uv, 24)).toEqual([0.25, 0.5]);
     expect(corner(uv, 26)).toEqual([0.75, 1]);
+  });
+});
+
+describe('cut pictures', () => {
+  /** Flat normals for unindexed corners, one per face. */
+  const normalsOf = (positions: Float32Array): Float32Array => {
+    const n = new Float32Array(positions.length);
+    for (let i = 0; i < positions.length; i += 9) {
+      const [ux, uy, uz] = [positions[i + 3] - positions[i], positions[i + 4] - positions[i + 1], positions[i + 5] - positions[i + 2]];
+      const [vx, vy, vz] = [positions[i + 6] - positions[i], positions[i + 7] - positions[i + 1], positions[i + 8] - positions[i + 2]];
+      const c = [uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx];
+      const len = Math.hypot(...c);
+      for (let k = 0; k < 3; k++) n.set([c[0] / len, c[1] / len, c[2] / len], i + k * 3);
+    }
+    return n;
+  };
+  /** Twice the area of every triangle, summed. */
+  const area = (p: Float32Array): number => {
+    let sum = 0;
+    for (let i = 0; i < p.length; i += 9) {
+      const [ux, uy, uz] = [p[i + 3] - p[i], p[i + 4] - p[i + 1], p[i + 5] - p[i + 2]];
+      const [vx, vy, vz] = [p[i + 6] - p[i], p[i + 7] - p[i + 1], p[i + 8] - p[i + 2]];
+      sum += Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx);
+    }
+    return sum;
+  };
+  // Two stickers stacked in one atlas: the first in the upper cell, the second in the lower.
+  const upper: Projector['rect'] = [0.1, 0.55, 0.9, 0.95];
+  const lower: Projector['rect'] = [0.1, 0.05, 0.9, 0.45];
+
+  it('keeps every corner of a big face inside its small sticker, or on the fill', () => {
+    // A 10 mm sheet over the middle of a 100 mm top face; a second sticker sits on the front face.
+    const mesh = cube(100);
+    const top: Mat = multiply(translation([0, 0, 57]), scaling([10, 10, 1]));
+    const front: Mat = multiply(translation([0, -57, 0]), multiply(rotation([90, 0, 0]), scaling([10, 10, 1])));
+    const pictures: Projector[] = [
+      { matrix: top, mapping: 'flat', angle: 0, rect: upper },
+      { matrix: front, mapping: 'flat', angle: 0, rect: lower },
+    ];
+    // Uncut, the face's corners run far past the cell: this is the bleed.
+    const plain = projectPictures(mesh, pictures);
+    expect(corner(plain, 24)[1]).toBeLessThan(lower[1]);
+    const cut = clipPictures(mesh, normalsOf(mesh), pictures);
+    expect(cut.positions.length).toBeGreaterThan(mesh.length);
+    expect(cut.normals.length).toBe(cut.positions.length);
+    expect(cut.uv.length).toBe((cut.positions.length / 3) * 2);
+    let onTop = 0;
+    let onFront = 0;
+    for (let i = 0; i < cut.uv.length / 2; i++) {
+      if (isFill(cut.uv, i)) continue;
+      const [u, v] = corner(cut.uv, i);
+      const z = cut.positions[i * 3 + 2];
+      const cell = z > 49 ? upper : lower;
+      if (cell === upper) onTop++;
+      else onFront++;
+      expect(u, `corner ${i}`).toBeGreaterThanOrEqual(cell[0] - 1e-5);
+      expect(u, `corner ${i}`).toBeLessThanOrEqual(cell[2] + 1e-5);
+      expect(v, `corner ${i}`).toBeGreaterThanOrEqual(cell[1] - 1e-5);
+      expect(v, `corner ${i}`).toBeLessThanOrEqual(cell[3] + 1e-5);
+    }
+    expect(onTop).toBeGreaterThan(0);
+    expect(onFront).toBeGreaterThan(0);
+    // Nothing is lost or doubled: the cut pieces add up to the cube's surface, and the pictured part to the two sheets.
+    expect(area(cut.positions)).toBeCloseTo(area(mesh), 6);
+    let pictured = 0;
+    for (let t = 0; t < cut.positions.length / 9; t++) {
+      if (isFill(cut.uv, t * 3)) continue;
+      pictured += area(cut.positions.subarray(t * 9, t * 9 + 9));
+    }
+    expect(pictured / 2).toBeCloseTo(200, 6);
+    // Cut corners keep their face's normal.
+    for (let i = 0; i < cut.positions.length / 3; i++) {
+      if (cut.positions[i * 3 + 2] > 49 && cut.positions[i * 3] < 49 && cut.positions[i * 3 + 1] < 49 && cut.positions[i * 3] > -49 && cut.positions[i * 3 + 1] > -49) {
+        expect(cut.normals[i * 3 + 2]).toBeCloseTo(1, 6);
+      }
+    }
+  });
+
+  it('leaves the corners alone when no picture reaches past a triangle', () => {
+    // A sheet the size of the face: the face's corners land exactly on the picture's edges, so nothing is cut.
+    const mesh = cube(10);
+    const normals = normalsOf(mesh);
+    const matrix: Mat = multiply(translation([0, 0, 7]), scaling([10, 10, 1]));
+    const cut = clipPictures(mesh, normals, [{ matrix, mapping: 'flat', angle: 0, rect: upper }]);
+    expect(cut.positions).toBe(mesh);
+    expect(cut.normals).toBe(normals);
+    expect(cut.uv).toEqual(projectPictures(mesh, [{ matrix, mapping: 'flat', angle: 0, rect: upper }]));
+  });
+
+  it('cuts a band off a cylinder where its ends come, not where the sides do', () => {
+    // A quarter band, half as tall as the cylinder, round its middle: each side is cut top and bottom.
+    const mesh = cylinder(10, 20, 32);
+    const matrix: Mat = multiply(translation([0, 0, 10]), scaling([20, 20, 10]));
+    const cut = clipPictures(mesh, normalsOf(mesh), [{ matrix, mapping: 'wrap', angle: 90, rect: lower }]);
+    expect(area(cut.positions)).toBeCloseTo(area(mesh), 4);
+    for (let i = 0; i < cut.uv.length / 2; i++) {
+      if (isFill(cut.uv, i)) continue;
+      const z = cut.positions[i * 3 + 2];
+      expect(z).toBeGreaterThanOrEqual(5 - 1e-4);
+      expect(z).toBeLessThanOrEqual(15 + 1e-4);
+      const [u, v] = corner(cut.uv, i);
+      expect(u).toBeGreaterThanOrEqual(lower[0] - 1e-5);
+      expect(u).toBeLessThanOrEqual(lower[2] + 1e-5);
+      expect(v).toBeGreaterThanOrEqual(lower[1] - 1e-5);
+      expect(v).toBeLessThanOrEqual(lower[3] + 1e-5);
+    }
   });
 });
 

@@ -81,15 +81,17 @@ function Appearance({ nodes }: { nodes: SceneNode[] }) {
   const hole = nodes.every((n) => n.hole);
   const solid = nodes.every((n) => !n.hole);
   const color = solid && nodes.every((n) => n.color === nodes[0].color) ? nodes[0].color : null;
+  // Edits skip locked objects, so the controls only go quiet once none of the selection takes them.
+  const locked = nodes.every((n) => n.locked);
   return (
     <fieldset className="group">
       <legend>Material</legend>
       <div className="field">
         <div className="segmented" role="radiogroup" aria-label="Solid or hole">
-          <button type="button" role="radio" aria-checked={solid} className={solid ? 'on' : ''} title="Adds material (S)" onClick={() => setHole(false)}>
+          <button type="button" role="radio" aria-checked={solid} className={solid ? 'on' : ''} title="Adds material (S)" disabled={locked} onClick={() => setHole(false)}>
             Solid
           </button>
-          <button type="button" role="radio" aria-checked={hole} className={hole ? 'on' : ''} title="Cuts material away from what it is grouped with (H)" onClick={() => setHole(true)}>
+          <button type="button" role="radio" aria-checked={hole} className={hole ? 'on' : ''} title="Cuts material away from what it is grouped with (H)" disabled={locked} onClick={() => setHole(true)}>
             Hole
           </button>
         </div>
@@ -104,17 +106,18 @@ function Appearance({ nodes }: { nodes: SceneNode[] }) {
             title={c.name}
             aria-label={c.name}
             aria-pressed={c.value === color}
+            disabled={locked}
             onClick={() => setColor(c.value)}
           />
         ))}
-        <CustomColor color={color} custom={color !== null && !PALETTE.some((c) => c.value === color)} />
+        <CustomColor color={color} custom={color !== null && !PALETTE.some((c) => c.value === color)} disabled={locked} />
       </div>
     </fieldset>
   );
 }
 
 /** A swatch for any other color: it opens the system color picker, and shows the color it last gave. */
-function CustomColor({ color, custom }: { color: string | null; custom: boolean }) {
+function CustomColor({ color, custom, disabled }: { color: string | null; custom: boolean; disabled?: boolean }) {
   const input = useRef<HTMLInputElement>(null);
   return (
     <>
@@ -125,9 +128,10 @@ function CustomColor({ color, custom }: { color: string | null; custom: boolean 
         title="Any color…"
         aria-label="Any color"
         aria-pressed={custom}
+        disabled={disabled}
         onClick={() => input.current?.click()}
       />
-      <input ref={input} type="color" className="swatch-input" aria-hidden tabIndex={-1} value={color ?? '#8fa3bf'} onChange={(e) => setColor(e.target.value)} />
+      <input ref={input} type="color" className="swatch-input" aria-hidden tabIndex={-1} disabled={disabled} value={color ?? '#8fa3bf'} onChange={(e) => setColor(e.target.value)} />
     </>
   );
 }
@@ -145,6 +149,7 @@ function withParam(node: ShapeNode, key: string, value: number): ShapeNode {
 
 function ShapeParams({ node }: { node: ShapeNode }) {
   const def = shapeDef(node.shape);
+  const locked = Boolean(node.locked);
   return (
     <>
       {def.params.map((p) => (
@@ -158,6 +163,7 @@ function ShapeParams({ node }: { node: ShapeNode }) {
           step={p.step}
           integer={p.integer}
           unit={p.unit}
+          disabled={locked}
           onChange={(v) => updateSelected((n) => (n.type === 'shape' ? withParam(n, p.key, v) : n), `param:${node.id}:${p.key}`)}
         />
       ))}
@@ -243,7 +249,7 @@ function PictureFields({ node }: { node: PictureNode }) {
         </div>
       </div>
       {node.mapping === 'wrap' && (
-        <SliderField label="Reach around" help="Sets how far around the band the picture wraps." value={node.angle} min={5} max={360} step={1} integer unit="°" onChange={(v) => editPicture(node.id, { angle: v })} />
+        <SliderField label="Reach around" help="Sets how far around the band the picture wraps." value={node.angle} min={5} max={360} step={1} integer unit="°" disabled={locked} onChange={(v) => editPicture(node.id, { angle: v })} />
       )}
       <dl className="facts">
         {image && (
@@ -318,8 +324,8 @@ function TextureFields({ node }: { node: SceneNode }) {
               </select>
             </div>
           )}
-          {texture?.mode === 'wrap' && <SliderField label="Turn" help="Turns the picture round the object. At 0° its middle faces the front; 90° turns it to the right side, 180° to the back." value={texture.turn} min={-180} max={180} step={1} integer unit="°" onChange={(v) => setTexture({ ...texture, turn: v })} />}
-          {texture?.mode === 'tile' && <SliderField label="Tile size" help="How many millimeters one repeat of the picture covers." value={texture.scale} min={2} max={500} step={1} unit="mm" onChange={(v) => setTexture({ ...texture, scale: v })} />}
+          {texture?.mode === 'wrap' && <SliderField label="Turn" help="Turns the picture round the object. At 0° its middle faces the front; 90° turns it to the right side, 180° to the back." value={texture.turn} min={-180} max={180} step={1} integer unit="°" disabled={locked} onChange={(v) => setTexture({ ...texture, turn: v })} />}
+          {texture?.mode === 'tile' && <SliderField label="Tile size" help="How many millimeters one repeat of the picture covers." value={texture.scale} min={2} max={500} step={1} unit="mm" disabled={locked} onChange={(v) => setTexture({ ...texture, scale: v })} />}
         </>
       )}
     </>

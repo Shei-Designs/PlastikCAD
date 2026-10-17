@@ -177,6 +177,27 @@ describe('shapes', () => {
     expect(builtSize(shape('cylinder', { size: [30, 12, 6], params: { sides: 48, radius: 3 } }))).toEqual([30, 12, 6]);
   });
 
+  it('keeps the rounded cylinder whole when the radius takes up a whole side', () => {
+    // Radius worth the whole box: a ball, not the nothing that a tube around a point used to be.
+    const ball = volumeOf(shape('cylinder', { size: [20, 20, 20], params: { sides: 64, radius: 10 } }));
+    expect(Math.abs(ball / ((4 / 3) * Math.PI * 1000) - 1)).toBeLessThan(0.02);
+    // Worth the width only: a bar with round ends, its rims rounded. That is a flat 10 by 20 plate
+    // (the core, standing up) grown by a ball of radius 5: Steiner's formula gives its volume.
+    const bar = volumeOf(shape('cylinder', { size: [10, 20, 30], params: { sides: 64, radius: 5 } }));
+    const exact = 2 * 10 * 20 * 5 + (Math.PI * 25 * 60) / 2 + (4 / 3) * Math.PI * 125;
+    expect(bar).toBeLessThan(exact);
+    expect(bar / exact).toBeGreaterThan(0.99);
+    volumeOf(shape('cylinder', { size: [20, 10, 30], params: { sides: 64, radius: 5 } }));
+    volumeOf(shape('cylinder', { size: [30, 12, 6], params: { sides: 48, radius: 6 } }));
+    // Nothing jumps as the radius reaches its limit.
+    for (const size of [[20, 20, 20], [10, 20, 30], [30, 12, 6]] as Vec3[]) {
+      const max = paramMax('cylinder', 'radius', size);
+      const whole = volumeOf(shape('cylinder', { size, params: { sides: 64, radius: max } }));
+      const nearly = volumeOf(shape('cylinder', { size, params: { sides: 64, radius: max - 0.01 } }));
+      expect(Math.abs(whole / nearly - 1)).toBeLessThan(0.01);
+    }
+  });
+
   it('rounds the round roof over its flat base', () => {
     // Thirty-two chords inside a half circle of radius 1/2, stretched to twice its height.
     expect(volumeOf(shape('roundroof'))).toBeCloseTo(2 * 16 * Math.sin(Math.PI / 32) * 0.25, 5);
