@@ -1,11 +1,11 @@
 [package]
-name = "tauri-plugin-input"
+name = "tauri-plugin-device"
 version = "0.1.0"
-description = "Tells BashCAD what it is being driven with: a hardware keyboard, or fingers and the on-screen keypad"
+description = "What BashCAD runs on: the keyboard and keypad it is driven with, and the documents Android hands it"
 authors = ["Andrew O'Shei"]
 license = "GPL-3.0-or-later"
 edition = "2021"
-links = "tauri-plugin-input"
+links = "tauri-plugin-device"
 
 [dependencies]
 tauri = { version = "2", features = [] }

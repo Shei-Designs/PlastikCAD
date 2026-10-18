@@ -64,8 +64,6 @@ const VIEWS: { id: ViewPreset; label: string }[] = [
 export const viewerRef: { current: Viewer | null } = { current: null };
 
 function Actions() {
-  const canUndo = useEditor((s) => s.canUndo);
-  const canRedo = useEditor((s) => s.canRedo);
   const scene = useEditor((s) => s.doc.scene);
   const selection = useEditor((s) => s.selection);
   const picked = useMemo(() => scene.filter((n) => selection.includes(n.id)), [scene, selection]);
@@ -75,25 +73,6 @@ function Actions() {
 
   return (
     <>
-      <div className="tool-group">
-        <button type="button" className="chip icon" title="Undo (Ctrl+Z)" aria-label="Undo" disabled={!canUndo} onClick={undo}>
-          <UndoIcon />
-        </button>
-        <button type="button" className="chip icon" title="Redo (Ctrl+Y)" aria-label="Redo" disabled={!canRedo} onClick={redo}>
-          <RedoIcon />
-        </button>
-      </div>
-      <div className="tool-group">
-        <button type="button" className="chip icon" title="Duplicate in place (Ctrl+D)" aria-label="Duplicate" disabled={none} onClick={duplicateSelected}>
-          <DuplicateIcon />
-        </button>
-        <Popover className="chip icon" title="Array (grid or ring)" button={<ArrayIcon />} disabled={none} align="right">
-          {(close) => <ArrayPanel close={close} />}
-        </Popover>
-        <button type="button" className="chip icon" title="Delete (Del)" aria-label="Delete" disabled={none} onClick={deleteSelected}>
-          <TrashIcon />
-        </button>
-      </div>
       <div className="tool-group">
         <button type="button" className="chip icon" title="Group (Ctrl+G)" aria-label="Group" disabled={picked.length < 2} onClick={() => void groupSelected()}>
           <GroupIcon />
@@ -132,7 +111,34 @@ function Actions() {
           <DropIcon />
         </button>
       </div>
+      <div className="tool-group">
+        <button type="button" className="chip icon" title="Duplicate in place (Ctrl+D)" aria-label="Duplicate" disabled={none} onClick={duplicateSelected}>
+          <DuplicateIcon />
+        </button>
+        <Popover className="chip icon" title="Array (grid or ring)" button={<ArrayIcon />} disabled={none} align="right">
+          {(close) => <ArrayPanel close={close} />}
+        </Popover>
+        <button type="button" className="chip icon" title="Delete (Del)" aria-label="Delete" disabled={none} onClick={deleteSelected}>
+          <TrashIcon />
+        </button>
+      </div>
     </>
+  );
+}
+
+/** Undo and redo, at the left end of the bar. */
+function History() {
+  const canUndo = useEditor((s) => s.canUndo);
+  const canRedo = useEditor((s) => s.canRedo);
+  return (
+    <div className="tool-group">
+      <button type="button" className="chip icon" title="Undo (Ctrl+Z)" aria-label="Undo" disabled={!canUndo} onClick={undo}>
+        <UndoIcon />
+      </button>
+      <button type="button" className="chip icon" title="Redo (Ctrl+Y)" aria-label="Redo" disabled={!canRedo} onClick={redo}>
+        <RedoIcon />
+      </button>
+    </div>
   );
 }
 
@@ -383,6 +389,7 @@ export function Viewport() {
       {prompt && <HandleInput key={JSON.stringify(prompt.kind)} prompt={prompt} onClose={() => viewer.current?.dismissPrompt()} />}
       <div className="view-toolbar">
         <div className="toolbar" role="toolbar" aria-label="Tools">
+          <History />
           <div className="tool-group">
             <button type="button" className={prefs.edges ? 'chip on' : 'chip'} aria-pressed={prefs.edges} onClick={() => setPrefs({ edges: !prefs.edges })}>
               Edges

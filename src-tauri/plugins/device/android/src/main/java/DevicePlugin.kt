@@ -1,14 +1,15 @@
-// What the app is being driven with: whether a hardware keyboard is attached
-// (a dock, a Bluetooth keyboard) and whether the on-screen keypad is showing.
-// Both are read from the system (no permissions needed) and reported again
-// the moment they change, so the page can switch between typing in place and
-// the entry sheet without guessing.
-package com.andrewoshei.bashcad.input
+// What the app runs on: whether a hardware keyboard is attached (a dock, a
+// Bluetooth keyboard) and whether the on-screen keypad is showing, both read
+// from the system (no permissions needed) and reported again the moment they
+// change, so the page can switch between typing in place and the entry sheet
+// without guessing. Also writes the documents the system pickers hand out.
+package com.andrewoshei.bashcad.device
 
 import android.app.Activity
 import android.content.Context
 import android.content.res.Configuration
 import android.hardware.input.InputManager
+import android.net.Uri
 import android.view.InputDevice
 import android.view.View
 import android.webkit.WebView
@@ -16,15 +17,24 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import app.tauri.annotation.Command
+import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
+import java.io.File
 import kotlin.math.max
 import kotlin.math.roundToInt
 
+@InvokeArg
+internal class WriteDocumentArgs {
+  lateinit var uri: String
+  /** A file holding the bytes, copied in and then deleted. */
+  lateinit var source: String
+}
+
 @TauriPlugin
-class InputPlugin(activity: Activity) : Plugin(activity), InputManager.InputDeviceListener {
+class DevicePlugin(activity: Activity) : Plugin(activity), InputManager.InputDeviceListener {
   private var hardwareKeyboard = false
   private var keypadVisible = false
   /** Height of the keypad over the page, in CSS pixels. */
@@ -74,6 +84,27 @@ class InputPlugin(activity: Activity) : Plugin(activity), InputManager.InputDevi
       keypadVisible = visible
       keypadHeight = height
       announce()
+    }
+  }
+
+  /**
+   * Copies a file into a document picked through the system dialog, by way of the document's
+   * provider: closing the provider's own stream is what tells it the document's new size, which a
+   * raw descriptor never does (the Files app then shows the export as 0 B).
+   */
+  @Command
+  fun writeDocument(invoke: Invoke) {
+    val args = invoke.parseArgs(WriteDocumentArgs::class.java)
+    val source = File(args.source)
+    try {
+      val out = host.contentResolver.openOutputStream(Uri.parse(args.uri), "wt")
+        ?: throw IllegalStateException("The document could not be opened for writing")
+      out.use { sink -> source.inputStream().use { it.copyTo(sink) } }
+      invoke.resolve()
+    } catch (e: Exception) {
+      invoke.reject(e.message ?: "Could not write the document")
+    } finally {
+      source.delete()
     }
   }
 

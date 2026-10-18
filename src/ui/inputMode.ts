@@ -28,7 +28,7 @@ function take(next: InputState): void {
 export async function initInput(): Promise<void> {
   if (!isAndroid()) return;
   try {
-    take(await invoke<InputState>('plugin:input|state'));
+    take(await invoke<InputState>('plugin:device|state'));
     await addPluginListener<InputState>('input', 'change', take);
   } catch (e) {
     console.warn('The input plugin did not answer; boxes will use the entry sheet.', e);
@@ -41,7 +41,7 @@ export const inputState = (): InputState | null => state;
 export async function refreshInput(): Promise<void> {
   if (!isAndroid()) return;
   try {
-    take(await invoke<InputState>('plugin:input|state'));
+    take(await invoke<InputState>('plugin:device|state'));
   } catch (e) {
     console.warn('The input plugin did not answer.', e);
   }

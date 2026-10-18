@@ -151,15 +151,32 @@ fn write_bytes(app: &AppHandle, path: &str, bytes: &[u8]) -> io::Result<()> {
     let parsed = file_path(path);
     match parsed.clone().into_path() {
         Ok(path) => write_atomic(&path, bytes),
-        Err(_) => {
-            // A document picked on Android: written through the descriptor its provider hands out.
-            let mut options = OpenOptions::new();
-            options.read(false).write(true).truncate(true).create(true);
-            let mut file = app.fs().open(parsed, options)?;
-            file.write_all(bytes)?;
-            file.sync_all()
-        }
+        Err(_) => write_document(app, path, bytes),
     }
+}
+
+/// A document picked on Android: the bytes go to a file of the app's own
+/// first, and the plugin copies them in through the document's provider, so
+/// the provider learns the new size (through a raw descriptor it would not,
+/// and the Files app would show the export as 0 B).
+#[cfg(target_os = "android")]
+fn write_document(app: &AppHandle, uri: &str, bytes: &[u8]) -> io::Result<()> {
+    let dir = app.path().app_cache_dir().map_err(io::Error::other)?;
+    fs::create_dir_all(&dir)?;
+    let stamp = UNIX_EPOCH.elapsed().map(|d| d.as_nanos()).unwrap_or(0);
+    let source = dir.join(format!("document-{stamp}.tmp"));
+    fs::write(&source, bytes)?;
+    tauri_plugin_device::write_document(app, uri, &source).map_err(io::Error::other)
+}
+
+#[cfg(not(target_os = "android"))]
+fn write_document(app: &AppHandle, uri: &str, bytes: &[u8]) -> io::Result<()> {
+    // Elsewhere a URL names a file; written through the descriptor the fs plugin opens.
+    let mut options = OpenOptions::new();
+    options.read(false).write(true).truncate(true).create(true);
+    let mut file = app.fs().open(file_path(uri), options)?;
+    file.write_all(bytes)?;
+    file.sync_all()
 }
 
 /// The file's bytes are the request body and its path is in the `path` header,
@@ -421,7 +438,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_input::init())
+        .plugin(tauri_plugin_device::init())
         .manage(SignIns::default())
         .invoke_handler(tauri::generate_handler![
             read_file,

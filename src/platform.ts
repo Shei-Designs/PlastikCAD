@@ -126,29 +126,44 @@ async function nameOf(path: string): Promise<string> {
   return asked ?? segment;
 }
 
-/** Native save dialog then write (desktop), or a download (browser, where `path` is null). Null if canceled. */
-export async function saveAs(
-  suggestedName: string,
-  filters: FileFilter[],
-  bytes: Uint8Array,
-  mime: string,
-): Promise<{ path: string | null; name: string } | null> {
-  if (isTauri()) {
-    const { save } = await import('@tauri-apps/plugin-dialog');
-    // Android keeps the type the document was created with; given as a MIME type (which the plugin passes
-    // through as it is), rather than left to the extension, which the system may not know.
-    const path = await save({ defaultPath: suggestedName, filters: isAndroid() ? [{ name: filters[0]?.name ?? mime, extensions: [mime] }] : filters });
-    if (!path) return null;
-    await writePath(path, bytes);
-    return { path, name: baseName(path) };
-  }
+/** Where a file is to be saved: a path on desktop, a document URI on Android, or just a name in the browser (a download). */
+export interface SaveTarget {
+  path: string | null;
+  name: string;
+}
+
+/**
+ * Asks where to save: the native dialog on desktop and Android, nothing in
+ * the browser (a download goes where the browser puts it). Null if canceled.
+ * `mime` is what Android creates the document as.
+ */
+export async function chooseSave(suggestedName: string, filters: FileFilter[], mime: string): Promise<SaveTarget | null> {
+  if (!isTauri()) return { path: null, name: suggestedName };
+  const { save } = await import('@tauri-apps/plugin-dialog');
+  // Android keeps the type the document was created with; given as a MIME type (which the plugin passes
+  // through as it is), rather than left to the extension, which the system may not know.
+  const path = await save({ defaultPath: suggestedName, filters: isAndroid() ? [{ name: filters[0]?.name ?? mime, extensions: [mime] }] : filters });
+  if (!path) return null;
+  return { path, name: await nameOf(path) };
+}
+
+/** Writes to a place chosen with `chooseSave`. */
+export async function writeTarget(target: SaveTarget, bytes: Uint8Array, mime: string): Promise<void> {
+  if (target.path !== null) return writePath(target.path, bytes);
   const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: mime }));
   const a = document.createElement('a');
   a.href = url;
-  a.download = suggestedName;
+  a.download = target.name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-  return { path: null, name: suggestedName };
+}
+
+/** Native save dialog then write (desktop), or a download (browser, where `path` is null). Null if canceled. */
+export async function saveAs(suggestedName: string, filters: FileFilter[], bytes: Uint8Array, mime: string): Promise<SaveTarget | null> {
+  const target = await chooseSave(suggestedName, filters, mime);
+  if (!target) return null;
+  await writeTarget(target, bytes, mime);
+  return target;
 }
 
 /** Desktop only: overwrite a known path atomically. */

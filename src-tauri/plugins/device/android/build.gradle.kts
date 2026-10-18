@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.andrewoshei.bashcad.input"
+    namespace = "com.andrewoshei.bashcad.device"
     compileSdk = 36
 
     defaultConfig {

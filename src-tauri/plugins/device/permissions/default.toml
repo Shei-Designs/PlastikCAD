@@ -1,0 +1,3 @@
+[default]
+description = "Lets the app ask what it is being driven with (a hardware keyboard, the on-screen keypad) and hear when that changes. Writing a picked document is done from the Rust side and needs no permission."
+permissions = ["allow-state", "allow-register-listener", "allow-remove-listener"]

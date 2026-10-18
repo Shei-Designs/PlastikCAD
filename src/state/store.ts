@@ -1791,7 +1791,8 @@ export async function receiveFiles(files: PickedFile[]): Promise<void> {
     const models = files.filter((f) => IMPORT_EXTENSIONS.includes(fileKind(f.name, f.bytes)));
     const pictures = files.filter((f) => IMAGE_EXTENSIONS.includes(fileKind(f.name, f.bytes)));
     if (models.length === 0 && pictures.length === 0) {
-      if (files.length) notify(`Cannot import that. Supported: ${IMPORTABLE.map((e) => e.toUpperCase()).join(', ')}.`, 'error');
+      if (files.some((f) => extension(f.name) === 'mtl')) notify('A .mtl file holds the colors of an OBJ and is read with it: pick the .obj, together with the .mtl for its colors.', 'error');
+      else if (files.length) notify(`Cannot import that. Supported: ${IMPORTABLE.map((e) => e.toUpperCase()).join(', ')}.`, 'error');
       return;
     }
     set({ busy: 'Importing…' });
@@ -1825,9 +1826,26 @@ export async function exportDesign(formatId: FormatId, selectionOnly: boolean): 
   const format = FORMATS.find((f) => f.id === formatId)!;
   const nodes = selectionOnly ? selectedNodes() : state.doc.scene;
   const name = state.doc.name;
+  const filters = [{ name: format.label, extensions: [format.extension] }];
   let bytes: Uint8Array;
   let warnings: string[] = [];
-  let sidecar: { name: string; bytes: Uint8Array; mime: string } | null = null;
+  if (format.id === 'obj') {
+    // The colors live in a material library beside the file, named after it: so the place is chosen
+    // first, and the file written for the name it was given there.
+    const worker = await geometry.prepare(nodes, state.doc.assets);
+    const result = await worker.exportColored(nodes, true);
+    const target = await platform.chooseSave(`${name}.obj`, filters, format.mime);
+    if (!target) return null;
+    const written = writeObj(result.objects, target.name.replace(/\.[^.]+$/, ''));
+    await platform.writeTarget(target, written.obj, format.mime);
+    if (written.mtl) {
+      // Next to the file on disk; a second download in the browser, and a second pick on Android, whose documents have no folder paths.
+      if (target.path && !target.path.includes('://')) await platform.writePath(target.path.slice(0, target.path.length - target.name.length) + written.mtlName, written.mtl);
+      else await platform.saveAs(written.mtlName, [{ name: 'Material library', extensions: ['mtl'] }], written.mtl, 'text/plain');
+    }
+    for (const w of result.warnings) notify(w, 'error');
+    return target.path ?? target.name;
+  }
   if (format.id === 'glb') {
     bytes = await exportGlb(nodes, state.doc.assets, name);
   } else if (format.id === '3mf') {
@@ -1836,14 +1854,6 @@ export async function exportDesign(formatId: FormatId, selectionOnly: boolean): 
     const result = await worker.exportColored(nodes, true);
     bytes = write3mf(result.objects, name);
     warnings = result.warnings;
-  } else if (format.id === 'obj') {
-    const worker = await geometry.prepare(nodes, state.doc.assets);
-    const result = await worker.exportColored(nodes, true);
-    const written = writeObj(result.objects, name);
-    bytes = written.obj;
-    warnings = result.warnings;
-    // The colors live in a material library beside the file.
-    if (written.mtl) sidecar = { name: written.mtlName, bytes: written.mtl, mime: 'text/plain' };
   } else {
     const worker = await geometry.prepare(nodes, state.doc.assets);
     // Exports are always made at fine detail: curves get more facets than are drawn on screen.
@@ -1851,13 +1861,8 @@ export async function exportDesign(formatId: FormatId, selectionOnly: boolean): 
     bytes = format.id === 'svg' || format.id === 'dxf' ? exportOutline(format.id, result.outline ?? [], name) : exportMesh(format.id, result.mesh, name);
     warnings = result.warnings;
   }
-  const where = await platform.saveAs(`${name}.${format.extension}`, [{ name: format.label, extensions: [format.extension] }], bytes, format.mime);
+  const where = await platform.saveAs(`${name}.${format.extension}`, filters, bytes, format.mime);
   if (!where) return null;
-  if (sidecar) {
-    // Next to the file on disk; a second download in the browser, and a second pick on Android, whose documents have no folder paths.
-    if (where.path && !where.path.includes('://')) await platform.writePath(where.path.slice(0, where.path.length - where.name.length) + sidecar.name, sidecar.bytes);
-    else await platform.saveAs(sidecar.name, [], sidecar.bytes, sidecar.mime);
-  }
   for (const w of warnings) notify(w, 'error');
   return where.path ?? where.name;
 }

@@ -399,7 +399,7 @@ src/
   ui/                 React components
   platform.ts         desktop app or plain browser: dialogs, files, drops
 src-tauri/            native window, file dialogs, reading and writing files (Rust)
-  plugins/input/      Android: reports a hardware keyboard and the on-screen keypad (Kotlin)
+  plugins/device/     Android: reports a hardware keyboard and the on-screen keypad, writes picked documents (Kotlin)
 ```
 
 A design is a flat list of nodes: shapes, parts, text, imports, pictures, and groups of

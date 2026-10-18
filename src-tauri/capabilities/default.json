@@ -10,6 +10,6 @@
     "dialog:allow-open",
     "dialog:allow-save",
     "dialog:allow-message",
-    "input:default"
+    "device:default"
   ]
 }
