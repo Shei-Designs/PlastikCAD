@@ -3,9 +3,9 @@
 // does not take the keyboard itself; this sheet opens at the top of the
 // window, says what is being entered and what it is now, and takes the new
 // value. Opened from anywhere through `openTouchEntry`, shown once in App.
-import { useEffect, useRef, useSyncExternalStore } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { flushSync } from 'react-dom';
-import { keyboardAttached, onInputChange } from './inputMode';
+import { inputState, keyboardAttached, onInputChange } from './inputMode';
 
 export { keyboardAttached } from './inputMode';
 
@@ -57,49 +57,62 @@ onInputChange((state) => {
 
 /**
  * A finger on a box. Without a keyboard the entry sheet opens at once. With
- * one, the box is focused by hand (so Android shows no caret handle) and
- * works as on the desktop; should the keypad come up after all, the sheet
+ * one, the box works as on the desktop (the touch focuses it and its text is
+ * selected for typing over); should the keypad come up after all, the sheet
  * opens.
  */
 export function enterByTouch(e: { pointerType: string; currentTarget: HTMLInputElement | HTMLTextAreaElement; preventDefault: () => void }, entry: TouchEntry): void {
   const box = e.currentTarget;
   if (e.pointerType !== 'touch' || box.disabled) return;
-  e.preventDefault();
-  if (!keyboardAttached()) return openTouchEntry(entry);
-  if (document.activeElement !== box) focusFresh(box, !entry.multiline);
+  if (!keyboardAttached()) {
+    e.preventDefault();
+    return openTouchEntry(entry);
+  }
   pending = { entry, until: performance.now() + 1500 };
 }
 
-/**
- * Focuses a box by hand with the caret at the end (no selection, so Android
- * shows neither handle nor cut-and-copy bar). With `fresh`, the first key
- * typed replaces the whole value, as a selected value would be replaced.
- */
-export function focusFresh(box: HTMLInputElement | HTMLTextAreaElement, fresh: boolean): void {
-  box.focus({ preventScroll: true });
-  const end = box.value.length;
-  box.setSelectionRange(end, end);
-  if (fresh) box.dataset.fresh = '1';
-  else delete box.dataset.fresh;
-}
+// The keypad put away by its own button (not by Done or a tap elsewhere): the sheet goes with it.
+let keypadWasVisible = false;
+onInputChange((state) => {
+  if (keypadWasVisible && !state.keypadVisible && current) {
+    const entry = current;
+    publish(null);
+    entry.onCancel?.();
+    (document.activeElement as HTMLElement | null)?.blur?.();
+  }
+  keypadWasVisible = state.keypadVisible;
+});
 
-/**
- * For a box focused with `focusFresh`: the text the first key typed should
- * leave in it (the key itself, or nothing for Backspace and Delete), or null
- * when the key is to be handled as usual. The box stops being fresh either way.
- */
-export function freshReplacement(e: { key: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; currentTarget: HTMLInputElement | HTMLTextAreaElement }): string | null {
-  const box = e.currentTarget;
-  if (!box.dataset.fresh) return null;
-  delete box.dataset.fresh;
-  if (e.ctrlKey || e.metaKey || e.altKey) return null;
-  if (e.key === 'Backspace' || e.key === 'Delete') return '';
-  return e.key.length === 1 ? e.key : null;
+/** Height of the room above the keypad: the window, less the keypad where it overlays, or what the keyboard left of the viewport where it resized it. */
+function roomAbove(): number {
+  const state = inputState();
+  const overlay = window.innerHeight - (state?.keypadVisible ? state.keypadHeight : 0);
+  const resized = window.visualViewport?.height ?? window.innerHeight;
+  return Math.max(120, Math.min(overlay, resized));
 }
 
 export function TouchEntrySheet() {
   const entry = useSyncExternalStore(subscribe, () => current);
   const box = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+  const panel = useRef<HTMLDivElement | null>(null);
+  // Kept in the middle of the room above the keypad, as that room changes.
+  const [top, setTop] = useState(64);
+  useLayoutEffect(() => {
+    if (!entry) return;
+    const place = () => {
+      const height = panel.current?.offsetHeight ?? 180;
+      setTop(Math.max(16, Math.round(roomAbove() / 2 - height / 2)));
+    };
+    place();
+    const stop = onInputChange(place);
+    window.visualViewport?.addEventListener('resize', place);
+    window.addEventListener('resize', place);
+    return () => {
+      stop();
+      window.visualViewport?.removeEventListener('resize', place);
+      window.removeEventListener('resize', place);
+    };
+  }, [entry]);
   // A new entry starts afresh and takes the focus. When the sheet opens from a tap the viewer handled
   // (a grip), the browser's compatibility mouse events arrive after the tap and move the focus to the
   // page, so the focus is taken once more a moment later.
@@ -139,7 +152,7 @@ export function TouchEntrySheet() {
   return (
     <>
       <div className="touch-entry-backdrop" onPointerDown={cancel} />
-      <div className="touch-entry" role="dialog" aria-label={entry.label} onKeyDown={onKey}>
+      <div className="touch-entry" ref={panel} style={{ top }} role="dialog" aria-label={entry.label} onKeyDown={onKey}>
         <div className="touch-entry-head">
           <span className="touch-entry-label clip">{entry.label}</span>
           {!entry.multiline && (

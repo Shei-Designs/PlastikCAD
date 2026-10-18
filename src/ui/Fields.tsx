@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Hint } from './Hint';
-import { enterByTouch, freshReplacement } from './TouchEntry';
+import { enterByTouch } from './TouchEntry';
 
 const decimals = (step: number) => Math.max(0, -Math.floor(Math.log10(step) + 1e-9));
 
@@ -9,13 +9,8 @@ const decimals = (step: number) => Math.max(0, -Math.floor(Math.log10(step) + 1e
 let lastPress: { type: string; time: number } = { type: '', time: 0 };
 if (typeof window !== 'undefined') window.addEventListener('pointerdown', (e) => (lastPress = { type: e.pointerType, time: e.timeStamp }), true);
 
-/**
- * Selects the box's text so that typing replaces it, unless a finger tapped
- * it: Android then puts up its cut-and-copy bar over the selection, often on
- * top of the keyboard, so the caret stays where the finger put it.
- */
-export function selectOnFocus(e: { target: HTMLInputElement; timeStamp: number }): void {
-  if (lastPress.type === 'touch' && e.timeStamp - lastPress.time < 1000) return;
+/** Selects the box's text so that typing replaces it. (A finger without a keyboard never gets here: it opens the entry sheet instead.) */
+export function selectOnFocus(e: { target: HTMLInputElement }): void {
   e.target.select();
 }
 
@@ -79,19 +74,11 @@ export function NumberBox({ value, onChange, tag, unit, step = 1, min = -Infinit
           selectOnFocus(e);
         }}
         onChange={(e) => setText(e.target.value)}
-        onBlur={(e) => {
-          delete e.currentTarget.dataset.fresh;
+        onBlur={() => {
           setEditing(false);
           commit(text);
         }}
         onKeyDown={(e) => {
-          // Focused by a finger with a keyboard attached: the first key typed replaces the value.
-          const typed = freshReplacement(e);
-          if (typed !== null) {
-            e.preventDefault();
-            setText(typed);
-            return;
-          }
           if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
             e.preventDefault();
             const next = clamp(Number((value + (e.key === 'ArrowUp' ? 1 : -1) * step * (e.shiftKey ? 10 : 1)).toFixed(6)));

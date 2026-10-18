@@ -49,7 +49,7 @@ import {
 } from './icons';
 import { ArrayPanel } from './ArrayPanel';
 import { recentTouch, selectOnFocus } from './Fields';
-import { enterByTouch, focusFresh, freshReplacement, keyboardAttached, openTouchEntry } from './TouchEntry';
+import { enterByTouch, keyboardAttached, openTouchEntry } from './TouchEntry';
 import { Popover } from './Popover';
 import { MatePanel } from './MatePanel';
 import { TransformBox } from './TransformBox';
@@ -191,7 +191,7 @@ function HandleInput({ prompt, onClose }: { prompt: HandlePrompt; onClose: () =>
     if (!recentTouch()) first?.focus();
     else if (!keyboardAttached()) openTouchEntry(entryOf(0));
     // After a tap, the browser's compatibility mouse events would blur the box (and close the prompt) if it were focused now.
-    else if (first) setTimeout(() => focusFresh(first, true), 0);
+    else setTimeout(() => first?.focus(), 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [origin]);
   return (
@@ -220,13 +220,6 @@ function HandleInput({ prompt, onClose }: { prompt: HandlePrompt; onClose: () =>
             onFocus={selectOnFocus}
             onChange={(e) => setTexts(texts.map((t, j) => (j === i ? e.target.value : t)))}
             onKeyDown={(e) => {
-              const typed = freshReplacement(e);
-              if (typed !== null) {
-                e.preventDefault();
-                setTexts(texts.map((t, j) => (j === i ? typed : t)));
-                e.stopPropagation();
-                return;
-              }
               // With two boxes and no button, Enter would not submit the form on its own.
               if (e.key === 'Enter') {
                 e.preventDefault();
