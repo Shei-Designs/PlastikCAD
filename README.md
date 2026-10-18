@@ -55,8 +55,8 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
   where things were grouped together. Hover a node to see that part on the
   plate; pick one and *Edit here* takes the groupings apart down to it, so the
   part can be changed, and *Done* puts them back together in the same order.
-- **Notes** – words attached to an object, from the Note button in the
-  toolbar or from a row of the tree. A note stays with its part through
+- **Notes** – words attached to an object, typed in the Notes box at the
+  bottom of the Structure tab. A note stays with its part through
   grouping and ungrouping; a part with one shows an info mark in the tree.
 - **Handles** – drag an object to move it, the corner and edge grips to size
   it (the top and bottom grips pull the height either way), the arrow to lift

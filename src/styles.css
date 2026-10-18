@@ -135,10 +135,10 @@ ul {
     grid-template-columns: minmax(204px, 240px) minmax(0, 1fr) minmax(260px, 300px);
   }
 
-  /* With the stage narrower than the toolbar's one firm row, the row wraps rather than running under the inspector. */
-  .view-toolbar {
+  /* With the stage narrower than the toolbar's one firm row, the bar wraps rather than running under the inspector. */
+  .toolbar {
     flex-wrap: wrap;
-    row-gap: 6px;
+    row-gap: 3px;
   }
 }
 
@@ -459,15 +459,83 @@ ul {
   left: 12px;
   right: 12px;
   display: flex;
-  align-items: center;
-  gap: 6px;
+  justify-content: center;
   pointer-events: none;
 }
 
-/* One firm row: nothing wraps or squashes; the window's minimum width keeps it all in view. */
-.view-toolbar > * {
+/* One unified bar, centered over the stage: nothing squashes; the window's minimum width keeps it all in view. */
+.toolbar {
+  display: flex;
   flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  backdrop-filter: blur(6px);
   pointer-events: auto;
+}
+
+.tool-group {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+
+/* A thin rule between the groups. */
+.toolbar > .tool-group + .tool-group {
+  margin-left: 4px;
+  padding-left: 5px;
+  border-left: 1px solid var(--border);
+}
+
+/* Inside the bar the chips are flat: the bar is the frame. */
+.toolbar .chip {
+  border-color: transparent;
+  border-radius: 6px;
+  background: none;
+  backdrop-filter: none;
+}
+
+.toolbar .chip:hover:not(:disabled) {
+  background: var(--control);
+}
+
+.toolbar .chip.on {
+  border-color: transparent;
+  background: var(--control);
+}
+
+.toolbar .popover.open > .chip {
+  background: var(--control);
+  color: var(--text);
+}
+
+/* Bottom-left: the axis triad (drawn on the canvas, in the space left for it) over the camera presets. */
+.view-widget {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  pointer-events: none;
+}
+
+.view-widget > * {
+  pointer-events: auto;
+}
+
+.triad-space {
+  pointer-events: none;
+}
+
+.view-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .chip {
@@ -520,44 +588,6 @@ ul {
   pointer-events: none;
 }
 
-.chip-group {
-  display: flex;
-}
-
-.chip-group > .chip,
-.chip-group > .popover > .chip {
-  border-radius: 0;
-  margin-left: -1px;
-}
-
-.chip-group > :first-child,
-.chip-group > :first-child > .chip {
-  margin-left: 0;
-  border-radius: 7px 0 0 7px;
-}
-
-.chip-group > :last-child,
-.chip-group > :last-child > .chip {
-  border-radius: 0 7px 7px 0;
-}
-
-.chip-group .chip.on {
-  position: relative;
-  z-index: 1;
-}
-
-/* An open popover's chip sits over the neighbor that shares its edge, like any lit chip. */
-.chip-group > .popover.open {
-  z-index: 20;
-}
-
-.actions {
-  display: flex;
-  flex: none;
-  gap: 6px;
-  margin-left: auto;
-}
-
 .chip.on {
   color: var(--text);
   border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
@@ -589,7 +619,8 @@ ul {
 .busy {
   position: absolute;
   left: 50%;
-  bottom: 18px;
+  /* Clear of the view widget's row in the corner. */
+  bottom: 56px;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
@@ -1614,7 +1645,7 @@ kbd {
 
 .hint-bar {
   top: auto;
-  bottom: 18px;
+  bottom: 56px;
   padding: 6px 14px;
   border-color: var(--border);
   border-radius: 999px;
@@ -2326,6 +2357,76 @@ kbd {
 /* ---------- touch screens: bigger targets ---------- */
 
 @media (pointer: coarse) {
+  /* Project bar: the name and its two buttons, sized for a finger. */
+  .file-bar {
+    padding: 3px 3px 3px 10px;
+  }
+
+  .doc-name {
+    height: 38px;
+    font-size: 16px;
+  }
+
+  .file-bar .icon-button,
+  .sidebar .brand .icon-button {
+    width: 40px;
+    height: 40px;
+  }
+
+  .file-bar .icon-button svg,
+  .sidebar .brand .icon-button svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  /* The toolbar and the camera presets grow to finger size. */
+  .toolbar {
+    padding: 4px;
+    border-radius: 11px;
+  }
+
+  .toolbar .chip {
+    height: 40px;
+    padding: 0 14px;
+    font-size: 14px;
+  }
+
+  .toolbar .chip.icon {
+    width: 40px;
+    padding: 0;
+  }
+
+  .toolbar .chip svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .view-row .segmented.small button {
+    height: 36px;
+    padding: 0 14px;
+    font-size: 14px;
+  }
+
+  .view-row .chip.icon {
+    width: 42px;
+    height: 42px;
+  }
+
+  .view-row .chip svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  /* Under the taller toolbar, and clear of the taller view row. */
+  .mode-banner {
+    top: 72px;
+  }
+
+  .hint-bar,
+  .busy {
+    bottom: 72px;
+  }
+
   .object-main {
     height: 40px;
     gap: 11px;

@@ -146,7 +146,7 @@ const ANIMATION_MS = 250;
 /** Above this, sharp-edge extraction costs more than it is worth. */
 const EDGE_TRIANGLE_LIMIT = 300_000;
 const MIN_PHI = 1e-3; // keeps the camera off the Z axis, where "up" is undefined
-const GIZMO_SIZE = 92;
+export const GIZMO_SIZE = 92;
 const GIZMO_MARGIN = 8;
 const EMPTY_RADIUS = 70;
 const PLATE_HALF = 100;
@@ -404,6 +404,8 @@ export class Viewer {
 
   private triadScene!: Scene;
   private triadCamera!: OrthographicCamera;
+  /** Where the triad is drawn, from the canvas's bottom-left corner; the view widget around it sets this. */
+  private triadOrigin = { x: GIZMO_MARGIN, y: GIZMO_MARGIN };
   private disposables: { dispose(): void }[] = [];
 
   // Handles around the selection, drawn over everything else.
@@ -465,6 +467,12 @@ export class Viewer {
   setPlacing(placing: boolean): void {
     this.placing = placing;
     if (this.ok) this.renderer.domElement.style.cursor = placing ? 'copy' : '';
+  }
+
+  /** Moves the axis triad, in CSS pixels from the canvas's bottom-left corner. */
+  setTriadOrigin(x: number, y: number): void {
+    this.triadOrigin = { x, y };
+    this.requestRender();
   }
 
   setView(preset: ViewPreset): void {
@@ -2246,7 +2254,7 @@ export class Viewer {
     this.triadCamera.quaternion.copy(camera.quaternion);
     this.triadCamera.position.set(0, 0, 1).applyQuaternion(camera.quaternion).multiplyScalar(5);
     renderer.clearDepth();
-    renderer.setViewport(GIZMO_MARGIN, GIZMO_MARGIN, GIZMO_SIZE, GIZMO_SIZE);
+    renderer.setViewport(this.triadOrigin.x, this.triadOrigin.y, GIZMO_SIZE, GIZMO_SIZE);
     renderer.render(this.triadScene, this.triadCamera);
     renderer.autoClear = true;
     renderer.setViewport(0, 0, width, height);

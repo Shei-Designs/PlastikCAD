@@ -29,7 +29,7 @@ import {
   ungroupSelected,
   useEditor,
 } from '../state/store';
-import { Viewer } from '../viewer/Viewer';
+import { GIZMO_SIZE, Viewer } from '../viewer/Viewer';
 import type { HandlePrompt, ViewItem, ViewPreset } from '../viewer/Viewer';
 import {
   AlignIcon,
@@ -76,8 +76,8 @@ function Actions() {
   const hasGroup = picked.some((n) => n.type === 'group');
 
   return (
-    <div className="actions">
-      <div className="chip-group">
+    <>
+      <div className="tool-group">
         <button type="button" className="chip icon" title="Undo (Ctrl+Z)" aria-label="Undo" disabled={!canUndo} onClick={undo}>
           <UndoIcon />
         </button>
@@ -85,7 +85,7 @@ function Actions() {
           <RedoIcon />
         </button>
       </div>
-      <div className="chip-group">
+      <div className="tool-group">
         <button type="button" className="chip icon" title="Duplicate in place (Ctrl+D)" aria-label="Duplicate" disabled={none} onClick={duplicateSelected}>
           <DuplicateIcon />
         </button>
@@ -96,7 +96,7 @@ function Actions() {
           <TrashIcon />
         </button>
       </div>
-      <div className="chip-group">
+      <div className="tool-group">
         <button type="button" className="chip icon" title="Group (Ctrl+G)" aria-label="Group" disabled={picked.length < 2} onClick={() => void groupSelected()}>
           <GroupIcon />
         </button>
@@ -104,7 +104,7 @@ function Actions() {
           <UngroupIcon />
         </button>
       </div>
-      <div className="chip-group">
+      <div className="tool-group">
         <button
           type="button"
           className={aligning ? 'chip icon on' : 'chip icon'}
@@ -134,7 +134,47 @@ function Actions() {
           <DropIcon />
         </button>
       </div>
-      <div className="chip-group">
+    </>
+  );
+}
+
+/**
+ * The corner widget: the axis triad the viewer draws (it tracks the camera,
+ * which keeps X, Y and Z straight when typing positions), with the camera
+ * presets and fit beneath it. The triad is drawn on the canvas, so the widget
+ * tells the viewer where its space is.
+ */
+function ViewWidget({ viewer }: { viewer: React.RefObject<Viewer | null> }) {
+  const space = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = space.current;
+    const host = el?.closest('.viewport');
+    if (!el || !host) return;
+    const place = () => {
+      const a = el.getBoundingClientRect();
+      const b = host.getBoundingClientRect();
+      viewer.current?.setTriadOrigin(a.left - b.left, b.bottom - a.bottom);
+    };
+    place();
+    const watch = new ResizeObserver(place);
+    watch.observe(el);
+    watch.observe(host);
+    return () => watch.disconnect();
+  }, [viewer]);
+  return (
+    <div className="view-widget">
+      <div className="triad-space" ref={space} style={{ width: GIZMO_SIZE, height: GIZMO_SIZE }} />
+      <div className="view-row">
+        <div className="segmented small" role="group" aria-label="Camera view">
+          {VIEWS.map((v) => (
+            <button key={v.id} type="button" onClick={() => viewer.current?.setView(v.id)}>
+              {v.label}
+            </button>
+          ))}
+        </div>
+        <button type="button" className="chip icon" title="Fit to view (F)" aria-label="Fit to view" onClick={() => viewer.current?.fit()}>
+          <FitIcon />
+        </button>
       </div>
     </div>
   );
@@ -344,35 +384,30 @@ export function Viewport() {
       <div className="readout" ref={readout} hidden />
       {prompt && <HandleInput key={JSON.stringify(prompt.kind)} prompt={prompt} onClose={() => viewer.current?.dismissPrompt()} />}
       <div className="view-toolbar">
-        <div className="segmented small" role="group" aria-label="Camera view">
-          {VIEWS.map((v) => (
-            <button key={v.id} type="button" onClick={() => viewer.current?.setView(v.id)}>
-              {v.label}
+        <div className="toolbar" role="toolbar" aria-label="Tools">
+          <div className="tool-group">
+            <button type="button" className={prefs.edges ? 'chip on' : 'chip'} aria-pressed={prefs.edges} onClick={() => setPrefs({ edges: !prefs.edges })}>
+              Edges
             </button>
-          ))}
+            <button type="button" className={prefs.grid ? 'chip on' : 'chip'} aria-pressed={prefs.grid} onClick={() => setPrefs({ grid: !prefs.grid })}>
+              Grid
+            </button>
+            <label className="chip select" title="Grid that moves and sizes snap to">
+              Snap
+              <select value={prefs.snap} onChange={(e) => setPrefs({ snap: Number(e.target.value) })}>
+                {SNAP_STEPS.map((s) => (
+                  <option key={s} value={s}>
+                    {s === 0 ? 'Off' : `${s} mm`}
+                  </option>
+                ))}
+              </select>
+              <ChevronIcon />
+            </label>
+          </div>
+          <Actions />
         </div>
-        <button type="button" className="chip icon" title="Fit to view (F)" aria-label="Fit to view" onClick={() => viewer.current?.fit()}>
-          <FitIcon />
-        </button>
-        <button type="button" className={prefs.edges ? 'chip on' : 'chip'} aria-pressed={prefs.edges} onClick={() => setPrefs({ edges: !prefs.edges })}>
-          Edges
-        </button>
-        <button type="button" className={prefs.grid ? 'chip on' : 'chip'} aria-pressed={prefs.grid} onClick={() => setPrefs({ grid: !prefs.grid })}>
-          Grid
-        </button>
-        <label className="chip select" title="Grid that moves and sizes snap to">
-          Snap
-          <select value={prefs.snap} onChange={(e) => setPrefs({ snap: Number(e.target.value) })}>
-            {SNAP_STEPS.map((s) => (
-              <option key={s} value={s}>
-                {s === 0 ? 'Off' : `${s} mm`}
-              </option>
-            ))}
-          </select>
-          <ChevronIcon />
-        </label>
-        <Actions />
       </div>
+      <ViewWidget viewer={viewer} />
 
       {editing && (
         <div className="mode-banner" role="status">
