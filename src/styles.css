@@ -1644,10 +1644,76 @@ kbd {
   pointer-events: none;
 }
 
-.notice.info {
+/* ---------- toast ---------- */
+
+/* Along the bottom of the window, over everything, as a toast on a phone. */
+.toast-host {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 16px;
+  z-index: 70;
+  display: flex;
+  justify-content: center;
+  padding: 0 16px;
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(640px, 100%);
+  padding: 10px 10px 10px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
   background: var(--panel-raised);
   color: var(--text);
-  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  font-size: 13px;
+  pointer-events: auto;
+  user-select: text;
+  -webkit-user-select: text;
+  animation: toast-in 180ms ease-out;
+}
+
+.toast svg {
+  flex: none;
+}
+
+.toast > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.toast.error {
+  border-color: color-mix(in srgb, var(--error-text) 40%, var(--border));
+  background: var(--error-bg);
+  color: var(--error-text);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (pointer: coarse) {
+  .toast {
+    padding: 14px 12px 14px 18px;
+    font-size: 15px;
+  }
+
+  .toast .notice-close {
+    width: 32px;
+    height: 32px;
+  }
 }
 
 .notice > span {

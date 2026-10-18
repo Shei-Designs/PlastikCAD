@@ -7,7 +7,6 @@ import {
   commitAlign,
   commitPlacing,
   deleteSelected,
-  dismissNotice,
   dropSelected,
   duplicateSelected,
   endGesture,
@@ -35,7 +34,6 @@ import {
   AlignIcon,
   ArrayIcon,
   ChevronIcon,
-  CloseIcon,
   DropIcon,
   DuplicateIcon,
   FitIcon,
@@ -282,7 +280,7 @@ export function Viewport() {
   const viewer = useRef<Viewer | null>(null);
 
   const state = useEditor((s) => s);
-  const { prefs, placing, selection, notice, busy, aligning, editing, highlight, mating } = state;
+  const { prefs, placing, selection, busy, aligning, editing, highlight, mating } = state;
   // Another selection, or an edit from elsewhere, and the typing boxes no longer belong to anything.
   useEffect(() => {
     viewer.current?.dismissPrompt();
@@ -439,15 +437,6 @@ export function Viewport() {
             <span>{text}</span>
           </div>
         ))}
-        {notice && (
-          <div className={notice.kind === 'error' ? 'notice error' : 'notice info'} role={notice.kind === 'error' ? 'alert' : 'status'}>
-            {notice.kind === 'error' && <WarningIcon />}
-            <span>{notice.text}</span>
-            <button type="button" className="notice-close" aria-label="Dismiss" onClick={dismissNotice}>
-              <CloseIcon />
-            </button>
-          </div>
-        )}
         </div>
         <TransformBox />
       </div>

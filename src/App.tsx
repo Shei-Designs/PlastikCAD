@@ -8,6 +8,7 @@ import {
   cancelPlacing,
   copySelected,
   deleteSelected,
+  dismissNotice,
   dropSelected,
   duplicateSelected,
   getState,
@@ -41,6 +42,7 @@ import { Sidebar } from './ui/Sidebar';
 import { initInput } from './ui/inputMode';
 import { TouchEntrySheet } from './ui/TouchEntry';
 import { Viewport, viewerRef } from './ui/Viewport';
+import { CloseIcon, WarningIcon } from './ui/icons';
 
 // Inputs that take no typing: clicking one of these must not put the shortcuts to sleep.
 const CLICK_INPUTS = new Set(['checkbox', 'radio', 'color', 'button', 'submit', 'reset', 'file']);
@@ -178,6 +180,24 @@ function step(e: KeyboardEvent): number {
   return (getState().prefs.snap || 1) * (e.shiftKey ? 10 : 1);
 }
 
+/** Word from the app, along the bottom of the window over everything, as a toast on a phone; gone by itself after a moment. */
+function Toast() {
+  const notice = useEditor((s) => s.notice);
+  if (!notice) return null;
+  const error = notice.kind === 'error';
+  return (
+    <div className="toast-host">
+      <div className={error ? 'toast error' : 'toast'} role={error ? 'alert' : 'status'}>
+        {error && <WarningIcon />}
+        <span>{notice.text}</span>
+        <button type="button" className="notice-close" aria-label="Dismiss" onClick={dismissNotice}>
+          <CloseIcon />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const theme = useEditor((s) => s.prefs.theme);
   const name = useEditor((s) => s.doc.name);
@@ -222,6 +242,7 @@ export default function App() {
       <Inspector />
       <Projects />
       <TouchEntrySheet />
+      <Toast />
     </div>
   );
 }
