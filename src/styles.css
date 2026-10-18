@@ -126,8 +126,7 @@ ul {
   display: grid;
   /* The side panels give up a little width before the toolbar over the stage would run out of room. */
   grid-template-columns: minmax(236px, 280px) minmax(788px, 1fr) minmax(292px, 360px);
-  /* The window's height, or what the keyboard leaves of it (see App.tsx). */
-  height: var(--app-height, 100%);
+  height: 100%;
 }
 
 /* Below the desktop window's minimum (a scaled-up PWA, a tablet) the stage gives way instead, so the inspector stays on screen. */
@@ -2368,4 +2367,82 @@ kbd {
     width: 24px;
     height: 24px;
   }
+}
+
+/* ---------- touch entry sheet ---------- */
+
+.touch-entry-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+}
+
+.touch-entry {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  z-index: 61;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(440px, calc(100vw - 32px));
+  padding: 12px 14px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  transform: translateX(-50%);
+}
+
+.touch-entry-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.touch-entry-label {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.touch-entry-now {
+  flex: none;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.touch-entry-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.touch-entry-row .text-input {
+  height: 44px;
+  font-size: 20px;
+}
+
+.touch-entry-row .text-input.area {
+  height: auto;
+  font-size: 15px;
+  resize: none;
+}
+
+.touch-entry-unit {
+  flex: none;
+  color: var(--muted);
+}
+
+.touch-entry-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.touch-entry-buttons .chip,
+.touch-entry-buttons .primary {
+  width: auto;
+  height: 36px;
+  padding: 0 18px;
 }

@@ -10,6 +10,7 @@ import { MAX_NOTE } from '../model/file';
 import { HOLE_COLOR } from '../model/ops';
 import type { SceneNode } from '../model/types';
 import { editInside, setHighlight, setNote } from '../state/store';
+import { openTouchEntry } from './TouchEntry';
 
 const kindOf = (node: SceneNode): string =>
   node.type === 'group'
@@ -53,6 +54,22 @@ function Notes({ path, node }: { path: string[]; node: SceneNode }) {
         placeholder="Anything to remember about this part."
         maxLength={MAX_NOTE}
         value={text}
+        // A finger writes the notes in the entry sheet at the top of the window, clear of the keypad.
+        onPointerDown={(e) => {
+          if (e.pointerType !== 'touch') return;
+          e.preventDefault();
+          openTouchEntry({
+            label: `Notes for ${node.name}`,
+            value: text,
+            inputMode: 'text',
+            multiline: true,
+            onCommit: (next) => {
+              const clipped = next.slice(0, MAX_NOTE);
+              setText(clipped);
+              setNote(path, clipped);
+            },
+          });
+        }}
         onChange={(e) => {
           setText(e.target.value);
           setNote(path, e.target.value);

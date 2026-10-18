@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Hint } from './Hint';
+import { openTouchEntry } from './TouchEntry';
 
 const decimals = (step: number) => Math.max(0, -Math.floor(Math.log10(step) + 1e-9));
 
@@ -18,21 +19,9 @@ export function selectOnFocus(e: { target: HTMLInputElement; timeStamp: number }
   e.target.select();
 }
 
-/**
- * A finger landing on a box: the box is focused by hand, with the caret at the
- * end, instead of by the touch itself. Android then shows no teardrop handle
- * at the caret, which otherwise floats over the keypad it just raised; the
- * keyboard still comes up, since this runs inside the touch. A tap on a box
- * that already has the focus is left to Android, so the caret can be moved.
- */
-export function focusByTouch(e: { pointerType: string; currentTarget: HTMLInputElement; preventDefault: () => void }): void {
-  const box = e.currentTarget;
-  if (e.pointerType !== 'touch' || document.activeElement === box || box.disabled) return;
-  e.preventDefault();
-  box.focus({ preventScroll: true });
-  box.setSelectionRange(box.value.length, box.value.length);
-  box.scrollIntoView({ block: 'nearest' });
-}
+/** Whether the last press on the page was a finger, a moment ago. */
+export const recentTouch = (): boolean => lastPress.type === 'touch' && performance.now() - lastPress.time < 1000;
+
 /** At most `places` decimals, without trailing zeros. */
 export const formatNumber = (value: number, places = 2) => String(Number(value.toFixed(places)));
 
@@ -83,7 +72,12 @@ export function NumberBox({ value, onChange, tag, unit, step = 1, min = -Infinit
         aria-label={label}
         disabled={disabled}
         value={text}
-        onPointerDown={focusByTouch}
+        // A finger does not type into the box under the keypad: the entry sheet takes the value instead.
+        onPointerDown={(e) => {
+          if (e.pointerType !== 'touch' || disabled) return;
+          e.preventDefault();
+          openTouchEntry({ label, value: formatNumber(value, places), unit, inputMode: integer ? 'numeric' : 'decimal', onCommit: commit });
+        }}
         onFocus={(e) => {
           setEditing(true);
           selectOnFocus(e);

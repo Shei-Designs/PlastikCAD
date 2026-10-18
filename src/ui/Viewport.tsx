@@ -48,7 +48,8 @@ import {
   WarningIcon,
 } from './icons';
 import { ArrayPanel } from './ArrayPanel';
-import { focusByTouch, selectOnFocus } from './Fields';
+import { recentTouch, selectOnFocus } from './Fields';
+import { openTouchEntry } from './TouchEntry';
 import { Popover } from './Popover';
 import { MatePanel } from './MatePanel';
 import { TransformBox } from './TransformBox';
@@ -147,13 +148,34 @@ function HandleInput({ prompt, onClose }: { prompt: HandlePrompt; onClose: () =>
   const [texts, setTexts] = useState(prompt.fields.map((f) => String(Number(f.value.toFixed(3)))));
   const host = useRef<HTMLFormElement>(null);
   const submit = () => {
+    submitWith(texts);
+  };
+  const submitWith = (typed: string[]) => {
     // A box left empty keeps the value it showed; with every box empty there is nothing to apply.
-    const blank = texts.map((t) => t.trim() === '');
+    const blank = typed.map((t) => t.trim() === '');
     if (!blank.every(Boolean)) {
-      const values = texts.map((t, i) => (blank[i] ? prompt.fields[i].value : Number(t.trim().replace(',', '.'))));
+      const values = typed.map((t, i) => (blank[i] ? prompt.fields[i].value : Number(t.trim().replace(',', '.'))));
       if (values.every((v) => Number.isFinite(v))) viewerRef.current?.applyTyped(prompt.kind, values);
     }
     onClose();
+  };
+  /** With a finger, the value is typed in the entry sheet at the top of the window rather than in the box under the keypad. */
+  const entryFor = (i: number) => {
+    const f = prompt.fields[i];
+    openTouchEntry({
+      label: `${f.tag}${prompt.fields.length > 1 ? ` (${i + 1} of ${prompt.fields.length})` : ''}`,
+      value: texts[i],
+      unit: prompt.unit,
+      inputMode: 'decimal',
+      onCommit: (raw) => {
+        const next = texts.map((t, j) => (j === i ? raw : t));
+        setTexts(next);
+        // With two boxes, the second is asked for next; the last one applies.
+        if (i + 1 < prompt.fields.length) setTimeout(() => entryFor(i + 1), 0);
+        else submitWith(next);
+      },
+      onCancel: onClose,
+    });
   };
   // The fields carry screen coordinates; the boxes are placed within the viewport, so its
   // corner comes off. That is only known once the form is in the page, hence the effect.
@@ -162,9 +184,12 @@ function HandleInput({ prompt, onClose }: { prompt: HandlePrompt; onClose: () =>
     const r = host.current?.parentElement?.getBoundingClientRect();
     setOrigin(r ? { left: r.left, top: r.top } : { left: 0, top: 0 });
   }, []);
-  // The first box takes the focus once it is in place (a box still hidden cannot).
+  // The first box takes the focus once it is in place (a box still hidden cannot); a grip tapped with a finger goes to the entry sheet instead.
   useEffect(() => {
-    if (origin) host.current?.querySelector('input')?.focus();
+    if (!origin) return;
+    if (recentTouch()) entryFor(0);
+    else host.current?.querySelector('input')?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [origin]);
   return (
     <form
@@ -174,9 +199,10 @@ function HandleInput({ prompt, onClose }: { prompt: HandlePrompt; onClose: () =>
         e.preventDefault();
         submit();
       }}
-      // Leaving one box for the other keeps the prompt; leaving the form closes it.
+      // Leaving one box for the other, or for the entry sheet, keeps the prompt; leaving the form otherwise closes it.
       onBlur={(e) => {
-        if (!host.current?.contains(e.relatedTarget as Node | null)) onClose();
+        const to = e.relatedTarget as HTMLElement | null;
+        if (!host.current?.contains(to) && !to?.closest('.touch-entry')) onClose();
       }}
     >
       {prompt.fields.map((f, i) => (
@@ -187,7 +213,11 @@ function HandleInput({ prompt, onClose }: { prompt: HandlePrompt; onClose: () =>
             value={texts[i]}
             spellCheck={false}
             inputMode="decimal"
-            onPointerDown={focusByTouch}
+            onPointerDown={(e) => {
+              if (e.pointerType !== 'touch') return;
+              e.preventDefault();
+              entryFor(i);
+            }}
             onFocus={selectOnFocus}
             onChange={(e) => setTexts(texts.map((t, j) => (j === i ? e.target.value : t)))}
             onKeyDown={(e) => {
