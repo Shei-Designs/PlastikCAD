@@ -155,8 +155,12 @@ const DRAG_THRESHOLD = 4; // px
 const PROMPT_PAD = 14; // px
 /** A box beside a grip starts this far from the grip's center, and no box comes nearer than this to the edge of the view (more at the top, under the toolbar). */
 const PROMPT_BESIDE = 30; // px
+/** How far above the top of the selection the lift arrow floats: further for a finger, so it and the top grip are two targets. */
+const LIFT_RISE = 30; // px
+const TOUCH_LIFT_RISE = 46; // px
+const liftRise = (): number => (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? TOUCH_LIFT_RISE : LIFT_RISE);
 /** The lift arrow is taller than a grip, so its box sits further up. */
-const PROMPT_LIFT_PAD = 30; // px
+const PROMPT_LIFT_PAD = LIFT_RISE; // px
 const PROMPT_MARGIN = 8; // px
 const PROMPT_MARGIN_TOP = 52; // px
 const PROMPT_BOX: [number, number] = [100, 28]; // px, about the size of a box
@@ -1267,7 +1271,7 @@ export class Viewer {
       } else if (k.type === 'lift') {
         const top = new Vector3((f.bounds.min[0] + f.bounds.max[0]) / 2, (f.bounds.min[1] + f.bounds.max[1]) / 2, f.bounds.max[2]);
         const px = this.pixelSize(top);
-        h.object.position.copy(top).add(new Vector3(0, 0, 30 * px));
+        h.object.position.copy(top).add(new Vector3(0, 0, liftRise() * px));
         h.object.scale.setScalar(h.pixels * px * (h === this.hovered ? 1.2 : 1) * this.gripScale);
       } else {
         const { at, from, to } = this.ringPlacement(k.axis);
@@ -1587,7 +1591,7 @@ export class Viewer {
         break;
       }
       case 'lift':
-        made = { kind: k, unit: 'mm', center, fields: [{ tag: 'Z', value: f.bounds.min[2], anchor: handle.object.position.toArray() as Vec3, out: [0, 0, 1], pad: PROMPT_LIFT_PAD, clientX: 0, clientY: 0 }] };
+        made = { kind: k, unit: 'mm', center, fields: [{ tag: 'Z', value: f.bounds.min[2], anchor: handle.object.position.toArray() as Vec3, out: [0, 0, 1], pad: PROMPT_LIFT_PAD + liftRise() - LIFT_RISE, clientX: 0, clientY: 0 }] };
         break;
       case 'rotate': {
         // The arc with its two arrowheads, sampled, so that the box can keep off the whole of it.
