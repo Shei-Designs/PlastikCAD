@@ -141,10 +141,17 @@ export async function chooseSave(suggestedName: string, filters: FileFilter[], m
   if (!isTauri()) return { path: null, name: suggestedName };
   const { save } = await import('@tauri-apps/plugin-dialog');
   // Android keeps the type the document was created with; given as a MIME type (which the plugin passes
-  // through as it is), rather than left to the extension, which the system may not know.
-  const path = await save({ defaultPath: suggestedName, filters: isAndroid() ? [{ name: filters[0]?.name ?? mime, extensions: [mime] }] : filters });
+  // through as it is), rather than left to the extension, which the system may not know. The device
+  // plugin picks a type the name survives, as the system adds the extension it knows for a type.
+  const path = await save({ defaultPath: suggestedName, filters: isAndroid() ? [{ name: filters[0]?.name ?? mime, extensions: [await androidMime(suggestedName, mime)] }] : filters });
   if (!path) return null;
   return { path, name: await nameOf(path) };
+}
+
+/** Android: the type to create a document of this name as, for the name to be kept. */
+async function androidMime(name: string, mime: string): Promise<string> {
+  const answer = await invoke<{ mime: string }>('plugin:device|mime_for', { name, mime }).catch(() => null);
+  return answer?.mime ?? mime;
 }
 
 /** Writes to a place chosen with `chooseSave`. */

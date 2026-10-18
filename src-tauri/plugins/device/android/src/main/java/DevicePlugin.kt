@@ -15,6 +15,7 @@ import android.provider.DocumentsContract
 import androidx.activity.result.ActivityResult
 import android.view.InputDevice
 import android.view.View
+import android.webkit.MimeTypeMap
 import android.webkit.WebView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
@@ -36,6 +37,12 @@ internal class CreateDocumentArgs {
   lateinit var parent: String
   lateinit var name: String
   /** The document's type; `vnd.android.document/directory` makes a folder. */
+  lateinit var mime: String
+}
+
+@InvokeArg
+internal class MimeForArgs {
+  lateinit var name: String
   lateinit var mime: String
 }
 
@@ -142,12 +149,37 @@ class DevicePlugin(activity: Activity) : Plugin(activity), InputManager.InputDev
     invoke.resolve(out)
   }
 
+  /**
+   * A type to create a document of the given name as, such that the name is kept: a provider
+   * appends the extension it knows for the type when the name's own does not fit it (so a
+   * `.mtl` made as text/plain comes out `.mtl.txt`). Where the system knows no type for the
+   * extension, a private one keeps it from adding any.
+   */
+  private fun mimeFor(name: String, wanted: String): String {
+    val extension = name.substringAfterLast('.', "").lowercase()
+    if (extension.isEmpty() || extension == name.lowercase()) return wanted
+    val map = MimeTypeMap.getSingleton()
+    val forWanted = map.getExtensionFromMimeType(wanted)
+    if (forWanted == null || forWanted.equals(extension, ignoreCase = true)) return wanted
+    return map.getMimeTypeFromExtension(extension) ?: "application/x-$extension"
+  }
+
+  /** The type the system save dialog should create a document of this name as, for the name to be kept. */
+  @Command
+  fun mimeFor(invoke: Invoke) {
+    val args = invoke.parseArgs(MimeForArgs::class.java)
+    val out = JSObject()
+    out.put("mime", mimeFor(args.name, args.mime))
+    invoke.resolve(out)
+  }
+
   /** Makes a document (or a folder) inside another; resolves with its URI. The provider may vary the name to keep it unique. */
   @Command
   fun createDocument(invoke: Invoke) {
     val args = invoke.parseArgs(CreateDocumentArgs::class.java)
     try {
-      val made = DocumentsContract.createDocument(host.contentResolver, Uri.parse(args.parent), args.mime, args.name)
+      val mime = if (args.mime == DocumentsContract.Document.MIME_TYPE_DIR) args.mime else mimeFor(args.name, args.mime)
+      val made = DocumentsContract.createDocument(host.contentResolver, Uri.parse(args.parent), mime, args.name)
         ?: throw IllegalStateException("The folder did not accept a new document")
       val out = JSObject()
       out.put("uri", made.toString())
