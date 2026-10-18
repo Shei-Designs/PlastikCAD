@@ -12,6 +12,7 @@ import android.hardware.input.InputManager
 import android.view.InputDevice
 import android.view.View
 import android.webkit.WebView
+import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import app.tauri.annotation.Command
@@ -23,36 +24,64 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 @TauriPlugin
-class InputPlugin(private val activity: Activity) : Plugin(activity), InputManager.InputDeviceListener {
+class InputPlugin(activity: Activity) : Plugin(activity), InputManager.InputDeviceListener {
   private var hardwareKeyboard = false
   private var keypadVisible = false
   /** Height of the keypad over the page, in CSS pixels. */
   private var keypadHeight = 0
 
+  /**
+   * The activity on screen. The plugin lives as long as the process, while Android may
+   * rebuild the activity (a dock that changes the display, say), so this is taken afresh
+   * from every lifecycle call rather than kept from construction.
+   */
+  private var host: Activity = activity
+  /** The content view whose window insets are being watched. */
+  private var watched: View? = null
+
   override fun load(webView: WebView) {
+    (webView.context as? Activity)?.let { host = it }
     hardwareKeyboard = detectKeyboard()
-    val inputManager = activity.getSystemService(Context.INPUT_SERVICE) as InputManager
+    val inputManager = host.getSystemService(Context.INPUT_SERVICE) as InputManager
     inputManager.registerInputDeviceListener(this, null)
-    // The keypad is seen in the window insets, read on the content view and handed on unchanged
-    // (the activity's own listener on the webview keeps working).
-    val content = activity.findViewById<View>(android.R.id.content)
+    watchKeypad()
+  }
+
+  /**
+   * The keypad is seen in the window insets, read on the content view and handed on unchanged
+   * (the activity's own listener on the webview keeps working). Attached again whenever the
+   * content view is a new one.
+   */
+  private fun watchKeypad() {
+    val content = host.findViewById<View>(android.R.id.content) ?: return
+    if (watched === content) return
+    watched = content
     ViewCompat.setOnApplyWindowInsetsListener(content) { _, insets ->
-      val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
-      val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-      val visible = insets.isVisible(WindowInsetsCompat.Type.ime()) && ime.bottom > 0
-      // The keypad's bottom covers the navigation bar, which the page does not extend under.
-      val height = if (visible) (max(0, ime.bottom - bars.bottom) / activity.resources.displayMetrics.density).roundToInt() else 0
-      if (visible != keypadVisible || height != keypadHeight) {
-        keypadVisible = visible
-        keypadHeight = height
-        announce()
-      }
+      readKeypad(insets)
       insets
+    }
+    ViewCompat.getRootWindowInsets(content)?.let { readKeypad(it) }
+    content.requestApplyInsets()
+  }
+
+  private fun readKeypad(insets: WindowInsetsCompat) {
+    val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+    val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+    val visible = insets.isVisible(WindowInsetsCompat.Type.ime()) && ime.bottom > 0
+    // The keypad's bottom covers the navigation bar, which the page does not extend under.
+    val height = if (visible) (max(0, ime.bottom - bars.bottom) / host.resources.displayMetrics.density).roundToInt() else 0
+    if (visible != keypadVisible || height != keypadHeight) {
+      keypadVisible = visible
+      keypadHeight = height
+      announce()
     }
   }
 
   @Command
   fun state(invoke: Invoke) {
+    // Asked afresh: the insets are read again in case a change went by unseen.
+    watchKeypad()
+    watched?.let { view -> ViewCompat.getRootWindowInsets(view)?.let { readKeypad(it) } }
     invoke.resolve(current())
   }
 
@@ -69,8 +98,7 @@ class InputPlugin(private val activity: Activity) : Plugin(activity), InputManag
   }
 
   /** A keyboard the user can type on: what the configuration says, or any attached alphabetic keyboard device. */
-  private fun detectKeyboard(): Boolean {
-    val config = activity.resources.configuration
+  private fun detectKeyboard(config: Configuration = host.resources.configuration): Boolean {
     val byConfiguration = config.keyboard == Configuration.KEYBOARD_QWERTY && config.hardKeyboardHidden == Configuration.HARDKEYBOARDHIDDEN_NO
     val byDevices = InputDevice.getDeviceIds().any { id ->
       val device = InputDevice.getDevice(id) ?: return@any false
@@ -81,19 +109,26 @@ class InputPlugin(private val activity: Activity) : Plugin(activity), InputManag
     return byConfiguration || byDevices
   }
 
-  private fun keyboardMayHaveChanged() {
-    val now = detectKeyboard()
+  private fun keyboardMayHaveChanged(config: Configuration = host.resources.configuration) {
+    val now = detectKeyboard(config)
     if (now != hardwareKeyboard) {
       hardwareKeyboard = now
       announce()
     }
+    watchKeypad()
+    watched?.let { view -> ViewCompat.getRootWindowInsets(view)?.let { readKeypad(it) } }
   }
 
   override fun onConfigurationChanged(newConfig: Configuration) {
-    keyboardMayHaveChanged()
+    keyboardMayHaveChanged(newConfig)
   }
 
-  override fun onResume() {
+  override fun onRestart(activity: AppCompatActivity) {
+    host = activity
+  }
+
+  override fun onResume(activity: AppCompatActivity) {
+    host = activity
     keyboardMayHaveChanged()
   }
 

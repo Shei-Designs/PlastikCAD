@@ -19,6 +19,7 @@ let state: InputState | null = isAndroid() ? null : { hardwareKeyboard: true, ke
 const listeners = new Set<(state: InputState) => void>();
 
 function take(next: InputState): void {
+  if (state && state.hardwareKeyboard === next.hardwareKeyboard && state.keypadVisible === next.keypadVisible && state.keypadHeight === next.keypadHeight) return;
   state = next;
   document.documentElement.style.setProperty('--keypad', next.keypadVisible ? `${next.keypadHeight}px` : '0px');
   for (const l of listeners) l(next);
@@ -36,6 +37,16 @@ export async function initInput(): Promise<void> {
 }
 
 export const inputState = (): InputState | null => state;
+
+/** Asks the plugin again (it reads the system afresh), for moments when a change may have gone by unheard. */
+export async function refreshInput(): Promise<void> {
+  if (!isAndroid()) return;
+  try {
+    take(await invoke<InputState>('plugin:input|state'));
+  } catch (e) {
+    console.warn('The input plugin did not answer.', e);
+  }
+}
 
 /** Whether typing can go into a box where it is: there is a keyboard. Unknown counts as none, the safer reading on a tablet. */
 export const keyboardAttached = (): boolean => state?.hardwareKeyboard ?? false;

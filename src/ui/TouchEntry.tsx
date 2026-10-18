@@ -5,7 +5,7 @@
 // value. Opened from anywhere through `openTouchEntry`, shown once in App.
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { flushSync } from 'react-dom';
-import { inputState, keyboardAttached, onInputChange } from './inputMode';
+import { inputState, keyboardAttached, onInputChange, refreshInput } from './inputMode';
 
 export { keyboardAttached } from './inputMode';
 
@@ -107,8 +107,12 @@ export function TouchEntrySheet() {
     const stop = onInputChange(place);
     window.visualViewport?.addEventListener('resize', place);
     window.addEventListener('resize', place);
+    // The keypad comes up after the sheet opens; its report is asked for as well as listened for,
+    // in case a change went by unheard.
+    const ask = setInterval(() => void refreshInput(), 400);
     return () => {
       stop();
+      clearInterval(ask);
       window.visualViewport?.removeEventListener('resize', place);
       window.removeEventListener('resize', place);
     };
