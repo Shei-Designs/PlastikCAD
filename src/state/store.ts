@@ -9,7 +9,7 @@ import { exportMesh, exportOutline, FORMATS } from '../io/export';
 import { writeObj } from '../io/obj';
 import { write3mf } from '../io/threemf';
 import type { FormatId } from '../io/export';
-import { centerMesh, centerOutline, IMAGE_EXTENSIONS, IMPORT_EXTENSIONS, importFile } from '../io/import';
+import { centerMesh, centerOutline, fileKind, IMAGE_EXTENSIONS, IMPORT_EXTENSIONS, importFile } from '../io/import';
 import { bytesToBase64 } from '../io/base64';
 import { exportGlb } from './glbExport';
 import { emptyDoc, HEAD_BYTES, legacyVersions, MAX_NOTE, parseDoc, readHeader, serializeDoc } from '../model/file';
@@ -1698,7 +1698,7 @@ async function imageSize(bytes: Uint8Array, mime: ImageAsset['mime']): Promise<{
 }
 
 /** Keep a picture file in the design. Returns its key (an identical picture already there is reused). */
-async function addImage(file: PickedFile, mime: ImageAsset['mime'] = extension(file.name) === 'png' ? 'image/png' : 'image/jpeg'): Promise<string> {
+async function addImage(file: PickedFile, mime: ImageAsset['mime'] = fileKind(file.name, file.bytes) === 'png' ? 'image/png' : 'image/jpeg'): Promise<string> {
   const data = bytesToBase64(file.bytes);
   const key = `image-${hashString(data)}-${data.length.toString(36)}`;
   if (state.doc.assets[key]) return key;
@@ -1787,8 +1787,8 @@ export async function receiveFiles(files: PickedFile[]): Promise<void> {
   try {
     const design = files.find((f) => extension(f.name) === FILE_EXTENSION);
     if (design) return await importProjectFile(design);
-    const models = files.filter((f) => IMPORT_EXTENSIONS.includes(extension(f.name)));
-    const pictures = files.filter((f) => IMAGE_EXTENSIONS.includes(extension(f.name)));
+    const models = files.filter((f) => IMPORT_EXTENSIONS.includes(fileKind(f.name, f.bytes)));
+    const pictures = files.filter((f) => IMAGE_EXTENSIONS.includes(fileKind(f.name, f.bytes)));
     if (models.length === 0 && pictures.length === 0) {
       if (files.length) notify(`Cannot import that. Supported: ${IMPORTABLE.map((e) => e.toUpperCase()).join(', ')}.`, 'error');
       return;

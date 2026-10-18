@@ -98,7 +98,25 @@ export async function readPath(path: string): Promise<PickedFile> {
   // Tauri delivers the bytes as an array of numbers where it cannot use a binary response.
   const data = await command<ArrayBuffer | number[]>('read_file', { path });
   const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : Uint8Array.from(data);
-  return { name: baseName(path), path, bytes };
+  return { name: await nameOf(path), path, bytes };
+}
+
+/**
+ * The file's name with its extension. A path ends in it; a `content://` URI
+ * from an Android picker may carry it in its last segment ("primary:Download/box.stl")
+ * or not at all, in which case the app asks the provider.
+ */
+async function nameOf(path: string): Promise<string> {
+  if (!path.includes('://')) return baseName(path);
+  let segment = baseName(path);
+  try {
+    segment = baseName(decodeURIComponent(segment));
+  } catch {
+    // Left as it came.
+  }
+  if (/\.[^.]+$/.test(segment)) return segment;
+  const asked = await command<string | null>('file_name', { path }).catch(() => null);
+  return asked ?? segment;
 }
 
 /** Native save dialog then write (desktop), or a download (browser, where `path` is null). Null if canceled. */

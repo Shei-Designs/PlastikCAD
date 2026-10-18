@@ -1190,18 +1190,6 @@ select:hover {
   cursor: default;
 }
 
-.export-result {
-  margin-top: 7px;
-  color: var(--muted);
-  font-size: 12px;
-  overflow-wrap: anywhere;
-  user-select: text;
-  -webkit-user-select: text;
-}
-
-.export-result.failed {
-  color: var(--error-text);
-}
 
 /* ---------- scrollbars ---------- */
 

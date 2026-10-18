@@ -109,6 +109,33 @@ async fn read_file(app: AppHandle, path: String) -> Result<Response, String> {
         .map_err(|err| format!("Could not read {path}: {err}"))
 }
 
+/// The name of a file, extension included, or null if it has none. A path
+/// names itself; the `content://` URIs the Android pickers hand out often do
+/// not (a download is `msf:123`), but the descriptor the provider opens usually
+/// points at the real file.
+#[tauri::command]
+fn file_name(app: AppHandle, path: String) -> Option<String> {
+    let parsed = file_path(&path);
+    let named = |path: &Path| path.file_name().map(|name| name.to_string_lossy().into_owned()).filter(|name| name.contains('.'));
+    if let Ok(path) = parsed.clone().into_path() {
+        return named(&path);
+    }
+    #[cfg(target_os = "android")]
+    {
+        use std::os::fd::AsRawFd;
+        let mut options = OpenOptions::new();
+        options.read(true);
+        let file = app.fs().open(parsed, options).ok()?;
+        let target = fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd())).ok()?;
+        return named(&target);
+    }
+    #[allow(unreachable_code)]
+    {
+        let _ = app;
+        None
+    }
+}
+
 /// The first `limit` bytes of a file: enough of a design to read its header
 /// without loading the meshes it may carry.
 #[tauri::command]
@@ -398,6 +425,7 @@ pub fn run() {
         .manage(SignIns::default())
         .invoke_handler(tauri::generate_handler![
             read_file,
+            file_name,
             read_head,
             write_file,
             list_designs,

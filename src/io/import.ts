@@ -53,10 +53,46 @@ export const IMPORT_EXTENSIONS = ['stl', 'obj', '3mf', 'glb', 'gltf', 'svg', 'dx
 /** Pictures, which come in as picture sheets rather than solids. */
 export const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg'];
 
-/** Reads a file by its extension. Throws an Error with a message fit to show the user. `companions` are the other files picked with it. */
+const extensionOf = (fileName: string): string => /\.([^./\\]+)$/.exec(fileName)?.[1].toLowerCase() ?? '';
+
+/**
+ * What kind of file this is, as an extension: the name's, or when the name has
+ * none that is known (a document picked on Android can come without one), what
+ * the bytes say. Empty when neither tells.
+ */
+export function fileKind(fileName: string, bytes: Uint8Array): string {
+  const extension = extensionOf(fileName);
+  if (IMPORT_EXTENSIONS.includes(extension) || IMAGE_EXTENSIONS.includes(extension)) return extension;
+  return sniff(bytes);
+}
+
+/** The kind of file these bytes begin like, by the formats' signatures. */
+function sniff(bytes: Uint8Array): string {
+  if (bytes.length < 4) return '';
+  const [a, b, c, d] = bytes;
+  if (a === 0x89 && b === 0x50 && c === 0x4e && d === 0x47) return 'png';
+  if (a === 0xff && b === 0xd8 && c === 0xff) return 'jpg';
+  if (a === 0x50 && b === 0x4b && c === 0x03 && d === 0x04) return '3mf';
+  if (a === 0x67 && b === 0x6c && c === 0x54 && d === 0x46) return 'glb';
+  // A binary STL is exactly as long as its triangle count says.
+  if (bytes.length >= 84) {
+    const count = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(80, true);
+    if (84 + count * 50 === bytes.length) return 'stl';
+  }
+  const head = new TextDecoder().decode(bytes.subarray(0, 2048)).replace(/^\ufeff/, '');
+  if (/^\s*solid\b/.test(head)) return 'stl';
+  if (/^\s*0\s*\r?\n\s*SECTION\b/.test(head) || /^\s*999\s*\r?\n/.test(head)) return 'dxf';
+  if (/^\s*(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*(<!DOCTYPE[^>]*>\s*)?<svg\b/i.test(head)) return 'svg';
+  if (/^\s*\{[\s\S]*"asset"/.test(head)) return 'gltf';
+  if (/^(\s*(#[^\n]*)?\r?\n)*\s*(v|vn|vt|o|g|mtllib|usemtl)\s/.test(head)) return 'obj';
+  return '';
+}
+
+/** Reads a file by its extension, or by its contents when the name has none. Throws an Error with a message fit to show the user. `companions` are the other files picked with it. */
 export function importFile(fileName: string, bytes: Uint8Array, companions: Companion[] = []): Imported {
-  const extension = /\.([^./\\]+)$/.exec(fileName)?.[1].toLowerCase() ?? '';
-  const name = fileName.slice(Math.max(fileName.lastIndexOf('/'), fileName.lastIndexOf('\\')) + 1).replace(/\.[^.]+$/, '');
+  const extension = fileKind(fileName, bytes);
+  const base = fileName.slice(Math.max(fileName.lastIndexOf('/'), fileName.lastIndexOf('\\')) + 1);
+  const name = extensionOf(base) ? base.replace(/\.[^.]+$/, '') : base || 'Import';
   switch (extension) {
     case 'stl':
       return { kind: 'model', parts: [{ name, mesh: checkedMesh(parseStl(bytes)) }], used: [] };
@@ -72,7 +108,8 @@ export function importFile(fileName: string, bytes: Uint8Array, companions: Comp
     case 'dxf':
       return { kind: 'outline', parts: parseDxf(bytes).map((part) => ({ ...part, shapes: checkedOutline(part.shapes) })) };
     default: {
-      const what = extension ? `.${extension} files` : 'Files of this type';
+      const given = extensionOf(fileName);
+      const what = given ? `.${given} files` : 'Files of this type';
       const supported = IMPORT_EXTENSIONS.map((e) => e.toUpperCase()).join(', ');
       throw new Error(`${what} can't be imported. Use one of: ${supported}.`);
     }

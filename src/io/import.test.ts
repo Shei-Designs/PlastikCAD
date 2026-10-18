@@ -6,7 +6,7 @@ import { exportMesh, exportOutline } from './export';
 import { writeGlb } from './glb';
 import { write3mf } from './threemf';
 import { scaling, translation } from '../model/math';
-import { centerMesh, centerOutline, checkedMesh, checkedOutline, IMPORT_EXTENSIONS, importFile } from './import';
+import { centerMesh, centerOutline, checkedMesh, checkedOutline, fileKind, IMPORT_EXTENSIONS, importFile } from './import';
 import type { Companion, ImportedModel } from './import';
 import type { OutlineShape } from '../model/types';
 import { signedArea } from './outline';
@@ -130,6 +130,22 @@ describe('importFile', () => {
   it('names the formats it can read when given another', () => {
     expect(() => importFile('part.step', new Uint8Array(4))).toThrow(/\.step files can't be imported.*STL, OBJ, 3MF, GLB, GLTF, SVG/);
     expect(() => importFile('README', new Uint8Array(4))).toThrow(/can't be imported/);
+  });
+
+  it('reads a file without an extension by what its bytes say (a document picked on Android)', () => {
+    // A download picked through the Android picker: no name to go by, only the bytes.
+    expect(importFile('msf:123', binaryStl(cubeFacets())).kind).toBe('model');
+    expect(importFile('msf:123', bytes('solid a\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\nendloop\nendfacet\nendsolid a\n')).kind).toBe('model');
+    const obj = importFile('msf:124', bytes('# made elsewhere\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n'));
+    expect(obj.kind).toBe('model');
+    expect(obj.kind === 'model' && obj.parts[0].name).toBe('msf:124');
+    expect(importFile('msf:125', bytes('<?xml version="1.0"?>\n<svg><rect width="1" height="1"/></svg>')).kind).toBe('outline');
+    expect(fileKind('msf:126', bytes('  0\nSECTION\n  2\nENTITIES\n  0\nENDSEC\n  0\nEOF\n'))).toBe('dxf');
+    expect(fileKind('msf:127', new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0]))).toBe('png');
+    expect(fileKind('msf:128', new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0]))).toBe('jpg');
+    // A known extension wins over the bytes; an unknown one with unreadable bytes is still refused.
+    expect(fileKind('part.stl', bytes('v 0 0 0\n'))).toBe('stl');
+    expect(() => importFile('part.step', bytes('ISO-10303-21;'))).toThrow(/\.step files can't be imported/);
   });
 });
 

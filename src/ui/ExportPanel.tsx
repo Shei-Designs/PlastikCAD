@@ -3,7 +3,7 @@ import { APP_NAME } from '../app';
 import { FORMATS } from '../io/export';
 import { skinOf } from '../geometry/skin';
 import { confirm } from '../platform';
-import { exportDesign, setPrefs, useEditor } from '../state/store';
+import { exportDesign, notify, setPrefs, useEditor } from '../state/store';
 import { ChevronIcon, DownloadIcon } from './icons';
 import { Popover } from './Popover';
 
@@ -11,7 +11,6 @@ export function ExportPanel() {
   const format = useEditor((s) => s.prefs.format);
   const selection = useEditor((s) => s.selection);
   const scene = useEditor((s) => s.doc.scene);
-  const [saved, setSaved] = useState<{ ok: boolean; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const active = FORMATS.find((f) => f.id === format)!;
   // Holes and hidden objects do not come out, nor do pictures on their own except in a GLB.
@@ -34,12 +33,12 @@ export function ExportPanel() {
       if (!ok) return;
     }
     setSaving(true);
-    setSaved(null);
     try {
+      // Told in the toast over the stage, so the panel keeps its height.
       const where = await exportDesign(format, partial);
-      if (where) setSaved({ ok: true, text: `Saved ${where}` });
+      if (where) notify(`Saved ${where}`);
     } catch (e) {
-      setSaved({ ok: false, text: `Export failed: ${e instanceof Error ? e.message : String(e)}` });
+      notify(`Export failed: ${e instanceof Error ? e.message : String(e)}`, 'error');
     } finally {
       setSaving(false);
     }
@@ -93,7 +92,6 @@ export function ExportPanel() {
           <DownloadIcon />
           {saving ? 'Exporting…' : partial ? 'Export selection' : 'Export'}
         </button>
-        {saved && <p className={saved.ok ? 'export-result' : 'export-result failed'}>{saved.text}</p>}
       </section>
     </div>
   );
