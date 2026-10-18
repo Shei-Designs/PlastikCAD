@@ -191,6 +191,26 @@ async fn save_export(app: AppHandle, request: Request<'_>) -> Result<tauri_plugi
     }
 }
 
+/// Writes the request body into `share/<name>` under the app's cache folder,
+/// for the device plugin to hand to other apps, and returns its path. The
+/// name travels in a header, percent-encoded. Earlier staged files go.
+#[tauri::command]
+async fn stage_share(app: AppHandle, request: Request<'_>) -> Result<String, String> {
+    let name = request
+        .headers()
+        .get("name")
+        .and_then(|value| percent_decode(value.as_bytes()))
+        .filter(|name| !name.is_empty() && !name.contains(['/', '\\']))
+        .ok_or("Could not prepare the file to share: no valid name was given")?;
+    let bytes = body_bytes(request.body()).ok_or_else(|| format!("Could not prepare {name}: the data was not bytes"))?;
+    let dir = app.path().app_cache_dir().map_err(|err| format!("Could not prepare {name}: {err}"))?.join("share");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).map_err(|err| format!("Could not prepare {name}: {err}"))?;
+    let path = dir.join(&name);
+    fs::write(&path, &bytes).map_err(|err| format!("Could not prepare {name}: {err}"))?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
 /// The first `limit` bytes of a file: enough of a design to read its header
 /// without loading the meshes it may carry.
 #[tauri::command]
@@ -499,6 +519,7 @@ pub fn run() {
             file_name,
             real_path,
             save_export,
+            stage_share,
             read_head,
             write_file,
             list_designs,

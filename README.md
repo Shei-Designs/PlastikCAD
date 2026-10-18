@@ -239,7 +239,8 @@ that; otherwise *Export* merges everything visible that is not a hole into one
 watertight mesh (after asking, when there are several objects). On desktop a
 save dialog asks where; on Android the app asks for a name, writes the file
 to `Download/BashCAD` (an OBJ and its `.mtl` into a folder of their name
-there), and says so in a box that offers *Share…* to hand it to another app. Units are millimeters, Z is up. A 3MF keeps every object separate, each with its color
+there), and says so in a box that offers *Share…* to hand it to another app
+(an OBJ and its `.mtl` go as one zip). Units are millimeters, Z is up. A 3MF keeps every object separate, each with its color
 as a base material; a group whose parts have colors of their own goes out as
 one object made of a closed part per color, with nothing overlapping, which
 slicers such as PrusaSlicer, OrcaSlicer, Bambu Studio and Cura can map to

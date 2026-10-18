@@ -51,6 +51,7 @@ vi.mock('../platform', () => ({
   canShare: () => false,
   keepsExports: () => false,
   share: async () => {},
+  shareBytes: async () => {},
   realPath: async (path: string) => path,
 }));
 

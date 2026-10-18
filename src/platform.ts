@@ -159,6 +159,12 @@ export async function share(uris: string[], mime: string): Promise<void> {
   await invoke('plugin:device|share', { uris, mime });
 }
 
+/** Android: opens the share sheet with a file made for the occasion (a zip of an export bundle), staged in the app's cache. */
+export async function shareBytes(name: string, bytes: Uint8Array, mime: string): Promise<void> {
+  const path = await command<string>('stage_share', bytes, { name: encodeURIComponent(name) });
+  await share([path], mime);
+}
+
 /** Where a picked file really is on disk, or null where that cannot be told (a document some other app holds). */
 export async function realPath(path: string): Promise<string | null> {
   if (!path.includes('://')) return path;

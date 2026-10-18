@@ -7,6 +7,7 @@ import { clampParams } from '../geometry/shapes';
 import { encodeFloat32, encodeUint32 } from '../io/base64';
 import { exportMesh, exportOutline, FORMATS } from '../io/export';
 import { writeObj } from '../io/obj';
+import { zipSync } from 'fflate';
 import { write3mf } from '../io/threemf';
 import type { FormatId } from '../io/export';
 import { centerMesh, centerOutline, fileKind, IMAGE_EXTENSIONS, IMPORT_EXTENSIONS, importFile } from '../io/import';
@@ -205,11 +206,21 @@ export function notify(text: string, kind: Notice['kind'] = 'info', action?: Not
  * waits: where they are, and Share… to hand them to another app. Elsewhere a
  * toast says where the file went.
  */
-export async function reportSaved(names: string[], where: string, uris: string[], mime: string): Promise<void> {
+/**
+ * Says where an export went: a toast, or on Android a box that offers to share
+ * it. Files that belong together (`bundle`) are shared as one zip of that name.
+ */
+export async function reportSaved(names: string[], where: string, uris: string[], mime: string, bundle?: { name: string; files: { name: string; bytes: Uint8Array }[] }): Promise<void> {
   const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
   if (!platform.canShare() || uris.length === 0) return notify(`Saved ${list} to ${where}`, 'ok');
   const chosen = await tell({ title: 'Exported', text: `${list} ${names.length === 1 ? 'is' : 'are'} in ${where}.`, actions: ['Share…', 'Done'] });
-  if (chosen === 'Share…') await platform.share(uris, mime).catch(fail);
+  if (chosen !== 'Share…') return;
+  if (bundle && bundle.files.length > 1) {
+    const zipped = zipSync(Object.fromEntries(bundle.files.map((f) => [f.name, f.bytes])));
+    await platform.shareBytes(`${bundle.name}.zip`, zipped, 'application/zip').catch(fail);
+  } else {
+    await platform.share(uris, mime).catch(fail);
+  }
 }
 
 /** On Android the name is asked for in the app (the file goes to its own folder); elsewhere the save dialog names the file. Null if backed out. */
@@ -1915,17 +1926,19 @@ export async function exportDesign(formatId: FormatId, selectionOnly: boolean): 
     const worker = await geometry.prepare(nodes, state.doc.assets);
     const result = await worker.exportColored(nodes, true);
     // The two go side by side, the library named after the file.
-    const names: string[] = [];
+    const bundle = { name, files: [] as { name: string; bytes: Uint8Array }[] };
     const where = await platform.saveBundle(`${name}.obj`, filters, format.mime, (base) => {
       const written = writeObj(result.objects, base);
       const files = [{ name: `${base}.obj`, bytes: written.obj, mime: format.mime }];
       if (written.mtl) files.push({ name: written.mtlName, bytes: written.mtl, mime: 'text/plain' });
-      names.push(...files.map((f) => f.name));
+      bundle.name = base;
+      bundle.files = files;
       return files;
     });
     if (!where) return false;
     for (const w of result.warnings) notify(w, 'error');
-    await reportSaved(names, where.where, where.uris, '*/*');
+    // Shared as one zip, so the two travel together.
+    await reportSaved(bundle.files.map((f) => f.name), where.where, where.uris, '*/*', bundle);
     return true;
   }
   if (format.id === 'glb') {

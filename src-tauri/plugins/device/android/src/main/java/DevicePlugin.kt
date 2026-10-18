@@ -21,6 +21,7 @@ import android.view.View
 import android.webkit.MimeTypeMap
 import android.webkit.WebView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import app.tauri.annotation.ActivityCallback
@@ -62,6 +63,7 @@ internal class ExportArgs {
 
 @InvokeArg
 internal class ShareArgs {
+  /** Content URIs, or paths of files staged under the app's cache folder (`share/`). */
   lateinit var uris: List<String>
   lateinit var mime: String
 }
@@ -284,12 +286,16 @@ class DevicePlugin(activity: Activity) : Plugin(activity), InputManager.InputDev
     return null
   }
 
-  /** Opens the system share sheet with the given files. */
+  /**
+   * Opens the system share sheet with the given files: documents by URI, or
+   * files staged in the cache by path, which go out through the app's own
+   * FileProvider (the one Tauri declares, whose paths cover the cache folder).
+   */
   @Command
   fun share(invoke: Invoke) {
     val args = invoke.parseArgs(ShareArgs::class.java)
     try {
-      val uris = ArrayList<Uri>(args.uris.map { Uri.parse(it) })
+      val uris = ArrayList<Uri>(args.uris.map { if (it.contains("://")) Uri.parse(it) else FileProvider.getUriForFile(host, host.packageName + ".fileprovider", File(it)) })
       val intent = if (uris.size == 1) {
         Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM, uris[0])
       } else {
