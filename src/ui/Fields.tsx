@@ -17,6 +17,22 @@ export function selectOnFocus(e: { target: HTMLInputElement; timeStamp: number }
   if (lastPress.type === 'touch' && e.timeStamp - lastPress.time < 1000) return;
   e.target.select();
 }
+
+/**
+ * A finger landing on a box: the box is focused by hand, with the caret at the
+ * end, instead of by the touch itself. Android then shows no teardrop handle
+ * at the caret, which otherwise floats over the keypad it just raised; the
+ * keyboard still comes up, since this runs inside the touch. A tap on a box
+ * that already has the focus is left to Android, so the caret can be moved.
+ */
+export function focusByTouch(e: { pointerType: string; currentTarget: HTMLInputElement; preventDefault: () => void }): void {
+  const box = e.currentTarget;
+  if (e.pointerType !== 'touch' || document.activeElement === box || box.disabled) return;
+  e.preventDefault();
+  box.focus({ preventScroll: true });
+  box.setSelectionRange(box.value.length, box.value.length);
+  box.scrollIntoView({ block: 'nearest' });
+}
 /** At most `places` decimals, without trailing zeros. */
 export const formatNumber = (value: number, places = 2) => String(Number(value.toFixed(places)));
 
@@ -67,6 +83,7 @@ export function NumberBox({ value, onChange, tag, unit, step = 1, min = -Infinit
         aria-label={label}
         disabled={disabled}
         value={text}
+        onPointerDown={focusByTouch}
         onFocus={(e) => {
           setEditing(true);
           selectOnFocus(e);

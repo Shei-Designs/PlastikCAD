@@ -126,7 +126,8 @@ ul {
   display: grid;
   /* The side panels give up a little width before the toolbar over the stage would run out of room. */
   grid-template-columns: minmax(236px, 280px) minmax(788px, 1fr) minmax(292px, 360px);
-  height: 100%;
+  /* The window's height, or what the keyboard leaves of it (see App.tsx). */
+  height: var(--app-height, 100%);
 }
 
 /* Below the desktop window's minimum (a scaled-up PWA, a tablet) the stage gives way instead, so the inspector stays on screen. */

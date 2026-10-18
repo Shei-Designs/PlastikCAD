@@ -48,7 +48,7 @@ import {
   WarningIcon,
 } from './icons';
 import { ArrayPanel } from './ArrayPanel';
-import { selectOnFocus } from './Fields';
+import { focusByTouch, selectOnFocus } from './Fields';
 import { Popover } from './Popover';
 import { MatePanel } from './MatePanel';
 import { TransformBox } from './TransformBox';
@@ -187,6 +187,7 @@ function HandleInput({ prompt, onClose }: { prompt: HandlePrompt; onClose: () =>
             value={texts[i]}
             spellCheck={false}
             inputMode="decimal"
+            onPointerDown={focusByTouch}
             onFocus={selectOnFocus}
             onChange={(e) => setTexts(texts.map((t, j) => (j === i ? e.target.value : t)))}
             onKeyDown={(e) => {

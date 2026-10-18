@@ -190,6 +190,21 @@ export default function App() {
   }, [name, dirty]);
 
   useEffect(() => {
+    // On Android the keyboard covers the page rather than shrinking it: the layout follows the
+    // visual viewport instead, so the box being typed in can be scrolled clear of the keypad.
+    const vv = window.visualViewport;
+    const follow = () => {
+      if (!vv) return;
+      const short = vv.height < window.innerHeight - 1;
+      document.documentElement.style.setProperty('--app-height', short ? `${Math.round(vv.height)}px` : '');
+      const active = document.activeElement;
+      if (short && (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement)) active.scrollIntoView({ block: 'nearest' });
+    };
+    vv?.addEventListener('resize', follow);
+    return () => vv?.removeEventListener('resize', follow);
+  }, []);
+
+  useEffect(() => {
     void restoreSession();
     window.addEventListener('keydown', onKeyDown);
     const stopDrops = platform.onFilesDropped((files) => void receiveFiles(files));
