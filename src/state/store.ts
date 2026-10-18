@@ -1635,8 +1635,16 @@ async function withCompanions(file: PickedFile, companions: PickedFile[]): Promi
     if (real) {
       const dir = real.slice(0, Math.max(real.lastIndexOf('/'), real.lastIndexOf('\\')) + 1);
       for (const name of missing) {
-        const read = await platform.readPath(dir + name).catch(() => null);
-        if (read) more.push(read);
+        // A library the file names, or failing that one named after the file, as the exporters write them.
+        const candidates = extension(name) === 'mtl' ? [name, `${baseName(file.name)}.mtl`] : [name];
+        for (const candidate of new Set(candidates)) {
+          const read = await platform.readPath(dir + candidate).catch(() => null);
+          if (read) {
+            // Under the name the file asked for, so the import finds it.
+            more.push(candidate === name ? read : { ...read, name });
+            break;
+          }
+        }
       }
     }
     if (more.length === 0 && (!file.path || file.path.includes('://'))) {

@@ -107,10 +107,16 @@ fn file_path(path: &str) -> FilePath {
 
 #[tauri::command]
 async fn read_file(app: AppHandle, path: String) -> Result<Response, String> {
-    app.fs()
-        .read(file_path(&path))
-        .map(Response::new)
-        .map_err(|err| format!("Could not read {path}: {err}"))
+    let read = app.fs().read(file_path(&path));
+    #[cfg(target_os = "android")]
+    let read = read.or_else(|err| {
+        // A file of the app's own in the shared storage that the path would not open is reached through the media store.
+        match if path.contains("://") { None } else { tauri_plugin_device::find_document(&app, &path) } {
+            Some(uri) => app.fs().read(file_path(&uri)),
+            None => Err(err),
+        }
+    });
+    read.map(Response::new).map_err(|err| format!("Could not read {path}: {err}"))
 }
 
 /// Where a file really is: a path names itself; the `content://` URIs the
@@ -130,7 +136,13 @@ fn real_path(app: AppHandle, path: String) -> Option<String> {
         options.read(true);
         let file = app.fs().open(parsed, options).ok()?;
         let target = fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd())).ok()?;
-        return Some(target.to_string_lossy().into_owned());
+        let target = target.to_string_lossy().into_owned();
+        // The descriptor points into the system's own mount of the shared storage (`/mnt/user/0/emulated/0/…`),
+        // which apps may not open; the same file is at `/storage/emulated/0/…`.
+        return Some(match target.find("/emulated/") {
+            Some(at) if !target.starts_with("/storage/") => format!("/storage{}", &target[at..]),
+            _ => target,
+        });
     }
     #[allow(unreachable_code)]
     {

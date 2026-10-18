@@ -87,6 +87,31 @@ pub fn export_to_downloads<R: Runtime>(app: &AppHandle<R>, folder: &str, name: &
         .map_err(|err| err.to_string())
 }
 
+#[cfg(target_os = "android")]
+#[derive(Serialize)]
+struct FindDocument<'a> {
+    path: &'a str,
+}
+
+#[cfg(target_os = "android")]
+#[derive(Deserialize)]
+struct Found {
+    uri: Option<String>,
+}
+
+/// Android only: the content URI of a file of the app's own in the shared
+/// storage (such as an export), given its path, for reading where the path
+/// itself cannot be opened. None if the media store does not know it.
+#[cfg(target_os = "android")]
+pub fn find_document<R: Runtime>(app: &AppHandle<R>, path: &str) -> Option<String> {
+    use tauri::Manager;
+    app.state::<Handle<R>>()
+        .0
+        .run_mobile_plugin::<Found>("findDocument", FindDocument { path })
+        .ok()?
+        .uri
+}
+
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("device")
         .invoke_handler(tauri::generate_handler![state])

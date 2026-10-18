@@ -207,8 +207,8 @@ export interface BundleFile {
 
 /**
  * Saves files that belong together, side by side: on desktop the save dialog
- * names the first and the rest go beside it; on Android all go to the app's
- * folder in Downloads; in the browser each is a download. `make` is given the
+ * names the first and the rest go beside it; on Android they go into a folder
+ * of their name in the app's folder in Downloads; in the browser each is a download. `make` is given the
  * name the bundle got (the chosen one, less its extension) and returns the
  * files. Resolves with where they went, or null if canceled.
  */
@@ -220,9 +220,11 @@ export async function saveBundle(suggestedName: string, filters: FileFilter[], m
     return { where: files.map((f) => f.name).join(' and '), uris: [] };
   }
   if (isAndroid()) {
+    // A folder of the bundle's name keeps its files together among the other exports.
+    const folder = base(suggestedName);
     const uris: string[] = [];
-    for (const file of make(base(suggestedName))) uris.push((await exportToAppFolder('', file.name, file.bytes, file.mime)).uri);
-    return { where: 'Download/BashCAD', uris };
+    for (const file of make(folder)) uris.push((await exportToAppFolder(folder, file.name, file.bytes, file.mime)).uri);
+    return { where: `Download/BashCAD/${folder}`, uris };
   }
   const target = await chooseSave(suggestedName, filters, mime);
   if (!target) return null;

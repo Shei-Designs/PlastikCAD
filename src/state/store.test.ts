@@ -30,11 +30,15 @@ vi.mock('./geometry', () => ({
 }));
 
 const saved: { name: string; bytes: Uint8Array }[] = [];
+/** Files a test puts on the pretend disk, by path, for `readPath` to find beside an import. */
+const shelf = new Map<string, Uint8Array>();
 vi.mock('../platform', () => ({
   confirm: async () => true,
   pickFiles: async () => [],
-  readPath: async () => {
-    throw new Error('no files here');
+  readPath: async (path: string) => {
+    const bytes = shelf.get(path);
+    if (!bytes) throw new Error('no files here');
+    return { name: path.slice(path.lastIndexOf('/') + 1), path, bytes };
   },
   saveAs: async (name: string, _filters: unknown, bytes: Uint8Array) => {
     saved.push({ name, bytes });
@@ -585,5 +589,16 @@ describe('importing', () => {
     await store.receiveFiles([ascii([[0, 0, 0, 10, 0, 0, 0, 10, 2], [0, 0, 0, 0, 10, 2, 10, 0, 0]])]);
     expect(scene().length).toBe(1);
     expect(scene()[0]).toMatchObject({ type: 'import', size: [10, 10, 2] });
+  });
+
+  it('reads a material library named after the OBJ beside it when the one it names is not there', async () => {
+    const text = (s: string) => new TextEncoder().encode(s);
+    const tetra = ['mtllib colors.mtl', 'v 0 0 0', 'v 10 0 0', 'v 0 10 0', 'v 0 0 10', 'usemtl red', 'f 1 2 3', 'f 1 2 4', 'f 2 3 4', 'f 1 4 3', ''].join('\n');
+    shelf.clear();
+    shelf.set('/exports/box/box.mtl', text('newmtl red\nKd 1 0 0\n'));
+    await store.receiveFiles([{ name: 'box.obj', path: '/exports/box/box.obj', bytes: text(tetra) }]);
+    expect(scene().length).toBe(1);
+    expect(scene()[0].color).toBe('#ff0000');
+    shelf.clear();
   });
 });

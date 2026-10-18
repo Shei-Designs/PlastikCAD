@@ -67,6 +67,12 @@ internal class ShareArgs {
 }
 
 @InvokeArg
+internal class FindDocumentArgs {
+  /** A path in the shared storage, such as `/storage/emulated/0/Download/BashCAD/box/box.mtl`. */
+  lateinit var path: String
+}
+
+@InvokeArg
 internal class WriteDocumentArgs {
   lateinit var uri: String
   /** A file holding the bytes, copied in and then deleted. */
@@ -249,6 +255,33 @@ class DevicePlugin(activity: Activity) : Plugin(activity), InputManager.InputDev
     } finally {
       source.delete()
     }
+  }
+
+  /**
+   * The content URI of a file at a path in the shared storage, from the media
+   * store, which lists the app's own files (its exports) there without any
+   * permission. Null for a path it does not know.
+   */
+  @Command
+  fun findDocument(invoke: Invoke) {
+    val args = invoke.parseArgs(FindDocumentArgs::class.java)
+    val result = JSObject()
+    result.put("uri", locate(args.path)?.toString())
+    invoke.resolve(result)
+  }
+
+  private fun locate(path: String): Uri? {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+    // The volume's root is `/storage/emulated/0/` (or `/mnt/user/0/emulated/0/` as a descriptor shows it).
+    val match = Regex("/emulated/\\d+/(.*/)?([^/]+)$").find(path) ?: return null
+    val relative = match.groupValues[1]
+    val name = match.groupValues[2]
+    if (relative.isEmpty()) return null
+    val collection = MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+    host.contentResolver.query(collection, arrayOf(MediaStore.MediaColumns._ID), "${MediaStore.MediaColumns.RELATIVE_PATH} = ? AND ${MediaStore.MediaColumns.DISPLAY_NAME} = ?", arrayOf(relative, name), null)?.use { rows ->
+      if (rows.moveToFirst()) return android.content.ContentUris.withAppendedId(collection, rows.getLong(0))
+    }
+    return null
   }
 
   /** Opens the system share sheet with the given files. */

@@ -238,8 +238,8 @@ The export button, at the bottom of the left panel, reads *Export selection* whe
 that; otherwise *Export* merges everything visible that is not a hole into one
 watertight mesh (after asking, when there are several objects). On desktop a
 save dialog asks where; on Android the app asks for a name, writes the file
-to `Download/BashCAD`, and says so in a box that offers *Share…* to hand it
-to another app. Units are millimeters, Z is up. A 3MF keeps every object separate, each with its color
+to `Download/BashCAD` (an OBJ and its `.mtl` into a folder of their name
+there), and says so in a box that offers *Share…* to hand it to another app. Units are millimeters, Z is up. A 3MF keeps every object separate, each with its color
 as a base material; a group whose parts have colors of their own goes out as
 one object made of a closed part per color, with nothing overlapping, which
 slicers such as PrusaSlicer, OrcaSlicer, Bambu Studio and Cura can map to
@@ -271,9 +271,11 @@ left alone, since that is its shape.
 - **3MF**: every build item is a part, split further where its triangles
   carry different colors; colors come from the base materials and color
   groups. Textures and slicer settings are ignored.
-- **OBJ**: the `.mtl` and the pictures it names are read from beside the
-  `.obj` on disk, or asked for where the picker grants one file at a time
-  (Android, the browser), and each material comes in with its color (`Kd`)
+- **OBJ**: the `.mtl` (the one the file names, or one named after it) and
+  the pictures it names are read from beside the `.obj`, including the
+  app's own exports on Android; only when they are not there are they asked
+  for, where the picker grants one file at a time (Android, the browser).
+  Each material comes in with its color (`Kd`)
   and picture (`map_Kd`), laid out by the file's texture coordinates. Without
   them, an OBJ comes in plain.
 - **GLB / glTF**: meshes are placed by the scene's nodes and turned from Y up
