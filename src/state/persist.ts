@@ -14,7 +14,7 @@ export interface Prefs {
   snap: number;
   format: FormatId;
   /** Which tab the left panel shows: the library of shapes and parts, or the design's objects. */
-  sidebar: 'library' | 'objects';
+  sidebar: 'library' | 'objects' | 'structure';
   /** The folder projects are kept in, when the user picked one (desktop app); null for the default. */
   projectsDir: string | null;
   /** Key of the project that was open last, to open it again at start-up. */
@@ -42,7 +42,7 @@ export function loadPrefs(): Prefs {
     grid: saved.grid ?? true,
     snap: SNAP_STEPS.includes(saved.snap as number) ? (saved.snap as number) : 1,
     format: (['stl', '3mf', 'obj', 'glb', 'svg', 'dxf'] as const).find((f) => f === saved.format) ?? 'stl',
-    sidebar: saved.sidebar === 'objects' ? 'objects' : 'library',
+    sidebar: saved.sidebar === 'objects' || saved.sidebar === 'structure' ? saved.sidebar : 'library',
     projectsDir: typeof saved.projectsDir === 'string' && saved.projectsDir ? saved.projectsDir : null,
     lastProject: typeof saved.lastProject === 'string' && saved.lastProject ? saved.lastProject : null,
     device,

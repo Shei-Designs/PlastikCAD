@@ -275,9 +275,16 @@ function Objects() {
                     if (e.shiftKey || e.ctrlKey || e.metaKey) toggleSelected(node.id);
                     else select([node.id]);
                   }}
+                  // A second click (or tap) goes to the object's structure.
+                  onDoubleClick={() => {
+                    if (node.hidden) return;
+                    select([node.id]);
+                    showTab('structure');
+                  }}
                 >
                   <span className={node.hole ? 'dot hole' : 'dot'} style={{ background: node.hole ? undefined : node.color, borderColor: node.hole ? HOLE_COLOR : undefined }} />
                   <span className="clip">{node.name}</span>
+                  {node.note && <span className="note-mark" title="Has notes" />}
                 </button>
                 <button
                   type="button"
@@ -308,28 +315,22 @@ function Objects() {
   );
 }
 
-/** The lower half of the Objects tab: how the selected object was put together, when it is a group. */
-function SelectedStructure() {
+/** The Structure tab: the selected object's tree and notes, or a word on what to select. */
+function StructureTab() {
   const scene = useEditor((s) => s.doc.scene);
   const selection = useEditor((s) => s.selection);
   const nodes = scene.filter((n) => selection.includes(n.id));
-  const group = nodes.length === 1 && nodes[0].type === 'group' ? nodes[0] : null;
+  if (nodes.length === 1) return <Structure root={nodes[0]} />;
   return (
-    <section className="structure-pane">
-      {group ? (
-        <Structure root={group} />
-      ) : (
-        <>
-          <h2>Structure tree</h2>
-          <p className="empty">{nodes.length === 1 ? 'A single shape has no parts inside it.' : 'Select a group to see how it was put together.'}</p>
-        </>
-      )}
+    <section className="structure-empty">
+      <h2>Structure</h2>
+      <p className="empty">{nodes.length === 0 ? 'Select an object to see how it was put together and keep notes on it.' : 'Select one object at a time to see its structure.'}</p>
     </section>
   );
 }
 
 /** A shape being carried from the library is put back when the tab changes: the next press on the plate must not place it. */
-function showTab(tab: 'library' | 'objects'): void {
+function showTab(tab: 'library' | 'objects' | 'structure'): void {
   cancelPlacing();
   setPrefs({ sidebar: tab });
 }
@@ -364,6 +365,9 @@ export function Sidebar() {
           <button type="button" role="tab" aria-selected={tab === 'objects'} className={tab === 'objects' ? 'on' : ''} onClick={() => showTab('objects')}>
             Objects
           </button>
+          <button type="button" role="tab" aria-selected={tab === 'structure'} className={tab === 'structure' ? 'on' : ''} onClick={() => showTab('structure')}>
+            Structure
+          </button>
         </div>
       </div>
       {tab === 'library' ? (
@@ -371,10 +375,13 @@ export function Sidebar() {
           <Shapes />
           <ImportRow />
         </nav>
-      ) : (
+      ) : tab === 'objects' ? (
         <nav className="catalog objects-tab" aria-label="Objects">
           <Objects />
-          <SelectedStructure />
+        </nav>
+      ) : (
+        <nav className="catalog structure-pane" aria-label="Structure">
+          <StructureTab />
         </nav>
       )}
       <ExportPanel />

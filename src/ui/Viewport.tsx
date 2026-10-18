@@ -41,14 +41,12 @@ import {
   FitIcon,
   GroupIcon,
   MirrorIcon,
-  NoteIcon,
   RedoIcon,
   TrashIcon,
   UndoIcon,
   UngroupIcon,
   WarningIcon,
 } from './icons';
-import { NotePanel } from './NotePanel';
 import { ArrayPanel } from './ArrayPanel';
 import { selectOnFocus } from './Fields';
 import { Popover } from './Popover';
@@ -136,9 +134,6 @@ function Actions() {
         </button>
       </div>
       <div className="chip-group">
-        <Popover className={picked.length === 1 && picked[0].note ? 'chip icon noted' : 'chip icon'} title="Note" button={<NoteIcon />} disabled={picked.length !== 1} align="right">
-          {() => <NotePanel path={[picked[0].id]} note={picked[0].note ?? ''} />}
-        </Popover>
       </div>
     </div>
   );
