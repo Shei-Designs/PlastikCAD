@@ -357,7 +357,7 @@ export function Sidebar() {
       </div>
       <FileBar />
       <div className="tabs">
-        <div className="segmented" role="tablist">
+        <div className="page-tabs" role="tablist">
           <button type="button" role="tab" aria-selected={tab === 'library'} className={tab === 'library' ? 'on' : ''} onClick={() => showTab('library')}>
             Library
           </button>

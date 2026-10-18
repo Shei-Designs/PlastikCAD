@@ -16,6 +16,9 @@ const MOD = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform) ?
 
 const TOUCH = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 
+/** Fingers need bigger swatches than fit in one row: the row keeps the first few colors, the custom swatch covers the rest. */
+const SWATCHES = TOUCH ? PALETTE.slice(0, 7) : PALETTE;
+
 const SHORTCUTS: [string, string][] = [
   ...(TOUCH
     ? ([
@@ -109,7 +112,7 @@ function Appearance({ nodes }: { nodes: SceneNode[] }) {
         </div>
       </div>
       <div className="swatch-row" role="group" aria-label="Color">
-        {PALETTE.map((c) => (
+        {SWATCHES.map((c) => (
           <button
             key={c.value}
             type="button"
