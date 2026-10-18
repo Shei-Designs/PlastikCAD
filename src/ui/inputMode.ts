@@ -3,7 +3,8 @@
 // and says when it changes (a keyboard docked or undocked, the keypad coming
 // up); everywhere else there is a keyboard. Boxes tapped with a finger type
 // in place when there is a keyboard and open the entry sheet when there is not.
-import { addPluginListener, invoke, isTauri } from '@tauri-apps/api/core';
+import { addPluginListener, invoke } from '@tauri-apps/api/core';
+import { isAndroid } from '../platform';
 
 export interface InputState {
   hardwareKeyboard: boolean;
@@ -11,8 +12,6 @@ export interface InputState {
   /** Height of the keypad over the page, in CSS pixels. */
   keypadHeight: number;
 }
-
-const isAndroid = (): boolean => isTauri() && typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
 
 /** Unknown until the plugin has answered; a desktop or a browser is taken to have a keyboard. */
 let state: InputState | null = isAndroid() ? null : { hardwareKeyboard: true, keypadVisible: false, keypadHeight: 0 };

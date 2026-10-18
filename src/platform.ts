@@ -21,6 +21,11 @@ export function isDesktop(): boolean {
   return isTauri();
 }
 
+/** The Android app: the Tauri shell in an Android webview. */
+export function isAndroid(): boolean {
+  return isTauri() && typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+}
+
 function baseName(path: string): string {
   return path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1);
 }
@@ -88,7 +93,9 @@ export async function pickFiles(options: { filters: FileFilter[]; multiple?: boo
   const multiple = options.multiple ?? false;
   if (!isTauri()) return pickInBrowser(options.filters, multiple);
   const { open } = await import('@tauri-apps/plugin-dialog');
-  const picked: string | string[] | null = await open({ filters: options.filters, multiple });
+  // Android's picker filters by the MIME type a file was stored with, which a GLB or a design file rarely
+  // has (they show greyed out), so there every file is offered and the app reads what each one is itself.
+  const picked: string | string[] | null = await open({ filters: isAndroid() ? [] : options.filters, multiple });
   if (picked === null) return [];
   return Promise.all((Array.isArray(picked) ? picked : [picked]).map(readPath));
 }
@@ -128,7 +135,9 @@ export async function saveAs(
 ): Promise<{ path: string | null; name: string } | null> {
   if (isTauri()) {
     const { save } = await import('@tauri-apps/plugin-dialog');
-    const path = await save({ defaultPath: suggestedName, filters });
+    // Android keeps the type the document was created with; given as a MIME type (which the plugin passes
+    // through as it is), rather than left to the extension, which the system may not know.
+    const path = await save({ defaultPath: suggestedName, filters: isAndroid() ? [{ name: filters[0]?.name ?? mime, extensions: [mime] }] : filters });
     if (!path) return null;
     await writePath(path, bytes);
     return { path, name: baseName(path) };
