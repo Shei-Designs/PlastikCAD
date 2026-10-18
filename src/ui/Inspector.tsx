@@ -14,10 +14,22 @@ import type { Section } from './Sections';
 
 const MOD = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform) ? '⌘' : 'Ctrl+';
 
+const TOUCH = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+
 const SHORTCUTS: [string, string][] = [
-  ['Orbit', 'Right drag'],
-  ['Pan', 'Middle drag · Shift+right drag'],
-  ['Zoom', 'Wheel'],
+  ...(TOUCH
+    ? ([
+        ['Orbit', 'One finger'],
+        ['Pan / zoom', 'Two fingers'],
+        ['Select more', 'Hold an object'],
+        ['Box select', 'Hold the plate, then drag'],
+        ['Clear selection', 'Tap the plate'],
+      ] as [string, string][])
+    : ([
+        ['Orbit', 'Right drag'],
+        ['Pan', 'Middle drag · Shift+right drag'],
+        ['Zoom', 'Wheel'],
+      ] as [string, string][])),
   ['Move', 'Drag · arrow keys'],
   ['Raise or lower', `Arrow handle · ${MOD}↑↓`],
   ['Resize height', 'Drag top or bottom grip'],

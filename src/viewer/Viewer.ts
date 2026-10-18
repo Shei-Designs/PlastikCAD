@@ -164,6 +164,8 @@ const PROMPT_BOX: [number, number] = [100, 28]; // px, about the size of a box
 const TOUCH_DRAG_THRESHOLD = 10; // px
 /** How much bigger a grip is to a finger than to the eye. */
 const TOUCH_GRIP_SCALE = 2.5;
+/** A finger held still this long means "more": add to the selection, or box-select. */
+const LONG_PRESS_MS = 450;
 const dragThreshold = (event: PointerEvent) => (event.pointerType === 'touch' ? TOUCH_DRAG_THRESHOLD : DRAG_THRESHOLD);
 const MIN_SIZE = 0.1; // mm
 const ROTATE_STEP = 15;
@@ -255,7 +257,10 @@ interface Frame {
 }
 
 type Drag =
-  | { mode: 'pending-move'; x: number; y: number; nodes: SceneNode[]; plane: Plane; origin: Vector3 }
+  /** `select` is the node a finger landed on, selected only once the press turns out to be a tap or a drag (a long press adds it instead). */
+  | { mode: 'pending-move'; x: number; y: number; nodes: SceneNode[]; plane: Plane; origin: Vector3; select?: string }
+  /** A finger on empty space: the camera has it unless it lifts without moving (clears the selection) or stays put (box selection). */
+  | { mode: 'pending-tap'; x: number; y: number }
   | { mode: 'move'; nodes: SceneNode[]; plane: Plane; origin: Vector3 }
   | { mode: 'pending-marquee'; x: number; y: number; additive: boolean }
   | { mode: 'marquee'; x: number; y: number; additive: boolean }
@@ -492,7 +497,8 @@ export class Viewer {
     this.drag = null;
     this.hideMarquee();
     this.events.onReadout(null, 0, 0);
-    if (drag.mode !== 'pending-move' && drag.mode !== 'pending-marquee' && drag.mode !== 'marquee' && drag.mode !== 'place') {
+    this.endHold();
+    if (drag.mode !== 'pending-move' && drag.mode !== 'pending-tap' && drag.mode !== 'pending-marquee' && drag.mode !== 'marquee' && drag.mode !== 'place') {
       this.events.onGestureEnd(true);
     }
     return true;
@@ -1379,6 +1385,7 @@ export class Viewer {
 
     const hit = this.pickNode();
     const additive = event.shiftKey || event.ctrlKey || event.metaKey;
+    const touch = event.pointerType === 'touch';
     // In align mode a click on a selected object makes it the anchor instead of starting a drag.
     if (this.options.align && hit?.item.selected && !additive) {
       this.events.onAnchor(hit.item.node.id);
@@ -1386,8 +1393,17 @@ export class Viewer {
       return;
     }
     if (!hit) {
-      // Empty space: a mouse draws a marquee; a finger turns the camera (OrbitControls takes it from here).
-      if (event.pointerType !== 'touch') this.drag = { mode: 'pending-marquee', x: event.clientX, y: event.clientY, additive };
+      // Empty space: a mouse draws a marquee. A finger turns the camera (OrbitControls takes it from
+      // here), unless it lifts without moving (a tap clears the selection) or stays put (box selection).
+      if (!touch) this.drag = { mode: 'pending-marquee', x: event.clientX, y: event.clientY, additive };
+      else {
+        this.drag = { mode: 'pending-tap', x: event.clientX, y: event.clientY };
+        this.holdFor(() => {
+          this.controls.enabled = false;
+          this.drag = { mode: 'marquee', x: event.clientX, y: event.clientY, additive: true };
+          this.showMarquee(event.clientX, event.clientY, event.clientX, event.clientY);
+        });
+      }
       return;
     }
     claim();
@@ -1396,9 +1412,11 @@ export class Viewer {
       this.events.onSelect([node.id], 'toggle');
       return;
     }
-    // Dragging something that is not selected yet selects it and moves it alone.
+    // Dragging something that is not selected yet selects it and moves it alone. A mouse selects it at
+    // once; a finger only once the press turns out to be a tap or a drag, since a long press adds it instead.
     const selected = hit.item.selected ? this.items.filter((i) => i.selected).map((i) => i.node) : [node];
-    if (!hit.item.selected) this.events.onSelect([node.id], 'replace');
+    const later = touch && !hit.item.selected;
+    if (!hit.item.selected && !later) this.events.onSelect([node.id], 'replace');
     const movable = selected.filter((n) => !n.locked);
     this.drag = {
       mode: 'pending-move',
@@ -1407,8 +1425,33 @@ export class Viewer {
       nodes: movable,
       plane: new Plane(new Vector3(0, 0, 1), -hit.point.z),
       origin: hit.point.clone(),
+      ...(later ? { select: node.id } : {}),
     };
+    if (touch) {
+      this.holdFor(() => {
+        // Held still on an object: it joins (or leaves) the selection, and nothing moves.
+        this.drag = null;
+        if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+        this.events.onSelect([node.id], 'toggle');
+      });
+    }
   };
+
+  private longPress: ReturnType<typeof setTimeout> | undefined;
+
+  /** Runs `then` if the finger is still down and has not moved by then. */
+  private holdFor(then: () => void): void {
+    clearTimeout(this.longPress);
+    this.longPress = setTimeout(() => {
+      this.longPress = undefined;
+      if (this.drag?.mode === 'pending-tap' || this.drag?.mode === 'pending-move') then();
+    }, LONG_PRESS_MS);
+  }
+
+  private endHold(): void {
+    clearTimeout(this.longPress);
+    this.longPress = undefined;
+  }
 
   private startHandleDrag(handle: Handle, event: PointerEvent): void {
     const f = this.frame!;
@@ -1786,8 +1829,16 @@ export class Viewer {
     switch (drag.mode) {
       case 'held':
         return;
+      case 'pending-tap':
+        // The finger is moving: the camera has it after all.
+        if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < dragThreshold(event)) return;
+        this.endHold();
+        this.drag = null;
+        return;
       case 'pending-move': {
         if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < dragThreshold(event) || drag.nodes.length === 0) return;
+        this.endHold();
+        if (drag.select) this.events.onSelect([drag.select], 'replace');
         this.drag = { mode: 'move', nodes: drag.nodes, plane: drag.plane, origin: drag.origin };
         this.renderer.domElement.style.cursor = 'move';
         this.events.onGestureStart();
@@ -1822,6 +1873,7 @@ export class Viewer {
 
   private readonly onPointerUp = (event: PointerEvent): void => {
     if (this.otherPointer(event)) return;
+    this.endHold();
     const drag = this.drag;
     this.drag = null;
     const canvas = this.renderer.domElement;
@@ -1847,6 +1899,11 @@ export class Viewer {
         }
         return;
       case 'pending-move':
+        // A finger that tapped an object selects it.
+        if (drag.select && event.type === 'pointerup') this.events.onSelect([drag.select], 'replace');
+        return;
+      case 'pending-tap':
+        if (event.type === 'pointerup') this.events.onSelect([], 'replace');
         return;
       case 'pending-marquee':
         // A plain click on nothing clears the selection.

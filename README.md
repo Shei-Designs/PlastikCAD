@@ -203,6 +203,7 @@ plus the thumbnail line at the top.
 | --- | --- |
 | Orbit / pan / zoom | Right drag / middle drag (or Shift + right drag) / wheel |
 | Select | Click; Shift-click adds; drag on the plate for a box selection |
+| Touch | One finger orbits, two pan and zoom; tap an object to select it, tap the plate to clear; hold an object to add it to the selection; hold the plate and drag for a box selection |
 | Move | Drag (Shift keeps to one axis); arrow keys nudge by the snap step, Shift ×10 |
 | Raise or lower | Arrow handle; Ctrl+Up / Ctrl+Down |
 | Resize | Corner and edge grips; the top grip pulls the height up, the bottom grip pulls it down; Shift scales evenly |
