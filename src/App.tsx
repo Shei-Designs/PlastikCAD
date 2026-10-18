@@ -40,6 +40,7 @@ import { Inspector } from './ui/Inspector';
 import { Projects } from './ui/Projects';
 import { Sidebar } from './ui/Sidebar';
 import { initInput } from './ui/inputMode';
+import { AskDialog } from './ui/AskDialog';
 import { TouchEntrySheet } from './ui/TouchEntry';
 import { Viewport, viewerRef } from './ui/Viewport';
 import { CloseIcon, WarningIcon } from './ui/icons';
@@ -254,6 +255,7 @@ export default function App() {
       <Inspector />
       <Projects />
       <TouchEntrySheet />
+      <AskDialog />
       <Toast />
     </div>
   );

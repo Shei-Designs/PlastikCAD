@@ -151,6 +151,9 @@ export async function exportToAppFolder(folder: string, name: string, bytes: Uin
 /** Whether files can be handed to other apps from here (the Android share sheet). */
 export const canShare = (): boolean => isAndroid();
 
+/** Whether exports are named in the app and kept in its own folder (Android), rather than placed through a save dialog. */
+export const keepsExports = (): boolean => isAndroid();
+
 /** Android: opens the share sheet with the given files. */
 export async function share(uris: string[], mime: string): Promise<void> {
   await invoke('plugin:device|share', { uris, mime });
@@ -203,12 +206,11 @@ export interface BundleFile {
 }
 
 /**
- * Saves files that belong together in a new folder of their own, so they are
- * not parted: on desktop the save dialog names the folder (its chosen name,
- * less the extension) inside the chosen place; on Android a folder is picked
- * and the new one made in it; in the browser each file is a download. `make`
- * is given the name the bundle got and returns its files. Resolves with where
- * they went, or null if canceled.
+ * Saves files that belong together, side by side: on desktop the save dialog
+ * names the first and the rest go beside it; on Android all go to the app's
+ * folder in Downloads; in the browser each is a download. `make` is given the
+ * name the bundle got (the chosen one, less its extension) and returns the
+ * files. Resolves with where they went, or null if canceled.
  */
 export async function saveBundle(suggestedName: string, filters: FileFilter[], mime: string, make: (base: string) => BundleFile[]): Promise<{ where: string; uris: string[] } | null> {
   const base = (name: string) => name.replace(/\.[^.]+$/, '');
@@ -218,19 +220,15 @@ export async function saveBundle(suggestedName: string, filters: FileFilter[], m
     return { where: files.map((f) => f.name).join(' and '), uris: [] };
   }
   if (isAndroid()) {
-    // A folder of its own in the app's folder in Downloads; nothing to pick.
-    const name = base(suggestedName);
     const uris: string[] = [];
-    for (const file of make(name)) uris.push((await exportToAppFolder(name, file.name, file.bytes, file.mime)).uri);
-    return { where: `Download/BashCAD/${name}`, uris };
+    for (const file of make(base(suggestedName))) uris.push((await exportToAppFolder('', file.name, file.bytes, file.mime)).uri);
+    return { where: 'Download/BashCAD', uris };
   }
   const target = await chooseSave(suggestedName, filters, mime);
   if (!target) return null;
-  const name = base(target.name);
-  const folder = target.path!.slice(0, target.path!.length - target.name.length) + name;
-  const separator = folder.includes('\\') && !folder.includes('/') ? '\\' : '/';
-  for (const file of make(name)) await writePath(`${folder}${separator}${file.name}`, file.bytes);
-  return { where: folder, uris: [] };
+  const folder = target.path!.slice(0, target.path!.length - target.name.length);
+  for (const file of make(base(target.name))) await writePath(folder + file.name, file.bytes);
+  return { where: folder.replace(/[\\/]$/, ''), uris: [] };
 }
 
 /** Native save dialog then write (desktop), or a download (browser, where `path` is null). Null if canceled. */

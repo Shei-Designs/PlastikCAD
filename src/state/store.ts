@@ -43,6 +43,7 @@ import { sanitizeParams } from '../parts/generators/types';
 import { mateOf } from '../parts/mates';
 import type { MateRequest } from '../parts/mates';
 import * as platform from '../platform';
+import { askName, tell } from '../ui/ask';
 import type { PickedFile } from '../platform';
 import { DEFAULT_FONT, loadFont, outlineOf } from '../text/fonts';
 import { geometry } from './geometry';
@@ -199,9 +200,23 @@ export function notify(text: string, kind: Notice['kind'] = 'info', action?: Not
   noticeTimer = setTimeout(() => set({ notice: null }), kind === 'error' || action ? 8000 : 3500);
 }
 
-/** A "Share…" button for the toast, where files can be handed to other apps; nothing elsewhere. */
-const shareAction = (uris: string[], mime: string): Notice['action'] | undefined =>
-  platform.canShare() && uris.length ? { label: 'Share…', run: () => void platform.share(uris, mime).catch(fail) } : undefined;
+/**
+ * Word of files written to the app's own folder (Android), in a box that
+ * waits: where they are, and Share… to hand them to another app. Elsewhere a
+ * toast says where the file went.
+ */
+export async function reportSaved(names: string[], where: string, uris: string[], mime: string): Promise<void> {
+  const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  if (!platform.canShare() || uris.length === 0) return notify(`Saved ${list} to ${where}`, 'ok');
+  const chosen = await tell({ title: 'Exported', text: `${list} ${names.length === 1 ? 'is' : 'are'} in ${where}.`, actions: ['Share…', 'Done'] });
+  if (chosen === 'Share…') await platform.share(uris, mime).catch(fail);
+}
+
+/** On Android the name is asked for in the app (the file goes to its own folder); elsewhere the save dialog names the file. Null if backed out. */
+async function exportName(suggested: string, extension: string): Promise<string | null> {
+  if (!platform.keepsExports()) return suggested;
+  return askName({ title: 'Export', label: 'File name', value: suggested, suffix: `.${extension}`, okLabel: 'Export' });
+}
 
 export const dismissNotice = (): void => set({ notice: null });
 
@@ -1402,9 +1417,11 @@ export async function saveCopy(): Promise<boolean> {
   try {
     await saveProject(true);
     const bytes = new TextEncoder().encode(serializeDoc(docToSave()));
-    const where = await platform.saveAs(fileNameFor(state.doc.name), DESIGN_FILTER, bytes, 'application/json');
+    const name = await exportName(fileNameFor(state.doc.name).replace(/\.[^.]+$/, ''), FILE_EXTENSION);
+    if (!name) return false;
+    const where = await platform.saveAs(`${name}.${FILE_EXTENSION}`, DESIGN_FILTER, bytes, 'application/json');
     if (!where) return false;
-    notify(`Saved a copy to ${where.path ?? where.name}`, 'ok', shareAction(where.uri ? [where.uri] : [], 'application/json'));
+    await reportSaved([where.name], where.path ? where.path.slice(0, where.path.length - where.name.length).replace(/[\\/]$/, '') || where.path : 'your downloads', where.uri ? [where.uri] : [], 'application/json');
     return true;
   } catch (e) {
     fail(e);
@@ -1875,11 +1892,12 @@ export async function importModel(): Promise<void> {
   }
 }
 
-/** Write the design (or just the selection) in an exchange format. Returns where it went, with a way to share it where there is one, or null if canceled. */
-export async function exportDesign(formatId: FormatId, selectionOnly: boolean): Promise<{ where: string; share?: Notice['action'] } | null> {
+/** Writes the design (or just the selection) in an exchange format and says where it went. Returns false if canceled. */
+export async function exportDesign(formatId: FormatId, selectionOnly: boolean): Promise<boolean> {
   const format = FORMATS.find((f) => f.id === formatId)!;
   const nodes = selectionOnly ? selectedNodes() : state.doc.scene;
-  const name = state.doc.name;
+  const name = await exportName(state.doc.name, format.extension);
+  if (!name) return false;
   const filters = [{ name: format.label, extensions: [format.extension] }];
   let bytes: Uint8Array;
   let warnings: string[] = [];
@@ -1888,16 +1906,19 @@ export async function exportDesign(formatId: FormatId, selectionOnly: boolean): 
     // first, and the files written for the name they were given there.
     const worker = await geometry.prepare(nodes, state.doc.assets);
     const result = await worker.exportColored(nodes, true);
-    // The two go into a folder of their own, so they are not parted.
+    // The two go side by side, the library named after the file.
+    const names: string[] = [];
     const where = await platform.saveBundle(`${name}.obj`, filters, format.mime, (base) => {
       const written = writeObj(result.objects, base);
       const files = [{ name: `${base}.obj`, bytes: written.obj, mime: format.mime }];
       if (written.mtl) files.push({ name: written.mtlName, bytes: written.mtl, mime: 'text/plain' });
+      names.push(...files.map((f) => f.name));
       return files;
     });
-    if (!where) return null;
+    if (!where) return false;
     for (const w of result.warnings) notify(w, 'error');
-    return { where: where.where, share: shareAction(where.uris, '*/*') };
+    await reportSaved(names, where.where, where.uris, '*/*');
+    return true;
   }
   if (format.id === 'glb') {
     bytes = await exportGlb(nodes, state.doc.assets, name);
@@ -1915,9 +1936,10 @@ export async function exportDesign(formatId: FormatId, selectionOnly: boolean): 
     warnings = result.warnings;
   }
   const where = await platform.saveAs(`${name}.${format.extension}`, filters, bytes, format.mime);
-  if (!where) return null;
+  if (!where) return false;
   for (const w of warnings) notify(w, 'error');
-  return { where: where.path ?? where.name, share: shareAction(where.uri ? [where.uri] : [], format.mime) };
+  await reportSaved([where.name], where.path ? where.path.slice(0, where.path.length - where.name.length).replace(/[\\/]$/, '') || where.path : 'your downloads', where.uri ? [where.uri] : [], format.mime);
+  return true;
 }
 
 // --- start-up -------------------------------------------------------------------

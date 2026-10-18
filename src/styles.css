@@ -427,6 +427,99 @@ ul {
   margin-top: 10px;
 }
 
+/* ---------- questions (ask.ts) ---------- */
+
+.ask {
+  /* High enough to clear the on-screen keyboard on a tablet. */
+  margin-top: max(16px, 12vh);
+  width: min(400px, calc(100vw - 32px));
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.ask::backdrop {
+  background: rgb(0 0 0 / 0.35);
+}
+
+.ask-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 18px 18px;
+}
+
+.ask-body h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.ask-body p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.ask-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ask-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ask-name .text-input {
+  height: 36px;
+  font-size: 15px;
+  color: var(--text);
+}
+
+.ask-suffix {
+  flex: none;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.ask-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.ask-buttons .chip,
+.ask-buttons .primary {
+  width: auto;
+  height: 36px;
+  padding: 0 18px;
+}
+
+@media (pointer: coarse) {
+  .ask-name .text-input {
+    height: 44px;
+    font-size: 17px;
+  }
+
+  .ask-buttons .chip,
+  .ask-buttons .primary {
+    height: 42px;
+    padding: 0 22px;
+  }
+}
+
 .icon-button {
   display: grid;
   place-items: center;
