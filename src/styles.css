@@ -490,7 +490,7 @@ ul {
   border-left: 1px solid var(--border);
 }
 
-/* Inside the bar the chips are flat: the bar is the frame. */
+/* Inside the bar the chips are flat: the bar is the frame. A lit chip keeps its accent ring, so Edges and Grid read on or off at a glance. */
 .toolbar .chip {
   border-color: transparent;
   border-radius: 6px;
@@ -498,13 +498,16 @@ ul {
   backdrop-filter: none;
 }
 
-.toolbar .chip:hover:not(:disabled) {
-  background: var(--control);
+/* Only where a pointer can hover: on a touch screen the hover look would stay on the last button tapped. */
+@media (hover: hover) {
+  .toolbar .chip:hover:not(:disabled) {
+    background: var(--control);
+  }
 }
 
 .toolbar .chip.on {
-  border-color: transparent;
-  background: var(--control);
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 .toolbar .popover.open > .chip {
