@@ -187,7 +187,7 @@ function Toast() {
   const error = notice.kind === 'error';
   return (
     <div className="toast-host">
-      <div className={error ? 'toast error' : 'toast'} role={error ? 'alert' : 'status'}>
+      <div className={error ? 'toast error' : notice.kind === 'ok' ? 'toast ok' : 'toast'} role={error ? 'alert' : 'status'}>
         {error && <WarningIcon />}
         <span>{notice.text}</span>
         <button type="button" className="notice-close" aria-label="Dismiss" onClick={dismissNotice}>

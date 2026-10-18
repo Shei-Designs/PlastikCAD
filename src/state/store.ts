@@ -55,7 +55,8 @@ import type { SyncReport } from '../sync/engine';
 import { mergeDocs } from '../sync/merge';
 
 export interface Notice {
-  kind: 'error' | 'info';
+  /** `ok` for something that went through (a save, an export, a sync), `info` for a plain word, `error` for what failed. */
+  kind: 'error' | 'info' | 'ok';
   text: string;
 }
 
@@ -1276,7 +1277,7 @@ async function write(fresh: boolean): Promise<boolean> {
 
 /** Ctrl+S: there is nothing to do but write what autosave would have a moment later, and say so. */
 export async function saveNow(): Promise<void> {
-  if (await saveProject(true)) notify(state.doc.scene.length || state.projectKey ? 'Saved' : 'Nothing to save yet');
+  if (await saveProject(true)) notify(state.doc.scene.length || state.projectKey ? 'Saved' : 'Nothing to save yet', 'ok');
 }
 
 function adopt(doc: Doc, key: string | null): void {
@@ -1357,7 +1358,7 @@ async function importProjectFile(file: PickedFile): Promise<void> {
   const key = await store.write(null, doc.name, serializeDoc(doc));
   adopt(doc, key);
   set({ browsing: false });
-  notify(`Added "${doc.name}" to your projects.`);
+  notify(`Added "${doc.name}" to your projects.`, 'ok');
   await offerLegacyVersions(text, doc.name);
 }
 
@@ -1376,7 +1377,7 @@ async function offerLegacyVersions(text: string, name: string): Promise<void> {
   });
   if (!keep) return;
   for (const version of versions) await projectStore().write(null, version.name, serializeDoc(version));
-  notify(`Added ${count} as projects.`);
+  notify(`Added ${count} as projects.`, 'ok');
 }
 
 /** "Open project file…": brings a design file from anywhere in as a project. */
@@ -1396,7 +1397,7 @@ export async function saveCopy(): Promise<boolean> {
     const bytes = new TextEncoder().encode(serializeDoc(docToSave()));
     const where = await platform.saveAs(fileNameFor(state.doc.name), DESIGN_FILTER, bytes, 'application/json');
     if (!where) return false;
-    notify(`Saved a copy to ${where.path ?? where.name}`);
+    notify(`Saved a copy to ${where.path ?? where.name}`, 'ok');
     return true;
   } catch (e) {
     fail(e);
@@ -1487,7 +1488,7 @@ export async function applySyncReport(report: SyncReport): Promise<void> {
     await reloadOpenProject(key);
   }
   for (const name of report.kept) notify(`"${name}" was changed on two devices at once; both versions were kept.`);
-  if (report.downloaded.length) notify(`Synced ${report.downloaded.length === 1 ? `"${report.downloaded[0]}"` : `${report.downloaded.length} projects`} from Google Drive.`);
+  if (report.downloaded.length) notify(`Synced ${report.downloaded.length === 1 ? `"${report.downloaded[0]}"` : `${report.downloaded.length} projects`} from Google Drive.`, 'ok');
 }
 
 /** The open project changed on disk under the editor: taken in whole, or merged with edits not yet saved. */
@@ -1518,7 +1519,7 @@ export async function linkGoogleDrive(): Promise<void> {
   if (!go) return;
   try {
     await linkAccount();
-    notify('Google Drive linked.');
+    notify('Google Drive linked.', 'ok');
   } catch (e) {
     fail(e);
   }
@@ -1529,7 +1530,7 @@ export async function unlinkGoogleDrive(): Promise<void> {
   if (!go) return;
   try {
     await unlinkAccount();
-    notify('Google Drive unlinked.');
+    notify('Google Drive unlinked.', 'ok');
   } catch (e) {
     fail(e);
   }

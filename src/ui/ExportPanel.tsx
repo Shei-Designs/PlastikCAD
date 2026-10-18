@@ -36,7 +36,7 @@ export function ExportPanel() {
     try {
       // Told in the toast over the stage, so the panel keeps its height.
       const where = await exportDesign(format, partial);
-      if (where) notify(`Saved ${where}`);
+      if (where) notify(`Saved ${where}`, 'ok');
     } catch (e) {
       notify(`Export failed: ${e instanceof Error ? e.message : String(e)}`, 'error');
     } finally {
