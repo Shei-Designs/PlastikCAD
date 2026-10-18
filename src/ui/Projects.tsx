@@ -20,6 +20,7 @@ import {
   useEditor,
 } from '../state/store';
 import { syncNow, useSyncStatus } from '../sync/sync';
+import { selectOnFocus } from './Fields';
 import { CloseIcon, Logo, MoreIcon } from './icons';
 import { Popover } from './Popover';
 
@@ -72,7 +73,7 @@ function Card({ item, current, refresh }: { item: ProjectInfo; current: boolean;
       </button>
       <div className="project-row">
         {renaming ? (
-          <input className="text-input" aria-label="Project name" defaultValue={item.name} autoFocus onFocus={(e) => e.currentTarget.select()} onBlur={(e) => commit(e.currentTarget.value)} onKeyDown={onKey} />
+          <input className="text-input" aria-label="Project name" defaultValue={item.name} autoFocus onFocus={selectOnFocus} onBlur={(e) => commit(e.currentTarget.value)} onKeyDown={onKey} />
         ) : (
           <button type="button" className="project-name clip" title={item.name} onClick={() => void openProject(item.key)}>
             {item.name}

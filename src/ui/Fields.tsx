@@ -3,6 +3,20 @@ import type { CSSProperties } from 'react';
 import { Hint } from './Hint';
 
 const decimals = (step: number) => Math.max(0, -Math.floor(Math.log10(step) + 1e-9));
+
+/** The last press on the page, to tell a focus given by a finger from one given by the keyboard or a mouse. */
+let lastPress: { type: string; time: number } = { type: '', time: 0 };
+if (typeof window !== 'undefined') window.addEventListener('pointerdown', (e) => (lastPress = { type: e.pointerType, time: e.timeStamp }), true);
+
+/**
+ * Selects the box's text so that typing replaces it, unless a finger tapped
+ * it: Android then puts up its cut-and-copy bar over the selection, often on
+ * top of the keyboard, so the caret stays where the finger put it.
+ */
+export function selectOnFocus(e: { target: HTMLInputElement; timeStamp: number }): void {
+  if (lastPress.type === 'touch' && e.timeStamp - lastPress.time < 1000) return;
+  e.target.select();
+}
 /** At most `places` decimals, without trailing zeros. */
 export const formatNumber = (value: number, places = 2) => String(Number(value.toFixed(places)));
 
@@ -55,7 +69,7 @@ export function NumberBox({ value, onChange, tag, unit, step = 1, min = -Infinit
         value={text}
         onFocus={(e) => {
           setEditing(true);
-          e.target.select();
+          selectOnFocus(e);
         }}
         onChange={(e) => setText(e.target.value)}
         onBlur={() => {

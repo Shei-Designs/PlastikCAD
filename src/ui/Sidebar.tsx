@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
 import { APP_NAME } from '../app';
 import { SHAPES } from '../geometry/shapes';
 import { HOLE_COLOR } from '../model/ops';
@@ -8,6 +9,7 @@ import {
   addPicture,
   addShape,
   addText,
+  cancelPlacing,
   importModel,
   isDirty,
   newProject,
@@ -222,6 +224,25 @@ const describe = (node: SceneNode): string =>
 function Objects() {
   const scene = useEditor((s) => s.doc.scene);
   const selection = useEditor((s) => s.selection);
+  // A finger held on a row toggles the object into the selection, and the tap that follows is not a click.
+  const hold = useRef<{ timer: ReturnType<typeof setTimeout>; id: string } | null>(null);
+  const held = useRef<string | null>(null);
+  const endHold = () => {
+    if (hold.current) clearTimeout(hold.current.timer);
+    hold.current = null;
+  };
+  const startHold = (e: ReactPointerEvent, id: string) => {
+    if (e.pointerType !== 'touch') return;
+    endHold();
+    hold.current = {
+      id,
+      timer: setTimeout(() => {
+        hold.current = null;
+        held.current = id;
+        toggleSelected(id);
+      }, LONG_PRESS_MS),
+    };
+  };
   return (
     <section className="objects">
       <h2>
@@ -239,7 +260,17 @@ function Objects() {
                   type="button"
                   className="object-main"
                   title={describe(node)}
+                  onPointerDown={(e) => {
+                    if (!node.hidden) startHold(e, node.id);
+                  }}
+                  onPointerUp={endHold}
+                  onPointerCancel={endHold}
+                  onPointerLeave={endHold}
                   onClick={(e) => {
+                    if (held.current === node.id) {
+                      held.current = null;
+                      return;
+                    }
                     if (node.hidden) return;
                     if (e.shiftKey || e.ctrlKey || e.metaKey) toggleSelected(node.id);
                     else select([node.id]);
@@ -297,6 +328,15 @@ function SelectedStructure() {
   );
 }
 
+/** A shape being carried from the library is put back when the tab changes: the next press on the plate must not place it. */
+function showTab(tab: 'library' | 'objects'): void {
+  cancelPlacing();
+  setPrefs({ sidebar: tab });
+}
+
+/** How long a finger rests on a row before it adds the object to the selection instead of selecting it alone. */
+const LONG_PRESS_MS = 450;
+
 export function Sidebar() {
   const theme = useEditor((s) => s.prefs.theme);
   const tab = useEditor((s) => s.prefs.sidebar);
@@ -318,10 +358,10 @@ export function Sidebar() {
       <FileBar />
       <div className="tabs">
         <div className="segmented" role="tablist">
-          <button type="button" role="tab" aria-selected={tab === 'library'} className={tab === 'library' ? 'on' : ''} onClick={() => setPrefs({ sidebar: 'library' })}>
+          <button type="button" role="tab" aria-selected={tab === 'library'} className={tab === 'library' ? 'on' : ''} onClick={() => showTab('library')}>
             Library
           </button>
-          <button type="button" role="tab" aria-selected={tab === 'objects'} className={tab === 'objects' ? 'on' : ''} onClick={() => setPrefs({ sidebar: 'objects' })}>
+          <button type="button" role="tab" aria-selected={tab === 'objects'} className={tab === 'objects' ? 'on' : ''} onClick={() => showTab('objects')}>
             Objects
           </button>
         </div>

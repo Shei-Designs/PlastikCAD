@@ -50,6 +50,7 @@ import {
 } from './icons';
 import { NotePanel } from './NotePanel';
 import { ArrayPanel } from './ArrayPanel';
+import { selectOnFocus } from './Fields';
 import { Popover } from './Popover';
 import { MatePanel } from './MatePanel';
 import { TransformBox } from './TransformBox';
@@ -191,7 +192,7 @@ function HandleInput({ prompt, onClose }: { prompt: HandlePrompt; onClose: () =>
             value={texts[i]}
             spellCheck={false}
             inputMode="decimal"
-            onFocus={(e) => e.target.select()}
+            onFocus={selectOnFocus}
             onChange={(e) => setTexts(texts.map((t, j) => (j === i ? e.target.value : t)))}
             onKeyDown={(e) => {
               // With two boxes and no button, Enter would not submit the form on its own.
