@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Hint } from './Hint';
-import { openTouchEntry } from './TouchEntry';
+import { enterByTouch, freshReplacement } from './TouchEntry';
 
 const decimals = (step: number) => Math.max(0, -Math.floor(Math.log10(step) + 1e-9));
 
@@ -72,22 +72,26 @@ export function NumberBox({ value, onChange, tag, unit, step = 1, min = -Infinit
         aria-label={label}
         disabled={disabled}
         value={text}
-        // A finger does not type into the box under the keypad: the entry sheet takes the value instead.
-        onPointerDown={(e) => {
-          if (e.pointerType !== 'touch' || disabled) return;
-          e.preventDefault();
-          openTouchEntry({ label, value: formatNumber(value, places), unit, inputMode: integer ? 'numeric' : 'decimal', onCommit: commit });
-        }}
+        // A finger does not type into the box under the keypad: the entry sheet takes the value instead (unless a keyboard is attached).
+        onPointerDown={(e) => enterByTouch(e, { label, value: formatNumber(value, places), unit, inputMode: integer ? 'numeric' : 'decimal', onCommit: commit })}
         onFocus={(e) => {
           setEditing(true);
           selectOnFocus(e);
         }}
         onChange={(e) => setText(e.target.value)}
-        onBlur={() => {
+        onBlur={(e) => {
+          delete e.currentTarget.dataset.fresh;
           setEditing(false);
           commit(text);
         }}
         onKeyDown={(e) => {
+          // Focused by a finger with a keyboard attached: the first key typed replaces the value.
+          const typed = freshReplacement(e);
+          if (typed !== null) {
+            e.preventDefault();
+            setText(typed);
+            return;
+          }
           if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
             e.preventDefault();
             const next = clamp(Number((value + (e.key === 'ArrowUp' ? 1 : -1) * step * (e.shiftKey ? 10 : 1)).toFixed(6)));

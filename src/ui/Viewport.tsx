@@ -49,7 +49,7 @@ import {
 } from './icons';
 import { ArrayPanel } from './ArrayPanel';
 import { recentTouch, selectOnFocus } from './Fields';
-import { openTouchEntry } from './TouchEntry';
+import { enterByTouch, focusFresh, freshReplacement, keyboardAttached, openTouchEntry } from './TouchEntry';
 import { Popover } from './Popover';
 import { MatePanel } from './MatePanel';
 import { TransformBox } from './TransformBox';
@@ -159,10 +159,10 @@ function HandleInput({ prompt, onClose }: { prompt: HandlePrompt; onClose: () =>
     }
     onClose();
   };
-  /** With a finger, the value is typed in the entry sheet at the top of the window rather than in the box under the keypad. */
-  const entryFor = (i: number) => {
+  /** With a finger and no keyboard, the value is typed in the entry sheet at the top of the window rather than in the box under the keypad. */
+  const entryOf = (i: number): Parameters<typeof openTouchEntry>[0] => {
     const f = prompt.fields[i];
-    openTouchEntry({
+    return {
       label: `${f.tag}${prompt.fields.length > 1 ? ` (${i + 1} of ${prompt.fields.length})` : ''}`,
       value: texts[i],
       unit: prompt.unit,
@@ -171,11 +171,11 @@ function HandleInput({ prompt, onClose }: { prompt: HandlePrompt; onClose: () =>
         const next = texts.map((t, j) => (j === i ? raw : t));
         setTexts(next);
         // With two boxes, the second is asked for next; the last one applies.
-        if (i + 1 < prompt.fields.length) setTimeout(() => entryFor(i + 1), 0);
+        if (i + 1 < prompt.fields.length) setTimeout(() => openTouchEntry(entryOf(i + 1)), 0);
         else submitWith(next);
       },
       onCancel: onClose,
-    });
+    };
   };
   // The fields carry screen coordinates; the boxes are placed within the viewport, so its
   // corner comes off. That is only known once the form is in the page, hence the effect.
@@ -187,8 +187,11 @@ function HandleInput({ prompt, onClose }: { prompt: HandlePrompt; onClose: () =>
   // The first box takes the focus once it is in place (a box still hidden cannot); a grip tapped with a finger goes to the entry sheet instead.
   useEffect(() => {
     if (!origin) return;
-    if (recentTouch()) entryFor(0);
-    else host.current?.querySelector('input')?.focus();
+    const first = host.current?.querySelector('input');
+    if (!recentTouch()) first?.focus();
+    else if (!keyboardAttached()) openTouchEntry(entryOf(0));
+    // After a tap, the browser's compatibility mouse events would blur the box (and close the prompt) if it were focused now.
+    else if (first) setTimeout(() => focusFresh(first, true), 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [origin]);
   return (
@@ -213,14 +216,17 @@ function HandleInput({ prompt, onClose }: { prompt: HandlePrompt; onClose: () =>
             value={texts[i]}
             spellCheck={false}
             inputMode="decimal"
-            onPointerDown={(e) => {
-              if (e.pointerType !== 'touch') return;
-              e.preventDefault();
-              entryFor(i);
-            }}
+            onPointerDown={(e) => enterByTouch(e, entryOf(i))}
             onFocus={selectOnFocus}
             onChange={(e) => setTexts(texts.map((t, j) => (j === i ? e.target.value : t)))}
             onKeyDown={(e) => {
+              const typed = freshReplacement(e);
+              if (typed !== null) {
+                e.preventDefault();
+                setTexts(texts.map((t, j) => (j === i ? typed : t)));
+                e.stopPropagation();
+                return;
+              }
               // With two boxes and no button, Enter would not submit the form on its own.
               if (e.key === 'Enter') {
                 e.preventDefault();

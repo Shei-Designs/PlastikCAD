@@ -2379,7 +2379,7 @@ kbd {
 
 .touch-entry {
   position: fixed;
-  top: 14px;
+  top: 64px;
   left: 50%;
   z-index: 61;
   display: flex;

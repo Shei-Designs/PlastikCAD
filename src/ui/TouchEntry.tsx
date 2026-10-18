@@ -40,6 +40,105 @@ export function openTouchEntry(entry: TouchEntry): void {
 
 export const closeTouchEntry = (): void => publish(null);
 
+// --- is there a keyboard? ----------------------------------------------------
+//
+// A tablet with a keyboard attached shows no keypad, and its boxes can work
+// as on the desktop. The page cannot ask, so it watches: a key event from a
+// real keyboard carries a `code` (the on-screen keyboard's do not), and a
+// keypad that comes up shrinks the visual viewport.
+
+const KEYS_SEEN = 'bashcad:keyboard';
+let keyboardSeen = (() => {
+  try {
+    return sessionStorage.getItem(KEYS_SEEN) === '1';
+  } catch {
+    return false;
+  }
+})();
+
+function noteKeyboard(seen: boolean): void {
+  keyboardSeen = seen;
+  try {
+    sessionStorage.setItem(KEYS_SEEN, seen ? '1' : '0');
+  } catch {
+    // Remembered for this page only.
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener(
+    'keydown',
+    (e) => {
+      if (e.code && e.keyCode !== 229 && !e.isComposing) noteKeyboard(true);
+    },
+    true,
+  );
+}
+
+/** Whether a real keyboard has been typed on in this session (and no keypad has come up since). */
+export const keyboardAttached = (): boolean => keyboardSeen;
+
+/**
+ * Focuses a box by hand with the caret at the end (no selection, so Android
+ * shows neither handle nor cut-and-copy bar). With `fresh`, the first key
+ * typed replaces the whole value, as a selected value would be replaced.
+ */
+export function focusFresh(box: HTMLInputElement | HTMLTextAreaElement, fresh: boolean): void {
+  box.focus({ preventScroll: true });
+  const end = box.value.length;
+  box.setSelectionRange(end, end);
+  if (fresh) box.dataset.fresh = '1';
+  else delete box.dataset.fresh;
+}
+
+/**
+ * For a box focused with `focusFresh`: the text the first key typed should
+ * leave in it (the key itself, or nothing for Backspace and Delete), or null
+ * when the key is to be handled as usual. The box stops being fresh either way.
+ */
+export function freshReplacement(e: { key: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; currentTarget: HTMLInputElement | HTMLTextAreaElement }): string | null {
+  const box = e.currentTarget;
+  if (!box.dataset.fresh) return null;
+  delete box.dataset.fresh;
+  if (e.ctrlKey || e.metaKey || e.altKey) return null;
+  if (e.key === 'Backspace' || e.key === 'Delete') return '';
+  return e.key.length === 1 ? e.key : null;
+}
+
+/** How much the visual viewport must shrink after a focus to count as the keypad coming up. */
+const KEYPAD_MIN = 100;
+
+/**
+ * A finger on a box. Without a keyboard the entry sheet opens at once. With
+ * one, the box is focused by hand (so Android shows no caret handle) and
+ * works as on the desktop; should the keypad come up after all, the sheet
+ * opens and the keyboard is forgotten.
+ */
+export function enterByTouch(e: { pointerType: string; currentTarget: HTMLInputElement | HTMLTextAreaElement; preventDefault: () => void }, entry: TouchEntry): void {
+  const box = e.currentTarget;
+  if (e.pointerType !== 'touch' || box.disabled) return;
+  e.preventDefault();
+  if (!keyboardAttached()) return openTouchEntry(entry);
+  if (document.activeElement !== box) {
+    focusFresh(box, !entry.multiline);
+  }
+  const vv = window.visualViewport;
+  if (!vv) return;
+  const before = vv.height;
+  const watch = () => {
+    if (before - vv.height < KEYPAD_MIN) return;
+    stop();
+    noteKeyboard(false);
+    openTouchEntry(entry);
+  };
+  const stop = () => {
+    vv.removeEventListener('resize', watch);
+    clearTimeout(timer);
+  };
+  vv.addEventListener('resize', watch);
+  const timer = setTimeout(stop, 1500);
+}
+
 export function TouchEntrySheet() {
   const entry = useSyncExternalStore(subscribe, () => current);
   const box = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
