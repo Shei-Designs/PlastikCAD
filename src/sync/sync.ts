@@ -7,7 +7,7 @@ import { hasProjectStore, projectStore } from '../state/projects';
 import { DriveRemote } from './drive';
 import { synchronize } from './engine';
 import type { SyncReport } from './engine';
-import { authorizedFetch, isConfigured, loadTokens, NeedsSignIn, revoke, saveTokens, signIn } from './google';
+import { authorizedFetch, cancelSignIn, isConfigured, loadTokens, NeedsSignIn, revoke, saveTokens, signIn } from './google';
 import type { Tokens } from './google';
 import { DbSyncState } from './state';
 
@@ -95,6 +95,9 @@ export async function linkAccount(): Promise<void> {
   }
   await syncNow();
 }
+
+/** Gives up a sign-in under way; `linkAccount` then rejects with "cancelled". */
+export const cancelLink = (): void => cancelSignIn();
 
 /** Forgets the account, tells Google so, and drops what was agreed with it; the local projects stay. */
 export async function unlinkAccount(): Promise<void> {

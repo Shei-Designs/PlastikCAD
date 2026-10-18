@@ -379,17 +379,21 @@ own; without one the projects browser says sync is not set up. In the
 [Google Cloud console](https://console.cloud.google.com/) create a project,
 enable the Google Drive API, set up the OAuth consent screen (external, in
 production; the only scope used is `drive.file`, which needs no
-verification), and create an OAuth client of type **Desktop app**. Then build
-with its id and secret in the environment:
+verification), and create two OAuth clients: one of type **Desktop app**,
+with an id and a secret, and one of type **Android**, with no secret, given
+the package name `com.andrewoshei.bashcad` and the SHA-1 of the key the APK
+is signed with (`keytool -list -v` prints it). Then build with them in the
+environment:
 
 ```sh
-VITE_GOOGLE_CLIENT_ID=…apps.googleusercontent.com VITE_GOOGLE_CLIENT_SECRET=… pnpm tauri build
+VITE_GOOGLE_CLIENT_ID=…apps.googleusercontent.com VITE_GOOGLE_CLIENT_SECRET=… VITE_GOOGLE_ANDROID_CLIENT_ID=…apps.googleusercontent.com pnpm tauri build
 ```
 
 (or put them in a `.env.local`, which git ignores). For an installed app
 Google does not treat the secret as secret. The sign-in opens the system
-browser and comes back to a loopback port on the device, on desktop and
-Android alike, so one client serves both.
+browser; on desktop it comes back to a loopback port, on Android to the app
+itself through a URL of its own scheme, since an app in the background may
+be frozen and could not answer a port.
 
 ### How it is put together
 

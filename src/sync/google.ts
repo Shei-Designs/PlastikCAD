@@ -1,15 +1,19 @@
 // Signing in to Google and keeping the tokens. The app is an "installed app"
-// to Google: the sign-in page opens in the system browser and comes back to a
-// loopback port (see the Rust side), with PKCE; the token exchange and
-// refreshes are plain HTTPS requests from here. The client id and secret come
-// from the build environment (VITE_GOOGLE_CLIENT_ID, VITE_GOOGLE_CLIENT_SECRET;
-// for an installed app Google does not treat the secret as secret).
+// to Google: the sign-in page opens in the system browser and comes back,
+// with PKCE, to a loopback port on desktop (see the Rust side) or, on Android,
+// to the app itself through a URL of its own scheme (the device plugin hands
+// it on). The token exchange and refreshes are plain HTTPS requests from
+// here. The clients come from the build environment: VITE_GOOGLE_CLIENT_ID
+// and VITE_GOOGLE_CLIENT_SECRET for a Google "Desktop app" client (for an
+// installed app Google does not treat the secret as secret), and
+// VITE_GOOGLE_ANDROID_CLIENT_ID for an "Android" client, which has no secret.
 import * as platform from '../platform';
 
-export const GOOGLE_CLIENT = {
-  id: (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined) ?? '',
-  secret: (import.meta.env.VITE_GOOGLE_CLIENT_SECRET as string | undefined) ?? '',
-};
+const env = (name: string): string => (import.meta.env[name] as string | undefined) ?? '';
+
+export const GOOGLE_CLIENT = platform.isAndroid()
+  ? { id: env('VITE_GOOGLE_ANDROID_CLIENT_ID'), secret: '' }
+  : { id: env('VITE_GOOGLE_CLIENT_ID'), secret: env('VITE_GOOGLE_CLIENT_SECRET') };
 
 /** The app may see and change only the files it made itself; nothing else in the Drive. */
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
@@ -103,19 +107,33 @@ async function tokenRequest(fields: Record<string, string>): Promise<TokenRespon
   return json;
 }
 
+/** The sign-in under way, for `cancelSignIn`. */
+let pending: platform.SignInSession | null = null;
+
 /** Walks the user through the sign-in in their browser and returns the tokens. */
 export async function signIn(): Promise<Tokens> {
   if (!isConfigured()) throw new Error('Google Drive sync is not set up in this build.');
   const verifier = randomToken(48);
   const state = randomToken(16);
-  const port = await platform.oauthStart();
-  const redirect = `http://127.0.0.1:${port}/`;
-  const query = new URLSearchParams(await platform.oauthWait(port, authUrl(redirect, await challengeOf(verifier), state)));
+  const session = await platform.oauthStart();
+  pending = session;
+  let query: URLSearchParams;
+  try {
+    query = new URLSearchParams(await platform.oauthWait(session, authUrl(session.redirect, await challengeOf(verifier), state)));
+  } finally {
+    pending = null;
+  }
+  const redirect = session.redirect;
   if (query.get('error')) throw new Error(query.get('error') === 'access_denied' ? 'The sign-in was cancelled.' : `Google refused the sign-in: ${query.get('error')}`);
   if (query.get('state') !== state || !query.get('code')) throw new Error('The sign-in did not come back as expected. Try again.');
   const json = await tokenRequest({ grant_type: 'authorization_code', code: query.get('code')!, code_verifier: verifier, redirect_uri: redirect });
   if (!json.refresh_token) throw new NeedsSignIn('Google gave no lasting access. Try signing in again.');
   return { access: json.access_token!, refresh: json.refresh_token, expires: Date.now() + (json.expires_in ?? 3600) * 1000, email: null };
+}
+
+/** Gives up the sign-in under way, if any; `signIn` then rejects. */
+export function cancelSignIn(): void {
+  if (pending) void platform.oauthCancel(pending);
 }
 
 /** Tells Google the grant is over, so that it no longer shows among the account's connected apps. Failing that is no reason to stay linked. */

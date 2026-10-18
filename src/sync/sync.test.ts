@@ -11,7 +11,7 @@ import type { Remote, RemoteFile, SyncReport } from './engine';
 import { authUrl, challengeOf, revoke } from './google';
 import { mergeDocs } from './merge';
 
-vi.mock('../platform', () => ({ isDesktop: () => false, oauthStart: async () => 0, oauthWait: async () => '', oauthCancel: async () => {} }));
+vi.mock('../platform', () => ({ isDesktop: () => false, isAndroid: () => false, oauthStart: async () => ({ redirect: 'http://127.0.0.1:0/', port: 0 }), oauthWait: async () => '', oauthCancel: async () => {} }));
 
 /** A remote that keeps files in memory and counts what it was asked to do. */
 class FakeRemote implements Remote {

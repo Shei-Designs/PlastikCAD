@@ -305,18 +305,58 @@ export async function pickFolder(defaultPath?: string): Promise<string | null> {
   return typeof picked === 'string' ? picked : null;
 }
 
-/** Desktop and Android: listens on a loopback port for a sign-in to come back to. Returns the port. */
-export async function oauthStart(): Promise<number> {
-  return command<number>('oauth_start');
+/** A sign-in waiting for the browser to come back: where it is sent back to, and the loopback port that listens on desktop. */
+export interface SignInSession {
+  redirect: string;
+  port: number;
+}
+
+/** The scheme of the URLs the browser hands back to the Android app: the app's package name, as Google asks of an Android client. */
+const ANDROID_REDIRECT = 'com.andrewoshei.bashcad:/oauth2redirect';
+const SIGN_IN_TIMEOUT_MS = 300_000;
+
+/** Android: the sign-in waiting for the browser's URL, if any. */
+let androidSignIn: { settle: (query: string | null, reason?: string) => void } | null = null;
+
+/**
+ * Readies a place for a sign-in to come back to: a loopback port on desktop,
+ * the app's own URL scheme on Android (a background app may be frozen, and
+ * could not answer a port; a URL of its scheme wakes it).
+ */
+export async function oauthStart(): Promise<SignInSession> {
+  if (isAndroid()) return { redirect: ANDROID_REDIRECT, port: 0 };
+  const port = await command<number>('oauth_start');
+  return { redirect: `http://127.0.0.1:${port}/`, port };
 }
 
 /** Opens the sign-in page in the system browser and resolves with the query string the browser is sent back with. */
-export async function oauthWait(port: number, url: string): Promise<string> {
-  return command<string>('oauth_wait', { port, url });
+export async function oauthWait(session: SignInSession, url: string): Promise<string> {
+  if (!isAndroid()) return command<string>('oauth_wait', { port: session.port, url });
+  androidSignIn?.settle(null, 'Another sign-in was started.');
+  const { addPluginListener } = await import('@tauri-apps/api/core');
+  return new Promise<string>((resolve, reject) => {
+    let stop: (() => void) | null = null;
+    const timer = setTimeout(() => settle(null, 'The sign-in took too long. Try again.'), SIGN_IN_TIMEOUT_MS);
+    const settle = (query: string | null, reason?: string) => {
+      clearTimeout(timer);
+      stop?.();
+      androidSignIn = null;
+      if (query === null) reject(new Error(reason ?? 'The sign-in was cancelled.'));
+      else resolve(query);
+    };
+    androidSignIn = { settle };
+    addPluginListener<{ uri: string }>('device', 'redirect', ({ uri }) => settle(uri.slice(uri.indexOf('?') + 1)))
+      .then((listener) => {
+        stop = () => void listener.unregister();
+        return command<void>('open_url', { url });
+      })
+      .catch((e) => settle(null, e instanceof Error ? e.message : String(e)));
+  });
 }
 
-export async function oauthCancel(port: number): Promise<void> {
-  await command<void>('oauth_cancel', { port });
+export async function oauthCancel(session: SignInSession): Promise<void> {
+  if (isAndroid()) return void androidSignIn?.settle(null);
+  await command<void>('oauth_cancel', { port: session.port });
 }
 
 /**

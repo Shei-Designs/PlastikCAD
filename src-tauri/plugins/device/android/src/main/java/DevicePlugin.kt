@@ -190,15 +190,28 @@ class DevicePlugin(activity: Activity) : Plugin(activity), InputManager.InputDev
     return intent.getParcelableExtra(Intent.EXTRA_STREAM)
   }
 
+  /** A URL of the app's own scheme: the browser sending a sign-in back. */
+  private fun redirectOf(intent: Intent?): Uri? {
+    val data = intent?.data ?: return null
+    return if (intent.action == Intent.ACTION_VIEW && data.scheme == host.packageName) data else null
+  }
+
   /** Keeps the files an intent brings, for `openedFiles`. True if there were any. */
   private fun takeIntent(intent: Intent?): Boolean {
+    if (redirectOf(intent) != null) return false
     val files = filesOf(intent)
     opened.addAll(files)
     return files.isNotEmpty()
   }
 
-  /** The app was running already (it is a single task) and was asked to open something else. */
+  /** The app was running already (it is a single task) and was asked to open something else, or a sign-in came back. */
   override fun onNewIntent(intent: Intent) {
+    redirectOf(intent)?.let { uri ->
+      val payload = JSObject()
+      payload.put("uri", uri.toString())
+      trigger("redirect", payload)
+      return
+    }
     if (takeIntent(intent)) trigger("opened", JSObject())
   }
 

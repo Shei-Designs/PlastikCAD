@@ -19,7 +19,7 @@ import {
   unlinkGoogleDrive,
   useEditor,
 } from '../state/store';
-import { syncNow, useSyncStatus } from '../sync/sync';
+import { cancelLink, syncNow, useSyncStatus } from '../sync/sync';
 import { selectOnFocus } from './Fields';
 import { CloseIcon, Logo, MoreIcon } from './icons';
 import { Popover } from './Popover';
@@ -105,8 +105,8 @@ function DriveRow() {
     return (
       <>
         <span className="clip">Google Drive: not linked{sync.error ? ` · ${sync.error}` : ''}</span>
-        <button type="button" className="chip" disabled={sync.busy} title="Keeps your projects in step across devices through your Google Drive" onClick={() => void linkGoogleDrive()}>
-          {sync.busy ? 'Signing in…' : 'Link Google Drive…'}
+        <button type="button" className="chip" title={sync.busy ? 'Gives up the sign-in' : 'Keeps your projects in step across devices through your Google Drive'} onClick={() => (sync.busy ? cancelLink() : void linkGoogleDrive())}>
+          {sync.busy ? 'Cancel sign-in' : 'Link Google Drive…'}
         </button>
       </>
     );

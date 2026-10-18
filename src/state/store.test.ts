@@ -71,6 +71,7 @@ vi.mock('../platform', () => ({
   share: async () => {},
   shareBytes: async () => {},
   realPath: async (path: string) => path,
+  isAndroid: () => false,
 }));
 
 
