@@ -130,6 +130,36 @@ async function nameOf(path: string): Promise<string> {
 export interface SaveTarget {
   path: string | null;
   name: string;
+  /** Android: the content URI of the written file, for sharing. */
+  uri?: string;
+}
+
+/**
+ * Android: writes an export into the app's own folder in Downloads
+ * (`Download/BashCAD/<folder>/<name>`), replacing a file of that name, with
+ * no dialog. Resolves with the file's content URI and the path as the Files
+ * app shows it.
+ */
+export async function exportToAppFolder(folder: string, name: string, bytes: Uint8Array, mime: string): Promise<{ uri: string; path: string }> {
+  return command<{ uri: string; path: string }>('save_export', bytes, {
+    folder: encodeURIComponent(folder),
+    name: encodeURIComponent(name),
+    mime: encodeURIComponent(mime),
+  });
+}
+
+/** Whether files can be handed to other apps from here (the Android share sheet). */
+export const canShare = (): boolean => isAndroid();
+
+/** Android: opens the share sheet with the given files. */
+export async function share(uris: string[], mime: string): Promise<void> {
+  await invoke('plugin:device|share', { uris, mime });
+}
+
+/** Where a picked file really is on disk, or null where that cannot be told (a document some other app holds). */
+export async function realPath(path: string): Promise<string | null> {
+  if (!path.includes('://')) return path;
+  return command<string | null>('real_path', { path }).catch(() => null);
 }
 
 /**
@@ -180,23 +210,19 @@ export interface BundleFile {
  * is given the name the bundle got and returns its files. Resolves with where
  * they went, or null if canceled.
  */
-export async function saveBundle(suggestedName: string, filters: FileFilter[], mime: string, make: (base: string) => BundleFile[]): Promise<string | null> {
+export async function saveBundle(suggestedName: string, filters: FileFilter[], mime: string, make: (base: string) => BundleFile[]): Promise<{ where: string; uris: string[] } | null> {
   const base = (name: string) => name.replace(/\.[^.]+$/, '');
   if (!isTauri()) {
     const files = make(base(suggestedName));
     for (const file of files) await writeTarget({ path: null, name: file.name }, file.bytes, file.mime);
-    return files.map((f) => f.name).join(' and ');
+    return { where: files.map((f) => f.name).join(' and '), uris: [] };
   }
   if (isAndroid()) {
-    const picked = await invoke<{ uri: string | null }>('plugin:device|pick_folder');
-    if (!picked.uri) return null;
+    // A folder of its own in the app's folder in Downloads; nothing to pick.
     const name = base(suggestedName);
-    const folder = await invoke<{ uri: string }>('plugin:device|create_document', { parent: picked.uri, name, mime: 'vnd.android.document/directory' });
-    for (const file of make(name)) {
-      const made = await invoke<{ uri: string }>('plugin:device|create_document', { parent: folder.uri, name: file.name, mime: file.mime });
-      await writePath(made.uri, file.bytes);
-    }
-    return `the ${name} folder`;
+    const uris: string[] = [];
+    for (const file of make(name)) uris.push((await exportToAppFolder(name, file.name, file.bytes, file.mime)).uri);
+    return { where: `Download/BashCAD/${name}`, uris };
   }
   const target = await chooseSave(suggestedName, filters, mime);
   if (!target) return null;
@@ -204,11 +230,16 @@ export async function saveBundle(suggestedName: string, filters: FileFilter[], m
   const folder = target.path!.slice(0, target.path!.length - target.name.length) + name;
   const separator = folder.includes('\\') && !folder.includes('/') ? '\\' : '/';
   for (const file of make(name)) await writePath(`${folder}${separator}${file.name}`, file.bytes);
-  return folder;
+  return { where: folder, uris: [] };
 }
 
 /** Native save dialog then write (desktop), or a download (browser, where `path` is null). Null if canceled. */
 export async function saveAs(suggestedName: string, filters: FileFilter[], bytes: Uint8Array, mime: string): Promise<SaveTarget | null> {
+  if (isAndroid()) {
+    // Into the app's folder in Downloads, with no dialog; shared from there.
+    const exported = await exportToAppFolder('', suggestedName, bytes, mime);
+    return { path: exported.path, name: suggestedName, uri: exported.uri };
+  }
   const target = await chooseSave(suggestedName, filters, mime);
   if (!target) return null;
   await writeTarget(target, bytes, mime);

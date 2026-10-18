@@ -113,16 +113,15 @@ async fn read_file(app: AppHandle, path: String) -> Result<Response, String> {
         .map_err(|err| format!("Could not read {path}: {err}"))
 }
 
-/// The name of a file, extension included, or null if it has none. A path
-/// names itself; the `content://` URIs the Android pickers hand out often do
-/// not (a download is `msf:123`), but the descriptor the provider opens usually
-/// points at the real file.
+/// Where a file really is: a path names itself; the `content://` URIs the
+/// Android pickers hand out do not (a download is `msf:123`), but the
+/// descriptor the provider opens usually points at the real file. Null where
+/// it cannot be told.
 #[tauri::command]
-fn file_name(app: AppHandle, path: String) -> Option<String> {
+fn real_path(app: AppHandle, path: String) -> Option<String> {
     let parsed = file_path(&path);
-    let named = |path: &Path| path.file_name().map(|name| name.to_string_lossy().into_owned()).filter(|name| name.contains('.'));
     if let Ok(path) = parsed.clone().into_path() {
-        return named(&path);
+        return Some(path.to_string_lossy().into_owned());
     }
     #[cfg(target_os = "android")]
     {
@@ -131,12 +130,52 @@ fn file_name(app: AppHandle, path: String) -> Option<String> {
         options.read(true);
         let file = app.fs().open(parsed, options).ok()?;
         let target = fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd())).ok()?;
-        return named(&target);
+        return Some(target.to_string_lossy().into_owned());
     }
     #[allow(unreachable_code)]
     {
         let _ = app;
         None
+    }
+}
+
+/// The name of a file, extension included, or null if it has none.
+#[tauri::command]
+fn file_name(app: AppHandle, path: String) -> Option<String> {
+    let real = real_path(app, path)?;
+    Path::new(&real).file_name().map(|name| name.to_string_lossy().into_owned()).filter(|name| name.contains('.'))
+}
+
+/// A temporary file of the app's own holding `bytes`, for the device plugin to move into place.
+#[cfg(target_os = "android")]
+fn stage_bytes(app: &AppHandle, bytes: &[u8]) -> io::Result<PathBuf> {
+    let dir = app.path().app_cache_dir().map_err(io::Error::other)?;
+    fs::create_dir_all(&dir)?;
+    let stamp = UNIX_EPOCH.elapsed().map(|d| d.as_nanos()).unwrap_or(0);
+    let source = dir.join(format!("document-{stamp}.tmp"));
+    fs::write(&source, bytes)?;
+    Ok(source)
+}
+
+/// Android: writes an export into the app's folder in Downloads. The bytes are
+/// the request body; `folder`, `name` and `mime` travel in headers, percent-encoded.
+#[tauri::command]
+async fn save_export(app: AppHandle, request: Request<'_>) -> Result<tauri_plugin_device::Exported, String> {
+    let header = |key: &str| request.headers().get(key).and_then(|value| percent_decode(value.as_bytes()));
+    let (folder, name, mime) = (header("folder").unwrap_or_default(), header("name"), header("mime"));
+    let (Some(name), Some(mime)) = (name, mime) else {
+        return Err("Could not write the export: no name was given".into());
+    };
+    let bytes = body_bytes(request.body()).ok_or("Could not write the export: the data was not understood")?;
+    #[cfg(target_os = "android")]
+    {
+        let source = stage_bytes(&app, &bytes).map_err(|err| format!("Could not write {name}: {err}"))?;
+        return tauri_plugin_device::export_to_downloads(&app, &folder, &name, &mime, &source).map_err(|err| format!("Could not write {name}: {err}"));
+    }
+    #[allow(unreachable_code)]
+    {
+        let _ = (app, folder, name, mime, bytes);
+        Err("Exports go to Downloads only on Android".into())
     }
 }
 
@@ -165,11 +204,7 @@ fn write_bytes(app: &AppHandle, path: &str, bytes: &[u8]) -> io::Result<()> {
 /// and the Files app would show the export as 0 B).
 #[cfg(target_os = "android")]
 fn write_document(app: &AppHandle, uri: &str, bytes: &[u8]) -> io::Result<()> {
-    let dir = app.path().app_cache_dir().map_err(io::Error::other)?;
-    fs::create_dir_all(&dir)?;
-    let stamp = UNIX_EPOCH.elapsed().map(|d| d.as_nanos()).unwrap_or(0);
-    let source = dir.join(format!("document-{stamp}.tmp"));
-    fs::write(&source, bytes)?;
+    let source = stage_bytes(app, bytes)?;
     tauri_plugin_device::write_document(app, uri, &source).map_err(io::Error::other)
 }
 
@@ -183,6 +218,23 @@ fn write_document(app: &AppHandle, uri: &str, bytes: &[u8]) -> io::Result<()> {
     file.sync_all()
 }
 
+/// The bytes of a request body: raw, or, where the webview cannot post a
+/// binary body and Tauri falls back to a JSON array of numbers, those.
+fn body_bytes(body: &InvokeBody) -> Option<Cow<'_, [u8]>> {
+    match body {
+        InvokeBody::Raw(bytes) => Some(Cow::Borrowed(bytes)),
+        InvokeBody::Json(value) => value
+            .as_array()
+            .and_then(|items| {
+                items
+                    .iter()
+                    .map(|item| item.as_u64().and_then(|n| u8::try_from(n).ok()))
+                    .collect::<Option<Vec<u8>>>()
+            })
+            .map(Cow::Owned),
+    }
+}
+
 /// The file's bytes are the request body and its path is in the `path` header,
 /// which spares a multi-megabyte design a round trip through JSON.
 #[tauri::command]
@@ -192,21 +244,7 @@ async fn write_file(app: AppHandle, request: Request<'_>) -> Result<(), String> 
         .get("path")
         .and_then(|value| percent_decode(value.as_bytes()))
         .ok_or("Could not write the file: no valid path was given")?;
-    let bytes: Cow<[u8]> = match request.body() {
-        InvokeBody::Raw(bytes) => Cow::Borrowed(bytes),
-        // Where the webview cannot post a binary body, Tauri falls back to
-        // sending the bytes as a JSON array of numbers.
-        InvokeBody::Json(value) => value
-            .as_array()
-            .and_then(|items| {
-                items
-                    .iter()
-                    .map(|item| item.as_u64().and_then(|n| u8::try_from(n).ok()))
-                    .collect::<Option<Vec<u8>>>()
-            })
-            .map(Cow::Owned)
-            .ok_or_else(|| format!("Could not write {path}: the data was not bytes"))?,
-    };
+    let bytes = body_bytes(request.body()).ok_or_else(|| format!("Could not write {path}: the data was not bytes"))?;
     write_bytes(&app, &path, &bytes).map_err(|err| format!("Could not write {path}: {err}"))
 }
 
@@ -447,6 +485,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             read_file,
             file_name,
+            real_path,
+            save_export,
             read_head,
             write_file,
             list_designs,

@@ -44,6 +44,9 @@ vi.mock('../platform', () => ({
     saved.push({ name: path, bytes });
   },
   startupFile: async () => null,
+  canShare: () => false,
+  share: async () => {},
+  realPath: async (path: string) => path,
 }));
 
 

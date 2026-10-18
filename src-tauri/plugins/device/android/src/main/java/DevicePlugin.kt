@@ -6,12 +6,15 @@
 package com.andrewoshei.bashcad.device
 
 import android.app.Activity
+import android.content.ContentValues
 import android.content.Intent
 import android.content.Context
 import android.content.res.Configuration
 import android.hardware.input.InputManager
 import android.net.Uri
+import android.os.Build
 import android.provider.DocumentsContract
+import android.provider.MediaStore
 import androidx.activity.result.ActivityResult
 import android.view.InputDevice
 import android.view.View
@@ -25,6 +28,7 @@ import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
+import app.tauri.plugin.JSArray
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
 import java.io.File
@@ -43,6 +47,22 @@ internal class CreateDocumentArgs {
 @InvokeArg
 internal class MimeForArgs {
   lateinit var name: String
+  lateinit var mime: String
+}
+
+@InvokeArg
+internal class ExportArgs {
+  /** Folder under the app's own folder in Downloads; empty for the app's folder itself. */
+  lateinit var folder: String
+  lateinit var name: String
+  lateinit var mime: String
+  /** A file holding the bytes, copied in and then deleted. */
+  lateinit var source: String
+}
+
+@InvokeArg
+internal class ShareArgs {
+  lateinit var uris: List<String>
   lateinit var mime: String
 }
 
@@ -186,6 +206,68 @@ class DevicePlugin(activity: Activity) : Plugin(activity), InputManager.InputDev
       invoke.resolve(out)
     } catch (e: Exception) {
       invoke.reject(e.message ?: "Could not create the document")
+    }
+  }
+
+  /**
+   * Writes an export into the app's own folder in Downloads (`Download/BashCAD/<folder>/`), where
+   * the Files app and other apps can see it, through the media store, which needs no permission
+   * for the app's own files. A file of the same name there is replaced. Resolves with the file's
+   * content URI (for sharing) and its path as the Files app shows it.
+   */
+  @Command
+  fun exportToDownloads(invoke: Invoke) {
+    val args = invoke.parseArgs(ExportArgs::class.java)
+    val source = File(args.source)
+    try {
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) throw IllegalStateException("Exports to Downloads need Android 10 or later")
+      val relative = "Download/BashCAD" + (if (args.folder.isEmpty()) "" else "/" + args.folder) + "/"
+      val resolver = host.contentResolver
+      val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+      // The media store would give a second file a numbered name; the old one goes first.
+      resolver.query(collection, arrayOf(MediaStore.Downloads._ID), "${MediaStore.Downloads.RELATIVE_PATH} = ? AND ${MediaStore.Downloads.DISPLAY_NAME} = ?", arrayOf(relative, args.name), null)?.use { rows ->
+        while (rows.moveToNext()) resolver.delete(android.content.ContentUris.withAppendedId(collection, rows.getLong(0)), null, null)
+      }
+      val values = ContentValues().apply {
+        put(MediaStore.Downloads.DISPLAY_NAME, args.name)
+        put(MediaStore.Downloads.MIME_TYPE, mimeFor(args.name, args.mime))
+        put(MediaStore.Downloads.RELATIVE_PATH, relative)
+        put(MediaStore.Downloads.IS_PENDING, 1)
+      }
+      val uri = resolver.insert(collection, values) ?: throw IllegalStateException("Downloads did not accept the file")
+      val out = resolver.openOutputStream(uri, "wt") ?: throw IllegalStateException("The file could not be opened for writing")
+      out.use { sink -> source.inputStream().use { it.copyTo(sink) } }
+      values.clear()
+      values.put(MediaStore.Downloads.IS_PENDING, 0)
+      resolver.update(uri, values, null, null)
+      val result = JSObject()
+      result.put("uri", uri.toString())
+      result.put("path", relative + args.name)
+      invoke.resolve(result)
+    } catch (e: Exception) {
+      invoke.reject(e.message ?: "Could not write the export")
+    } finally {
+      source.delete()
+    }
+  }
+
+  /** Opens the system share sheet with the given files. */
+  @Command
+  fun share(invoke: Invoke) {
+    val args = invoke.parseArgs(ShareArgs::class.java)
+    try {
+      val uris = ArrayList<Uri>(args.uris.map { Uri.parse(it) })
+      val intent = if (uris.size == 1) {
+        Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM, uris[0])
+      } else {
+        Intent(Intent.ACTION_SEND_MULTIPLE).putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+      }
+      intent.type = args.mime
+      intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+      host.startActivity(Intent.createChooser(intent, null))
+      invoke.resolve()
+    } catch (e: Exception) {
+      invoke.reject(e.message ?: "Could not share")
     }
   }
 

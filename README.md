@@ -145,8 +145,9 @@ On desktop, projects are `.bashcad` files in a projects folder, `BashCAD` in
 your Documents folder unless you pick another in the projects browser (Ctrl+O).
 The browser lists every project with a thumbnail, newest first, to open,
 rename, duplicate or delete them; renaming a project renames its file. On
-Android, projects live in the app's own storage. In a plain browser they are
-kept by the browser itself, per profile.
+Android, projects live in the app's own storage, and a copy saved for sharing
+goes to `Download/BashCAD`. In a plain browser they are kept by the browser
+itself, per profile.
 
 Two commands move designs in and out of the projects folder. **Open project
 file…** (also dropping or double-clicking a `.bashcad` file) brings a copy in
@@ -235,8 +236,10 @@ plus the thumbnail line at the top.
 
 The export button, at the bottom of the left panel, reads *Export selection* when something is selected and exports just
 that; otherwise *Export* merges everything visible that is not a hole into one
-watertight mesh (after asking, when there are several objects). Units are
-millimeters, Z is up. A 3MF keeps every object separate, each with its color
+watertight mesh (after asking, when there are several objects). On desktop a
+save dialog asks where; on Android every export goes to `Download/BashCAD`
+with no dialog (a folder of its own for an OBJ), and the toast offers
+*Share…* to hand it to another app. Units are millimeters, Z is up. A 3MF keeps every object separate, each with its color
 as a base material; a group whose parts have colors of their own goes out as
 one object made of a closed part per color, with nothing overlapping, which
 slicers such as PrusaSlicer, OrcaSlicer, Bambu Studio and Cura can map to

@@ -1697,6 +1697,28 @@ kbd {
   color: var(--error-text);
 }
 
+.toast-action {
+  flex: none;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid currentColor;
+  border-radius: 7px;
+  background: none;
+  color: inherit;
+  font-weight: 600;
+}
+
+.toast-action:hover {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+@media (pointer: coarse) {
+  .toast-action {
+    height: 38px;
+    padding: 0 16px;
+  }
+}
+
 .toast.ok {
   border-color: color-mix(in srgb, var(--ok-text) 40%, var(--border));
   background: var(--ok-bg);

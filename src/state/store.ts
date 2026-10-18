@@ -58,6 +58,8 @@ export interface Notice {
   /** `ok` for something that went through (a save, an export, a sync), `info` for a plain word, `error` for what failed. */
   kind: 'error' | 'info' | 'ok';
   text: string;
+  /** Something to do about it, offered as a button ("Share…"). */
+  action?: { label: string; run: () => void };
 }
 
 export interface EditorState {
@@ -190,11 +192,16 @@ export function docToSave(s: EditorState = state): Doc {
   return { ...s.doc, scene: regroup(s.doc.scene, s.editing.layers, (n) => geometry.bounds(n)) };
 }
 
-export function notify(text: string, kind: Notice['kind'] = 'info'): void {
+export function notify(text: string, kind: Notice['kind'] = 'info', action?: Notice['action']): void {
   clearTimeout(noticeTimer);
-  set({ notice: { kind, text } });
-  noticeTimer = setTimeout(() => set({ notice: null }), kind === 'error' ? 8000 : 3500);
+  set({ notice: { kind, text, action } });
+  // Longer with something to read twice or a button to reach.
+  noticeTimer = setTimeout(() => set({ notice: null }), kind === 'error' || action ? 8000 : 3500);
 }
+
+/** A "Share…" button for the toast, where files can be handed to other apps; nothing elsewhere. */
+const shareAction = (uris: string[], mime: string): Notice['action'] | undefined =>
+  platform.canShare() && uris.length ? { label: 'Share…', run: () => void platform.share(uris, mime).catch(fail) } : undefined;
 
 export const dismissNotice = (): void => set({ notice: null });
 
@@ -1397,7 +1404,7 @@ export async function saveCopy(): Promise<boolean> {
     const bytes = new TextEncoder().encode(serializeDoc(docToSave()));
     const where = await platform.saveAs(fileNameFor(state.doc.name), DESIGN_FILTER, bytes, 'application/json');
     if (!where) return false;
-    notify(`Saved a copy to ${where.path ?? where.name}`, 'ok');
+    notify(`Saved a copy to ${where.path ?? where.name}`, 'ok', shareAction(where.uri ? [where.uri] : [], 'application/json'));
     return true;
   } catch (e) {
     fail(e);
@@ -1605,13 +1612,17 @@ async function withCompanions(file: PickedFile, companions: PickedFile[]): Promi
     }
     if (missing.length === 0) return found;
     const more: PickedFile[] = [];
-    if (file.path && !file.path.includes('://')) {
-      const dir = file.path.slice(0, file.path.length - file.name.length);
+    // Beside the file on disk, where the file's place is known (a path; on Android, a document of the
+    // app's own, such as its exports, which the app may read by path).
+    const real = file.path ? await platform.realPath(file.path) : null;
+    if (real) {
+      const dir = real.slice(0, Math.max(real.lastIndexOf('/'), real.lastIndexOf('\\')) + 1);
       for (const name of missing) {
         const read = await platform.readPath(dir + name).catch(() => null);
         if (read) more.push(read);
       }
-    } else {
+    }
+    if (more.length === 0 && (!file.path || file.path.includes('://'))) {
       const list = missing.map((n) => `"${n}"`).join(', ');
       const ok = await platform.confirm(`"${file.name}" names ${list} for its colors${missing.some((n) => extension(n) !== 'mtl') ? ' and pictures' : ''}. Pick ${missing.length === 1 ? 'it' : 'them'} now, or import the shapes without?`, {
         title: 'Import',
@@ -1864,8 +1875,8 @@ export async function importModel(): Promise<void> {
   }
 }
 
-/** Write the design (or just the selection) in an exchange format. Returns where it went, or null if canceled. */
-export async function exportDesign(formatId: FormatId, selectionOnly: boolean): Promise<string | null> {
+/** Write the design (or just the selection) in an exchange format. Returns where it went, with a way to share it where there is one, or null if canceled. */
+export async function exportDesign(formatId: FormatId, selectionOnly: boolean): Promise<{ where: string; share?: Notice['action'] } | null> {
   const format = FORMATS.find((f) => f.id === formatId)!;
   const nodes = selectionOnly ? selectedNodes() : state.doc.scene;
   const name = state.doc.name;
@@ -1886,7 +1897,7 @@ export async function exportDesign(formatId: FormatId, selectionOnly: boolean): 
     });
     if (!where) return null;
     for (const w of result.warnings) notify(w, 'error');
-    return where;
+    return { where: where.where, share: shareAction(where.uris, '*/*') };
   }
   if (format.id === 'glb') {
     bytes = await exportGlb(nodes, state.doc.assets, name);
@@ -1906,7 +1917,7 @@ export async function exportDesign(formatId: FormatId, selectionOnly: boolean): 
   const where = await platform.saveAs(`${name}.${format.extension}`, filters, bytes, format.mime);
   if (!where) return null;
   for (const w of warnings) notify(w, 'error');
-  return where.path ?? where.name;
+  return { where: where.path ?? where.name, share: shareAction(where.uri ? [where.uri] : [], format.mime) };
 }
 
 // --- start-up -------------------------------------------------------------------

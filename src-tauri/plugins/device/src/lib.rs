@@ -59,6 +59,34 @@ pub fn write_document<R: Runtime>(app: &AppHandle<R>, uri: &str, source: &std::p
         .map_err(|err| err.to_string())
 }
 
+/// An export written into the app's folder in Downloads: its content URI (for sharing) and its path as the Files app shows it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Exported {
+    pub uri: String,
+    pub path: String,
+}
+
+#[cfg(target_os = "android")]
+#[derive(Serialize)]
+struct ExportArgs<'a> {
+    folder: &'a str,
+    name: &'a str,
+    mime: &'a str,
+    source: &'a str,
+}
+
+/// Android only: moves the file at `source` into `Download/BashCAD/<folder>/<name>`
+/// through the media store, replacing a file of that name. The source file is deleted afterwards.
+#[cfg(target_os = "android")]
+pub fn export_to_downloads<R: Runtime>(app: &AppHandle<R>, folder: &str, name: &str, mime: &str, source: &std::path::Path) -> Result<Exported, String> {
+    use tauri::Manager;
+    let source = source.to_string_lossy();
+    app.state::<Handle<R>>()
+        .0
+        .run_mobile_plugin::<Exported>("exportToDownloads", ExportArgs { folder, name, mime, source: &source })
+        .map_err(|err| err.to_string())
+}
+
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("device")
         .invoke_handler(tauri::generate_handler![state])

@@ -190,6 +190,18 @@ function Toast() {
       <div className={error ? 'toast error' : notice.kind === 'ok' ? 'toast ok' : 'toast'} role={error ? 'alert' : 'status'}>
         {error && <WarningIcon />}
         <span>{notice.text}</span>
+        {notice.action && (
+          <button
+            type="button"
+            className="toast-action"
+            onClick={() => {
+              dismissNotice();
+              notice.action?.run();
+            }}
+          >
+            {notice.action.label}
+          </button>
+        )}
         <button type="button" className="notice-close" aria-label="Dismiss" onClick={dismissNotice}>
           <CloseIcon />
         </button>
