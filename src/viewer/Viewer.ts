@@ -1348,7 +1348,14 @@ export class Viewer {
     // A camera button must not take the focus off a typing box: a pan keeps the boxes.
     if (event.button !== 0 && this.prompt) event.preventDefault();
     if (this.drag) {
-      // A second finger during a drag is neither ours nor the camera's.
+      // A second finger while the first rests on empty space makes a two-finger camera gesture (pan,
+      // pinch): the press is the camera's from here on, not a tap or a long press.
+      if (this.drag.mode === 'pending-tap') {
+        this.endHold();
+        this.drag = null;
+        return;
+      }
+      // A second finger during an edit is neither ours nor the camera's.
       if (event.pointerId !== this.dragPointer) event.stopImmediatePropagation();
       return;
     }
