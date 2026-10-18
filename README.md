@@ -228,7 +228,7 @@ plus the thumbnail line at the top.
 | --- | --- |
 | STL | 3D mesh for any slicer |
 | 3MF | 3D mesh with units and colors, preferred by modern slicers; a part per color for multi-material printing |
-| OBJ | 3D mesh for modeling tools, with the colors in a material library beside it |
+| OBJ | 3D mesh for modeling tools, with the colors in a material library; the two go in a folder of their own |
 | GLB | 3D scene with colors, textures and pictures, for Blender, Godot, Unity and renderers |
 | SVG | Outline of the design seen from above, for laser cutters and vector editors |
 | DXF | The same outline, to extrude in CAD or cut on a laser / CNC |
@@ -244,7 +244,9 @@ filaments. A GLB keeps every object separate, each with its color
 and, if it has one, its texture or pictures embedded as the image files they
 came from; a group whose parts have colors of their own is one mesh with a
 primitive per color. It is written Y up in meters, as glTF wants. An OBJ
-carries its colors in a material library written beside it. The other formats
+carries its colors in a material library named after it, and the two are
+written together into a new folder of the name you give, so they are not
+parted. The other formats
 carry the shapes alone and say so before exporting a design that has pictures
 on it.
 

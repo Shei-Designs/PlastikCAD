@@ -1831,20 +1831,19 @@ export async function exportDesign(formatId: FormatId, selectionOnly: boolean): 
   let warnings: string[] = [];
   if (format.id === 'obj') {
     // The colors live in a material library beside the file, named after it: so the place is chosen
-    // first, and the file written for the name it was given there.
+    // first, and the files written for the name they were given there.
     const worker = await geometry.prepare(nodes, state.doc.assets);
     const result = await worker.exportColored(nodes, true);
-    const target = await platform.chooseSave(`${name}.obj`, filters, format.mime);
-    if (!target) return null;
-    const written = writeObj(result.objects, target.name.replace(/\.[^.]+$/, ''));
-    await platform.writeTarget(target, written.obj, format.mime);
-    if (written.mtl) {
-      // Next to the file on disk; a second download in the browser, and a second pick on Android, whose documents have no folder paths.
-      if (target.path && !target.path.includes('://')) await platform.writePath(target.path.slice(0, target.path.length - target.name.length) + written.mtlName, written.mtl);
-      else await platform.saveAs(written.mtlName, [{ name: 'Material library', extensions: ['mtl'] }], written.mtl, 'text/plain');
-    }
+    // The two go into a folder of their own, so they are not parted.
+    const where = await platform.saveBundle(`${name}.obj`, filters, format.mime, (base) => {
+      const written = writeObj(result.objects, base);
+      const files = [{ name: `${base}.obj`, bytes: written.obj, mime: format.mime }];
+      if (written.mtl) files.push({ name: written.mtlName, bytes: written.mtl, mime: 'text/plain' });
+      return files;
+    });
+    if (!where) return null;
     for (const w of result.warnings) notify(w, 'error');
-    return target.path ?? target.name;
+    return where;
   }
   if (format.id === 'glb') {
     bytes = await exportGlb(nodes, state.doc.assets, name);

@@ -74,6 +74,10 @@ fn temp_sibling(target: &Path) -> io::Result<PathBuf> {
 /// Write to a temporary sibling, then rename it over the target, so a crash
 /// can never leave a half-written design behind.
 fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    // The folder is made on the way if need be (an export that goes into a folder of its own).
+    if let Some(parent) = path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+        fs::create_dir_all(parent)?;
+    }
     // Replace the file a symlink points at, not the link itself.
     let target = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     let tmp = temp_sibling(&target)?;

@@ -6,16 +6,20 @@
 package com.andrewoshei.bashcad.device
 
 import android.app.Activity
+import android.content.Intent
 import android.content.Context
 import android.content.res.Configuration
 import android.hardware.input.InputManager
 import android.net.Uri
+import android.provider.DocumentsContract
+import androidx.activity.result.ActivityResult
 import android.view.InputDevice
 import android.view.View
 import android.webkit.WebView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import app.tauri.annotation.ActivityCallback
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
@@ -25,6 +29,15 @@ import app.tauri.plugin.Plugin
 import java.io.File
 import kotlin.math.max
 import kotlin.math.roundToInt
+
+@InvokeArg
+internal class CreateDocumentArgs {
+  /** A document URI from `pickFolder` or an earlier `createDocument`. */
+  lateinit var parent: String
+  lateinit var name: String
+  /** The document's type; `vnd.android.document/directory` makes a folder. */
+  lateinit var mime: String
+}
 
 @InvokeArg
 internal class WriteDocumentArgs {
@@ -105,6 +118,42 @@ class DevicePlugin(activity: Activity) : Plugin(activity), InputManager.InputDev
       invoke.reject(e.message ?: "Could not write the document")
     } finally {
       source.delete()
+    }
+  }
+
+  /** Asks for a folder; resolves with its document URI, or null if the picker was dismissed. */
+  @Command
+  fun pickFolder(invoke: Invoke) {
+    val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+    startActivityForResult(invoke, intent, "folderPicked")
+  }
+
+  @ActivityCallback
+  fun folderPicked(invoke: Invoke, result: ActivityResult) {
+    val out = JSObject()
+    val tree = if (result.resultCode == Activity.RESULT_OK) result.data?.data else null
+    if (tree == null) {
+      out.put("uri", null)
+    } else {
+      // Granted for as long as the app runs, which is as long as the export takes.
+      host.contentResolver.takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+      out.put("uri", DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree)).toString())
+    }
+    invoke.resolve(out)
+  }
+
+  /** Makes a document (or a folder) inside another; resolves with its URI. The provider may vary the name to keep it unique. */
+  @Command
+  fun createDocument(invoke: Invoke) {
+    val args = invoke.parseArgs(CreateDocumentArgs::class.java)
+    try {
+      val made = DocumentsContract.createDocument(host.contentResolver, Uri.parse(args.parent), args.mime, args.name)
+        ?: throw IllegalStateException("The folder did not accept a new document")
+      val out = JSObject()
+      out.put("uri", made.toString())
+      invoke.resolve(out)
+    } catch (e: Exception) {
+      invoke.reject(e.message ?: "Could not create the document")
     }
   }
 

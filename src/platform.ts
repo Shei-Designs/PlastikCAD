@@ -158,6 +158,48 @@ export async function writeTarget(target: SaveTarget, bytes: Uint8Array, mime: s
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/** A file of a bundle, named by the caller once the bundle's name is known. */
+export interface BundleFile {
+  name: string;
+  bytes: Uint8Array;
+  mime: string;
+}
+
+/**
+ * Saves files that belong together in a new folder of their own, so they are
+ * not parted: on desktop the save dialog names the folder (its chosen name,
+ * less the extension) inside the chosen place; on Android a folder is picked
+ * and the new one made in it; in the browser each file is a download. `make`
+ * is given the name the bundle got and returns its files. Resolves with where
+ * they went, or null if canceled.
+ */
+export async function saveBundle(suggestedName: string, filters: FileFilter[], mime: string, make: (base: string) => BundleFile[]): Promise<string | null> {
+  const base = (name: string) => name.replace(/\.[^.]+$/, '');
+  if (!isTauri()) {
+    const files = make(base(suggestedName));
+    for (const file of files) await writeTarget({ path: null, name: file.name }, file.bytes, file.mime);
+    return files.map((f) => f.name).join(' and ');
+  }
+  if (isAndroid()) {
+    const picked = await invoke<{ uri: string | null }>('plugin:device|pick_folder');
+    if (!picked.uri) return null;
+    const name = base(suggestedName);
+    const folder = await invoke<{ uri: string }>('plugin:device|create_document', { parent: picked.uri, name, mime: 'vnd.android.document/directory' });
+    for (const file of make(name)) {
+      const made = await invoke<{ uri: string }>('plugin:device|create_document', { parent: folder.uri, name: file.name, mime: file.mime });
+      await writePath(made.uri, file.bytes);
+    }
+    return `the ${name} folder`;
+  }
+  const target = await chooseSave(suggestedName, filters, mime);
+  if (!target) return null;
+  const name = base(target.name);
+  const folder = target.path!.slice(0, target.path!.length - target.name.length) + name;
+  const separator = folder.includes('\\') && !folder.includes('/') ? '\\' : '/';
+  for (const file of make(name)) await writePath(`${folder}${separator}${file.name}`, file.bytes);
+  return folder;
+}
+
 /** Native save dialog then write (desktop), or a download (browser, where `path` is null). Null if canceled. */
 export async function saveAs(suggestedName: string, filters: FileFilter[], bytes: Uint8Array, mime: string): Promise<SaveTarget | null> {
   const target = await chooseSave(suggestedName, filters, mime);
