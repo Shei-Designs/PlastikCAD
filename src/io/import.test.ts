@@ -132,6 +132,17 @@ describe('importFile', () => {
     expect(() => importFile('README', new Uint8Array(4))).toThrow(/can't be imported/);
   });
 
+  it('names the companions an OBJ wants that did not come along', () => {
+    const obj = bytes('mtllib colors.mtl\nv 0 0 0\nv 1 0 0\nv 0 1 0\nusemtl red\nf 1 2 3\n');
+    const alone = importFile('part.obj', obj);
+    expect(alone.kind === 'model' && alone.missing).toEqual(['colors.mtl']);
+    const mtl = { name: 'colors.mtl', bytes: bytes('newmtl red\nKd 1 0 0\nmap_Kd textures/skin.png\n') };
+    const withLib = importFile('part.obj', obj, [mtl]);
+    expect(withLib.kind === 'model' && withLib.missing).toEqual(['skin.png']);
+    expect(withLib.kind === 'model' && withLib.used).toEqual(['colors.mtl']);
+    expect(withLib.kind === 'model' && withLib.parts[0].color).toBe('#ff0000');
+  });
+
   it('reads a file without an extension by what its bytes say (a document picked on Android)', () => {
     // A download picked through the Android picker: no name to go by, only the bytes.
     expect(importFile('msf:123', binaryStl(cubeFacets())).kind).toBe('model');

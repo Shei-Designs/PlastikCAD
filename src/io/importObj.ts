@@ -14,6 +14,8 @@ const BACKSLASH = 92;
 interface Material {
   color?: string;
   image?: ImportedImage;
+  /** The picture the material names, when it did not come along. */
+  imageRef?: string;
 }
 
 /** The faces of one material as they were read: corner vertex and texture indices, six per triangle, resolved at the end. */
@@ -180,12 +182,17 @@ export function parseObj(bytes: Uint8Array, name = 'Model', companions: Companio
     throw new Error(faceCount ? 'This OBJ file has no usable faces.' : 'This OBJ file has no faces.');
   }
   const used = new Set<string>();
-  for (const [, m] of materials) if (m.image) used.add(m.image.name);
+  const missing = new Set<string>();
+  for (const [, m] of materials) {
+    if (m.image) used.add(m.image.name);
+    else if (m.imageRef) missing.add(m.imageRef);
+  }
   for (const lib of libraries) {
     const companion = findCompanion(companions, lib);
     if (companion) used.add(companion.name);
+    else missing.add(baseOf(lib));
   }
-  return { kind: 'model', parts, used: [...used] };
+  return { kind: 'model', parts, used: [...used], missing: [...missing] };
 }
 
 /** The materials of the named libraries, as far as they came along: `Kd` as the color, `map_Kd` as the picture. */
@@ -210,16 +217,20 @@ function loadMaterials(libraries: string[], companions: Companion[]): Map<string
         const image = findCompanion(companions, words[words.length - 1]);
         const mime = image && imageMime(image.name);
         if (image && mime) current.image = { name: image.name, mime, bytes: image.bytes };
+        else current.imageRef = baseOf(words[words.length - 1]);
       }
     }
   }
   return out;
 }
 
+/** The file name a reference ends in, folders dropped. */
+const baseOf = (ref: string): string => ref.replace(/\\/g, '/').split('/').pop() ?? ref;
+
 /** A companion file by the name a file refers to it by, ignoring folders and case. */
 function findCompanion(companions: Companion[], ref: string): Companion | undefined {
-  const base = ref.replace(/\\/g, '/').split('/').pop()?.toLowerCase();
-  return base ? companions.find((c) => c.name.replace(/\\/g, '/').split('/').pop()?.toLowerCase() === base) : undefined;
+  const base = baseOf(ref).toLowerCase();
+  return base ? companions.find((c) => baseOf(c.name).toLowerCase() === base) : undefined;
 }
 
 export function imageMime(name: string): ImportedImage['mime'] | undefined {

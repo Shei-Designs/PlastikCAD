@@ -269,10 +269,11 @@ left alone, since that is its shape.
 - **3MF**: every build item is a part, split further where its triangles
   carry different colors; colors come from the base materials and color
   groups. Textures and slicer settings are ignored.
-- **OBJ**: pick or drop the `.mtl` and the pictures it names along with the
-  `.obj`, and each material comes in with its color (`Kd`) and picture
-  (`map_Kd`), laid out by the file's texture coordinates. On its own, an OBJ
-  comes in plain.
+- **OBJ**: the `.mtl` and the pictures it names are read from beside the
+  `.obj` on disk, or asked for where the picker grants one file at a time
+  (Android, the browser), and each material comes in with its color (`Kd`)
+  and picture (`map_Kd`), laid out by the file's texture coordinates. Without
+  them, an OBJ comes in plain.
 - **GLB / glTF**: meshes are placed by the scene's nodes and turned from Y up
   in meters to Z up in millimeters; each material brings its base color and
   picture, laid out by the file's texture coordinates. A `.gltf` must embed

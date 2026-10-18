@@ -1586,6 +1586,48 @@ const IMPORT_COLOR = '#8fa3bf';
  * GLB) becomes one group, its parts where the file put them, each in its own
  * color. Returns the names of the companion files the models used up.
  */
+/**
+ * The files a model names (an OBJ's material library, its pictures) that were
+ * not picked with it. Beside a file on disk they are read from there; on
+ * Android or in the browser, where the picker grants one file at a time, the
+ * user is asked to pick them. Two rounds at most: the library, then what it names.
+ */
+async function withCompanions(file: PickedFile, companions: PickedFile[]): Promise<PickedFile[]> {
+  if (fileKind(file.name, file.bytes) !== 'obj') return companions;
+  let found = companions;
+  for (let round = 0; round < 2; round++) {
+    let missing: string[];
+    try {
+      const data = importFile(file.name, file.bytes, found);
+      missing = data.kind === 'model' ? (data.missing ?? []) : [];
+    } catch {
+      return found;
+    }
+    if (missing.length === 0) return found;
+    const more: PickedFile[] = [];
+    if (file.path && !file.path.includes('://')) {
+      const dir = file.path.slice(0, file.path.length - file.name.length);
+      for (const name of missing) {
+        const read = await platform.readPath(dir + name).catch(() => null);
+        if (read) more.push(read);
+      }
+    } else {
+      const list = missing.map((n) => `"${n}"`).join(', ');
+      const ok = await platform.confirm(`"${file.name}" names ${list} for its colors${missing.some((n) => extension(n) !== 'mtl') ? ' and pictures' : ''}. Pick ${missing.length === 1 ? 'it' : 'them'} now, or import the shapes without?`, {
+        title: 'Import',
+        okLabel: 'Pick',
+        cancelLabel: 'Without',
+      });
+      if (!ok) return found;
+      const picked = await platform.pickFiles({ filters: [{ name: 'Material libraries and pictures', extensions: ['mtl', ...IMAGE_EXTENSIONS] }], multiple: true });
+      more.push(...picked);
+    }
+    if (more.length === 0) return found;
+    found = [...found, ...more];
+  }
+  return found;
+}
+
 async function importModels(files: PickedFile[], companions: PickedFile[]): Promise<Set<string>> {
   const used = new Set<string>();
   const assets = { ...state.doc.assets };
@@ -1599,6 +1641,7 @@ async function importModels(files: PickedFile[], companions: PickedFile[]): Prom
     scene = [...scene, node];
   };
   for (const file of files) {
+    companions = await withCompanions(file, companions);
     const data = importFile(file.name, file.bytes, companions);
     const name = uniqueName(scene, baseName(file.name));
     const members: ImportNode[] = [];

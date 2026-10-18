@@ -33,6 +33,8 @@ export interface ImportedModel {
   kind: 'model';
   parts: ImportedPart[];
   used: string[];
+  /** Files the model names (a material library, its pictures) that did not come along. */
+  missing?: string[];
 }
 
 /** Filled 2D shapes in millimeters, Y up, in groups of one fill color. */
