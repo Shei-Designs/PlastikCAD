@@ -1234,6 +1234,13 @@ export class Viewer {
     return (2 * Math.max(depth, 1e-3) * Math.tan((FOV * Math.PI) / 360)) / Math.max(this.height, 1);
   }
 
+  /** The point `px` pixels straight up the screen from `at`, at the same depth. */
+  private aboveOnScreen(at: Vector3, px: number): Vector3 {
+    const ndc = at.clone().project(this.camera);
+    ndc.y += (2 * px) / Math.max(this.height, 1);
+    return ndc.unproject(this.camera);
+  }
+
   private framePoint(local: Vec3): Vector3 {
     const m = this.frame!.matrix;
     return new Vector3(
@@ -1269,12 +1276,14 @@ export class Viewer {
         h.object.position.copy(at);
         h.object.scale.setScalar(h.pixels * this.pixelSize(at) * (h === this.hovered ? 1.35 : 1) * this.gripScale);
       } else if (k.type === 'lift') {
-        // Straight above the top grip (the middle of the object's top face), and never below the highest point.
+        // Straight up the screen from the top grip (the middle of the object's top face), never below the
+        // highest point. Up the screen, not up the Z axis: in perspective a world-vertical line leans as
+        // the object moves off center, and the arrow would wander off the grip.
         const top = this.framePoint([0, 0, hz]);
         top.z = Math.max(top.z, f.bounds.max[2]);
-        const px = this.pixelSize(top);
-        h.object.position.copy(top).add(new Vector3(0, 0, liftRise() * px));
-        h.object.scale.setScalar(h.pixels * px * (h === this.hovered ? 1.2 : 1) * this.gripScale);
+        const at = this.aboveOnScreen(top, liftRise());
+        h.object.position.copy(at);
+        h.object.scale.setScalar(h.pixels * this.pixelSize(at) * (h === this.hovered ? 1.2 : 1) * this.gripScale);
       } else {
         const { at, from, to } = this.ringPlacement(k.axis);
         // The ring's hit tube is already several times fatter than the drawn arc, so it is not scaled.
