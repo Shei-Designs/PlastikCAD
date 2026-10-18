@@ -230,6 +230,7 @@ export default function App() {
     void restoreSession();
     window.addEventListener('keydown', onKeyDown);
     const stopDrops = platform.onFilesDropped((files) => void receiveFiles(files));
+    const stopOpened = platform.onFilesOpened((paths) => void Promise.all(paths.map((p) => platform.readPath(p))).then(receiveFiles).catch(console.error));
     // Changes are written as they happen; closing or hiding the window writes whatever is still pending.
     const stopGuard = platform.guardClose(isDirty, () => saveProject(true));
     const stopHidden = platform.onHidden(() => void saveProject(true));
@@ -242,6 +243,7 @@ export default function App() {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('contextmenu', noMenu);
       stopDrops();
+      stopOpened();
       stopGuard();
       stopHidden();
     };

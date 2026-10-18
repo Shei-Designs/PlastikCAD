@@ -29,7 +29,7 @@ export async function initInput(): Promise<void> {
   if (!isAndroid()) return;
   try {
     take(await invoke<InputState>('plugin:device|state'));
-    await addPluginListener<InputState>('input', 'change', take);
+    await addPluginListener<InputState>('device', 'change', take);
   } catch (e) {
     console.warn('The input plugin did not answer; boxes will use the entry sheet.', e);
   }

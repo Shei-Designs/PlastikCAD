@@ -211,6 +211,16 @@ async fn stage_share(app: AppHandle, request: Request<'_>) -> Result<String, Str
     Ok(path.to_string_lossy().into_owned())
 }
 
+/// Deletes a file the user asked to be rid of (the original of a design brought in as a project).
+#[tauri::command]
+async fn delete_file(path: String) -> Result<(), String> {
+    let target = Path::new(&path);
+    if !target.is_file() {
+        return Err(format!("Could not delete {path}: it is not a file"));
+    }
+    fs::remove_file(target).map_err(|err| format!("Could not delete {path}: {err}"))
+}
+
 /// The first `limit` bytes of a file: enough of a design to read its header
 /// without loading the meshes it may carry.
 #[tauri::command]
@@ -520,6 +530,7 @@ pub fn run() {
             real_path,
             save_export,
             stage_share,
+            delete_file,
             read_head,
             write_file,
             list_designs,

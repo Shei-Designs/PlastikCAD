@@ -23,6 +23,32 @@
                 <!-- AndroidTV support -->
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
+            <!-- Files the Files app and other apps may hand over: designs and models, by the types they are
+                 stored under. A .bashcad is unknown to the system and comes as application/octet-stream, so
+                 every unknown file is offered too; the app says when one is not for it. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="application/x-bashcad" />
+                <data android:mimeType="model/stl" />
+                <data android:mimeType="model/x.stl-ascii" />
+                <data android:mimeType="model/x.stl-binary" />
+                <data android:mimeType="application/sla" />
+                <data android:mimeType="application/vnd.ms-pki.stl" />
+                <data android:mimeType="model/obj" />
+                <data android:mimeType="application/x-tgif" />
+                <data android:mimeType="model/gltf-binary" />
+                <data android:mimeType="model/3mf" />
+                <data android:mimeType="application/vnd.ms-3mfdocument" />
+                <data android:mimeType="image/svg+xml" />
+                <data android:mimeType="image/vnd.dxf" />
+                <data android:mimeType="application/dxf" />
+            </intent-filter>
             <!-- tauri-file-associations. AUTO-GENERATED. DO NOT REMOVE. -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />

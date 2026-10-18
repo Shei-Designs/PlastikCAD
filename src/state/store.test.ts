@@ -30,6 +30,19 @@ vi.mock('./geometry', () => ({
 }));
 
 const saved: { name: string; bytes: Uint8Array }[] = [];
+/** Whether the pretend platform can delete picked files, and which it was asked to. */
+let deletable = false;
+const deleted: string[] = [];
+/** The boxes the editor put up, and what a test answers them with (the first action unless told otherwise). */
+const told: { title: string; text: string; actions: string[] }[] = [];
+let choose: (actions: string[]) => string = (actions) => actions[0];
+vi.mock('../ui/ask', () => ({
+  askName: async (options: { value: string }) => options.value,
+  tell: async (options: { title: string; text: string; actions: string[] }) => {
+    told.push(options);
+    return choose(options.actions);
+  },
+}));
 /** Files a test puts on the pretend disk, by path, for `readPath` to find beside an import. */
 const shelf = new Map<string, Uint8Array>();
 vi.mock('../platform', () => ({
@@ -47,7 +60,12 @@ vi.mock('../platform', () => ({
   writePath: async (path: string, bytes: Uint8Array) => {
     saved.push({ name: path, bytes });
   },
-  startupFile: async () => null,
+  startupFiles: async () => [],
+  onFilesOpened: () => () => {},
+  canDelete: (path: string | null) => deletable && path !== null,
+  deleteFile: async (path: string) => {
+    deleted.push(path);
+  },
   canShare: () => false,
   keepsExports: () => false,
   share: async () => {},
@@ -377,6 +395,29 @@ describe('projects', () => {
     expect(parseDoc(await kept.read('mem:1')).scene[0].pos[0]).toBe(1);
   });
 
+  it('takes a fresh thumbnail once the pause has passed, when a save had to keep an older one', async () => {
+    vi.useFakeTimers();
+    let shots = 0;
+    // Only a picture of the real shape is kept by the file format.
+    const shot = (n: number) => `data:image/jpeg;base64,${'A'.repeat(n)}`;
+    store.provideThumbnail(() => shot(++shots));
+    try {
+      store.addShape('box');
+      expect(await store.saveProject()).toBe(true);
+      expect(parseDoc(await kept.read('mem:1')).thumb).toBe(shot(1));
+      // A change right after: the save keeps the picture just taken rather than drawing again…
+      store.setColor('#ff0000');
+      expect(await store.saveProject()).toBe(true);
+      expect(parseDoc(await kept.read('mem:1')).thumb).toBe(shot(1));
+      // …and owes a fresh one, written on its own once the pause has passed.
+      await vi.advanceTimersByTimeAsync(11_000);
+      expect(parseDoc(await kept.read('mem:1')).thumb).toBe(shot(2));
+      expect(shots).toBe(2);
+    } finally {
+      store.provideThumbnail(null);
+    }
+  });
+
   it('renames the project with the file following, and keeps the id', async () => {
     store.addShape('box');
     await store.saveProject();
@@ -438,7 +479,27 @@ describe('projects', () => {
     expect(b.scene).toEqual(a.scene);
     // An untitled design takes its file's name.
     expect(b.name).toBe('shared');
-    expect(store.getState().notice?.text).toMatch(/Added "shared"/);
+    // It is explained that the project is a copy, kept apart from the file.
+    expect(told.pop()).toMatchObject({ title: 'Project added', text: expect.stringMatching(/"shared" is now a project of its own/), actions: ['OK'] });
+    expect(deleted).toEqual([]);
+  });
+
+  it('offers to delete the file a project was brought in from, where it can', async () => {
+    store.addShape('box');
+    await store.saveProject();
+    const text = await kept.read('mem:1');
+    deletable = true;
+    choose = (actions) => actions[actions.length - 1];
+    try {
+      await store.receiveFiles([{ name: 'shared.bashcad', path: '/elsewhere/shared.bashcad', bytes: new TextEncoder().encode(text) }]);
+    } finally {
+      deletable = false;
+      choose = (actions) => actions[0];
+    }
+    expect(told.pop()?.actions).toEqual(['Keep the file', 'Delete the file']);
+    expect(deleted).toEqual(['/elsewhere/shared.bashcad']);
+    expect(store.getState().notice?.text).toMatch(/Deleted shared.bashcad/);
+    deleted.length = 0;
   });
 
   it('takes in what a sync pass changed under the open project, merging edits not yet saved', async () => {

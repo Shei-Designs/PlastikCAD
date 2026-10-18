@@ -92,10 +92,15 @@ function pickInBrowser(filters: FileFilter[], multiple: boolean): Promise<Picked
 export async function pickFiles(options: { filters: FileFilter[]; multiple?: boolean }): Promise<PickedFile[]> {
   const multiple = options.multiple ?? false;
   if (!isTauri()) return pickInBrowser(options.filters, multiple);
+  if (isAndroid()) {
+    // The device plugin's picker: every file is offered, as the system picker filters by the type a file was
+    // stored with, which a GLB or a design file rarely has (they show greyed out), and the app reads what each
+    // one is itself. Its grant also lets the app delete what was picked, when asked to.
+    const { uris } = await invoke<{ uris: string[] }>('plugin:device|pick_documents', { multiple });
+    return Promise.all(uris.map(readPath));
+  }
   const { open } = await import('@tauri-apps/plugin-dialog');
-  // Android's picker filters by the MIME type a file was stored with, which a GLB or a design file rarely
-  // has (they show greyed out), so there every file is offered and the app reads what each one is itself.
-  const picked: string | string[] | null = await open({ filters: isAndroid() ? [] : options.filters, multiple });
+  const picked: string | string[] | null = await open({ filters: options.filters, multiple });
   if (picked === null) return [];
   return Promise.all((Array.isArray(picked) ? picked : [picked]).map(readPath));
 }
@@ -314,9 +319,48 @@ export async function oauthCancel(port: number): Promise<void> {
   await command<void>('oauth_cancel', { port });
 }
 
-/** Desktop only: path of a design file passed on the command line, else null (always null in the browser). */
-export async function startupFile(): Promise<string | null> {
-  return isTauri() ? command<string | null>('startup_file') : null;
+/**
+ * The files the app was started with: the design passed on the command line
+ * on desktop, the files tapped or shared to it on Android. None in the browser.
+ */
+export async function startupFiles(): Promise<string[]> {
+  if (!isTauri()) return [];
+  if (isAndroid()) return (await invoke<{ uris: string[] }>('plugin:device|opened_files').catch(() => ({ uris: [] }))).uris;
+  const path = await command<string | null>('startup_file');
+  return path ? [path] : [];
+}
+
+/**
+ * Android: files handed to the running app (a tap in the Files app while it is
+ * open). Fetched when the plugin says some arrived. Returns an unsubscribe function.
+ */
+export function onFilesOpened(handler: (paths: string[]) => void): () => void {
+  if (!isAndroid()) return () => {};
+  let stopped = false;
+  let stop: (() => void) | null = null;
+  import('@tauri-apps/api/core')
+    .then(({ addPluginListener }) => addPluginListener('device', 'opened', async () => {
+      const { uris } = await invoke<{ uris: string[] }>('plugin:device|opened_files');
+      if (uris.length > 0) handler(uris);
+    }))
+    .then((listener) => {
+      stop = () => void listener.unregister();
+      if (stopped) stop();
+    })
+    .catch(console.error);
+  return () => {
+    stopped = true;
+    stop?.();
+  };
+}
+
+/** Whether a picked file can be deleted from here: it has a place (a path, or a document on Android). */
+export const canDelete = (path: string | null): boolean => isTauri() && path !== null;
+
+/** Deletes a file the user picked or opened: by path on desktop, through its provider on Android. */
+export async function deleteFile(path: string): Promise<void> {
+  if (path.includes('://')) return void (await invoke('plugin:device|delete_document', { uri: path }));
+  await command<void>('delete_file', { path });
 }
 
 export function setWindowTitle(title: string): void {

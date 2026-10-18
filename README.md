@@ -150,9 +150,11 @@ goes to `Download/BashCAD`. In a plain browser they are kept by the browser
 itself, per profile.
 
 Two commands move designs in and out of the projects folder. **Open project
-file…** (Ctrl+Shift+O, also dropping or double-clicking a `.bashcad` file) brings a copy in
-as a project of its own, with a fresh id, so a file someone sent you never
-passes for one of your own. **Save a copy…** (Ctrl+Shift+S) writes the design
+file…** (Ctrl+Shift+O, also dropping or double-clicking a `.bashcad` file,
+or opening one from the Files app on Android) brings a copy in as a project
+of its own, with a fresh id, so a file someone sent you never passes for one
+of your own. A box says so, since edits go to the copy and not to the file,
+and offers to delete the file. **Save a copy…** (Ctrl+Shift+S) writes the design
 wherever you like, to share or keep; the project itself stays where it is.
 
 ### Google Drive

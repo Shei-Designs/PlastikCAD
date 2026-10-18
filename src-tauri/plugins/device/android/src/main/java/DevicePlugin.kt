@@ -6,6 +6,7 @@
 package com.andrewoshei.bashcad.device
 
 import android.app.Activity
+import android.content.ClipData
 import android.content.ContentValues
 import android.content.Intent
 import android.content.Context
@@ -75,6 +76,16 @@ internal class FindDocumentArgs {
 }
 
 @InvokeArg
+internal class PickDocumentsArgs {
+  var multiple: Boolean = false
+}
+
+@InvokeArg
+internal class DeleteDocumentArgs {
+  lateinit var uri: String
+}
+
+@InvokeArg
 internal class WriteDocumentArgs {
   lateinit var uri: String
   /** A file holding the bytes, copied in and then deleted. */
@@ -97,8 +108,12 @@ class DevicePlugin(activity: Activity) : Plugin(activity), InputManager.InputDev
   /** The content view whose window insets are being watched. */
   private var watched: View? = null
 
+  /** Files the app was asked to open (a tap in the Files app, a share to it), waiting to be fetched by the page. */
+  private val opened = ArrayList<Uri>()
+
   override fun load(webView: WebView) {
     (webView.context as? Activity)?.let { host = it }
+    takeIntent(host.intent)
     hardwareKeyboard = detectKeyboard()
     val inputManager = host.getSystemService(Context.INPUT_SERVICE) as InputManager
     inputManager.registerInputDeviceListener(this, null)
@@ -153,6 +168,88 @@ class DevicePlugin(activity: Activity) : Plugin(activity), InputManager.InputDev
       invoke.reject(e.message ?: "Could not write the document")
     } finally {
       source.delete()
+    }
+  }
+
+  /** The files an intent asks the app to open: the viewed document, or the shared stream(s). */
+  private fun filesOf(intent: Intent?): List<Uri> {
+    intent ?: return emptyList()
+    return when (intent.action) {
+      Intent.ACTION_VIEW -> listOfNotNull(intent.data)
+      Intent.ACTION_SEND -> listOfNotNull(streamOf(intent))
+      Intent.ACTION_SEND_MULTIPLE -> {
+        @Suppress("DEPRECATION")
+        intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM) ?: emptyList()
+      }
+      else -> emptyList()
+    }
+  }
+
+  private fun streamOf(intent: Intent): Uri? {
+    @Suppress("DEPRECATION")
+    return intent.getParcelableExtra(Intent.EXTRA_STREAM)
+  }
+
+  /** Keeps the files an intent brings, for `openedFiles`. True if there were any. */
+  private fun takeIntent(intent: Intent?): Boolean {
+    val files = filesOf(intent)
+    opened.addAll(files)
+    return files.isNotEmpty()
+  }
+
+  /** The app was running already (it is a single task) and was asked to open something else. */
+  override fun onNewIntent(intent: Intent) {
+    if (takeIntent(intent)) trigger("opened", JSObject())
+  }
+
+  /** The files waiting to be opened, as content URIs, handed over once. */
+  @Command
+  fun openedFiles(invoke: Invoke) {
+    val out = JSObject()
+    out.put("uris", JSArray(opened.map { it.toString() }))
+    opened.clear()
+    invoke.resolve(out)
+  }
+
+  /**
+   * Asks for one or more documents of any type. Unlike the GET_CONTENT picker, an OPEN_DOCUMENT
+   * grant lets the app change or delete what was picked, for the offer to remove a file brought in
+   * as a project. Resolves with the content URIs, none if dismissed.
+   */
+  @Command
+  fun pickDocuments(invoke: Invoke) {
+    val args = invoke.parseArgs(PickDocumentsArgs::class.java)
+    val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+      addCategory(Intent.CATEGORY_OPENABLE)
+      type = "*/*"
+      putExtra(Intent.EXTRA_ALLOW_MULTIPLE, args.multiple)
+    }
+    startActivityForResult(invoke, intent, "documentsPicked")
+  }
+
+  @ActivityCallback
+  fun documentsPicked(invoke: Invoke, result: ActivityResult) {
+    val uris = ArrayList<String>()
+    if (result.resultCode == Activity.RESULT_OK) {
+      val data = result.data
+      val clip: ClipData? = data?.clipData
+      if (clip != null) for (i in 0 until clip.itemCount) clip.getItemAt(i).uri?.let { uris.add(it.toString()) }
+      else data?.data?.let { uris.add(it.toString()) }
+    }
+    val out = JSObject()
+    out.put("uris", JSArray(uris))
+    invoke.resolve(out)
+  }
+
+  /** Deletes a picked document, where its provider and the grant allow it. */
+  @Command
+  fun deleteDocument(invoke: Invoke) {
+    val args = invoke.parseArgs(DeleteDocumentArgs::class.java)
+    try {
+      if (!DocumentsContract.deleteDocument(host.contentResolver, Uri.parse(args.uri))) throw IllegalStateException("The file's provider would not delete it")
+      invoke.resolve()
+    } catch (e: Exception) {
+      invoke.reject(e.message ?: "Could not delete the file")
     }
   }
 

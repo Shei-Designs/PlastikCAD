@@ -1246,6 +1246,9 @@ let thumbSource: (() => string | null) | null = null;
 /** Taking the picture means drawing the scene again, so it is not done on every save. */
 const THUMB_EVERY_MS = 10_000;
 let thumbTakenAt = 0;
+/** The last save kept an older picture (one had just been taken); a fresh one is owed once the pause has passed. */
+let thumbStale = false;
+let thumbRefresh: ReturnType<typeof setTimeout> | undefined;
 let writing: Promise<boolean> | null = null;
 let lastSaveError: string | null = null;
 
@@ -1257,11 +1260,26 @@ function thumbFor(doc: Doc, fresh: boolean): string | undefined {
   if (doc.scene.length === 0) return undefined;
   if (!thumbSource) return doc.thumb;
   const now = Date.now();
-  if (!fresh && doc.thumb && now - thumbTakenAt < THUMB_EVERY_MS) return doc.thumb;
+  if (!fresh && doc.thumb && now - thumbTakenAt < THUMB_EVERY_MS) {
+    // Otherwise the last edit of a burst (a color picked right after a shape was placed) would never show.
+    thumbStale = true;
+    clearTimeout(thumbRefresh);
+    thumbRefresh = setTimeout(refreshThumbnail, THUMB_EVERY_MS - (now - thumbTakenAt) + 50);
+    return doc.thumb;
+  }
   const shot = thumbSource();
   if (!shot) return doc.thumb;
   thumbTakenAt = now;
+  thumbStale = false;
   return shot;
+}
+
+/** Writes the project again with a fresh picture, when the last save made do with an older one and nothing else is pending. */
+function refreshThumbnail(): void {
+  if (!thumbStale || writing || isDirty() || !hasProjectStore() || state.projectKey === null || state.doc.scene.length === 0) return;
+  writing = write(true).finally(() => {
+    writing = null;
+  });
 }
 
 /** Whether the project is worth a file yet: it has one already, something was put in it, or it was named. */
@@ -1275,7 +1293,8 @@ const worthSaving = (): boolean => state.projectKey !== null || state.doc.scene.
 export function saveProject(fresh = false): Promise<boolean> {
   clearTimeout(autosaveTimer);
   if (writing) return writing.then(() => saveProject(fresh));
-  if (!isDirty() || !worthSaving()) return Promise.resolve(true);
+  // A fresh save is also owed a fresh picture, when the last one made do with an older shot.
+  if ((!isDirty() && !(fresh && thumbStale && state.projectKey !== null)) || !worthSaving()) return Promise.resolve(true);
   if (!hasProjectStore()) return Promise.resolve(false);
   writing = write(fresh).finally(() => {
     writing = null;
@@ -1391,8 +1410,29 @@ async function importProjectFile(file: PickedFile): Promise<void> {
   const key = await store.write(null, doc.name, serializeDoc(doc));
   adopt(doc, key);
   set({ browsing: false });
-  notify(`Added "${doc.name}" to your projects.`, 'ok');
+  await explainCopy(doc.name, file);
   await offerLegacyVersions(text, doc.name);
+}
+
+/**
+ * Says that the project is a copy of the file, kept with the app's projects,
+ * so that edits are not expected to land in the file; and offers to delete the
+ * file, which would otherwise go stale beside the living copy.
+ */
+async function explainCopy(name: string, file: PickedFile): Promise<void> {
+  const text = `"${name}" is now a project of its own in ${APP_NAME}. Changes you make are saved with the app's projects, not in the file you opened.`;
+  if (!platform.canDelete(file.path)) {
+    await tell({ title: 'Project added', text, actions: ['OK'] });
+    return;
+  }
+  const chosen = await tell({ title: 'Project added', text: `${text} The file can stay where it is, or go.`, actions: ['Keep the file', 'Delete the file'] });
+  if (chosen !== 'Delete the file') return;
+  try {
+    await platform.deleteFile(file.path!);
+    notify(`Deleted ${file.name}.`, 'ok');
+  } catch (e) {
+    notify(`${APP_NAME} could not delete ${file.name} from here (${e instanceof Error ? e.message : String(e)}). Remove it in your file manager.`, 'error');
+  }
 }
 
 /**
@@ -1973,8 +2013,8 @@ export async function restoreSession(): Promise<void> {
     // Edits made before the store was ready are written now.
     if (isDirty()) scheduleAutosave();
     initSync({ device: state.prefs.device, flush: () => saveProject(true), changed: (report) => void applySyncReport(report), notice: (text) => notify(text, 'error') });
-    const path = await platform.startupFile();
-    if (path) return void (await importProjectFile(await platform.readPath(path)));
+    const opened = await platform.startupFiles();
+    if (opened.length > 0) return void (await receiveFiles(await Promise.all(opened.map((p) => platform.readPath(p)))));
     const last = state.prefs.lastProject;
     if (!last || isDirty()) return;
     try {
