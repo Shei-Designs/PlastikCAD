@@ -2379,7 +2379,8 @@ kbd {
 
 .touch-entry {
   position: fixed;
-  top: 64px;
+  /* Midway down what the keypad leaves of the window, never higher than just under the toolbar. */
+  top: clamp(64px, calc((100vh - var(--keypad, 0px)) / 2 - 90px), 45vh);
   left: 50%;
   z-index: 61;
   display: flex;
@@ -2392,6 +2393,7 @@ kbd {
   background: var(--panel);
   box-shadow: var(--shadow);
   transform: translateX(-50%);
+  transition: top 160ms ease-out;
 }
 
 .touch-entry-head {

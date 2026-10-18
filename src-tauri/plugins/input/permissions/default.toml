@@ -1,0 +1,3 @@
+[default]
+description = "Lets the app ask what it is being driven with (a hardware keyboard, the on-screen keypad) and hear when that changes."
+permissions = ["allow-state", "allow-register-listener", "allow-remove-listener"]

@@ -1,0 +1,49 @@
+// What the app is being driven with: a hardware keyboard, or fingers and the
+// on-screen keypad. On Android the input plugin reports it from the system
+// and says when it changes (a keyboard docked or undocked, the keypad coming
+// up); everywhere else there is a keyboard. Boxes tapped with a finger type
+// in place when there is a keyboard and open the entry sheet when there is not.
+import { addPluginListener, invoke, isTauri } from '@tauri-apps/api/core';
+
+export interface InputState {
+  hardwareKeyboard: boolean;
+  keypadVisible: boolean;
+  /** Height of the keypad over the page, in CSS pixels. */
+  keypadHeight: number;
+}
+
+const isAndroid = (): boolean => isTauri() && typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+
+/** Unknown until the plugin has answered; a desktop or a browser is taken to have a keyboard. */
+let state: InputState | null = isAndroid() ? null : { hardwareKeyboard: true, keypadVisible: false, keypadHeight: 0 };
+const listeners = new Set<(state: InputState) => void>();
+
+function take(next: InputState): void {
+  state = next;
+  document.documentElement.style.setProperty('--keypad', next.keypadVisible ? `${next.keypadHeight}px` : '0px');
+  for (const l of listeners) l(next);
+}
+
+/** Asks the plugin and keeps listening. Safe to call where there is no plugin. */
+export async function initInput(): Promise<void> {
+  if (!isAndroid()) return;
+  try {
+    take(await invoke<InputState>('plugin:input|state'));
+    await addPluginListener<InputState>('input', 'change', take);
+  } catch (e) {
+    console.warn('The input plugin did not answer; boxes will use the entry sheet.', e);
+  }
+}
+
+export const inputState = (): InputState | null => state;
+
+/** Whether typing can go into a box where it is: there is a keyboard. Unknown counts as none, the safer reading on a tablet. */
+export const keyboardAttached = (): boolean => state?.hardwareKeyboard ?? false;
+
+export function onInputChange(listener: (state: InputState) => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+/** For tests and the browser: pretends the plugin said so. */
+export const setInputState = (next: InputState): void => take(next);

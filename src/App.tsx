@@ -38,6 +38,7 @@ import {
 import { Inspector } from './ui/Inspector';
 import { Projects } from './ui/Projects';
 import { Sidebar } from './ui/Sidebar';
+import { initInput } from './ui/inputMode';
 import { TouchEntrySheet } from './ui/TouchEntry';
 import { Viewport, viewerRef } from './ui/Viewport';
 
@@ -191,6 +192,7 @@ export default function App() {
   }, [name, dirty]);
 
   useEffect(() => {
+    void initInput();
     void restoreSession();
     window.addEventListener('keydown', onKeyDown);
     const stopDrops = platform.onFilesDropped((files) => void receiveFiles(files));

@@ -5,6 +5,9 @@
 // value. Opened from anywhere through `openTouchEntry`, shown once in App.
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { flushSync } from 'react-dom';
+import { keyboardAttached, onInputChange } from './inputMode';
+
+export { keyboardAttached } from './inputMode';
 
 export interface TouchEntry {
   /** What the value is ("Width", "Notes for Box"). */
@@ -40,43 +43,32 @@ export function openTouchEntry(entry: TouchEntry): void {
 
 export const closeTouchEntry = (): void => publish(null);
 
-// --- is there a keyboard? ----------------------------------------------------
-//
-// A tablet with a keyboard attached shows no keypad, and its boxes can work
-// as on the desktop. The page cannot ask, so it watches: a key event from a
-// real keyboard carries a `code` (the on-screen keyboard's do not), and a
-// keypad that comes up shrinks the visual viewport.
+// --- a finger on a box -------------------------------------------------------
 
-const KEYS_SEEN = 'bashcad:keyboard';
-let keyboardSeen = (() => {
-  try {
-    return sessionStorage.getItem(KEYS_SEEN) === '1';
-  } catch {
-    return false;
+/** The entry a box asked for while typing in place; opened after all if the keypad comes up. */
+let pending: { entry: TouchEntry; until: number } | null = null;
+onInputChange((state) => {
+  if (state.keypadVisible && pending && performance.now() < pending.until) {
+    const { entry } = pending;
+    pending = null;
+    openTouchEntry(entry);
   }
-})();
+});
 
-function noteKeyboard(seen: boolean): void {
-  keyboardSeen = seen;
-  try {
-    sessionStorage.setItem(KEYS_SEEN, seen ? '1' : '0');
-  } catch {
-    // Remembered for this page only.
-  }
+/**
+ * A finger on a box. Without a keyboard the entry sheet opens at once. With
+ * one, the box is focused by hand (so Android shows no caret handle) and
+ * works as on the desktop; should the keypad come up after all, the sheet
+ * opens.
+ */
+export function enterByTouch(e: { pointerType: string; currentTarget: HTMLInputElement | HTMLTextAreaElement; preventDefault: () => void }, entry: TouchEntry): void {
+  const box = e.currentTarget;
+  if (e.pointerType !== 'touch' || box.disabled) return;
+  e.preventDefault();
+  if (!keyboardAttached()) return openTouchEntry(entry);
+  if (document.activeElement !== box) focusFresh(box, !entry.multiline);
+  pending = { entry, until: performance.now() + 1500 };
 }
-
-if (typeof window !== 'undefined') {
-  window.addEventListener(
-    'keydown',
-    (e) => {
-      if (e.code && e.keyCode !== 229 && !e.isComposing) noteKeyboard(true);
-    },
-    true,
-  );
-}
-
-/** Whether a real keyboard has been typed on in this session (and no keypad has come up since). */
-export const keyboardAttached = (): boolean => keyboardSeen;
 
 /**
  * Focuses a box by hand with the caret at the end (no selection, so Android
@@ -103,40 +95,6 @@ export function freshReplacement(e: { key: string; ctrlKey: boolean; metaKey: bo
   if (e.ctrlKey || e.metaKey || e.altKey) return null;
   if (e.key === 'Backspace' || e.key === 'Delete') return '';
   return e.key.length === 1 ? e.key : null;
-}
-
-/** How much the visual viewport must shrink after a focus to count as the keypad coming up. */
-const KEYPAD_MIN = 100;
-
-/**
- * A finger on a box. Without a keyboard the entry sheet opens at once. With
- * one, the box is focused by hand (so Android shows no caret handle) and
- * works as on the desktop; should the keypad come up after all, the sheet
- * opens and the keyboard is forgotten.
- */
-export function enterByTouch(e: { pointerType: string; currentTarget: HTMLInputElement | HTMLTextAreaElement; preventDefault: () => void }, entry: TouchEntry): void {
-  const box = e.currentTarget;
-  if (e.pointerType !== 'touch' || box.disabled) return;
-  e.preventDefault();
-  if (!keyboardAttached()) return openTouchEntry(entry);
-  if (document.activeElement !== box) {
-    focusFresh(box, !entry.multiline);
-  }
-  const vv = window.visualViewport;
-  if (!vv) return;
-  const before = vv.height;
-  const watch = () => {
-    if (before - vv.height < KEYPAD_MIN) return;
-    stop();
-    noteKeyboard(false);
-    openTouchEntry(entry);
-  };
-  const stop = () => {
-    vv.removeEventListener('resize', watch);
-    clearTimeout(timer);
-  };
-  vv.addEventListener('resize', watch);
-  const timer = setTimeout(stop, 1500);
 }
 
 export function TouchEntrySheet() {
