@@ -18,6 +18,7 @@ import {
   mirrorSelected,
   newProject,
   nudgeSelected,
+  openProjectFile,
   openProjects,
   paste,
   receiveFiles,
@@ -66,7 +67,7 @@ function onKeyDown(e: KeyboardEvent): void {
 
   // File commands work everywhere, including from inside a text box.
   if (mod && !e.altKey) {
-    const command = key === 's' ? (e.shiftKey ? saveCopy : saveNow) : key === 'o' ? openProjects : key === 'n' ? newProject : key === 'i' ? importModel : null;
+    const command = key === 's' ? (e.shiftKey ? saveCopy : saveNow) : key === 'o' ? (e.shiftKey ? openProjectFile : openProjects) : key === 'n' ? newProject : key === 'i' ? importModel : null;
     if (command) {
       e.preventDefault();
       commitTyping();

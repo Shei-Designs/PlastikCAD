@@ -92,7 +92,7 @@ function FileBar() {
           <div className="menu" role="menu">
             {item('New project', `${MOD}N`, () => void newProject(), close)}
             {item('Projects…', `${MOD}O`, openProjects, close)}
-            {item('Open project file…', '', () => void openProjectFile(), close)}
+            {item('Open project file…', `${MOD}Shift+O`, () => void openProjectFile(), close)}
             {item('Save a copy…', `${MOD}Shift+S`, () => void saveCopy(), close)}
             <hr />
             {item(`About ${APP_NAME}…`, '', () => setAbout(true), close)}

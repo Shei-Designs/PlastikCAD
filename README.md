@@ -150,7 +150,7 @@ goes to `Download/BashCAD`. In a plain browser they are kept by the browser
 itself, per profile.
 
 Two commands move designs in and out of the projects folder. **Open project
-file…** (also dropping or double-clicking a `.bashcad` file) brings a copy in
+file…** (Ctrl+Shift+O, also dropping or double-clicking a `.bashcad` file) brings a copy in
 as a project of its own, with a fresh id, so a file someone sent you never
 passes for one of your own. **Save a copy…** (Ctrl+Shift+S) writes the design
 wherever you like, to share or keep; the project itself stays where it is.
@@ -220,7 +220,7 @@ plus the thumbnail line at the top.
 | Align by key | Alt+← / → / ↓ / ↑ (left / right / front / back), Alt+PgDn / PgUp (bottom / top); add Shift to center on that axis; Alt+C centers on X and Y |
 | Fit to view | F |
 | Undo / redo | Ctrl+Z / Ctrl+Y |
-| Projects / new project / save a copy | Ctrl+O / Ctrl+N / Ctrl+Shift+S (Ctrl+S writes pending changes at once) |
+| Projects / open project file / new project / save a copy | Ctrl+O / Ctrl+Shift+O / Ctrl+N / Ctrl+Shift+S (Ctrl+S writes pending changes at once) |
 | Import | Ctrl+I |
 
 ## Export formats
