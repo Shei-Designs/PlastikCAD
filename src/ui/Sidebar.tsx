@@ -13,6 +13,7 @@ import {
   importModel,
   isDirty,
   newProject,
+  openPartsBin,
   openProjectFile,
   openProjects,
   renameProject,
@@ -35,7 +36,7 @@ import { Popover } from './Popover';
 import { CATEGORIES, GENERATORS, getGenerator } from '../parts/generators';
 import { partThumbnail } from './partThumbnails';
 import { Structure } from './Structure';
-import { PART_THUMBNAILS, pictureThumbnail, shapeThumbnail, textThumbnail } from './thumbnails';
+import { PART_THUMBNAILS, partsBinThumbnail, pictureThumbnail, shapeThumbnail, textThumbnail } from './thumbnails';
 
 const MOD = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform) ? '⌘' : 'Ctrl+';
 
@@ -109,6 +110,7 @@ const FAMILY_NAMES: Record<string, string> = { gears: 'Gear', pulleys: 'Pulley',
 
 function Shapes() {
   const placing = useEditor((s) => s.placing);
+  const bin = useEditor((s) => s.bin);
   const active = placing?.type === 'shape' ? placing.shape : null;
   const placingFamily = placing?.type === 'part' ? getGenerator(placing.part).category : null;
   return (
@@ -192,6 +194,12 @@ function Shapes() {
             </button>
           </li>
         ))}
+        <li>
+          <button type="button" className={bin ? 'shape selected' : 'shape'} title="Parts you saved from your designs, to place again." aria-pressed={bin} onClick={openPartsBin}>
+            <span className="thumb">{partsBinThumbnail}</span>
+            <span className="shape-name">Custom</span>
+          </button>
+        </li>
       </ul>
     </section>
   );

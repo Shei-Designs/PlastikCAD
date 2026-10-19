@@ -177,7 +177,6 @@ export class MemoryProjects implements ProjectStore {
 
 // --- browser: IndexedDB ------------------------------------------------------
 
-const DB_NAME = FILE_FORMAT;
 const DB_VERSION = 2;
 /** Header rows, small, for listing. */
 const META = 'projects';
@@ -194,9 +193,9 @@ interface MetaRecord {
   thumb: string | null;
 }
 
-function openDb(): Promise<IDBDatabase> {
+function openDb(name: string): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const open = indexedDB.open(DB_NAME, DB_VERSION);
+    const open = indexedDB.open(name, DB_VERSION);
     open.onupgradeneeded = (event) => {
       const db = open.result;
       const meta = db.createObjectStore(META, { keyPath: 'key' });
@@ -229,8 +228,8 @@ function openDb(): Promise<IDBDatabase> {
   });
 }
 
-function transact<T>(mode: IDBTransactionMode, run: (tx: IDBTransaction) => IDBRequest<T> | void): Promise<T> {
-  return openDb().then(
+function transact<T>(name: string, mode: IDBTransactionMode, run: (tx: IDBTransaction) => IDBRequest<T> | void): Promise<T> {
+  return openDb(name).then(
     (db) =>
       new Promise<T>((resolve, reject) => {
         const tx = db.transaction([META, TEXTS], mode);
@@ -251,13 +250,16 @@ function transact<T>(mode: IDBTransactionMode, run: (tx: IDBTransaction) => IDBR
 export class DbProjects implements ProjectStore {
   readonly location = null;
 
+  /** `name` is the database: the projects have one, the custom parts another. */
+  constructor(private readonly name: string = FILE_FORMAT) {}
+
   async list(): Promise<ProjectInfo[]> {
-    const rows = await transact<MetaRecord[]>('readonly', (tx) => tx.objectStore(META).getAll());
+    const rows = await transact<MetaRecord[]>(this.name, 'readonly', (tx) => tx.objectStore(META).getAll());
     return rows.map((r) => ({ key: r.key, id: r.id, name: r.name, revision: r.revision ?? null, modified: r.modified, size: r.size, thumb: r.thumb }));
   }
 
   async read(key: string): Promise<string> {
-    const text = await transact<string | undefined>('readonly', (tx) => tx.objectStore(TEXTS).get(key));
+    const text = await transact<string | undefined>(this.name, 'readonly', (tx) => tx.objectStore(TEXTS).get(key));
     if (typeof text !== 'string') throw new Error('This project is gone.');
     return text;
   }
@@ -265,7 +267,7 @@ export class DbProjects implements ProjectStore {
   async write(key: string | null, name: string, text: string): Promise<string> {
     const at = key ?? newId();
     const header = headerOf(text);
-    await transact<void>('readwrite', (tx) => {
+    await transact<void>(this.name, 'readwrite', (tx) => {
       tx.objectStore(META).put({ key: at, id: header.id, name, revision: header.revision, modified: Date.now(), size: text.length, thumb: header.thumb } satisfies MetaRecord);
       tx.objectStore(TEXTS).put(text, at);
     });
@@ -273,7 +275,7 @@ export class DbProjects implements ProjectStore {
   }
 
   async remove(key: string): Promise<void> {
-    await transact<void>('readwrite', (tx) => {
+    await transact<void>(this.name, 'readwrite', (tx) => {
       tx.objectStore(META).delete(key);
       tx.objectStore(TEXTS).delete(key);
     });
@@ -282,7 +284,11 @@ export class DbProjects implements ProjectStore {
 
 // --- the store in use -----------------------------------------------------
 
+/** The browser database the custom parts live in. */
+const PARTS_DB = `${FILE_FORMAT}-parts`;
+
 let current: ProjectStore | null = null;
+let parts: ProjectStore | null = null;
 
 /** The store projects are kept in; `useProjectStore` first, or there is none. */
 export function projectStore(): ProjectStore {
@@ -290,12 +296,34 @@ export function projectStore(): ProjectStore {
   return current;
 }
 
+/**
+ * The store custom parts are kept in: objects the user saved from a design to
+ * place again. Each is a design file of one object, kept apart from the
+ * projects (a "Parts" folder inside the projects folder on desktop, a database
+ * of its own in a browser) so that it never shows up as a project.
+ */
+export function partStore(): ProjectStore {
+  if (!parts) throw new Error('The parts storage is not ready yet.');
+  return parts;
+}
+
+const PARTS_FOLDER = 'Parts';
+/** The folder custom parts go in, inside a projects folder. */
+export const partsDirOf = (projectsDir: string): string => join(projectsDir, PARTS_FOLDER);
+
+/** Parts follow the projects folder; a store without a folder gets a memory store for them until `usePartStore` says otherwise. */
 export function useProjectStore(store: ProjectStore): void {
   current = store;
+  parts = store.location ? new DiskProjects(partsDirOf(store.location)) : new MemoryProjects();
+}
+
+export function usePartStore(store: ProjectStore): void {
+  parts = store;
 }
 
 /** Whether a store has been chosen (start-up has got that far). */
 export const hasProjectStore = (): boolean => current !== null;
+export const hasPartStore = (): boolean => parts !== null;
 
 /**
  * Picks the store for this platform: the projects folder on desktop (the one
@@ -307,13 +335,15 @@ export async function openProjectStore(chosenDir: string | null): Promise<{ fixe
   if (platform.isDesktop()) {
     const home = await platform.defaultProjectsDir();
     const dir = home.fixed ? home.path : (chosenDir ?? home.path);
-    current = new DiskProjects(dir);
+    useProjectStore(new DiskProjects(dir));
     return { fixed: home.fixed, defaultDir: home.path };
   }
   if (typeof indexedDB === 'undefined') {
-    current = new MemoryProjects();
+    useProjectStore(new MemoryProjects());
+    usePartStore(new MemoryProjects());
     return { fixed: true, defaultDir: null };
   }
-  current = new DbProjects();
+  useProjectStore(new DbProjects());
+  usePartStore(new DbProjects(PARTS_DB));
   return { fixed: true, defaultDir: null };
 }

@@ -693,3 +693,77 @@ describe('importing', () => {
     shelf.clear();
   });
 });
+
+describe('custom parts', () => {
+  const parts = () => projects.partStore().list();
+
+  it('keeps a selected object as a part standing at the middle of the plate, and places copies of it', async () => {
+    store.addShape('box');
+    const original = only();
+    store.nudgeSelected([30, 10, 0]);
+    expect(await store.saveAsPart(original)).toBe(true);
+    const [part] = await parts();
+    expect(part.name).toBe('Box');
+    const doc = parseDoc(await projects.partStore().read(part.key));
+    expect(doc.scene.length).toBe(1);
+    expect(doc.scene[0].id).not.toBe(original);
+    expect(doc.scene[0].pos).toEqual([0, 0, 10]);
+    expect(doc.revision).toBeTruthy();
+    // The original stays where it was.
+    expect(posOf(original)).toEqual([30, 10, 10]);
+
+    // Picked from the bin, carried to a point and put down: a fresh object named after the part.
+    await store.pickPart(part.key);
+    const carried = store.getState().placing!;
+    expect(carried.name).toBe('Box');
+    expect(carried.id).not.toBe(doc.scene[0].id);
+    store.movePlacing([5, 5, 0]);
+    expect(store.getState().placing!.pos).toEqual([5, 5, 10]);
+    store.commitPlacing();
+    expect(scene().map((n) => n.name)).toEqual(['Box', 'Box 2']);
+    // Or added straight to the middle.
+    await store.addCustomPart(part.key);
+    expect(scene().map((n) => n.name)).toEqual(['Box', 'Box 2', 'Box 3']);
+    expect(posOf(only())).toEqual([0, 0, 10]);
+  });
+
+  it('keeps a group whole, with fresh ids inside, and drops hidden and locked', async () => {
+    twoBoxes();
+    await store.groupSelected();
+    const group = only();
+    store.toggleLocked(group);
+    expect(await store.saveAsPart(group)).toBe(true);
+    const [part] = await parts();
+    const doc = parseDoc(await projects.partStore().read(part.key));
+    const saved = doc.scene[0] as GroupNode;
+    expect(saved.type).toBe('group');
+    expect(saved.locked).toBeUndefined();
+    const before = scene().find((n) => n.id === group) as GroupNode;
+    expect(saved.children.map((c) => c.id)).not.toEqual(before.children.map((c) => c.id));
+    expect(saved.children.length).toBe(2);
+  });
+
+  it('renames and deletes parts, and the other library tiles close the bin', async () => {
+    store.addShape('cylinder');
+    await store.saveAsPart(only());
+    const [part] = await parts();
+    await store.renamePartAt(part.key, 'Post');
+    expect((await parts()).map((p) => p.name)).toEqual(['Post']);
+    store.openPartsBin();
+    expect(store.getState().bin).toBe(true);
+    expect(store.getState().selection).toEqual([]);
+    store.startPlacing('box');
+    expect(store.getState().bin).toBe(false);
+    expect(await store.deletePart(part.key, 'Post')).toBe(true);
+    expect(await parts()).toEqual([]);
+  });
+
+  it('asks first, and does nothing when told not to', async () => {
+    store.addShape('box');
+    choose = (actions) => actions[actions.length - 1];
+    expect(await store.saveAsPart(only())).toBe(false);
+    expect(await parts()).toEqual([]);
+    expect(told[told.length - 1]?.title).toBe('Save as a part');
+    choose = (actions) => actions[0];
+  });
+});

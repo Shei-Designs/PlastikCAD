@@ -138,6 +138,19 @@ long as you need.
 Only the kind and its parameters are stored in the design; the geometry is
 made from them.
 
+### Custom parts
+
+Anything you have built can go back into the library. Select an object (a
+group counts as one; group several objects first to keep them as one part)
+and press the save-as-part button beside its name in the right panel. The
+object goes into the **Custom** bin, with its structure intact, standing at
+the middle of the plate. The Custom tile in the library opens the bin in the
+right panel: search, sort by name or recency, pick a part and click on the
+plate to place it, or double-click it to add it at the middle. Each part can
+be renamed or deleted from its menu. Custom parts are kept beside your
+projects (a `Parts` folder inside the projects folder on desktop) and synced
+to Google Drive with them.
+
 ## Projects
 
 Designs are projects, and a project is saved as you work: a second after the
@@ -167,9 +180,10 @@ wherever you like, to share or keep; the project itself stays where it is.
 Projects can be kept in step across devices through Google Drive. In the
 projects browser, **Link Google Drive…** signs you in with Google in your
 browser; from then on PlastikCAD keeps a copy of every project in a `PlastikCAD`
-folder at the top of your Drive and syncs a few seconds after each save, when
-the app starts or comes back online, every few minutes, and on **Sync now**.
-Exports are never synced.
+folder at the top of your Drive (and of every custom part in a `Parts` folder
+inside it) and syncs a few seconds after each save, when the app starts or
+comes back online, every few minutes, and on **Sync now**. Exports are never
+synced.
 
 PlastikCAD asks only for access to files it created itself (Google's
 `drive.file` permission), so it cannot read the rest of your Drive. The flip

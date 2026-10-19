@@ -154,6 +154,22 @@ export const ProjectsIcon = () => (
     <rect x="13" y="13" width="7" height="7" rx="1.2" />
   </Icon>
 );
+/** An arrow going down into an open box: save as a custom part. */
+export const SaveAsPartIcon = () => (
+  <Icon>
+    <path d="M12 3v10M8.5 9.5 12 13l3.5-3.5" />
+    <path d="M4 13v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5" />
+    <path d="M4 14h4.5l1.5 2h4l1.5-2H20" />
+  </Icon>
+);
+/** A box of parts: the custom parts tile in the library. */
+export const PartsBinIcon = () => (
+  <Icon>
+    <path d="M4 9.5 12 5l8 4.5v7L12 21l-8-4.5z" />
+    <path d="M4 9.5 12 14l8-4.5M12 14v7" />
+    <path d="M8 7.3l8 4.5" />
+  </Icon>
+);
 export const MoreIcon = () => (
   <Icon>
     <circle cx="6" cy="12" r="1.3" fill="currentColor" />

@@ -50,7 +50,7 @@ import { DEFAULT_FONT, loadFont, outlineOf } from '../text/fonts';
 import { geometry } from './geometry';
 import { loadPrefs, savePrefs } from './persist';
 import type { Prefs } from './persist';
-import { DiskProjects, fileNameFor, hasProjectStore, openProjectStore, projectStore, useProjectStore } from './projects';
+import { DiskProjects, fileNameFor, hasProjectStore, openProjectStore, partStore, projectStore, useProjectStore } from './projects';
 import type { ProjectInfo } from './projects';
 import { initSync, linkAccount, requestSync, unlinkAccount } from '../sync/sync';
 import type { SyncReport } from '../sync/engine';
@@ -80,6 +80,10 @@ export interface EditorState {
   storage: { location: string | null; fixed: boolean; defaultDir: string | null } | null;
   /** New shape following the pointer until it is put down. */
   placing: SceneNode | null;
+  /** The custom parts bin is open in the inspector (shown while nothing is selected). */
+  bin: boolean;
+  /** Counts up whenever the custom parts change, here or by sync, so that the bin lists them again. */
+  partsEpoch: number;
   /**
    * The gear a mate is being made for while the wizard is open; the previewed mate carries
    * `id`. `building` while the preview the panel asks for is not in the scene yet.
@@ -125,6 +129,8 @@ let state: EditorState = {
   storage: null,
   saved: null,
   placing: null,
+  bin: false,
+  partsEpoch: 0,
   mating: null,
   aligning: null,
   editing: null,
@@ -383,7 +389,7 @@ export function startPlacing(kind: ShapeKind): void {
   abortAlignPreview();
   // Parked far below the plate until the pointer reaches the viewport.
   const node = makeShape(kind, [0, 0, -1e6]);
-  set({ placing: node, selection: [] });
+  set({ placing: node, selection: [], bin: false });
 }
 
 const TEXT_THICKNESS = 2;
@@ -417,7 +423,7 @@ export async function startPlacingText(): Promise<void> {
     const node = makeText('Text', DEFAULT_FONT);
     if (!node) return;
     abortAlignPreview();
-    set({ placing: node, selection: [] });
+    set({ placing: node, selection: [], bin: false });
   } catch (e) {
     fail(e);
   }
@@ -431,7 +437,7 @@ export async function addText(): Promise<void> {
     if (!node) return;
     node.pos = [0, 0, node.size[2] / 2];
     node.name = uniqueName(state.doc.scene, node.name);
-    state = { ...state, placing: null };
+    state = { ...state, placing: null, bin: false };
     commit([...state.doc.scene, node], { selection: [node.id] });
   } catch (e) {
     fail(e);
@@ -520,7 +526,7 @@ export async function startPlacingPart(category: string): Promise<void> {
   try {
     const node = await sizePart(makePart(def.id));
     abortAlignPreview();
-    set({ placing: node, selection: [] });
+    set({ placing: node, selection: [], bin: false });
   } catch (e) {
     fail(e);
   } finally {
@@ -537,7 +543,7 @@ export async function addPart(category: string): Promise<void> {
     const node = await sizePart(makePart(def.id));
     node.pos = [0, 0, node.size[2] / 2];
     node.name = uniqueName(state.doc.scene, node.name);
-    state = { ...state, placing: null };
+    state = { ...state, placing: null, bin: false };
     commit([...state.doc.scene, node], { selection: [node.id] });
   } catch (e) {
     fail(e);
@@ -741,7 +747,9 @@ async function applyPartChange(id: string, change: PartChange): Promise<void> {
 export function movePlacing(point: Vec3 | null): void {
   const node = state.placing;
   if (!node) return;
-  const pos: Vec3 = point ? [point[0], point[1], point[2] + node.size[2] / 2] : [0, 0, -1e6];
+  // Lifted by the depth of its base below its center: half the box for a shape, less for a part saved turned on its side.
+  const lift = node.pos[2] - geometry.bounds(node).min[2];
+  const pos: Vec3 = point ? [point[0], point[1], point[2] + lift] : [0, 0, -1e6];
   if (pos.every((v, i) => v === node.pos[i])) return;
   set({ placing: { ...node, pos } });
 }
@@ -766,7 +774,7 @@ export const cancelPlacing = (): void => {
 export function addShape(kind: ShapeKind): void {
   const node = makeShape(kind);
   node.name = uniqueName(state.doc.scene, node.name);
-  state = { ...state, placing: null };
+  state = { ...state, placing: null, bin: false };
   commit([...state.doc.scene, node], { selection: [node.id] });
 }
 
@@ -1259,8 +1267,8 @@ export function cancelEditing(): void {
 // no Save; "Save a copy" writes the design somewhere else, "Open project file"
 // brings an outside file in as a project.
 
-/** Picture of the design for the projects browser, given by the viewer when there is one. */
-let thumbSource: (() => string | null) | null = null;
+/** Picture of the design for the projects browser, or of some of its objects alone, given by the viewer when there is one. */
+let thumbSource: ((only?: string[]) => string | null) | null = null;
 /** Taking the picture means drawing the scene again, so it is not done on every save. */
 const THUMB_EVERY_MS = 10_000;
 let thumbTakenAt = 0;
@@ -1270,7 +1278,7 @@ let thumbRefresh: ReturnType<typeof setTimeout> | undefined;
 let writing: Promise<boolean> | null = null;
 let lastSaveError: string | null = null;
 
-export function provideThumbnail(source: (() => string | null) | null): void {
+export function provideThumbnail(source: ((only?: string[]) => string | null) | null): void {
   thumbSource = source;
 }
 
@@ -1362,6 +1370,7 @@ function adopt(doc: Doc, key: string | null): void {
     saving: false,
     selection: [],
     placing: null,
+    bin: false,
     mating: null,
     editing: null,
     highlight: null,
@@ -1563,6 +1572,135 @@ export async function renameProjectAt(key: string, name: string): Promise<void> 
   }
 }
 
+// --- custom parts -----------------------------------------------------------------
+//
+// An object the user wants again goes into the parts bin: a design file of its
+// own holding that one object, kept beside the projects and synced like them.
+// The bin is browsed in the inspector; a part picked there is carried to the
+// plate like a shape from the library.
+
+/** Opens the bin in the inspector; whatever was selected or carried is let go of. */
+export function openPartsBin(): void {
+  abortAlignPreview();
+  set({ bin: true, selection: [], placing: null });
+}
+
+export function closePartsBin(): void {
+  if (state.bin || state.placing) set({ bin: false, placing: null });
+}
+
+export async function listParts(): Promise<ProjectInfo[]> {
+  try {
+    return await partStore().list();
+  } catch (e) {
+    fail(e);
+    return [];
+  }
+}
+
+/** The object as it goes into the bin: fresh ids, shown and unlocked, standing on the plate at its middle. */
+function partOf(node: SceneNode): SceneNode {
+  const b = geometry.bounds(node);
+  const c = boundsCenter(b);
+  return { ...cloneNode(node), hidden: undefined, locked: undefined, pos: tidyVec([node.pos[0] - c[0], node.pos[1] - c[1], node.pos[2] - b.min[2]]) };
+}
+
+/** Asks, then keeps the object as a custom part. Resolves true once it is in the bin. */
+export async function saveAsPart(id: string): Promise<boolean> {
+  const node = state.doc.scene.find((n) => n.id === id);
+  if (!node) return false;
+  const chosen = await tell({
+    title: 'Save as a part',
+    text: `Save "${node.name}" as a custom part? It goes in the library under Custom, on all your devices, to place in any design.`,
+    actions: ['Save part', 'Cancel'],
+  });
+  if (chosen !== 'Save part') return false;
+  try {
+    const part = partOf(node);
+    const assets = Object.fromEntries([...usedAssets([part])].filter((key) => state.doc.assets[key]).map((key) => [key, state.doc.assets[key]]));
+    const doc: Doc = {
+      id: newId(),
+      name: node.name,
+      scene: [part],
+      assets,
+      thumb: thumbSource?.([node.id]) ?? undefined,
+      revision: newId(),
+      device: state.prefs.device,
+      saved: new Date().toISOString(),
+    };
+    await partStore().write(null, doc.name, serializeDoc(doc));
+    set({ partsEpoch: state.partsEpoch + 1 });
+    notify(`"${node.name}" is in your custom parts.`, 'ok');
+    requestSync();
+    return true;
+  } catch (e) {
+    fail(e);
+    return false;
+  }
+}
+
+/** A part from the bin as a new object for the design: fresh ids, named after the part, its pictures brought along. */
+async function loadPart(key: string): Promise<SceneNode> {
+  const doc = parseDoc(await partStore().read(key));
+  const node = doc.scene[0];
+  if (!node) throw new Error('This part is empty.');
+  const missing = Object.fromEntries(Object.entries(doc.assets).filter(([k]) => !state.doc.assets[k]));
+  if (Object.keys(missing).length) state = { ...state, doc: { ...state.doc, assets: { ...state.doc.assets, ...missing } } };
+  return { ...cloneNode(node), name: doc.name };
+}
+
+/** Start carrying a custom part, to be put down like a shape. */
+export async function pickPart(key: string): Promise<void> {
+  try {
+    const node = await loadPart(key);
+    abortAlignPreview();
+    set({ placing: { ...node, pos: [0, 0, -1e6] }, selection: [] });
+  } catch (e) {
+    fail(e);
+  }
+}
+
+/** Add a custom part at the middle of the plate straight away (keyboard route, double-click). */
+export async function addCustomPart(key: string): Promise<void> {
+  try {
+    const node = await loadPart(key);
+    node.name = uniqueName(state.doc.scene, node.name);
+    state = { ...state, placing: null };
+    commit([...state.doc.scene, node], { selection: [node.id] });
+  } catch (e) {
+    fail(e);
+  }
+}
+
+export async function renamePartAt(key: string, name: string): Promise<void> {
+  const clean = name.trim();
+  if (!clean) return;
+  try {
+    const store = partStore();
+    const doc = parseDoc(await store.read(key));
+    if (doc.name === clean) return;
+    await store.write(key, clean, serializeDoc({ ...doc, name: clean, revision: newId(), parent: doc.revision, device: state.prefs.device, saved: new Date().toISOString() }));
+    set({ partsEpoch: state.partsEpoch + 1 });
+    requestSync();
+  } catch (e) {
+    fail(e);
+  }
+}
+
+export async function deletePart(key: string, name: string): Promise<boolean> {
+  try {
+    const sure = await platform.confirm(`Delete the part "${name}"? Objects already placed from it stay in their designs.`, { title: APP_NAME, okLabel: 'Delete', cancelLabel: 'Keep' });
+    if (!sure) return false;
+    await partStore().remove(key);
+    set({ partsEpoch: state.partsEpoch + 1 });
+    requestSync();
+    return true;
+  } catch (e) {
+    fail(e);
+    return false;
+  }
+}
+
 // --- cloud sync -----------------------------------------------------------------
 
 /** What a sync pass wrote or removed, taken into the editor: the open project above all. */
@@ -1582,6 +1720,12 @@ export async function applySyncReport(report: SyncReport): Promise<void> {
   }
   for (const name of report.kept) notify(`"${name}" was changed on two devices at once; both versions were kept.`);
   if (report.downloaded.length) notify(`Synced ${report.downloaded.length === 1 ? `"${report.downloaded[0]}"` : `${report.downloaded.length} projects`} from Google Drive.`, 'ok');
+}
+
+/** A sync pass changed the custom parts: the bin lists them again. */
+function applyPartsSyncReport(report: SyncReport): void {
+  set({ partsEpoch: state.partsEpoch + 1 });
+  for (const name of report.kept) notify(`The part "${name}" was changed on two devices at once; both versions were kept.`);
 }
 
 /** The open project changed on disk under the editor: taken in whole, or merged with edits not yet saved. */
@@ -1653,6 +1797,8 @@ export async function chooseProjectsFolder(dir: string | null = null): Promise<v
       });
     }
     let openKey = state.projectKey;
+    const oldParts = partStore();
+    const parts = move ? await oldParts.list() : [];
     if (move) {
       for (const item of items) {
         const text = await old.read(item.key);
@@ -1662,6 +1808,12 @@ export async function chooseProjectsFolder(dir: string | null = null): Promise<v
       }
     }
     useProjectStore(fresh);
+    // The custom parts go with their projects.
+    for (const item of parts) {
+      await partStore().write(null, item.name, await oldParts.read(item.key));
+      await oldParts.remove(item.key);
+    }
+    if (parts.length) set({ partsEpoch: state.partsEpoch + 1 });
     setPrefs({ projectsDir: picked === storage.defaultDir ? null : picked });
     set({ storage: { ...storage, location: picked }, projectKey: openKey });
     setPrefs({ lastProject: openKey });
@@ -1882,7 +2034,7 @@ export async function startPlacingPicture(): Promise<void> {
   const key = await pickImage();
   if (!key) return;
   abortAlignPreview();
-  set({ placing: makePicture(key), selection: [] });
+  set({ placing: makePicture(key), selection: [], bin: false });
 }
 
 /** Add a picture at the middle of the plate straight away (keyboard route, double-click). */
@@ -1892,7 +2044,7 @@ export async function addPicture(): Promise<void> {
   const node = makePicture(key);
   node.pos = [0, 0, node.size[2] / 2];
   node.name = uniqueName(state.doc.scene, node.name);
-  state = { ...state, placing: null };
+  state = { ...state, placing: null, bin: false };
   commit([...state.doc.scene, node], { selection: [node.id] });
 }
 
@@ -1911,7 +2063,7 @@ async function importPictures(files: PickedFile[]): Promise<void> {
   }
   const shift = (x - 5) / 2;
   for (const n of nodes) n.pos = tidyVec([n.pos[0] - shift, n.pos[1], n.pos[2]]);
-  state = { ...state, placing: null };
+  state = { ...state, placing: null, bin: false };
   commit(scene, { selection: nodes.map((n) => n.id) });
 }
 
@@ -2030,7 +2182,7 @@ export async function restoreSession(): Promise<void> {
     set({ storage: { location: projectStore().location, fixed, defaultDir } });
     // Edits made before the store was ready are written now.
     if (isDirty()) scheduleAutosave();
-    initSync({ device: state.prefs.device, flush: () => saveProject(true), changed: (report) => void applySyncReport(report), notice: (text) => notify(text, 'error') });
+    initSync({ device: state.prefs.device, flush: () => saveProject(true), changed: (report) => void applySyncReport(report), partsChanged: applyPartsSyncReport, notice: (text) => notify(text, 'error') });
     const opened = await platform.startupFiles();
     if (opened.length > 0) return void (await receiveFiles(await Promise.all(opened.map((p) => platform.readPath(p)))));
     const last = state.prefs.lastProject;

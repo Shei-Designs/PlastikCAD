@@ -186,6 +186,16 @@ export const pictureThumbnail: ReactNode = glyph(
   </>,
 );
 
+/** An open box with a part dropping in: the custom parts. */
+export const partsBinThumbnail: ReactNode = glyph(
+  <>
+    <path d="M6 16.5v10L18 32l12-5.5v-10" />
+    <path d="M6 16.5 18 22l12-5.5M18 22v10" />
+    <path d="M6 16.5 1.5 12l12-5.5L18 11M30 16.5l4.5-4.5-12-5.5L18 11v11" />
+    <path d="M18 3v6M15.5 6.5 18 9l2.5-2.5" />
+  </>,
+);
+
 export const textThumbnail: ReactNode = glyph(
   <>
     <path d="M7 8h17v5.5h-5.5V27h-6V13.5H7z" />

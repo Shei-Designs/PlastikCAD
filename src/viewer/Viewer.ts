@@ -516,17 +516,30 @@ export class Viewer {
     return true;
   }
 
-  /** Small picture of the whole design from the current angle (JPEG data URL): the project's thumbnail. */
-  capture(width = 320, height = 200): string | null {
+  /**
+   * Small picture (JPEG data URL) of the whole design from the current angle,
+   * for the project's thumbnail; or, given `only`, of those objects alone from
+   * the standard angle without the grid, for a custom part's.
+   */
+  capture(width = 320, height = 200, only?: string[]): string | null {
     if (!this.ok || this.disposed || !this.width || !this.height) return null;
-    const visible = this.items.filter((i) => !i.ghost && !i.node.hidden);
+    const wanted = only ? new Set(only) : null;
+    const visible = this.items.filter((i) => !i.ghost && !i.node.hidden && (!wanted || wanted.has(i.node.id)));
     if (visible.length === 0) return null;
     const saved = this.currentPose();
     const { center, radius } = this.extent(visible);
-    const pose = { ...saved, target: center, distance: this.fitDistance(radius, width / height) };
+    const pose = { ...(wanted ? this.poseFor(VIEW_DIRECTIONS.iso) : saved), target: center, distance: this.fitDistance(radius, width / height) };
     const selected = [...this.drawn.values()].filter((d) => d.item.selected);
+    const others = wanted ? [...this.drawn.values()].filter((d) => d.mesh.visible && !wanted.has(d.item.node.id)) : [];
+    const grid = this.gridMajor.visible;
+    const shown = (d: Drawn, on: boolean) => {
+      d.mesh.visible = on;
+      if (d.edges) d.edges.visible = on;
+    };
     try {
       for (const d of selected) this.style(d, false);
+      for (const d of others) shown(d, false);
+      if (wanted) this.gridMajor.visible = this.gridMinor.visible = this.axes.visible = false;
       this.applyPose(pose);
       this.draw(false);
       const canvas = document.createElement('canvas');
@@ -551,6 +564,8 @@ export class Viewer {
       return null;
     } finally {
       for (const d of selected) this.style(d, true);
+      for (const d of others) shown(d, true);
+      this.gridMajor.visible = this.gridMinor.visible = this.axes.visible = grid;
       this.applyPose(saved);
       this.draw();
     }

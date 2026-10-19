@@ -3,13 +3,16 @@
 // every few minutes. Status is published for the UI; the editor is told what
 // changed under it. Nothing here knows about the editor's state.
 import { useSyncExternalStore } from 'react';
-import { hasProjectStore, projectStore } from '../state/projects';
+import { hasPartStore, hasProjectStore, partStore, projectStore } from '../state/projects';
 import { DriveRemote } from './drive';
 import { synchronize } from './engine';
 import type { SyncReport } from './engine';
 import { authorizedFetch, cancelSignIn, isConfigured, loadTokens, NeedsSignIn, revoke, saveTokens, signIn } from './google';
 import type { Tokens } from './google';
-import { DbSyncState } from './state';
+import { DbSyncState, STORES } from './state';
+
+/** The Drive folder the custom parts go in, inside the app's folder. */
+export const PARTS_FOLDER = 'Parts';
 
 export interface SyncStatus {
   /** Whether this build knows a Google client at all. */
@@ -31,9 +34,12 @@ let status: SyncStatus = { configured: isConfigured(), linked: false, email: nul
 const listeners = new Set<() => void>();
 let tokens: Tokens | null = null;
 let remote: DriveRemote | null = null;
-const state = typeof indexedDB === 'undefined' ? null : new DbSyncState();
+let partsRemote: DriveRemote | null = null;
+const state = typeof indexedDB === 'undefined' ? null : new DbSyncState(STORES.projects);
+const partsState = typeof indexedDB === 'undefined' ? null : new DbSyncState(STORES.parts);
 let device = '';
 let onChanged: ((report: SyncReport) => void) | null = null;
+let onPartsChanged: ((report: SyncReport) => void) | null = null;
 let onNotice: ((text: string) => void) | null = null;
 let beforeSync: (() => Promise<unknown>) | null = null;
 let timer: ReturnType<typeof setTimeout> | undefined;
@@ -58,17 +64,20 @@ function useTokens(next: Tokens | null): void {
   tokens = next;
   saveTokens(next);
   remote = next ? new DriveRemote(authorizedFetch(() => tokens, useTokens)) : null;
+  partsRemote = remote ? new DriveRemote(authorizedFetch(() => tokens, useTokens), PARTS_FOLDER, remote) : null;
   publish({ linked: next !== null, email: next?.email ?? null });
 }
 
 /**
  * Picks up the linked account, if any, and starts the schedule. `changed` is
- * told what each pass wrote or removed; `flush` runs before a pass so that
- * pending edits are on disk first.
+ * told what each pass wrote or removed among the projects, `partsChanged`
+ * among the custom parts; `flush` runs before a pass so that pending edits
+ * are on disk first.
  */
-export function initSync(options: { device: string; changed: (report: SyncReport) => void; notice: (text: string) => void; flush: () => Promise<unknown> }): void {
+export function initSync(options: { device: string; changed: (report: SyncReport) => void; partsChanged: (report: SyncReport) => void; notice: (text: string) => void; flush: () => Promise<unknown> }): void {
   device = options.device;
   onChanged = options.changed;
+  onPartsChanged = options.partsChanged;
   onNotice = options.notice;
   beforeSync = options.flush;
   useTokens(loadTokens());
@@ -106,6 +115,7 @@ export async function unlinkAccount(): Promise<void> {
   const old = tokens;
   useTokens(null);
   await state?.clear();
+  await partsState?.clear();
   publish({ lastSync: null, error: null });
   if (old) await revoke(old);
 }
@@ -144,8 +154,13 @@ async function pass(): Promise<SyncReport | null> {
   try {
     await beforeSync?.();
     const report = await synchronize(projectStore(), remote, state, { device });
-    publish({ busy: false, lastSync: Date.now(), error: null });
     if (report.changedKeys.length || report.removedKeys.length || report.kept.length) onChanged?.(report);
+    // The parts after the projects, so that trouble with them never holds a project back.
+    if (partsRemote && partsState && hasPartStore()) {
+      const parts = await synchronize(partStore(), partsRemote, partsState, { device });
+      if (parts.changedKeys.length || parts.removedKeys.length || parts.kept.length) onPartsChanged?.(parts);
+    }
+    publish({ busy: false, lastSync: Date.now(), error: null });
     return report;
   } catch (e) {
     if (e instanceof NeedsSignIn) {

@@ -333,6 +333,19 @@ describe('Google Drive remote', () => {
     expect(calls.length).toBe(5);
   });
 
+  it('keeps the parts in a folder inside the app folder', async () => {
+    const app = new DriveRemote(fetch);
+    const parts = new DriveRemote(fetch, 'Parts', app);
+    answers.push(() => ({ files: [{ id: 'folder1', name: 'PlastikCAD' }] }));
+    answers.push(() => ({ files: [] }), () => ({ id: 'folder2' }));
+    answers.push(() => ({ files: [] }));
+    expect(await parts.list()).toEqual([]);
+    expect(decodeURIComponent(calls[0].url.replace(/\+/g, ' '))).toContain("'root' in parents");
+    expect(decodeURIComponent(calls[1].url.replace(/\+/g, ' '))).toContain("name = 'Parts' and mimeType = 'application/vnd.google-apps.folder' and 'folder1' in parents");
+    expect(JSON.parse(calls[2].init!.body as string)).toMatchObject({ name: 'Parts', parents: ['folder1'] });
+    expect(decodeURIComponent(calls[3].url.replace(/\+/g, ' '))).toContain("'folder2' in parents");
+  });
+
   it('uploads as multipart, creating in the folder or replacing in place, and trashes to delete', async () => {
     const drive = new DriveRemote(fetch);
     answers.push(() => ({ files: [{ id: 'folder1', name: 'PlastikCAD' }] }));

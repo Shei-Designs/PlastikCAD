@@ -12,7 +12,8 @@ vi.mock('../platform', () => ({
   isDesktop: () => true,
   listDesigns: async (dir: string): Promise<DesignEntry[]> =>
     Array.from(files, ([path, bytes]) => ({ path, name: path.slice(dir.length + 1), size: bytes.length, modified: clock }))
-      .filter((e) => e.path.startsWith(`${dir}/`) && e.name.toLowerCase().endsWith('.plastikcad') && !e.name.startsWith('.'))
+      // Only the files directly inside the folder, as the real listing does: a "Parts" subfolder is not among the projects.
+      .filter((e) => e.path.startsWith(`${dir}/`) && !e.name.includes('/') && e.name.toLowerCase().endsWith('.plastikcad') && !e.name.startsWith('.'))
       .sort((a, b) => a.name.localeCompare(b.name)),
   readHead: async (path: string, limit: number) => {
     const bytes = files.get(path);
@@ -40,7 +41,7 @@ vi.mock('../platform', () => ({
   },
 }));
 
-const { DiskProjects, fileNameFor, uniqueFileName } = await import('./projects');
+const { DiskProjects, fileNameFor, partStore, partsDirOf, uniqueFileName, useProjectStore } = await import('./projects');
 
 const DIR = '/home/me/Documents/PlastikCAD';
 const design = (id: string, name: string) => serializeDoc({ ...emptyDoc(), id, name, scene: [makeShape('box')] });
@@ -64,6 +65,19 @@ describe('file names', () => {
     expect(uniqueFileName('Box.plastikcad', ['box.plastikcad'])).toBe('Box (2).plastikcad');
     expect(uniqueFileName('Box.plastikcad', ['Box.plastikcad', 'Box (2).plastikcad'])).toBe('Box (3).plastikcad');
     expect(uniqueFileName('Box.plastikcad', ['Box.plastikcad'], 'box.plastikcad')).toBe('Box.plastikcad');
+  });
+});
+
+describe('the parts folder', () => {
+  it('sits inside the projects folder and follows it', async () => {
+    expect(partsDirOf(DIR)).toBe(`${DIR}/Parts`);
+    useProjectStore(new DiskProjects(DIR));
+    expect(partStore().location).toBe(`${DIR}/Parts`);
+    // Parts written there are not among the projects.
+    const key = await partStore().write(null, 'Post', design('part0001', 'Post'));
+    expect(key).toBe(`${DIR}/Parts/Post.plastikcad`);
+    expect((await new DiskProjects(DIR).list()).map((p) => p.name)).toEqual([]);
+    expect((await partStore().list()).map((p) => p.name)).toEqual(['Post']);
   });
 });
 

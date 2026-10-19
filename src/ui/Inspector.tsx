@@ -5,10 +5,11 @@ import { picturesOf } from '../model/ops';
 import { TEXT_FONTS } from '../model/types';
 import type { ImageAsset, PictureMapping, PictureNode, SceneNode, ShapeNode, TextAlign, TextNode } from '../model/types';
 import { geometry } from '../state/geometry';
-import { editPicture, editText, imageAssets, pickImage, setColor, setHole, setTexture, toggleLocked, updateNode, updateSelected, useEditor } from '../state/store';
+import { editPicture, editText, imageAssets, notify, pickImage, saveAsPart, setColor, setHole, setTexture, toggleLocked, updateNode, updateSelected, useEditor } from '../state/store';
 import { formatNumber, SliderField } from './Fields';
 import { partFigures } from '../parts/figures';
-import { CloseIcon, LockIcon, PictureIcon, WarningIcon } from './icons';
+import { CloseIcon, LockIcon, PictureIcon, SaveAsPartIcon, WarningIcon } from './icons';
+import { PartsBin } from './PartsBin';
 import { PartFields } from './PartFields';
 import { Sections } from './Sections';
 import type { Section } from './Sections';
@@ -389,16 +390,26 @@ function Design() {
   const scene = useEditor((s) => s.doc.scene);
   const selection = useEditor((s) => s.selection);
   const nodes = useMemo(() => scene.filter((n) => selection.includes(n.id)), [scene, selection]);
+  const bin = useEditor((s) => s.bin);
   useSyncExternalStore(geometry.subscribe, geometry.getRevision);
 
-  if (nodes.length === 0) return <Overview />;
+  if (nodes.length === 0) return bin ? <PartsBin /> : <Overview />;
   if (nodes.length > 1) {
     return (
       <>
         <header className="params-head">
-          <div>
+          <div className="grow">
             <h1>{nodes.length} objects</h1>
           </div>
+          <button
+            type="button"
+            className="icon-button"
+            title="Save as a custom part (group the objects first)"
+            aria-label="Save as a part"
+            onClick={() => notify('Group the objects first, then save the group as a part.')}
+          >
+            <SaveAsPartIcon />
+          </button>
         </header>
         <Appearance nodes={nodes} />
       </>
@@ -417,8 +428,11 @@ function Design() {
         <div className="grow">
           <NameField node={node} />
         </div>
+        <button type="button" className="icon-button" title="Save as a custom part, to place in any design" aria-label="Save as a part" onClick={() => void saveAsPart(node.id)}>
+          <SaveAsPartIcon />
+        </button>
         {node.locked && (
-          <button type="button" className="icon-button" title="Locked: press to unlock" aria-label="Unlock" onClick={() => toggleLocked(node.id)}>
+          <button type="button" className="icon-button lock" title="Locked: press to unlock" aria-label="Unlock" onClick={() => toggleLocked(node.id)}>
             <LockIcon />
           </button>
         )}

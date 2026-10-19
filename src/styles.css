@@ -869,10 +869,147 @@ ul {
   color: var(--muted);
 }
 
-/* The lock beside a locked object's name, level with the name box. */
+/* The buttons beside the object's name (save as a part, the lock), level with the name box. */
 .params-head .icon-button {
+  margin-top: 1px;
+}
+
+.params-head .icon-button:last-child {
   margin-right: -6px;
+}
+
+.params-head .icon-button.lock {
   color: var(--accent);
+}
+
+/* ---------- custom parts bin ---------- */
+
+.parts-bin {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bin-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 14px 0 0;
+}
+
+.bin-head h1 {
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.bin-head p {
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+.bin-head .icon-button {
+  margin: 1px -6px 0 0;
+}
+
+.bin-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bin-tools .text-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.bin-sort {
+  display: flex;
+  gap: 4px;
+}
+
+.bin-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bin-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-raised);
+}
+
+.bin-card.on {
+  border-color: var(--accent);
+}
+
+.bin-pick {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  overflow: hidden;
+}
+
+.bin-thumb {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 10;
+  border-radius: 6px;
+  background: var(--control);
+  color: var(--muted);
+  overflow: hidden;
+}
+
+.bin-card.on .bin-thumb {
+  color: var(--accent);
+}
+
+.bin-thumb svg {
+  width: 28px;
+  height: 28px;
+}
+
+.bin-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.bin-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.bin-row .text-input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+}
+
+.bin-name {
+  flex: 1;
+  min-width: 0;
+  padding: 0 4px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.parts-bin .empty {
+  margin: 8px 0;
 }
 
 .group {

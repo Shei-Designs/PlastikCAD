@@ -1,7 +1,8 @@
 // Google Drive as a remote for the sync engine: a folder of .plastikcad files,
 // each tagged with its project id and revision in the file's app properties.
 // With the drive.file scope the app sees only files it created, which is all
-// it needs, and nothing else in the Drive.
+// it needs, and nothing else in the Drive. The custom parts are a second
+// remote, in a "Parts" folder inside the app's folder.
 import { APP_NAME, FILE_EXTENSION, FILE_FORMAT, isDesignName } from '../app';
 import type { Remote, RemoteFile } from './engine';
 
@@ -46,22 +47,25 @@ const quote = (s: string): string => `'${s.replace(/\\/g, '\\\\').replace(/'/g, 
 export class DriveRemote implements Remote {
   private folderId: string | null = null;
 
+  /** `parent` is the remote whose folder this one's folder sits in; without one it sits at the top of the Drive. */
   constructor(
     private readonly fetch: Fetch,
     readonly folderName = APP_NAME,
+    private readonly parent: DriveRemote | null = null,
   ) {}
 
-  /** The app's folder at the top of the Drive, made on first use. */
+  /** The remote's folder, made on first use. */
   async folder(): Promise<string> {
     if (this.folderId) return this.folderId;
-    const q = `name = ${quote(this.folderName)} and mimeType = '${FOLDER_TYPE}' and 'root' in parents and trashed = false`;
+    const under = this.parent ? await this.parent.folder() : 'root';
+    const q = `name = ${quote(this.folderName)} and mimeType = '${FOLDER_TYPE}' and ${quote(under)} in parents and trashed = false`;
     const found = await body<{ files: DriveFile[] }>(await this.fetch(`${API}/files?q=${encodeURIComponent(q)}&fields=files(id,name)&pageSize=10`), 'find its folder');
     if (found.files.length) return (this.folderId = found.files[0].id);
     const made = await body<DriveFile>(
       await this.fetch(`${API}/files?fields=id`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: this.folderName, mimeType: FOLDER_TYPE, parents: ['root'] }),
+        body: JSON.stringify({ name: this.folderName, mimeType: FOLDER_TYPE, parents: [under] }),
       }),
       'make its folder',
     );

@@ -327,7 +327,7 @@ export function Viewport() {
       { theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap },
     );
     viewer.current = viewerRef.current = v;
-    provideThumbnail(() => v.capture(320, 200));
+    provideThumbnail((only) => v.capture(320, 200, only));
     return () => {
       provideThumbnail(null);
       v.dispose();
