@@ -495,14 +495,18 @@ async function partBox(node: PartNode): Promise<Bounds> {
 
 const measurePart = async (node: PartNode): Promise<Vec3> => boundsSize(await partBox(node));
 
-/** Give a part its measured box, keeping whatever scale it had and where it stands. */
-async function sizePart(node: PartNode): Promise<PartNode> {
+/**
+ * Give a part its measured box, keeping whatever scale it had and where it stands.
+ * `was` is the node as it is in the scene, whose base is kept: `node` may already carry
+ * new settings, and measuring that would read the new mesh at the old placement.
+ */
+async function sizePart(node: PartNode, was: PartNode = node): Promise<PartNode> {
   const natural = await measurePart(node);
   const size: Vec3 = [0, 1, 2].map((i) => (node.size[i] / node.natural[i]) * natural[i]) as Vec3;
   const next: PartNode = { ...node, natural, size };
   // Parked parts have no base to keep; placed ones stay on whatever they stand on.
   if (node.pos[2] > -1e5) {
-    const lift = geometry.bounds(node).min[2] - boxBounds(next).min[2];
+    const lift = geometry.bounds(was).min[2] - boxBounds(next).min[2];
     next.pos = [node.pos[0], node.pos[1], node.pos[2] + lift];
   }
   return next;
@@ -723,7 +727,7 @@ async function applyPartChange(id: string, change: PartChange): Promise<void> {
   const name = change.part && change.part !== node.part && auto ? uniqueName(state.doc.scene.filter((n) => n.id !== id), def.name) : node.name;
   const edit = ++partEdits;
   try {
-    const sized = await sizePart({ ...node, part: def.id, params, name });
+    const sized = await sizePart({ ...node, part: def.id, params, name }, node);
     // The new shape is built before the node changes, so the old one is never shown at the new size.
     await geometry.ready(sized, state.doc.assets);
     // A later edit has overtaken this one, or the part is gone.
