@@ -94,7 +94,7 @@ describe('motor mounts', () => {
     expect(extent(plate.stats, 0)).toBeCloseTo(47, 1);
     // A 130 has no screw holes: the plate carries only the bore.
     const mabuchi = made(dcMotor, { motor: '130', form: 'plate' });
-    expect(mabuchi.warnings.some((w) => w.includes('no screw holes'))).toBe(true);
+    expect(mabuchi.notes?.some((w) => w.includes('no screw holes'))).toBe(true);
     const b = made(dcMotor, { motor: '130', form: 'bracket' });
     expect(b.warnings.some((w) => w.includes('bracket'))).toBe(true);
   });

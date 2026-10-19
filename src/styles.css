@@ -1011,6 +1011,12 @@ ul {
   color: var(--warn-text);
 }
 
+/* What a part has to say about the chosen model, under its settings. */
+.part-note {
+  margin-top: 12px;
+  line-height: 1.4;
+}
+
 /* A part's warnings float over the foot of the inspector like toasts, so the settings keep their place. */
 .inspector-notes {
   position: absolute;

@@ -453,6 +453,7 @@ function spacing(holes: Vec2[]): string | null {
 
 function build(boards: Board[], p: Params, q: Quality): BuildResult {
   const warnings: string[] = [];
+  const notes: string[] = [];
   const b = boards.find((x) => x.id === str(p, 'board')) ?? boards[0];
   if (b.caution) warnings.push(b.caution);
   let make = form(p);
@@ -489,19 +490,19 @@ function build(boards: Board[], p: Params, q: Quality): BuildResult {
       solid = difference(solid, ...cutters);
     }
     info.push({ label: 'Posts', value: `Ø${d.toFixed(1)} × ${height.toFixed(1)} mm` }, { label: 'Hole', value: hole > 0 ? mm(hole, 2) : 'none' });
-    return { solid, outline, info, warnings };
+    return { solid, outline, info, warnings, notes };
   }
 
   if (make === 'holes') {
     let hole = drill(p, b);
     if (hole <= 0) {
       hole = SCREWS[b.screw].clearance;
-      warnings.push('A hole template needs a hole: the clearance size is used.');
+      warnings.push(`Hole is set to None, so the cutters take the ${b.screw} clearance size.`);
     }
     const length = num(p, 'holeLength');
     const pins = b.holes.map(([x, y]) => translate(cylinder(hole / 2, length, n), [x, y, 0]));
     info.push({ label: 'Hole', value: `Ø${hole.toFixed(2)} × ${length.toFixed(1)} mm` });
-    return { solid: union(...pins), outline, info, warnings };
+    return { solid: union(...pins), outline, info, warnings, notes };
   }
 
   if (make === 'connectors') {
@@ -542,7 +543,7 @@ function build(boards: Board[], p: Params, q: Quality): BuildResult {
       })),
       { label: 'Reach', value: mm(reach, 1) },
     );
-    return { solid: union(...pieces), outline, info, warnings };
+    return { solid: union(...pieces), outline, info, warnings, notes };
   }
 
   if (make === 'blank') {
@@ -550,7 +551,7 @@ function build(boards: Board[], p: Params, q: Quality): BuildResult {
     const t = num(p, 'blankThickness');
     const reach = b.length + (b.overhang?.length ?? 0);
     info.push({ label: 'Slab', value: `${(reach + 2 * gap).toFixed(2)} × ${(b.width + 2 * gap).toFixed(2)} × ${t.toFixed(1)} mm` });
-    return { solid: slab(b, gap, t, gap === 0, q), outline, info, warnings };
+    return { solid: slab(b, gap, t, gap === 0, q), outline, info, warnings, notes };
   }
 
   // Corner stops: a block over each corner of the board's box, with the board itself, grown by the
@@ -563,7 +564,7 @@ function build(boards: Board[], p: Params, q: Quality): BuildResult {
   if (base && num(p, 'baseMargin') < gap + t) warnings.push(`The stops overhang the base: a margin of at least ${(gap + t).toFixed(1)} mm covers them.`);
   // At an end the module reaches past, the legs across that end stop short of it.
   const endLeg = b.overhang ? Math.max(1, Math.min(leg, (b.width - b.overhang.width) / 2 - gap - 0.5)) : leg;
-  if (endLeg < leg) warnings.push(`The legs across the antenna end are ${endLeg.toFixed(1)} mm, to clear the module.`);
+  if (endLeg < leg) notes.push(`The two stops at the antenna end have ${endLeg.toFixed(1)} mm legs across it, so the module clears them.`);
   const x0 = -gap;
   const y0 = -gap;
   const x1 = b.length + gap;
@@ -579,7 +580,7 @@ function build(boards: Board[], p: Params, q: Quality): BuildResult {
   const carved = difference(union(...stops.map((s) => extrude([s], height))), translate(slab(b, gap, height + 2, false, q), [0, 0, -1]));
   const blocks = [translate(carved, [0, 0, baseT])];
   info.push({ label: 'Stops', value: `${t.toFixed(1)} mm thick, ${height.toFixed(1)} mm high, legs ${leg.toFixed(1)} mm` }, { label: 'Pocket', value: `${(b.length + 2 * gap).toFixed(2)} × ${(b.width + 2 * gap).toFixed(2)} mm` });
-  return { solid: union(...plate(), ...blocks), outline, info, warnings };
+  return { solid: union(...plate(), ...blocks), outline, info, warnings, notes };
 }
 
 function family(id: string, name: string, summary: string, boards: Board[], defaultForm: Form): GeneratorDef {

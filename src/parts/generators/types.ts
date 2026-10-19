@@ -51,7 +51,10 @@ export interface BuildResult {
   outline?: Shape2D;
   /** Derived dimensions worth showing to the user (pitch diameter, outside diameter, ...). */
   info: InfoItem[];
+  /** Things that went wrong or were overridden; shown as warnings. */
   warnings: string[];
+  /** Things worth knowing about the chosen model (what fits it, what to check); shown quietly. */
+  notes?: string[];
 }
 
 export type Category = 'gears' | 'pulleys' | 'screws' | 'frames' | 'ducts' | 'boards' | 'fans' | 'cutouts' | 'motors';

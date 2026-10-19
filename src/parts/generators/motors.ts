@@ -347,7 +347,7 @@ function groups(motors: Motor[]): ParamGroup[] {
 function build(motors: Motor[], p: Params, q: Quality): BuildResult {
   const warnings: string[] = [];
   const m = motors.find((x) => x.id === str(p, 'motor')) ?? motors[0];
-  if (m.note) warnings.push(m.note);
+  const notes = m.note ? [m.note] : [];
   let make = form(p);
   if (make === 'bracket' && !m.bracket) {
     warnings.push(`An L-bracket does not suit the ${m.label}; a plate is made instead.`);
@@ -377,7 +377,7 @@ function build(motors: Motor[], p: Params, q: Quality): BuildResult {
     const shape: Shape2D = [plate, ...m.holes.map(([x, y]) => circle(boltD / 2, n, x, y)), bore(m, grow, q)];
     const { min, max } = extentOf(plate);
     info.push({ label: 'Plate', value: `${(max[0] - min[0]).toFixed(1)} × ${(max[1] - min[1]).toFixed(1)} × ${t} mm` });
-    if (make === 'plate') return { solid: extrude(shape, t), outline, info, warnings };
+    if (make === 'plate') return { solid: extrude(shape, t), outline, info, warnings, notes };
 
     // The bracket: the plate stood up on its lower edge, the motor on its -Y side, a slotted foot behind.
     const H = max[1] - min[1];
@@ -411,7 +411,7 @@ function build(motors: Motor[], p: Params, q: Quality): BuildResult {
       }
     }
     info.push({ label: 'Foot', value: `${W.toFixed(1)} × ${footLen} mm, ${str(p, 'footScrew')} ${slotLen > 0 ? 'slots' : 'holes'}` });
-    return { solid: union(...pieces), outline, info, warnings };
+    return { solid: union(...pieces), outline, info, warnings, notes };
   }
 
   if (make === 'holes') {
@@ -419,7 +419,7 @@ function build(motors: Motor[], p: Params, q: Quality): BuildResult {
     const pins: Solid[] = m.holes.map(([x, y]) => translate(cylinder(boltD / 2, len, n), [x, y, -len / 2]));
     pins.push(translate(extrude([bore(m, grow, q)], len), [0, 0, -len / 2]));
     info.push({ label: 'Bolt holes', value: `Ø${boltD.toFixed(2)} mm` });
-    return { solid: union(...pins), outline, info, warnings };
+    return { solid: union(...pins), outline, info, warnings, notes };
   }
 
   // The motor itself: body behind the face (and above it for a servo), tabs, pilot, shaft.
@@ -435,7 +435,7 @@ function build(motors: Motor[], p: Params, q: Quality): BuildResult {
   if (shaftLen > pilotH) pieces.push(translate(extrude([shaftSection(m.shaft.d, m.shaft.flat, q)], shaftLen - pilotH), [...(m.shaft.at ?? [0, 0]), top + pilotH]));
   else warnings.push('The shaft is shorter than the pilot boss, so no shaft is shown.');
   info.push({ label: 'Body', value: `${m.body.round ? `Ø${m.body.w}` : `${m.body.w} × ${m.body.h}`} × ${below} mm behind the face` });
-  return { solid: union(...pieces), outline, info, warnings };
+  return { solid: union(...pieces), outline, info, warnings, notes };
 }
 
 function extentOf(poly: Polygon): { min: Vec2; max: Vec2 } {
