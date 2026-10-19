@@ -369,9 +369,9 @@ pnpm typecheck
 pnpm tauri build    # build installers into src-tauri/target/release/bundle
 ```
 
-The icon and the banner follow the Shei Designs design system: a Tape orange
-tile with the product's two letters in Inter 800, Carbon on dark and Bone on
-light surfaces, the product name in Space Grotesk. `docs/brand/draw.cjs`
+The icon and the banner follow the Shei Designs product rules: the shared
+rounded tile in PlastikCAD's own teal, the cube-with-a-hole mark in Carbon,
+the product name in Space Grotesk. `docs/brand/draw.cjs`
 draws them (`node docs/brand/draw.cjs`), into `docs/brand/`, `public/icon.svg`
 and `docs/banner.svg`; after a change, rasterize the tile at 1024 px
 (`rsvg-convert`) and regenerate the platform icons, Android launcher icons
