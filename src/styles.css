@@ -8,9 +8,9 @@
   --control: #1b2423;
   --control-hover: #263130;
   --border: #263130;
-  --text: #e4e8e6;
-  --muted: #879390;
-  --faint: #566361;
+  --text: #eef2f0;
+  --muted: #aab5b2;
+  --faint: #7d8986;
   --accent: #17cdd3;
   --accent-strong: #3fdbe0;
   --on-accent: #0a0d0d;
@@ -41,8 +41,8 @@
   --control-hover: #d7dfdc;
   --border: #d3dbd8;
   --text: #0c1211;
-  --muted: #5f6b68;
-  --faint: #94a09c;
+  --muted: #46524f;
+  --faint: #6d7976;
   --accent: #0f9ea3;
   --accent-strong: #0b8488;
   --on-accent: #ffffff;
@@ -356,7 +356,7 @@ ul {
   font-weight: 600;
   letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: var(--faint);
+  color: var(--muted);
 }
 
 .part {
@@ -385,7 +385,7 @@ ul {
   flex: none;
   width: 32px;
   height: 32px;
-  color: var(--faint);
+  color: var(--muted);
 }
 
 .thumb svg {
@@ -899,7 +899,7 @@ ul {
   align-items: center;
   gap: 5px;
   margin-bottom: 3px;
-  color: var(--muted);
+  color: var(--text);
 }
 
 .field.inline {
@@ -1509,7 +1509,7 @@ kbd {
 }
 
 .shape:hover:not(:disabled) .thumb {
-  color: var(--muted);
+  color: var(--text);
 }
 
 .shape.selected {
@@ -1527,7 +1527,7 @@ kbd {
 
 .shape-name {
   font-size: 11.5px;
-  color: var(--muted);
+  color: var(--text);
 }
 
 .shape.selected .shape-name {
@@ -2286,7 +2286,7 @@ kbd {
   border-radius: 6px;
   cursor: pointer;
   outline: 0;
-  color: var(--muted);
+  color: var(--text);
 }
 
 .outline-row:hover,
