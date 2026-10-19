@@ -213,6 +213,24 @@ describe('notes and colors', () => {
     expect(scene().find((n) => n.id === a)!.note).toBe('Tap M3');
   });
 
+  it('renames an object, and one inside a group, from the structure', async () => {
+    const { a, b } = twoBoxes();
+    store.setNameAt([a], '  Lid  ');
+    expect(scene().find((n) => n.id === a)!.name).toBe('Lid');
+    store.setNameAt([a], '   ');
+    expect(scene().find((n) => n.id === a)!.name).toBe('Lid');
+    store.select([a, b]);
+    await store.groupSelected();
+    const group = scene()[0] as GroupNode;
+    store.setNameAt([group.id, b], 'Spacer');
+    store.setNameAt([group.id], 'Bracket');
+    const after = scene()[0] as GroupNode;
+    expect(after.name).toBe('Bracket');
+    expect(after.children.find((c) => c.id === b)!.name).toBe('Spacer');
+    store.undo();
+    expect((scene()[0] as GroupNode).name).not.toBe('Bracket');
+  });
+
   it('groups mixed, paints the whole on a color pick, and gives the parts their colors back on ungroup', async () => {
     const { a, b } = twoBoxes();
     store.select([a]);

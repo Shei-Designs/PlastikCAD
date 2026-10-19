@@ -880,6 +880,20 @@ export function setColor(color: string): void {
   }, 'color');
 }
 
+/** Rename the object at `path` (one inside a group too); a blank name is ignored. */
+export function setNameAt(path: string[], name: string): void {
+  const clean = name.trim();
+  if (!clean) return;
+  const patch = (nodes: Scene, depth: number): Scene =>
+    nodes.map((n) => {
+      if (n.id !== path[depth]) return n;
+      if (depth < path.length - 1) return n.type === 'group' ? { ...n, children: patch(n.children, depth + 1) } : n;
+      return n.name === clean ? n : { ...n, name: clean };
+    });
+  const scene = patch(state.doc.scene, 0);
+  if (scene.some((n, i) => n !== state.doc.scene[i])) commit(scene);
+}
+
 /** Attach words to the object at `path` (one inside a group too); an empty note takes them off. */
 export function setNote(path: string[], note: string): void {
   const clean = note.trim().slice(0, MAX_NOTE);

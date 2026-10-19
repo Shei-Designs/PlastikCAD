@@ -1,15 +1,15 @@
 // The Structure tab: how the selected object was put together, as an outline
 // with the object at the top and what it was grouped from indented beneath,
 // down to the primitives; a single shape is one row. Hover a row to see that
-// part on the plate; pick one to edit the object at that layer, and to read or
-// write its notes in the box fixed at the bottom.
+// part on the plate; pick one to edit the object at that layer, and to name it
+// and read or write its notes in the box fixed at the bottom.
 import { useEffect, useState } from 'react';
 import { shapeDef } from '../geometry/shapes';
 import { getGenerator } from '../parts/generators';
 import { MAX_NOTE } from '../model/file';
 import { HOLE_COLOR } from '../model/ops';
 import type { SceneNode } from '../model/types';
-import { editInside, setHighlight, setNote } from '../state/store';
+import { editInside, setHighlight, setNameAt, setNote } from '../state/store';
 import { enterByTouch } from './TouchEntry';
 
 const kindOf = (node: SceneNode): string =>
@@ -28,7 +28,39 @@ const kindOf = (node: SceneNode): string =>
 const countLeaves = (node: SceneNode): number => (node.type === 'group' ? node.children.reduce((n, c) => n + countLeaves(c), 0) : 1);
 const depthOf = (node: SceneNode): number => (node.type === 'group' ? 1 + Math.max(...node.children.map(depthOf)) : 0);
 
-/** The box at the bottom: the notes of the picked layer, kept as they are typed (a sitting of typing is one undo step). */
+/** The name of the picked layer, taken when typing is done (Enter or leaving the box); Escape puts the old one back. */
+function Name({ path, node }: { path: string[]; node: SceneNode }) {
+  const [text, setText] = useState(node.name);
+  useEffect(() => setText(node.name), [node.name]);
+  const commit = (next: string) => {
+    const clean = next.trim();
+    if (clean && clean !== node.name) setNameAt(path, clean);
+    else setText(node.name);
+  };
+  return (
+    <label className="details-field">
+      <span className="notes-head">Name</span>
+      <input
+        className="text-input"
+        aria-label="Name"
+        spellCheck={false}
+        value={text}
+        onPointerDown={(e) => enterByTouch(e, { label: 'Name', value: text, inputMode: 'text', onCommit: commit })}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={() => commit(text)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur();
+          if (e.key === 'Escape') {
+            setText(node.name);
+            e.currentTarget.blur();
+          }
+        }}
+      />
+    </label>
+  );
+}
+
+/** The notes of the picked layer, kept as they are typed (a sitting of typing is one undo step). */
 function Notes({ path, node }: { path: string[]; node: SceneNode }) {
   const note = node.note ?? '';
   const [text, setText] = useState(note);
@@ -43,11 +75,8 @@ function Notes({ path, node }: { path: string[]; node: SceneNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [note]);
   return (
-    <label className="notes" title="Keeps reminders with this part of the object, saved in the design">
-      <span className="notes-head">
-        Notes
-        <span className="notes-for clip">{node.name}</span>
-      </span>
+    <label className="details-field" title="Keeps reminders with this part of the object, saved in the design">
+      <span className="notes-head">Notes</span>
       <textarea
         className="text-input area"
         aria-label={`Notes for ${node.name}`}
@@ -152,7 +181,10 @@ export function Structure({ root }: { root: SceneNode }) {
           </div>
         )}
       </div>
-      <Notes path={path} node={chosen} />
+      <div className="details">
+        <Name path={path} node={chosen} />
+        <Notes path={path} node={chosen} />
+      </div>
     </div>
   );
 }

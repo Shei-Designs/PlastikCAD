@@ -310,13 +310,20 @@ ul {
   letter-spacing: 0;
 }
 
-.notes {
+/* The box at the foot of the Structure tab: the picked layer's name and notes. */
+.details {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
   flex: none;
   padding: 8px 8px 10px;
   border-top: 1px solid var(--border);
+}
+
+.details-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .notes-head {
@@ -330,14 +337,7 @@ ul {
   color: var(--faint);
 }
 
-.notes-for {
-  min-width: 0;
-  font-weight: 500;
-  letter-spacing: 0;
-  text-transform: none;
-}
-
-.notes .text-input.area {
+.details .text-input.area {
   min-height: 88px;
   resize: vertical;
 }
