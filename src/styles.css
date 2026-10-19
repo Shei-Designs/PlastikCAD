@@ -1011,6 +1011,17 @@ ul {
   color: var(--warn-text);
 }
 
+/* A setting that does not apply to the current choices stays in place, greyed out. */
+.field:has(:disabled) > label {
+  color: var(--faint);
+}
+
+input[type='range']:disabled,
+select:disabled,
+.switch:disabled {
+  opacity: 0.45;
+}
+
 /* A line or two about the model chosen in a dropdown, right under it. */
 .option-note {
   margin-top: 5px;

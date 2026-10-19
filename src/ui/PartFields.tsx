@@ -77,13 +77,16 @@ export function PartFields({ node }: { node: PartNode }) {
   const family = CATEGORIES.find((c) => c.id === def.category)!;
   const kin = GENERATORS.filter((g) => g.category === def.category);
   const locked = Boolean(node.locked);
-  const groups = def.groups.filter((g) => g.params.some((d) => !d.visible || d.visible(node.params)));
+  // A setting that does not apply to the current choices stays in view, greyed out, so the
+  // form keeps its shape as values change. A whole group that does not apply is left out.
+  const applies = (d: ParamDef) => !d.visible || d.visible(node.params);
+  const groups = def.groups.filter((g) => g.params.some(applies));
   const change = (key: string, v: Params[string]) => void editPart(node.id, { params: { [key]: v } });
   const canMate = mateKinds(def.id).length > 0;
   const mating = useEditor((s) => s.mating !== null);
   const sections: Section[] = groups.map((g) => ({
     title: g.title,
-    content: g.params.filter((d) => !d.visible || d.visible(node.params)).map((d) => <Field key={d.key} def={d} params={node.params} disabled={locked} onChange={change} />),
+    content: g.params.map((d) => <Field key={d.key} def={d} params={node.params} disabled={locked || !applies(d)} onChange={change} />),
   }));
   if (canMate && sections.length) {
     sections[0].after = (
