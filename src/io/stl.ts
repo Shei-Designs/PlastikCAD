@@ -2,14 +2,14 @@ import { APP_NAME } from '../app';
 import type { MeshData } from '../geometry/mesh';
 
 /** Binary STL: 80-byte header, uint32 triangle count, then 50 bytes per facet. */
-export function writeStl(mesh: MeshData, name: string): Uint8Array {
+export function writeStl(mesh: MeshData, name: string, units = 'mm'): Uint8Array {
   const { positions: p, triangles: t } = mesh;
   const count = t.length / 3;
   const bytes = new Uint8Array(84 + count * 50);
   const view = new DataView(bytes.buffer);
 
   // Must not start with "solid", or some readers mistake the file for ASCII STL.
-  const header = `${APP_NAME} binary STL (mm) - ${name}`;
+  const header = `${APP_NAME} binary STL (${units}) - ${name}`;
   for (let i = 0; i < Math.min(80, header.length); i++) bytes[i] = header.charCodeAt(i) & 0x7f;
   view.setUint32(80, count, true);
 

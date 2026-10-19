@@ -11,6 +11,7 @@ import { partFigures } from '../parts/figures';
 import { tell } from './ask';
 import { CloseIcon, LockIcon, PictureIcon, SaveAsPartIcon, WarningIcon } from './icons';
 import { PartsBin } from './PartsBin';
+import { RobotInspector } from './RobotInspector';
 import { PartFields } from './PartFields';
 import { Sections } from './Sections';
 import type { Section } from './Sections';
@@ -54,7 +55,7 @@ const SHORTCUTS: [string, string][] = [
   ['Import model or picture', `${MOD}I`],
 ];
 
-function NameField({ node }: { node: SceneNode }) {
+export function NameField({ node }: { node: SceneNode }) {
   const [text, setText] = useState(node.name);
   useEffect(() => setText(node.name), [node.name]);
   return (
@@ -478,12 +479,11 @@ function Warnings() {
 }
 
 export function Inspector() {
+  const robot = useEditor((s) => s.robot);
   return (
     <aside className="inspector">
-      <div className="params">
-        <Design />
-      </div>
-      <Warnings />
+      <div className="params">{robot ? <RobotInspector /> : <Design />}</div>
+      {!robot && <Warnings />}
     </aside>
   );
 }

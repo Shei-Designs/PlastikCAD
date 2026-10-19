@@ -8,7 +8,9 @@ import { paintOf } from '../model/ops';
 import { apply, determinant, emptyBounds, expandBounds, isEmptyBounds, nodeMatrix, unionBounds } from '../model/math';
 import type { Bounds, Mat } from '../model/math';
 import type { Asset, GroupNode, ImportNode, MeshAsset, OutlineAsset, PartNode, PictureNode, Polygon, SceneNode } from '../model/types';
-import type { BuildResult, ColoredExport, ColoredObject, ColoredPart, ExportResult } from '../worker/protocol';
+import type { BuildResult, ColoredExport, ColoredObject, ColoredPart, ExportResult, LinkGeometry, LinkProperties } from '../worker/protocol';
+import { meshProperties } from '../robot/inertia';
+import type { CollisionKind } from '../robot/types';
 import { CREASE_ANGLE, creasedNormals, NO_SOURCE } from './mesh';
 import type { Faces, MeshData, MeshWithUV } from './mesh';
 import { buildSolid } from '../parts/evaluate';
@@ -661,6 +663,54 @@ export function exportColored(nodes: SceneNode[], fine = false, local = false): 
         if (objects.length === 0) throw new Error('There is nothing to export.');
         return { objects, warnings };
       }),
+    );
+  } finally {
+    refining = false;
+  }
+}
+
+/**
+ * Volume, area, centroid and inertia of each node as placed in the design, for
+ * the robot's links. An open mesh gives what its triangles say, which is not
+ * to be relied on; `watertight` says so.
+ */
+export function massProperties(nodes: SceneNode[]): LinkProperties[] {
+  return operation((k) => scoped((keep) => nodes.map((node) => propertiesOf(k, node, keep))));
+}
+
+function propertiesOf(k: ManifoldToplevel, node: SceneNode, keep: Keep): LinkProperties {
+  const entry = builtOf(k, node);
+  const mesh = entry.solid ? meshOf(placed(k, node, keep)) : transformed(entry.open, nodeMatrix(node));
+  return { id: node.id, ...meshProperties(mesh), watertight: Boolean(entry.solid), triangles: mesh.triangles.length / 3 };
+}
+
+/**
+ * Each node as a robot link, placed in the design: its visual parts by color,
+ * the collision shape asked for (a convex hull, the shape itself, or nothing
+ * for a box or none) and its mass properties.
+ */
+export function robotGeometry(nodes: SceneNode[], collisions: Record<string, CollisionKind>, fine: boolean): LinkGeometry[] {
+  refining = fine;
+  try {
+    return operation((k) =>
+      scoped((keep) =>
+        nodes.map((node): LinkGeometry => {
+          const entry = builtOf(k, node);
+          const kind = collisions[node.id] ?? 'hull';
+          if (!entry.solid) {
+            const mesh = transformed(entry.open, nodeMatrix(node));
+            const points: [number, number, number][] = [];
+            for (let i = 0; i < mesh.positions.length; i += 3) points.push([mesh.positions[i], mesh.positions[i + 1], mesh.positions[i + 2]]);
+            const collision = kind === 'mesh' ? mesh : kind === 'hull' && points.length >= 4 ? meshOf(keep(k.Manifold.hull(points))) : null;
+            return { id: node.id, visual: [{ color: node.color, mesh }], collision, bounds: boundsOfPositions(mesh.positions), props: propertiesOf(k, node, keep) };
+          }
+          const matrix = mat4(nodeMatrix(node));
+          const visual = coloredParts(k, node, keep).map((p) => ({ color: p.color, mesh: meshOf(keep(p.solid.transform(matrix))) }));
+          const solid = placed(k, node, keep);
+          const collision = kind === 'mesh' ? meshOf(solid) : kind === 'hull' ? meshOf(keep(solid.hull())) : null;
+          return { id: node.id, visual, collision, bounds: toBounds(solid.boundingBox()), props: propertiesOf(k, node, keep) };
+        }),
+      ),
     );
   } finally {
     refining = false;

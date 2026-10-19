@@ -1,6 +1,7 @@
 import type { Bounds } from '../model/math';
 import type { Asset, PartNode, SceneNode } from '../model/types';
-import type { BuildResult, ColoredExport, ExportResult, WorkerRequest, WorkerResponse } from './protocol';
+import type { CollisionKind } from '../robot/types';
+import type { BuildResult, ColoredExport, ExportResult, LinkGeometry, LinkProperties, WorkerRequest, WorkerResponse } from './protocol';
 
 interface Waiting {
   resolve: (value: never) => void;
@@ -72,6 +73,16 @@ export class GeometryClient {
   /** Every node placed, one closed part per color: what a colored mesh format carries. */
   exportColored(nodes: SceneNode[], fine: boolean, local = false): Promise<ColoredExport> {
     return this.send({ type: 'exportColored', nodes, fine, local });
+  }
+
+  /** Volume, area, centroid and inertia of each node as placed in the design. */
+  massProperties(nodes: SceneNode[]): Promise<LinkProperties[]> {
+    return this.send({ type: 'massProperties', nodes });
+  }
+
+  /** Each node as a robot link: visual parts, collision shape and mass properties, placed in the design. */
+  robotGeometry(nodes: SceneNode[], collisions: Record<string, CollisionKind>, fine: boolean): Promise<LinkGeometry[]> {
+    return this.send({ type: 'robotGeometry', nodes, collisions, fine });
   }
 
   dispose(): void {

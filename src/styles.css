@@ -3016,3 +3016,184 @@ kbd {
   padding: 0 18px;
 }
 
+
+/* ---------- robot mode ---------- */
+
+/* The file bar's robot button lights up while the mode is on. */
+.file-bar .icon-button.on {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.robot-bar .page-tabs {
+  align-items: center;
+  justify-content: space-between;
+  height: 34px;
+  padding: 0 0 0 4px;
+}
+
+.robot-mode-title {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.robot-panel .structure-scroll h2 + h2 {
+  margin-top: 14px;
+}
+
+/* A joint row carries the hinge glyph where a link has its color dot. */
+.outline-row.joint > svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--muted);
+}
+
+.outline-row.joint.on > svg {
+  color: var(--accent);
+}
+
+.outline-row .outline-kind {
+  text-transform: capitalize;
+}
+
+/* The joints of a link, listed in its panel as rows like the tree's. */
+.joint-list {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.joint-list .outline-row {
+  width: 100%;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+/* What the checks found: one line each, with a way to the culprit. */
+.problems {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.problem {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+.problem.error {
+  background: var(--error-bg);
+  color: var(--error-text);
+}
+
+.problem > svg {
+  flex: none;
+  margin-top: 1px;
+}
+
+.problem > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.problem .chip {
+  flex: none;
+  color: inherit;
+  border-color: color-mix(in srgb, currentColor 35%, transparent);
+}
+
+/* The status line over the robot export button doubles as the way to the list. */
+.export-note.problems {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin: 0 0 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.export-note.problems svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.export-note.problems.error {
+  color: var(--error-text);
+}
+
+.export-note.problems.warn {
+  color: var(--warn-text);
+}
+
+.export-note.problems:hover {
+  text-decoration: underline;
+}
+
+.export-format {
+  flex: 1;
+  text-align: right;
+  color: var(--text);
+}
+
+/* Wide select chips sit on their own in a field row. */
+.chip.select.wide {
+  max-width: 60%;
+}
+
+.chip.select.wide select {
+  max-width: 100%;
+  text-overflow: ellipsis;
+}
+
+.field .chip.select.wide:only-child {
+  max-width: 100%;
+  width: 100%;
+  justify-content: space-between;
+}
+
+.number-row.spread {
+  display: flex;
+  gap: 6px;
+}
+
+.number-row.spread .number-box {
+  flex: 1;
+  min-width: 0;
+}
+
+.number-row.spread .number-box input {
+  min-width: 0;
+}
+
+.chip-row,
+.axis-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.axis-row .segmented {
+  flex: 1;
+}

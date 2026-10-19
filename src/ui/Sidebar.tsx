@@ -26,12 +26,14 @@ import {
   startPlacingText,
   toggleHidden,
   toggleLocked,
+  toggleRobotMode,
   toggleSelected,
   useEditor,
 } from '../state/store';
 import { About } from './About';
 import { ExportPanel } from './ExportPanel';
-import { EyeIcon, EyeOffIcon, ImportIcon, LockIcon, Logo, MenuIcon, MoonIcon, ProjectsIcon, SunIcon, UnlockIcon } from './icons';
+import { EyeIcon, EyeOffIcon, ImportIcon, LockIcon, Logo, MenuIcon, MoonIcon, ProjectsIcon, RobotIcon, SunIcon, UnlockIcon } from './icons';
+import { RobotExport, RobotModeBar, RobotPanel } from './RobotPanel';
 import { Popover } from './Popover';
 import { CATEGORIES, GENERATORS, getGenerator } from '../parts/generators';
 import { partThumbnail } from './partThumbnails';
@@ -47,6 +49,7 @@ function FileBar() {
   const [text, setText] = useState(name);
   useEffect(() => setText(name), [name]);
   const [about, setAbout] = useState(false);
+  const robot = useEditor((s) => s.robot);
   const status = saving ? 'Saving…' : dirty ? 'Changes not saved yet' : 'All changes saved';
 
   const item = (label: string, keys: string, run: () => void, close: () => void) => (
@@ -87,6 +90,9 @@ function FileBar() {
       />
       <button type="button" className="icon-button" title={`Projects (${MOD}O)`} aria-label="Projects" onClick={openProjects}>
         <ProjectsIcon />
+      </button>
+      <button type="button" className={robot ? 'icon-button on' : 'icon-button'} title={robot ? 'Leave Robot mode' : 'Robot mode: joints, masses and a URDF export'} aria-label="Robot mode" aria-pressed={robot} onClick={toggleRobotMode}>
+        <RobotIcon />
       </button>
       <Popover className="icon-button" title="File" button={<MenuIcon />} align="right">
         {(close) => (
@@ -343,27 +349,47 @@ function showTab(tab: 'library' | 'objects' | 'structure'): void {
   setPrefs({ sidebar: tab });
 }
 
+function Brand({ theme }: { theme: 'dark' | 'light' }) {
+  return (
+    <div className="brand">
+      <Logo />
+      <span className="wordmark">{APP_NAME}</span>
+      <button
+        type="button"
+        className="icon-button"
+        title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+        aria-label="Toggle theme"
+        onClick={() => setPrefs({ theme: theme === 'dark' ? 'light' : 'dark' })}
+      >
+        {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
+      </button>
+    </div>
+  );
+}
+
 /** How long a finger rests on a row before it adds the object to the selection instead of selecting it alone. */
 const LONG_PRESS_MS = 450;
 
 export function Sidebar() {
   const theme = useEditor((s) => s.prefs.theme);
   const tab = useEditor((s) => s.prefs.sidebar);
+  const robot = useEditor((s) => s.robot);
+  if (robot) {
+    return (
+      <aside className="sidebar">
+        <Brand theme={theme} />
+        <FileBar />
+        <RobotModeBar />
+        <nav className="catalog structure-pane" aria-label="Robot">
+          <RobotPanel />
+        </nav>
+        <RobotExport />
+      </aside>
+    );
+  }
   return (
     <aside className="sidebar">
-      <div className="brand">
-        <Logo />
-        <span className="wordmark">{APP_NAME}</span>
-        <button
-          type="button"
-          className="icon-button"
-          title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-          aria-label="Toggle theme"
-          onClick={() => setPrefs({ theme: theme === 'dark' ? 'light' : 'dark' })}
-        >
-          {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
-        </button>
-      </div>
+      <Brand theme={theme} />
       <FileBar />
       <div className="tabs">
         <div className="page-tabs" role="tablist">

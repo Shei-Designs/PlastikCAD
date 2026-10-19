@@ -14,11 +14,11 @@ const materialName = (color: string): string => objName(PALETTE.find((c) => c.va
  * library (`mtl`) to save beside the file, named as `mtllib` says; a part
  * with no color (an empty string) needs none.
  */
-export function writeObj(objects: ColoredObject[], name: string): { obj: Uint8Array; mtl: Uint8Array | null; mtlName: string } {
+export function writeObj(objects: ColoredObject[], name: string, units = 'millimeters'): { obj: Uint8Array; mtl: Uint8Array | null; mtlName: string } {
   const colors: string[] = [];
   for (const o of objects) for (const p of o.parts) if (p.color && !colors.includes(p.color)) colors.push(p.color);
   const mtlName = `${objName(name)}.mtl`;
-  const lines: string[] = [`# ${APP_NAME} - units: millimeters`];
+  const lines: string[] = [`# ${APP_NAME} - units: ${units}`];
   if (colors.length) lines.push(`mtllib ${mtlName}`);
   let offset = 0;
   for (const o of objects) {

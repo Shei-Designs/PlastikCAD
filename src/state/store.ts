@@ -55,6 +55,12 @@ import type { ProjectInfo } from './projects';
 import { initSync, linkAccount, requestSync, unlinkAccount } from '../sync/sync';
 import type { SyncReport } from '../sync/engine';
 import { mergeDocs } from '../sync/merge';
+import { checkRobot } from '../robot/check';
+import { buildRobotPackage, packageName } from '../robot/export';
+import { jointInChild, linkNodes, linkOf, pruned, robotOf } from '../robot/model';
+import { defaultJoint } from '../robot/types';
+import type { Robot, RobotJoint, RobotLink } from '../robot/types';
+import { massProps } from './massProps';
 
 export interface Notice {
   /** `ok` for something that went through (a save, an export, a sync), `info` for a plain word, `error` for what failed. */
@@ -71,7 +77,7 @@ export interface EditorState {
   /** Where the project is kept (its key in the project store), once it has been written. */
   projectKey: string | null;
   /** The design as last saved or opened, to tell whether there are changes still to write. */
-  saved: { scene: Scene; name: string } | null;
+  saved: { scene: Scene; name: string; robot?: Robot } | null;
   /** A write to the project store is under way. */
   saving: boolean;
   /** The projects browser is open. */
@@ -84,6 +90,10 @@ export interface EditorState {
   bin: boolean;
   /** Counts up whenever the custom parts change, here or by sync, so that the bin lists them again. */
   partsEpoch: number;
+  /** Robot mode: the panels show the design as links and joints, and the export makes a robot description. */
+  robot: boolean;
+  /** The joint picked in Robot mode (nothing else is selected while one is). */
+  joint: string | null;
   /**
    * The gear a mate is being made for while the wizard is open; the previewed mate carries
    * `id`. `building` while the preview the panel asks for is not in the scene yet.
@@ -114,6 +124,7 @@ export interface EditorState {
 interface Step {
   scene: Scene;
   selection: string[];
+  robot?: Robot;
 }
 
 const DESIGN_FILTER = [{ name: `${APP_NAME} design`, extensions: [FILE_EXTENSION] }];
@@ -131,6 +142,8 @@ let state: EditorState = {
   placing: null,
   bin: false,
   partsEpoch: 0,
+  robot: false,
+  joint: null,
   mating: null,
   aligning: null,
   editing: null,
@@ -142,7 +155,7 @@ let state: EditorState = {
   canRedo: false,
   epoch: 0,
 };
-state.saved = { scene: state.doc.scene, name: state.doc.name };
+state.saved = { scene: state.doc.scene, name: state.doc.name, robot: state.doc.robot };
 
 const listeners = new Set<() => void>();
 let past: Step[] = [];
@@ -179,7 +192,7 @@ export function useEditor<T>(selector: (s: EditorState) => T): T {
 }
 
 export const isDirty = (s: EditorState = state): boolean =>
-  !s.saved || s.doc.scene !== s.saved.scene || s.doc.name !== s.saved.name;
+  !s.saved || s.doc.scene !== s.saved.scene || s.doc.name !== s.saved.name || s.doc.robot !== s.saved.robot;
 
 /** How long after the last change the project is written. */
 const AUTOSAVE_MS = 1000;
@@ -245,7 +258,20 @@ export function setPrefs(patch: Partial<Prefs>): void {
 
 // --- scene edits and undo -------------------------------------------------
 
-const step = (): Step => ({ scene: state.doc.scene, selection: state.selection });
+const step = (): Step => ({ scene: state.doc.scene, selection: state.selection, robot: state.doc.robot });
+
+/** Puts the present on the undo stack before a change. Edits with the same `merge` key in quick succession count as one. */
+function record(merge?: string): void {
+  if (gesture) return;
+  const now = Date.now();
+  const merged = merge && lastMerge?.key === merge && now - lastMerge.time < MERGE_WINDOW_MS;
+  if (!merged) {
+    past.push(step());
+    if (past.length > UNDO_LIMIT) past.shift();
+  }
+  future = [];
+  lastMerge = merge ? { key: merge, time: now } : null;
+}
 
 /**
  * Replace the scene as one undoable step. Edits with the same `merge` key in
@@ -254,17 +280,10 @@ const step = (): Step => ({ scene: state.doc.scene, selection: state.selection }
 function commit(scene: Scene, options: { selection?: string[]; merge?: string } = {}): void {
   abortAlignPreview();
   const selection = options.selection ?? state.selection;
-  if (!gesture) {
-    const now = Date.now();
-    const merged = options.merge && lastMerge?.key === options.merge && now - lastMerge.time < MERGE_WINDOW_MS;
-    if (!merged) {
-      past.push(step());
-      if (past.length > UNDO_LIMIT) past.shift();
-    }
-    future = [];
-    lastMerge = options.merge ? { key: options.merge, time: now } : null;
-  }
-  set({ doc: { ...state.doc, scene }, selection });
+  record(options.merge);
+  // The robot lets go of objects that are gone.
+  const robot = state.doc.robot && pruned(state.doc.robot, scene);
+  set({ doc: robot !== state.doc.robot ? { ...state.doc, scene, robot } : { ...state.doc, scene }, selection });
 }
 
 /** Start of a drag: everything until `endGesture` is a single undo step. */
@@ -298,7 +317,7 @@ function restore(from: Step[], to: Step[]): void {
   to.push(step());
   lastMerge = null;
   const ids = new Set(target.scene.map((n) => n.id));
-  set({ doc: { ...state.doc, scene: target.scene }, selection: target.selection.filter((id) => ids.has(id)) });
+  set({ doc: { ...state.doc, scene: target.scene, robot: target.robot }, selection: target.selection.filter((id) => ids.has(id)) });
   // The dots follow the objects back.
   if (state.aligning) refreshAlignBounds();
 }
@@ -324,8 +343,8 @@ export function selectedNodes(s: EditorState = state): SceneNode[] {
 
 export function select(ids: string[]): void {
   abortAlignPreview();
-  // Selecting an object takes the right panel from the custom parts bin.
-  set(ids.length && state.bin ? { selection: ids, bin: false } : { selection: ids });
+  // Selecting an object takes the right panel from the custom parts bin, and from a joint.
+  set(ids.length ? { selection: ids, bin: false, joint: null } : { selection: ids });
 }
 
 export function toggleSelected(id: string): void {
@@ -1331,7 +1350,7 @@ export function saveProject(fresh = false): Promise<boolean> {
 
 async function write(fresh: boolean): Promise<boolean> {
   // What is being written counts as saved once it is, even if more changed meanwhile.
-  const base = { scene: state.doc.scene, name: state.doc.name };
+  const base = { scene: state.doc.scene, name: state.doc.name, robot: state.doc.robot };
   const doc = docToSave();
   const thumb = thumbFor(doc, fresh);
   // Every save is a revision following the one before it, so that sync can tell what changed where.
@@ -1367,11 +1386,13 @@ function adopt(doc: Doc, key: string | null): void {
   set({
     doc,
     projectKey: key,
-    saved: { scene: doc.scene, name: doc.name },
+    saved: { scene: doc.scene, name: doc.name, robot: doc.robot },
     saving: false,
     selection: [],
     placing: null,
     bin: false,
+    robot: false,
+    joint: null,
     mating: null,
     editing: null,
     highlight: null,
@@ -1702,6 +1723,129 @@ export async function deletePart(key: string, name: string): Promise<boolean> {
   }
 }
 
+// --- robot mode ---------------------------------------------------------------
+
+/** The panels turn to links and joints; whatever was being carried or lined up is let go of. */
+export function enterRobotMode(): void {
+  if (state.mating) cancelMate();
+  if (state.aligning) stopAligning();
+  cancelPlacing();
+  set({ robot: true, joint: null, bin: false, selection: [] });
+}
+
+export const leaveRobotMode = (): void => set({ robot: false, joint: null });
+export const toggleRobotMode = (): void => (state.robot ? leaveRobotMode() : enterRobotMode());
+
+export function selectJoint(id: string | null): void {
+  abortAlignPreview();
+  set(id ? { joint: id, selection: [] } : { joint: null });
+}
+
+/** Replaces the robot as one undoable step, like `commit` does the scene. */
+function commitRobot(robot: Robot, merge?: string): void {
+  record(merge);
+  set({ doc: { ...state.doc, robot } });
+}
+
+const editRobot = (change: (robot: Robot) => Robot, merge?: string): void => commitRobot(change(robotOf(state.doc)), merge);
+
+export function setRobotName(name: string): void {
+  const clean = name.trim();
+  if (clean) editRobot((r) => ({ ...r, name: clean }), 'robot-name');
+}
+
+export function setRobotRoot(node: string | null): void {
+  editRobot((r) => ({ ...r, root: node }));
+}
+
+export function updateLink(node: string, patch: Partial<Omit<RobotLink, 'node'>>, merge?: string): void {
+  editRobot((r) => ({ ...r, links: [...r.links.filter((l) => l.node !== node), { ...linkOf(r, node), ...patch }] }), merge);
+}
+
+const jointName = (robot: Robot, base: string): string => {
+  let name = base;
+  for (let n = 2; robot.joints.some((j) => j.name === name); n++) name = `${base} ${n}`;
+  return name;
+};
+
+/**
+ * Hangs `child` from `parent` by a new joint, and picks it. The joint starts
+ * on the child's box where it comes nearest the parent's center (an arm's
+ * joint sits at the end towards the body), with its axis along the child's Z.
+ */
+export function addJoint(parent: string, child: string): string | null {
+  const childNode = state.doc.scene.find((n) => n.id === child);
+  const parentNode = state.doc.scene.find((n) => n.id === parent);
+  if (!childNode || !parentNode || parent === child) return null;
+  const towards = jointInChild(parentNode.pos, [0, 0, 1], childNode).origin;
+  const origin = towards.map((x, i) => Math.min(childNode.size[i] / 2, Math.max(-childNode.size[i] / 2, x))) as Vec3;
+  const id = newId();
+  editRobot((r) => ({ ...r, root: r.root ?? parent, joints: [...r.joints, defaultJoint(id, jointName(r, `${childNode.name} joint`), parent, child, tidyVec(origin))] }));
+  selectJoint(id);
+  return id;
+}
+
+export function updateJoint(id: string, patch: Partial<Omit<RobotJoint, 'id'>>, merge?: string): void {
+  editRobot((r) => ({ ...r, joints: r.joints.map((j) => (j.id === id ? { ...j, ...patch } : j)) }), merge);
+}
+
+/** Puts the joint at a place and direction given in the design's coordinates (it is kept in the child's). */
+export function placeJoint(id: string, origin: Vec3, axis: Vec3, merge?: string): void {
+  const joint = robotOf(state.doc).joints.find((j) => j.id === id);
+  const child = joint && state.doc.scene.find((n) => n.id === joint.child);
+  if (!joint || !child) return;
+  const local = jointInChild(origin, axis, child);
+  updateJoint(id, { origin: tidyVec(local.origin), axis: tidyVec(local.axis) }, merge);
+}
+
+export function deleteJoint(id: string): void {
+  editRobot((r) => ({
+    ...r,
+    joints: r.joints.filter((j) => j.id !== id).map((j) => (j.mimic?.joint === id ? (({ mimic: _m, ...rest }) => rest)(j) : j)),
+  }));
+  if (state.joint === id) set({ joint: null });
+}
+
+/**
+ * Writes the robot as a ROS 2 package in a zip: URDF, meshes and launch files.
+ * Stopped by any error the checks find; the overview lists them. False if
+ * nothing was written.
+ */
+export async function exportRobot(): Promise<boolean> {
+  const doc = state.doc;
+  const robot = robotOf(doc);
+  const nodes = linkNodes(doc.scene);
+  const stop = async (problems: ReturnType<typeof checkRobot>): Promise<boolean> => {
+    const errors = problems.filter((p) => p.level === 'error');
+    if (errors.length === 0) return false;
+    set({ selection: [], joint: null });
+    await tell({ title: 'Robot', text: `${errors.length === 1 ? 'One problem stops' : `${errors.length} problems stop`} the export. ${errors[0].text}`, actions: ['OK'] });
+    return true;
+  };
+  if (await stop(checkRobot(doc, massProps.known(nodes), robot))) return false;
+  const name = await exportName(packageName(robot), 'zip');
+  if (!name) return false;
+  set({ busy: 'Exporting the robot…' });
+  try {
+    const worker = await geometry.prepare(nodes, doc.assets);
+    const collisions = Object.fromEntries(nodes.map((n) => [n.id, linkOf(robot, n.id).collision]));
+    const geo = await worker.robotGeometry(nodes, collisions, true);
+    // Checked again with every link weighed, in case some had not been when the first check ran.
+    if (await stop(checkRobot(doc, new Map(geo.map((g) => [g.id, g.props])), robot))) return false;
+    const pkg = buildRobotPackage(doc, new Map(geo.map((g) => [g.id, g])), robot);
+    const bytes = zipSync(Object.fromEntries(pkg.files.map((f) => [`${pkg.name}/${f.name}`, f.bytes])), { level: 6 });
+    const where = await platform.saveAs(`${name}.zip`, [{ name: 'Zip archive', extensions: ['zip'] }], bytes, 'application/zip');
+    if (!where) return false;
+    await reportSaved([where.name], where.path ? where.path.slice(0, where.path.length - where.name.length).replace(/[\\/]$/, '') || where.path : 'your downloads', where.uri ? [where.uri] : [], 'application/zip');
+    return true;
+  } catch (e) {
+    fail(e);
+    return false;
+  } finally {
+    set({ busy: null });
+  }
+}
+
 // --- cloud sync -----------------------------------------------------------------
 
 /** What a sync pass wrote or removed, taken into the editor: the open project above all. */
@@ -1736,13 +1880,13 @@ async function reloadOpenProject(key: string): Promise<void> {
     if (!isDirty()) {
       const ids = new Set(incoming.scene.map((n) => n.id));
       resetHistory();
-      set({ doc: incoming, saved: { scene: incoming.scene, name: incoming.name }, selection: state.selection.filter((id) => ids.has(id)), editing: null, mating: null, placing: null });
+      set({ doc: incoming, saved: { scene: incoming.scene, name: incoming.name, robot: incoming.robot }, selection: state.selection.filter((id) => ids.has(id)), editing: null, mating: null, placing: null });
       return;
     }
     // Edits since the last save are merged onto what came in; the next save writes the result.
     const base = state.saved ? { ...state.doc, scene: state.saved.scene, name: state.saved.name } : null;
     const { doc } = mergeDocs(base, state.doc, incoming);
-    set({ doc: { ...doc, revision: incoming.revision }, saved: { scene: incoming.scene, name: incoming.name } });
+    set({ doc: { ...doc, revision: incoming.revision }, saved: { scene: incoming.scene, name: incoming.name, robot: incoming.robot } });
   } catch (e) {
     fail(e);
   }

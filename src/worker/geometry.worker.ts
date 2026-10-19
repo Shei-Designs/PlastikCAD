@@ -1,6 +1,6 @@
 // Runs all solid modeling off the UI thread so the viewport stays responsive.
 import wasmUrl from 'manifold-3d/manifold.wasm?url';
-import { build, exportColored, exportNodes, forgetAssets, initKernel, measure, partBox, setAssets } from '../geometry/kernel';
+import { build, exportColored, exportNodes, forgetAssets, initKernel, massProperties, measure, partBox, robotGeometry, setAssets } from '../geometry/kernel';
 import type { WorkerRequest, WorkerResponse } from './protocol';
 
 const ctx = self as unknown as {
@@ -37,6 +37,14 @@ function handle(req: WorkerRequest): void {
     case 'exportColored': {
       const result = exportColored(req.nodes, req.fine, req.local);
       ctx.postMessage({ type: 'exportedColored', id: req.id, result }, result.objects.flatMap((o) => o.parts.flatMap((p) => [p.mesh.positions.buffer, p.mesh.triangles.buffer])));
+      break;
+    }
+    case 'massProperties':
+      ctx.postMessage({ type: 'massProperties', id: req.id, result: massProperties(req.nodes) });
+      break;
+    case 'robotGeometry': {
+      const result = robotGeometry(req.nodes, req.collisions, req.fine);
+      ctx.postMessage({ type: 'robotGeometry', id: req.id, result }, result.flatMap((l) => [...l.visual.flatMap((p) => [p.mesh.positions.buffer, p.mesh.triangles.buffer]), ...(l.collision ? [l.collision.positions.buffer, l.collision.triangles.buffer] : [])]));
       break;
     }
     case 'export': {

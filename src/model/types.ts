@@ -142,6 +142,9 @@ export interface PictureNode extends NodeBase {
 
 export type SceneNode = ShapeNode | GroupNode | ImportNode | TextNode | PartNode | PictureNode;
 
+import type { Robot } from '../robot/types';
+export type { Robot };
+
 /** The fonts lettering can be set in. All are bold or heavy cuts: thin strokes do not print. */
 export const TEXT_FONTS: { id: string; name: string }[] = [
   { id: 'sans', name: 'Sans' },
@@ -202,4 +205,6 @@ export interface Doc {
   parent?: string;
   device?: string;
   saved?: string;
+  /** The robot laid over the design (Robot mode): links, joints and their physical settings. */
+  robot?: Robot;
 }

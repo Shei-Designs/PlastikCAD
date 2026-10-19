@@ -7,6 +7,7 @@ import {
   cancelMate,
   cancelPlacing,
   copySelected,
+  deleteJoint,
   deleteSelected,
   dismissNotice,
   dropSelected,
@@ -30,6 +31,7 @@ import {
   saveProject,
   select,
   selectAll,
+  selectJoint,
   setHole,
   stopAligning,
   toggleAligning,
@@ -83,6 +85,7 @@ function onKeyDown(e: KeyboardEvent): void {
     if (s.mating) cancelMate();
     else if (s.aligning) stopAligning();
     else if (s.placing) cancelPlacing();
+    else if (s.joint) selectJoint(null);
     else select([]);
     return;
   }
@@ -144,9 +147,15 @@ function onKeyDown(e: KeyboardEvent): void {
     return;
   }
 
+  // In Robot mode a picked joint goes before any object.
+  const remove = () => {
+    const { joint } = getState();
+    if (joint) deleteJoint(joint);
+    else deleteSelected();
+  };
   const plain: Record<string, () => void> = {
-    Delete: deleteSelected,
-    Backspace: deleteSelected,
+    Delete: remove,
+    Backspace: remove,
     ArrowLeft: () => nudgeSelected([-step(e), 0, 0]),
     ArrowRight: () => nudgeSelected([step(e), 0, 0]),
     ArrowUp: () => nudgeSelected([0, step(e), 0]),

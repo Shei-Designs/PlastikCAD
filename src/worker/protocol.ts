@@ -1,6 +1,8 @@
 import type { Faces, MeshData, RenderMesh } from '../geometry/mesh';
 import type { Bounds } from '../model/math';
 import type { Asset, PartNode, Polygon, SceneNode } from '../model/types';
+import type { MeshProperties } from '../robot/inertia';
+import type { CollisionKind } from '../robot/types';
 
 export type WorkerRequest =
   /** Imported data that later requests may refer to. Sent before any node that uses it. */
@@ -22,7 +24,11 @@ export type WorkerRequest =
    * Every node placed, as one closed part per color (holes cut, the parts of a mixed group kept apart), for a
    * colored export. With `local` the parts stay in the nodes' own built frames, unplaced (one node at a time).
    */
-  | { type: 'exportColored'; id: number; nodes: SceneNode[]; fine: boolean; local?: boolean };
+  | { type: 'exportColored'; id: number; nodes: SceneNode[]; fine: boolean; local?: boolean }
+  /** Volume, area, centroid and inertia of each node as placed in the design, for the robot's links. */
+  | { type: 'massProperties'; id: number; nodes: SceneNode[] }
+  /** Each node placed, as the visual parts, collision shape and mass properties of a robot link. */
+  | { type: 'robotGeometry'; id: number; nodes: SceneNode[]; collisions: Record<string, CollisionKind>; fine: boolean };
 
 export interface BuildResult {
   key: string;
@@ -68,10 +74,30 @@ export interface ColoredExport {
   warnings: string[];
 }
 
+/** Mass properties of a node as placed in the design (mm, g-free: see `MeshProperties`). */
+export interface LinkProperties extends MeshProperties {
+  id: string;
+  /** False for an open mesh, whose figures are what its triangles happen to say. */
+  watertight: boolean;
+  triangles: number;
+}
+
+/** A robot link's geometry as exported: everything placed in the design (mm, Z up). */
+export interface LinkGeometry {
+  id: string;
+  visual: ColoredPart[];
+  /** The collision mesh (a hull, or the shape itself); null for a box, which `bounds` describes, or none. */
+  collision: MeshData | null;
+  bounds: Bounds;
+  props: LinkProperties;
+}
+
 export type WorkerResponse =
   | { type: 'built'; id: number; result: BuildResult }
   | { type: 'measured'; id: number; bounds: Bounds | null }
   | { type: 'partBoxed'; id: number; bounds: Bounds | null }
   | { type: 'exported'; id: number; result: ExportResult }
   | { type: 'exportedColored'; id: number; result: ColoredExport }
+  | { type: 'massProperties'; id: number; result: LinkProperties[] }
+  | { type: 'robotGeometry'; id: number; result: LinkGeometry[] }
   | { type: 'error'; id: number; message: string };

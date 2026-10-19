@@ -9,6 +9,8 @@ import { sanitizeParams } from '../parts/generators/types';
 import { newId, usedAssets } from './ops';
 import { TEXT_FONTS } from './types';
 import type { Asset, Doc, OutlineShape, PartParamValue, Scene, SceneNode, ShapeKind, Texture, Vec3 } from './types';
+import { COLLISION_KINDS, JOINT_TYPES } from '../robot/types';
+import type { CollisionKind, JointType, MassSpec, Robot, RobotJoint, RobotLink } from '../robot/types';
 
 export function emptyDoc(): Doc {
   return { id: newId(), name: 'Untitled', scene: [], assets: {} };
@@ -100,8 +102,42 @@ export function serializeDoc(doc: Doc): string {
     thumb: doc.thumb,
     scene: doc.scene.map(canonical),
     assets: liveAssets(doc),
+    // After the scene: a robot has a "name" line of its own, which must not pass for the header's.
+    robot: doc.robot ? canonicalRobot(doc.robot) : undefined,
   };
   return pretty(file, 0) + '\n';
+}
+
+/** Fixed key order, links and joints sorted by id, so that the same robot always serializes to the same text. */
+export function canonicalRobot(robot: Robot): Record<string, unknown> {
+  const byId = <T>(key: (item: T) => string) => (a: T, b: T) => key(a).localeCompare(key(b));
+  return {
+    name: robot.name,
+    root: robot.root ?? undefined,
+    links: [...robot.links].sort(byId((l: RobotLink) => l.node)).map((l) => ({
+      node: l.node,
+      name: l.name,
+      mass: l.mass.kind === 'measured' ? { kind: 'measured', grams: l.mass.grams } : { kind: 'material', material: l.mass.material, infill: l.mass.infill, shell: l.mass.shell },
+      collision: l.collision,
+      friction: l.friction,
+    })),
+    joints: [...robot.joints].sort(byId((j: RobotJoint) => j.id)).map((j) => ({
+      id: j.id,
+      name: j.name,
+      type: j.type,
+      parent: j.parent,
+      child: j.child,
+      origin: j.origin,
+      axis: j.axis,
+      lower: j.lower,
+      upper: j.upper,
+      effort: j.effort,
+      velocity: j.velocity,
+      damping: j.damping,
+      friction: j.friction,
+      mimic: j.mimic ? { joint: j.mimic.joint, multiplier: j.mimic.multiplier, offset: j.mimic.offset } : undefined,
+    })),
+  };
 }
 
 // --- reading -------------------------------------------------------------
@@ -260,6 +296,71 @@ function readAssets(raw: unknown): Record<string, Asset> {
   return out;
 }
 
+const finite = (v: unknown, fallback: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
+const JOINT_KINDS = new Set<string>(JOINT_TYPES.map((t) => t.id));
+const COLLISIONS = new Set<string>(COLLISION_KINDS.map((c) => c.id));
+
+function readMass(raw: unknown): MassSpec {
+  if (isRecord(raw) && raw.kind === 'measured') return { kind: 'measured', grams: Math.max(0, finite(raw.grams, 0)) };
+  const r = isRecord(raw) ? raw : {};
+  return { kind: 'material', material: typeof r.material === 'string' ? r.material : 'pla', infill: Math.min(100, Math.max(0, finite(r.infill, 20))), shell: Math.max(0, finite(r.shell, 1.2)) };
+}
+
+/** The robot of a file, with anything that names an object the scene no longer has left off. Undefined when there is none. */
+function readRobot(raw: unknown, scene: Scene): Robot | undefined {
+  if (!isRecord(raw)) return undefined;
+  const ids = new Set(scene.map((n) => n.id));
+  const links: RobotLink[] = [];
+  const seenLinks = new Set<string>();
+  if (Array.isArray(raw.links)) {
+    for (const l of raw.links) {
+      if (!isRecord(l) || typeof l.node !== 'string' || !ids.has(l.node) || seenLinks.has(l.node)) continue;
+      seenLinks.add(l.node);
+      links.push({
+        node: l.node,
+        ...(typeof l.name === 'string' && l.name.trim() ? { name: l.name } : {}),
+        mass: readMass(l.mass),
+        collision: typeof l.collision === 'string' && COLLISIONS.has(l.collision) ? (l.collision as CollisionKind) : 'hull',
+        friction: Math.max(0, finite(l.friction, 0.8)),
+      });
+    }
+  }
+  const joints: RobotJoint[] = [];
+  const seenJoints = new Set<string>();
+  if (Array.isArray(raw.joints)) {
+    for (const j of raw.joints) {
+      if (!isRecord(j) || typeof j.id !== 'string' || seenJoints.has(j.id)) continue;
+      if (typeof j.parent !== 'string' || typeof j.child !== 'string' || !ids.has(j.parent) || !ids.has(j.child)) continue;
+      seenJoints.add(j.id);
+      const axis = vec3(j.axis, [0, 0, 1]);
+      joints.push({
+        id: j.id,
+        name: typeof j.name === 'string' && j.name.trim() ? j.name : 'joint',
+        type: typeof j.type === 'string' && JOINT_KINDS.has(j.type) ? (j.type as JointType) : 'revolute',
+        parent: j.parent,
+        child: j.child,
+        origin: vec3(j.origin, [0, 0, 0]),
+        axis: axis.some((x) => x !== 0) ? axis : [0, 0, 1],
+        lower: finite(j.lower, -90),
+        upper: finite(j.upper, 90),
+        effort: Math.max(0, finite(j.effort, 10)),
+        velocity: Math.max(0, finite(j.velocity, 90)),
+        damping: Math.max(0, finite(j.damping, 0)),
+        friction: Math.max(0, finite(j.friction, 0)),
+        ...(isRecord(j.mimic) && typeof j.mimic.joint === 'string' ? { mimic: { joint: j.mimic.joint, multiplier: finite(j.mimic.multiplier, 1), offset: finite(j.mimic.offset, 0) } } : {}),
+      });
+    }
+  }
+  // A follower whose leader is gone follows nothing.
+  for (const j of joints) if (j.mimic && !seenJoints.has(j.mimic.joint)) delete j.mimic;
+  return {
+    name: typeof raw.name === 'string' && raw.name.trim() ? raw.name : 'robot',
+    root: typeof raw.root === 'string' && ids.has(raw.root) ? raw.root : null,
+    links,
+    joints,
+  };
+}
+
 function parseFile(text: string): Record<string, unknown> {
   let raw: unknown;
   try {
@@ -287,6 +388,8 @@ export function parseDoc(text: string): Doc {
   const thumb = readThumb(raw.thumb);
   const doc: Doc = { id: readId(raw.id), name: readName(raw.name, 'Untitled'), scene: readScene(raw.scene, assets), assets };
   if (thumb) doc.thumb = thumb;
+  const robot = readRobot(raw.robot, doc.scene);
+  if (robot) doc.robot = robot;
   const revision = readRevision(raw.revision);
   if (revision) doc.revision = revision;
   const parent = readRevision(raw.parent);

@@ -151,6 +151,48 @@ be renamed or deleted from its menu. Custom parts are kept beside your
 projects (a `Parts` folder inside the projects folder on desktop) and synced
 to Google Drive with them.
 
+## Robot mode
+
+The robot button in the project bar turns the design into a robot for ROS 2,
+RViz, Gazebo and anything else that reads URDF. Every top-level object is a
+link (group what belongs together first); joints say how the links move
+against each other. The left panel shows the links as a tree hanging from the
+base link, the right panel sets up whatever is picked, and the design itself
+is not touched: leave the mode and everything is as it was. The robot is saved
+in the design file and synced with it.
+
+- **Base link.** Pick the object the rest hangs from, on the right while
+  nothing is selected or with *Make base* on a link.
+- **Joints.** Select a link and attach it to another: a joint is made with the
+  link as the child, placed on the child's box where it comes nearest the
+  parent, and picked, drawn as a rod along its axis on the plate. Set its kind
+  (revolute, continuous, prismatic, fixed), its origin and axis in the design's
+  coordinates, its limits, effort, velocity, damping and friction, and whether
+  it follows another joint (URDF `mimic`, for the passive joints of a linkage).
+  A joint stays with its child: move the child and the joint comes along.
+- **Mass.** Each link is weighed from its shape and material: pick a material
+  (filaments, resin, metals, acrylic, wood, foam...) and, for a printed part,
+  the infill and the shell thickness, or type the mass you weighed. The
+  volume, surface, mass, center of mass and principal moments of inertia are
+  shown; the inertia tensor goes into the file.
+- **Collision.** A convex hull by default, or the bounding box, the exact
+  mesh, or none; and the surface's coefficient of friction for Gazebo.
+- **Checks.** The overview lists what stops an export (no base, a link no
+  joint reaches, limits the wrong way round, a link with no mass or an
+  impossible inertia) and what is only worth knowing (a joint that closes a
+  loop, an open mesh, a heavy collision mesh), each with a *Show* button.
+- **Export** writes a zip holding a ROS 2 package: `urdf/<name>.urdf`, a
+  colored OBJ per link under `meshes/visual` and an STL under
+  `meshes/collision`, `package.xml`, `CMakeLists.txt`, a launch file for RViz
+  with joint sliders and one for Gazebo through `ros_gz`, and an RViz layout.
+  Meters, kilograms and radians, Z up; every link's frame is parallel to the
+  design's axes and sits at its joint, with its meshes written in that frame.
+
+Loops (a four-bar linkage, a parallel gripper) can be built: the joint that
+closes a loop is kept in the design and listed as a warning, since URDF cannot
+hold it; mark the passive joints as following the driven one. SDF export,
+which keeps loops, drive and sensor presets and `ros2_control` blocks are next.
+
 ## Projects
 
 Designs are projects, and a project is saved as you work: a second after the
@@ -434,7 +476,8 @@ src/
   state/              the editor: selection, undo, files, preferences
   viewer/             three.js view: drawing, picking, handles
   parts/              the gear, pulley, sprocket and thread generators
-  io/                 STL, 3MF, OBJ, GLB, SVG, DXF writers; STL, OBJ, 3MF, GLB, SVG, DXF readers
+  io/                 STL, 3MF, OBJ, GLB, SVG, DXF, URDF writers; STL, OBJ, 3MF, GLB, SVG, DXF readers
+  robot/              Robot mode: links and joints, materials and mass properties, checks, the ROS 2 package
   sync/               Google sign-in (PKCE, loopback), Drive remote, three-way merge, sync engine
   text/               fonts, and laying words out as outlines
   ui/                 React components
@@ -486,6 +529,9 @@ never touch the mesh kernel, which keeps them easy to test.
 - More parts: throated worm wheel, planetary set helper, V-belt pulleys,
   imperial threads.
 - Assembly preview of meshing gears.
+- Robot mode: joint placement on snap points with a pose slider, SDF output
+  (with loops), cylinder and sphere collision shapes, drive and sensor
+  presets, `ros2_control`, xacro, MJCF.
 - STEP export. Shapes and parts are already described as profiles and
   operations rather than triangles, so a B-rep backend can evaluate the same
   descriptions.

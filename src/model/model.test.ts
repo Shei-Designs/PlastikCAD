@@ -695,3 +695,42 @@ describe('axis rotation', () => {
     close(axisRotation(1, 37), rotation([0, 37, 0]));
   });
 });
+
+describe('the robot in a file', () => {
+  const base = (id: string, name: string): SceneNode => ({ id, name, type: 'shape', shape: 'box', params: {}, pos: [0, 0, 10], rot: [0, 0, 0], size: [20, 20, 20], hole: false, color: '#8fa3bf' });
+  it('round-trips links and joints, and drops what names an object that is gone', () => {
+    const doc = emptyDoc();
+    doc.scene = [base('aaaaaaaa', 'Body'), base('bbbbbbbb', 'Arm')];
+    doc.robot = {
+      name: 'Rover',
+      root: 'aaaaaaaa',
+      links: [
+        { node: 'bbbbbbbb', name: 'arm_link', mass: { kind: 'measured', grams: 120 }, collision: 'box', friction: 0.5 },
+        { node: 'gone0000', mass: { kind: 'material', material: 'steel', infill: 100, shell: 1.2 }, collision: 'hull', friction: 0.8 },
+      ],
+      joints: [
+        { id: 'j1', name: 'shoulder', type: 'revolute', parent: 'aaaaaaaa', child: 'bbbbbbbb', origin: [0, 0, 20], axis: [0, 1, 0], lower: -45, upper: 90, effort: 5, velocity: 60, damping: 0.1, friction: 0.02, mimic: { joint: 'j9', multiplier: 1, offset: 0 } },
+        { id: 'j2', name: 'lost', type: 'fixed', parent: 'aaaaaaaa', child: 'gone0000', origin: [0, 0, 0], axis: [0, 0, 1], lower: 0, upper: 0, effort: 0, velocity: 0, damping: 0, friction: 0 },
+      ],
+    };
+    const text = serializeDoc(doc);
+    // The robot comes after the scene, so its name never passes for the design's in the header.
+    expect(text.indexOf('"robot"')).toBeGreaterThan(text.indexOf('"scene"'));
+    expect(readHeader(text)?.name).toBe('Untitled');
+    const back = parseDoc(text);
+    expect(back.robot?.name).toBe('Rover');
+    expect(back.robot?.root).toBe('aaaaaaaa');
+    expect(back.robot?.links).toEqual([doc.robot.links[0]]);
+    // The follower of a joint that is gone follows nothing.
+    expect(back.robot?.joints).toEqual([{ ...doc.robot.joints[0], mimic: undefined }].map(({ mimic: _m, ...j }) => j));
+    // Reading what was written gives the same text again.
+    expect(serializeDoc(parseDoc(serializeDoc(back)))).toBe(serializeDoc(back));
+  });
+
+  it('leaves a design without a robot without one', () => {
+    const doc = emptyDoc();
+    doc.scene = [base('aaaaaaaa', 'Body')];
+    expect(serializeDoc(doc)).not.toContain('"robot"');
+    expect(parseDoc(serializeDoc(doc)).robot).toBeUndefined();
+  });
+});

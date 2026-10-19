@@ -203,3 +203,21 @@ export const LinkIcon = () => (
 
 /** App mark (the same drawing as the favicon). */
 export const Logo = () => <img src="/icon.svg" width="22" height="22" alt="" />;
+/** A robot's head: Robot mode. */
+export const RobotIcon = () => (
+  <Icon>
+    <rect x="4.5" y="8" width="15" height="11" rx="2.5" />
+    <path d="M12 8V5.5" />
+    <circle cx="12" cy="4" r="1.5" />
+    <path d="M9 13h.01M15 13h.01" strokeWidth="2.6" />
+    <path d="M9.5 16.5h5" />
+  </Icon>
+);
+/** A hinge pin with its axis through it: a joint. */
+export const JointIcon = () => (
+  <Icon>
+    <circle cx="12" cy="12" r="3.5" />
+    <path d="M12 3v5.5M12 15.5V21" />
+    <path d="M5.5 16.5 9 14M18.5 7.5 15 10" />
+  </Icon>
+);

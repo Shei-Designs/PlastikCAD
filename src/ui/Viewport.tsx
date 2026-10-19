@@ -28,6 +28,11 @@ import {
   ungroupSelected,
   useEditor,
 } from '../state/store';
+import { boundsSize } from '../model/math';
+import type { Mat } from '../model/math';
+import type { Vec3 } from '../model/types';
+import { jointInDesign } from '../robot/model';
+import type { EditorState } from '../state/store';
 import { GIZMO_SIZE, Viewer } from '../viewer/Viewer';
 import type { HandlePrompt, ViewItem, ViewPreset } from '../viewer/Viewer';
 import {
@@ -279,6 +284,27 @@ function HandleInput({ prompt, onClose }: { prompt: HandlePrompt; onClose: () =>
   );
 }
 
+/** The picked joint, as a thin rod along its axis through its origin, as long as the child's box is wide. */
+function jointMarker(s: EditorState): { matrix: Mat; size: Vec3 } | null {
+  const joint = s.joint ? s.doc.robot?.joints.find((j) => j.id === s.joint) : undefined;
+  const child = joint && s.doc.scene.find((n) => n.id === joint.child);
+  if (!joint || !child) return null;
+  const { origin, axis } = jointInDesign(joint, child);
+  // A frame whose Z is the axis: pick any perpendicular for X, and Y follows.
+  const pick: Vec3 = Math.abs(axis[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
+  const x = normalize(cross(pick, axis));
+  const y = cross(axis, x);
+  const matrix: Mat = [x[0], x[1], x[2], y[0], y[1], y[2], axis[0], axis[1], axis[2], origin[0], origin[1], origin[2]];
+  const reach = Math.max(...boundsSize(geometry.bounds(child))) * 1.4 + 10;
+  return { matrix, size: [2, 2, reach] };
+}
+
+const cross = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const normalize = (v: Vec3): Vec3 => {
+  const n = Math.hypot(...v) || 1;
+  return [v[0] / n, v[1] / n, v[2] / n];
+};
+
 export function Viewport() {
   const host = useRef<HTMLDivElement>(null);
   const [prompt, setPrompt] = useState<HandlePrompt | null>(null);
@@ -286,7 +312,8 @@ export function Viewport() {
   const viewer = useRef<Viewer | null>(null);
 
   const state = useEditor((s) => s);
-  const { prefs, placing, selection, busy, aligning, editing, highlight, mating } = state;
+  const { prefs, placing, selection, busy, aligning, editing, mating } = state;
+  const highlight = state.highlight ?? jointMarker(state);
   // Another selection, or an edit from elsewhere, and the typing boxes no longer belong to anything.
   useEffect(() => {
     viewer.current?.dismissPrompt();

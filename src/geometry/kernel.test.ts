@@ -847,3 +847,36 @@ describe('the mended binding', () => {
     good.delete();
   });
 });
+
+describe('robot links', () => {
+  it('weighs a placed box: volume, centroid and inertia follow the node', async () => {
+    const { massProperties } = await import('./kernel');
+    const box = shape('box', { size: [20, 30, 40], pos: [5, 6, 20] });
+    const [p] = massProperties([box]);
+    expect(p.id).toBe(box.id);
+    expect(p.watertight).toBe(true);
+    expect(p.volume).toBeCloseTo(24000, 1);
+    expect(p.area).toBeCloseTo(2 * (600 + 1200 + 800), 1);
+    expect(p.centroid.map((v) => +v.toFixed(4))).toEqual([5, 6, 20]);
+    expect(p.unit[0]).toBeCloseTo((900 + 1600) / 12, 3);
+  });
+
+  it('gives each link its visual parts, the collision shape asked for and its bounds', async () => {
+    const { robotGeometry } = await import('./kernel');
+    const body = shape('box', { size: [20, 20, 10], pos: [0, 0, 5] });
+    const wheel = shape('cylinder', { size: [10, 10, 4], pos: [15, 0, 5], rot: [90, 0, 0] });
+    const [b, w] = robotGeometry([body, wheel], { [body.id]: 'box', [wheel.id]: 'hull' }, false);
+    expect(b.collision).toBeNull();
+    expect(b.bounds.min.map((v) => +v.toFixed(4))).toEqual([-10, -10, 0]);
+    expect(b.visual).toHaveLength(1);
+    expect(b.visual[0].color).toBe(body.color);
+    // A convex cylinder's hull is the cylinder, give or take a facet.
+    expect(w.collision).not.toBeNull();
+    expect(w.collision!.triangles.length / 3).toBeGreaterThan(20);
+    expect(w.props.volume).toBeCloseTo(Math.PI * 25 * 4, -1);
+    // Placed: the wheel's centroid is where the node is.
+    expect(w.props.centroid.map((v) => +v.toFixed(3))).toEqual([15, 0, 5]);
+    const [m] = robotGeometry([body], { [body.id]: 'mesh' }, false);
+    expect(m.collision!.triangles.length).toBe(36);
+  });
+});
