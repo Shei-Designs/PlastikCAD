@@ -6,9 +6,9 @@ import { sanitizeParams } from './generators/types';
 import type { BuildResult } from './generators/types';
 import { QUALITY } from './types';
 
-type Figures = Required<Pick<BuildResult, 'info' | 'warnings' | 'notes'>>;
+type Figures = Pick<BuildResult, 'info' | 'warnings'>;
 
-const NONE: Figures = { info: [], warnings: [], notes: [] };
+const NONE: Figures = { info: [], warnings: [] };
 
 // Nodes are immutable: an edit makes a new object, so the node itself is the cache key.
 const cache = new WeakMap<PartNode, Figures>();
@@ -20,7 +20,7 @@ export function partFigures(node: PartNode): Figures {
     try {
       const def = getGenerator(node.part);
       const built = def.build(sanitizeParams(def, node.params), QUALITY.draft);
-      figures = { info: built.info, warnings: built.warnings, notes: built.notes ?? [] };
+      figures = { info: built.info, warnings: built.warnings };
     } catch {
       figures = NONE;
     }

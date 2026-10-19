@@ -93,8 +93,8 @@ describe('motor mounts', () => {
     const plate = made(stepper, { motor: '28byj48', form: 'plate', margin: 6 });
     expect(extent(plate.stats, 0)).toBeCloseTo(47, 1);
     // A 130 has no screw holes: the plate carries only the bore.
-    const mabuchi = made(dcMotor, { motor: '130', form: 'plate' });
-    expect(mabuchi.notes?.some((w) => w.includes('no screw holes'))).toBe(true);
+    const motorOptions = (dcMotor.groups[0].params[0] as { options: { value: string; note?: string }[] }).options;
+    expect(motorOptions.find((o) => o.value === '130')?.note).toMatch(/No screw holes/);
     const b = made(dcMotor, { motor: '130', form: 'bracket' });
     expect(b.warnings.some((w) => w.includes('bracket'))).toBe(true);
   });

@@ -6,7 +6,6 @@ import { CATEGORIES, GENERATORS, getGenerator } from '../parts/generators';
 import { defaultParams } from '../parts/generators/types';
 import type { BooleanParam, ParamDef, Params, SelectParam } from '../parts/generators/types';
 import type { PartNode } from '../model/types';
-import { partFigures } from '../parts/figures';
 import { mateKinds } from '../parts/mates';
 import { editPart, startMate, useEditor } from '../state/store';
 import { SliderField } from './Fields';
@@ -19,6 +18,7 @@ import type { Section } from './Sections';
 function SelectField({ def, value, disabled, onChange }: { def: SelectParam; value: string; disabled?: boolean; onChange: (v: string) => void }) {
   const id = useId();
   const compact = def.options.length <= 3 && def.options.every((o) => o.label.length <= 14);
+  const note = def.options.find((o) => o.value === value)?.note;
   return (
     <div className="field">
       <label htmlFor={compact ? undefined : id} id={`${id}-label`}>
@@ -42,6 +42,7 @@ function SelectField({ def, value, disabled, onChange }: { def: SelectParam; val
           ))}
         </select>
       )}
+      {note && <p className="field-note option-note">{note}</p>}
     </div>
   );
 }
@@ -79,7 +80,6 @@ export function PartFields({ node }: { node: PartNode }) {
   const groups = def.groups.filter((g) => g.params.some((d) => !d.visible || d.visible(node.params)));
   const change = (key: string, v: Params[string]) => void editPart(node.id, { params: { [key]: v } });
   const canMate = mateKinds(def.id).length > 0;
-  const notes = partFigures(node).notes;
   const mating = useEditor((s) => s.mating !== null);
   const sections: Section[] = groups.map((g) => ({
     title: g.title,
@@ -126,11 +126,6 @@ export function PartFields({ node }: { node: PartNode }) {
       )}
 
       <Sections legend="Settings" extra={reset} reset={`${node.id}:${def.id}`} sections={sections} />
-      {notes.map((n) => (
-        <p key={n} className="field-note part-note">
-          {n}
-        </p>
-      ))}
     </>
   );
 }

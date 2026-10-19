@@ -1011,10 +1011,10 @@ ul {
   color: var(--warn-text);
 }
 
-/* What a part has to say about the chosen model, under its settings. */
-.part-note {
-  margin-top: 12px;
-  line-height: 1.4;
+/* A line or two about the model chosen in a dropdown, right under it. */
+.option-note {
+  margin-top: 5px;
+  line-height: 1.35;
 }
 
 /* A part's warnings float over the foot of the inspector like toasts, so the settings keep their place. */
@@ -2464,13 +2464,6 @@ kbd {
 .section-tabs button.on {
   color: var(--text);
   border-bottom-color: var(--accent);
-}
-
-/* With tabs under it the legend is only a title: the tab row draws the rule. */
-.group.tabbed legend {
-  margin-bottom: 2px;
-  padding-bottom: 0;
-  border-bottom: 0;
 }
 
 /* ---------- projects browser ---------- */

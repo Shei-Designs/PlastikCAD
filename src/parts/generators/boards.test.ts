@@ -125,7 +125,7 @@ describe('dev board mounts', () => {
     expect(pocket.stats.volume).toBeGreaterThan((49.26 * 28.94 + 6.54 * 19) * 4 * 0.99);
     // The stops across the antenna end keep out of the module's way.
     const stops = made(esp32, { board: 'esp32-devkitc', form: 'corners', stopGap: 0.3, stopThickness: 2, stopLength: 8, stopHeight: 5 });
-    expect(stops.notes?.some((w) => w.includes('antenna end'))).toBe(true);
+    expect(stops.info.some((i) => i.label.includes('antenna end'))).toBe(true);
     expect(extent(stops.stats, 0)).toBeCloseTo(48.26 + 2 * 0.3 + 2 * 2, 6);
     const endLeg = (27.94 - 18) / 2 - 0.3 - 0.5;
     const cornerFill = 4 * (1 - Math.PI / 4) * 1.3 * 1.3;

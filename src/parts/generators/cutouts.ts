@@ -115,9 +115,9 @@ function stepped(main: Opening, wings: { w: number; h: number }, grow: number): 
 // panel cut-outs, Amass's XT60E sheet.
 export const PANEL_CONNECTORS: PanelConnector[] = [
   { id: 'neutrik-d', label: 'Neutrik D-series', cutout: round(24), holes: { d: 3.2, across: 19, up: 24, diagonal: true } },
-  { id: 'iec-c14', label: 'IEC C14 inlet, screw flange', cutout: { w: 28, h: 20, r: 3 }, holes: { d: 3.5, across: 40 }, note: 'Fits the Schurter 6100 and Qualtek 703W inlets, in a panel up to 8 mm thick.' },
+  { id: 'iec-c14', label: 'IEC C14 inlet, screw flange', cutout: { w: 28, h: 20, r: 3 }, holes: { d: 3.5, across: 40 }, note: 'Fits Schurter 6100 and Qualtek 703W inlets; panels up to 8 mm.' },
   { id: 'iec-c13', label: 'IEC C13 outlet, screw flange', cutout: { w: 32.5, h: 24.8, r: 4 }, holes: { d: 3.5, across: 40 } },
-  { id: 'iec-c8', label: 'IEC C8 inlet, snap-in', cutout: { w: 19.5, h: 12.5, r: 0 }, wings: { w: 24.5, h: 7.5 }, note: 'Snaps into a panel 0.6 to 1.5 mm thick (Qualtek 771W); the wider notch below the opening is for its catches.' },
+  { id: 'iec-c8', label: 'IEC C8 inlet, snap-in', cutout: { w: 19.5, h: 12.5, r: 0 }, wings: { w: 24.5, h: 7.5 }, note: 'Snap-in (Qualtek 771W) for 0.6 to 1.5 mm panels; the notch takes its catches.' },
   { id: 'db9', label: 'D-sub 9 (DE-9)', cutout: { w: 20.7, h: 11.68, r: 2.4, bottom: 15.9 }, holes: { d: 3.1, across: 24.99 } },
   { id: 'db15', label: 'D-sub 15 (DA-15)', cutout: { w: 29, h: 11.68, r: 2.4, bottom: 24.2 }, holes: { d: 3.1, across: 33.32 } },
   { id: 'db25', label: 'D-sub 25 (DB-25)', cutout: { w: 42.8, h: 11.68, r: 2.4, bottom: 38 }, holes: { d: 3.1, across: 47.04 } },
@@ -142,7 +142,7 @@ export const panelConnector: GeneratorDef = {
     {
       title: 'Connector',
       params: [
-        { key: 'connector', label: 'Connector', type: 'select', default: 'neutrik-d', options: PANEL_CONNECTORS.map((c) => ({ value: c.id, label: c.label })) },
+        { key: 'connector', label: 'Connector', type: 'select', default: 'neutrik-d', options: PANEL_CONNECTORS.map((c) => ({ value: c.id, label: c.label, note: c.note })) },
         clearanceParam,
         { key: 'holes', label: 'Screw holes', type: 'boolean', default: true, visible: (p) => Boolean(PANEL_CONNECTORS.find((c) => c.id === str(p, 'connector'))?.holes) },
       ],
@@ -159,7 +159,7 @@ export const panelConnector: GeneratorDef = {
       { label: 'Nominal', value: sizeText(c.cutout.w, c.cutout.h) },
       ...(c.holes ? [{ label: 'Holes', value: `${holeShapes(c.holes, 0, q).at.length} × Ø${c.holes.d} mm, ${[c.holes.across && `${c.holes.across} mm across`, c.holes.up && `${c.holes.up} mm up`].filter(Boolean).join(c.holes.diagonal ? ' and ' : ', ')}${c.holes.diagonal ? ', at opposite corners' : ''}` }] : []),
     ];
-    return { solid: prism(shapes), outline: shapes, info, warnings, notes: c.note ? [c.note] : [] };
+    return { solid: prism(shapes), outline: shapes, info, warnings };
   },
 };
 

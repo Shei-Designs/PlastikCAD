@@ -25,7 +25,8 @@ export interface NumberParam extends BaseParam {
 export interface SelectParam extends BaseParam {
   type: 'select';
   default: string;
-  options: { value: string; label: string }[];
+  /** `note`: a line or two about that choice, shown under the control while it is chosen. */
+  options: { value: string; label: string; note?: string }[];
 }
 
 export interface BooleanParam extends BaseParam {
@@ -53,8 +54,6 @@ export interface BuildResult {
   info: InfoItem[];
   /** Things that went wrong or were overridden; shown as warnings. */
   warnings: string[];
-  /** Things worth knowing about the chosen model (what fits it, what to check); shown quietly. */
-  notes?: string[];
 }
 
 export type Category = 'gears' | 'pulleys' | 'screws' | 'frames' | 'ducts' | 'boards' | 'fans' | 'cutouts' | 'motors';
