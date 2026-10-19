@@ -1,7 +1,8 @@
-// Google Drive as a remote for the sync engine: a folder of .bashcad files,
+// Google Drive as a remote for the sync engine: a folder of .plastikcad files,
 // each tagged with its project id and revision in the file's app properties.
 // With the drive.file scope the app sees only files it created, which is all
 // it needs, and nothing else in the Drive.
+import { APP_NAME, FILE_EXTENSION, FILE_FORMAT, isDesignName } from '../app';
 import type { Remote, RemoteFile } from './engine';
 
 const API = 'https://www.googleapis.com/drive/v3';
@@ -47,7 +48,7 @@ export class DriveRemote implements Remote {
 
   constructor(
     private readonly fetch: Fetch,
-    readonly folderName = 'BashCAD',
+    readonly folderName = APP_NAME,
   ) {}
 
   /** The app's folder at the top of the Drive, made on first use. */
@@ -76,7 +77,7 @@ export class DriveRemote implements Remote {
       const params = new URLSearchParams({ q, fields: `nextPageToken,files(${FILE_FIELDS})`, pageSize: '1000' });
       if (pageToken) params.set('pageToken', pageToken);
       const page = await body<{ files: DriveFile[]; nextPageToken?: string }>(await this.fetch(`${API}/files?${params}`), 'list the projects');
-      for (const file of page.files) if (/\.bashcad$/i.test(file.name)) out.push(toRemote(file));
+      for (const file of page.files) if (isDesignName(file.name)) out.push(toRemote(file));
       pageToken = page.nextPageToken;
     } while (pageToken);
     return out;
@@ -89,14 +90,14 @@ export class DriveRemote implements Remote {
   }
 
   async upload(existing: RemoteFile | null, name: string, text: string, meta: { projectId: string; revision: string | null }): Promise<RemoteFile> {
-    const fileName = /\.bashcad$/i.test(name) ? name : `${name}.bashcad`;
+    const fileName = isDesignName(name) ? name : `${name}.${FILE_EXTENSION}`;
     const metadata: Record<string, unknown> = {
       name: fileName,
       mimeType: 'application/json',
-      appProperties: { app: 'bashcad', projectId: meta.projectId, revision: meta.revision ?? '' },
+      appProperties: { app: FILE_FORMAT, projectId: meta.projectId, revision: meta.revision ?? '' },
     };
     if (!existing) metadata.parents = [await this.folder()];
-    const boundary = `bashcad-${Math.random().toString(36).slice(2)}`;
+    const boundary = `${FILE_FORMAT}-${Math.random().toString(36).slice(2)}`;
     const parts = [
       `--${boundary}\r\ncontent-type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n`,
       `--${boundary}\r\ncontent-type: application/json\r\n\r\n${text}\r\n`,

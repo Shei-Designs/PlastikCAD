@@ -2,7 +2,7 @@
 // project: IndexedDB, which the desktop webview and browsers alike have.
 import type { SyncRecord, SyncState } from './engine';
 
-const DB_NAME = 'bashcad-sync';
+const DB_NAME = 'plastikcad-sync';
 const STORE = 'records';
 
 function openDb(): Promise<IDBDatabase> {

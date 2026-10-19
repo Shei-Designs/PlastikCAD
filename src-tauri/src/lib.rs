@@ -367,6 +367,29 @@ struct ProjectsHome {
     fixed: bool,
 }
 
+/// Renames the projects folder of the app's old name to its new one, and the
+/// `.bashcad` files in it to `.plastikcad`, when the new folder does not exist
+/// yet. Anything that cannot be renamed is left where it is: the old names
+/// still open.
+#[cfg(not(mobile))]
+fn adopt_old_folder(old: &Path, new: &Path) {
+    if new.exists() || !old.is_dir() || fs::rename(old, new).is_err() {
+        return;
+    }
+    let Ok(entries) = fs::read_dir(new) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let is_old = path.extension().and_then(|ext| ext.to_str()).is_some_and(|ext| ext.eq_ignore_ascii_case(OLD_DESIGN_EXTENSION));
+        if !is_old || !path.is_file() {
+            continue;
+        }
+        let renamed = path.with_extension(DESIGN_EXTENSION);
+        if !renamed.exists() {
+            let _ = fs::rename(&path, &renamed);
+        }
+    }
+}
+
 #[tauri::command]
 fn default_projects_dir(app: AppHandle) -> Result<ProjectsHome, String> {
     let paths = app.path();
@@ -376,7 +399,11 @@ fn default_projects_dir(app: AppHandle) -> Result<ProjectsHome, String> {
     let (dir, fixed) = (
         paths
             .document_dir()
-            .map(|dir| dir.join("BashCAD"))
+            .map(|dir| {
+                // Projects kept by the app under its old name move over, once.
+                adopt_old_folder(&dir.join("BashCAD"), &dir.join("PlastikCAD"));
+                dir.join("PlastikCAD")
+            })
             .or_else(|_| paths.app_data_dir().map(|dir| dir.join("projects"))),
         false,
     );
@@ -489,7 +516,7 @@ fn answer_browser(mut stream: TcpStream) -> io::Result<Option<String>> {
     let query = target.split_once('?').map(|(_, q)| q.to_owned());
     let ours = query.as_deref().is_some_and(|q| q.split('&').any(|p| p.starts_with("code=") || p.starts_with("error=")));
     let (status, body) = if ours {
-        ("200 OK", "<!doctype html><meta charset=utf-8><title>BashCAD</title><body style=\"font-family:sans-serif;padding:2em\"><h2>Signed in</h2><p>You can close this page and go back to BashCAD.</p>")
+        ("200 OK", "<!doctype html><meta charset=utf-8><title>PlastikCAD</title><body style=\"font-family:sans-serif;padding:2em\"><h2>Signed in</h2><p>You can close this page and go back to PlastikCAD.</p>")
     } else {
         ("404 Not Found", "")
     };
@@ -498,13 +525,17 @@ fn answer_browser(mut stream: TcpStream) -> io::Result<Option<String>> {
     Ok(if ours { query } else { None })
 }
 
-/// Only a design may be opened from the command line: a `.bashcad` file,
-/// whatever its case. Anything else on the command line (a flag, a stray
+/// The extension of a design file, and the one from before the app was PlastikCAD.
+const DESIGN_EXTENSION: &str = "plastikcad";
+const OLD_DESIGN_EXTENSION: &str = "bashcad";
+
+/// Only a design may be opened from the command line: a `.plastikcad` (or an
+/// old `.bashcad`) file, whatever its case. Anything else on the command line (a flag, a stray
 /// document) is ignored.
 fn is_design_path(path: &Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("bashcad"))
+        .is_some_and(|ext| ext.eq_ignore_ascii_case(DESIGN_EXTENSION) || ext.eq_ignore_ascii_case(OLD_DESIGN_EXTENSION))
 }
 
 /// The first argument naming an existing design, made absolute.
@@ -516,7 +547,7 @@ fn startup_file_from(args: impl Iterator<Item = OsString>) -> Option<String> {
 }
 
 /// The design the app was launched with: the operating system passes the path
-/// as an argument when a `.bashcad` file is double-clicked.
+/// as an argument when a `.plastikcad` file is double-clicked.
 #[tauri::command]
 fn startup_file() -> Option<String> {
     startup_file_from(std::env::args_os().skip(1))
@@ -569,7 +600,7 @@ mod tests {
     impl TempDir {
         fn new() -> Self {
             let n = DIRS.fetch_add(1, Ordering::Relaxed);
-            let dir = std::env::temp_dir().join(format!("bashcad-test-{}-{n}", std::process::id()));
+            let dir = std::env::temp_dir().join(format!("plastikcad-test-{}-{n}", std::process::id()));
             fs::create_dir_all(&dir).unwrap();
             TempDir(dir)
         }
@@ -597,36 +628,36 @@ mod tests {
     #[test]
     fn write_atomic_creates_and_overwrites() {
         let dir = TempDir::new();
-        let file = dir.path("design.bashcad");
+        let file = dir.path("design.plastikcad");
         write_atomic(&file, b"first").unwrap();
         assert_eq!(fs::read(&file).unwrap(), b"first");
         write_atomic(&file, b"second, longer").unwrap();
         assert_eq!(fs::read(&file).unwrap(), b"second, longer");
-        assert_eq!(dir.names(), vec!["design.bashcad"]);
+        assert_eq!(dir.names(), vec!["design.plastikcad"]);
     }
 
     #[test]
     fn write_atomic_leaves_no_temporary_files() {
         let dir = TempDir::new();
-        let file = dir.path("design.bashcad");
+        let file = dir.path("design.plastikcad");
         for i in 0..5u8 {
             write_atomic(&file, &[i; 16]).unwrap();
         }
         assert_eq!(fs::read(&file).unwrap(), [4u8; 16]);
-        assert_eq!(dir.names(), vec!["design.bashcad"]);
+        assert_eq!(dir.names(), vec!["design.plastikcad"]);
     }
 
     #[test]
     fn temp_siblings_never_collide() {
         // Two writes in flight at once (a version save and a Ctrl+S) must not
         // share a temporary name, or the second rename fails.
-        let target = Path::new("/some/where/design.bashcad");
+        let target = Path::new("/some/where/design.plastikcad");
         let a = temp_sibling(target).unwrap();
         let b = temp_sibling(target).unwrap();
         assert_ne!(a, b);
         assert_eq!(a.parent(), target.parent());
         let name = a.file_name().unwrap().to_str().unwrap();
-        assert!(name.starts_with(".design.bashcad.") && name.ends_with(".tmp"), "{name}");
+        assert!(name.starts_with(".design.plastikcad.") && name.ends_with(".tmp"), "{name}");
     }
 
     #[test]
@@ -634,9 +665,9 @@ mod tests {
         // A left-over temporary of the same name is left alone and reported,
         // never truncated and never renamed over the design.
         let dir = TempDir::new();
-        let file = dir.path("design.bashcad");
+        let file = dir.path("design.plastikcad");
         fs::write(&file, b"kept").unwrap();
-        let stale = dir.path(".design.bashcad.stale.tmp");
+        let stale = dir.path(".design.plastikcad.stale.tmp");
         fs::write(&stale, b"half written").unwrap();
         let opened = fs::OpenOptions::new().write(true).create_new(true).open(&stale);
         assert_eq!(opened.err().map(|e| e.kind()), Some(io::ErrorKind::AlreadyExists));
@@ -644,13 +675,13 @@ mod tests {
         write_atomic(&file, b"new").unwrap();
         assert_eq!(fs::read(&file).unwrap(), b"new");
         fs::remove_file(&stale).unwrap();
-        assert_eq!(dir.names(), vec!["design.bashcad"]);
+        assert_eq!(dir.names(), vec!["design.plastikcad"]);
     }
 
     #[test]
     fn write_atomic_concurrent_writes_to_one_target() {
         let dir = TempDir::new();
-        let file = dir.path("design.bashcad");
+        let file = dir.path("design.plastikcad");
         let handles: Vec<_> = (0..8u8)
             .map(|i| {
                 let file = file.clone();
@@ -663,15 +694,15 @@ mod tests {
         let bytes = fs::read(&file).unwrap();
         assert_eq!(bytes.len(), 4096);
         assert!(bytes.iter().all(|b| *b == bytes[0]));
-        assert_eq!(dir.names(), vec!["design.bashcad"]);
+        assert_eq!(dir.names(), vec!["design.plastikcad"]);
     }
 
     #[test]
     fn write_atomic_follows_symlinks() {
         let dir = TempDir::new();
-        let real = dir.path("real.bashcad");
+        let real = dir.path("real.plastikcad");
         fs::write(&real, b"old").unwrap();
-        let link = dir.path("link.bashcad");
+        let link = dir.path("link.plastikcad");
         #[cfg(unix)]
         {
             std::os::unix::fs::symlink(&real, &link).unwrap();
@@ -689,17 +720,17 @@ mod tests {
     #[test]
     fn designs_in_lists_designs_only() {
         let dir = TempDir::new();
-        fs::write(dir.path("b.bashcad"), b"{}").unwrap();
-        fs::write(dir.path("A.BashCAD"), b"{}").unwrap();
+        fs::write(dir.path("b.plastikcad"), b"{}").unwrap();
+        fs::write(dir.path("A.PlastikCAD"), b"{}").unwrap();
         fs::write(dir.path("notes.txt"), b"").unwrap();
-        fs::write(dir.path(".a.bashcad.123.0.tmp"), b"").unwrap();
-        fs::create_dir(dir.path("folder.bashcad")).unwrap();
+        fs::write(dir.path(".a.plastikcad.123.0.tmp"), b"").unwrap();
+        fs::create_dir(dir.path("folder.plastikcad")).unwrap();
         let listed = designs_in(&dir.0).unwrap();
         let names: Vec<&str> = listed.iter().map(|e| e.name.as_str()).collect();
-        assert_eq!(names, vec!["A.BashCAD", "b.bashcad"]);
+        assert_eq!(names, vec!["A.PlastikCAD", "b.plastikcad"]);
         assert_eq!(listed[1].size, 2);
         assert!(listed[1].modified > 0.0);
-        assert_eq!(Path::new(&listed[1].path), dir.path("b.bashcad"));
+        assert_eq!(Path::new(&listed[1].path), dir.path("b.plastikcad"));
     }
 
     #[test]
@@ -713,17 +744,17 @@ mod tests {
     #[test]
     fn move_path_renames_but_never_overwrites() {
         let dir = TempDir::new();
-        let from = dir.path("a.bashcad");
-        let to = dir.path("b.bashcad");
+        let from = dir.path("a.plastikcad");
+        let to = dir.path("b.plastikcad");
         fs::write(&from, b"a").unwrap();
         move_path(&from, &to).unwrap();
-        assert_eq!(dir.names(), vec!["b.bashcad"]);
+        assert_eq!(dir.names(), vec!["b.plastikcad"]);
         fs::write(&from, b"again").unwrap();
         let err = move_path(&from, &to).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::AlreadyExists);
         assert_eq!(fs::read(&to).unwrap(), b"a");
         // Into a folder that does not exist yet.
-        let deep = dir.path("sub").join("c.bashcad");
+        let deep = dir.path("sub").join("c.plastikcad");
         move_path(&from, &deep).unwrap();
         assert_eq!(fs::read(&deep).unwrap(), b"again");
     }
@@ -749,7 +780,7 @@ mod tests {
         assert_eq!(query, "state=abc&code=4%2Fxyz");
         let (stray, ours) = browser.join().unwrap();
         assert!(stray.starts_with("HTTP/1.1 404"));
-        assert!(ours.starts_with("HTTP/1.1 200") && ours.contains("go back to BashCAD"));
+        assert!(ours.starts_with("HTTP/1.1 200") && ours.contains("go back to PlastikCAD"));
     }
 
     #[test]
@@ -771,10 +802,10 @@ mod tests {
     #[test]
     fn startup_file_accepts_only_designs() {
         let dir = TempDir::new();
-        let design = dir.path("thing.bashcad");
-        let upper = dir.path("THING.BASHCAD");
+        let design = dir.path("thing.plastikcad");
+        let upper = dir.path("THING.PLASTIKCAD");
         let other = dir.path("notes.txt");
-        let missing = dir.path("gone.bashcad");
+        let missing = dir.path("gone.plastikcad");
         for file in [&design, &upper, &other] {
             fs::write(file, b"").unwrap();
         }
@@ -787,7 +818,32 @@ mod tests {
         assert_eq!(startup_file_from(args(&[Path::new("--flag"), &other, &design])), Some(design.to_str().unwrap().to_owned()));
         assert_eq!(startup_file_from(args(&[Path::new("/etc/passwd")])), None);
         assert_eq!(startup_file_from(std::iter::empty()), None);
-        assert!(!is_design_path(Path::new("design.bashcad.txt")));
-        assert!(is_design_path(Path::new("Design.BashCad")));
+        assert!(!is_design_path(Path::new("design.plastikcad.txt")));
+        assert!(is_design_path(Path::new("Design.PlastikCad")));
+        assert!(is_design_path(Path::new("Old.BashCAD")));
+    }
+
+    #[test]
+    fn old_projects_folder_is_adopted_once() {
+        let dir = TempDir::new();
+        let old = dir.path("BashCAD");
+        let new = dir.path("PlastikCAD");
+        fs::create_dir(&old).unwrap();
+        fs::write(old.join("Box.bashcad"), b"{}").unwrap();
+        fs::write(old.join("Lid.plastikcad"), b"{}").unwrap();
+        fs::write(old.join("notes.txt"), b"").unwrap();
+        fs::create_dir(old.join("sub.bashcad")).unwrap();
+        adopt_old_folder(&old, &new);
+        assert!(!old.exists());
+        let mut names: Vec<String> = fs::read_dir(&new).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+        names.sort();
+        assert_eq!(names, vec!["Box.plastikcad", "Lid.plastikcad", "notes.txt", "sub.bashcad"]);
+
+        // With the new folder in place the old one is left alone.
+        fs::create_dir(&old).unwrap();
+        fs::write(old.join("Later.bashcad"), b"{}").unwrap();
+        adopt_old_folder(&old, &new);
+        assert!(old.join("Later.bashcad").is_file());
+        assert!(!new.join("Later.plastikcad").exists());
     }
 }

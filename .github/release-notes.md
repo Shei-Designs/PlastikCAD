@@ -1,4 +1,4 @@
-BashCAD is a desktop app for fast solid modelling for 3D printing: combine simple shapes into a part and export it for your slicer.
+PlastikCAD is a desktop app for fast solid modelling for 3D printing: combine simple shapes into a part and export it for your slicer.
 
 ## Download
 
@@ -16,5 +16,5 @@ BashCAD is a desktop app for fast solid modelling for 3D printing: combine simpl
 These builds are not code-signed yet, so the operating system will ask before running them.
 
 - **Windows:** SmartScreen shows "Windows protected your PC". Choose **More info**, then **Run anyway**.
-- **macOS:** open the app once, dismiss the warning, then go to **System Settings → Privacy & Security** and choose **Open Anyway**. If macOS reports that the app is damaged, run `xattr -cr /Applications/BashCAD.app` in Terminal and open it again.
+- **macOS:** open the app once, dismiss the warning, then go to **System Settings → Privacy & Security** and choose **Open Anyway**. If macOS reports that the app is damaged, run `xattr -cr /Applications/PlastikCAD.app` in Terminal and open it again.
 - **Linux:** no extra steps.

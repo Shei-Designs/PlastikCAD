@@ -1,1 +1,1 @@
--keep class com.andrewoshei.bashcad.input.** { *; }
+-keep class com.sheidesigns.plastikcad.input.** { *; }

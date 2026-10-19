@@ -3,7 +3,7 @@
 // from the system (no permissions needed) and reported again the moment they
 // change, so the page can switch between typing in place and the entry sheet
 // without guessing. Also writes the documents the system pickers hand out.
-package com.andrewoshei.bashcad.device
+package com.sheidesigns.plastikcad.device
 
 import android.app.Activity
 import android.content.ClipData
@@ -71,7 +71,7 @@ internal class ShareArgs {
 
 @InvokeArg
 internal class FindDocumentArgs {
-  /** A path in the shared storage, such as `/storage/emulated/0/Download/BashCAD/box/box.mtl`. */
+  /** A path in the shared storage, such as `/storage/emulated/0/Download/PlastikCAD/box/box.mtl`. */
   lateinit var path: String
 }
 
@@ -328,7 +328,7 @@ class DevicePlugin(activity: Activity) : Plugin(activity), InputManager.InputDev
   }
 
   /**
-   * Writes an export into the app's own folder in Downloads (`Download/BashCAD/<folder>/`), where
+   * Writes an export into the app's own folder in Downloads (`Download/PlastikCAD/<folder>/`), where
    * the Files app and other apps can see it, through the media store, which needs no permission
    * for the app's own files. A file of the same name there is replaced. Resolves with the file's
    * content URI (for sharing) and its path as the Files app shows it.
@@ -339,7 +339,7 @@ class DevicePlugin(activity: Activity) : Plugin(activity), InputManager.InputDev
     val source = File(args.source)
     try {
       if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) throw IllegalStateException("Exports to Downloads need Android 10 or later")
-      val relative = "Download/BashCAD" + (if (args.folder.isEmpty()) "" else "/" + args.folder) + "/"
+      val relative = "Download/PlastikCAD" + (if (args.folder.isEmpty()) "" else "/" + args.folder) + "/"
       val resolver = host.contentResolver
       val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
       // The media store would give a second file a numbered name; the old one goes first.

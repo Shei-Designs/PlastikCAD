@@ -1,5 +1,5 @@
 // Ported from Gearwright (src/geometry/evaluate.ts). Evaluates a Solid
-// description with the Manifold kernel; `buildSolid` is what BashCAD's own
+// description with the Manifold kernel; `buildSolid` is what PlastikCAD's own
 // kernel calls, the rest serves the generator tests.
 import Module from 'manifold-3d';
 import type { Manifold, ManifoldToplevel } from 'manifold-3d';

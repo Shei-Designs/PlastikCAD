@@ -1,7 +1,7 @@
 [package]
 name = "tauri-plugin-device"
 version = "0.1.0"
-description = "What BashCAD runs on: the keyboard and keypad it is driven with, and the documents Android hands it"
+description = "What PlastikCAD runs on: the keyboard and keypad it is driven with, and the documents Android hands it"
 authors = ["Andrew O'Shei"]
 license = "GPL-3.0-or-later"
 edition = "2021"

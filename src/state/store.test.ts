@@ -331,7 +331,7 @@ describe('editing inside a group', () => {
     store.nudgeSelected([5, 0, 0]);
     expect(await store.saveCopy()).toBe(true);
     expect(saved.length).toBe(1);
-    expect(saved[0].name).toBe('Untitled.bashcad');
+    expect(saved[0].name).toBe('Untitled.plastikcad');
     const file = parseDoc(new TextDecoder().decode(saved[0].bytes));
     expect(file.scene.length).toBe(1);
     const written = file.scene[0] as GroupNode;
@@ -471,7 +471,7 @@ describe('projects', () => {
     store.addShape('box');
     await store.saveProject();
     const text = await kept.read('mem:1');
-    const file: PickedFile = { name: 'shared.bashcad', path: '/elsewhere/shared.bashcad', bytes: new TextEncoder().encode(text) };
+    const file: PickedFile = { name: 'shared.plastikcad', path: '/elsewhere/shared.plastikcad', bytes: new TextEncoder().encode(text) };
     await store.receiveFiles([file]);
     expect(kept.records.size).toBe(2);
     expect(store.getState().projectKey).toBe('mem:2');
@@ -485,6 +485,16 @@ describe('projects', () => {
     expect(deleted).toEqual([]);
   });
 
+  it('opens a design file by its old extension too', async () => {
+    store.addShape('box');
+    await store.saveProject();
+    const text = (await kept.read('mem:1')).replace('"format": "plastikcad"', '"format": "bashcad"');
+    await store.receiveFiles([{ name: 'Old.bashcad', path: '/elsewhere/Old.bashcad', bytes: new TextEncoder().encode(text) }]);
+    expect(store.getState().projectKey).toBe('mem:2');
+    expect(store.getState().doc.name).toBe('Old');
+    told.pop();
+  });
+
   it('offers to delete the file a project was brought in from, where it can', async () => {
     store.addShape('box');
     await store.saveProject();
@@ -492,14 +502,14 @@ describe('projects', () => {
     deletable = true;
     choose = (actions) => actions[actions.length - 1];
     try {
-      await store.receiveFiles([{ name: 'shared.bashcad', path: '/elsewhere/shared.bashcad', bytes: new TextEncoder().encode(text) }]);
+      await store.receiveFiles([{ name: 'shared.plastikcad', path: '/elsewhere/shared.plastikcad', bytes: new TextEncoder().encode(text) }]);
     } finally {
       deletable = false;
       choose = (actions) => actions[0];
     }
     expect(told.pop()?.actions).toEqual(['Keep the file', 'Delete the file']);
-    expect(deleted).toEqual(['/elsewhere/shared.bashcad']);
-    expect(store.getState().notice?.text).toMatch(/Deleted shared.bashcad/);
+    expect(deleted).toEqual(['/elsewhere/shared.plastikcad']);
+    expect(store.getState().notice?.text).toMatch(/Deleted shared.plastikcad/);
     deleted.length = 0;
   });
 

@@ -161,7 +161,7 @@ export async function synchronize(local: ProjectStore, remote: Remote, state: Sy
         } else {
           await remote.remove(file);
           await state.remove(projectId);
-          report.deletedRemotely.push(file.name.replace(/\.bashcad$/i, ''));
+          report.deletedRemotely.push(file.name.replace(/\.(plastikcad|bashcad)$/i, ''));
         }
       } else if (!info && !file && known) {
         await state.remove(projectId);

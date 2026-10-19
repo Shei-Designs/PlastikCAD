@@ -1,5 +1,5 @@
 <h1 align="center">
-  <img src="docs/banner.svg" alt="BashCAD" width="100%">
+  <img src="docs/banner.svg" alt="PlastikCAD: fast solid modelling for 3D printing" width="100%">
 </h1>
 
 Fast solid modeling for 3D printing: a desktop app for bashing out a part from
@@ -8,10 +8,13 @@ Drop boxes, cylinders and wedges on the plate, add a gear, a pulley or a
 threaded rod made to your numbers, turn some of it into holes, group, and
 export a file for your slicer.
 
-Runs locally on Linux, Windows and macOS; nothing leaves your machine. Free
-software under the GPL-3.0.
+Runs locally on Linux, Windows, macOS and Android; nothing leaves your machine
+unless you link a Google Drive. Free software under the GPL-3.0.
 
-BashCAD supersedes [Gearwright](https://github.com/AOShei/gearwright): every
+PlastikCAD is a [Shei Designs](https://sheidesigns.com) project, designed and
+built by [Andrew O'Shei](https://andrewoshei.com).
+
+PlastikCAD supersedes [Gearwright](https://github.com/AOShei/gearwright): every
 part type and parameter it had is in here, as objects you can combine with
 everything else.
 
@@ -141,16 +144,18 @@ Designs are projects, and a project is saved as you work: a second after the
 last change, and when the window is hidden or closed. There is no Save. The
 dot by the project name shows while a change is still being written.
 
-On desktop, projects are `.bashcad` files in a projects folder, `BashCAD` in
+On desktop, projects are `.plastikcad` files in a projects folder, `PlastikCAD` in
 your Documents folder unless you pick another in the projects browser (Ctrl+O).
+(The app used to be called BashCAD: a `BashCAD` folder from then is renamed on
+the first start, its `.bashcad` files with it, and a `.bashcad` file still opens.)
 The browser lists every project with a thumbnail, newest first, to open,
 rename, duplicate or delete them; renaming a project renames its file. On
 Android, projects live in the app's own storage, and a copy saved for sharing
-goes to `Download/BashCAD`. In a plain browser they are kept by the browser
+goes to `Download/PlastikCAD`. In a plain browser they are kept by the browser
 itself, per profile.
 
 Two commands move designs in and out of the projects folder. **Open project
-file…** (Ctrl+Shift+O, also dropping or double-clicking a `.bashcad` file,
+file…** (Ctrl+Shift+O, also dropping or double-clicking a `.plastikcad` file,
 or opening one from the Files app on Android) brings a copy in as a project
 of its own, with a fresh id, so a file someone sent you never passes for one
 of your own. A box says so, since edits go to the copy and not to the file,
@@ -161,12 +166,12 @@ wherever you like, to share or keep; the project itself stays where it is.
 
 Projects can be kept in step across devices through Google Drive. In the
 projects browser, **Link Google Drive…** signs you in with Google in your
-browser; from then on BashCAD keeps a copy of every project in a `BashCAD`
+browser; from then on PlastikCAD keeps a copy of every project in a `PlastikCAD`
 folder at the top of your Drive and syncs a few seconds after each save, when
 the app starts or comes back online, every few minutes, and on **Sync now**.
 Exports are never synced.
 
-BashCAD asks only for access to files it created itself (Google's
+PlastikCAD asks only for access to files it created itself (Google's
 `drive.file` permission), so it cannot read the rest of your Drive. The flip
 side is that it also cannot see a project file you drop into that folder by
 hand; bring such a file in with **Open project file…** instead.
@@ -182,7 +187,7 @@ leaves the projects where they are, here and in the Drive. While linked, the
 sign-in tokens are kept in the app's own browser storage on the device, in
 plain text like most desktop apps keep them; do not link on a shared account.
 
-A `.bashcad` file is plain JSON, written to diff well: keys in a fixed order,
+A `.plastikcad` file is plain JSON, written to diff well: keys in a fixed order,
 one property per line, vectors on a single line. If you keep the projects
 folder in git, a change to one object shows up as a change to a few lines,
 plus the thumbnail line at the top.
@@ -240,7 +245,7 @@ The export button, at the bottom of the left panel, reads *Export selection* whe
 that; otherwise *Export* merges everything visible that is not a hole into one
 watertight mesh (after asking, when there are several objects). On desktop a
 save dialog asks where; on Android the app asks for a name, writes the file
-to `Download/BashCAD` (an OBJ and its `.mtl` into a folder of their name
+to `Download/PlastikCAD` (an OBJ and its `.mtl` into a folder of their name
 there), and says so in a box that offers *Share…* to hand it to another app
 (an OBJ and its `.mtl` go as one zip). Units are millimeters, Z is up. A 3MF keeps every object separate, each with its color
 as a base material; a group whose parts have colors of their own goes out as
@@ -291,7 +296,7 @@ left alone, since that is its shape.
   mesh can still be given any other texture, wrapped or tiled.
 - **SVG**: shapes are grouped by fill color, each group a part of its own.
   Every closed outline is filled and extruded, whatever its stroke or fill, so
-  laser-cutter drawings work (including a gear profile exported from BashCAD
+  laser-cutter drawings work (including a gear profile exported from PlastikCAD
   as SVG). Convert text to paths first; `<use>`, images and CSS classes are
   not read.
 - **DXF**: lines, polylines, circles, arcs, ellipses and splines are chained
@@ -364,9 +369,13 @@ pnpm typecheck
 pnpm tauri build    # build installers into src-tauri/target/release/bundle
 ```
 
-The app icon is drawn in `src-tauri/app-icon.svg` (Windows and Linux) and
-`src-tauri/app-icon-macos.svg` (the same mark with the margin macOS expects).
-After editing them, regenerate the bitmaps with `pnpm tauri icon` — see
+The icon and the banner follow the Shei Designs design system: a Tape orange
+tile with the product's two letters in Inter 800, Carbon on dark and Bone on
+light surfaces, the product name in Space Grotesk. `docs/brand/draw.cjs`
+draws them (`node docs/brand/draw.cjs`), into `docs/brand/`, `public/icon.svg`
+and `docs/banner.svg`; after a change, rasterize the tile at 1024 px
+(`rsvg-convert`) and regenerate the platform icons, Android launcher icons
+included, with `pnpm tauri icon docs/brand/icon.json` — see
 [the Tauri docs](https://tauri.app/develop/icons/).
 
 Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds installers
@@ -381,7 +390,7 @@ enable the Google Drive API, set up the OAuth consent screen (external, in
 production; the only scope used is `drive.file`, which needs no
 verification), and create two OAuth clients: one of type **Desktop app**,
 with an id and a secret, and one of type **Android**, with no secret, given
-the package name `com.andrewoshei.bashcad` and the SHA-1 of the key the APK
+the package name `com.sheidesigns.plastikcad` and the SHA-1 of the key the APK
 is signed with (`keytool -list -v` prints it). Then build with them in the
 environment:
 
@@ -466,3 +475,5 @@ never touch the mesh kernel, which keeps them easy to test.
 ## License
 
 GPL-3.0-or-later. See [LICENSE](LICENSE).
+
+Copyright © 2026 Andrew O'Shei, Shei Designs.

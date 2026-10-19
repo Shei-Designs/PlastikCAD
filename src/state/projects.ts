@@ -1,4 +1,4 @@
-// Where projects are kept. The desktop app keeps them as `.bashcad` files in a
+// Where projects are kept. The desktop app keeps them as `.plastikcad` files in a
 // projects folder (on Android, in the app's own storage); a plain browser keeps
 // them in IndexedDB. Autosave writes here and the projects browser lists it.
 // A project is addressed by its key: the file's path on disk, a record key in
@@ -61,7 +61,7 @@ export function fileNameFor(name: string): string {
   return `${clean || 'Untitled'}.${FILE_EXTENSION}`;
 }
 
-/** `Name.bashcad`, or `Name (2).bashcad` when a different file already has that name (compared ignoring case, as some file systems do). */
+/** `Name.plastikcad`, or `Name (2).plastikcad` when a different file already has that name (compared ignoring case, as some file systems do). */
 export function uniqueFileName(wanted: string, taken: Iterable<string>, own?: string): string {
   const used = new Set(Array.from(taken, (n) => n.toLowerCase()));
   if (own) used.delete(own.toLowerCase());

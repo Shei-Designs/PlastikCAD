@@ -1,7 +1,7 @@
-# Code, Security, and Quality Audit Report: Quick_CAD (BashCAD)
+# Code, Security, and Quality Audit Report: Quick_CAD (PlastikCAD)
 
 **Audit Date:** October 2026  
-**Audited Target:** `Quick_CAD` (`BashCAD`) desktop & web 3D CAD application  
+**Audited Target:** `Quick_CAD` (`PlastikCAD`) desktop & web 3D CAD application  
 **Codebase Size:** ~24,077 lines of TypeScript/React/Three.js/WASM and Rust/Tauri v2  
 **Test Suite Status:** 23 test suites, 389 unit tests passing (Vitest); 0 Rust tests  
 **Overall Code Quality:** Solid modern TypeScript, strict typing, clean modular structure; however, several critical vulnerabilities, denial-of-service vectors, state desynchronizations, and WebGL/WASM memory leaks were identified across the Tauri backend, geometry worker, state manager, and 3D viewers.
@@ -122,7 +122,7 @@ While the application features well-structured idiomatic TypeScript, functional 
       write_atomic(Path::new(&path), &bytes).map_err(|e| e.to_string())
   }
   ```
-  Neither command verifies that `path` was selected via an approved file dialog, is within the workspace/app directory, or possesses an allowed file extension (`.bashcad`, `.stl`, `.obj`, etc.). Any Cross-Site Scripting (XSS), malicious dependency in `node_modules`, or compromised local dev server can invoke `invoke('read_file', { path: '/home/user/.ssh/id_rsa' })` or overwrite executable scripts (`~/.bashrc`, `~/.profile`) for immediate Remote Code Execution (RCE).
+  Neither command verifies that `path` was selected via an approved file dialog, is within the workspace/app directory, or possesses an allowed file extension (`.plastikcad`, `.stl`, `.obj`, etc.). Any Cross-Site Scripting (XSS), malicious dependency in `node_modules`, or compromised local dev server can invoke `invoke('read_file', { path: '/home/user/.ssh/id_rsa' })` or overwrite executable scripts (`~/.bashrc`, `~/.profile`) for immediate Remote Code Execution (RCE).
 - **Remediation:**  
   1. Enable a strict CSP in `tauri.conf.json`:
      ```json
@@ -197,8 +197,8 @@ While the application features well-structured idiomatic TypeScript, functional 
   ```
   Because `write_file` is an `async fn` called on Tokio worker threads, two concurrent writes to the same destination file share the identical temporary filename.
   For instance, when `saveVersion()` runs, line 1442 fires an unawaited `void saveDesign()`. If the user simultaneously presses `Ctrl+S`, two async invocations of `write_file` run concurrently:
-  - Writer A creates `.design.bashcad.12345.tmp` and begins writing.
-  - Writer B opens `.design.bashcad.12345.tmp` with `File::create`, truncating Writer A's file mid-stream.
+  - Writer A creates `.design.plastikcad.12345.tmp` and begins writing.
+  - Writer B opens `.design.plastikcad.12345.tmp` with `File::create`, truncating Writer A's file mid-stream.
   - Writer A's write finishes or fails, and Writer A renames the truncated temp file over the real design file.
   Furthermore, `File::create` does not use `create_new(true)` (`O_EXCL`), and the cleanup handler `if result.is_err() { let _ = fs::remove_file(&tmp); }` deletes the temp file even if `create` failed because another thread owned it.
 - **Remediation:**  
@@ -497,7 +497,7 @@ While the application features well-structured idiomatic TypeScript, functional 
   *Details:* `v.toFixed(decimals)` returns `"1.5e+30"`. Line 4 checks `s.includes('.')` (which is true) and applies `s.replace(/\.?0+$/, '')`. This strips trailing zeros from the **exponent**, turning `"1.5e+30"` into `"1.5e+3"` ($1.5 \times 10^{30}$ becomes $1500$).  
   *Fix:* Strip trailing zeros only before `'e'` or return scientific notation numbers unmodified.
 
-- **[MED-02] Unbounded Recursion on Deeply Nested Groups in `.bashcad` Files:**  
+- **[MED-02] Unbounded Recursion on Deeply Nested Groups in `.plastikcad` Files:**  
   *Location:* `src/model/file.ts:195-199`, `src/model/ops.ts`, `src/model/geomKey.ts`  
   *Details:* `readNode` recursively parses `GroupNode.children` without a depth limit. A file with ~1,500 nested groups overflows the JavaScript call stack.  
   *Fix:* Enforce a maximum hierarchy depth (e.g. `MAX_DEPTH = 32`).
@@ -542,10 +542,10 @@ While the application features well-structured idiomatic TypeScript, functional 
   *Details:* `read_file` and `write_file` execute blocking `std::fs::read` and `file.sync_all()` directly inside Tokio async worker threads without `spawn_blocking`, degrading async runtime throughput.  
   *Fix:* Use `tokio::fs` or wrap blocking calls in `tokio::task::spawn_blocking`.
 
-- **[MED-11] `startup_file()` Accepts Non-`.bashcad` Files and Repeats on Webview Reload:**  
+- **[MED-11] `startup_file()` Accepts Non-`.plastikcad` Files and Repeats on Webview Reload:**  
   *Location:* `src-tauri/src/lib.rs:109-117`, `src/state/store.ts:1487-1498`  
   *Details:* Any command-line argument (including flags or `.stl` files) is treated as a startup file and reloaded on webview refresh, discarding unsaved in-memory changes.  
-  *Fix:* Validate extension (`.bashcad`) and consume the startup argument once.
+  *Fix:* Validate extension (`.plastikcad`) and consume the startup argument once.
 
 - **[MED-12] Worker Crash Leaves `GeometryClient` Promises Hanging Forever:**  
   *Location:* `src/worker/client.ts:19-27, 60-73`, `src/worker/geometry.worker.ts:11, 45-55`  

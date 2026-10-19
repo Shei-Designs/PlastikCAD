@@ -1,4 +1,4 @@
-package com.andrewoshei.bashcad
+package com.sheidesigns.plastikcad
 
 import android.content.res.Configuration
 import android.os.Bundle

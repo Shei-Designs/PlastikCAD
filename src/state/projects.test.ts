@@ -12,7 +12,7 @@ vi.mock('../platform', () => ({
   isDesktop: () => true,
   listDesigns: async (dir: string): Promise<DesignEntry[]> =>
     Array.from(files, ([path, bytes]) => ({ path, name: path.slice(dir.length + 1), size: bytes.length, modified: clock }))
-      .filter((e) => e.path.startsWith(`${dir}/`) && e.name.toLowerCase().endsWith('.bashcad') && !e.name.startsWith('.'))
+      .filter((e) => e.path.startsWith(`${dir}/`) && e.name.toLowerCase().endsWith('.plastikcad') && !e.name.startsWith('.'))
       .sort((a, b) => a.name.localeCompare(b.name)),
   readHead: async (path: string, limit: number) => {
     const bytes = files.get(path);
@@ -42,7 +42,7 @@ vi.mock('../platform', () => ({
 
 const { DiskProjects, fileNameFor, uniqueFileName } = await import('./projects');
 
-const DIR = '/home/me/Documents/BashCAD';
+const DIR = '/home/me/Documents/PlastikCAD';
 const design = (id: string, name: string) => serializeDoc({ ...emptyDoc(), id, name, scene: [makeShape('box')] });
 
 beforeEach(() => {
@@ -52,44 +52,44 @@ beforeEach(() => {
 
 describe('file names', () => {
   it('makes a safe file name from a project name', () => {
-    expect(fileNameFor('Bracket')).toBe('Bracket.bashcad');
-    expect(fileNameFor(' a/b\\c:d*e?f"g<h>i|j ')).toBe('a b c d e f g h i j.bashcad');
-    expect(fileNameFor('Trailing dots...')).toBe('Trailing dots.bashcad');
-    expect(fileNameFor('   ')).toBe('Untitled.bashcad');
-    expect(fileNameFor('x'.repeat(200))).toBe(`${'x'.repeat(80)}.bashcad`);
+    expect(fileNameFor('Bracket')).toBe('Bracket.plastikcad');
+    expect(fileNameFor(' a/b\\c:d*e?f"g<h>i|j ')).toBe('a b c d e f g h i j.plastikcad');
+    expect(fileNameFor('Trailing dots...')).toBe('Trailing dots.plastikcad');
+    expect(fileNameFor('   ')).toBe('Untitled.plastikcad');
+    expect(fileNameFor('x'.repeat(200))).toBe(`${'x'.repeat(80)}.plastikcad`);
   });
 
   it('numbers a name another file already has, ignoring case, but not the file itself', () => {
-    expect(uniqueFileName('Box.bashcad', ['Lid.bashcad'])).toBe('Box.bashcad');
-    expect(uniqueFileName('Box.bashcad', ['box.bashcad'])).toBe('Box (2).bashcad');
-    expect(uniqueFileName('Box.bashcad', ['Box.bashcad', 'Box (2).bashcad'])).toBe('Box (3).bashcad');
-    expect(uniqueFileName('Box.bashcad', ['Box.bashcad'], 'box.bashcad')).toBe('Box.bashcad');
+    expect(uniqueFileName('Box.plastikcad', ['Lid.plastikcad'])).toBe('Box.plastikcad');
+    expect(uniqueFileName('Box.plastikcad', ['box.plastikcad'])).toBe('Box (2).plastikcad');
+    expect(uniqueFileName('Box.plastikcad', ['Box.plastikcad', 'Box (2).plastikcad'])).toBe('Box (3).plastikcad');
+    expect(uniqueFileName('Box.plastikcad', ['Box.plastikcad'], 'box.plastikcad')).toBe('Box.plastikcad');
   });
 });
 
 describe('the projects folder', () => {
   it('lists the designs in the folder by their headers, skipping what is not a design', async () => {
-    files.set(`${DIR}/Bracket.bashcad`, encoder.encode(design('bracket1', 'Bracket')));
-    files.set(`${DIR}/notes.bashcad`, encoder.encode('{"hello": true}'));
+    files.set(`${DIR}/Bracket.plastikcad`, encoder.encode(design('bracket1', 'Bracket')));
+    files.set(`${DIR}/notes.plastikcad`, encoder.encode('{"hello": true}'));
     files.set(`${DIR}/other.txt`, encoder.encode('x'));
     const store = new DiskProjects(DIR);
     const listed = await store.list();
-    expect(listed).toEqual([{ key: `${DIR}/Bracket.bashcad`, id: 'bracket1', name: 'Bracket', revision: null, modified: 1000, size: files.get(`${DIR}/Bracket.bashcad`)!.length, thumb: null }]);
+    expect(listed).toEqual([{ key: `${DIR}/Bracket.plastikcad`, id: 'bracket1', name: 'Bracket', revision: null, modified: 1000, size: files.get(`${DIR}/Bracket.plastikcad`)!.length, thumb: null }]);
   });
 
   it('reads a whole file whose header is laid out some other way', async () => {
     const text = JSON.stringify(JSON.parse(design('flat0001', 'Flat')));
-    files.set(`${DIR}/Flat.bashcad`, encoder.encode(text));
+    files.set(`${DIR}/Flat.plastikcad`, encoder.encode(text));
     const [info] = await new DiskProjects(DIR).list();
     expect(info).toMatchObject({ id: 'flat0001', name: 'Flat' });
   });
 
   it('writes a new project under its name, numbered when the name is taken', async () => {
-    files.set(`${DIR}/Box.bashcad`, encoder.encode(design('other001', 'Box')));
+    files.set(`${DIR}/Box.plastikcad`, encoder.encode(design('other001', 'Box')));
     const store = new DiskProjects(DIR);
     const text = design('mine0001', 'Box');
     const key = await store.write(null, 'Box', text);
-    expect(key).toBe(`${DIR}/Box (2).bashcad`);
+    expect(key).toBe(`${DIR}/Box (2).plastikcad`);
     expect(await store.read(key)).toBe(text);
     // Written again under the same name: the same file.
     expect(await store.write(key, 'Box', text)).toBe(key);
@@ -99,10 +99,10 @@ describe('the projects folder', () => {
   it('moves the file when the project is renamed, never over another', async () => {
     const store = new DiskProjects(DIR);
     const key = await store.write(null, 'Draft', design('p0000001', 'Draft'));
-    expect(key).toBe(`${DIR}/Draft.bashcad`);
-    files.set(`${DIR}/Hinge.bashcad`, encoder.encode(design('other001', 'Hinge')));
+    expect(key).toBe(`${DIR}/Draft.plastikcad`);
+    files.set(`${DIR}/Hinge.plastikcad`, encoder.encode(design('other001', 'Hinge')));
     const renamed = await store.write(key, 'Hinge', design('p0000001', 'Hinge'));
-    expect(renamed).toBe(`${DIR}/Hinge (2).bashcad`);
+    expect(renamed).toBe(`${DIR}/Hinge (2).plastikcad`);
     expect(files.has(key)).toBe(false);
     expect(new TextDecoder().decode(files.get(renamed))).toContain('"name": "Hinge"');
     // A change of case alone keeps the file, number and all.
@@ -111,7 +111,7 @@ describe('the projects folder', () => {
   });
 
   it('remembers headers until a file changes', async () => {
-    const path = `${DIR}/Bracket.bashcad`;
+    const path = `${DIR}/Bracket.plastikcad`;
     files.set(path, encoder.encode(design('bracket1', 'Bracket')));
     const store = new DiskProjects(DIR);
     const platform = await import('../platform');

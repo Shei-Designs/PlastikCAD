@@ -345,7 +345,7 @@ export function Sidebar() {
     <aside className="sidebar">
       <div className="brand">
         <Logo />
-        <span>{APP_NAME}</span>
+        <span className="wordmark">{APP_NAME}</span>
         <button
           type="button"
           className="icon-button"

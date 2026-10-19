@@ -1,8 +1,19 @@
 // The About box: name, version and license, opened from the File menu.
 import { useEffect, useRef } from 'react';
-import { APP_NAME, APP_URL, APP_VERSION } from '../app';
+import type React from 'react';
+import { APP_NAME, APP_URL, APP_VERSION, AUTHOR, AUTHOR_URL, PUBLISHER, PUBLISHER_URL } from '../app';
 import { isDesktop } from '../platform';
 import { Logo } from './icons';
+
+/** A link that opens in the browser; on desktop, where the webview cannot leave the app, the address is shown instead. */
+function Link({ href, children }: { href: string; children: React.ReactNode }) {
+  if (isDesktop()) return <span>{children}</span>;
+  return (
+    <a href={href} target="_blank" rel="noreferrer">
+      {children}
+    </a>
+  );
+}
 
 export function About({ open, onClose }: { open: boolean; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -32,18 +43,15 @@ export function About({ open, onClose }: { open: boolean; onClose: () => void })
       <div className="about-body">
         <div className="brand">
           <Logo />
-          <span>{APP_NAME}</span>
+          <span className="wordmark">{APP_NAME}</span>
         </div>
         <p>Version {APP_VERSION}</p>
+        <p className="about-by">
+          A <Link href={PUBLISHER_URL}>{PUBLISHER}</Link> project, designed and built by <Link href={AUTHOR_URL}>{AUTHOR}</Link>.
+        </p>
         <p>Free software under the GNU General Public License, version 3 or later.</p>
         <p className="about-link">
-          {isDesktop() ? (
-            <span>{APP_URL}</span>
-          ) : (
-            <a href={APP_URL} target="_blank" rel="noreferrer">
-              {APP_URL}
-            </a>
-          )}
+          <Link href={APP_URL}>{APP_URL}</Link>
         </p>
         <button type="button" className="primary" onClick={onClose}>
           Close

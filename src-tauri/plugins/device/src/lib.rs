@@ -75,7 +75,7 @@ struct ExportArgs<'a> {
     source: &'a str,
 }
 
-/// Android only: moves the file at `source` into `Download/BashCAD/<folder>/<name>`
+/// Android only: moves the file at `source` into `Download/PlastikCAD/<folder>/<name>`
 /// through the media store, replacing a file of that name. The source file is deleted afterwards.
 #[cfg(target_os = "android")]
 pub fn export_to_downloads<R: Runtime>(app: &AppHandle<R>, folder: &str, name: &str, mime: &str, source: &std::path::Path) -> Result<Exported, String> {
@@ -119,7 +119,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             #[cfg(target_os = "android")]
             {
                 use tauri::Manager;
-                let handle = api.register_android_plugin("com.andrewoshei.bashcad.device", "DevicePlugin")?;
+                let handle = api.register_android_plugin("com.sheidesigns.plastikcad.device", "DevicePlugin")?;
                 app.manage(Handle(handle));
             }
             let _ = (app, &api);

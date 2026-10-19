@@ -185,8 +185,8 @@ const VIEW_DIRECTIONS: Record<ViewPreset, Vector3> = {
 };
 
 const THEMES = {
-  dark: { grid: 0x8a94a8, major: 0.3, minor: 0.1, accent: 0xff9f4d, edge: 0.85, stage: ['#2a303b', '#14171c'] },
-  light: { grid: 0x5c6675, major: 0.34, minor: 0.12, accent: 0xd86e12, edge: 0.7, stage: ['#ffffff', '#d5dae2'] },
+  dark: { grid: 0x8a8580, major: 0.3, minor: 0.1, accent: 0xff6b1a, edge: 0.85, stage: ['#2a2620', '#0a0907'] },
+  light: { grid: 0x6b665f, major: 0.34, minor: 0.12, accent: 0xe8590f, edge: 0.7, stage: ['#ffffff', '#ddd8cc'] },
 };
 
 const AXIS_COLORS = ['#e5484d', '#3fae5a', '#4c8dff'];

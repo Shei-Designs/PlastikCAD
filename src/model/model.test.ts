@@ -463,7 +463,7 @@ describe('design files', () => {
   it('reads the versions an old file carries as designs of their own, and drops them from the design', () => {
     const box = shape('box');
     const old = {
-      format: 'bashcad',
+      format: 'plastikcad',
       version: 1,
       name: 'Bracket',
       head: 'v2',
@@ -549,7 +549,7 @@ describe('design files', () => {
   });
 
   it('does not let an asset called __proto__ change the asset table itself', () => {
-    const text = `{"format":"bashcad","version":1,"name":"x","scene":[],"assets":{"__proto__":{"kind":"mesh","positions":"","triangles":""},"constructor":{"kind":"mesh","positions":"AA","triangles":"AA"}}}`;
+    const text = `{"format":"plastikcad","version":1,"name":"x","scene":[],"assets":{"__proto__":{"kind":"mesh","positions":"","triangles":""},"constructor":{"kind":"mesh","positions":"AA","triangles":"AA"}}}`;
     const doc = parseDoc(text);
     expect(Object.getPrototypeOf(doc.assets)).toBe(Object.prototype);
     expect(Object.keys(doc.assets)).toEqual(['constructor']);
@@ -560,7 +560,7 @@ describe('design files', () => {
     const nest = (depth: number): string => {
       let inner = `{"id":"leaf","type":"shape","shape":"box"}`;
       for (let i = 0; i < depth; i++) inner = `{"id":"g${i}","type":"group","children":[${inner}]}`;
-      return `{"format":"bashcad","version":1,"name":"x","scene":[${inner}],"assets":{}}`;
+      return `{"format":"plastikcad","version":1,"name":"x","scene":[${inner}],"assets":{}}`;
     };
     expect(parseDoc(nest(10)).scene.length).toBe(1);
     expect(() => parseDoc(nest(2000))).toThrow('This design is nested too deeply.');
@@ -582,7 +582,7 @@ describe('design files', () => {
       params: { wall: 3, sides: 100000, radius: 50 },
     };
     const image = { kind: 'image', name: 'P', mime: 'image/png', data: 'AAAA', width: 2, height: 2 };
-    const text = JSON.stringify({ format: 'bashcad', version: 1, name: 'x', scene: [tube], assets: { img: image } });
+    const text = JSON.stringify({ format: 'plastikcad', version: 1, name: 'x', scene: [tube], assets: { img: image } });
     const [group] = parseDoc(text).scene;
     expect(group.type).toBe('group');
     if (group.type !== 'group') return;
@@ -617,6 +617,11 @@ describe('file headers', () => {
     expect(text.indexOf('"id": "proj0001"')).toBeLessThan(text.indexOf('"scene"'));
     expect(text.indexOf('"thumb"')).toBeLessThan(text.indexOf('"scene"'));
     expect(readHeader(text)).toEqual({ id: 'proj0001', name: 'Hinge "left"', revision: null, thumb: THUMB });
+    // A file from when the app was BashCAD is the same file under another marker.
+    const old = text.replace('"format": "plastikcad"', '"format": "bashcad"');
+    expect(readHeader(old)).toEqual(readHeader(text));
+    expect(parseDoc(old)).toEqual(parseDoc(text));
+    expect(() => parseDoc(text.replace('"format": "plastikcad"', '"format": "othercad"'))).toThrow(/not a design made with this app/);
     // Only the start of the file, cut off inside the scene.
     expect(readHeader(text.slice(0, text.indexOf('"scene"') + 40))).toEqual({ id: 'proj0001', name: 'Hinge "left"', revision: null, thumb: THUMB });
     expect(parseDoc(text)).toEqual(doc());
@@ -631,9 +636,9 @@ describe('file headers', () => {
   });
 
   it('refuses what is not a design laid out by the app', () => {
-    expect(readHeader('{"format":"bashcad","version":2,"name":"Flat"}')).toBeNull();
+    expect(readHeader('{"format":"plastikcad","version":2,"name":"Flat"}')).toBeNull();
     expect(readHeader('<svg/>')).toBeNull();
-    expect(readHeader('{\n  "format": "bashcad",\n  "version": 2')).toBeNull();
+    expect(readHeader('{\n  "format": "plastikcad",\n  "version": 2')).toBeNull();
   });
 
   it('drops a thumbnail that is not a small picture', () => {

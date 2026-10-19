@@ -1,9 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "BashCAD",
-  "mainBinaryName": "bashcad",
+  "productName": "PlastikCAD",
+  "mainBinaryName": "plastikcad",
   "version": "0.1.0",
-  "identifier": "com.andrewoshei.bashcad",
+  "identifier": "com.sheidesigns.plastikcad",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
   "app": {
     "windows": [
       {
-        "title": "BashCAD",
+        "title": "PlastikCAD",
         "width": 1480,
         "height": 900,
         "minWidth": 1320,
@@ -30,6 +30,9 @@
     "category": "GraphicsAndDesign",
     "shortDescription": "Fast solid modelling for 3D printing",
     "license": "GPL-3.0-or-later",
+    "publisher": "Shei Designs",
+    "homepage": "https://sheidesigns.com",
+    "copyright": "Copyright © 2026 Andrew O'Shei, Shei Designs",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -39,13 +42,13 @@
     ],
     "fileAssociations": [
       {
-        "ext": ["bashcad"],
-        "name": "BashCAD design",
-        "description": "BashCAD design",
-        "mimeType": "application/x-bashcad",
+        "ext": ["plastikcad", "bashcad"],
+        "name": "PlastikCAD design",
+        "description": "PlastikCAD design",
+        "mimeType": "application/x-plastikcad",
         "role": "Editor",
         "exportedType": {
-          "identifier": "com.andrewoshei.bashcad.design",
+          "identifier": "com.sheidesigns.plastikcad.design",
           "conformsTo": ["public.data"]
         }
       }

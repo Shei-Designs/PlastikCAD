@@ -37,6 +37,7 @@ src-tauri/gen/android/app/build
 
 # Local environment and tool state
 .env
+.env.local
 .env.*
 .claude/
 .playwright-mcp/
@@ -48,4 +49,5 @@ coverage/
 /*.obj
 /*.dxf
 /*.svg
+/*.plastikcad
 /*.bashcad

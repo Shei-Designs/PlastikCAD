@@ -20,7 +20,7 @@ const SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const REVOKE_URL = 'https://oauth2.googleapis.com/revoke';
-const TOKENS_KEY = 'bashcad:google:v1';
+const TOKENS_KEY = 'plastikcad:google:v1';
 
 export interface Tokens {
   access: string;

@@ -141,7 +141,7 @@ export interface SaveTarget {
 
 /**
  * Android: writes an export into the app's own folder in Downloads
- * (`Download/BashCAD/<folder>/<name>`), replacing a file of that name, with
+ * (`Download/PlastikCAD/<folder>/<name>`), replacing a file of that name, with
  * no dialog. Resolves with the file's content URI and the path as the Files
  * app shows it.
  */
@@ -235,7 +235,7 @@ export async function saveBundle(suggestedName: string, filters: FileFilter[], m
     const folder = base(suggestedName);
     const uris: string[] = [];
     for (const file of make(folder)) uris.push((await exportToAppFolder(folder, file.name, file.bytes, file.mime)).uri);
-    return { where: `Download/BashCAD/${folder}`, uris };
+    return { where: `Download/PlastikCAD/${folder}`, uris };
   }
   const target = await chooseSave(suggestedName, filters, mime);
   if (!target) return null;
@@ -312,7 +312,7 @@ export interface SignInSession {
 }
 
 /** The scheme of the URLs the browser hands back to the Android app: the app's package name, as Google asks of an Android client. */
-const ANDROID_REDIRECT = 'com.andrewoshei.bashcad:/oauth2redirect';
+const ANDROID_REDIRECT = 'com.sheidesigns.plastikcad:/oauth2redirect';
 const SIGN_IN_TIMEOUT_MS = 300_000;
 
 /** Android: the sign-in waiting for the browser's URL, if any. */

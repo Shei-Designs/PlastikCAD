@@ -2,7 +2,7 @@
 // be taken on it. Kept outside React so that the viewer, keyboard shortcuts
 // and menus all drive the same functions.
 import { useSyncExternalStore } from 'react';
-import { APP_NAME, FILE_EXTENSION } from '../app';
+import { APP_NAME, FILE_EXTENSION, isDesignName } from '../app';
 import { clampParams } from '../geometry/shapes';
 import { encodeFloat32, encodeUint32 } from '../io/base64';
 import { exportMesh, exportOutline, FORMATS } from '../io/export';
@@ -1588,7 +1588,7 @@ async function reloadOpenProject(key: string): Promise<void> {
 /** Links a Google account, after saying what that means. */
 export async function linkGoogleDrive(): Promise<void> {
   const go = await platform.confirm(
-    `${APP_NAME} will keep a copy of your projects in a "BashCAD" folder in your Google Drive and keep them in step with your other devices. It can see only the files it put there itself: a project file dropped into that folder by hand will not show up here. Sign in with Google now?`,
+    `${APP_NAME} will keep a copy of your projects in a "${APP_NAME}" folder in your Google Drive and keep them in step with your other devices. It can see only the files it put there itself: a project file dropped into that folder by hand will not show up here. Sign in with Google now?`,
     { title: 'Link Google Drive', okLabel: 'Sign in', cancelLabel: 'Not now' },
   );
   if (!go) return;
@@ -1916,7 +1916,7 @@ const IMPORTABLE = [...IMPORT_EXTENSIONS, ...IMAGE_EXTENSIONS];
 /** Files picked or dropped: designs are opened, models, drawings and pictures are imported into the current design. */
 export async function receiveFiles(files: PickedFile[]): Promise<void> {
   try {
-    const design = files.find((f) => extension(f.name) === FILE_EXTENSION);
+    const design = files.find((f) => isDesignName(f.name));
     if (design) return await importProjectFile(design);
     const models = files.filter((f) => IMPORT_EXTENSIONS.includes(fileKind(f.name, f.bytes)));
     const pictures = files.filter((f) => IMAGE_EXTENSIONS.includes(fileKind(f.name, f.bytes)));

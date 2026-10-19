@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.andrewoshei.bashcad.device"
+    namespace = "com.sheidesigns.plastikcad.device"
     compileSdk = 36
 
     defaultConfig {

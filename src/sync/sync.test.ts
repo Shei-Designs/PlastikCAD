@@ -33,7 +33,7 @@ class FakeRemote implements Remote {
     this.calls.upload++;
     if (this.failOn === meta.projectId) throw new Error(`cannot upload ${name}`);
     const id = existing?.id ?? `remote-${++this.serial}`;
-    const file: RemoteFile = { id, name: `${name}.bashcad`, projectId: meta.projectId, revision: meta.revision, modified: Date.now() };
+    const file: RemoteFile = { id, name: `${name}.plastikcad`, projectId: meta.projectId, revision: meta.revision, modified: Date.now() };
     this.files.set(id, { file, text });
     return file;
   }
@@ -44,7 +44,7 @@ class FakeRemote implements Remote {
   /** Puts a design there as another device would have. */
   put(doc: Doc): RemoteFile {
     const id = `remote-${++this.serial}`;
-    const file: RemoteFile = { id, name: `${doc.name}.bashcad`, projectId: doc.id, revision: doc.revision ?? null, modified: Date.now() };
+    const file: RemoteFile = { id, name: `${doc.name}.plastikcad`, projectId: doc.id, revision: doc.revision ?? null, modified: Date.now() };
     this.files.set(id, { file, text: serializeDoc(doc) });
     return file;
   }
@@ -105,7 +105,7 @@ describe('sync engine', () => {
     const v3 = edited(v2, [box('a', 7)], 'Base plate');
     const file = [...remote.files.values()].find((f) => f.file.projectId === 'project1')!;
     file.text = serializeDoc(v3);
-    file.file = { ...file.file, revision: v3.revision!, name: 'Base plate.bashcad' };
+    file.file = { ...file.file, revision: v3.revision!, name: 'Base plate.plastikcad' };
     const report = await sync();
     expect(report.downloaded).toEqual(['Base plate']);
     expect(report.changedKeys).toEqual([key]);
@@ -316,16 +316,16 @@ describe('Google Drive remote', () => {
   it('makes its folder when there is none, lists page by page and keeps only designs', async () => {
     const drive = new DriveRemote(fetch);
     answers.push(() => ({ files: [] }), () => ({ id: 'folder1' }));
-    answers.push(() => ({ files: [{ id: 'f1', name: 'A.bashcad', modifiedTime: '2026-10-17T10:00:00Z', appProperties: { projectId: 'project1', revision: 'r1' } }, { id: 'f2', name: 'notes.txt' }], nextPageToken: 'more' }));
-    answers.push(() => ({ files: [{ id: 'f3', name: 'B.bashcad' }] }));
+    answers.push(() => ({ files: [{ id: 'f1', name: 'A.plastikcad', modifiedTime: '2026-10-17T10:00:00Z', appProperties: { projectId: 'project1', revision: 'r1' } }, { id: 'f2', name: 'notes.txt' }], nextPageToken: 'more' }));
+    answers.push(() => ({ files: [{ id: 'f3', name: 'B.plastikcad' }] }));
     const files = await drive.list();
     expect(calls[1].init?.method).toBe('POST');
-    expect(JSON.parse(calls[1].init!.body as string)).toMatchObject({ name: 'BashCAD', parents: ['root'] });
+    expect(JSON.parse(calls[1].init!.body as string)).toMatchObject({ name: 'PlastikCAD', parents: ['root'] });
     expect(decodeURIComponent(calls[2].url.replace(/\+/g, ' '))).toContain("'folder1' in parents and trashed = false");
     expect(calls[3].url).toContain('pageToken=more');
     expect(files).toEqual([
-      { id: 'f1', name: 'A.bashcad', projectId: 'project1', revision: 'r1', modified: Date.parse('2026-10-17T10:00:00Z') },
-      { id: 'f3', name: 'B.bashcad', projectId: null, revision: null, modified: 0 },
+      { id: 'f1', name: 'A.plastikcad', projectId: 'project1', revision: 'r1', modified: Date.parse('2026-10-17T10:00:00Z') },
+      { id: 'f3', name: 'B.plastikcad', projectId: null, revision: null, modified: 0 },
     ]);
     // The folder is remembered.
     answers.push(() => ({ files: [] }));
@@ -335,8 +335,8 @@ describe('Google Drive remote', () => {
 
   it('uploads as multipart, creating in the folder or replacing in place, and trashes to delete', async () => {
     const drive = new DriveRemote(fetch);
-    answers.push(() => ({ files: [{ id: 'folder1', name: 'BashCAD' }] }));
-    answers.push(() => ({ id: 'new1', name: 'Plate.bashcad', appProperties: { projectId: 'project1', revision: 'r1' } }));
+    answers.push(() => ({ files: [{ id: 'folder1', name: 'PlastikCAD' }] }));
+    answers.push(() => ({ id: 'new1', name: 'Plate.plastikcad', appProperties: { projectId: 'project1', revision: 'r1' } }));
     const made = await drive.upload(null, 'Plate', '{"x":1}', { projectId: 'project1', revision: 'r1' });
     expect(made).toMatchObject({ id: 'new1', projectId: 'project1', revision: 'r1' });
     const create = calls[1];
@@ -346,10 +346,10 @@ describe('Google Drive remote', () => {
     const boundary = /boundary=(.+)$/.exec(create.init!.headers!['content-type' as keyof HeadersInit] as string)![1];
     expect(body.split(`--${boundary}`).length).toBe(4);
     expect(body).toContain('"parents":["folder1"]');
-    expect(body).toContain('"appProperties":{"app":"bashcad","projectId":"project1","revision":"r1"}');
+    expect(body).toContain('"appProperties":{"app":"plastikcad","projectId":"project1","revision":"r1"}');
     expect(body).toContain('\r\n\r\n{"x":1}\r\n');
 
-    answers.push(() => ({ id: 'new1', name: 'Plate.bashcad', appProperties: { projectId: 'project1', revision: 'r2' } }));
+    answers.push(() => ({ id: 'new1', name: 'Plate.plastikcad', appProperties: { projectId: 'project1', revision: 'r2' } }));
     await drive.upload(made, 'Plate', '{"x":2}', { projectId: 'project1', revision: 'r2' });
     expect(calls[2].url).toContain('/upload/drive/v3/files/new1?uploadType=multipart');
     expect(calls[2].init?.method).toBe('PATCH');
@@ -360,6 +360,6 @@ describe('Google Drive remote', () => {
     expect(calls[3].init).toMatchObject({ method: 'PATCH', body: '{"trashed":true}' });
 
     answers.push(() => new Response(JSON.stringify({ error: { message: 'Rate limit exceeded' } }), { status: 403 }));
-    await expect(drive.download(made)).rejects.toThrow('Google Drive could not download Plate.bashcad: Rate limit exceeded');
+    await expect(drive.download(made)).rejects.toThrow('Google Drive could not download Plate.plastikcad: Rate limit exceeded');
   });
 });

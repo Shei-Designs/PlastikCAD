@@ -14,11 +14,11 @@ val tauriProperties = Properties().apply {
     }
 }
 
-// Release builds are signed with the key in ~/.android/bashcad-keystore.properties
+// Release builds are signed with the key in ~/.android/plastikcad-keystore.properties
 // (store path, passwords and alias), which never enters the repository. Without
 // it the release APK is left unsigned, as Android Studio would.
 val keystoreProperties = Properties().apply {
-    val propFile = file(System.getProperty("user.home") + "/.android/bashcad-keystore.properties")
+    val propFile = file(System.getProperty("user.home") + "/.android/plastikcad-keystore.properties")
     if (propFile.exists()) {
         propFile.inputStream().use { load(it) }
     }
@@ -26,10 +26,10 @@ val keystoreProperties = Properties().apply {
 
 android {
     compileSdk = 37
-    namespace = "com.andrewoshei.bashcad"
+    namespace = "com.sheidesigns.plastikcad"
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
-        applicationId = "com.andrewoshei.bashcad"
+        applicationId = "com.sheidesigns.plastikcad"
         minSdk = 24
         targetSdk = 37
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()

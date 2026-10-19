@@ -2,7 +2,7 @@
 // holds the scene and any imported data. It is laid out to diff well, so
 // designs can also live in a git repository: keys come in a fixed order, one
 // node property per line, numbers kept short.
-import { FILE_FORMAT, FILE_VERSION } from '../app';
+import { FILE_FORMAT, FILE_VERSION, LEGACY_FORMAT } from '../app';
 import { SHAPES, clampParams, defaultParams } from '../geometry/shapes';
 import { GENERATORS, RENAMED_PARTS, getGenerator } from '../parts/generators';
 import { sanitizeParams } from '../parts/generators/types';
@@ -267,7 +267,7 @@ function parseFile(text: string): Record<string, unknown> {
   } catch {
     throw new Error('This file is not a design: it could not be read as JSON.');
   }
-  if (!isRecord(raw) || raw.format !== FILE_FORMAT) throw new Error('This file is not a design made with this app.');
+  if (!isRecord(raw) || (raw.format !== FILE_FORMAT && raw.format !== LEGACY_FORMAT)) throw new Error('This file is not a design made with this app.');
   if (typeof raw.version !== 'number' || raw.version > FILE_VERSION) {
     throw new Error('This design was saved by a newer version of the app. Update to open it.');
   }
@@ -314,7 +314,7 @@ export interface DocHeader {
  * the scene. Null when the text is not the start of a design file.
  */
 export function readHeader(head: string): DocHeader | null {
-  if (!/^\{\s*\n\s*"format": "bashcad",/.test(head)) return null;
+  if (!/^\{\s*\n\s*"format": "(?:plastikcad|bashcad)",/.test(head)) return null;
   // Only what comes before the scene is the header: the objects in it have ids and names of their own.
   const sceneAt = head.search(/^\s*"scene":/m);
   const header = sceneAt < 0 ? head : head.slice(0, sceneAt);
