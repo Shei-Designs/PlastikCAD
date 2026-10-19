@@ -305,59 +305,38 @@ export async function pickFolder(defaultPath?: string): Promise<string | null> {
   return typeof picked === 'string' ? picked : null;
 }
 
-/** A sign-in waiting for the browser to come back: where it is sent back to, and the loopback port that listens on desktop. */
+/** A sign-in waiting for the browser to come back: where it is sent back to, and the loopback port that listens. */
 export interface SignInSession {
   redirect: string;
   port: number;
 }
 
-/** The scheme of the URLs the browser hands back to the Android app: the app's package name, as Google asks of an Android client. */
-const ANDROID_REDIRECT = 'com.sheidesigns.plastikcad:/oauth2redirect';
-const SIGN_IN_TIMEOUT_MS = 300_000;
-
-/** Android: the sign-in waiting for the browser's URL, if any. */
-let androidSignIn: { settle: (query: string | null, reason?: string) => void } | null = null;
-
-/**
- * Readies a place for a sign-in to come back to: a loopback port on desktop,
- * the app's own URL scheme on Android (a background app may be frozen, and
- * could not answer a port; a URL of its scheme wakes it).
- */
+/** Desktop: readies a loopback port for the sign-in to come back to. */
 export async function oauthStart(): Promise<SignInSession> {
-  if (isAndroid()) return { redirect: ANDROID_REDIRECT, port: 0 };
   const port = await command<number>('oauth_start');
   return { redirect: `http://127.0.0.1:${port}/`, port };
 }
 
-/** Opens the sign-in page in the system browser and resolves with the query string the browser is sent back with. */
-export async function oauthWait(session: SignInSession, url: string): Promise<string> {
-  if (!isAndroid()) return command<string>('oauth_wait', { port: session.port, url });
-  androidSignIn?.settle(null, 'Another sign-in was started.');
-  const { addPluginListener } = await import('@tauri-apps/api/core');
-  return new Promise<string>((resolve, reject) => {
-    let stop: (() => void) | null = null;
-    const timer = setTimeout(() => settle(null, 'The sign-in took too long. Try again.'), SIGN_IN_TIMEOUT_MS);
-    const settle = (query: string | null, reason?: string) => {
-      clearTimeout(timer);
-      stop?.();
-      androidSignIn = null;
-      if (query === null) reject(new Error(reason ?? 'The sign-in was cancelled.'));
-      else resolve(query);
-    };
-    androidSignIn = { settle };
-    addPluginListener<{ uri: string }>('device', 'redirect', ({ uri }) => settle(uri.slice(uri.indexOf('?') + 1)))
-      .then((listener) => {
-        stop = () => void listener.unregister();
-        return command<void>('open_url', { url });
-      })
-      .catch((e) => settle(null, e instanceof Error ? e.message : String(e)));
-  });
+/** Desktop: opens the sign-in page in the system browser and resolves with the query string the browser is sent back with. */
+export const oauthWait = (session: SignInSession, url: string): Promise<string> => command<string>('oauth_wait', { port: session.port, url });
+
+export const oauthCancel = (session: SignInSession): Promise<void> => command<void>('oauth_cancel', { port: session.port });
+
+/**
+ * Android: an access token for the scope from Google Play services, which
+ * knows the app by its package and signing key (Google takes no redirect URL
+ * from an Android app). The first time Google's own sheet asks the user; after
+ * that the grant is remembered. `silent` asks only for what is granted already
+ * and rejects with "needs-sign-in" otherwise; a sheet dismissed rejects with
+ * "cancelled".
+ */
+export async function androidAuthorize(scope: string, silent: boolean): Promise<string> {
+  const { accessToken } = await invoke<{ accessToken: string }>('plugin:device|authorize', { scope, silent });
+  return accessToken;
 }
 
-export async function oauthCancel(session: SignInSession): Promise<void> {
-  if (isAndroid()) return void androidSignIn?.settle(null);
-  await command<void>('oauth_cancel', { port: session.port });
-}
+/** Android: forgets a token Play services holds, so the account is asked again next time. */
+export const androidClearToken = (token: string): Promise<void> => invoke<void>('plugin:device|clear_token', { token }).catch(() => undefined);
 
 /**
  * The files the app was started with: the design passed on the command line

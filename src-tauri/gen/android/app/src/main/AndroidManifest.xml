@@ -23,13 +23,6 @@
                 <!-- AndroidTV support -->
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
-            <!-- A sign-in with Google coming back from the browser: a URL of the app's own scheme. -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="${applicationId}" />
-            </intent-filter>
             <!-- Files the Files app and other apps may hand over: designs and models, by the types they are
                  stored under. A .plastikcad (or an old .bashcad) is unknown to the system and comes as application/octet-stream, so
                  every unknown file is offered too; the app says when one is not for it. -->

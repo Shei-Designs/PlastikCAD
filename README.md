@@ -399,10 +399,14 @@ VITE_GOOGLE_CLIENT_ID=â€¦apps.googleusercontent.com VITE_GOOGLE_CLIENT_SECRET=â€
 ```
 
 (or put them in a `.env.local`, which git ignores). For an installed app
-Google does not treat the secret as secret. The sign-in opens the system
-browser; on desktop it comes back to a loopback port, on Android to the app
-itself through a URL of its own scheme, since an app in the background may
-be frozen and could not answer a port.
+Google does not treat the secret as secret. On desktop the sign-in opens the
+system browser and comes back to a loopback port. On Android, Google takes
+no redirect URL from an app, so Google Play services asks for the grant in
+its own sheet and hands back access tokens; it finds the Android client by
+the app's package name and signing key, and the Android client id in the
+build only says that sync is set up there. A build signed with another key
+(a debug build, Play App Signing) needs that key's SHA-1 on an Android
+client too.
 
 ### How it is put together
 

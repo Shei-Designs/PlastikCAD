@@ -1,8 +1,9 @@
 //! What the app runs on. On Android the Kotlin side reports whether a hardware
 //! keyboard is attached and whether the on-screen keypad is showing (and how
 //! tall it is), sends a `change` event whenever either changes, and writes
-//! the documents the system pickers hand out. Everywhere else there is a
-//! keyboard, no keypad, and documents are plain files.
+//! the documents the system pickers hand out, and asks Google Play services
+//! for the Drive authorization. Everywhere else there is a keyboard, no
+//! keypad, and documents are plain files.
 use serde::{Deserialize, Serialize};
 use tauri::plugin::{Builder, TauriPlugin};
 use tauri::{AppHandle, Runtime};

@@ -29,5 +29,6 @@ kotlin {
 dependencies {
     implementation("androidx.core:core-ktx:1.9.0")
     implementation("androidx.appcompat:appcompat:1.7.1")
+    implementation("com.google.android.gms:play-services-auth:22.0.0")
     implementation(project(":tauri-android"))
 }

@@ -1,12 +1,15 @@
-// Signing in to Google and keeping the tokens. The app is an "installed app"
-// to Google: the sign-in page opens in the system browser and comes back,
-// with PKCE, to a loopback port on desktop (see the Rust side) or, on Android,
-// to the app itself through a URL of its own scheme (the device plugin hands
-// it on). The token exchange and refreshes are plain HTTPS requests from
-// here. The clients come from the build environment: VITE_GOOGLE_CLIENT_ID
-// and VITE_GOOGLE_CLIENT_SECRET for a Google "Desktop app" client (for an
-// installed app Google does not treat the secret as secret), and
-// VITE_GOOGLE_ANDROID_CLIENT_ID for an "Android" client, which has no secret.
+// Signing in to Google and keeping the tokens. On desktop the app is an
+// "installed app" to Google: the sign-in page opens in the system browser and
+// comes back, with PKCE, to a loopback port (see the Rust side); the token
+// exchange and refreshes are plain HTTPS requests from here. On Android,
+// Google takes no redirect URL, so Google Play services asks for the grant
+// and hands back access tokens, one at a time, with no refresh token: a new
+// one is fetched when the old runs out. The clients come from the build
+// environment: VITE_GOOGLE_CLIENT_ID and VITE_GOOGLE_CLIENT_SECRET for a
+// Google "Desktop app" client (for an installed app Google does not treat the
+// secret as secret), and VITE_GOOGLE_ANDROID_CLIENT_ID for an "Android"
+// client, which Play services finds by the app's package and signing key; the
+// id itself only says that the Android build is set up.
 import * as platform from '../platform';
 
 const env = (name: string): string => (import.meta.env[name] as string | undefined) ?? '';
@@ -51,6 +54,9 @@ export function saveTokens(tokens: Tokens | null): void {
     // Without storage the sign-in lasts for the session.
   }
 }
+
+/** Android: Play services' tokens are good for an hour; this is when one is given up for a fresh one. */
+const ANDROID_TOKEN_MS = 50 * 60_000;
 
 /** Thrown when the account has to be linked again (the refresh token was revoked, or there never was one). */
 export class NeedsSignIn extends Error {
@@ -110,9 +116,24 @@ async function tokenRequest(fields: Record<string, string>): Promise<TokenRespon
 /** The sign-in under way, for `cancelSignIn`. */
 let pending: platform.SignInSession | null = null;
 
-/** Walks the user through the sign-in in their browser and returns the tokens. */
+/** Android: a token from Play services, with the errors it names put into words. */
+async function androidTokens(silent: boolean): Promise<Tokens> {
+  let access: string;
+  try {
+    access = await platform.androidAuthorize(SCOPE, silent);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    if (message === 'needs-sign-in') throw new NeedsSignIn();
+    if (message === 'cancelled') throw new Error('The sign-in was cancelled.');
+    throw new Error(message);
+  }
+  return { access, refresh: '', expires: Date.now() + ANDROID_TOKEN_MS, email: null };
+}
+
+/** Walks the user through the sign-in (the browser on desktop, Google's sheet on Android) and returns the tokens. */
 export async function signIn(): Promise<Tokens> {
   if (!isConfigured()) throw new Error('Google Drive sync is not set up in this build.');
+  if (platform.isAndroid()) return androidTokens(false);
   const verifier = randomToken(48);
   const state = randomToken(16);
   const session = await platform.oauthStart();
@@ -139,7 +160,9 @@ export function cancelSignIn(): void {
 /** Tells Google the grant is over, so that it no longer shows among the account's connected apps. Failing that is no reason to stay linked. */
 export async function revoke(tokens: Tokens): Promise<boolean> {
   try {
-    const response = await fetch(REVOKE_URL, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token: tokens.refresh }) });
+    // Revoking an access token revokes the grant behind it too, which is all Android has.
+    const response = await fetch(REVOKE_URL, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token: tokens.refresh || tokens.access }) });
+    if (platform.isAndroid()) await platform.androidClearToken(tokens.access);
     return response.ok;
   } catch {
     return false;
@@ -147,6 +170,8 @@ export async function revoke(tokens: Tokens): Promise<boolean> {
 }
 
 export async function refresh(tokens: Tokens): Promise<Tokens> {
+  // Android keeps no refresh token: the next one comes from Play services, without a word if the grant stands.
+  if (platform.isAndroid()) return { ...(await androidTokens(true)), email: tokens.email };
   const json = await tokenRequest({ grant_type: 'refresh_token', refresh_token: tokens.refresh });
   return { ...tokens, access: json.access_token!, expires: Date.now() + (json.expires_in ?? 3600) * 1000 };
 }

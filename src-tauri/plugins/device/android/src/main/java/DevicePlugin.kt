@@ -2,7 +2,9 @@
 // Bluetooth keyboard) and whether the on-screen keypad is showing, both read
 // from the system (no permissions needed) and reported again the moment they
 // change, so the page can switch between typing in place and the entry sheet
-// without guessing. Also writes the documents the system pickers hand out.
+// without guessing. Also writes the documents the system pickers hand out, and
+// asks Google Play services for the Drive authorization (Google takes no
+// redirect URL from an Android app; its own sheet asks and hands back a token).
 package com.sheidesigns.plastikcad.device
 
 import android.app.Activity
@@ -17,6 +19,15 @@ import android.os.Build
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import androidx.activity.result.ActivityResult
+import androidx.activity.result.IntentSenderRequest
+import com.google.android.gms.auth.api.identity.AuthorizationRequest
+import com.google.android.gms.auth.api.identity.AuthorizationResult
+import com.google.android.gms.auth.api.identity.ClearTokenRequest
+import com.google.android.gms.auth.api.identity.Identity
+import com.google.android.gms.common.ConnectionResult
+import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.common.api.CommonStatusCodes
+import com.google.android.gms.common.api.Scope
 import android.view.InputDevice
 import android.view.View
 import android.webkit.MimeTypeMap
@@ -83,6 +94,19 @@ internal class PickDocumentsArgs {
 @InvokeArg
 internal class DeleteDocumentArgs {
   lateinit var uri: String
+}
+
+@InvokeArg
+internal class AuthorizeArgs {
+  /** The OAuth scope wanted, such as `https://www.googleapis.com/auth/drive.file`. */
+  lateinit var scope: String
+  /** Only what is already granted: rather than ask the user, say `needs-sign-in`. */
+  var silent: Boolean = false
+}
+
+@InvokeArg
+internal class ClearTokenArgs {
+  lateinit var token: String
 }
 
 @InvokeArg
@@ -190,29 +214,89 @@ class DevicePlugin(activity: Activity) : Plugin(activity), InputManager.InputDev
     return intent.getParcelableExtra(Intent.EXTRA_STREAM)
   }
 
-  /** A URL of the app's own scheme: the browser sending a sign-in back. */
-  private fun redirectOf(intent: Intent?): Uri? {
-    val data = intent?.data ?: return null
-    return if (intent.action == Intent.ACTION_VIEW && data.scheme == host.packageName) data else null
-  }
-
   /** Keeps the files an intent brings, for `openedFiles`. True if there were any. */
   private fun takeIntent(intent: Intent?): Boolean {
-    if (redirectOf(intent) != null) return false
     val files = filesOf(intent)
     opened.addAll(files)
     return files.isNotEmpty()
   }
 
-  /** The app was running already (it is a single task) and was asked to open something else, or a sign-in came back. */
+  /** The app was running already (it is a single task) and was asked to open something else. */
   override fun onNewIntent(intent: Intent) {
-    redirectOf(intent)?.let { uri ->
-      val payload = JSObject()
-      payload.put("uri", uri.toString())
-      trigger("redirect", payload)
+    if (takeIntent(intent)) trigger("opened", JSObject())
+  }
+
+  /**
+   * Asks Google Play services for an access token with the scope, through the
+   * Android OAuth client registered for this package and signing key. The first
+   * time, Google's own sheet asks the user; after that the grant is remembered
+   * and the token comes back without a word. Resolves with `accessToken`.
+   */
+  @Command
+  fun authorize(invoke: Invoke) {
+    val args = invoke.parseArgs(AuthorizeArgs::class.java)
+    val request = AuthorizationRequest.builder().setRequestedScopes(listOf(Scope(args.scope))).build()
+    Identity.getAuthorizationClient(host)
+      .authorize(request)
+      .addOnSuccessListener { result ->
+        if (!result.hasResolution()) {
+          resolveToken(invoke, result)
+        } else if (args.silent) {
+          invoke.reject("needs-sign-in")
+        } else {
+          val sender = result.pendingIntent?.intentSender
+          if (sender == null) invoke.reject("Google gave no way to ask for access")
+          else startIntentSenderForResult(invoke, IntentSenderRequest.Builder(sender).build(), "authorized")
+        }
+      }
+      .addOnFailureListener { e -> invoke.reject(describe(e)) }
+  }
+
+  @ActivityCallback
+  fun authorized(invoke: Invoke, result: ActivityResult) {
+    if (result.resultCode != Activity.RESULT_OK) {
+      invoke.reject("cancelled")
       return
     }
-    if (takeIntent(intent)) trigger("opened", JSObject())
+    try {
+      resolveToken(invoke, Identity.getAuthorizationClient(host).getAuthorizationResultFromIntent(result.data))
+    } catch (e: ApiException) {
+      invoke.reject(describe(e))
+    }
+  }
+
+  private fun resolveToken(invoke: Invoke, result: AuthorizationResult) {
+    val token = result.accessToken
+    if (token == null) {
+      invoke.reject("Google gave no access token")
+      return
+    }
+    val out = JSObject()
+    out.put("accessToken", token)
+    invoke.resolve(out)
+  }
+
+  /** Why Play services would not authorize, in words fit to show. */
+  private fun describe(e: Exception): String {
+    if (e is ApiException) {
+      return when (e.statusCode) {
+        CommonStatusCodes.CANCELED -> "cancelled"
+        CommonStatusCodes.NETWORK_ERROR, CommonStatusCodes.TIMEOUT -> "Google could not be reached. Check the connection and try again."
+        CommonStatusCodes.DEVELOPER_ERROR -> "This build is not registered with Google: its package name or signing key does not match the Android client."
+        CommonStatusCodes.API_NOT_CONNECTED, CommonStatusCodes.SERVICE_DISABLED, ConnectionResult.SERVICE_MISSING, CommonStatusCodes.SERVICE_VERSION_UPDATE_REQUIRED -> "Google Play services is missing or out of date on this device."
+        else -> e.message ?: "Google refused the sign-in (${e.statusCode})"
+      }
+    }
+    return e.message ?: "Google refused the sign-in"
+  }
+
+  /** Forgets a token Play services holds, so that the account is asked again next time. */
+  @Command
+  fun clearToken(invoke: Invoke) {
+    val args = invoke.parseArgs(ClearTokenArgs::class.java)
+    Identity.getAuthorizationClient(host)
+      .clearToken(ClearTokenRequest.builder().setToken(args.token).build())
+      .addOnCompleteListener { invoke.resolve() }
   }
 
   /** The files waiting to be opened, as content URIs, handed over once. */

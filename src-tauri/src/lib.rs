@@ -455,15 +455,6 @@ async fn oauth_wait(app: AppHandle, port: u16, url: String) -> Result<String, St
     result.map_err(|err| err.to_string())
 }
 
-/// Opens a page in the system browser (Android's sign-in, which comes back to the app by its own URL scheme).
-#[tauri::command]
-fn open_url(app: AppHandle, url: String) -> Result<(), String> {
-    if !url.starts_with("https://") {
-        return Err("Only https pages are opened".into());
-    }
-    app.opener().open_url(&url, None::<&str>).map_err(|err| format!("Could not open the browser: {err}"))
-}
-
 /// Gives up a sign-in that is waiting.
 #[tauri::command]
 fn oauth_cancel(app: AppHandle, port: u16) {
@@ -571,7 +562,6 @@ pub fn run() {
             save_export,
             stage_share,
             delete_file,
-            open_url,
             read_head,
             write_file,
             list_designs,
