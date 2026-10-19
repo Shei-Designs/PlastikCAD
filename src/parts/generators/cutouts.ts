@@ -114,7 +114,7 @@ function stepped(main: Opening, wings: { w: number; h: number }, grow: number): 
 // D-series drawings, Schurter 6100-3 / 6600-3 and Qualtek 771W for the IEC parts, Norcomp's D-sub
 // panel cut-outs, Amass's XT60E sheet.
 export const PANEL_CONNECTORS: PanelConnector[] = [
-  { id: 'neutrik-d', label: 'Neutrik D-series', cutout: round(24), holes: { d: 3.2, across: 19, up: 24, diagonal: true }, note: 'Every D-series chassis connector (XLR, powerCON, etherCON, USB) takes this one cutout: a Ø24 mm hole with two M3 screw holes on opposite corners.' },
+  { id: 'neutrik-d', label: 'Neutrik D-series', cutout: round(24), holes: { d: 3.2, across: 19, up: 24, diagonal: true } },
   { id: 'iec-c14', label: 'IEC C14 inlet, screw flange', cutout: { w: 28, h: 20, r: 3 }, holes: { d: 3.5, across: 40 }, note: 'Fits the Schurter 6100 and Qualtek 703W inlets, in a panel up to 8 mm thick.' },
   { id: 'iec-c13', label: 'IEC C13 outlet, screw flange', cutout: { w: 32.5, h: 24.8, r: 4 }, holes: { d: 3.5, across: 40 } },
   { id: 'iec-c8', label: 'IEC C8 inlet, snap-in', cutout: { w: 19.5, h: 12.5, r: 0 }, wings: { w: 24.5, h: 7.5 }, note: 'Snaps into a panel 0.6 to 1.5 mm thick (Qualtek 771W); the wider notch below the opening is for its catches.' },
