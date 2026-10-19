@@ -289,34 +289,24 @@ function PictureFields({ node }: { node: PictureNode }) {
   );
 }
 
-type TextureMode = 'wrap' | 'tile' | 'own';
-
-const TEXTURE_MODES: { id: TextureMode; label: string; title: string }[] = [
-  { id: 'wrap', label: 'Wrap', title: 'The picture once around the object, bottom to top, like a label' },
-  { id: 'tile', label: 'Tile', title: 'The picture repeated over every side, for patterns and materials' },
-];
-
-/** For an imported mesh that brought texture coordinates: the picture laid out as the file had it. */
-const OWN_MODE: (typeof TEXTURE_MODES)[number] = { id: 'own', label: 'Imported', title: 'Lays the picture out as the imported file had it' };
-
 /**
  * A texture is a picture stretched over the surface, and lives under the colors
  * as part of the material. Until there is one, a button fetches a picture; then
- * its layout, the picture and the layout's one setting show.
+ * one row holds the picture and a Tile toggle, with the layout's one setting under it.
  */
 function TextureFields({ node }: { node: SceneNode }) {
-  const id = useId();
   const doc = useEditor((s) => s.doc);
   const images = useMemo(() => imageAssets(doc), [doc]);
   const locked = Boolean(node.locked);
   const pictures = picturesOf(node).length;
   const texture = node.texture ?? null;
   const asset = node.type === 'import' ? doc.assets[node.asset] : undefined;
-  const own = asset?.kind === 'mesh' && Boolean(asset.uv);
-  const modes = own ? [...TEXTURE_MODES, OWN_MODE] : TEXTURE_MODES;
+  // Untiled, the picture goes once around the object; an imported mesh that brought texture coordinates keeps the file's own layout instead.
+  const plain = asset?.kind === 'mesh' && asset.uv ? 'own' : 'wrap';
+  const tiled = texture?.mode === 'tile';
   const add = async () => {
     const key = await pickImage();
-    if (key) setTexture({ asset: key, mode: own ? 'own' : 'wrap', scale: 50, turn: 0 });
+    if (key) setTexture({ asset: key, mode: plain, scale: 50, turn: 0 });
   };
   const choose = async (key: string) => {
     if (key === 'new') key = (await pickImage()) ?? '';
@@ -340,23 +330,13 @@ function TextureFields({ node }: { node: SceneNode }) {
   return (
     <div className="texture">
       <div className="field inline texture-head">
-        <label id={`${id}-texture`}>Texture</label>
+        <label>Texture</label>
         <button type="button" className="legend-button" title="Remove the texture" aria-label="Remove the texture" disabled={locked} onClick={() => setTexture(null)}>
           <CloseIcon />
         </button>
       </div>
-      <div className="field">
-        <div className="segmented" role="radiogroup" aria-labelledby={`${id}-texture`}>
-          {modes.map((m) => (
-            <button key={m.id} type="button" role="radio" aria-checked={m.id === texture.mode} className={m.id === texture.mode ? 'on' : ''} title={m.title} disabled={locked} onClick={() => setTexture({ ...texture, mode: m.id })}>
-              {m.label}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="field">
-        <label htmlFor={id}>Picture</label>
-        <select id={id} value={texture.asset} disabled={locked} onChange={(e) => void choose(e.target.value)}>
+      <div className="field texture-row">
+        <select aria-label="Picture" value={texture.asset} disabled={locked} onChange={(e) => void choose(e.target.value)}>
           {images.map((i) => (
             <option key={i.key} value={i.key}>
               {imageLabel(i.asset)}
@@ -364,6 +344,9 @@ function TextureFields({ node }: { node: SceneNode }) {
           ))}
           <option value="new">Another picture…</option>
         </select>
+        <button type="button" className={tiled ? 'chip on' : 'chip'} aria-pressed={tiled} title={tiled ? 'Repeats the picture over every side; off, it goes once around the object like a label' : 'Repeats the picture over every side, for patterns and materials'} disabled={locked} onClick={() => setTexture({ ...texture, mode: tiled ? plain : 'tile' })}>
+          Tile
+        </button>
       </div>
       {texture.mode === 'wrap' && <SliderField label="Turn" help="Turns the picture round the object. At 0° its middle faces the front; 90° turns it to the right side, 180° to the back." value={texture.turn} min={-180} max={180} step={1} integer unit="°" disabled={locked} onChange={(v) => setTexture({ ...texture, turn: v })} />}
       {texture.mode === 'tile' && <SliderField label="Tile size" help="How many millimeters one repeat of the picture covers." value={texture.scale} min={2} max={500} step={1} unit="mm" disabled={locked} onChange={(v) => setTexture({ ...texture, scale: v })} />}

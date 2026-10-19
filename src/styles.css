@@ -1066,6 +1066,28 @@ ul {
   margin-bottom: 4px;
 }
 
+/* The picture takes the row; the Tile toggle keeps to its word. */
+.texture-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.texture-row select {
+  flex: 1;
+  min-width: 0;
+}
+
+.texture-row .chip {
+  flex: none;
+  backdrop-filter: none;
+  background: var(--control);
+}
+
+.texture-row .chip.on {
+  background: color-mix(in srgb, var(--accent) 14%, var(--control));
+}
+
 input[type='range'] {
   flex: 1;
   min-width: 0;
