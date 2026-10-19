@@ -2,9 +2,13 @@ import { useMemo, useState, useSyncExternalStore } from 'react';
 import { boundsSize, tidy, tidyAngle, unionBounds } from '../model/math';
 import type { SceneNode, Vec3 } from '../model/types';
 import { geometry } from '../state/geometry';
+import { partFigures } from '../parts/figures';
 import { resizeNode, updateNode, useEditor } from '../state/store';
 import { formatNumber, NumberBox } from './Fields';
-import { LinkIcon } from './icons';
+import { ChevronIcon, LinkIcon } from './icons';
+
+/** Whether the dimensions are unfolded; kept for the session, across selections. */
+let dimsOpen = false;
 
 const AXES = ['X', 'Y', 'Z'] as const;
 const SIZE_TAGS = ['W', 'D', 'H'] as const;
@@ -35,6 +39,38 @@ export function TransformBox() {
   return <Single node={nodes[0]} />;
 }
 
+/**
+ * The figures a part works out about itself (pitch diameter and the like),
+ * folded away above the size until asked for. Only parts have any.
+ */
+function Dimensions({ node }: { node: SceneNode }) {
+  const [open, setOpen] = useState(dimsOpen);
+  const info = node.type === 'part' ? partFigures(node).info : [];
+  if (info.length === 0) return null;
+  const toggle = () => {
+    dimsOpen = !open;
+    setOpen(!open);
+  };
+  return (
+    <div className={open ? 'transform-dims open' : 'transform-dims'}>
+      <button type="button" className="transform-dims-toggle" aria-expanded={open} onClick={toggle}>
+        <ChevronIcon />
+        Dimensions
+      </button>
+      {open && (
+        <dl className="facts">
+          {info.map((item) => (
+            <div key={item.label}>
+              <dt>{item.label}</dt>
+              <dd>{item.value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </div>
+  );
+}
+
 function Single({ node }: { node: SceneNode }) {
   const [linked, setLinked] = useState(false);
   const low = geometry.bounds(node).min[2];
@@ -52,6 +88,7 @@ function Single({ node }: { node: SceneNode }) {
   };
   return (
     <div className="transform-box" role="group" aria-label="Size, position and rotation">
+      <Dimensions node={node} />
       <div className="transform-row">
         <span className="transform-label">
           Size

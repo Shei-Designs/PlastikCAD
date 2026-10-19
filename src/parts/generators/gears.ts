@@ -43,7 +43,7 @@ const faceWidthParam: ParamDef = {
 };
 
 const toothFormGroup = (opts: { shift?: boolean } = {}): ParamGroup => ({
-  title: 'Tooth form',
+  title: 'Teeth',
   params: [
     {
       type: 'number',

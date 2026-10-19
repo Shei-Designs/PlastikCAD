@@ -71,7 +71,7 @@ export const bevelGear: GeneratorDef = {
       ],
     },
     {
-      title: 'Tooth form',
+      title: 'Teeth',
       params: [
         { type: 'number', key: 'pressureAngle', label: 'Pressure angle', default: 20, min: 14.5, max: 30, step: 0.5, unit: '°' },
         {

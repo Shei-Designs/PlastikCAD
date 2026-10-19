@@ -8,6 +8,8 @@ import { geometry } from '../state/geometry';
 import { editPicture, editText, imageAssets, pickImage, setColor, setHole, setTexture, updateNode, updateSelected, useEditor } from '../state/store';
 import { formatNumber, SliderField } from './Fields';
 import { getGenerator } from '../parts/generators';
+import { partFigures } from '../parts/figures';
+import { CloseIcon, PictureIcon, WarningIcon } from './icons';
 import { PartFields } from './PartFields';
 import { Sections } from './Sections';
 import type { Section } from './Sections';
@@ -128,6 +130,7 @@ function Appearance({ nodes }: { nodes: SceneNode[] }) {
         <CustomColor color={color} custom={color !== null && !PALETTE.some((c) => c.value === color)} disabled={locked} />
       </div>
       {mixed && <p className="field-note">Each part keeps its own color. Picking one paints the whole.</p>}
+      {nodes.length === 1 && nodes[0].type !== 'picture' && !nodes[0].hole && <TextureFields node={nodes[0]} />}
     </fieldset>
   );
 }
@@ -286,10 +289,9 @@ function PictureFields({ node }: { node: PictureNode }) {
   );
 }
 
-type TextureMode = 'none' | 'wrap' | 'tile' | 'own';
+type TextureMode = 'wrap' | 'tile' | 'own';
 
 const TEXTURE_MODES: { id: TextureMode; label: string; title: string }[] = [
-  { id: 'none', label: 'None', title: 'Plain color' },
   { id: 'wrap', label: 'Wrap', title: 'The picture once around the object, bottom to top, like a label' },
   { id: 'tile', label: 'Tile', title: 'The picture repeated over every side, for patterns and materials' },
 ];
@@ -297,6 +299,11 @@ const TEXTURE_MODES: { id: TextureMode; label: string; title: string }[] = [
 /** For an imported mesh that brought texture coordinates: the picture laid out as the file had it. */
 const OWN_MODE: (typeof TEXTURE_MODES)[number] = { id: 'own', label: 'Imported', title: 'Lays the picture out as the imported file had it' };
 
+/**
+ * A texture is a picture stretched over the surface, and lives under the colors
+ * as part of the material. Until there is one, a button fetches a picture; then
+ * its layout, the picture and the layout's one setting show.
+ */
 function TextureFields({ node }: { node: SceneNode }) {
   const id = useId();
   const doc = useEditor((s) => s.doc);
@@ -304,54 +311,63 @@ function TextureFields({ node }: { node: SceneNode }) {
   const locked = Boolean(node.locked);
   const pictures = picturesOf(node).length;
   const texture = node.texture ?? null;
-  const mode = texture?.mode ?? 'none';
   const asset = node.type === 'import' ? doc.assets[node.asset] : undefined;
-  const modes = asset?.kind === 'mesh' && asset.uv ? [...TEXTURE_MODES, OWN_MODE] : TEXTURE_MODES;
-  const choose = async (key: string | null) => {
-    if (key === 'new') key = await pickImage();
-    if (key) setTexture({ asset: key, mode: texture?.mode ?? 'wrap', scale: texture?.scale ?? 50, turn: texture?.turn ?? 0 });
+  const own = asset?.kind === 'mesh' && Boolean(asset.uv);
+  const modes = own ? [...TEXTURE_MODES, OWN_MODE] : TEXTURE_MODES;
+  const add = async () => {
+    const key = await pickImage();
+    if (key) setTexture({ asset: key, mode: own ? 'own' : 'wrap', scale: 50, turn: 0 });
   };
-  const setMode = async (m: TextureMode) => {
-    if (m === 'none') return setTexture(null);
-    if (texture) return setTexture({ ...texture, mode: m });
-    const key = images[0]?.key ?? (await pickImage());
-    if (key) setTexture({ asset: key, mode: m, scale: 50, turn: 0 });
+  const choose = async (key: string) => {
+    if (key === 'new') key = (await pickImage()) ?? '';
+    if (key && texture) setTexture({ ...texture, asset: key });
   };
+  if (pictures > 0) {
+    return (
+      <p className="field-note">
+        Carries {pictures} picture{pictures === 1 ? '' : 's'}, which cover the surface instead of a texture.
+      </p>
+    );
+  }
+  if (!texture) {
+    return (
+      <button type="button" className="import-button texture-button" disabled={locked} onClick={() => void add()}>
+        <PictureIcon />
+        Texture from a picture…
+      </button>
+    );
+  }
   return (
-    <>
-      {pictures > 0 ? (
-        <p className="field-note">
-          Carries {pictures} picture{pictures === 1 ? '' : 's'}, which cover the surface instead of a texture.
-        </p>
-      ) : (
-        <>
-          <div className="field">
-            <div className="segmented" role="radiogroup" aria-label="Texture">
-              {modes.map((m) => (
-                <button key={m.id} type="button" role="radio" aria-checked={m.id === mode} className={m.id === mode ? 'on' : ''} title={m.title} disabled={locked} onClick={() => void setMode(m.id)}>
-                  {m.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          {texture && (
-            <div className="field">
-              <label htmlFor={id}>Picture</label>
-              <select id={id} value={texture.asset} disabled={locked} onChange={(e) => void choose(e.target.value)}>
-                {images.map((i) => (
-                  <option key={i.key} value={i.key}>
-                    {imageLabel(i.asset)}
-                  </option>
-                ))}
-                <option value="new">Another picture…</option>
-              </select>
-            </div>
-          )}
-          {texture?.mode === 'wrap' && <SliderField label="Turn" help="Turns the picture round the object. At 0° its middle faces the front; 90° turns it to the right side, 180° to the back." value={texture.turn} min={-180} max={180} step={1} integer unit="°" disabled={locked} onChange={(v) => setTexture({ ...texture, turn: v })} />}
-          {texture?.mode === 'tile' && <SliderField label="Tile size" help="How many millimeters one repeat of the picture covers." value={texture.scale} min={2} max={500} step={1} unit="mm" disabled={locked} onChange={(v) => setTexture({ ...texture, scale: v })} />}
-        </>
-      )}
-    </>
+    <div className="texture">
+      <div className="field inline texture-head">
+        <label id={`${id}-texture`}>Texture</label>
+        <button type="button" className="legend-button" title="Remove the texture" aria-label="Remove the texture" disabled={locked} onClick={() => setTexture(null)}>
+          <CloseIcon />
+        </button>
+      </div>
+      <div className="field">
+        <div className="segmented" role="radiogroup" aria-labelledby={`${id}-texture`}>
+          {modes.map((m) => (
+            <button key={m.id} type="button" role="radio" aria-checked={m.id === texture.mode} className={m.id === texture.mode ? 'on' : ''} title={m.title} disabled={locked} onClick={() => setTexture({ ...texture, mode: m.id })}>
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="field">
+        <label htmlFor={id}>Picture</label>
+        <select id={id} value={texture.asset} disabled={locked} onChange={(e) => void choose(e.target.value)}>
+          {images.map((i) => (
+            <option key={i.key} value={i.key}>
+              {imageLabel(i.asset)}
+            </option>
+          ))}
+          <option value="new">Another picture…</option>
+        </select>
+      </div>
+      {texture.mode === 'wrap' && <SliderField label="Turn" help="Turns the picture round the object. At 0° its middle faces the front; 90° turns it to the right side, 180° to the back." value={texture.turn} min={-180} max={180} step={1} integer unit="°" disabled={locked} onChange={(v) => setTexture({ ...texture, turn: v })} />}
+      {texture.mode === 'tile' && <SliderField label="Tile size" help="How many millimeters one repeat of the picture covers." value={texture.scale} min={2} max={500} step={1} unit="mm" disabled={locked} onChange={(v) => setTexture({ ...texture, scale: v })} />}
+    </div>
   );
 }
 
@@ -421,8 +437,6 @@ function Design() {
     );
   }
   const node = nodes[0];
-  // The texture follows the object's own settings as one more tab; a hole has no surface to show it on.
-  const texture: Section[] = node.type !== 'picture' && !node.hole ? [{ title: 'Texture', content: <TextureFields node={node} /> }] : [];
   const own: Section[] =
     node.type === 'shape' && shapeDef(node.shape).params.length > 0
       ? [{ title: shapeDef(node.shape).name, content: <ShapeParams node={node} /> }]
@@ -438,8 +452,40 @@ function Design() {
         </div>
       </header>
       {node.type === 'picture' ? <PictureFields node={node} /> : <Appearance nodes={nodes} />}
-      {node.type === 'part' ? <PartFields node={node} more={texture} /> : <Sections legend="Settings" reset={node.id} sections={[...own, ...texture]} />}
+      {node.type === 'part' ? <PartFields node={node} /> : <Sections legend="Settings" reset={node.id} sections={own} />}
     </>
+  );
+}
+
+/**
+ * What a part has to say about its settings, at the foot of the panel so the
+ * settings above keep their place. Each note can be waved away; it comes back
+ * the next time the part raises it.
+ */
+function Warnings() {
+  const scene = useEditor((s) => s.doc.scene);
+  const selection = useEditor((s) => s.selection);
+  const node = selection.length === 1 ? scene.find((n) => n.id === selection[0]) : undefined;
+  const warnings = node?.type === 'part' ? partFigures(node).warnings : [];
+  const keys = warnings.map((w) => `${node!.id}:${w}`);
+  const [dismissed, setDismissed] = useState<string[]>([]);
+  // A note that is no longer raised is forgotten, so that it shows again when it is.
+  const raised = keys.join('\n');
+  useEffect(() => setDismissed((d) => d.filter((k) => keys.includes(k))), [raised]); // eslint-disable-line react-hooks/exhaustive-deps
+  const shown = warnings.filter((_, i) => !dismissed.includes(keys[i]));
+  if (shown.length === 0) return null;
+  return (
+    <div className="inspector-notes" role="status">
+      {shown.map((w) => (
+        <div key={w} className="inspector-note">
+          <WarningIcon />
+          <span>{w}</span>
+          <button type="button" className="legend-button" title="Dismiss" aria-label="Dismiss" onClick={() => setDismissed((d) => [...d, `${node!.id}:${w}`])}>
+            <CloseIcon />
+          </button>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -449,6 +495,7 @@ export function Inspector() {
       <div className="params">
         <Design />
       </div>
+      <Warnings />
     </aside>
   );
 }

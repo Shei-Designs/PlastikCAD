@@ -79,8 +79,8 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
   Surfaces hidden behind others stay clean, so the far wall of a cup does not
   get the picture through the near one. The object's own color shows
   everywhere the picture does not reach. An object can also wear a
-  **texture** over its whole surface instead (the Texture tab of its
-  settings): a picture wrapped once around
+  **texture** over its whole surface instead (under the colors in its
+  Material settings): a picture wrapped once around
   it, bottom to top, turned to any side, or tiled every so many millimeters
   from every side, for patterns and materials. Pictures and textures are for
   scenes and renders, not printing: they travel in GLB exports and are left

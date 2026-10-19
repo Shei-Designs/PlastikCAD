@@ -171,6 +171,13 @@ export const CloseIcon = () => (
     <path d="M6 6l12 12M18 6 6 18" />
   </Icon>
 );
+export const PictureIcon = () => (
+  <Icon>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <circle cx="9" cy="10" r="1.6" />
+    <path d="m21 16-5-5-8 8" />
+  </Icon>
+);
 export const LinkIcon = () => (
   <Icon width="14" height="14">
     <path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1" />

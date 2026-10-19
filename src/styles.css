@@ -1010,6 +1010,62 @@ ul {
   color: var(--warn-text);
 }
 
+/* A part's warnings, at the foot of the inspector so the settings above keep their place. */
+.inspector-notes {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.inspector-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 6px 7px 10px;
+  border-radius: 8px;
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.inspector-note > svg {
+  flex: none;
+  margin-top: 1px;
+}
+
+.inspector-note > span {
+  flex: 1;
+}
+
+.inspector-note .legend-button {
+  flex: none;
+  margin: -1px 0 0;
+  color: inherit;
+  opacity: 0.7;
+}
+
+.inspector-note .legend-button:hover {
+  opacity: 1;
+  background: rgb(0 0 0 / 0.12);
+}
+
+/* The texture, under the colors: a button until there is one, then its layout with a way to take it off. */
+.texture-button {
+  margin-top: 8px;
+}
+
+.texture {
+  margin-top: 8px;
+}
+
+.texture-head {
+  margin-bottom: 4px;
+}
+
 input[type='range'] {
   flex: 1;
   min-width: 0;
@@ -1165,27 +1221,20 @@ select:hover {
   color: var(--error-text);
 }
 
-.dimensions {
-  min-height: 0;
-  overflow-y: auto;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--panel) 90%, transparent);
-  backdrop-filter: blur(8px);
+.transform-dims {
+  margin: -2px -4px 0;
 }
 
-.dimensions.open {
-  width: 100%;
-}
-
-.dimensions-head {
+/* The dimensions fold: a row above the size that opens a list of the part's figures. */
+.transform-dims-toggle {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 4px;
   width: 100%;
-  padding: 7px 10px 7px 12px;
+  height: 24px;
+  padding: 0 4px;
   border: 0;
+  border-radius: 6px;
   background: none;
   font-size: 11px;
   font-weight: 600;
@@ -1194,30 +1243,23 @@ select:hover {
   color: var(--muted);
 }
 
-.dimensions:not(.open) .dimensions-head svg {
-  transform: rotate(180deg);
+.transform-dims-toggle:hover {
+  background: var(--control);
+  color: var(--text);
 }
 
-.dimensions dl {
-  padding: 0 12px 9px;
+.transform-dims-toggle svg {
+  transition: transform 0.15s;
 }
 
-.dimensions dl > div {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 1.5px 0;
+.transform-dims:not(.open) .transform-dims-toggle svg {
+  transform: rotate(-90deg);
 }
 
-.dimensions dt {
-  color: var(--muted);
-}
-
-.dimensions dd {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  user-select: text;
-  -webkit-user-select: text;
+.transform-dims .facts {
+  padding: 2px 4px 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
 }
 
 .export-row {
@@ -2356,30 +2398,43 @@ kbd {
 /* The sections of a settings box: a row of tabs that wraps instead of squeezing. */
 .section-tabs {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-bottom: 10px;
+  margin: 0 0 10px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.section-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .section-tabs button {
-  height: 24px;
-  padding: 0 10px;
+  flex: 1 0 auto;
+  height: 30px;
+  margin-bottom: -1px;
+  padding: 0 8px;
   border: 0;
-  border-radius: 6px;
-  background: var(--control);
+  border-bottom: 2px solid transparent;
+  background: none;
   color: var(--muted);
-  font-size: 12px;
+  font-weight: 600;
   white-space: nowrap;
 }
 
-.section-tabs button:hover {
-  background: var(--control-hover);
+.section-tabs button:hover:not(.on) {
   color: var(--text);
 }
 
 .section-tabs button.on {
-  background: var(--text);
-  color: var(--panel);
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+/* With tabs under it the legend is only a title: the tab row draws the rule. */
+.group.tabbed legend {
+  margin-bottom: 2px;
+  padding-bottom: 0;
+  border-bottom: 0;
 }
 
 /* ---------- projects browser ---------- */
