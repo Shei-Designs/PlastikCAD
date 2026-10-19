@@ -5,10 +5,10 @@ import { picturesOf } from '../model/ops';
 import { TEXT_FONTS } from '../model/types';
 import type { ImageAsset, PictureMapping, PictureNode, SceneNode, ShapeNode, TextAlign, TextNode } from '../model/types';
 import { geometry } from '../state/geometry';
-import { editPicture, editText, imageAssets, pickImage, setColor, setHole, setTexture, updateNode, updateSelected, useEditor } from '../state/store';
+import { editPicture, editText, imageAssets, pickImage, setColor, setHole, setTexture, toggleLocked, updateNode, updateSelected, useEditor } from '../state/store';
 import { formatNumber, SliderField } from './Fields';
 import { partFigures } from '../parts/figures';
-import { CloseIcon, PictureIcon, WarningIcon } from './icons';
+import { CloseIcon, LockIcon, PictureIcon, WarningIcon } from './icons';
 import { PartFields } from './PartFields';
 import { Sections } from './Sections';
 import type { Section } from './Sections';
@@ -416,8 +416,12 @@ function Design() {
       <header className="params-head">
         <div className="grow">
           <NameField node={node} />
-          {node.locked && <p>Locked</p>}
         </div>
+        {node.locked && (
+          <button type="button" className="icon-button" title="Locked: press to unlock" aria-label="Unlock" onClick={() => toggleLocked(node.id)}>
+            <LockIcon />
+          </button>
+        )}
       </header>
       {node.type === 'picture' ? <PictureFields node={node} /> : <Appearance nodes={nodes} />}
       {node.type === 'part' ? <PartFields node={node} /> : <Sections legend="Settings" reset={node.id} sections={own} />}

@@ -869,6 +869,12 @@ ul {
   color: var(--muted);
 }
 
+/* The lock beside a locked object's name, level with the name box. */
+.params-head .icon-button {
+  margin-right: -6px;
+  color: var(--accent);
+}
+
 .group {
   margin: 14px 0 0;
   padding: 0;
