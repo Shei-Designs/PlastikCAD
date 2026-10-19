@@ -2432,6 +2432,11 @@ kbd {
 }
 
 /* The sections of a settings box: a row of tabs that wraps instead of squeezing. */
+/* The legend's rule sits just over the tab row. */
+.group.tabbed legend {
+  margin-bottom: 2px;
+}
+
 .section-tabs {
   display: flex;
   margin: 0 0 10px;
