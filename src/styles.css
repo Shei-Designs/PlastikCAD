@@ -169,6 +169,7 @@ ul {
 }
 
 .inspector {
+  position: relative;
   border-left: 1px solid var(--border);
 }
 
@@ -1010,26 +1011,33 @@ ul {
   color: var(--warn-text);
 }
 
-/* A part's warnings, at the foot of the inspector so the settings above keep their place. */
+/* A part's warnings float over the foot of the inspector like toasts, so the settings keep their place. */
 .inspector-notes {
-  flex: none;
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 5;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 8px 12px 12px;
-  border-top: 1px solid var(--border);
+  pointer-events: none;
 }
 
 .inspector-note {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  padding: 7px 6px 7px 10px;
-  border-radius: 8px;
+  padding: 8px 6px 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--warn-text) 35%, var(--border));
+  border-radius: 10px;
   background: var(--warn-bg);
   color: var(--warn-text);
+  box-shadow: var(--shadow);
   font-size: 12px;
   line-height: 1.35;
+  pointer-events: auto;
+  animation: toast-in 180ms ease-out;
 }
 
 .inspector-note > svg {
