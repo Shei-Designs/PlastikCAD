@@ -139,6 +139,18 @@ describe('buildRobotPackage', () => {
     expect(text(pkg.files.find((f) => f.name === 'rviz/display.rviz')!.bytes)).toContain('Fixed Frame: Body');
   });
 
+  it('writes a cylinder collision turned as the object is', () => {
+    const d = doc();
+    const tilted = { ...wheel, rot: [90, 0, 0] as [number, number, number] };
+    d.scene = [body, tilted, arm];
+    d.robot!.links[0].collision = 'cylinder';
+    const geo = geometry();
+    geo.set(wheel.id, boxGeometry(tilted));
+    const urdf = text(buildRobotPackage(d, geo).files.find((f) => f.name === 'urdf/test_rover.urdf')!.bytes);
+    // The wheel joint (4 mm inboard, in the wheel's frame) turned with the wheel, so the box center is 4 mm above it.
+    expect(urdf).toMatch(/<collision>\s*<origin xyz="0 0 0.004" rpy="1.570796 0 0"\/>\s*<geometry><cylinder radius="0.01" length="0.02"\/>/);
+  });
+
   it('leaves a loop-closing joint out with a warning', () => {
     const d = doc();
     d.robot!.joints.push({ ...defaultJoint('j3', 'closing', arm.id, wheel.id, [0, 0, 0]) });

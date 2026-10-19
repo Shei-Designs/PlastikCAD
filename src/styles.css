@@ -3119,9 +3119,13 @@ kbd {
 /* The status line over the robot export button doubles as the way to the list. */
 .export-note.problems {
   display: flex;
+  flex-wrap: nowrap;
   align-items: center;
+  justify-content: flex-start;
   gap: 6px;
   width: 100%;
+  height: auto;
+  min-height: 1.4em;
   margin: 0 0 8px;
   padding: 0;
   border: 0;
@@ -3196,4 +3200,21 @@ kbd {
 
 .axis-row .segmented {
   flex: 1;
+}
+
+/* The pick-a-point button in the joint panel, lit while the plate waits for a click. */
+.chip.pick {
+  width: 100%;
+  justify-content: center;
+  gap: 6px;
+  height: 30px;
+}
+
+.chip.pick.on {
+  color: var(--accent);
+}
+
+.export-note.problems.warn:hover {
+  text-decoration: none;
+  cursor: default;
 }

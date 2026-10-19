@@ -26,11 +26,13 @@ export type MassSpec =
       shell: number;
     };
 
-export type CollisionKind = 'hull' | 'box' | 'mesh' | 'none';
+export type CollisionKind = 'hull' | 'box' | 'cylinder' | 'sphere' | 'mesh' | 'none';
 
 export const COLLISION_KINDS: { id: CollisionKind; name: string; help: string }[] = [
   { id: 'hull', name: 'Convex hull', help: 'The shape wrapped tight, with no hollows: fast and close.' },
-  { id: 'box', name: 'Box', help: 'The bounding box: fastest, roomier.' },
+  { id: 'box', name: 'Box', help: "The object's box, turned as it is: fastest, roomier." },
+  { id: 'cylinder', name: 'Cylinder', help: "A cylinder filling the object's box along its own Z: wheels, rollers, shafts." },
+  { id: 'sphere', name: 'Sphere', help: "A ball filling the object's box: balls and casters." },
   { id: 'mesh', name: 'Exact mesh', help: 'The visual shape itself: slow, and most simulators approximate it anyway.' },
   { id: 'none', name: 'None', help: 'Passes through everything.' },
 ];

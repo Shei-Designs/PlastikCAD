@@ -12,10 +12,11 @@ import { jointInDesign, linkOf } from '../robot/model';
 import { COLLISION_KINDS, JOINT_TYPES } from '../robot/types';
 import type { RobotJoint, RobotLink } from '../robot/types';
 import type { Problem } from '../robot/check';
-import { addJoint, deleteJoint, placeJoint, select, selectJoint, setRobotName, setRobotRoot, updateJoint, updateLink, useEditor } from '../state/store';
+import { addJoint, deleteJoint, fitJointFollowers, placeJoint, select, selectJoint, setPose, setRobotName, setRobotRoot, startJointPick, stopJointPick, updateJoint, updateLink, useEditor } from '../state/store';
+import { rangeOf } from '../robot/kinematics';
 import { formatNumber, NumberBox, selectOnFocus, SliderField } from './Fields';
 import { Hint } from './Hint';
-import { ChevronIcon, JointIcon, TrashIcon, WarningIcon } from './icons';
+import { ChevronIcon, JointIcon, PinIcon, TrashIcon, WarningIcon } from './icons';
 import { NameField } from './Inspector';
 import { useRobot } from './RobotPanel';
 
@@ -233,14 +234,12 @@ function LinkPanel({ node }: { node: SceneNode }) {
       </fieldset>
       <fieldset className="group">
         <legend>Collision</legend>
-        <div className="field">
-          <div className="segmented small" role="radiogroup" aria-label="Collision shape">
-            {COLLISION_KINDS.map((k) => (
-              <button key={k.id} type="button" role="radio" aria-checked={link.collision === k.id} className={link.collision === k.id ? 'on' : ''} title={k.help} onClick={() => set({ collision: k.id })}>
-                {k.id === 'hull' ? 'Hull' : k.id === 'mesh' ? 'Exact' : k.name}
-              </button>
-            ))}
-          </div>
+        <div className="field inline">
+          <label>
+            Shape
+            <Hint text={COLLISION_KINDS.find((k) => k.id === link.collision)?.help ?? ''} />
+          </label>
+          <Select value={link.collision} label="Collision shape" options={COLLISION_KINDS.map((k) => ({ value: k.id, label: k.name }))} onChange={(id) => set({ collision: id })} />
         </div>
         <div className="field inline">
           <label>
@@ -294,7 +293,12 @@ const AXES: { label: string; vector: Vec3 }[] = [
 ];
 
 function JointPanel({ joint }: { joint: RobotJoint }) {
-  const { robot, nodes, problems } = useRobot();
+  const { robot, nodes, problems, tree } = useRobot();
+  const picking = useEditor((s) => s.jointPick);
+  const pose = useEditor((s) => s.pose);
+  const [lo, hi] = rangeOf(joint);
+  const posed = pose?.joint === joint.id ? pose.value : 0;
+  const inLoop = tree.loops.length > 0;
   const child = nodes.find((n) => n.id === joint.child);
   const parent = nodes.find((n) => n.id === joint.parent);
   const placed = child ? jointInDesign(joint, child) : { origin: joint.origin, axis: joint.axis };
@@ -344,6 +348,12 @@ function JointPanel({ joint }: { joint: RobotJoint }) {
       <fieldset className="group">
         <legend>Place</legend>
         <div className="field">
+          <button type="button" className={picking ? 'chip pick on' : 'chip pick'} aria-pressed={picking} title="Shows points on both links; click one to put the joint there. The end of a round shape gives its axis too." onClick={() => (picking ? stopJointPick() : startJointPick())}>
+            <PinIcon />
+            {picking ? 'Click a point on the plate…' : 'Pick a point on the plate'}
+          </button>
+        </div>
+        <div className="field">
           <label>
             Origin
             <Hint text="Where the joint sits, in the design's coordinates (mm)." />
@@ -384,6 +394,27 @@ function JointPanel({ joint }: { joint: RobotJoint }) {
           </div>
         )}
       </fieldset>
+      {joint.type !== 'fixed' && (
+        <fieldset className="group">
+          <legend>
+            Try it
+            {pose?.joint === joint.id && (
+              <button type="button" className="chip" title="Puts the robot back" onClick={() => setPose(null)}>
+                Reset
+              </button>
+            )}
+          </legend>
+          <SliderField label={angular ? 'Angle' : 'Travel'} help="Moves the joint on the plate to see the robot move; the design stays as it is." value={posed} min={lo} max={hi} step={angular ? 1 : 0.5} unit={unit} onChange={(v) => setPose(v)} />
+          {pose?.joint === joint.id && !pose.solved.closed && <p className="export-note problems warn">The linkage cannot close here: a loop joint is {formatNumber(pose.solved.error, 1)} mm apart.</p>}
+          {inLoop && (
+            <div className="field">
+              <button type="button" className="chip" title="Sweeps this joint over its range with the loops closed and sets the passive joints to follow it (mimic), as URDF needs" onClick={() => fitJointFollowers(joint.id)}>
+                Set the others to follow this joint
+              </button>
+            </div>
+          )}
+        </fieldset>
+      )}
       {joint.type !== 'fixed' && (
         <fieldset className="group">
           <legend>Motion</legend>

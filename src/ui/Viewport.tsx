@@ -12,6 +12,8 @@ import {
   endGesture,
   finishEditing,
   getState,
+  jointSnaps,
+  pickJointSnap,
   groupSelected,
   mirrorSelected,
   movePlacing,
@@ -31,6 +33,7 @@ import {
 import { boundsSize } from '../model/math';
 import type { Mat } from '../model/math';
 import type { Vec3 } from '../model/types';
+import { posedScene } from '../robot/kinematics';
 import { jointInDesign } from '../robot/model';
 import type { EditorState } from '../state/store';
 import { GIZMO_SIZE, Viewer } from '../viewer/Viewer';
@@ -312,8 +315,9 @@ export function Viewport() {
   const viewer = useRef<Viewer | null>(null);
 
   const state = useEditor((s) => s);
-  const { prefs, placing, selection, busy, aligning, editing, mating } = state;
+  const { prefs, placing, selection, busy, aligning, editing, mating, pose } = state;
   const highlight = state.highlight ?? jointMarker(state);
+  const snaps = useMemo(() => (state.jointPick ? jointSnaps(state) : null), [state.jointPick, state.joint, state.doc]);
   // Another selection, or an edit from elsewhere, and the typing boxes no longer belong to anything.
   useEffect(() => {
     viewer.current?.dismissPrompt();
@@ -350,6 +354,11 @@ export function Viewport() {
         onAlignPick: commitAlign,
         onAnchor: setAlignAnchor,
         onHandleClick: setPrompt,
+        onSnapHover: () => undefined,
+        onSnapPick: (index) => {
+          const point = jointSnaps(getState())[index];
+          if (point) pickJointSnap(point);
+        },
       },
       { theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap },
     );
@@ -364,8 +373,8 @@ export function Viewport() {
   }, []);
 
   useEffect(() => {
-    viewer.current?.setOptions({ theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap, interactive: true, align: aligning, highlight });
-  }, [prefs.theme, prefs.edges, prefs.grid, prefs.snap, aligning, highlight]);
+    viewer.current?.setOptions({ theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap, interactive: true, align: aligning, highlight, snaps });
+  }, [prefs.theme, prefs.edges, prefs.grid, prefs.snap, aligning, highlight, snaps]);
 
   useEffect(() => {
     viewer.current?.setPlacing(Boolean(placing));
@@ -381,11 +390,13 @@ export function Viewport() {
       const entry = geometry.get(node);
       return entry?.state === 'ready' ? entry.result : null;
     };
-    const list: ViewItem[] = scene.map((node) => ({ node, result: ready(node), selected: picked.has(node.id) }));
+    // A posed robot is drawn with its links moved; the geometry is the same, only the matrices change.
+    const shown = pose ? posedScene(scene, pose.solved.frames) : scene;
+    const list: ViewItem[] = shown.map((node) => ({ node, result: ready(node), selected: picked.has(node.id) }));
     if (placing) list.push({ node: placing, result: ready(placing), selected: false, ghost: true });
     return list;
     // `revision` changes when geometry arrives.
-  }, [scene, selection, placing, revision]);
+  }, [scene, selection, placing, revision, pose]);
 
   useEffect(() => {
     viewer.current?.setItems(items, assets);

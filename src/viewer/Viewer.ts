@@ -69,6 +69,14 @@ export interface ViewerOptions {
   align: { bounds: Bounds; anchor: string | null } | null;
   /** A box to point out (a part inside a group): its frame and size. */
   highlight: { matrix: Mat; size: Vec3 } | null;
+  /** Points to pick from (Robot mode, placing a joint): dots at each, in the scene. */
+  snaps: SnapPoint[] | null;
+}
+
+export interface SnapPoint {
+  at: Vec3;
+  /** A direction the point carries (the axis of a round shape), shown as a line through it. */
+  axis?: Vec3;
 }
 
 export type AlignMode = 'min' | 'center' | 'max';
@@ -103,6 +111,9 @@ export interface ViewerEvents {
   /** A handle was clicked rather than dragged: offer to type the value it would set (see `applyTyped`). */
   /** A grip was clicked rather than dragged: show boxes to type its values. `null` takes them away again. */
   onHandleClick(prompt: HandlePrompt | null): void;
+  /** A snap point was hovered (null: left) or clicked. */
+  onSnapHover(index: number | null): void;
+  onSnapPick(index: number): void;
 }
 
 export interface HandlePrompt {
@@ -135,7 +146,7 @@ export interface HandlePrompt {
   }[];
 }
 
-const DEFAULTS: ViewerOptions = { theme: 'dark', edges: true, grid: true, snap: 1, interactive: true, align: null, highlight: null };
+const DEFAULTS: ViewerOptions = { theme: 'dark', edges: true, grid: true, snap: 1, interactive: true, align: null, highlight: null, snaps: null };
 /** Distance of the anchor dots from the box, in pixels. */
 const ALIGN_GAP = 22;
 const ALIGN_MODES: AlignMode[] = ['min', 'center', 'max'];
@@ -421,6 +432,10 @@ export class Viewer {
   private handleMode: 'none' | 'single' | 'several' | 'locked' | 'align' = 'none';
   private alignLines!: LineSegments<BufferGeometry, LineBasicMaterial>;
   private hovered: Handle | null = null;
+  /** Dots at the snap points on offer, one sprite each, and the hovered one. */
+  private snapDots: Sprite[] = [];
+  private snapHot: number | null = null;
+  private snapAxis!: LineSegments<BufferGeometry, LineBasicMaterial>;
   private grips!: { corner: SpriteMaterial; edge: SpriteMaterial; lift: SpriteMaterial; dot: SpriteMaterial; dotHot: SpriteMaterial };
   private arcParts!: { arc: TorusGeometry; head: ConeGeometry; hit: TorusGeometry };
 
@@ -760,6 +775,11 @@ export class Viewer {
     this.alignLines = new LineSegments(lines, new LineBasicMaterial({ transparent: true, opacity: 0.55, depthTest: false }));
     this.alignLines.visible = false;
     this.overlay.add(this.alignLines);
+    const axisLine = new BufferGeometry();
+    axisLine.setAttribute('position', new BufferAttribute(new Float32Array(6), 3));
+    this.snapAxis = new LineSegments(axisLine, new LineBasicMaterial({ transparent: true, opacity: 0.8, depthTest: false }));
+    this.snapAxis.visible = false;
+    this.overlay.add(this.snapAxis);
     // Quarter ring with an arrowhead at each end, in the XY plane from +X to +Y.
     this.arcParts = {
       arc: new TorusGeometry(1, 0.07, 8, 20, Math.PI / 2),
@@ -800,6 +820,8 @@ export class Viewer {
     this.gridMajor.visible = this.gridMinor.visible = this.axes.visible = grid;
     this.outline.material.color.set(t.accent);
     this.alignLines.material.color.set(t.accent);
+    this.snapAxis.material.color.set(t.accent);
+    this.syncSnaps();
     this.pointer3d.material.color.set(theme === 'dark' ? 0xffffff : 0x1b1f27);
     const h = this.options.highlight;
     if (h) {
@@ -1416,6 +1438,12 @@ export class Viewer {
     }
     if (!this.options.interactive) return;
 
+    const snap = this.pickSnap(event);
+    if (snap !== null) {
+      this.events.onSnapPick(snap);
+      claim();
+      return;
+    }
     const handle = this.pickHandle(event);
     if (handle?.kind.type === 'align') {
       this.events.onAlignPick(handle.kind.axis, handle.kind.mode);
@@ -1866,7 +1894,12 @@ export class Viewer {
       return;
     }
     if (!drag) {
-      if (event.buttons === 0 && this.options.interactive) this.hover(this.pickHandle(event));
+      if (event.buttons === 0 && this.options.interactive) {
+        const snap = this.pickSnap(event);
+        this.hoverSnap(snap);
+        this.hover(snap === null ? this.pickHandle(event) : null);
+        if (snap !== null) this.renderer.domElement.style.cursor = 'pointer';
+      }
       return;
     }
     if (this.press && Math.hypot(event.clientX - this.press.x, event.clientY - this.press.y) >= dragThreshold(event)) this.press = null;
@@ -1979,7 +2012,77 @@ export class Viewer {
   private readonly onPointerLeave = (): void => {
     if (this.placing && !this.drag) this.events.onPlaceMove(null);
     this.hover(null);
+    this.hoverSnap(null);
   };
+
+  // --- snap points (Robot mode) ------------------------------------------------
+
+  /** One dot per snap point on offer; the dots are kept across option changes and only remade when the count changes. */
+  private syncSnaps(): void {
+    const wanted = this.options.snaps?.length ?? 0;
+    while (this.snapDots.length > wanted) {
+      const dot = this.snapDots.pop()!;
+      this.overlay.remove(dot);
+    }
+    while (this.snapDots.length < wanted) {
+      const dot = new Sprite(this.grips.dot);
+      dot.renderOrder = 11;
+      this.overlay.add(dot);
+      this.snapDots.push(dot);
+    }
+    if (this.snapHot !== null && this.snapHot >= wanted) this.hoverSnap(null);
+    this.snapAxis.visible = false;
+  }
+
+  private layoutSnaps(): void {
+    const snaps = this.options.snaps;
+    if (!snaps) return;
+    snaps.forEach((snap, i) => {
+      const dot = this.snapDots[i];
+      if (!dot) return;
+      const hot = i === this.snapHot;
+      dot.material = hot ? this.grips.dotHot : this.grips.dot;
+      dot.position.set(snap.at[0], snap.at[1], snap.at[2]);
+      dot.scale.setScalar((hot ? 16 : 11) * this.pixelSize(dot.position) * this.gripScale);
+    });
+    // The hovered point's axis, drawn through it.
+    const hot = this.snapHot !== null ? snaps[this.snapHot] : undefined;
+    this.snapAxis.visible = Boolean(hot?.axis);
+    if (hot?.axis) {
+      const reach = 40 * this.pixelSize(new Vector3(...hot.at));
+      const pts = this.snapAxis.geometry.getAttribute('position') as BufferAttribute;
+      for (let k = 0; k < 3; k++) {
+        pts.setComponent(0, k, hot.at[k] - hot.axis[k] * reach);
+        pts.setComponent(1, k, hot.at[k] + hot.axis[k] * reach);
+      }
+      pts.needsUpdate = true;
+    }
+  }
+
+  private pickSnap(event?: PointerEvent): number | null {
+    if (!this.options.snaps?.length) return null;
+    this.gripScale = event?.pointerType === 'touch' ? TOUCH_GRIP_SCALE : 1;
+    this.layoutSnaps();
+    this.overlay.updateMatrixWorld();
+    this.gripScale = 1;
+    let best: number | null = null;
+    let bestDistance = Infinity;
+    this.snapDots.forEach((dot, i) => {
+      const hit = this.raycaster.intersectObject(dot, false)[0];
+      if (hit && hit.distance < bestDistance) {
+        best = i;
+        bestDistance = hit.distance;
+      }
+    });
+    return best;
+  }
+
+  private hoverSnap(index: number | null): void {
+    if (index === this.snapHot) return;
+    this.snapHot = index;
+    this.events.onSnapHover(index);
+    this.requestRender();
+  }
 
   private hover(handle: Handle | null): void {
     if (handle === this.hovered) return;
@@ -2274,8 +2377,9 @@ export class Viewer {
     if (!withOverlays) return;
 
     renderer.autoClear = false;
-    if (this.frame || this.pointer3d.visible) {
+    if (this.frame || this.pointer3d.visible || this.snapDots.length) {
       this.layoutHandles();
+      this.layoutSnaps();
       renderer.clearDepth();
       renderer.render(this.overlay, camera);
     }

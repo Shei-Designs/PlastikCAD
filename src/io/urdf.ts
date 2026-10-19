@@ -22,6 +22,8 @@ export interface UrdfShape {
   geometry: UrdfGeometry;
   /** Where the shape sits in the link's frame, m; the link's origin if left out. */
   origin?: Vec3;
+  /** How it is turned there: roll, pitch, yaw in radians (about the fixed X, then Y, then Z). */
+  rpy?: Vec3;
 }
 
 export interface UrdfLink {
@@ -58,7 +60,11 @@ const geometryXml = (g: UrdfGeometry): string => {
   return `<sphere radius="${fmt(g.sphere.radius, 6)}"/>`;
 };
 
-const originXml = (origin: Vec3 | undefined, indent: string): string => (origin && origin.some((x) => x !== 0) ? `${indent}<origin xyz="${vec(origin)}" rpy="0 0 0"/>\n` : '');
+const originXml = (origin: Vec3 | undefined, rpy: Vec3 | undefined, indent: string): string => {
+  const moved = origin?.some((x) => x !== 0);
+  const turned = rpy?.some((x) => x !== 0);
+  return moved || turned ? `${indent}<origin xyz="${vec(origin ?? [0, 0, 0])}" rpy="${vec(rpy ?? [0, 0, 0])}"/>\n` : '';
+};
 
 function linkXml(link: UrdfLink, materials: Map<string, string>): string {
   const lines: string[] = [`  <link name="${escapeXml(link.name)}">`];
@@ -74,14 +80,14 @@ function linkXml(link: UrdfLink, materials: Map<string, string>): string {
   }
   for (const v of link.visual) {
     lines.push('    <visual>');
-    lines.push(originXml(v.origin, '      ').trimEnd());
+    lines.push(originXml(v.origin, v.rpy, '      ').trimEnd());
     lines.push(`      <geometry>${geometryXml(v.geometry)}</geometry>`);
     if (v.color) lines.push(`      <material name="${materialName(v.color, materials)}"/>`);
     lines.push('    </visual>');
   }
   for (const c of link.collision) {
     lines.push('    <collision>');
-    lines.push(originXml(c.origin, '      ').trimEnd());
+    lines.push(originXml(c.origin, c.rpy, '      ').trimEnd());
     lines.push(`      <geometry>${geometryXml(c.geometry)}</geometry>`);
     lines.push('    </collision>');
   }

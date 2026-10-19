@@ -221,3 +221,10 @@ export const JointIcon = () => (
     <path d="M5.5 16.5 9 14M18.5 7.5 15 10" />
   </Icon>
 );
+/** A map pin: pick a point on the plate. */
+export const PinIcon = () => (
+  <Icon>
+    <path d="M12 21s-6-5.5-6-10.5a6 6 0 0 1 12 0C18 15.5 12 21 12 21z" />
+    <circle cx="12" cy="10.5" r="2.2" />
+  </Icon>
+);

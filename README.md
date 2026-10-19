@@ -165,18 +165,33 @@ in the design file and synced with it.
   nothing is selected or with *Make base* on a link.
 - **Joints.** Select a link and attach it to another: a joint is made with the
   link as the child, placed on the child's box where it comes nearest the
-  parent, and picked, drawn as a rod along its axis on the plate. Set its kind
-  (revolute, continuous, prismatic, fixed), its origin and axis in the design's
-  coordinates, its limits, effort, velocity, damping and friction, and whether
-  it follows another joint (URDF `mimic`, for the passive joints of a linkage).
-  A joint stays with its child: move the child and the joint comes along.
+  parent, and picked, drawn as a rod along its axis on the plate. *Pick a
+  point on the plate* puts dots on both links (corners, edge middles, face
+  centers, and the ends of a round shape's axis, which set the axis too):
+  click one to move the joint there. Set its kind (revolute, continuous,
+  prismatic, fixed), its origin and axis in the design's coordinates, its
+  limits, effort, velocity, damping and friction, and whether it follows
+  another joint (URDF `mimic`). A joint stays with its child: move the child
+  and the joint comes along.
+- **Try it.** The slider in a joint's panel moves it on the plate, the links
+  below it following, to see the range of motion and catch an axis pointing
+  the wrong way. The design is not touched; *Reset* puts the robot back.
+- **Linkages.** Loops (a four-bar, a parallel gripper) are built as they
+  are, with a joint closing each. The slider solves the loops, so the
+  linkage moves as the real one does, and says when it cannot close. *Set
+  the others to follow this joint* sweeps the driven joint over its range
+  and writes each passive joint's motion as a URDF `mimic` line: exact for a
+  parallelogram, a fit with a reported error for other four-bars. URDF
+  cannot hold the loop-closing joint, so it is left out of the export with a
+  warning; SDF, which keeps it, is next.
 - **Mass.** Each link is weighed from its shape and material: pick a material
   (filaments, resin, metals, acrylic, wood, foam...) and, for a printed part,
   the infill and the shell thickness, or type the mass you weighed. The
   volume, surface, mass, center of mass and principal moments of inertia are
   shown; the inertia tensor goes into the file.
-- **Collision.** A convex hull by default, or the bounding box, the exact
-  mesh, or none; and the surface's coefficient of friction for Gazebo.
+- **Collision.** A convex hull by default, or the object's box, a cylinder
+  or a sphere filling it (turned as the object is), the exact mesh, or none;
+  and the surface's coefficient of friction for Gazebo.
 - **Checks.** The overview lists what stops an export (no base, a link no
   joint reaches, limits the wrong way round, a link with no mass or an
   impossible inertia) and what is only worth knowing (a joint that closes a
@@ -188,10 +203,8 @@ in the design file and synced with it.
   Meters, kilograms and radians, Z up; every link's frame is parallel to the
   design's axes and sits at its joint, with its meshes written in that frame.
 
-Loops (a four-bar linkage, a parallel gripper) can be built: the joint that
-closes a loop is kept in the design and listed as a warning, since URDF cannot
-hold it; mark the passive joints as following the driven one. SDF export,
-which keeps loops, drive and sensor presets and `ros2_control` blocks are next.
+SDF export (which keeps loops), drive and sensor presets and `ros2_control`
+blocks are next.
 
 ## Projects
 
@@ -529,9 +542,8 @@ never touch the mesh kernel, which keeps them easy to test.
 - More parts: throated worm wheel, planetary set helper, V-belt pulleys,
   imperial threads.
 - Assembly preview of meshing gears.
-- Robot mode: joint placement on snap points with a pose slider, SDF output
-  (with loops), cylinder and sphere collision shapes, drive and sensor
-  presets, `ros2_control`, xacro, MJCF.
+- Robot mode: SDF output (with loops), drive and sensor presets,
+  `ros2_control`, xacro, MJCF.
 - STEP export. Shapes and parts are already described as profiles and
   operations rather than triangles, so a B-rep backend can evaluate the same
   descriptions.

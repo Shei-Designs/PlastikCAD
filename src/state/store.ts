@@ -57,7 +57,11 @@ import type { SyncReport } from '../sync/engine';
 import { mergeDocs } from '../sync/merge';
 import { checkRobot } from '../robot/check';
 import { buildRobotPackage, packageName } from '../robot/export';
-import { jointInChild, linkNodes, linkOf, pruned, robotOf } from '../robot/model';
+import { fitFollowers, solvePose } from '../robot/kinematics';
+import type { Solved } from '../robot/kinematics';
+import { jointInChild, jointInDesign as jointInDesignOf, linkNodes, linkOf, pruned, robotOf } from '../robot/model';
+import { snapPointsOf } from '../robot/snaps';
+import type { SnapPoint } from '../viewer/Viewer';
 import { defaultJoint } from '../robot/types';
 import type { Robot, RobotJoint, RobotLink } from '../robot/types';
 import { massProps } from './massProps';
@@ -94,6 +98,10 @@ export interface EditorState {
   robot: boolean;
   /** The joint picked in Robot mode (nothing else is selected while one is). */
   joint: string | null;
+  /** The picked joint is being placed: the plate offers the snap points of its two links. */
+  jointPick: boolean;
+  /** The picked joint moved to try the robot: its value, and where every link goes for it (loops solved). */
+  pose: { joint: string; value: number; solved: Solved } | null;
   /**
    * The gear a mate is being made for while the wizard is open; the previewed mate carries
    * `id`. `building` while the preview the panel asks for is not in the scene yet.
@@ -144,6 +152,8 @@ let state: EditorState = {
   partsEpoch: 0,
   robot: false,
   joint: null,
+  jointPick: false,
+  pose: null,
   mating: null,
   aligning: null,
   editing: null,
@@ -281,9 +291,9 @@ function commit(scene: Scene, options: { selection?: string[]; merge?: string } 
   abortAlignPreview();
   const selection = options.selection ?? state.selection;
   record(options.merge);
-  // The robot lets go of objects that are gone.
+  // The robot lets go of objects that are gone, and of a pose, which was for the objects as they were.
   const robot = state.doc.robot && pruned(state.doc.robot, scene);
-  set({ doc: robot !== state.doc.robot ? { ...state.doc, scene, robot } : { ...state.doc, scene }, selection });
+  set({ doc: robot !== state.doc.robot ? { ...state.doc, scene, robot } : { ...state.doc, scene }, selection, pose: null });
 }
 
 /** Start of a drag: everything until `endGesture` is a single undo step. */
@@ -317,7 +327,7 @@ function restore(from: Step[], to: Step[]): void {
   to.push(step());
   lastMerge = null;
   const ids = new Set(target.scene.map((n) => n.id));
-  set({ doc: { ...state.doc, scene: target.scene, robot: target.robot }, selection: target.selection.filter((id) => ids.has(id)) });
+  set({ doc: { ...state.doc, scene: target.scene, robot: target.robot }, selection: target.selection.filter((id) => ids.has(id)), pose: null });
   // The dots follow the objects back.
   if (state.aligning) refreshAlignBounds();
 }
@@ -1393,6 +1403,8 @@ function adopt(doc: Doc, key: string | null): void {
     bin: false,
     robot: false,
     joint: null,
+    jointPick: false,
+    pose: null,
     mating: null,
     editing: null,
     highlight: null,
@@ -1733,18 +1745,71 @@ export function enterRobotMode(): void {
   set({ robot: true, joint: null, bin: false, selection: [] });
 }
 
-export const leaveRobotMode = (): void => set({ robot: false, joint: null });
+export const leaveRobotMode = (): void => set({ robot: false, joint: null, jointPick: false, pose: null });
 export const toggleRobotMode = (): void => (state.robot ? leaveRobotMode() : enterRobotMode());
 
 export function selectJoint(id: string | null): void {
   abortAlignPreview();
-  set(id ? { joint: id, selection: [] } : { joint: null });
+  set(id ? { joint: id, selection: [], jointPick: false, pose: null } : { joint: null, jointPick: false, pose: null });
 }
 
-/** Replaces the robot as one undoable step, like `commit` does the scene. */
+/** Replaces the robot as one undoable step, like `commit` does the scene. A pose was for the robot as it was. */
 function commitRobot(robot: Robot, merge?: string): void {
   record(merge);
-  set({ doc: { ...state.doc, robot } });
+  set({ doc: { ...state.doc, robot }, pose: null });
+}
+
+/** The picked joint is placed by a click on one of these: the corners, edge middles, face centers and axis ends of its two links. */
+export function jointSnaps(s: EditorState = state): SnapPoint[] {
+  const joint = s.jointPick && s.joint ? s.doc.robot?.joints.find((j) => j.id === s.joint) : undefined;
+  if (!joint) return [];
+  const child = s.doc.scene.find((n) => n.id === joint.child);
+  const parent = s.doc.scene.find((n) => n.id === joint.parent);
+  return [...(child ? snapPointsOf(child) : []), ...(parent ? snapPointsOf(parent) : [])];
+}
+
+export const startJointPick = (): void => set({ jointPick: Boolean(state.joint), pose: null });
+export const stopJointPick = (): void => set({ jointPick: false });
+
+/** Puts the picked joint on a snap point; a point that carries an axis (the end of a cylinder) gives the joint that axis too. */
+export function pickJointSnap(point: SnapPoint): void {
+  const joint = state.joint && robotOf(state.doc).joints.find((j) => j.id === state.joint);
+  const child = joint && state.doc.scene.find((n) => n.id === joint.child);
+  if (!joint || !child) return;
+  const placed = jointInDesignOf(joint, child);
+  placeJoint(joint.id, point.at, point.axis ?? placed.axis);
+  set({ jointPick: false });
+}
+
+/**
+ * Moves the picked joint to `value` for a look, every other free joint going
+ * where the loops close; null puts the robot back. The design is not touched.
+ */
+export function setPose(value: number | null): void {
+  const joint = state.joint;
+  if (value === null || !joint) return void set({ pose: null });
+  const start = state.pose?.joint === joint ? state.pose.solved.values : undefined;
+  const solved = solvePose(robotOf(state.doc), state.doc.scene, new Map([[joint, value]]), start);
+  set({ pose: { joint, value, solved } });
+}
+
+/**
+ * Finds how the passive joints of a linkage follow the picked one, by
+ * sweeping it over its range with the loops closed, and writes that as each
+ * one's mimic: exact for a parallelogram, a fit with a reported error else.
+ */
+export function fitJointFollowers(id: string): void {
+  const robot = robotOf(state.doc);
+  const fits = fitFollowers(robot, state.doc.scene, id);
+  const fitted = [...fits].filter(([, fit]) => fit.closed);
+  if (fitted.length === 0) {
+    notify(fits.size ? 'The linkage does not close over the whole range of this joint; narrow its limits and try again.' : 'No other joint moves with this one.', 'error');
+    return;
+  }
+  editRobot((r) => ({ ...r, joints: r.joints.map((j) => (fits.has(j.id) && fits.get(j.id)!.closed ? { ...j, mimic: { joint: id, multiplier: fits.get(j.id)!.multiplier, offset: fits.get(j.id)!.offset } } : j)) }));
+  const worst = Math.max(...fitted.map(([, fit]) => fit.error));
+  const names = fitted.map(([jid]) => robot.joints.find((j) => j.id === jid)?.name ?? jid).join(', ');
+  notify(worst < 0.05 ? `${names} now follow${fitted.length === 1 ? 's' : ''} this joint exactly.` : `${names} now follow${fitted.length === 1 ? 's' : ''} this joint, off by up to ${worst.toFixed(1)} over the range (a line cannot do better).`, 'ok');
 }
 
 const editRobot = (change: (robot: Robot) => Robot, merge?: string): void => commitRobot(change(robotOf(state.doc)), merge);

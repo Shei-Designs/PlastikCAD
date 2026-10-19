@@ -33,10 +33,10 @@ export function RobotPanel() {
   const joint = useEditor((s) => s.joint);
   const byId = new Map(nodes.map((n) => [n.id, n]));
 
-  const linkRow = (node: SceneNode, depth: number, after?: ReactNode) => {
+  const linkRow = (node: SceneNode, depth: number, after?: ReactNode, under?: string) => {
     const on = selection.length === 1 && selection[0] === node.id;
     return (
-      <li key={`l:${node.id}`} role="none">
+      <li key={under ? `l:${node.id}:${under}` : `l:${node.id}`} role="none">
         <div
           className={on ? 'outline-row on' : 'outline-row'}
           style={{ paddingLeft: 8 + depth * 14 }}
@@ -93,7 +93,7 @@ export function RobotPanel() {
     for (const j of robot.joints) {
       if (j.parent !== id || !byId.has(j.child)) continue;
       if (tree.parentJoint.get(j.child) === j) rows.push(jointRow(j, depth + 1, false), ...branch(j.child, depth + 2));
-      else rows.push(jointRow(j, depth + 1, true), linkRow(byId.get(j.child)!, depth + 2, 'Reached above'));
+      else rows.push(jointRow(j, depth + 1, true), linkRow(byId.get(j.child)!, depth + 2, 'Above', j.id));
     }
     return rows;
   };
@@ -150,7 +150,7 @@ export function RobotExport() {
         </div>
         <button type="button" className={errors ? 'export-note problems error' : warnings ? 'export-note problems warn' : 'export-note problems'} title="Shows the list" onClick={() => select([])}>
           {problems.length > 0 && <WarningIcon />}
-          {status}
+          <span className="clip">{status}</span>
         </button>
         <button type="button" className="primary" disabled={Boolean(busy) || errors > 0 || nodes.length === 0} onClick={() => void exportRobot()}>
           <DownloadIcon />
@@ -163,10 +163,11 @@ export function RobotExport() {
 
 /** The row over the left panel in Robot mode, in place of the tabs. */
 export function RobotModeBar() {
+  const picking = useEditor((s) => s.jointPick);
   return (
     <div className="tabs robot-bar">
       <div className="page-tabs">
-        <span className="robot-mode-title">Robot mode</span>
+        <span className="robot-mode-title">{picking ? 'Click a point on the plate' : 'Robot mode'}</span>
         <button type="button" className="icon-button" title="Leave Robot mode" aria-label="Leave Robot mode" onClick={leaveRobotMode}>
           <CloseIcon />
         </button>

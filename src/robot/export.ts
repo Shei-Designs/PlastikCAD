@@ -2,7 +2,6 @@
 // for looks and one for collisions, and the files that make the folder a
 // package with launch files. Pure: the kernel's answers come in, files go out.
 import type { MeshData } from '../geometry/mesh';
-import { boundsCenter, boundsSize } from '../model/math';
 import type { Doc, Vec3 } from '../model/types';
 import { encodeText } from '../io/format';
 import { writeObj } from '../io/obj';
@@ -88,8 +87,14 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
       if (written.mtl) files.push({ name: `meshes/visual/${written.mtlName}`, bytes: written.mtl });
       visual.push({ geometry: { mesh: `package://${pkg}/meshes/visual/${name}.obj` }, color: rgb(geo.visual[0].color) });
     }
-    if (link.collision === 'box') {
-      collision.push({ geometry: { box: boundsSize(geo.bounds).map((x) => x * M) as Vec3 }, origin: boundsCenter(geo.bounds).map((x, i) => (x - frame[i]) * M) as Vec3 });
+    if (link.collision === 'box' || link.collision === 'cylinder' || link.collision === 'sphere') {
+      // The object's own box, where it stands and turned as it is (URDF's roll, pitch, yaw are the design's X, Y, Z turns).
+      const origin = node.pos.map((x, i) => (x - frame[i]) * M) as Vec3;
+      const rpy = node.rot.map((d) => (d * Math.PI) / 180) as Vec3;
+      const size = node.size.map((x) => x * M) as Vec3;
+      const geometry =
+        link.collision === 'box' ? { box: size } : link.collision === 'cylinder' ? { cylinder: { radius: Math.max(size[0], size[1]) / 2, length: size[2] } } : { sphere: { radius: Math.max(...size) / 2 } };
+      collision.push({ geometry, origin, rpy });
     } else if (link.collision !== 'none' && geo.collision) {
       files.push({ name: `meshes/collision/${name}.stl`, bytes: writeStl(inFrame(geo.collision, frame), name, 'm') });
       collision.push({ geometry: { mesh: `package://${pkg}/meshes/collision/${name}.stl` } });
