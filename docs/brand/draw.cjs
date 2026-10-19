@@ -13,7 +13,7 @@ const grotesk = load('/home/andrew/.local/share/fonts/freqverb/SpaceGrotesk-Medi
 const mono = load(F('jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff'));
 const CARBON = '#0A0907', TAPE = '#FF6B1A', LINEN = '#E8E4D8', DUST = '#8A8580';
 // PlastikCAD's own colour from the product register, and the one shade the mark may add: Carbon with a quarter of the tile in it.
-const TEAL = '#17D3BA', SHADE = '#0D3C34';
+const TEAL = '#17CDD3', SHADE = '#0D3A3A';
 const TILE = 'M26 6 H74 A20 20 0 0 1 94 26 V74 A20 20 0 0 1 74 94 H26 A20 20 0 0 1 6 74 V26 A20 20 0 0 1 26 6 Z';
 
 // Path data written out plainly (opentype's own writer drops into shorthand curves and produces NaN now and then).

@@ -8,5 +8,5 @@
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
     <!-- The app's light panel colour (see src/styles.css), shown behind the system bars. -->
-    <color name="plastikcad_bg">#f4f1ea</color>
+    <color name="plastikcad_bg">#eef2f0</color>
 </resources>

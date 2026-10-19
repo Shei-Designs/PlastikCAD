@@ -1,25 +1,30 @@
 :root {
-  /* The Shei Designs palette: Carbon, Slate and Iron surfaces, Linen and Dust text, Tape for the one accent. */
-  --bg: #0a0907;
-  --panel: #15130f;
-  --panel-raised: #1a1812;
-  --control: #1f1c17;
-  --control-hover: #2a2620;
-  --border: #2a2620;
-  --text: #e8e4d8;
-  --muted: #8a8580;
-  --faint: #5a564f;
-  --accent: #ff6b1a;
-  --accent-strong: #ff8440;
-  --on-accent: #0a0907;
+  /* The Shei Designs surfaces (Carbon, Slate, Iron, Linen, Dust) tinted a few percent toward PlastikCAD's teal,
+     so the product colour is at home here. Two accents: the teal is the app's identity (what is selected, active,
+     focused or linked), Tape is the house signal (the action to take, the change still being written). */
+  --bg: #0a0d0d;
+  --panel: #111716;
+  --panel-raised: #161d1c;
+  --control: #1b2423;
+  --control-hover: #263130;
+  --border: #263130;
+  --text: #e4e8e6;
+  --muted: #879390;
+  --faint: #566361;
+  --accent: #17cdd3;
+  --accent-strong: #3fdbe0;
+  --on-accent: #0a0d0d;
+  --signal: #ff6b1a;
+  --signal-strong: #ff8440;
+  --on-signal: #0a0907;
   --warn-bg: #3a2a10;
   --warn-text: #f3cf8a;
   --error-bg: #3d1b18;
   --error-text: #ffb3a7;
   --ok-bg: #1b3322;
   --ok-text: #a9e3b6;
-  --stage-inner: #2a2620;
-  --stage-outer: #0a0907;
+  --stage-inner: #263130;
+  --stage-outer: #0a0d0d;
   --shadow: 0 6px 24px rgb(0 0 0 / 0.45);
   color-scheme: dark;
   font-family: Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', sans-serif;
@@ -28,19 +33,22 @@
 }
 
 :root[data-theme='light'] {
-  /* The light variant: Bone canvas, Ink text, Tape kept (a shade deeper where it is text on Bone). */
-  --bg: #f4f1ea;
+  /* The light variant: Bone and Ink with the same teal tint; both accents a shade deeper, as they are text here. */
+  --bg: #eef2f0;
   --panel: #ffffff;
-  --panel-raised: #faf8f3;
-  --control: #ece8df;
-  --control-hover: #e2ddd2;
-  --border: #ddd8cc;
-  --text: #0e0d0b;
-  --muted: #6b665f;
-  --faint: #9a958d;
-  --accent: #e8590f;
-  --accent-strong: #c94d0a;
-  --on-accent: #0e0d0b;
+  --panel-raised: #f7faf9;
+  --control: #e3e9e7;
+  --control-hover: #d7dfdc;
+  --border: #d3dbd8;
+  --text: #0c1211;
+  --muted: #5f6b68;
+  --faint: #94a09c;
+  --accent: #0f9ea3;
+  --accent-strong: #0b8488;
+  --on-accent: #ffffff;
+  --signal: #e8590f;
+  --signal-strong: #c94d0a;
+  --on-signal: #ffffff;
   --warn-bg: #fff1d6;
   --warn-text: #7a4e00;
   --error-bg: #fbe3de;
@@ -48,8 +56,8 @@
   --ok-bg: #e3f3e6;
   --ok-text: #1d6b3a;
   --stage-inner: #ffffff;
-  --stage-outer: #ddd8cc;
-  --shadow: 0 6px 24px rgb(40 30 20 / 0.16);
+  --stage-outer: #d3dbd8;
+  --shadow: 0 6px 24px rgb(20 40 35 / 0.16);
   color-scheme: light;
 }
 
@@ -1038,7 +1046,7 @@ input[type='range']::-moz-range-track {
 input[type='range']::-moz-range-progress {
   height: 4px;
   border-radius: 2px;
-  background: var(--accent);
+  background: var(--signal);
 }
 
 input[type='range']::-moz-range-thumb {
@@ -1088,7 +1096,7 @@ select:hover {
 }
 
 .switch:checked {
-  background: var(--accent);
+  background: var(--signal);
 }
 
 .switch:checked::after {
@@ -1301,13 +1309,13 @@ select:hover {
   height: 34px;
   border: 0;
   border-radius: 8px;
-  background: var(--accent);
-  color: var(--on-accent);
+  background: var(--signal);
+  color: var(--on-signal);
   font-weight: 650;
 }
 
 .primary:hover:not(:disabled) {
-  background: var(--accent-strong);
+  background: var(--signal-strong);
 }
 
 .primary:disabled {
@@ -1357,7 +1365,7 @@ select:hover {
 }
 
 .dirty-dot.on {
-  background: var(--accent);
+  background: var(--signal);
 }
 
 .doc-name {

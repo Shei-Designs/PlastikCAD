@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- The app's dark panel colour (see src/styles.css), shown behind the system bars. -->
-    <color name="plastikcad_bg">#0a0907</color>
+    <color name="plastikcad_bg">#0a0d0d</color>
 </resources>
