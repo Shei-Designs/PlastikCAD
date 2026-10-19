@@ -1,13 +1,12 @@
 import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { PALETTE, paramMax, polygonExtent, shapeDef } from '../geometry/shapes';
 import { boundsSize, tidyVec, unionBounds } from '../model/math';
-import { countShapes, picturesOf } from '../model/ops';
+import { picturesOf } from '../model/ops';
 import { TEXT_FONTS } from '../model/types';
 import type { ImageAsset, PictureMapping, PictureNode, SceneNode, ShapeNode, TextAlign, TextNode } from '../model/types';
 import { geometry } from '../state/geometry';
 import { editPicture, editText, imageAssets, pickImage, setColor, setHole, setTexture, updateNode, updateSelected, useEditor } from '../state/store';
 import { formatNumber, SliderField } from './Fields';
-import { getGenerator } from '../parts/generators';
 import { partFigures } from '../parts/figures';
 import { CloseIcon, PictureIcon, WarningIcon } from './icons';
 import { PartFields } from './PartFields';
@@ -52,19 +51,6 @@ const SHORTCUTS: [string, string][] = [
   ['Fit to view', 'F'],
   ['Import model or picture', `${MOD}I`],
 ];
-
-const kindOf = (node: SceneNode): string =>
-  node.type === 'group'
-    ? `Group of ${countShapes(node.children)} shape${countShapes(node.children) === 1 ? '' : 's'}`
-    : node.type === 'import'
-      ? 'Imported model'
-      : node.type === 'text'
-        ? 'Lettering to emboss, or engrave as a hole.'
-        : node.type === 'part'
-          ? getGenerator(node.part).summary
-          : node.type === 'picture'
-            ? 'Picture that prints onto the object it is grouped with.'
-            : shapeDef(node.shape).summary;
 
 function NameField({ node }: { node: SceneNode }) {
   const [text, setText] = useState(node.name);
@@ -412,7 +398,6 @@ function Design() {
         <header className="params-head">
           <div>
             <h1>{nodes.length} objects</h1>
-            <p>Group them to merge the solids and cut the holes.</p>
           </div>
         </header>
         <Appearance nodes={nodes} />
@@ -431,7 +416,7 @@ function Design() {
       <header className="params-head">
         <div className="grow">
           <NameField node={node} />
-          <p>{kindOf(node)}{node.locked ? ' · locked' : ''}</p>
+          {node.locked && <p>Locked</p>}
         </div>
       </header>
       {node.type === 'picture' ? <PictureFields node={node} /> : <Appearance nodes={nodes} />}
