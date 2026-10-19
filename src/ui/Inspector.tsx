@@ -8,6 +8,7 @@ import { geometry } from '../state/geometry';
 import { editPicture, editText, imageAssets, notify, pickImage, saveAsPart, setColor, setHole, setTexture, toggleLocked, updateNode, updateSelected, useEditor } from '../state/store';
 import { formatNumber, SliderField } from './Fields';
 import { partFigures } from '../parts/figures';
+import { tell } from './ask';
 import { CloseIcon, LockIcon, PictureIcon, SaveAsPartIcon, WarningIcon } from './icons';
 import { PartsBin } from './PartsBin';
 import { PartFields } from './PartFields';
@@ -116,7 +117,6 @@ function Appearance({ nodes }: { nodes: SceneNode[] }) {
         ))}
         <CustomColor color={color} custom={color !== null && !PALETTE.some((c) => c.value === color)} disabled={locked} />
       </div>
-      {mixed && <p className="field-note">Each part keeps its own color. Picking one paints the whole.</p>}
       {nodes.length === 1 && nodes[0].type !== 'picture' && !nodes[0].hole && <TextureFields node={nodes[0]} />}
     </fieldset>
   );
@@ -292,6 +292,15 @@ function TextureFields({ node }: { node: SceneNode }) {
   const plain = asset?.kind === 'mesh' && asset.uv ? 'own' : 'wrap';
   const tiled = texture?.mode === 'tile';
   const add = async () => {
+    // Pictures grouped onto the object cover its surface; a texture would never show under them.
+    if (pictures > 0) {
+      await tell({
+        title: 'Texture',
+        text: 'The selected object already has an image projected onto its surface. To add a texture remove the projected image first.',
+        actions: ['OK'],
+      });
+      return;
+    }
     const key = await pickImage();
     if (key) setTexture({ asset: key, mode: plain, scale: 50, turn: 0 });
   };
@@ -299,14 +308,7 @@ function TextureFields({ node }: { node: SceneNode }) {
     if (key === 'new') key = (await pickImage()) ?? '';
     if (key && texture) setTexture({ ...texture, asset: key });
   };
-  if (pictures > 0) {
-    return (
-      <p className="field-note">
-        Carries {pictures} picture{pictures === 1 ? '' : 's'}, which cover the surface instead of a texture.
-      </p>
-    );
-  }
-  if (!texture) {
+  if (!texture || pictures > 0) {
     return (
       <button type="button" className="import-button texture-button" disabled={locked} onClick={() => void add()}>
         <PictureIcon />
@@ -428,14 +430,14 @@ function Design() {
         <div className="grow">
           <NameField node={node} />
         </div>
-        <button type="button" className="icon-button" title="Save as a custom part, to place in any design" aria-label="Save as a part" onClick={() => void saveAsPart(node.id)}>
-          <SaveAsPartIcon />
-        </button>
         {node.locked && (
           <button type="button" className="icon-button lock" title="Locked: press to unlock" aria-label="Unlock" onClick={() => toggleLocked(node.id)}>
             <LockIcon />
           </button>
         )}
+        <button type="button" className="icon-button" title="Save as a custom part, to place in any design" aria-label="Save as a part" onClick={() => void saveAsPart(node.id)}>
+          <SaveAsPartIcon />
+        </button>
       </header>
       {node.type === 'picture' ? <PictureFields node={node} /> : <Appearance nodes={nodes} />}
       {node.type === 'part' ? <PartFields node={node} /> : <Sections legend="Settings" reset={node.id} sections={own} />}

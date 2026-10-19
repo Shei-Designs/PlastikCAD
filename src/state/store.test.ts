@@ -712,14 +712,17 @@ describe('custom parts', () => {
     // The original stays where it was.
     expect(posOf(original)).toEqual([30, 10, 10]);
 
-    // Picked from the bin, carried to a point and put down: a fresh object named after the part.
+    // Picked from the bin, carried to a point and put down: a fresh object named after the part, and the bin closes behind it.
+    store.openPartsBin();
     await store.pickPart(part.key);
+    expect(store.getState().bin).toBe(true);
     const carried = store.getState().placing!;
     expect(carried.name).toBe('Box');
     expect(carried.id).not.toBe(doc.scene[0].id);
     store.movePlacing([5, 5, 0]);
     expect(store.getState().placing!.pos).toEqual([5, 5, 10]);
     store.commitPlacing();
+    expect(store.getState().bin).toBe(false);
     expect(scene().map((n) => n.name)).toEqual(['Box', 'Box 2']);
     // Or added straight to the middle.
     await store.addCustomPart(part.key);
@@ -753,6 +756,12 @@ describe('custom parts', () => {
     expect(store.getState().bin).toBe(true);
     expect(store.getState().selection).toEqual([]);
     store.startPlacing('box');
+    expect(store.getState().bin).toBe(false);
+    // Selecting an object in the design closes it too; clearing the selection does not.
+    store.openPartsBin();
+    store.select([]);
+    expect(store.getState().bin).toBe(true);
+    store.select([scene()[0].id]);
     expect(store.getState().bin).toBe(false);
     expect(await store.deletePart(part.key, 'Post')).toBe(true);
     expect(await parts()).toEqual([]);

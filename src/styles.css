@@ -469,7 +469,7 @@ ul {
 .ask {
   /* High enough to clear the on-screen keyboard on a tablet. */
   margin-top: max(16px, 12vh);
-  width: min(400px, calc(100vw - 32px));
+  width: min(440px, calc(100vw - 32px));
   padding: 0;
   border: 1px solid var(--border);
   border-radius: 12px;

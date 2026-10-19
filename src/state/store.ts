@@ -324,7 +324,8 @@ export function selectedNodes(s: EditorState = state): SceneNode[] {
 
 export function select(ids: string[]): void {
   abortAlignPreview();
-  set({ selection: ids });
+  // Selecting an object takes the right panel from the custom parts bin.
+  set(ids.length && state.bin ? { selection: ids, bin: false } : { selection: ids });
 }
 
 export function toggleSelected(id: string): void {
@@ -762,7 +763,7 @@ export function commitPlacing(): void {
     return;
   }
   const placed = { ...node, name: uniqueName(state.doc.scene, node.name) };
-  state = { ...state, placing: null };
+  state = { ...state, placing: null, bin: false };
   commit([...state.doc.scene, placed], { selection: [placed.id] });
 }
 
@@ -1665,7 +1666,7 @@ export async function addCustomPart(key: string): Promise<void> {
   try {
     const node = await loadPart(key);
     node.name = uniqueName(state.doc.scene, node.name);
-    state = { ...state, placing: null };
+    state = { ...state, placing: null, bin: false };
     commit([...state.doc.scene, node], { selection: [node.id] });
   } catch (e) {
     fail(e);
