@@ -46,7 +46,8 @@ export interface Board {
   /** The board's own outline, CCW from its lower-left corner, when it is not a rounded rectangle. */
   outline?: (q: Quality) => Polygon;
   /** Shown as a warning: clones of this board differ. */
-  caution?: string;
+  /** A line or two for the dropdown: holes, orientation, what to check. */
+  note: string;
   /** The sockets along the board's edges, from its drawing. */
   sockets?: EdgeSocket[];
 }
@@ -143,10 +144,10 @@ const piHoles = (width: number): Vec2[] => [
 ];
 
 export const RASPBERRY_PI: Board[] = [
-  { id: 'pi5', label: 'Raspberry Pi 5', length: 85, width: 56, corner: 3, holes: piHoles(56), holeDiameter: 2.7, screw: 'M2.5', layout: 'USB and Ethernet on the right, SD card slot on the left, GPIO header along the top, power and HDMI along the bottom.', sockets: PI5_SOCKETS },
-  { id: 'pi4', label: 'Raspberry Pi 4 Model B', length: 85, width: 56, corner: 3, holes: piHoles(56), holeDiameter: 2.7, screw: 'M2.5', layout: 'USB and Ethernet on the right, SD card slot on the left, GPIO header along the top, power, HDMI and audio along the bottom.', sockets: PI4_SOCKETS },
-  { id: 'pi3', label: 'Raspberry Pi 3 Model B / B+', length: 85, width: 56, corner: 3, holes: piHoles(56), holeDiameter: 2.75, screw: 'M2.5', layout: 'USB and Ethernet on the right, SD card slot on the left, GPIO header along the top, power, HDMI and audio along the bottom.', sockets: PI3_SOCKETS },
-  { id: 'pi-zero-2', label: 'Raspberry Pi Zero / Zero 2 W', length: 65, width: 30, corner: 3, holes: piHoles(30), holeDiameter: 2.75, screw: 'M2.5', layout: 'Mini HDMI and micro USB along the bottom long edge, SD card slot on the left. The holes sit 3.5 mm in from every edge, so the pattern is the same whichever way round.', sockets: ZERO_SOCKETS },
+  { id: 'pi5', label: 'Raspberry Pi 5', length: 85, width: 56, corner: 3, holes: piHoles(56), holeDiameter: 2.7, screw: 'M2.5', layout: 'USB and Ethernet on the right, SD card slot on the left, GPIO header along the top, power and HDMI along the bottom.', sockets: PI5_SOCKETS, note: 'Four M2.5 holes, 58 × 49 mm. USB and Ethernet on the right, GPIO header along the top.' },
+  { id: 'pi4', label: 'Raspberry Pi 4 Model B', length: 85, width: 56, corner: 3, holes: piHoles(56), holeDiameter: 2.7, screw: 'M2.5', layout: 'USB and Ethernet on the right, SD card slot on the left, GPIO header along the top, power, HDMI and audio along the bottom.', sockets: PI4_SOCKETS, note: 'Four M2.5 holes, 58 × 49 mm. USB and Ethernet on the right, GPIO header along the top.' },
+  { id: 'pi3', label: 'Raspberry Pi 3 Model B / B+', length: 85, width: 56, corner: 3, holes: piHoles(56), holeDiameter: 2.75, screw: 'M2.5', layout: 'USB and Ethernet on the right, SD card slot on the left, GPIO header along the top, power, HDMI and audio along the bottom.', sockets: PI3_SOCKETS, note: 'Four M2.5 holes, 58 × 49 mm. USB and Ethernet on the right, GPIO header along the top.' },
+  { id: 'pi-zero-2', label: 'Raspberry Pi Zero / Zero 2 W', length: 65, width: 30, corner: 3, holes: piHoles(30), holeDiameter: 2.75, screw: 'M2.5', layout: 'Mini HDMI and micro USB along the bottom long edge, SD card slot on the left. The holes sit 3.5 mm in from every edge, so the pattern is the same whichever way round.', sockets: ZERO_SOCKETS, note: 'Four M2.5 holes, 58 × 23 mm. Ports along the bottom long edge, SD card on the left.' },
   {
     id: 'pico',
     label: 'Raspberry Pi Pico / Pico W / Pico 2',
@@ -163,6 +164,7 @@ export const RASPBERRY_PI: Board[] = [
     screw: 'M2',
     layout: 'Micro USB on the left.',
     sockets: [{ name: 'Micro USB', socket: 'micro-usb', edge: 'left', at: 10.5, w: 8, h: 2.9, out: 1.3 }],
+    note: 'Four M2 holes, 47 × 11.4 mm. Micro USB on the left; often held by its header pins instead.',
   },
 ];
 
@@ -198,7 +200,7 @@ function arduinoOutline(length: number, q: Quality): Polygon {
 }
 
 export const ARDUINO: Board[] = [
-  { id: 'uno', label: 'Arduino Uno (R3 / R4)', length: 68.58, width: 53.34, corner: 1, holes: unoHoles, holeDiameter: 3.2, screw: 'M3', layout: 'USB and power jack on the left, the notched end on the right.', outline: (q) => arduinoOutline(68.58, q), sockets: UNO_SOCKETS },
+  { id: 'uno', label: 'Arduino Uno (R3 / R4)', length: 68.58, width: 53.34, corner: 1, holes: unoHoles, holeDiameter: 3.2, screw: 'M3', layout: 'USB and power jack on the left, the notched end on the right.', outline: (q) => arduinoOutline(68.58, q), sockets: UNO_SOCKETS, note: 'Four M3 holes in the Uno pattern, which shields share. USB and power jack on the left.' },
   {
     id: 'mega',
     label: 'Arduino Mega 2560',
@@ -211,6 +213,7 @@ export const ARDUINO: Board[] = [
     layout: 'USB and power jack on the left, the notched end on the right.',
     outline: (q) => arduinoOutline(101.6, q),
     sockets: UNO_SOCKETS,
+    note: 'The Uno\'s four holes plus two near the far end. USB and power jack on the left.',
   },
   {
     id: 'nano',
@@ -227,6 +230,7 @@ export const ARDUINO: Board[] = [
     holeDiameter: 1.8,
     screw: 'M1.6',
     layout: 'USB on the left. Usually held by its header pins instead; the corner holes, 1.27 mm in from every edge, take M1.6 screws.',
+    note: 'Four M1.6 holes 1.27 mm in from the corners. USB on the left; usually held by its header pins.',
   },
 ];
 
@@ -243,7 +247,7 @@ export const ESP32: Board[] = [
     layout: 'Micro USB on the left. The module\'s antenna reaches 6 mm past the right-hand end of the board, which the blank, the pocket and the corner stops allow for. No mounting holes.',
     overhang: { length: 6.04, width: 18 },
     sockets: [{ name: 'Micro USB', socket: 'micro-usb', edge: 'left', at: 13.95, w: 7.4, h: 2.9, out: 0.95 }],
-    caution: 'Clones differ by a millimeter or two; some have the antenna flush with the end. Measure yours.',
+    note: 'No holes: blank, pocket or corner stops. Antenna reaches 6 mm past the right end; clones differ.',
   },
   {
     id: 'esp32-devkit-v1',
@@ -260,7 +264,7 @@ export const ESP32: Board[] = [
     holeDiameter: 2.8,
     screw: 'M2.5',
     layout: 'Micro USB on the left, antenna on the right. The holes sit 2.2 mm in from every edge.',
-    caution: 'No maker\'s drawing; measured from real boards, and clones differ by up to 0.5 mm. Some have no holes.',
+    note: 'Four holes 2.2 mm in from the corners; USB left, antenna right. Clones differ, some have no holes.',
   },
   {
     id: 'nodemcu-32s',
@@ -272,7 +276,7 @@ export const ESP32: Board[] = [
     holeDiameter: 0,
     screw: 'M3',
     layout: 'Micro USB on the left, antenna on the right. No mounting holes.',
-    caution: 'Only the overall size is published, and clones differ. Measure yours.',
+    note: 'No holes: blank, pocket or corner stops. Only the overall size is published; measure yours.',
   },
 ];
 
@@ -331,7 +335,7 @@ function groups(boards: Board[], defaultForm: Form): ParamGroup[] {
     {
       title: 'Board',
       params: [
-        { key: 'board', label: 'Board', type: 'select', default: boards[0].id, options: boards.map((b) => ({ value: b.id, label: b.label, note: b.caution })) },
+        { key: 'board', label: 'Board', type: 'select', default: boards[0].id, options: boards.map((b) => ({ value: b.id, label: b.label, note: b.note })) },
         {
           key: 'form',
           label: 'Make',

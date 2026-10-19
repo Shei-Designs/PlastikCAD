@@ -44,7 +44,8 @@ export interface Motor {
   tabs?: { w: number; h: number; t: number; at?: Vec2 };
   /** Usual body lengths, for the help text. */
   lengths?: string;
-  note?: string;
+  /** A line or two for the dropdown: the hole pattern and what to watch. */
+  note: string;
   /** An L-bracket makes sense for this motor. */
   bracket?: boolean;
 }
@@ -64,11 +65,11 @@ const corners = (s: number): Vec2[] => [
 const ring = (n: number, d: number): Vec2[] => Array.from({ length: n }, (_, i) => [(d / 2) * Math.cos((2 * Math.PI * i) / n), (d / 2) * Math.sin((2 * Math.PI * i) / n)]);
 
 export const STEPPERS: Motor[] = [
-  { id: 'nema17', label: 'NEMA 17 (42 mm)', face: square(42.3, 5), holes: corners(31), screw: 'M3', pilot: { d: 22, h: 2 }, shaft: { d: 5, len: 24, flat: 4.5 }, body: { w: 42.3, h: 42.3, r: 5, below: 40 }, lengths: '34, 40 or 48', bracket: true },
-  { id: 'nema23', label: 'NEMA 23 (57 mm)', face: square(57.3, 5), holes: corners(47.14), screw: 'M5', pilot: { d: 38.1, h: 1.6 }, shaft: { d: 6.35, len: 21, flat: 5.85 }, body: { w: 57.3, h: 57.3, r: 5, below: 56 }, lengths: '42, 56 or 76', bracket: true, note: 'Holes go right through the frame: use long M5 or #10 screws.' },
-  { id: 'nema14', label: 'NEMA 14 (35 mm)', face: square(35.2, 4), holes: corners(26), screw: 'M3', pilot: { d: 22, h: 2 }, shaft: { d: 5, len: 24, flat: 4.5 }, body: { w: 35.2, h: 35.2, r: 4, below: 34 }, lengths: '28 or 34', bracket: true },
-  { id: 'nema11', label: 'NEMA 11 (28 mm)', face: square(28.2, 3), holes: corners(23), screw: 'M2.5', pilot: { d: 22, h: 2 }, shaft: { d: 5, len: 20 }, body: { w: 28.2, h: 28.2, r: 3, below: 33 }, lengths: '33, 45 or 51', bracket: true },
-  { id: 'nema8', label: 'NEMA 8 (20 mm)', face: square(20.3, 2), holes: corners(15.4), screw: 'M2', pilot: { d: 16, h: 1.5 }, shaft: { d: 4, len: 10, flat: 3.5 }, body: { w: 20.3, h: 20.3, r: 2, below: 27.3 }, lengths: '27 to 38', bracket: true },
+  { id: 'nema17', label: 'NEMA 17 (42 mm)', face: square(42.3, 5), holes: corners(31), screw: 'M3', pilot: { d: 22, h: 2 }, shaft: { d: 5, len: 24, flat: 4.5 }, body: { w: 42.3, h: 42.3, r: 5, below: 40 }, lengths: '34, 40 or 48', bracket: true, note: 'The usual printer stepper. Four M3 holes on a 31 mm square, 22 mm pilot boss.' },
+  { id: 'nema23', label: 'NEMA 23 (57 mm)', face: square(57.3, 5), holes: corners(47.14), screw: 'M5', pilot: { d: 38.1, h: 1.6 }, shaft: { d: 6.35, len: 21, flat: 5.85 }, body: { w: 57.3, h: 57.3, r: 5, below: 56 }, lengths: '42, 56 or 76', bracket: true, note: 'Four M5 holes on a 47.1 mm square, 38.1 mm boss. Holes go right through: use long screws.' },
+  { id: 'nema14', label: 'NEMA 14 (35 mm)', face: square(35.2, 4), holes: corners(26), screw: 'M3', pilot: { d: 22, h: 2 }, shaft: { d: 5, len: 24, flat: 4.5 }, body: { w: 35.2, h: 35.2, r: 4, below: 34 }, lengths: '28 or 34', bracket: true, note: 'Four M3 holes on a 26 mm square, 22 mm pilot boss.' },
+  { id: 'nema11', label: 'NEMA 11 (28 mm)', face: square(28.2, 3), holes: corners(23), screw: 'M2.5', pilot: { d: 22, h: 2 }, shaft: { d: 5, len: 20 }, body: { w: 28.2, h: 28.2, r: 3, below: 33 }, lengths: '33, 45 or 51', bracket: true, note: 'Four M2.5 holes on a 23 mm square, 22 mm pilot boss.' },
+  { id: 'nema8', label: 'NEMA 8 (20 mm)', face: square(20.3, 2), holes: corners(15.4), screw: 'M2', pilot: { d: 16, h: 1.5 }, shaft: { d: 4, len: 10, flat: 3.5 }, body: { w: 20.3, h: 20.3, r: 2, below: 27.3 }, lengths: '27 to 38', bracket: true, note: 'Four M2 holes on a 15.4 mm square, 16 mm pilot boss.' },
   {
     id: '28byj48',
     label: '28BYJ-48 geared stepper',
@@ -82,7 +83,7 @@ export const STEPPERS: Motor[] = [
     shaft: { d: 5, len: 10, flat: 3 },
     body: { w: 28, h: 28, round: true, below: 19 },
     tabs: { w: 42, h: 7, t: 1, at: [0, -8] },
-    note: 'Ears sit 8 mm off the shaft, on the wire side; the shaft is on the body center.',
+    note: 'Ears 35 mm apart, 8 mm off the shaft on the wire side; the shaft is on the body center.',
   },
 ];
 
@@ -114,7 +115,7 @@ export const GEARMOTORS: Motor[] = [
     screw: 'M3',
     shaft: { d: 5.4, len: 9, flat: 3.7 },
     body: { w: 22.4, h: 37, r: 1, below: 18.6 },
-    note: 'Gearbox block only; the can runs 33 mm past its back. Shaft out both sides; the three holes go right through.',
+    note: 'Gearbox block only; the can runs 33 mm past it. Shaft out both sides, holes go right through.',
   },
   {
     id: '25d',
@@ -130,6 +131,7 @@ export const GEARMOTORS: Motor[] = [
     body: { w: 25, h: 25, round: true, below: 52 },
     lengths: '48 to 58 by gear ratio',
     bracket: true,
+    note: 'Two M3 holes 17 mm apart either side of a 7 mm boss. Length runs 48 to 58 mm by gear ratio.',
   },
   {
     id: '37d',
@@ -160,7 +162,7 @@ export const SERVOS: Motor[] = [
     shaft: { d: 4.7, len: 8, at: [-5.25, 0] },
     body: { w: 22.5, h: 11.8, r: 1, below: 16, above: 6.7 },
     tabs: { w: 32.2, h: 11.8, t: 2.5 },
-    note: 'Body drops through the plate, tabs sit on it; output 6 mm in from one end. Tab holes vary by maker.',
+    note: 'Body drops through the plate, tabs sit on it; output 6 mm in from one end. Tab holes vary.',
   },
   {
     id: 'mg996r',
@@ -177,7 +179,7 @@ export const SERVOS: Motor[] = [
     shaft: { d: 5.9, len: 5.7, at: [-9.95, 0] },
     body: { w: 40.7, h: 19.7, r: 1, below: 26.8, above: 10.2 },
     tabs: { w: 54, h: 19.7, t: 2.5 },
-    note: 'Body drops through the plate, tabs sit on it; output 10 mm in from one end. Tab holes vary by maker.',
+    note: 'Body drops through the plate, tabs sit on it; output 10 mm in from one end. Tab holes vary.',
   },
 ];
 
@@ -195,7 +197,7 @@ export const DC_MOTORS: Motor[] = [
     shaft: { d: 5, len: 17 },
     body: { w: 42, h: 42, round: true, below: 66.7 },
     bracket: true,
-    note: 'No maker\'s drawing exists; the figures are the sellers\' usual ones. Check a motor before printing.',
+    note: 'No maker\'s drawing; the figures are the sellers\' usual ones. Check a motor before printing.',
   },
   {
     id: '130',

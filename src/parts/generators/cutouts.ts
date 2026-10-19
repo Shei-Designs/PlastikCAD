@@ -81,7 +81,8 @@ export interface PanelConnector {
    * below), both (four at the corners), or diagonal (two at opposite corners of an across × up box).
    */
   holes?: { d: number; across?: number; up?: number; diagonal?: boolean };
-  note?: string;
+  /** A line or two for the dropdown: what fits, what the holes take. */
+  note: string;
 }
 
 /** A round hole as an opening. */
@@ -114,14 +115,14 @@ function stepped(main: Opening, wings: { w: number; h: number }, grow: number): 
 // D-series drawings, Schurter 6100-3 / 6600-3 and Qualtek 771W for the IEC parts, Norcomp's D-sub
 // panel cut-outs, Amass's XT60E sheet.
 export const PANEL_CONNECTORS: PanelConnector[] = [
-  { id: 'neutrik-d', label: 'Neutrik D-series', cutout: round(24), holes: { d: 3.2, across: 19, up: 24, diagonal: true } },
+  { id: 'neutrik-d', label: 'Neutrik D-series', cutout: round(24), holes: { d: 3.2, across: 19, up: 24, diagonal: true }, note: 'Fits every D-size chassis connector: XLR, speakON, powerCON, etherCON. M3 holes.' },
   { id: 'iec-c14', label: 'IEC C14 inlet, screw flange', cutout: { w: 28, h: 20, r: 3 }, holes: { d: 3.5, across: 40 }, note: 'Fits Schurter 6100 and Qualtek 703W inlets; panels up to 8 mm.' },
-  { id: 'iec-c13', label: 'IEC C13 outlet, screw flange', cutout: { w: 32.5, h: 24.8, r: 4 }, holes: { d: 3.5, across: 40 } },
+  { id: 'iec-c13', label: 'IEC C13 outlet, screw flange', cutout: { w: 32.5, h: 24.8, r: 4 }, holes: { d: 3.5, across: 40 }, note: 'Fits Schurter 6600 and like outlets; two M3 holes 40 mm apart.' },
   { id: 'iec-c8', label: 'IEC C8 inlet, snap-in', cutout: { w: 19.5, h: 12.5, r: 0 }, wings: { w: 24.5, h: 7.5 }, note: 'Snap-in (Qualtek 771W) for 0.6 to 1.5 mm panels; the notch takes its catches.' },
-  { id: 'db9', label: 'D-sub 9 (DE-9)', cutout: { w: 20.7, h: 11.68, r: 2.4, bottom: 15.9 }, holes: { d: 3.1, across: 24.99 } },
-  { id: 'db15', label: 'D-sub 15 (DA-15)', cutout: { w: 29, h: 11.68, r: 2.4, bottom: 24.2 }, holes: { d: 3.1, across: 33.32 } },
-  { id: 'db25', label: 'D-sub 25 (DB-25)', cutout: { w: 42.8, h: 11.68, r: 2.4, bottom: 38 }, holes: { d: 3.1, across: 47.04 } },
-  { id: 'xt60', label: 'XT60 panel mount (XT60E)', cutout: { w: 15.5, h: 8.1, r: 1 }, holes: { d: 3.2, across: 20 } },
+  { id: 'db9', label: 'D-sub 9 (DE-9)', cutout: { w: 20.7, h: 11.68, r: 2.4, bottom: 15.9 }, holes: { d: 3.1, across: 24.99 }, note: '9-pin D-sub (serial). Norcomp cut-out; the holes take #4-40 jackscrews or M3.' },
+  { id: 'db15', label: 'D-sub 15 (DA-15)', cutout: { w: 29, h: 11.68, r: 2.4, bottom: 24.2 }, holes: { d: 3.1, across: 33.32 }, note: '15-pin D-sub in two rows (DA-15). Norcomp cut-out; holes take #4-40 jackscrews or M3.' },
+  { id: 'db25', label: 'D-sub 25 (DB-25)', cutout: { w: 42.8, h: 11.68, r: 2.4, bottom: 38 }, holes: { d: 3.1, across: 47.04 }, note: '25-pin D-sub (parallel). Norcomp cut-out; the holes take #4-40 jackscrews or M3.' },
+  { id: 'xt60', label: 'XT60 panel mount (XT60E)', cutout: { w: 15.5, h: 8.1, r: 1 }, holes: { d: 3.2, across: 20 }, note: 'Amass XT60E panel mount; two M3 holes 20 mm apart.' },
 ];
 
 function holeShapes(h: NonNullable<PanelConnector['holes']>, grow: number, q: Quality): { at: Vec2[]; shapes: Polygon[] } {

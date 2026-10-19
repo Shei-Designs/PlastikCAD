@@ -1022,10 +1022,15 @@ select:disabled,
   opacity: 0.45;
 }
 
-/* A line or two about the model chosen in a dropdown, right under it. */
+/* A line or two about the model chosen in a dropdown, right under it; always two lines tall, so nothing below shifts. */
 .option-note {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  height: 2.7em;
   margin-top: 5px;
   line-height: 1.35;
+  overflow: hidden;
 }
 
 /* A part's warnings float over the foot of the inspector like toasts, so the settings keep their place. */
