@@ -3218,3 +3218,31 @@ kbd {
   text-decoration: none;
   cursor: default;
 }
+
+/* The wheel joints and their sides, in the robot's control section. */
+.drive-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.drive-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.drive-list .segmented {
+  flex: none;
+  width: 150px;
+}
+
+.switch-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}

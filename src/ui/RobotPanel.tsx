@@ -8,10 +8,11 @@ import { HOLE_COLOR } from '../model/ops';
 import type { SceneNode } from '../model/types';
 import { checkRobot } from '../robot/check';
 import { linkNodes, robotOf, spanningTree } from '../robot/model';
-import type { RobotJoint } from '../robot/types';
+import type { RobotJoint, RobotSensor } from '../robot/types';
 import { massProps } from '../state/massProps';
-import { exportRobot, leaveRobotMode, select, selectJoint, useEditor } from '../state/store';
-import { CloseIcon, DownloadIcon, JointIcon, WarningIcon } from './icons';
+import { exportRobot, leaveRobotMode, select, selectJoint, selectSensor, setPrefs, useEditor } from '../state/store';
+import { ChevronIcon, CloseIcon, DownloadIcon, JointIcon, SensorIcon, WarningIcon } from './icons';
+import { Popover } from './Popover';
 
 /** What the panels in Robot mode share: the links, the tree from the base, and what the checks found. */
 export function useRobot() {
@@ -31,6 +32,7 @@ export function RobotPanel() {
   const { robot, nodes, tree } = useRobot();
   const selection = useEditor((s) => s.selection);
   const joint = useEditor((s) => s.joint);
+  const sensor = useEditor((s) => s.sensor);
   const byId = new Map(nodes.map((n) => [n.id, n]));
 
   const linkRow = (node: SceneNode, depth: number, after?: ReactNode, under?: string) => {
@@ -85,11 +87,37 @@ export function RobotPanel() {
       </li>
     );
   };
-  /** A link, then every joint hanging from it with the link below each, down the tree. */
+  const sensorRow = (x: RobotSensor, depth: number) => {
+    const on = sensor === x.id;
+    return (
+      <li key={`s:${x.id}`} role="none">
+        <div
+          className={['outline-row joint', on ? 'on' : ''].join(' ')}
+          style={{ paddingLeft: 8 + depth * 14 }}
+          tabIndex={0}
+          role="treeitem"
+          aria-selected={on}
+          aria-level={depth + 1}
+          onClick={() => selectSensor(x.id)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              selectSensor(x.id);
+            }
+          }}
+        >
+          <SensorIcon />
+          <span className="clip">{x.name}</span>
+          <span className="outline-kind">{x.kind === 'imu' ? 'IMU' : x.kind}</span>
+        </div>
+      </li>
+    );
+  };
+  /** A link, its sensors, then every joint hanging from it with the link below each, down the tree. */
   const branch = (id: string, depth: number): ReactNode[] => {
     const node = byId.get(id);
     if (!node) return [];
-    const rows: ReactNode[] = [linkRow(node, depth)];
+    const rows: ReactNode[] = [linkRow(node, depth), ...robot.sensors.filter((x) => x.link === id).map((x) => sensorRow(x, depth + 1))];
     for (const j of robot.joints) {
       if (j.parent !== id || !byId.has(j.child)) continue;
       if (tree.parentJoint.get(j.child) === j) rows.push(jointRow(j, depth + 1, false), ...branch(j.child, depth + 2));
@@ -135,9 +163,16 @@ export function RobotPanel() {
 }
 
 /** At the foot of the left panel in Robot mode: what the checks say, and the export. */
+const ROBOT_FORMATS: { id: 'urdf' | 'sdf'; label: string; description: string }[] = [
+  { id: 'urdf', label: 'ROS 2 package', description: 'URDF with meshes, launch files, bridge and controllers' },
+  { id: 'sdf', label: 'Gazebo model', description: 'SDF with every joint, loops included, and a world' },
+];
+
 export function RobotExport() {
   const { problems, nodes } = useRobot();
   const busy = useEditor((s) => s.busy);
+  const format = useEditor((s) => s.prefs.robotFormat);
+  const active = ROBOT_FORMATS.find((f) => f.id === format) ?? ROBOT_FORMATS[0];
   const errors = problems.filter((p) => p.level === 'error').length;
   const warnings = problems.length - errors;
   const status = errors ? `${errors} problem${errors === 1 ? '' : 's'} to fix${warnings ? `, ${warnings} warning${warnings === 1 ? '' : 's'}` : ''}` : warnings ? `${warnings} warning${warnings === 1 ? '' : 's'}` : nodes.length ? 'Ready to export' : 'Nothing to export yet';
@@ -146,7 +181,40 @@ export function RobotExport() {
       <section className="export" aria-label="Export robot">
         <div className="export-row">
           <span className="export-label">Format</span>
-          <span className="export-format">ROS 2 package (URDF)</span>
+          <Popover
+            className="select-button"
+            title="What the robot is written as"
+            align="left"
+            side="up"
+            fill
+            button={
+              <>
+                <span>{active.label}</span>
+                <ChevronIcon />
+              </>
+            }
+          >
+            {(close) => (
+              <div className="menu" role="listbox" aria-label="Robot format">
+                {ROBOT_FORMATS.map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    role="option"
+                    aria-selected={f.id === format}
+                    className={f.id === format ? 'menu-item format on' : 'menu-item format'}
+                    onClick={() => {
+                      close();
+                      setPrefs({ robotFormat: f.id });
+                    }}
+                  >
+                    <span>{f.label}</span>
+                    <small>{f.description}</small>
+                  </button>
+                ))}
+              </div>
+            )}
+          </Popover>
         </div>
         <button type="button" className={errors ? 'export-note problems error' : warnings ? 'export-note problems warn' : 'export-note problems'} title="Shows the list" onClick={() => select([])}>
           {problems.length > 0 && <WarningIcon />}
@@ -154,7 +222,7 @@ export function RobotExport() {
         </button>
         <button type="button" className="primary" disabled={Boolean(busy) || errors > 0 || nodes.length === 0} onClick={() => void exportRobot()}>
           <DownloadIcon />
-          {busy ? 'Exporting…' : 'Export robot'}
+          {busy ? 'Exporting…' : format === 'sdf' ? 'Export model' : 'Export package'}
         </button>
       </section>
     </div>

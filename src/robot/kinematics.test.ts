@@ -23,6 +23,8 @@ const scene = [ground, crank, coupler, rocker];
 const fourBar = (): Robot => ({
   name: 'linkage',
   root: ground.id,
+  sensors: [],
+  control: true,
   links: [],
   joints: [hinge('j1', ground, crank, [0, 0, 0]), hinge('j2', crank, coupler, [0, 0, 50]), hinge('j3', coupler, rocker, [100, 0, 50]), hinge('j4', rocker, ground, [100, 0, 0])],
 });

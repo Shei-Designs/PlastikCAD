@@ -75,6 +75,51 @@ export interface RobotJoint {
   mimic?: { joint: string; multiplier: number; offset: number };
 }
 
+export type SensorKind = 'camera' | 'depth' | 'lidar' | 'imu';
+
+export const SENSOR_KINDS: { id: SensorKind; name: string; help: string }[] = [
+  { id: 'camera', name: 'Camera', help: 'A color camera looking along its X axis.' },
+  { id: 'depth', name: 'Depth camera', help: 'A camera that also gives the distance to everything it sees, as a point cloud.' },
+  { id: 'lidar', name: 'Lidar', help: 'A laser scanner sweeping a plane about its Z axis.' },
+  { id: 'imu', name: 'IMU', help: 'Measures turn rate and acceleration, for odometry.' },
+];
+
+/** A sensor fixed to a link, as a frame of its own with a Gazebo sensor in it. */
+export interface RobotSensor {
+  id: string;
+  name: string;
+  kind: SensorKind;
+  /** Node id of the link it sits on. */
+  link: string;
+  /** Where it sits and how it is turned, in the link's own frame (mm, degrees), like a joint. A camera looks along its X, a lidar sweeps about its Z. */
+  origin: Vec3;
+  rot: Vec3;
+  /** Hz. */
+  rate: number;
+  /** Cameras: field of view in degrees, picture size in pixels, nearest and farthest seen in mm. */
+  camera: { hfov: number; width: number; height: number; near: number; far: number };
+  /** Lidars: rays per sweep, the sweep's width in degrees, nearest and farthest seen in mm. */
+  lidar: { samples: number; hfov: number; min: number; max: number };
+}
+
+export const defaultSensor = (id: string, name: string, kind: SensorKind, link: string, origin: Vec3): RobotSensor => ({
+  id,
+  name,
+  kind,
+  link,
+  origin,
+  rot: [0, 0, 0],
+  rate: kind === 'imu' ? 100 : kind === 'lidar' ? 10 : 30,
+  camera: { hfov: 80, width: 640, height: 480, near: 50, far: 10000 },
+  lidar: { samples: 360, hfov: 360, min: 100, max: 12000 },
+});
+
+/** A differential drive: the wheel joints on each side, driven together by a Gazebo plugin that takes velocity commands. */
+export interface DiffDrive {
+  left: string[];
+  right: string[];
+}
+
 export interface Robot {
   /** Name of the robot, and of the package it is exported as. */
   name: string;
@@ -82,9 +127,13 @@ export interface Robot {
   root: string | null;
   links: RobotLink[];
   joints: RobotJoint[];
+  sensors: RobotSensor[];
+  drive?: DiffDrive;
+  /** Write ros2_control for every actuated joint not driven as a wheel, with a trajectory controller over them. */
+  control: boolean;
 }
 
-export const emptyRobot = (name = 'robot'): Robot => ({ name, root: null, links: [], joints: [] });
+export const emptyRobot = (name = 'robot'): Robot => ({ name, root: null, links: [], joints: [], sensors: [], control: true });
 
 export const DEFAULT_MASS: MassSpec = { kind: 'material', material: 'pla', infill: 20, shell: 1.2 };
 

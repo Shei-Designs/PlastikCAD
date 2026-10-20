@@ -182,8 +182,9 @@ in the design file and synced with it.
   the others to follow this joint* sweeps the driven joint over its range
   and writes each passive joint's motion as a URDF `mimic` line: exact for a
   parallelogram, a fit with a reported error for other four-bars. URDF
-  cannot hold the loop-closing joint, so it is left out of the export with a
-  warning; SDF, which keeps it, is next.
+  cannot hold the loop-closing joint, so it is left out of the package with
+  a warning; the Gazebo model keeps it (and drops the mimic of joints on the
+  loop, since the loop then closes for real).
 - **Mass.** Each link is weighed from its shape and material: pick a material
   (filaments, resin, metals, acrylic, wood, foam...) and, for a printed part,
   the infill and the shell thickness, or type the mass you weighed. The
@@ -192,19 +193,37 @@ in the design file and synced with it.
 - **Collision.** A convex hull by default, or the object's box, a cylinder
   or a sphere filling it (turned as the object is), the exact mesh, or none;
   and the surface's coefficient of friction for Gazebo.
+- **Sensors.** A link's panel adds a camera, depth camera, lidar or IMU to
+  it: a frame of its own, placed by a point on the plate or by numbers,
+  turned to look (or sweep) along any of the design's axes, with its rate and,
+  for a camera, field of view, picture size and clip distances, for a lidar
+  the rays, sweep and range. The export writes each as a Gazebo sensor and
+  bridges its topics to ROS 2; a camera also gets the optical frame ROS
+  expects.
+- **Control.** In the overview, mark each wheel joint's side for a
+  differential drive: Gazebo's DiffDrive plugin then takes velocity commands
+  on `cmd_vel` and reports odometry, with the track and wheel radius measured
+  from the design. The other actuated joints go under `ros2_control` with a
+  joint trajectory controller (`arm_controller`) and a joint state
+  broadcaster, unless switched off.
 - **Checks.** The overview lists what stops an export (no base, a link no
   joint reaches, limits the wrong way round, a link with no mass or an
   impossible inertia) and what is only worth knowing (a joint that closes a
   loop, an open mesh, a heavy collision mesh), each with a *Show* button.
-- **Export** writes a zip holding a ROS 2 package: `urdf/<name>.urdf`, a
-  colored OBJ per link under `meshes/visual` and an STL under
+- **Export** writes a zip in one of two forms. A *ROS 2 package*:
+  `urdf/<name>.urdf` with the sensors, drive and friction in `<gazebo>`
+  blocks, a colored OBJ per link under `meshes/visual` and an STL under
   `meshes/collision`, `package.xml`, `CMakeLists.txt`, a launch file for RViz
-  with joint sliders and one for Gazebo through `ros_gz`, and an RViz layout.
+  with joint sliders, one for Gazebo through `ros_gz` that opens the
+  package's world (`worlds/<name>.sdf`, with the sensor systems on), spawns
+  the robot, starts the bridge from `config/bridge.yaml` and the controllers
+  from `config/controllers.yaml`, and an RViz layout. Or a *Gazebo model*:
+  `model.sdf` with every joint (loops included), `model.config`, the meshes
+  and a world that includes the model, to open with `gz sim` and no ROS.
   Meters, kilograms and radians, Z up; every link's frame is parallel to the
   design's axes and sits at its joint, with its meshes written in that frame.
-
-SDF export (which keeps loops), drive and sensor presets and `ros2_control`
-blocks are next.
+  The URDF says `__PACKAGE_SHARE__` where it means the package's share
+  folder; the launch files fill that in, so no xacro is needed.
 
 ## Projects
 
@@ -489,7 +508,7 @@ src/
   state/              the editor: selection, undo, files, preferences
   viewer/             three.js view: drawing, picking, handles
   parts/              the gear, pulley, sprocket and thread generators
-  io/                 STL, 3MF, OBJ, GLB, SVG, DXF, URDF writers; STL, OBJ, 3MF, GLB, SVG, DXF readers
+  io/                 STL, 3MF, OBJ, GLB, SVG, DXF, URDF, SDF writers; STL, OBJ, 3MF, GLB, SVG, DXF readers
   robot/              Robot mode: links and joints, materials and mass properties, checks, the ROS 2 package
   sync/               Google sign-in (PKCE, loopback), Drive remote, three-way merge, sync engine
   text/               fonts, and laying words out as outlines
@@ -542,8 +561,7 @@ never touch the mesh kernel, which keeps them easy to test.
 - More parts: throated worm wheel, planetary set helper, V-belt pulleys,
   imperial threads.
 - Assembly preview of meshing gears.
-- Robot mode: SDF output (with loops), drive and sensor presets,
-  `ros2_control`, xacro, MJCF.
+- Robot mode: xacro output, MJCF for MuJoCo, URDF import.
 - STEP export. Shapes and parts are already described as profiles and
   operations rather than triangles, so a B-rep backend can evaluate the same
   descriptions.

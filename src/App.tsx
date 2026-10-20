@@ -9,6 +9,7 @@ import {
   copySelected,
   deleteJoint,
   deleteSelected,
+  deleteSensor,
   dismissNotice,
   dropSelected,
   duplicateSelected,
@@ -32,8 +33,10 @@ import {
   select,
   selectAll,
   selectJoint,
+  selectSensor,
   setHole,
   stopAligning,
+  stopJointPick,
   toggleAligning,
   undo,
   ungroupSelected,
@@ -85,7 +88,9 @@ function onKeyDown(e: KeyboardEvent): void {
     if (s.mating) cancelMate();
     else if (s.aligning) stopAligning();
     else if (s.placing) cancelPlacing();
+    else if (s.jointPick) stopJointPick();
     else if (s.joint) selectJoint(null);
+    else if (s.sensor) selectSensor(null);
     else select([]);
     return;
   }
@@ -149,8 +154,9 @@ function onKeyDown(e: KeyboardEvent): void {
 
   // In Robot mode a picked joint goes before any object.
   const remove = () => {
-    const { joint } = getState();
+    const { joint, sensor } = getState();
     if (joint) deleteJoint(joint);
+    else if (sensor) deleteSensor(sensor);
     else deleteSelected();
   };
   const plain: Record<string, () => void> = {

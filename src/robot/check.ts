@@ -14,6 +14,8 @@ export interface Problem {
   link?: string;
   /** Id of the joint it is about. */
   joint?: string;
+  /** Id of the sensor it is about. */
+  sensor?: string;
 }
 
 /** The collision mesh past which a simulator slows down noticeably. */
@@ -25,8 +27,8 @@ export const HEAVY_COLLISION = 20_000;
  */
 export function checkRobot(doc: Doc, props: Map<string, LinkProperties>, robot: Robot = robotOf(doc)): Problem[] {
   const out: Problem[] = [];
-  const error = (text: string, at: { link?: string; joint?: string } = {}) => out.push({ level: 'error', text, ...at });
-  const warn = (text: string, at: { link?: string; joint?: string } = {}) => out.push({ level: 'warning', text, ...at });
+  const error = (text: string, at: { link?: string; joint?: string; sensor?: string } = {}) => out.push({ level: 'error', text, ...at });
+  const warn = (text: string, at: { link?: string; joint?: string; sensor?: string } = {}) => out.push({ level: 'warning', text, ...at });
   const nodes = linkNodes(doc.scene);
   const nameOf = (id: string) => nodes.find((n) => n.id === id)?.name ?? 'an object';
   if (nodes.length === 0) {
@@ -57,6 +59,23 @@ export function checkRobot(doc: Doc, props: Map<string, LinkProperties>, robot: 
       if (j.mimic.joint === j.id) error(`"${j.name}" follows itself.`, { joint: j.id });
       else if (!jointIds.has(j.mimic.joint)) error(`"${j.name}" follows a joint that is gone.`, { joint: j.id });
     }
+  }
+
+  for (const x of robot.sensors) {
+    if (!ids.has(x.link)) error(`The sensor "${x.name}" sits on an object that is hidden, a hole or gone.`, { sensor: x.id });
+    if ((x.kind === 'camera' || x.kind === 'depth') && !(x.camera.near < x.camera.far)) error(`"${x.name}" sees nothing: its nearest distance must be below its farthest.`, { sensor: x.id });
+    if (x.kind === 'lidar' && !(x.lidar.min < x.lidar.max)) error(`"${x.name}" sees nothing: its nearest range must be below its farthest.`, { sensor: x.id });
+  }
+  if (robot.drive) {
+    const wheel = (id: string) => robot.joints.find((j) => j.id === id);
+    if (robot.drive.left.length === 0 || robot.drive.right.length === 0) error('The drive needs at least one wheel joint on each side.');
+    for (const id of [...robot.drive.left, ...robot.drive.right]) {
+      const j = wheel(id);
+      if (!j) continue;
+      if (j.type !== 'continuous' && j.type !== 'revolute') error(`"${j.name}" drives a wheel but does not turn.`, { joint: j.id });
+      if (j.mimic) error(`"${j.name}" drives a wheel and follows another joint; it cannot do both.`, { joint: j.id });
+    }
+    if (robot.drive.left.some((id) => robot.drive!.right.includes(id))) error('A wheel joint is on both sides of the drive.');
   }
 
   for (const node of nodes) {

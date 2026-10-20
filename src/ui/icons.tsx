@@ -228,3 +228,10 @@ export const PinIcon = () => (
     <circle cx="12" cy="10.5" r="2.2" />
   </Icon>
 );
+/** An eye on a stalk: a sensor. */
+export const SensorIcon = () => (
+  <Icon>
+    <path d="M3 12s3.5-5 9-5 9 5 9 5-3.5 5-9 5-9-5-9-5z" />
+    <circle cx="12" cy="12" r="2.5" />
+  </Icon>
+);

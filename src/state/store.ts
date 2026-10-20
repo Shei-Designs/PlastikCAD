@@ -56,14 +56,14 @@ import { initSync, linkAccount, requestSync, unlinkAccount } from '../sync/sync'
 import type { SyncReport } from '../sync/engine';
 import { mergeDocs } from '../sync/merge';
 import { checkRobot } from '../robot/check';
-import { buildRobotPackage, packageName } from '../robot/export';
+import { buildRobotPackage, buildSdfModel, packageName } from '../robot/export';
 import { fitFollowers, solvePose } from '../robot/kinematics';
 import type { Solved } from '../robot/kinematics';
-import { jointInChild, jointInDesign as jointInDesignOf, linkNodes, linkOf, pruned, robotOf } from '../robot/model';
+import { jointInChild, jointInDesign as jointInDesignOf, linkNodes, linkOf, pruned, robotOf, sensorInDesign, sensorInLink } from '../robot/model';
 import { snapPointsOf } from '../robot/snaps';
 import type { SnapPoint } from '../viewer/Viewer';
-import { defaultJoint } from '../robot/types';
-import type { Robot, RobotJoint, RobotLink } from '../robot/types';
+import { defaultJoint, defaultSensor, SENSOR_KINDS } from '../robot/types';
+import type { DiffDrive, Robot, RobotJoint, RobotLink, RobotSensor, SensorKind } from '../robot/types';
 import { massProps } from './massProps';
 
 export interface Notice {
@@ -98,7 +98,9 @@ export interface EditorState {
   robot: boolean;
   /** The joint picked in Robot mode (nothing else is selected while one is). */
   joint: string | null;
-  /** The picked joint is being placed: the plate offers the snap points of its two links. */
+  /** The sensor picked in Robot mode (nothing else is selected while one is). */
+  sensor: string | null;
+  /** The picked joint or sensor is being placed: the plate offers the snap points of its links. */
   jointPick: boolean;
   /** The picked joint moved to try the robot: its value, and where every link goes for it (loops solved). */
   pose: { joint: string; value: number; solved: Solved } | null;
@@ -152,6 +154,7 @@ let state: EditorState = {
   partsEpoch: 0,
   robot: false,
   joint: null,
+  sensor: null,
   jointPick: false,
   pose: null,
   mating: null,
@@ -353,8 +356,8 @@ export function selectedNodes(s: EditorState = state): SceneNode[] {
 
 export function select(ids: string[]): void {
   abortAlignPreview();
-  // Selecting an object takes the right panel from the custom parts bin, and from a joint.
-  set(ids.length ? { selection: ids, bin: false, joint: null } : { selection: ids });
+  // Selecting an object takes the right panel from the custom parts bin; any selection, or none, takes it from a joint or sensor.
+  set(ids.length ? { selection: ids, bin: false, joint: null, sensor: null, jointPick: false, pose: null } : { selection: ids, joint: null, sensor: null, jointPick: false, pose: null });
 }
 
 export function toggleSelected(id: string): void {
@@ -1403,6 +1406,7 @@ function adopt(doc: Doc, key: string | null): void {
     bin: false,
     robot: false,
     joint: null,
+    sensor: null,
     jointPick: false,
     pose: null,
     mating: null,
@@ -1745,12 +1749,17 @@ export function enterRobotMode(): void {
   set({ robot: true, joint: null, bin: false, selection: [] });
 }
 
-export const leaveRobotMode = (): void => set({ robot: false, joint: null, jointPick: false, pose: null });
+export const leaveRobotMode = (): void => set({ robot: false, joint: null, sensor: null, jointPick: false, pose: null });
 export const toggleRobotMode = (): void => (state.robot ? leaveRobotMode() : enterRobotMode());
 
 export function selectJoint(id: string | null): void {
   abortAlignPreview();
-  set(id ? { joint: id, selection: [], jointPick: false, pose: null } : { joint: null, jointPick: false, pose: null });
+  set(id ? { joint: id, sensor: null, selection: [], jointPick: false, pose: null } : { joint: null, jointPick: false, pose: null });
+}
+
+export function selectSensor(id: string | null): void {
+  abortAlignPreview();
+  set(id ? { sensor: id, joint: null, selection: [], jointPick: false, pose: null } : { sensor: null, jointPick: false });
 }
 
 /** Replaces the robot as one undoable step, like `commit` does the scene. A pose was for the robot as it was. */
@@ -1759,20 +1768,37 @@ function commitRobot(robot: Robot, merge?: string): void {
   set({ doc: { ...state.doc, robot }, pose: null });
 }
 
-/** The picked joint is placed by a click on one of these: the corners, edge middles, face centers and axis ends of its two links. */
+/**
+ * The picked joint or sensor is placed by a click on one of these: the
+ * corners, edge middles, face centers and axis ends of the joint's two links,
+ * or of the sensor's one.
+ */
 export function jointSnaps(s: EditorState = state): SnapPoint[] {
-  const joint = s.jointPick && s.joint ? s.doc.robot?.joints.find((j) => j.id === s.joint) : undefined;
+  if (!s.jointPick) return [];
+  if (s.sensor) {
+    const sensor = s.doc.robot?.sensors.find((x) => x.id === s.sensor);
+    const link = sensor && s.doc.scene.find((n) => n.id === sensor.link);
+    return link ? snapPointsOf(link) : [];
+  }
+  const joint = s.joint ? s.doc.robot?.joints.find((j) => j.id === s.joint) : undefined;
   if (!joint) return [];
   const child = s.doc.scene.find((n) => n.id === joint.child);
   const parent = s.doc.scene.find((n) => n.id === joint.parent);
   return [...(child ? snapPointsOf(child) : []), ...(parent ? snapPointsOf(parent) : [])];
 }
 
-export const startJointPick = (): void => set({ jointPick: Boolean(state.joint), pose: null });
+export const startJointPick = (): void => set({ jointPick: Boolean(state.joint || state.sensor), pose: null });
 export const stopJointPick = (): void => set({ jointPick: false });
 
-/** Puts the picked joint on a snap point; a point that carries an axis (the end of a cylinder) gives the joint that axis too. */
+/** Puts the picked joint (or sensor) on a snap point; a point that carries an axis (the end of a cylinder) gives a joint that axis too. */
 export function pickJointSnap(point: SnapPoint): void {
+  if (state.sensor) {
+    const sensor = robotOf(state.doc).sensors.find((x) => x.id === state.sensor);
+    const link = sensor && state.doc.scene.find((n) => n.id === sensor.link);
+    if (sensor && link) placeSensor(sensor.id, point.at, sensorInDesign(sensor, link).matrix);
+    set({ jointPick: false });
+    return;
+  }
   const joint = state.joint && robotOf(state.doc).joints.find((j) => j.id === state.joint);
   const child = joint && state.doc.scene.find((n) => n.id === joint.child);
   if (!joint || !child) return;
@@ -1780,6 +1806,54 @@ export function pickJointSnap(point: SnapPoint): void {
   placeJoint(joint.id, point.at, point.axis ?? placed.axis);
   set({ jointPick: false });
 }
+
+// --- sensors, drive and control ---------------------------------------------------
+
+const sensorName = (robot: Robot, base: string): string => {
+  let name = base;
+  for (let n = 2; robot.sensors.some((x) => x.name === name); n++) name = `${base}_${n}`;
+  return name;
+};
+
+/** Fixes a sensor to a link at the link's center, looking along the design's +X, and picks it. */
+export function addSensor(link: string, kind: SensorKind): string | null {
+  const node = state.doc.scene.find((n) => n.id === link);
+  if (!node) return null;
+  const id = newId();
+  const base = SENSOR_KINDS.find((k) => k.id === kind)?.name.toLowerCase().replace(/\s+/g, '_') ?? kind;
+  const local = sensorInLink(node.pos, [0, 0, 0], node);
+  editRobot((r) => ({ ...r, sensors: [...r.sensors, { ...defaultSensor(id, sensorName(r, base), kind, link, tidyVec(local.origin)), rot: tidyVec(local.rot) }] }));
+  selectSensor(id);
+  return id;
+}
+
+export function updateSensor(id: string, patch: Partial<Omit<RobotSensor, 'id'>>, merge?: string): void {
+  editRobot((r) => ({ ...r, sensors: r.sensors.map((x) => (x.id === id ? { ...x, ...patch } : x)) }), merge);
+}
+
+/** Puts the sensor at a place in the design, turned as `matrix` says there (it is kept in its link's frame). */
+export function placeSensor(id: string, origin: Vec3, matrix: Mat, merge?: string): void {
+  const sensor = robotOf(state.doc).sensors.find((x) => x.id === id);
+  const link = sensor && state.doc.scene.find((n) => n.id === sensor.link);
+  if (!sensor || !link) return;
+  const local = sensorInLink(origin, eulerOf(matrix), link);
+  updateSensor(id, { origin: tidyVec(local.origin), rot: tidyVec(local.rot) }, merge);
+}
+
+export function deleteSensor(id: string): void {
+  editRobot((r) => ({ ...r, sensors: r.sensors.filter((x) => x.id !== id) }));
+  if (state.sensor === id) set({ sensor: null });
+}
+
+/** Sets which wheel joints the differential drive turns on each side; nothing on either side removes the drive. */
+export function setDrive(drive: DiffDrive | null): void {
+  editRobot((r) => {
+    const { drive: _old, ...rest } = r;
+    return drive && (drive.left.length || drive.right.length) ? { ...rest, drive } : rest;
+  });
+}
+
+export const setControl = (control: boolean): void => editRobot((r) => ({ ...r, control }));
 
 /**
  * Moves the picked joint to `value` for a look, every other free joint going
@@ -1876,14 +1950,14 @@ export function deleteJoint(id: string): void {
  * Stopped by any error the checks find; the overview lists them. False if
  * nothing was written.
  */
-export async function exportRobot(): Promise<boolean> {
+export async function exportRobot(format: 'urdf' | 'sdf' = state.prefs.robotFormat): Promise<boolean> {
   const doc = state.doc;
   const robot = robotOf(doc);
   const nodes = linkNodes(doc.scene);
   const stop = async (problems: ReturnType<typeof checkRobot>): Promise<boolean> => {
     const errors = problems.filter((p) => p.level === 'error');
     if (errors.length === 0) return false;
-    set({ selection: [], joint: null });
+    set({ selection: [], joint: null, sensor: null });
     await tell({ title: 'Robot', text: `${errors.length === 1 ? 'One problem stops' : `${errors.length} problems stop`} the export. ${errors[0].text}`, actions: ['OK'] });
     return true;
   };
@@ -1897,7 +1971,7 @@ export async function exportRobot(): Promise<boolean> {
     const geo = await worker.robotGeometry(nodes, collisions, true);
     // Checked again with every link weighed, in case some had not been when the first check ran.
     if (await stop(checkRobot(doc, new Map(geo.map((g) => [g.id, g.props])), robot))) return false;
-    const pkg = buildRobotPackage(doc, new Map(geo.map((g) => [g.id, g])), robot);
+    const pkg = (format === 'sdf' ? buildSdfModel : buildRobotPackage)(doc, new Map(geo.map((g) => [g.id, g])), robot);
     const bytes = zipSync(Object.fromEntries(pkg.files.map((f) => [`${pkg.name}/${f.name}`, f.bytes])), { level: 6 });
     const where = await platform.saveAs(`${name}.zip`, [{ name: 'Zip archive', extensions: ['zip'] }], bytes, 'application/zip');
     if (!where) return false;

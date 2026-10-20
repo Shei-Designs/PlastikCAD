@@ -33,6 +33,15 @@ export interface UrdfLink {
   collision: UrdfShape[];
   /** Coefficient of friction of the surface, written for Gazebo. */
   friction?: number;
+  /** Gazebo sensor elements fixed in this link (see `sensorXml`), written in a <gazebo> block for it. */
+  sensors?: string[];
+}
+
+export interface UrdfExtras {
+  /** Model-level Gazebo plugin elements (the drive, the joint state publisher). */
+  plugins?: string[];
+  /** Joints under ros2_control, with position commands; a block is written and the Gazebo plugin for it, reading `controllersYaml`. */
+  control?: { joints: string[]; controllersYaml: string };
 }
 
 export interface UrdfJoint {
@@ -40,8 +49,9 @@ export interface UrdfJoint {
   type: JointType;
   parent: string;
   child: string;
-  /** The child frame in the parent frame, m. */
+  /** The child frame in the parent frame, m, and how it is turned there (radians); a sensor's frame is the one joint that turns. */
   origin: Vec3;
+  rpy?: Vec3;
   axis: Vec3;
   /** Radians or meters; effort N·m or N; velocity rad/s or m/s. */
   limit?: { lower: number; upper: number; effort: number; velocity: number };
@@ -104,7 +114,7 @@ function materialName(color: [number, number, number], materials: Map<string, st
 }
 
 function jointXml(j: UrdfJoint): string {
-  const lines = [`  <joint name="${escapeXml(j.name)}" type="${j.type}">`, `    <parent link="${escapeXml(j.parent)}"/>`, `    <child link="${escapeXml(j.child)}"/>`, `    <origin xyz="${vec(j.origin)}" rpy="0 0 0"/>`];
+  const lines = [`  <joint name="${escapeXml(j.name)}" type="${j.type}">`, `    <parent link="${escapeXml(j.parent)}"/>`, `    <child link="${escapeXml(j.child)}"/>`, `    <origin xyz="${vec(j.origin)}" rpy="${vec(j.rpy ?? [0, 0, 0])}"/>`];
   if (j.type !== 'fixed') lines.push(`    <axis xyz="${vec(j.axis)}"/>`);
   if (j.limit && j.type !== 'fixed') {
     const range = j.type === 'continuous' ? '' : ` lower="${fmt(j.limit.lower, 6)}" upper="${fmt(j.limit.upper, 6)}"`;
@@ -116,14 +126,42 @@ function jointXml(j: UrdfJoint): string {
   return lines.join('\n');
 }
 
-export function writeUrdf(name: string, links: UrdfLink[], joints: UrdfJoint[]): string {
+export function writeUrdf(name: string, links: UrdfLink[], joints: UrdfJoint[], extras: UrdfExtras = {}): string {
   const materials = new Map<string, string>();
   const body = links.map((l) => linkXml(l, materials));
   const head = [...materials].map(([n, rgba]) => `  <material name="${n}">\n    <color rgba="${rgba}"/>\n  </material>`);
-  // Gazebo reads friction from its own block beside the link.
-  const gazebo = links.filter((l) => l.friction !== undefined && l.collision.length > 0).map((l) => `  <gazebo reference="${escapeXml(l.name)}">\n    <mu1>${fmt(l.friction!, 4)}</mu1>\n    <mu2>${fmt(l.friction!, 4)}</mu2>\n  </gazebo>`);
+  // Gazebo reads friction and sensors from blocks of its own beside the links, and plugins from blocks of the robot's.
+  const gazebo: string[] = [];
+  for (const l of links) {
+    const inner: string[] = [];
+    if (l.friction !== undefined && l.collision.length > 0) inner.push(`    <mu1>${fmt(l.friction, 4)}</mu1>`, `    <mu2>${fmt(l.friction, 4)}</mu2>`);
+    for (const s of l.sensors ?? []) inner.push(indent(s, '    '));
+    if (inner.length) gazebo.push(`  <gazebo reference="${escapeXml(l.name)}">`, ...inner, '  </gazebo>');
+  }
+  for (const p of extras.plugins ?? []) gazebo.push('  <gazebo>', indent(p, '    '), '  </gazebo>');
+  if (extras.control && extras.control.joints.length) {
+    gazebo.push(
+      '  <ros2_control name="GazeboSimSystem" type="system">',
+      '    <hardware>',
+      '      <plugin>gz_ros2_control/GazeboSimSystem</plugin>',
+      '    </hardware>',
+      ...extras.control.joints.flatMap((j) => [`    <joint name="${escapeXml(j)}">`, '      <command_interface name="position"/>', '      <state_interface name="position"/>', '      <state_interface name="velocity"/>', '    </joint>']),
+      '  </ros2_control>',
+      '  <gazebo>',
+      '    <plugin filename="gz_ros2_control-system" name="gz_ros2_control::GazeboSimROS2ControlPlugin">',
+      `      <parameters>${escapeXml(extras.control.controllersYaml)}</parameters>`,
+      '    </plugin>',
+      '  </gazebo>',
+    );
+  }
   return [`<?xml version="1.0"?>`, `<!-- Made with ${APP_NAME}. Units: meters, kilograms, radians. -->`, `<robot name="${escapeXml(name)}">`, ...head, ...body, ...joints.map(jointXml), ...gazebo, '</robot>', ''].join('\n');
 }
+
+const indent = (text: string, by: string): string =>
+  text
+    .split('\n')
+    .map((l) => (l ? by + l : l))
+    .join('\n');
 
 /** A name URDF and ROS accept: letters, digits and underscores, starting with a letter. */
 export function urdfName(raw: string, fallback = 'link'): string {

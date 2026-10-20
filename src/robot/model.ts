@@ -1,9 +1,10 @@
 // Reading a robot against its design: which objects are links, what each
 // link's settings are, and how the joints hang the links from the base.
-import { apply, frameMatrix, invert, rotation } from '../model/math';
+import { apply, eulerOf, frameMatrix, invert, multiply, rotation } from '../model/math';
+import type { Mat } from '../model/math';
 import type { Doc, Scene, SceneNode, Vec3 } from '../model/types';
 import { defaultLink, emptyRobot } from './types';
-import type { Robot, RobotJoint, RobotLink } from './types';
+import type { Robot, RobotJoint, RobotLink, RobotSensor } from './types';
 
 /** The objects that are links: every top-level solid that is shown. Holes cut nothing at the top level, and pictures are flat. */
 export const linkNodes = (scene: Scene): SceneNode[] => scene.filter((n) => !n.hidden && !n.hole && n.type !== 'picture');
@@ -22,8 +23,25 @@ export function pruned(robot: Robot, scene: Scene): Robot {
   const jointIds = new Set(joints.map((j) => j.id));
   const followers = joints.map((j) => (j.mimic && !jointIds.has(j.mimic.joint) ? { ...j, mimic: undefined } : j));
   const root = robot.root && ids.has(robot.root) ? robot.root : null;
-  if (links.length === robot.links.length && joints.length === robot.joints.length && followers.every((j, i) => j === joints[i]) && root === robot.root) return robot;
-  return { ...robot, root, links, joints: followers.map((j) => (j.mimic === undefined ? stripMimic(j) : j)) };
+  const sensors = robot.sensors.filter((x) => ids.has(x.link));
+  const drive = robot.drive && { left: robot.drive.left.filter((id) => jointIds.has(id)), right: robot.drive.right.filter((id) => jointIds.has(id)) };
+  const sameDrive = !robot.drive || (drive!.left.length === robot.drive.left.length && drive!.right.length === robot.drive.right.length);
+  if (links.length === robot.links.length && joints.length === robot.joints.length && followers.every((j, i) => j === joints[i]) && root === robot.root && sensors.length === robot.sensors.length && sameDrive) return robot;
+  return { ...robot, root, links, joints: followers.map((j) => (j.mimic === undefined ? stripMimic(j) : j)), sensors, ...(drive ? { drive } : {}) };
+}
+
+/** A sensor's place in the design: its origin and the frame it is turned to (its X looks along the first column), from the link's frame. */
+export function sensorInDesign(sensor: RobotSensor, link: SceneNode): { origin: Vec3; matrix: Mat } {
+  const frame = frameMatrix(link);
+  const turned = multiply(rotation(link.rot), rotation(sensor.rot));
+  return { origin: apply(frame, sensor.origin), matrix: [...turned.slice(0, 9), ...apply(frame, sensor.origin)] as Mat };
+}
+
+/** The other way: a place in the design and a turn (as Euler degrees in the design), as the link's frame has them. */
+export function sensorInLink(origin: Vec3, rot: Vec3, link: SceneNode): { origin: Vec3; rot: Vec3 } {
+  const back = invert(frameMatrix(link));
+  const local = multiply(invert(rotation(link.rot)), rotation(rot));
+  return { origin: apply(back, origin), rot: eulerOf(local) };
 }
 
 const stripMimic = ({ mimic: _mimic, ...rest }: RobotJoint): RobotJoint => rest;

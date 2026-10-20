@@ -4,7 +4,18 @@
 import { APP_NAME } from '../app';
 import { escapeXml } from './format';
 
-export function packageXml(name: string, description: string): string {
+export interface PackageNeeds {
+  /** The package carries a Gazebo launch with the bridge, so it depends on ros_gz. */
+  gazebo: boolean;
+  /** ros2_control is in the URDF. */
+  control: boolean;
+}
+
+export function packageXml(name: string, description: string, needs: PackageNeeds = { gazebo: true, control: false }): string {
+  const extra = [
+    ...(needs.gazebo ? ['ros_gz_sim', 'ros_gz_bridge'] : []),
+    ...(needs.control ? ['gz_ros2_control', 'controller_manager', 'joint_state_broadcaster', 'joint_trajectory_controller'] : []),
+  ];
   return `<?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
@@ -19,7 +30,7 @@ export function packageXml(name: string, description: string): string {
   <exec_depend>robot_state_publisher</exec_depend>
   <exec_depend>joint_state_publisher_gui</exec_depend>
   <exec_depend>rviz2</exec_depend>
-  <exec_depend>xacro</exec_depend>
+${extra.map((d) => `  <exec_depend>${d}</exec_depend>`).join('\n')}
 
   <export>
     <build_type>ament_cmake</build_type>
@@ -34,7 +45,7 @@ project(${name})
 
 find_package(ament_cmake REQUIRED)
 
-install(DIRECTORY urdf meshes launch rviz
+install(DIRECTORY urdf meshes launch rviz config worlds
   DESTINATION share/\${PROJECT_NAME}
 )
 
@@ -61,7 +72,7 @@ def generate_launch_description():
     urdf = os.path.join(share, 'urdf', '${name}.urdf')
     rviz_config = os.path.join(share, 'rviz', 'display.rviz')
     with open(urdf, 'r') as f:
-        robot_description = f.read()
+        robot_description = f.read().replace('${SHARE_PLACEHOLDER}', share)
 
     return LaunchDescription([
         DeclareLaunchArgument('gui', default_value='true', description='Show joint sliders'),
@@ -131,9 +142,27 @@ Window Geometry:
 `;
 }
 
-/** Gazebo through ros_gz: starts an empty world and spawns the robot from its description. */
-export function gazeboLaunch(name: string): string {
-  return `# Made with ${APP_NAME}. Spawns the robot in Gazebo (Harmonic or later, through ros_gz):
+/** Where the URDF says "the package's share folder": the launch files fill it in, so no xacro is needed. */
+export const SHARE_PLACEHOLDER = '__PACKAGE_SHARE__';
+
+export interface GazeboLaunchNeeds {
+  /** Controllers to spawn after the robot, in order (ros2_control). */
+  controllers: string[];
+}
+
+/** Gazebo through ros_gz: the package's world, the robot spawned into it, the bridge, and any controllers. */
+export function gazeboLaunch(name: string, needs: GazeboLaunchNeeds = { controllers: [] }): string {
+  const spawners = needs.controllers
+    .map(
+      (c) => `
+        Node(
+            package='controller_manager',
+            executable='spawner',
+            arguments=['${c}', '--controller-manager', '/controller_manager'],
+        ),`,
+    )
+    .join('');
+  return `# Made with ${APP_NAME}. Spawns the robot in Gazebo (Harmonic or later, through ros_gz) with the bridge to ROS 2:
 #   ros2 launch ${name} gazebo.launch.py
 import os
 
@@ -147,12 +176,14 @@ from launch_ros.actions import Node
 def generate_launch_description():
     share = get_package_share_directory('${name}')
     urdf = os.path.join(share, 'urdf', '${name}.urdf')
+    world = os.path.join(share, 'worlds', '${name}.sdf')
+    bridge_config = os.path.join(share, 'config', 'bridge.yaml')
     with open(urdf, 'r') as f:
-        robot_description = f.read()
+        robot_description = f.read().replace('${SHARE_PLACEHOLDER}', share)
 
     gz_sim = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(get_package_share_directory('ros_gz_sim'), 'launch', 'gz_sim.launch.py')),
-        launch_arguments={'gz_args': '-r empty.sdf'}.items(),
+        launch_arguments={'gz_args': f'-r {world}'}.items(),
     )
 
     return LaunchDescription([
@@ -167,9 +198,55 @@ def generate_launch_description():
         Node(
             package='ros_gz_sim',
             executable='create',
-            arguments=['-name', '${name}', '-topic', 'robot_description', '-z', '0.1'],
+            arguments=['-name', '${name}', '-topic', 'robot_description', '-z', '0.05'],
         ),
+        Node(
+            package='ros_gz_bridge',
+            executable='parameter_bridge',
+            parameters=[{'config_file': bridge_config, 'use_sim_time': True}],
+        ),${spawners}
     ])
+`;
+}
+
+export interface BridgeTopic {
+  ros: string;
+  gz: string;
+  rosType: string;
+  gzType: string;
+  direction: 'GZ_TO_ROS' | 'ROS_TO_GZ' | 'BIDIRECTIONAL';
+}
+
+/** The ros_gz_bridge configuration: which Gazebo topics become which ROS topics. */
+export function bridgeYaml(topics: BridgeTopic[]): string {
+  return topics
+    .map((t) => `- ros_topic_name: ${t.ros}\n  gz_topic_name: ${t.gz}\n  ros_type_name: ${t.rosType}\n  gz_type_name: ${t.gzType}\n  direction: ${t.direction}\n`)
+    .join('');
+}
+
+/** ros2_control: a joint state broadcaster and one trajectory controller over the given joints. */
+export function controllersYaml(joints: string[]): string {
+  return `controller_manager:
+  ros__parameters:
+    update_rate: 100
+    use_sim_time: true
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+    arm_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+arm_controller:
+  ros__parameters:
+    joints:
+${joints.map((j) => `      - ${j}`).join('\n')}
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+    state_publish_rate: 50.0
+    action_monitor_rate: 20.0
+    allow_partial_joints_goal: false
 `;
 }
 
@@ -188,5 +265,14 @@ The robot is \`urdf/${name}.urdf\`. Visual meshes are OBJ files with their
 colors, collision meshes STL, all in meters with Z up, each in the frame of
 its link. Masses and inertias come from the shapes and the materials chosen
 in ${APP_NAME}; check any that were estimated rather than weighed.
+
+Gazebo reads the sensors, the drive and the friction from the \`<gazebo>\`
+blocks in the URDF. \`worlds/${name}.sdf\` is an empty world with the
+sensor systems switched on, \`config/bridge.yaml\` tells ros_gz_bridge which
+topics to carry across (sensors, clock, joint states, cmd_vel and odom for a
+drive), and \`config/controllers.yaml\` sets up ros2_control when the robot
+has joints under it: \`/arm_controller\` takes joint trajectories. The URDF
+says \`${SHARE_PLACEHOLDER}\` where it means the package's share folder; the
+launch files fill that in, so no xacro is needed.
 `;
 }

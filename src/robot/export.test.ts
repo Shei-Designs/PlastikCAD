@@ -3,10 +3,10 @@ import { emptyDoc } from '../model/file';
 import type { SceneNode } from '../model/types';
 import type { LinkGeometry } from '../worker/protocol';
 import { checkRobot } from './check';
-import { buildRobotPackage } from './export';
+import { buildRobotPackage, buildSdfModel } from './export';
 import { meshProperties } from './inertia';
 import { jointInChild, jointInDesign, spanningTree } from './model';
-import { defaultJoint, defaultLink } from './types';
+import { defaultJoint, defaultLink, defaultSensor } from './types';
 import type { Robot } from './types';
 
 const text = (b: Uint8Array) => new TextDecoder().decode(b);
@@ -31,6 +31,8 @@ function robot(): Robot {
   return {
     name: 'Test Rover',
     root: body.id,
+    sensors: [],
+    control: true,
     links: [{ ...defaultLink(wheel.id), mass: { kind: 'measured', grams: 50 }, collision: 'hull', friction: 1.2 }, { ...defaultLink(arm.id), collision: 'box' }],
     joints: [
       // In the child's frame: the wheel's axle 4 mm inboard of its center, the shoulder at the arm's lower end.
@@ -164,5 +166,99 @@ describe('buildRobotPackage', () => {
     d.robot!.joints[1].mimic = { joint: 'j1', multiplier: 2, offset: 10 };
     const urdf = text(buildRobotPackage(d, geometry()).files.find((f) => f.name === 'urdf/test_rover.urdf')!.bytes);
     expect(urdf).toContain('<mimic joint="left_wheel_joint" multiplier="2" offset="0.174533"/>');
+  });
+});
+
+describe('sensors, drive and control', () => {
+  const rover = () => {
+    const d = doc();
+    const r = d.robot!;
+    r.sensors = [
+      { ...defaultSensor('s1', 'front cam', 'camera', body.id, [50, 0, 10]) },
+      { ...defaultSensor('s2', 'top lidar', 'lidar', body.id, [0, 0, 10]), rot: [0, 0, 90] },
+      { ...defaultSensor('s3', 'imu', 'imu', body.id, [0, 0, 0]) },
+    ];
+    // The wheel joint drives the left side; a mirrored one would drive the right. Here one joint each side, the arm's shoulder stays under ros2_control.
+    r.joints.push({ ...defaultJoint('j3', 'right wheel joint', body.id, arm.id, [0, 0, -20]), type: 'continuous', axis: [0, 1, 0] });
+    r.drive = { left: ['j1'], right: ['j3'] };
+    return d;
+  };
+
+  it('writes sensor frames, Gazebo blocks, the drive and ros2_control into the package', () => {
+    const d = rover();
+    // The arm is both the right wheel (j3) and on the shoulder (j2): the shoulder is a loop joint then, so only the wheels remain in the tree.
+    d.robot!.joints.splice(1, 1);
+    const pkg = buildRobotPackage(d, geometry());
+    const names = pkg.files.map((f) => f.name);
+    expect(names).toEqual(expect.arrayContaining(['worlds/test_rover.sdf', 'config/bridge.yaml']));
+    expect(names).not.toContain('config/controllers.yaml');
+    const urdf = text(pkg.files.find((f) => f.name === 'urdf/test_rover.urdf')!.bytes);
+    // The camera's frame hangs from the body by a fixed joint, 50 mm forward of the body's center (which is 10 mm up), with an optical frame under it.
+    expect(urdf).toMatch(/<joint name="front_cam_joint" type="fixed">\s*<parent link="Body"\/>\s*<child link="front_cam_link"\/>\s*<origin xyz="0.05 0 0.02" rpy="0 0 0"\/>/);
+    expect(urdf).toMatch(/<joint name="front_cam_optical_joint" type="fixed">[\s\S]*?rpy="-1.570796 0 -1.570796"/);
+    // The lidar's frame is turned a quarter about Z.
+    expect(urdf).toMatch(/<child link="top_lidar_link"\/>\s*<origin xyz="0 0 0.02" rpy="0 0 1.570796"\/>/);
+    // Each sensor's Gazebo block sits in its own frame.
+    expect(urdf).toMatch(/<gazebo reference="front_cam_link">\s*<sensor name="front_cam" type="camera">[\s\S]*?<topic>front_cam\/image<\/topic>[\s\S]*?<horizontal_fov>1.396263<\/horizontal_fov>/);
+    expect(urdf).toMatch(/<sensor name="top_lidar" type="gpu_lidar">[\s\S]*?<samples>360<\/samples>[\s\S]*?<min>0.1<\/min><max>12<\/max>/);
+    expect(urdf).toMatch(/<sensor name="imu" type="imu">/);
+    // The drive: both wheel joints, the track between them (72 mm: 36 out each way), the wheel radius (10 mm).
+    // The track is the distance between the two wheel joints (the "right wheel" here is the arm, 36 mm in and 10 mm up from the left: 37.4 mm);
+    // the radius the mean of the wheels' half-extents across their axles (10 and 20 mm).
+    expect(urdf).toMatch(/<plugin filename="gz-sim-diff-drive-system"[\s\S]*?<left_joint>left_wheel_joint<\/left_joint>\s*<right_joint>right_wheel_joint<\/right_joint>\s*<wheel_separation>0.03736<\/wheel_separation>\s*<wheel_radius>0.015<\/wheel_radius>/);
+    expect(urdf).toContain('<plugin filename="gz-sim-joint-state-publisher-system"');
+    expect(urdf).not.toContain('<ros2_control');
+    const bridge = text(pkg.files.find((f) => f.name === 'config/bridge.yaml')!.bytes);
+    expect(bridge).toContain('ros_topic_name: /cmd_vel');
+    expect(bridge).toContain('ros_topic_name: /front_cam/image');
+    expect(bridge).toContain('ros_topic_name: /top_lidar/scan');
+    expect(bridge).toContain('ros_topic_name: /imu/imu');
+    const world = text(pkg.files.find((f) => f.name === 'worlds/test_rover.sdf')!.bytes);
+    expect(world).toContain('gz-sim-sensors-system');
+    expect(world).not.toContain('<include>');
+  });
+
+  it('puts the joints that are not wheels under ros2_control', () => {
+    const d = rover();
+    d.robot!.drive = { left: ['j1'], right: [] };
+    d.robot!.joints.pop();
+    // Left only: the check would stop this, but the writer still writes what it can: no drive, the shoulder controlled.
+    const pkg = buildRobotPackage(d, geometry());
+    const urdf = text(pkg.files.find((f) => f.name === 'urdf/test_rover.urdf')!.bytes);
+    expect(urdf).not.toContain('gz-sim-diff-drive-system');
+    expect(urdf).toMatch(/<ros2_control name="GazeboSimSystem" type="system">[\s\S]*?<joint name="shoulder">\s*<command_interface name="position"\/>/);
+    expect(urdf).toContain('<parameters>__PACKAGE_SHARE__/config/controllers.yaml</parameters>');
+    const controllers = text(pkg.files.find((f) => f.name === 'config/controllers.yaml')!.bytes);
+    expect(controllers).toContain('      - shoulder');
+    const launch = text(pkg.files.find((f) => f.name === 'launch/gazebo.launch.py')!.bytes);
+    expect(launch).toContain("arguments=['arm_controller'");
+    expect(launch).toContain("replace('__PACKAGE_SHARE__', share)");
+  });
+
+  it('writes an SDF model with every joint, loops included, and the sensors in their links', () => {
+    const d = rover();
+    d.robot!.joints.push({ ...defaultJoint('j4', 'closing', arm.id, wheel.id, [0, 0, 0]) });
+    d.robot!.joints[1].mimic = { joint: 'j1', multiplier: 1, offset: 0 };
+    const model = buildSdfModel(d, geometry());
+    expect(model.name).toBe('test_rover');
+    const names = model.files.map((f) => f.name);
+    expect(names).toEqual(expect.arrayContaining(['model.config', 'model.sdf', 'worlds/test_rover.sdf', 'README.md', 'meshes/visual/Body.obj']));
+    const sdf = text(model.files.find((f) => f.name === 'model.sdf')!.bytes);
+    expect(sdf).toContain('<model name="Test_Rover">');
+    expect(sdf).toMatch(/<link name="Left_wheel">\s*<pose>0 0.036 0.01 0 0 0<\/pose>/);
+    expect(sdf).toContain('<uri>model://test_rover/meshes/visual/Body.obj</uri>');
+    // The loop joint is there, in its child's frame: the wheel's frame sits at its own joint (0, 36, 10), the closing joint at the wheel's center (0, 40, 10).
+    expect(sdf).toMatch(/<joint name="closing" type="revolute">\s*<pose relative_to="Left_wheel">0 0.004 0 0 0 0<\/pose>\s*<parent>Arm_upper<\/parent>\s*<child>Left_wheel<\/child>/);
+    // A continuous joint is a revolute one without limits; friction goes on the surface.
+    expect(sdf).toMatch(/<joint name="left_wheel_joint" type="revolute">[\s\S]*?<limit><effort>2<\/effort><velocity>12.566371<\/velocity><\/limit>/);
+    expect(sdf).toContain('<surface><friction><ode><mu>1.2</mu><mu2>1.2</mu2></ode></friction></surface>');
+    // The shoulder lies on the loop, so its mimic is dropped: the loop closes for real.
+    expect(sdf).not.toContain('<mimic');
+    // Sensors sit in the body at their own pose.
+    expect(sdf).toMatch(/<sensor name="front_cam" type="camera">\s*<pose>0.05 0 0.02 0 0 0<\/pose>/);
+    expect(sdf).toContain('<gz_frame_id>Body</gz_frame_id>');
+    expect(sdf).toContain('gz-sim-diff-drive-system');
+    const world = text(model.files.find((f) => f.name === 'worlds/test_rover.sdf')!.bytes);
+    expect(world).toContain('<uri>model://test_rover</uri>');
   });
 });

@@ -9,8 +9,8 @@ import { sanitizeParams } from '../parts/generators/types';
 import { newId, usedAssets } from './ops';
 import { TEXT_FONTS } from './types';
 import type { Asset, Doc, OutlineShape, PartParamValue, Scene, SceneNode, ShapeKind, Texture, Vec3 } from './types';
-import { COLLISION_KINDS, JOINT_TYPES } from '../robot/types';
-import type { CollisionKind, JointType, MassSpec, Robot, RobotJoint, RobotLink } from '../robot/types';
+import { COLLISION_KINDS, JOINT_TYPES, SENSOR_KINDS, defaultSensor } from '../robot/types';
+import type { CollisionKind, JointType, MassSpec, Robot, RobotJoint, RobotLink, RobotSensor, SensorKind } from '../robot/types';
 
 export function emptyDoc(): Doc {
   return { id: newId(), name: 'Untitled', scene: [], assets: {} };
@@ -137,6 +137,21 @@ export function canonicalRobot(robot: Robot): Record<string, unknown> {
       friction: j.friction,
       mimic: j.mimic ? { joint: j.mimic.joint, multiplier: j.mimic.multiplier, offset: j.mimic.offset } : undefined,
     })),
+    sensors: robot.sensors.length
+      ? [...robot.sensors].sort(byId((x: RobotSensor) => x.id)).map((x) => ({
+          id: x.id,
+          name: x.name,
+          kind: x.kind,
+          link: x.link,
+          origin: x.origin,
+          rot: x.rot,
+          rate: x.rate,
+          camera: x.kind === 'camera' || x.kind === 'depth' ? { hfov: x.camera.hfov, width: x.camera.width, height: x.camera.height, near: x.camera.near, far: x.camera.far } : undefined,
+          lidar: x.kind === 'lidar' ? { samples: x.lidar.samples, hfov: x.lidar.hfov, min: x.lidar.min, max: x.lidar.max } : undefined,
+        }))
+      : undefined,
+    drive: robot.drive ? { left: [...robot.drive.left].sort(), right: [...robot.drive.right].sort() } : undefined,
+    control: robot.control ? undefined : false,
   };
 }
 
@@ -299,6 +314,40 @@ function readAssets(raw: unknown): Record<string, Asset> {
 const finite = (v: unknown, fallback: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
 const JOINT_KINDS = new Set<string>(JOINT_TYPES.map((t) => t.id));
 const COLLISIONS = new Set<string>(COLLISION_KINDS.map((c) => c.id));
+const SENSORS = new Set<string>(SENSOR_KINDS.map((k) => k.id));
+
+function readSensors(raw: unknown, ids: Set<string>): RobotSensor[] {
+  const out: RobotSensor[] = [];
+  const seen = new Set<string>();
+  if (!Array.isArray(raw)) return out;
+  for (const x of raw) {
+    if (!isRecord(x) || typeof x.id !== 'string' || seen.has(x.id) || typeof x.link !== 'string' || !ids.has(x.link)) continue;
+    if (typeof x.kind !== 'string' || !SENSORS.has(x.kind)) continue;
+    seen.add(x.id);
+    const base = defaultSensor(x.id, typeof x.name === 'string' && x.name.trim() ? x.name : 'sensor', x.kind as SensorKind, x.link, vec3(x.origin, [0, 0, 0]));
+    const cam = isRecord(x.camera) ? x.camera : {};
+    const lid = isRecord(x.lidar) ? x.lidar : {};
+    out.push({
+      ...base,
+      rot: vec3(x.rot, [0, 0, 0]),
+      rate: Math.max(0.1, finite(x.rate, base.rate)),
+      camera: {
+        hfov: Math.min(179, Math.max(1, finite(cam.hfov, base.camera.hfov))),
+        width: Math.max(1, Math.round(finite(cam.width, base.camera.width))),
+        height: Math.max(1, Math.round(finite(cam.height, base.camera.height))),
+        near: Math.max(1, finite(cam.near, base.camera.near)),
+        far: Math.max(2, finite(cam.far, base.camera.far)),
+      },
+      lidar: {
+        samples: Math.max(2, Math.round(finite(lid.samples, base.lidar.samples))),
+        hfov: Math.min(360, Math.max(1, finite(lid.hfov, base.lidar.hfov))),
+        min: Math.max(1, finite(lid.min, base.lidar.min)),
+        max: Math.max(2, finite(lid.max, base.lidar.max)),
+      },
+    });
+  }
+  return out;
+}
 
 function readMass(raw: unknown): MassSpec {
   if (isRecord(raw) && raw.kind === 'measured') return { kind: 'measured', grams: Math.max(0, finite(raw.grams, 0)) };
@@ -353,11 +402,16 @@ function readRobot(raw: unknown, scene: Scene): Robot | undefined {
   }
   // A follower whose leader is gone follows nothing.
   for (const j of joints) if (j.mimic && !seenJoints.has(j.mimic.joint)) delete j.mimic;
+  const jointList = (v: unknown): string[] => (Array.isArray(v) ? v.filter((id): id is string => typeof id === 'string' && seenJoints.has(id)) : []);
+  const drive = isRecord(raw.drive) ? { left: jointList(raw.drive.left), right: jointList(raw.drive.right) } : undefined;
   return {
     name: typeof raw.name === 'string' && raw.name.trim() ? raw.name : 'robot',
     root: typeof raw.root === 'string' && ids.has(raw.root) ? raw.root : null,
     links,
     joints,
+    sensors: readSensors(raw.sensors, ids),
+    ...(drive && (drive.left.length || drive.right.length) ? { drive } : {}),
+    control: raw.control !== false,
   };
 }
 

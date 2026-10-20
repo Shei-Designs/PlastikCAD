@@ -704,6 +704,8 @@ describe('the robot in a file', () => {
     doc.robot = {
       name: 'Rover',
       root: 'aaaaaaaa',
+      sensors: [],
+      control: true,
       links: [
         { node: 'bbbbbbbb', name: 'arm_link', mass: { kind: 'measured', grams: 120 }, collision: 'box', friction: 0.5 },
         { node: 'gone0000', mass: { kind: 'material', material: 'steel', infill: 100, shell: 1.2 }, collision: 'hull', friction: 0.8 },
@@ -720,9 +722,9 @@ describe('the robot in a file', () => {
     const back = parseDoc(text);
     expect(back.robot?.name).toBe('Rover');
     expect(back.robot?.root).toBe('aaaaaaaa');
-    expect(back.robot?.links).toEqual([doc.robot.links[0]]);
+    expect(back.robot?.links).toEqual([doc.robot!.links[0]]);
     // The follower of a joint that is gone follows nothing.
-    expect(back.robot?.joints).toEqual([{ ...doc.robot.joints[0], mimic: undefined }].map(({ mimic: _m, ...j }) => j));
+    expect(back.robot?.joints).toEqual([{ ...doc.robot!.joints[0], mimic: undefined }].map(({ mimic: _m, ...j }) => j));
     // Reading what was written gives the same text again.
     expect(serializeDoc(parseDoc(serializeDoc(back)))).toBe(serializeDoc(back));
   });

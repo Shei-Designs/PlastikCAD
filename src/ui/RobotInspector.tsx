@@ -3,20 +3,21 @@
 // settings, or a joint's kind, place, axis and limits.
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { boundsCenter } from '../model/math';
+import { boundsCenter, eulerOf } from '../model/math';
+import type { Mat } from '../model/math';
 import type { SceneNode, Vec3 } from '../model/types';
 import { geometry } from '../state/geometry';
 import { massOf, principalMoments, tensorOf } from '../robot/inertia';
 import { MATERIALS, materialOf } from '../robot/materials';
-import { jointInDesign, linkOf } from '../robot/model';
-import { COLLISION_KINDS, JOINT_TYPES } from '../robot/types';
-import type { RobotJoint, RobotLink } from '../robot/types';
+import { jointInDesign, linkOf, sensorInDesign } from '../robot/model';
+import { COLLISION_KINDS, JOINT_TYPES, SENSOR_KINDS } from '../robot/types';
+import type { RobotJoint, RobotLink, RobotSensor, SensorKind } from '../robot/types';
 import type { Problem } from '../robot/check';
-import { addJoint, deleteJoint, fitJointFollowers, placeJoint, select, selectJoint, setPose, setRobotName, setRobotRoot, startJointPick, stopJointPick, updateJoint, updateLink, useEditor } from '../state/store';
+import { addJoint, addSensor, deleteJoint, deleteSensor, fitJointFollowers, placeJoint, placeSensor, select, selectJoint, selectSensor, setControl, setDrive, setPose, setRobotName, setRobotRoot, startJointPick, stopJointPick, updateJoint, updateLink, updateSensor, useEditor } from '../state/store';
 import { rangeOf } from '../robot/kinematics';
 import { formatNumber, NumberBox, selectOnFocus, SliderField } from './Fields';
 import { Hint } from './Hint';
-import { ChevronIcon, JointIcon, PinIcon, TrashIcon, WarningIcon } from './icons';
+import { ChevronIcon, JointIcon, PinIcon, SensorIcon, TrashIcon, WarningIcon } from './icons';
 import { NameField } from './Inspector';
 import { useRobot } from './RobotPanel';
 
@@ -77,8 +78,8 @@ function Problems({ problems }: { problems: Problem[] }) {
         <li key={i} className={p.level === 'error' ? 'problem error' : 'problem warn'}>
           <WarningIcon />
           <span>{p.text}</span>
-          {(p.link || p.joint) && (
-            <button type="button" className="chip" onClick={() => (p.joint ? selectJoint(p.joint) : select([p.link!]))}>
+          {(p.link || p.joint || p.sensor) && (
+            <button type="button" className="chip" onClick={() => (p.joint ? selectJoint(p.joint) : p.sensor ? selectSensor(p.sensor) : select([p.link!]))}>
               Show
             </button>
           )}
@@ -127,11 +128,64 @@ function Overview() {
           </div>
         </dl>
       </fieldset>
+      <Control />
       <fieldset className="group">
         <legend>Checks</legend>
         <Problems problems={problems} />
       </fieldset>
     </>
+  );
+}
+
+/** The drive and the controllers: which wheel joints turn on each side, and whether the rest go under ros2_control. */
+function Control() {
+  const { robot } = useRobot();
+  const wheels = robot.joints.filter((j) => j.type === 'continuous' || j.type === 'revolute');
+  const side = (id: string): 'left' | 'right' | '' => (robot.drive?.left.includes(id) ? 'left' : robot.drive?.right.includes(id) ? 'right' : '');
+  const put = (id: string, to: 'left' | 'right' | '') => {
+    const left = (robot.drive?.left ?? []).filter((x) => x !== id);
+    const right = (robot.drive?.right ?? []).filter((x) => x !== id);
+    if (to === 'left') left.push(id);
+    if (to === 'right') right.push(id);
+    setDrive({ left, right });
+  };
+  const rest = robot.joints.filter((j) => j.type !== 'fixed' && !j.mimic && side(j.id) === '');
+  return (
+    <fieldset className="group">
+      <legend>Control</legend>
+      <div className="field">
+        <label>
+          Wheels
+          <Hint text="A differential drive turns the left and right wheels together from velocity commands (cmd_vel) and reports odometry. Mark each wheel joint's side." />
+        </label>
+        {wheels.length === 0 ? (
+          <p className="empty">Add a turning joint for each wheel first.</p>
+        ) : (
+          <ul className="drive-list">
+            {wheels.map((j) => (
+              <li key={j.id}>
+                <span className="clip">{j.name}</span>
+                <div className="segmented small" role="radiogroup" aria-label={`${j.name} drives`}>
+                  {(['', 'left', 'right'] as const).map((to) => (
+                    <button key={to || 'none'} type="button" role="radio" aria-checked={side(j.id) === to} className={side(j.id) === to ? 'on' : ''} onClick={() => put(j.id, to)}>
+                      {to === '' ? 'No' : to === 'left' ? 'Left' : 'Right'}
+                    </button>
+                  ))}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <label className="field inline">
+        <span className="switch-label">
+          Controllers for the other joints
+          <Hint text="Writes ros2_control over every actuated joint that is not a wheel, with a joint trajectory controller (arm_controller) and a joint state broadcaster." />
+        </span>
+        <input type="checkbox" className="switch" checked={robot.control} onChange={(e) => setControl(e.target.checked)} />
+      </label>
+      {robot.control && rest.length > 0 && <p className="export-note">{rest.map((j) => j.name).join(', ')}</p>}
+    </fieldset>
   );
 }
 
@@ -149,6 +203,7 @@ function LinkPanel({ node }: { node: SceneNode }) {
   const own = problems.filter((q) => q.link === node.id);
   const others = nodes.filter((n) => n.id !== node.id);
   const joints = robot.joints.filter((j) => j.parent === node.id || j.child === node.id);
+  const sensors = robot.sensors.filter((x) => x.link === node.id);
   const nameOf = (id: string) => nodes.find((n) => n.id === id)?.name ?? '?';
   const set = (patch: Partial<Omit<RobotLink, 'node'>>, merge?: string) => updateLink(node.id, patch, merge);
   const setMass = (patch: Record<string, unknown>, merge?: string) => set({ mass: { ...link.mass, ...patch } as RobotLink['mass'] }, merge);
@@ -275,6 +330,29 @@ function LinkPanel({ node }: { node: SceneNode }) {
         ) : (
           <p className="empty">Add another object to have something to attach to.</p>
         )}
+      </fieldset>
+      <fieldset className="group">
+        <legend>Sensors</legend>
+        {sensors.length > 0 && (
+          <ul className="joint-list">
+            {sensors.map((x) => (
+              <li key={x.id}>
+                <button type="button" className="outline-row joint" onClick={() => selectSensor(x.id)}>
+                  <SensorIcon />
+                  <span className="clip">{x.name}</span>
+                  <span className="outline-kind">{x.kind === 'imu' ? 'IMU' : x.kind}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="field inline">
+          <label>
+            Add
+            <Hint text="Fixes a sensor to this link: a frame of its own, with a Gazebo sensor in it and its topics bridged to ROS 2." />
+          </label>
+          <Select value="" label="Add a sensor" placeholder="Choose a sensor…" options={SENSOR_KINDS.map((k) => ({ value: k.id, label: k.name }))} onChange={(kind) => addSensor(node.id, kind as SensorKind)} />
+        </div>
       </fieldset>
       {own.length > 0 && (
         <fieldset className="group">
@@ -462,12 +540,153 @@ function JointPanel({ joint }: { joint: RobotJoint }) {
   );
 }
 
+const DIRECTIONS: { label: string; vector: Vec3 }[] = [
+  { label: '+X', vector: [1, 0, 0] },
+  { label: '−X', vector: [-1, 0, 0] },
+  { label: '+Y', vector: [0, 1, 0] },
+  { label: '−Y', vector: [0, -1, 0] },
+  { label: '+Z', vector: [0, 0, 1] },
+  { label: '−Z', vector: [0, 0, -1] },
+];
+
+const cross = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+
+/** A frame whose X (a camera's look) or Z (a lidar's sweep axis) points along `dir`, the rest kept as upright as can be. */
+function frameFacing(dir: Vec3, along: 'x' | 'z'): Mat {
+  if (along === 'x') {
+    const up: Vec3 = Math.abs(dir[2]) > 0.9 ? [1, 0, 0] : [0, 0, 1];
+    const y = cross(up, dir);
+    const n = Math.hypot(...y) || 1;
+    const yn = y.map((v) => v / n) as Vec3;
+    const z = cross(dir, yn);
+    return [...dir, ...yn, ...z, 0, 0, 0] as Mat;
+  }
+  const ref: Vec3 = Math.abs(dir[0]) > 0.9 ? [0, 1, 0] : [1, 0, 0];
+  const y = cross(dir, ref);
+  const n = Math.hypot(...y) || 1;
+  const yn = y.map((v) => v / n) as Vec3;
+  const x = cross(yn, dir);
+  return [...x, ...yn, ...dir, 0, 0, 0] as Mat;
+}
+
+function SensorPanel({ sensor }: { sensor: RobotSensor }) {
+  const { nodes, problems } = useRobot();
+  const picking = useEditor((s) => s.jointPick);
+  const link = nodes.find((n) => n.id === sensor.link);
+  const placed = link ? sensorInDesign(sensor, link) : null;
+  const own = problems.filter((q) => q.sensor === sensor.id);
+  const kind = SENSOR_KINDS.find((k) => k.id === sensor.kind)!;
+  const camera = sensor.kind === 'camera' || sensor.kind === 'depth';
+  const along = camera ? 'x' : 'z';
+  const facing = placed ? (along === 'x' ? [placed.matrix[0], placed.matrix[1], placed.matrix[2]] : [placed.matrix[6], placed.matrix[7], placed.matrix[8]]) : [1, 0, 0];
+  const faces = DIRECTIONS.findIndex((d) => Math.abs(d.vector[0] * facing[0] + d.vector[1] * facing[1] + d.vector[2] * facing[2] - 1) < 1e-6);
+  const put = (origin: Vec3, matrix: Mat, merge?: string) => placeSensor(sensor.id, origin, matrix, merge);
+  const row = (label: string, content: ReactNode, help?: string) => (
+    <div className="field inline">
+      <label>
+        {label}
+        {help && <Hint text={help} />}
+      </label>
+      {content}
+    </div>
+  );
+  const setCamera = (patch: Partial<RobotSensor['camera']>, merge?: string) => updateSensor(sensor.id, { camera: { ...sensor.camera, ...patch } }, merge);
+  const setLidar = (patch: Partial<RobotSensor['lidar']>, merge?: string) => updateSensor(sensor.id, { lidar: { ...sensor.lidar, ...patch } }, merge);
+  return (
+    <>
+      <header className="params-head">
+        <div className="grow">
+          <TextField className="name-input" value={sensor.name} label="Sensor name" onCommit={(name) => updateSensor(sensor.id, { name })} />
+          <p>
+            {kind.name} on {link?.name ?? '?'}
+          </p>
+        </div>
+        <button type="button" className="icon-button" title="Delete this sensor (Delete)" aria-label="Delete sensor" onClick={() => deleteSensor(sensor.id)}>
+          <TrashIcon />
+        </button>
+      </header>
+      <fieldset className="group">
+        <legend>Sensor</legend>
+        {row('Kind', <Select value={sensor.kind} label="Kind" options={SENSOR_KINDS.map((k) => ({ value: k.id, label: k.name }))} onChange={(id) => updateSensor(sensor.id, { kind: id })} />, kind.help)}
+        {row('On link', <Select value={sensor.link} label="Link" options={nodes.map((n) => ({ value: n.id, label: n.name }))} onChange={(id) => updateSensor(sensor.id, { link: id })} />)}
+        {row('Rate', <NumberBox label="Rate" value={sensor.rate} unit="Hz" min={0.1} max={1000} step={5} places={1} onChange={(v) => updateSensor(sensor.id, { rate: v }, 'sensor-rate')} />, 'How many readings a second.')}
+      </fieldset>
+      <fieldset className="group">
+        <legend>Place</legend>
+        <div className="field">
+          <button type="button" className={picking ? 'chip pick on' : 'chip pick'} aria-pressed={picking} title="Shows points on the link; click one to put the sensor there." onClick={() => (picking ? stopJointPick() : startJointPick())}>
+            <PinIcon />
+            {picking ? 'Click a point on the plate…' : 'Pick a point on the plate'}
+          </button>
+        </div>
+        {placed && (
+          <>
+            <div className="field">
+              <label>
+                Origin
+                <Hint text="Where the sensor sits, in the design's coordinates (mm)." />
+              </label>
+              <div className="number-row spread">
+                {(['X', 'Y', 'Z'] as const).map((tag, i) => (
+                  <NumberBox key={tag} label={`Origin ${tag}`} tag={tag} value={Number(placed.origin[i].toFixed(3))} step={1} places={2} onChange={(v) => put(placed.origin.map((x, k) => (k === i ? v : x)) as Vec3, placed.matrix, 'sensor-origin')} />
+                ))}
+              </div>
+            </div>
+            <div className="field">
+              <label>
+                {camera ? 'Looks along' : sensor.kind === 'lidar' ? 'Sweeps about' : 'Up axis'}
+                <Hint text={camera ? "The camera's line of sight, in the design's axes." : sensor.kind === 'lidar' ? 'The axis the scan turns about: up, for a scan of the floor plan.' : "The IMU's Z, in the design's axes."} />
+              </label>
+              <div className="segmented small" role="radiogroup" aria-label="Direction">
+                {DIRECTIONS.map((d, i) => (
+                  <button key={d.label} type="button" role="radio" aria-checked={faces === i} className={faces === i ? 'on' : ''} onClick={() => put(placed.origin, frameFacing(d.vector, along))}>
+                    {d.label}
+                  </button>
+                ))}
+              </div>
+              {faces < 0 && <p className="export-note">{eulerOf(placed.matrix).map((v) => formatNumber(v, 1)).join(', ')}° (set by the link's turn)</p>}
+            </div>
+          </>
+        )}
+      </fieldset>
+      {camera && (
+        <fieldset className="group">
+          <legend>Picture</legend>
+          {row('Field of view', <NumberBox label="Field of view" value={sensor.camera.hfov} unit="°" min={1} max={179} step={5} places={1} onChange={(v) => setCamera({ hfov: v }, 'cam-fov')} />, 'Horizontal, in degrees.')}
+          {row('Width', <NumberBox label="Width" value={sensor.camera.width} unit="px" min={1} max={8192} step={16} integer onChange={(v) => setCamera({ width: v }, 'cam-w')} />)}
+          {row('Height', <NumberBox label="Height" value={sensor.camera.height} unit="px" min={1} max={8192} step={16} integer onChange={(v) => setCamera({ height: v }, 'cam-h')} />)}
+          {row('Nearest', <NumberBox label="Nearest" value={sensor.camera.near} unit="mm" min={1} step={10} places={0} onChange={(v) => setCamera({ near: v }, 'cam-near')} />, 'Closer than this is not seen.')}
+          {row('Farthest', <NumberBox label="Farthest" value={sensor.camera.far} unit="mm" min={2} step={1000} places={0} onChange={(v) => setCamera({ far: v }, 'cam-far')} />, 'Farther than this is not seen.')}
+        </fieldset>
+      )}
+      {sensor.kind === 'lidar' && (
+        <fieldset className="group">
+          <legend>Scan</legend>
+          {row('Rays', <NumberBox label="Rays" value={sensor.lidar.samples} min={2} max={7200} step={10} integer onChange={(v) => setLidar({ samples: v }, 'lidar-n')} />, 'Readings per sweep.')}
+          {row('Sweep', <NumberBox label="Sweep" value={sensor.lidar.hfov} unit="°" min={1} max={360} step={10} places={1} onChange={(v) => setLidar({ hfov: v }, 'lidar-fov')} />, 'How wide the sweep is, centered on the X axis.')}
+          {row('Nearest', <NumberBox label="Nearest range" value={sensor.lidar.min} unit="mm" min={1} step={10} places={0} onChange={(v) => setLidar({ min: v }, 'lidar-min')} />)}
+          {row('Farthest', <NumberBox label="Farthest range" value={sensor.lidar.max} unit="mm" min={2} step={1000} places={0} onChange={(v) => setLidar({ max: v }, 'lidar-max')} />)}
+        </fieldset>
+      )}
+      {own.length > 0 && (
+        <fieldset className="group">
+          <legend>Checks</legend>
+          <Problems problems={own} />
+        </fieldset>
+      )}
+    </>
+  );
+}
+
 export function RobotInspector() {
   const scene = useEditor((s) => s.doc.scene);
   const selection = useEditor((s) => s.selection);
   const jointId = useEditor((s) => s.joint);
   const joint = useEditor((s) => s.doc.robot?.joints.find((j) => j.id === jointId));
+  const sensorId = useEditor((s) => s.sensor);
+  const sensor = useEditor((s) => s.doc.robot?.sensors.find((x) => x.id === sensorId));
   if (joint) return <JointPanel joint={joint} />;
+  if (sensor) return <SensorPanel sensor={sensor} />;
   const nodes = scene.filter((n) => selection.includes(n.id));
   if (nodes.length === 1) {
     const node = nodes[0];

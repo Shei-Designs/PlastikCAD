@@ -34,7 +34,7 @@ import { boundsSize } from '../model/math';
 import type { Mat } from '../model/math';
 import type { Vec3 } from '../model/types';
 import { posedScene } from '../robot/kinematics';
-import { jointInDesign } from '../robot/model';
+import { jointInDesign, sensorInDesign } from '../robot/model';
 import type { EditorState } from '../state/store';
 import { GIZMO_SIZE, Viewer } from '../viewer/Viewer';
 import type { HandlePrompt, ViewItem, ViewPreset } from '../viewer/Viewer';
@@ -287,8 +287,15 @@ function HandleInput({ prompt, onClose }: { prompt: HandlePrompt; onClose: () =>
   );
 }
 
-/** The picked joint, as a thin rod along its axis through its origin, as long as the child's box is wide. */
+/** The picked joint, as a thin rod along its axis through its origin, as long as the child's box is wide; a sensor as a stub along where it looks. */
 function jointMarker(s: EditorState): { matrix: Mat; size: Vec3 } | null {
+  const sensor = s.sensor ? s.doc.robot?.sensors.find((x) => x.id === s.sensor) : undefined;
+  const link = sensor && s.doc.scene.find((n) => n.id === sensor.link);
+  if (sensor && link) {
+    const { matrix } = sensorInDesign(sensor, link);
+    // A camera looks along its X; a lidar sweeps about its Z, an IMU stands on it.
+    return { matrix, size: sensor.kind === 'camera' || sensor.kind === 'depth' ? [30, 8, 8] : [8, 8, 30] };
+  }
   const joint = s.joint ? s.doc.robot?.joints.find((j) => j.id === s.joint) : undefined;
   const child = joint && s.doc.scene.find((n) => n.id === joint.child);
   if (!joint || !child) return null;
@@ -317,7 +324,7 @@ export function Viewport() {
   const state = useEditor((s) => s);
   const { prefs, placing, selection, busy, aligning, editing, mating, pose } = state;
   const highlight = state.highlight ?? jointMarker(state);
-  const snaps = useMemo(() => (state.jointPick ? jointSnaps(state) : null), [state.jointPick, state.joint, state.doc]);
+  const snaps = useMemo(() => (state.jointPick ? jointSnaps(state) : null), [state.jointPick, state.joint, state.sensor, state.doc]);
   // Another selection, or an edit from elsewhere, and the typing boxes no longer belong to anything.
   useEffect(() => {
     viewer.current?.dismissPrompt();

@@ -1,0 +1,128 @@
+// The Gazebo side of a robot: sensors, the drive and joint-state plugins,
+// written as SDF elements. The same elements go into an SDF model as they
+// are, and into a URDF inside <gazebo> blocks, which Gazebo merges when it
+// reads the URDF. Everything in SI; the caller converts from the design.
+import type { Vec3 } from '../model/types';
+import type { SensorKind } from '../robot/types';
+import { escapeXml, fmt } from './format';
+
+export interface GazeboSensor {
+  /** Name of the sensor and of the frame (link) it sits in. */
+  name: string;
+  frame: string;
+  kind: SensorKind;
+  rate: number;
+  /** Radians, pixels, meters. */
+  camera: { hfov: number; width: number; height: number; near: number; far: number };
+  /** Rays, radians, meters. */
+  lidar: { samples: number; hfov: number; min: number; max: number };
+  /** Where it sits in the link, m and radians; at the link's origin when left out (the frame is the sensor's own). */
+  pose?: { xyz: Vec3; rpy: Vec3 };
+}
+
+const pad = (text: string, indent: string): string =>
+  text
+    .split('\n')
+    .map((l) => (l ? indent + l : l))
+    .join('\n');
+
+/** One <sensor> element, its pose at the frame's origin (the frame is the sensor's own link). */
+export function sensorXml(s: GazeboSensor): string {
+  const type = s.kind === 'camera' ? 'camera' : s.kind === 'depth' ? 'depth_camera' : s.kind === 'lidar' ? 'gpu_lidar' : 'imu';
+  const topic = sensorTopic(s);
+  const lines = [`<sensor name="${escapeXml(s.name)}" type="${type}">`, ...(s.pose ? [`  <pose>${[...s.pose.xyz, ...s.pose.rpy].map((x) => fmt(x, 6)).join(' ')}</pose>`] : []), `  <always_on>true</always_on>`, `  <update_rate>${fmt(s.rate, 3)}</update_rate>`, `  <visualize>true</visualize>`, `  <topic>${topic}</topic>`, `  <gz_frame_id>${escapeXml(s.frame)}</gz_frame_id>`];
+  if (s.kind === 'camera' || s.kind === 'depth') {
+    lines.push(
+      '  <camera>',
+      `    <horizontal_fov>${fmt(s.camera.hfov, 6)}</horizontal_fov>`,
+      `    <image><width>${s.camera.width}</width><height>${s.camera.height}</height></image>`,
+      `    <clip><near>${fmt(s.camera.near, 4)}</near><far>${fmt(s.camera.far, 4)}</far></clip>`,
+      '  </camera>',
+    );
+  } else if (s.kind === 'lidar') {
+    lines.push(
+      '  <lidar>',
+      '    <scan>',
+      `      <horizontal><samples>${s.lidar.samples}</samples><resolution>1</resolution><min_angle>${fmt(-s.lidar.hfov / 2, 6)}</min_angle><max_angle>${fmt(s.lidar.hfov / 2, 6)}</max_angle></horizontal>`,
+      '    </scan>',
+      `    <range><min>${fmt(s.lidar.min, 4)}</min><max>${fmt(s.lidar.max, 4)}</max><resolution>0.01</resolution></range>`,
+      '  </lidar>',
+    );
+  }
+  lines.push('</sensor>');
+  return lines.join('\n');
+}
+
+/** The Gazebo topic a sensor publishes on. */
+export const sensorTopic = (s: { name: string; kind: SensorKind }): string => (s.kind === 'camera' ? `${s.name}/image` : s.kind === 'depth' ? `${s.name}/depth` : s.kind === 'lidar' ? `${s.name}/scan` : `${s.name}/imu`);
+
+export interface GazeboDrive {
+  leftJoints: string[];
+  rightJoints: string[];
+  /** Meters. */
+  wheelSeparation: number;
+  wheelRadius: number;
+  /** Name of the base link, the odometry's child frame. */
+  baseFrame: string;
+}
+
+/** The differential drive plugin: velocity commands in on cmd_vel, odometry and its transform out. */
+export function diffDriveXml(d: GazeboDrive): string {
+  return [
+    '<plugin filename="gz-sim-diff-drive-system" name="gz::sim::systems::DiffDrive">',
+    ...d.leftJoints.map((j) => `  <left_joint>${escapeXml(j)}</left_joint>`),
+    ...d.rightJoints.map((j) => `  <right_joint>${escapeXml(j)}</right_joint>`),
+    `  <wheel_separation>${fmt(d.wheelSeparation, 5)}</wheel_separation>`,
+    `  <wheel_radius>${fmt(d.wheelRadius, 5)}</wheel_radius>`,
+    '  <topic>cmd_vel</topic>',
+    '  <odom_topic>odom</odom_topic>',
+    '  <tf_topic>tf</tf_topic>',
+    '  <frame_id>odom</frame_id>',
+    `  <child_frame_id>${escapeXml(d.baseFrame)}</child_frame_id>`,
+    '  <odom_publish_frequency>50</odom_publish_frequency>',
+    '</plugin>',
+  ].join('\n');
+}
+
+/** Publishes every joint's position, for robot_state_publisher when ros2_control is not in charge. */
+export function jointStateXml(topic = 'joint_states'): string {
+  return `<plugin filename="gz-sim-joint-state-publisher-system" name="gz::sim::systems::JointStatePublisher">\n  <topic>${topic}</topic>\n</plugin>`;
+}
+
+/** Friction of a collision surface, as Gazebo's ODE parameters. */
+export function surfaceXml(friction: number): string {
+  return `<surface><friction><ode><mu>${fmt(friction, 4)}</mu><mu2>${fmt(friction, 4)}</mu2></ode></friction></surface>`;
+}
+
+/** The system plugins an empty world needs for sensors and physics, with the robot's model included when `include` is given. */
+export function worldXml(name: string, include?: string): string {
+  return `<?xml version="1.0"?>
+<sdf version="1.9">
+  <world name="${escapeXml(name)}">
+    <physics name="default" type="ode"><max_step_size>0.001</max_step_size><real_time_factor>1</real_time_factor></physics>
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors"><render_engine>ogre2</render_engine></plugin>
+    <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
+    <plugin filename="gz-sim-contact-system" name="gz::sim::systems::Contact"/>
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><plane><normal>0 0 1</normal><size>100 100</size></plane></geometry>${surfaceXml(1)}</collision>
+        <visual name="visual"><geometry><plane><normal>0 0 1</normal><size>100 100</size></plane></geometry><material><ambient>0.8 0.8 0.8 1</ambient><diffuse>0.8 0.8 0.8 1</diffuse></material></visual>
+      </link>
+    </model>${include ? `\n    <include>\n      <uri>model://${escapeXml(include)}</uri>\n      <pose>0 0 0.05 0 0 0</pose>\n    </include>` : ''}
+  </world>
+</sdf>
+`;
+}
+
+export { pad };
