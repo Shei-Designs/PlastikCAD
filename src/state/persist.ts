@@ -13,8 +13,8 @@ export interface Prefs {
   /** Grid step that moves and sizes snap to, in mm; 0 turns snapping off. */
   snap: number;
   format: FormatId;
-  /** What the robot is exported as: a ROS 2 package with a URDF, or a Gazebo model with an SDF. */
-  robotFormat: 'urdf' | 'sdf';
+  /** What the robot is exported as: a ROS 2 package with a URDF, a Gazebo model with an SDF, or a MuJoCo model. */
+  robotFormat: 'urdf' | 'sdf' | 'mjcf';
   /** Which tab the left panel shows: the library of shapes and parts, or the design's objects. */
   sidebar: 'library' | 'objects' | 'structure';
   /** The folder projects are kept in, when the user picked one (desktop app); null for the default. */
@@ -44,7 +44,7 @@ export function loadPrefs(): Prefs {
     grid: saved.grid ?? true,
     snap: SNAP_STEPS.includes(saved.snap as number) ? (saved.snap as number) : 1,
     format: (['stl', '3mf', 'obj', 'glb', 'svg', 'dxf'] as const).find((f) => f === saved.format) ?? 'stl',
-    robotFormat: saved.robotFormat === 'sdf' ? 'sdf' : 'urdf',
+    robotFormat: saved.robotFormat === 'sdf' || saved.robotFormat === 'mjcf' ? saved.robotFormat : 'urdf',
     sidebar: saved.sidebar === 'objects' || saved.sidebar === 'structure' ? saved.sidebar : 'library',
     projectsDir: typeof saved.projectsDir === 'string' && saved.projectsDir ? saved.projectsDir : null,
     lastProject: typeof saved.lastProject === 'string' && saved.lastProject ? saved.lastProject : null,

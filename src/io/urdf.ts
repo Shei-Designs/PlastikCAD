@@ -42,6 +42,12 @@ export interface UrdfExtras {
   plugins?: string[];
   /** Joints under ros2_control, with position commands; a block is written and the Gazebo plugin for it, reading `controllersYaml`. */
   control?: { joints: string[]; controllersYaml: string };
+  /**
+   * Write xacro instead: the package name as a property, the Gazebo blocks
+   * behind a `use_gazebo` argument and ros2_control behind `use_ros2_control`,
+   * so one file serves RViz alone, Gazebo, and a real robot.
+   */
+  xacro?: { package: string };
 }
 
 export interface UrdfJoint {
@@ -128,7 +134,10 @@ function jointXml(j: UrdfJoint): string {
 
 export function writeUrdf(name: string, links: UrdfLink[], joints: UrdfJoint[], extras: UrdfExtras = {}): string {
   const materials = new Map<string, string>();
-  const body = links.map((l) => linkXml(l, materials));
+  const xacro = extras.xacro;
+  // In xacro the package is a property, so the meshes follow a rename.
+  const inPackage = (text: string): string => (xacro ? text.split(`package://${xacro.package}/`).join('package://${package}/') : text);
+  const body = links.map((l) => inPackage(linkXml(l, materials)));
   const head = [...materials].map(([n, rgba]) => `  <material name="${n}">\n    <color rgba="${rgba}"/>\n  </material>`);
   // Gazebo reads friction and sensors from blocks of its own beside the links, and plugins from blocks of the robot's.
   const gazebo: string[] = [];
@@ -139,8 +148,9 @@ export function writeUrdf(name: string, links: UrdfLink[], joints: UrdfJoint[], 
     if (inner.length) gazebo.push(`  <gazebo reference="${escapeXml(l.name)}">`, ...inner, '  </gazebo>');
   }
   for (const p of extras.plugins ?? []) gazebo.push('  <gazebo>', indent(p, '    '), '  </gazebo>');
+  const control: string[] = [];
   if (extras.control && extras.control.joints.length) {
-    gazebo.push(
+    control.push(
       '  <ros2_control name="GazeboSimSystem" type="system">',
       '    <hardware>',
       '      <plugin>gz_ros2_control/GazeboSimSystem</plugin>',
@@ -149,12 +159,29 @@ export function writeUrdf(name: string, links: UrdfLink[], joints: UrdfJoint[], 
       '  </ros2_control>',
       '  <gazebo>',
       '    <plugin filename="gz_ros2_control-system" name="gz_ros2_control::GazeboSimROS2ControlPlugin">',
-      `      <parameters>${escapeXml(extras.control.controllersYaml)}</parameters>`,
+      `      <parameters>${xacro ? '$(find ${package})/config/controllers.yaml' : escapeXml(extras.control.controllersYaml)}</parameters>`,
       '    </plugin>',
       '  </gazebo>',
     );
   }
-  return [`<?xml version="1.0"?>`, `<!-- Made with ${APP_NAME}. Units: meters, kilograms, radians. -->`, `<robot name="${escapeXml(name)}">`, ...head, ...body, ...joints.map(jointXml), ...gazebo, '</robot>', ''].join('\n');
+  if (!xacro) return [`<?xml version="1.0"?>`, `<!-- Made with ${APP_NAME}. Units: meters, kilograms, radians. -->`, `<robot name="${escapeXml(name)}">`, ...head, ...body, ...joints.map(jointXml), ...gazebo, ...control, '</robot>', ''].join('\n');
+  const guarded = (arg: string, lines: string[]): string[] => (lines.length ? [`  <xacro:if value="$(arg ${arg})">`, ...lines.map((l) => (l ? `  ${l}` : l)), '  </xacro:if>'] : []);
+  return [
+    `<?xml version="1.0"?>`,
+    `<!-- Made with ${APP_NAME}. Units: meters, kilograms, radians. -->`,
+    `<!-- xacro ${xacro.package}.urdf.xacro use_gazebo:=false   leaves out the Gazebo blocks (RViz, or a real robot); use_ros2_control:=false the controllers. -->`,
+    `<robot name="${escapeXml(name)}" xmlns:xacro="http://www.ros.org/wiki/xacro">`,
+    `  <xacro:property name="package" value="${escapeXml(xacro.package)}"/>`,
+    '  <xacro:arg name="use_gazebo" default="true"/>',
+    '  <xacro:arg name="use_ros2_control" default="true"/>',
+    ...head,
+    ...body,
+    ...joints.map(jointXml),
+    ...guarded('use_gazebo', gazebo),
+    ...guarded('use_ros2_control', control),
+    '</robot>',
+    '',
+  ].join('\n');
 }
 
 const indent = (text: string, by: string): string =>

@@ -163,9 +163,10 @@ export function RobotPanel() {
 }
 
 /** At the foot of the left panel in Robot mode: what the checks say, and the export. */
-const ROBOT_FORMATS: { id: 'urdf' | 'sdf'; label: string; description: string }[] = [
-  { id: 'urdf', label: 'ROS 2 package', description: 'URDF with meshes, launch files, bridge and controllers' },
+const ROBOT_FORMATS: { id: 'urdf' | 'sdf' | 'mjcf'; label: string; description: string }[] = [
+  { id: 'urdf', label: 'ROS 2 package', description: 'URDF and xacro with meshes, launch files, bridge and controllers' },
   { id: 'sdf', label: 'Gazebo model', description: 'SDF with every joint, loops included, and a world' },
+  { id: 'mjcf', label: 'MuJoCo model', description: 'MJCF with actuators, loops as constraints' },
 ];
 
 export function RobotExport() {
@@ -222,7 +223,7 @@ export function RobotExport() {
         </button>
         <button type="button" className="primary" disabled={Boolean(busy) || errors > 0 || nodes.length === 0} onClick={() => void exportRobot()}>
           <DownloadIcon />
-          {busy ? 'Exporting…' : format === 'sdf' ? 'Export model' : 'Export package'}
+          {busy ? 'Exporting…' : format === 'urdf' ? 'Export package' : 'Export model'}
         </button>
       </section>
     </div>

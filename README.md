@@ -210,9 +210,11 @@ in the design file and synced with it.
   joint reaches, limits the wrong way round, a link with no mass or an
   impossible inertia) and what is only worth knowing (a joint that closes a
   loop, an open mesh, a heavy collision mesh), each with a *Show* button.
-- **Export** writes a zip in one of two forms. A *ROS 2 package*:
+- **Export** writes a zip in one of three forms. A *ROS 2 package*:
   `urdf/<name>.urdf` with the sensors, drive and friction in `<gazebo>`
-  blocks, a colored OBJ per link under `meshes/visual` and an STL under
+  blocks (and `<name>.urdf.xacro` beside it, the same with the Gazebo blocks
+  behind `use_gazebo:=false` and the controllers behind
+  `use_ros2_control:=false`), a colored OBJ per link under `meshes/visual` and an STL under
   `meshes/collision`, `package.xml`, `CMakeLists.txt`, a launch file for RViz
   with joint sliders, one for Gazebo through `ros_gz` that opens the
   package's world (`worlds/<name>.sdf`, with the sensor systems on), spawns
@@ -220,7 +222,11 @@ in the design file and synced with it.
   from `config/controllers.yaml`, and an RViz layout. Or a *Gazebo model*:
   `model.sdf` with every joint (loops included), `model.config`, the meshes
   and a world that includes the model, to open with `gz sim` and no ROS.
-  Meters, kilograms and radians, Z up; every link's frame is parallel to the
+  Or a *MuJoCo model*: one MJCF file with the bodies nested down the tree,
+  position servos on the controlled joints and velocity motors on the
+  wheels, loops closed by connect constraints, followers by joint
+  constraints, cameras and IMUs (lidars have no MuJoCo counterpart), and the
+  meshes beside it. Meters, kilograms and radians, Z up; every link's frame is parallel to the
   design's axes and sits at its joint, with its meshes written in that frame.
   The URDF says `__PACKAGE_SHARE__` where it means the package's share
   folder; the launch files fill that in, so no xacro is needed.
@@ -508,7 +514,7 @@ src/
   state/              the editor: selection, undo, files, preferences
   viewer/             three.js view: drawing, picking, handles
   parts/              the gear, pulley, sprocket and thread generators
-  io/                 STL, 3MF, OBJ, GLB, SVG, DXF, URDF, SDF writers; STL, OBJ, 3MF, GLB, SVG, DXF readers
+  io/                 STL, 3MF, OBJ, GLB, SVG, DXF, URDF, SDF, MJCF writers; STL, OBJ, 3MF, GLB, SVG, DXF readers
   robot/              Robot mode: links and joints, materials and mass properties, checks, the ROS 2 package
   sync/               Google sign-in (PKCE, loopback), Drive remote, three-way merge, sync engine
   text/               fonts, and laying words out as outlines
@@ -561,7 +567,7 @@ never touch the mesh kernel, which keeps them easy to test.
 - More parts: throated worm wheel, planetary set helper, V-belt pulleys,
   imperial threads.
 - Assembly preview of meshing gears.
-- Robot mode: xacro output, MJCF for MuJoCo, URDF import.
+- Robot mode: URDF import, Isaac Sim USD.
 - STEP export. Shapes and parts are already described as profiles and
   operations rather than triangles, so a B-rep backend can evaluate the same
   descriptions.

@@ -11,6 +11,8 @@ import type { BridgeTopic } from '../io/rosPackage';
 import type { GazeboSensor } from '../io/gazebo';
 import { writeObj } from '../io/obj';
 import { bridgeYaml, cmakeLists, controllersYaml, displayLaunch, gazeboLaunch, packageXml, readme, rvizConfig, SHARE_PLACEHOLDER } from '../io/rosPackage';
+import { writeMjcf } from '../io/mjcf';
+import type { MjcfBody, MjcfModel } from '../io/mjcf';
 import { modelConfig, writeSdf } from '../io/sdf';
 import type { SdfJoint, SdfLink } from '../io/sdf';
 import { writeStl } from '../io/stl';
@@ -271,6 +273,7 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
     { name: 'CMakeLists.txt', bytes: encodeText(cmakeLists(pkg)) },
     { name: 'README.md', bytes: encodeText(readme(pkg, robot.name)) },
     { name: `urdf/${pkg}.urdf`, bytes: encodeText(writeUrdf(p.robotName, links, joints, { plugins, control })) },
+    { name: `urdf/${pkg}.urdf.xacro`, bytes: encodeText(writeUrdf(p.robotName, links, joints, { plugins, control, xacro: { package: pkg } })) },
     { name: 'launch/display.launch.py', bytes: encodeText(displayLaunch(pkg)) },
     { name: 'launch/gazebo.launch.py', bytes: encodeText(gazeboLaunch(pkg, { controllers })) },
     { name: 'rviz/display.rviz', bytes: encodeText(rvizConfig(base)) },
@@ -340,5 +343,65 @@ Every joint is in \`model.sdf\`, loops included.${drive ? ` The drive takes velo
 commands on the \`cmd_vel\` topic:
 
     gz topic -t /cmd_vel -m gz.msgs.Twist -p 'linear: {x: 0.2}'` : ''}
+`;
+}
+
+/**
+ * The robot as a MuJoCo model: one XML with the bodies nested down the
+ * tree, the meshes beside it. Loops are closed by pinning the two links of
+ * each loop joint together at its point; followers by joint constraints.
+ * Lidars have no counterpart and are left out, with a warning.
+ */
+export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot = robotOf(doc)): RobotPackage {
+  const p = prepare(doc, geometry, robot, (path) => path);
+  const { pkg, files, warnings } = p;
+  const byName = new Map(p.links.map((l) => [l.name, l]));
+  const childrenOf = new Map<string, UrdfJoint[]>();
+  for (const j of p.treeJoints) childrenOf.set(j.parent, [...(childrenOf.get(j.parent) ?? []), j]);
+  const sensorsOf = (link: string) => p.sensors.filter((s) => s.link === link);
+  for (const s of p.sensors) if (s.kind === 'lidar') warnings.push(`"${s.name}" is a lidar, which MuJoCo has no sensor for; it was left out.`);
+  const body = (name: string, joint: UrdfJoint | undefined): MjcfBody => {
+    const l = byName.get(name)!;
+    const cams = sensorsOf(name).filter((s) => s.kind === 'camera' || s.kind === 'depth');
+    const imus = sensorsOf(name).filter((s) => s.kind === 'imu');
+    return {
+      name,
+      pos: joint ? joint.origin : [0, 0, 0],
+      inertial: l.inertial,
+      visual: l.visual,
+      collision: l.collision,
+      friction: l.friction,
+      joint: joint ? { name: joint.name, type: joint.type, axis: joint.axis, limit: joint.limit, dynamics: joint.dynamics } : undefined,
+      children: (childrenOf.get(name) ?? []).map((j) => body(j.child, j)),
+      ...(cams.length ? { cameras: cams.map((s) => ({ name: s.name, pos: s.xyz, rpy: s.rpy, hfov: s.camera.hfov, aspect: s.camera.width / s.camera.height })) } : {}),
+      ...(imus.length ? { imus: imus.map((s) => ({ name: s.name, pos: s.xyz, rpy: s.rpy })) } : {}),
+    };
+  };
+  const base = p.linkNames.get(robot.root!)!;
+  const model: MjcfModel = {
+    name: p.robotName,
+    base: body(base, undefined),
+    floating: Boolean(p.drive),
+    // A loop joint's origin is given in its parent's frame; the connect anchor is in the first body's frame.
+    connects: p.loopJoints.map((j) => ({ body1: j.parent, body2: j.child, anchor: j.origin })),
+    followers: [...p.treeJoints, ...p.loopJoints].filter((j) => j.mimic && p.treeJoints.some((t) => t.name === j.name)).map((j) => ({ joint: j.name, leader: j.mimic!.joint, multiplier: j.mimic!.multiplier, offset: j.mimic!.offset })),
+    servos: p.controlled,
+    wheels: p.drive ? [...p.drive.leftJoints, ...p.drive.rightJoints] : [],
+  };
+  files.unshift({ name: `${pkg}.xml`, bytes: encodeText(writeMjcf(model)) }, { name: 'README.md', bytes: encodeText(mjcfReadme(pkg, robot.name)) });
+  return { name: pkg, files, warnings };
+}
+
+function mjcfReadme(name: string, robot: string): string {
+  return `# ${robot}
+
+A MuJoCo model made with PlastikCAD. Open it with the viewer:
+
+    python -m mujoco.viewer --mjcf ${name}.xml
+
+Visual meshes are OBJ files with their colors, collision meshes STL (MuJoCo
+makes a convex hull of each), all in meters with Z up. Joints under control
+have position servos, wheels velocity motors; the Control tab of the viewer
+drives them. Loops are closed by connect constraints at their joints.
 `;
 }

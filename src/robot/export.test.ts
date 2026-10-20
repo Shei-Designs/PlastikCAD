@@ -3,7 +3,7 @@ import { emptyDoc } from '../model/file';
 import type { SceneNode } from '../model/types';
 import type { LinkGeometry } from '../worker/protocol';
 import { checkRobot } from './check';
-import { buildRobotPackage, buildSdfModel } from './export';
+import { buildMjcfModel, buildRobotPackage, buildSdfModel } from './export';
 import { meshProperties } from './inertia';
 import { jointInChild, jointInDesign, spanningTree } from './model';
 import { defaultJoint, defaultLink, defaultSensor } from './types';
@@ -260,5 +260,64 @@ describe('sensors, drive and control', () => {
     expect(sdf).toContain('gz-sim-diff-drive-system');
     const world = text(model.files.find((f) => f.name === 'worlds/test_rover.sdf')!.bytes);
     expect(world).toContain('<uri>model://test_rover</uri>');
+  });
+});
+
+describe('xacro and MuJoCo', () => {
+  it('writes a xacro beside the URDF with the Gazebo and control blocks behind arguments', () => {
+    const d = doc();
+    d.robot!.sensors = [defaultSensor('s3', 'imu', 'imu', body.id, [0, 0, 0])];
+    const pkg = buildRobotPackage(d, geometry());
+    const xacro = text(pkg.files.find((f) => f.name === 'urdf/test_rover.urdf.xacro')!.bytes);
+    expect(xacro).toContain('xmlns:xacro="http://www.ros.org/wiki/xacro"');
+    expect(xacro).toContain('<xacro:property name="package" value="test_rover"/>');
+    expect(xacro).toContain('<mesh filename="package://${package}/meshes/visual/Body.obj"/>');
+    expect(xacro).toMatch(/<xacro:if value="\$\(arg use_gazebo\)">\s*<gazebo reference="Body">/);
+    expect(xacro).toMatch(/<xacro:if value="\$\(arg use_ros2_control\)">\s*<ros2_control/);
+    expect(xacro).toContain('<parameters>$(find ${package})/config/controllers.yaml</parameters>');
+    // The plain URDF has no xacro in it.
+    const urdf = text(pkg.files.find((f) => f.name === 'urdf/test_rover.urdf')!.bytes);
+    expect(urdf).not.toContain('xacro');
+  });
+
+  it('writes a MuJoCo model: nested bodies, joints, actuators, a loop as a connect, a camera and an IMU', () => {
+    const d = doc();
+    // Both joints drive (the shoulder standing in for a right wheel), so the base floats.
+    d.robot!.drive = { left: ['j1'], right: ['j2'] };
+    d.robot!.joints.push({ ...defaultJoint('j4', 'closing', arm.id, wheel.id, [0, 0, 0]) });
+    d.robot!.sensors = [defaultSensor('s1', 'cam', 'camera', body.id, [50, 0, 10]), defaultSensor('s2', 'scan', 'lidar', body.id, [0, 0, 10]), defaultSensor('s3', 'imu', 'imu', body.id, [0, 0, 0])];
+    const model = buildMjcfModel(d, geometry());
+    expect(model.name).toBe('test_rover');
+    expect(model.warnings.some((w) => w.includes('lidar'))).toBe(true);
+    const names = model.files.map((f) => f.name);
+    expect(names).toEqual(expect.arrayContaining(['test_rover.xml', 'README.md', 'meshes/visual/Body.obj', 'meshes/collision/Body.stl']));
+    const xml = text(model.files.find((f) => f.name === 'test_rover.xml')!.bytes);
+    expect(xml).toContain('<mujoco model="Test_Rover">');
+    expect(xml).toContain('<compiler angle="radian" meshdir="meshes" autolimits="true"/>');
+    expect(xml).toContain('<mesh name="visual_Body_obj" file="visual/Body.obj"/>');
+    // The base floats (there is a drive); the wheel hangs from it 36 mm out with a hinge about Y, no range; the arm's shoulder has one in radians.
+    expect(xml).toMatch(/<body name="Body" pos="0 0 0">\s*<freejoint name="root"\/>/);
+    expect(xml).toMatch(/<body name="Left_wheel" pos="0 0.036 0.01">\s*<joint name="left_wheel_joint" type="hinge" axis="0 1 0" damping="0.1" frictionloss="0"\/>/);
+    expect(xml).toMatch(/<joint name="shoulder" type="hinge" axis="0 1 0" range="-1.570796 1.570796" limited="true"/);
+    expect(xml).toMatch(/<inertial pos="0 0.004 0" mass="0.05" fullinertia="/);
+    expect(xml).toContain('<geom type="mesh" mesh="visual_Body_obj" class="visual" material="color_ff8800"/>');
+    expect(xml).toContain('<geom type="box" size="0.005 0.005 0.02" pos="0 0 0.02" class="collision" friction="0.8 0.005 0.0001"/>');
+    // Actuators: the wheels velocity motors.
+    expect(xml).toContain('<velocity name="left_wheel_joint_motor" joint="left_wheel_joint" kv="1"/>');
+    expect(xml).toContain('<velocity name="shoulder_motor" joint="shoulder" kv="1"/>');
+    expect(xml).not.toContain('<position');
+    // The loop: arm and wheel pinned at the closing joint, given in the arm's frame (the wheel's center, 40 mm out and 10 down from the shoulder).
+    expect(xml).toContain('<connect body1="Arm_upper" body2="Left_wheel" anchor="0 0.04 -0.01"/>');
+    // The camera 50 mm forward of the body's center, the IMU a site with a gyro and an accelerometer.
+    expect(xml).toMatch(/<camera name="cam" pos="0.05 0 0.02" quat="0.5 -0.5 0.5 -0.5" fovy="/);
+    expect(xml).toContain('<site name="imu" pos="0 0 0.01"');
+    expect(xml).toContain('<gyro name="imu_gyro" site="imu"/>');
+  });
+
+  it('welds an arm to the world and gives its joints position servos', () => {
+    const xml = text(buildMjcfModel(doc(), geometry()).files.find((f) => f.name === 'test_rover.xml')!.bytes);
+    expect(xml).not.toContain('<freejoint');
+    expect(xml).toContain('<position name="shoulder_servo" joint="shoulder" kp="50" ctrllimited="false"/>');
+    expect(xml).toContain('<position name="left_wheel_joint_servo" joint="left_wheel_joint" kp="50" ctrllimited="false"/>');
   });
 });
