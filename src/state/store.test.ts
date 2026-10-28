@@ -192,6 +192,55 @@ describe('align mode previews', () => {
   });
 });
 
+describe('ghosts', () => {
+  it('ghosts the selection out of the selection, keeps ghosts out of select-all, and brings them all back', () => {
+    const { a, b } = twoBoxes();
+    store.addShape('box');
+    const c = only();
+    store.select([a, b]);
+    store.ghostSelected();
+    expect(selected()).toEqual([]);
+    expect(scene().filter((n) => n.ghost).map((n) => n.id).sort()).toEqual([a, b].sort());
+    expect(store.hasGhosts()).toBe(true);
+    store.selectAll();
+    expect(selected()).toEqual([c]);
+    store.unghostAll();
+    expect(scene().some((n) => n.ghost)).toBe(false);
+    expect(store.hasGhosts()).toBe(false);
+    store.selectAll();
+    expect(selected().sort()).toEqual([a, b, c].sort());
+  });
+
+  it('toggles one ghost, drops it from the selection, and undoes', () => {
+    const { a, b } = twoBoxes();
+    store.toggleGhost(a);
+    expect(selected()).toEqual([b]);
+    expect(scene().find((n) => n.id === a)!.ghost).toBe(true);
+    store.toggleGhost(a);
+    expect(scene().find((n) => n.id === a)!.ghost).toBeUndefined();
+    store.undo();
+    expect(scene().find((n) => n.id === a)!.ghost).toBe(true);
+    store.undo();
+    expect(scene().find((n) => n.id === a)!.ghost).toBeUndefined();
+    expect(selected().sort()).toEqual([a, b].sort());
+  });
+
+  it('leaves the ghost flag on the group, not its parts, and stays through editing inside', async () => {
+    const { a, b } = twoBoxes();
+    await store.groupSelected();
+    const group = only();
+    store.toggleGhost(group);
+    const node = scene().find((n) => n.id === group) as GroupNode;
+    expect(node.ghost).toBe(true);
+    expect(node.children.every((c) => c.ghost === undefined)).toBe(true);
+    store.unghostAll();
+    store.editInside([group, a]);
+    expect(selected()).toEqual([a]);
+    await store.finishEditing();
+    expect((scene()[0] as GroupNode).children.map((c) => c.id).sort()).toEqual([a, b].sort());
+  });
+});
+
 describe('notes and colors', () => {
   it('keeps a note on a part through grouping, and edits one inside a group', async () => {
     const { a, b } = twoBoxes();

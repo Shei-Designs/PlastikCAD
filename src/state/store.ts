@@ -364,7 +364,7 @@ export function toggleSelected(id: string): void {
   select(state.selection.includes(id) ? state.selection.filter((s) => s !== id) : [...state.selection, id]);
 }
 
-export const selectAll = (): void => select(state.doc.scene.filter((n) => !n.hidden).map((n) => n.id));
+export const selectAll = (): void => select(state.doc.scene.filter((n) => !n.hidden && !n.ghost).map((n) => n.id));
 
 /** Tight bounds of everything selected, or null when nothing is. */
 export function selectionBounds(nodes: SceneNode[] = selectedNodes()): Bounds | null {
@@ -1173,6 +1173,51 @@ export function toggleLocked(id: string): void {
   if (node.locked) delete next.locked;
   else next.locked = true;
   commit(state.doc.scene.map((n) => (n.id === id ? next : n)));
+}
+
+/** The node with its ghost flag turned on or off. */
+function withGhost(node: SceneNode, ghost: boolean): SceneNode {
+  if (Boolean(node.ghost) === ghost) return node;
+  const next = { ...node };
+  if (ghost) next.ghost = true;
+  else delete next.ghost;
+  return next;
+}
+
+/** Fade one object out of reach, or bring it back. A ghost leaves the selection: nothing picks it. */
+export function toggleGhost(id: string): void {
+  const node = state.doc.scene.find((n) => n.id === id);
+  if (!node) return;
+  abortAlignPreview();
+  const next = withGhost(node, !node.ghost);
+  commit(
+    state.doc.scene.map((n) => (n.id === id ? next : n)),
+    { selection: state.selection.filter((s) => s !== id || !next.ghost) },
+  );
+}
+
+/**
+ * Fade the selection out of reach: the objects stay in view as faint shadows
+ * but no longer take a click or a drag, so that what is around or inside them
+ * can be worked on. `unghostAll` brings every ghost back.
+ */
+export function ghostSelected(): void {
+  const ids = new Set(state.selection);
+  if (ids.size === 0) return;
+  abortAlignPreview();
+  commit(
+    state.doc.scene.map((n) => (ids.has(n.id) ? withGhost(n, true) : n)),
+    { selection: [] },
+  );
+}
+
+export const hasGhosts = (s: EditorState = state): boolean => s.doc.scene.some((n) => n.ghost);
+
+/** Bring every ghost back within reach. */
+export function unghostAll(): void {
+  if (!hasGhosts()) return;
+  abortAlignPreview();
+  commit(state.doc.scene.map((n) => withGhost(n, false)));
 }
 
 /** Measure and build a group of the given members (their hole flags as they are to be inside it); null if nothing solid would be left. */

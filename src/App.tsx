@@ -14,6 +14,7 @@ import {
   dropSelected,
   duplicateSelected,
   getState,
+  ghostSelected,
   groupSelected,
   importModel,
   isDirty,
@@ -40,6 +41,7 @@ import {
   toggleAligning,
   undo,
   ungroupSelected,
+  unghostAll,
   useEditor,
 } from './state/store';
 import { Inspector } from './ui/Inspector';
@@ -170,6 +172,8 @@ function onKeyDown(e: KeyboardEvent): void {
     s: () => setHole(false),
     d: dropSelected,
     f: () => viewerRef.current?.fit(),
+    // G ghosts the selection; Shift+G brings every ghost back.
+    g: () => (e.shiftKey ? unghostAll() : ghostSelected()),
     l: toggleAligning,
     x: () => mirrorSelected(0),
     y: () => mirrorSelected(1),

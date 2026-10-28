@@ -3,8 +3,8 @@ import { emptyDoc, legacyVersions, parseDoc, readHeader, serializeDoc } from './
 import { geomKey } from './geomKey';
 import { apply, axisRotation, determinant, eulerOf, multiply, nodeMatrix, rotation } from './math';
 import type { Mat } from './math';
-import { alignNodes, arrayNodes, arrayPlaces, boxBoundsOf, cloneNode, dissolve, frameAlong, layerMembers, makeGroup, makeShape, mirrorNodes, nodeAt, picturesOf, regroup, rotateNodes, sourceColor, ungroup, usedAssets } from './ops';
-import type { Doc, GroupNode, PictureNode, SceneNode, Vec3 } from './types';
+import { alignNodes, arrayNodes, arrayPlaces, boxBoundsOf, cloneNode, dissolve, frameAlong, layerMembers, makeGroup, makeShape, mirrorNodes, nodeAt, picturesOf, regroup, rotateNodes, scaleNodes, sourceColor, ungroup, usedAssets } from './ops';
+import type { Doc, GroupNode, PictureNode, SceneNode, ShapeNode, Vec3 } from './types';
 
 const close = (a: number[], b: number[], eps = 1e-6) => {
   expect(a.length).toBe(b.length);
@@ -44,6 +44,33 @@ describe('rotations', () => {
     const [node] = rotateNodes([shape('box', { pos: [10, 0, 5] })], 2, 90, [0, 0, 0]);
     close(node.pos, [0, 10, 5]);
     close(node.rot, [0, 0, 90]);
+  });
+});
+
+describe('stretching several nodes as one box', () => {
+  it('moves each with the stretch about the anchor and sizes it along the fixed axes', () => {
+    // Two 20 mm boxes side by side along X: the box round them runs from x = 0 to x = 50.
+    const a = shape('box', { pos: [10, 0, 10] });
+    const b = shape('box', { pos: [40, 0, 10] });
+    const [sa, sb] = scaleNodes([a, b], [2, 1, 0.5], [0, 0, 0]);
+    close(sa.pos, [20, 0, 5]);
+    close(sa.size, [40, 20, 10]);
+    close(sb.pos, [80, 0, 5]);
+    close(sb.size, [40, 20, 10]);
+  });
+
+  it('is exact for a node turned a quarter turn: its own axes swap roles', () => {
+    const [turned] = scaleNodes([shape('box', { rot: [0, 0, 90], size: [10, 20, 30] })], [2, 1, 1], [0, 0, 0]);
+    // The node's local Y runs along the scene's X, so that is the side that doubles.
+    close(turned.size, [10, 40, 30]);
+    close(turned.rot, [0, 0, 90]);
+  });
+
+  it('keeps every side at least the minimum and the shape parameters in range', () => {
+    const [tiny] = scaleNodes([shape('box', { size: [20, 20, 20] })], [0.0001, 1, 1], [0, 0, 0], 0.5);
+    expect(tiny.size[0]).toBe(0.5);
+    const [rounded] = scaleNodes([shape('box', { params: { radius: 8 }, size: [20, 20, 20] } as Partial<SceneNode>)], [0.25, 0.25, 1], [0, 0, 0]);
+    expect((rounded as ShapeNode).params.radius).toBeLessThanOrEqual(2.5);
   });
 });
 
@@ -433,7 +460,7 @@ describe('design files', () => {
     return {
       id: 'bracket01',
       name: 'Bracket',
-      scene: [box, group, { ...drawing, hidden: true }, { ...label, note: 'Engrave 0.6 mm deep' }],
+      scene: [box, { ...group, ghost: true }, { ...drawing, hidden: true }, { ...label, note: 'Engrave 0.6 mm deep' }],
       assets: {
         'outline-1': { kind: 'outline', shapes: [{ contours: [[[0, 0], [10, 0], [10, 10], [0, 10]]], evenodd: true }] },
         unused: { kind: 'mesh', positions: '', triangles: '' },
@@ -449,6 +476,8 @@ describe('design files', () => {
     // Notes travel; a group made now is mixed, and says so.
     expect(back.scene[3].note).toBe('Engrave 0.6 mm deep');
     expect((back.scene[1] as GroupNode).mixed).toBe(true);
+    expect(back.scene[1].ghost).toBe(true);
+    expect(back.scene[0].ghost).toBeUndefined();
     expect(serializeDoc(doc)).toContain('"mixed": true');
   });
 

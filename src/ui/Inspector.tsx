@@ -46,6 +46,7 @@ const SHORTCUTS: [string, string][] = [
   ['Solid / hole', 'S / H'],
   ['Mirror', 'X / Y / Z'],
   ['Rotate 90°', 'Shift+X / Y / Z · Alt reverses'],
+  ['Ghost / un-ghost all', 'G / Shift+G'],
   ['Align', 'L'],
   ['Align to edge', 'Alt+arrows / PgUp / PgDn'],
   ['Align centers', 'Alt+Shift+arrows'],

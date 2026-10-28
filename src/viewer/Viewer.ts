@@ -50,7 +50,7 @@ import type { Skin } from '../geometry/skin';
 import { cornerColors, tintKey, underPicture } from '../geometry/tint';
 import { boundsCenter, builtSize, flipSigns, frameMatrix, isEmptyBounds, rotation, tidy, tidyVec, unionBounds } from '../model/math';
 import type { Bounds, Mat } from '../model/math';
-import { HOLE_COLOR, rotateNodes } from '../model/ops';
+import { HOLE_COLOR, rotateNodes, scaleNodes } from '../model/ops';
 import type { Asset, GroupNode, SceneNode, Vec3 } from '../model/types';
 import type { BuildResult } from '../worker/protocol';
 import { SkinPainter } from './skin';
@@ -86,7 +86,7 @@ export interface ViewItem {
   /** Built geometry, or null while the worker is still at it. */
   result: BuildResult | null;
   selected: boolean;
-  /** A shape being placed: drawn faintly and ignored by picking. */
+  /** Drawn faintly and ignored by picking: a shape being placed, or an object ghosted by the user (`node.ghost`, fainter still). */
   ghost?: boolean;
 }
 
@@ -183,6 +183,9 @@ const TOUCH_GRIP_SCALE = 2.5;
 const LONG_PRESS_MS = 450;
 const dragThreshold = (event: PointerEvent) => (event.pointerType === 'touch' ? TOUCH_DRAG_THRESHOLD : DRAG_THRESHOLD);
 const MIN_SIZE = 0.1; // mm
+/** How much of a ghosted object's fill and outline is left. */
+const GHOST_OPACITY = 0.14;
+const GHOST_EDGE_OPACITY = 0.45;
 const ROTATE_STEP = 15;
 const ROTATE_COARSE = 45;
 
@@ -271,6 +274,15 @@ interface Frame {
   single: SceneNode | null;
 }
 
+/** The box a grip stretches, as it was when the grip was pressed: one object's own, or the whole selection's (square to the axes). */
+interface GripBox {
+  matrix: Mat;
+  size: Vec3;
+  single: SceneNode | null;
+}
+
+const gripBox = (f: Frame): GripBox => ({ matrix: f.matrix, size: [f.half[0] * 2, f.half[1] * 2, f.half[2] * 2], single: f.single });
+
 type Drag =
   /** `select` is the node a finger landed on, selected only once the press turns out to be a tap or a drag (a long press adds it instead). */
   | { mode: 'pending-move'; x: number; y: number; nodes: SceneNode[]; plane: Plane; origin: Vector3; select?: string }
@@ -280,10 +292,10 @@ type Drag =
   | { mode: 'pending-marquee'; x: number; y: number; additive: boolean }
   | { mode: 'marquee'; x: number; y: number; additive: boolean }
   /** `axisOnly` restricts a corner grip to one base axis when the base is seen edge-on and the other cannot be followed. */
-  | { mode: 'resize'; node: SceneNode; sx: number; sy: number; grab: Vector3; axisOnly?: 0 | 1 }
+  | { mode: 'resize'; box: GripBox; nodes: SceneNode[]; sx: number; sy: number; grab: Vector3; axisOnly?: 0 | 1 }
   /** A grip pressed from an angle it cannot be dragged from: a click still brings up its typing boxes. */
   | { mode: 'held' }
-  | { mode: 'height'; node: SceneNode; side: 1 | -1; grab: number }
+  | { mode: 'height'; box: GripBox; nodes: SceneNode[]; side: 1 | -1; grab: number }
   | { mode: 'lift'; nodes: SceneNode[]; origin: Vector3; grab: number }
   | { mode: 'rotate'; nodes: SceneNode[]; axis: 0 | 1 | 2; pivot: Vec3; start: number | null; x: number }
   | { mode: 'place' };
@@ -878,7 +890,8 @@ export class Viewer {
         before.ghost === item.ghost &&
         before.node.color === node.color &&
         before.node.hole === node.hole &&
-        before.node.hidden === node.hidden;
+        before.node.hidden === node.hidden &&
+        before.node.ghost === node.ghost;
       if (!same) this.style(d, item.selected);
     }
     for (const [id, d] of this.drawn) {
@@ -1087,19 +1100,21 @@ export class Viewer {
       material.needsUpdate = true;
     }
     material.color.set(map || tinted ? '#ffffff' : color);
-    const faint = node.hole || ghost;
+    // A ghosted object is a shadow of itself: a faint fill with its outline, so that it still shows where it is.
+    const faded = Boolean(node.ghost);
+    const faint = node.hole || ghost || faded;
     if (material.transparent !== Boolean(faint)) {
       material.transparent = Boolean(faint);
       material.needsUpdate = true;
     }
-    material.opacity = ghost ? 0.6 : node.hole ? 0.38 : 1;
+    material.opacity = faded ? GHOST_OPACITY : ghost ? 0.6 : node.hole ? 0.38 : 1;
     material.depthWrite = !faint;
     // Selected parts glow a little in their own color; the accent is kept for edges and handles.
     material.emissive.set(selected ? color : 0x000000);
     material.emissiveIntensity = selected ? 0.14 : 0;
     d.mesh.renderOrder = faint ? 1 : 0;
 
-    const wantEdges = (this.options.edges || selected) && Boolean(d.shown) && !node.hidden;
+    const wantEdges = (this.options.edges || selected || faded) && Boolean(d.shown) && !node.hidden;
     if (!wantEdges) {
       if (d.edges) d.edges.visible = false;
       return;
@@ -1122,8 +1137,8 @@ export class Viewer {
       d.edges.material.opacity = 1;
     } else {
       // A darkened shade of the part color reads on any color and theme.
-      d.edges.material.color.copy(new Color(color)).multiplyScalar(0.22);
-      d.edges.material.opacity = node.hole ? 0.5 : t.edge;
+      d.edges.material.color.copy(new Color(color)).multiplyScalar(faded ? 0.5 : 0.22);
+      d.edges.material.opacity = node.hole ? 0.5 : faded ? GHOST_EDGE_OPACITY : t.edge;
     }
   }
 
@@ -1222,7 +1237,6 @@ export class Viewer {
     this.clearHandles();
     this.handleMode = mode;
     if (mode === 'locked') return;
-    const single = mode === 'single';
     const add = (kind: HandleKind, object: Object3D, pixels: number, cursor: string) => {
       object.renderOrder = 10;
       this.overlay.add(object);
@@ -1233,17 +1247,16 @@ export class Viewer {
       this.alignLines.visible = true;
       return;
     }
-    if (single) {
-      for (const sx of [-1, 0, 1] as const) {
-        for (const sy of [-1, 0, 1] as const) {
-          if (sx === 0 && sy === 0) continue;
-          const corner = sx !== 0 && sy !== 0;
-          add({ type: 'resize', sx, sy }, new Sprite(corner ? this.grips.corner : this.grips.edge), corner ? 13 : 11, 'nwse-resize');
-        }
+    // One object gets grips on its own box; several get them on the box round them all, which stretches them together.
+    for (const sx of [-1, 0, 1] as const) {
+      for (const sy of [-1, 0, 1] as const) {
+        if (sx === 0 && sy === 0) continue;
+        const corner = sx !== 0 && sy !== 0;
+        add({ type: 'resize', sx, sy }, new Sprite(corner ? this.grips.corner : this.grips.edge), corner ? 13 : 11, 'nwse-resize');
       }
-      add({ type: 'height', side: 1 }, new Sprite(this.grips.corner), 13, 'ns-resize');
-      add({ type: 'height', side: -1 }, new Sprite(this.grips.corner), 13, 'ns-resize');
     }
+    add({ type: 'height', side: 1 }, new Sprite(this.grips.corner), 13, 'ns-resize');
+    add({ type: 'height', side: -1 }, new Sprite(this.grips.corner), 13, 'ns-resize');
     add({ type: 'lift' }, new Sprite(this.grips.lift), 26, 'ns-resize');
     for (const axis of [0, 1, 2] as const) {
       const ring = new Group();
@@ -1279,7 +1292,11 @@ export class Viewer {
   }
 
   private framePoint(local: Vec3): Vector3 {
-    const m = this.frame!.matrix;
+    return this.pointOf(this.frame!.matrix, local);
+  }
+
+  /** A point of a box (frame or grip box) in the scene. */
+  private pointOf(m: Mat, local: Vec3): Vector3 {
     return new Vector3(
       m[0] * local[0] + m[3] * local[1] + m[6] * local[2] + m[9],
       m[1] * local[0] + m[4] * local[1] + m[7] * local[2] + m[10],
@@ -1531,16 +1548,17 @@ export class Viewer {
     const k = handle.kind;
     const nodes = this.items.filter((i) => i.selected && !i.ghost && !i.node.locked).map((i) => i.node);
     if (nodes.length === 0) return;
-    if (k.type === 'resize' && f.single) {
+    const box = gripBox(f);
+    if (k.type === 'resize') {
       // A corner grip seen with the base edge-on cannot follow both axes: it follows the one seen best.
-      const axisOnly = k.sx !== 0 && k.sy !== 0 && this.baseEdgeOn(f.single) ? this.bestBaseAxis(f.single) : undefined;
-      const grab = this.resizePoint(f.single, k.sx, k.sy, axisOnly);
+      const axisOnly = k.sx !== 0 && k.sy !== 0 && this.baseEdgeOn(box) ? this.bestBaseAxis(box) : undefined;
+      const grab = this.resizePoint(box, k.sx, k.sy, axisOnly);
       const handleLocal = new Vector3(k.sx * f.half[0], k.sy * f.half[1], 0);
-      this.drag = grab ? { mode: 'resize', node: f.single, sx: k.sx, sy: k.sy, grab: grab.sub(handleLocal), axisOnly } : { mode: 'held' };
-    } else if (k.type === 'height' && f.single) {
+      this.drag = grab ? { mode: 'resize', box, nodes, sx: k.sx, sy: k.sy, grab: grab.sub(handleLocal), axisOnly } : { mode: 'held' };
+    } else if (k.type === 'height') {
       // Measured from the end that stays put: the base for the top grip, the top for the bottom one.
-      const t = this.alongAxis(this.framePoint([0, 0, -k.side * f.half[2]]), this.frameAxis(f.single, 2));
-      this.drag = t === null ? { mode: 'held' } : { mode: 'height', node: f.single, side: k.side, grab: t - k.side * f.single.size[2] };
+      const t = this.alongAxis(this.framePoint([0, 0, -k.side * f.half[2]]), this.boxAxis(box, 2));
+      this.drag = t === null ? { mode: 'held' } : { mode: 'height', box, nodes, side: k.side, grab: t - k.side * box.size[2] };
     } else if (k.type === 'lift') {
       const origin = handle.object.position.clone();
       const t = this.alongAxis(origin, new Vector3(0, 0, 1));
@@ -1624,22 +1642,20 @@ export class Viewer {
     let made: HandlePrompt | null = null;
     switch (k.type) {
       case 'height':
-        if (!f.single) return null;
         // Right beside the height grip, so that it stays to hand on a big object seen close up; level with
         // the grip, it covers neither the grip nor the lift arrow above it.
-        made = { kind: k, unit: 'mm', center, fields: [{ tag: 'H', value: f.single.size[2], anchor: handle.object.getWorldPosition(new Vector3()).toArray() as Vec3, beside: true, clientX: 0, clientY: 0 }] };
+        made = { kind: k, unit: 'mm', center, fields: [{ tag: 'H', value: hz * 2, anchor: handle.object.getWorldPosition(new Vector3()).toArray() as Vec3, beside: true, clientX: 0, clientY: 0 }] };
         break;
       case 'resize': {
-        if (!f.single) return null;
         const fields: Field[] = [];
         if (k.sx !== 0) {
           // Width goes on a bottom edge running along X: at the grip's side, else the side facing the camera.
           const side = k.sy !== 0 ? k.sy : this.nearest([{ at: [0, -hy, -hz] as Vec3, s: -1 }, { at: [0, hy, -hz] as Vec3, s: 1 }]).s;
-          fields.push(edge('W', f.single.size[0], [0, side * hy, -hz], [1, 0, 0], [0, 0, -hz]));
+          fields.push(edge('W', hx * 2, [0, side * hy, -hz], [1, 0, 0], [0, 0, -hz]));
         }
         if (k.sy !== 0) {
           const side = k.sx !== 0 ? k.sx : this.nearest([{ at: [-hx, 0, -hz] as Vec3, s: -1 }, { at: [hx, 0, -hz] as Vec3, s: 1 }]).s;
-          fields.push(edge('D', f.single.size[1], [side * hx, 0, -hz], [0, 1, 0], [0, 0, -hz]));
+          fields.push(edge('D', hy * 2, [side * hx, 0, -hz], [0, 1, 0], [0, 0, -hz]));
         }
         made = { kind: k, unit: 'mm', center, fields };
         break;
@@ -1788,15 +1804,16 @@ export class Viewer {
     if (nodes.length === 0) return;
     let changed: SceneNode[] | null = null;
     const v = values[0];
-    if (kind.type === 'height' && f.single) {
-      if (v >= MIN_SIZE) changed = [this.resized(f.single, [f.single.size[0], f.single.size[1], v], [0, 0, -kind.side])];
-    } else if (kind.type === 'resize' && f.single) {
-      const size: Vec3 = [...f.single.size];
+    const box = gripBox(f);
+    if (kind.type === 'height') {
+      if (v >= MIN_SIZE) changed = this.stretched(box, nodes, [box.size[0], box.size[1], v], [0, 0, -kind.side]);
+    } else if (kind.type === 'resize') {
+      const size: Vec3 = [...box.size];
       const w = values[0];
       const d = values.length > 1 ? values[1] : values[0];
       if (kind.sx !== 0 && w >= MIN_SIZE) size[0] = w;
       if (kind.sy !== 0 && d >= MIN_SIZE) size[1] = d;
-      changed = [this.resized(f.single, size, [-kind.sx as -1 | 0 | 1, -kind.sy as -1 | 0 | 1, 0])];
+      changed = this.stretched(box, nodes, size, [-kind.sx as -1 | 0 | 1, -kind.sy as -1 | 0 | 1, 0]);
     } else if (kind.type === 'lift') {
       const dz = v - f.bounds.min[2];
       changed = nodes.map((n) => ({ ...n, pos: [n.pos[0], n.pos[1], n.pos[2] + dz] as Vec3 }));
@@ -1810,8 +1827,8 @@ export class Viewer {
     this.events.onGestureEnd(false);
   }
 
-  private frameAxis(node: SceneNode, axis: 0 | 1 | 2): Vector3 {
-    const m = rotation(node.rot);
+  private boxAxis(box: GripBox, axis: 0 | 1 | 2): Vector3 {
+    const m = box.matrix;
     return new Vector3(m[axis * 3], m[axis * 3 + 1], m[axis * 3 + 2]);
   }
 
@@ -1826,31 +1843,29 @@ export class Viewer {
     return (b * w.dot(ray.direction) - w.dot(axis)) / denominator;
   }
 
-  /** True when the node's base plane is seen so nearly edge-on that a pointer cannot be placed on it. */
-  private baseEdgeOn(node: SceneNode): boolean {
-    const m = frameMatrix(node);
-    return Math.abs(this.raycaster.ray.direction.dot(new Vector3(m[6], m[7], m[8]))) < 0.06;
+  /** True when the box's base plane is seen so nearly edge-on that a pointer cannot be placed on it. */
+  private baseEdgeOn(box: GripBox): boolean {
+    return Math.abs(this.raycaster.ray.direction.dot(this.boxAxis(box, 2))) < 0.06;
   }
 
-  /** Of the node's two base axes, the one squarer to the view, which the pointer can follow. */
-  private bestBaseAxis(node: SceneNode): 0 | 1 {
-    const m = frameMatrix(node);
+  /** Of the box's two base axes, the one squarer to the view, which the pointer can follow. */
+  private bestBaseAxis(box: GripBox): 0 | 1 {
     const d = this.raycaster.ray.direction;
-    return Math.abs(d.dot(new Vector3(m[0], m[1], m[2]))) <= Math.abs(d.dot(new Vector3(m[3], m[4], m[5]))) ? 0 : 1;
+    return Math.abs(d.dot(this.boxAxis(box, 0))) <= Math.abs(d.dot(this.boxAxis(box, 1))) ? 0 : 1;
   }
 
   /**
-   * Pointer position on the plane of the node's base, in the node's own (unscaled) frame, relative to
+   * Pointer position on the plane of the box's base, in the box's own (unscaled) frame, relative to
    * its center. With `axisOnly`, or for an edge grip, the pointer is followed along one axis only and
    * the other is held at the grip, which works from any viewing angle.
    */
-  private resizePoint(node: SceneNode, sx: number, sy: number, axisOnly?: 0 | 1): Vector3 | null {
-    const m = frameMatrix(node);
+  private resizePoint(box: GripBox, sx: number, sy: number, axisOnly?: 0 | 1): Vector3 | null {
+    const m = box.matrix;
     const x = new Vector3(m[0], m[1], m[2]);
     const y = new Vector3(m[3], m[4], m[5]);
     const z = new Vector3(m[6], m[7], m[8]);
     const center = new Vector3(m[9], m[10], m[11]);
-    const base = center.clone().addScaledVector(z, -node.size[2] / 2);
+    const base = center.clone().addScaledVector(z, -box.size[2] / 2);
     const single = axisOnly ?? (sx !== 0 && sy !== 0 ? null : sx !== 0 ? 0 : 1);
     if (single === null) {
       const plane = new Plane().setFromNormalAndCoplanarPoint(z, base);
@@ -1863,7 +1878,7 @@ export class Viewer {
     const t = this.alongAxis(base, single === 0 ? x : y);
     if (t === null) return null;
     // The axis not followed stays at the grip's own place, so that side keeps its size.
-    return single === 0 ? new Vector3(t, (sy * node.size[1]) / 2, 0) : new Vector3((sx * node.size[0]) / 2, t, 0);
+    return single === 0 ? new Vector3(t, (sy * box.size[1]) / 2, 0) : new Vector3((sx * box.size[0]) / 2, t, 0);
   }
 
   /** Angle of the pointer around a fixed axis through `pivot`, or null when that axis is seen side-on. */
@@ -2145,39 +2160,50 @@ export class Viewer {
     return next;
   }
 
+  /**
+   * The nodes as they are once the grip box has `size`, with the `anchor` side (-1/0/+1 per axis) staying
+   * put: one object is resized on its own frame; several are stretched together about the fixed side of
+   * the box round them, which is square to the axes.
+   */
+  private stretched(box: GripBox, nodes: SceneNode[], size: Vec3, anchor: Vec3): SceneNode[] {
+    if (box.single) return [this.resized(box.single, size, anchor)];
+    const factor: Vec3 = [0, 1, 2].map((c) => size[c] / Math.max(box.size[c], 1e-6)) as Vec3;
+    const pivot = this.pointOf(box.matrix, [(anchor[0] * box.size[0]) / 2, (anchor[1] * box.size[1]) / 2, (anchor[2] * box.size[2]) / 2]);
+    return scaleNodes(nodes, factor, pivot.toArray() as Vec3, MIN_SIZE);
+  }
+
   private resizeTo(drag: Extract<Drag, { mode: 'resize' }>, event: PointerEvent): void {
-    const { node, sx, sy } = drag;
-    const p = this.resizePoint(node, sx, sy, drag.axisOnly);
+    const { box, sx, sy } = drag;
+    const p = this.resizePoint(box, sx, sy, drag.axisOnly);
     if (!p) return;
     p.sub(drag.grab);
-    const size: Vec3 = [...node.size];
-    if (sx !== 0) size[0] = Math.max(MIN_SIZE, this.snap(sx * p.x + node.size[0] / 2));
-    if (sy !== 0) size[1] = Math.max(MIN_SIZE, this.snap(sy * p.y + node.size[1] / 2));
+    const size: Vec3 = [...box.size];
+    if (sx !== 0) size[0] = Math.max(MIN_SIZE, this.snap(sx * p.x + box.size[0] / 2));
+    if (sy !== 0) size[1] = Math.max(MIN_SIZE, this.snap(sy * p.y + box.size[1] / 2));
     if (event.shiftKey) {
       // Shift scales the whole thing evenly, following the axis that moved most.
-      const fx = size[0] / node.size[0];
-      const fy = size[1] / node.size[1];
+      const fx = size[0] / box.size[0];
+      const fy = size[1] / box.size[1];
       const f = Math.abs(fx - 1) >= Math.abs(fy - 1) ? fx : fy;
-      size[0] = node.size[0] * f;
-      size[1] = node.size[1] * f;
-      size[2] = node.size[2] * f;
+      size[0] = box.size[0] * f;
+      size[1] = box.size[1] * f;
+      size[2] = box.size[2] * f;
     }
     // The side opposite the grip stays where it is; so does the base.
-    this.events.onGestureChange([this.resized(node, size, [-sx as -1 | 0 | 1, -sy as -1 | 0 | 1, event.shiftKey ? -1 : 0])]);
+    this.events.onGestureChange(this.stretched(box, drag.nodes, size, [-sx as -1 | 0 | 1, -sy as -1 | 0 | 1, event.shiftKey ? -1 : 0]));
     this.events.onReadout(event.shiftKey ? size.map(fmt).join(' × ') : `${fmt(size[0])} × ${fmt(size[1])}`, event.clientX, event.clientY);
   }
 
   private heightTo(drag: Extract<Drag, { mode: 'height' }>, event: PointerEvent): void {
-    const { node, side } = drag;
-    const m = frameMatrix(node);
-    const z = new Vector3(m[6], m[7], m[8]);
-    const fixed = new Vector3(m[9], m[10], m[11]).addScaledVector(z, (-side * node.size[2]) / 2);
+    const { box, side } = drag;
+    const z = this.boxAxis(box, 2);
+    const fixed = this.pointOf(box.matrix, [0, 0, 0]).addScaledVector(z, (-side * box.size[2]) / 2);
     const t = this.alongAxis(fixed, z);
     if (t === null) return;
     const h = Math.max(MIN_SIZE, this.snap(side * (t - drag.grab)));
-    const f = h / node.size[2];
-    const size: Vec3 = event.shiftKey ? [node.size[0] * f, node.size[1] * f, h] : [node.size[0], node.size[1], h];
-    this.events.onGestureChange([this.resized(node, size, [0, 0, -side])]);
+    const f = h / box.size[2];
+    const size: Vec3 = event.shiftKey ? [box.size[0] * f, box.size[1] * f, h] : [box.size[0], box.size[1], h];
+    this.events.onGestureChange(this.stretched(box, drag.nodes, size, [0, 0, -side]));
     this.events.onReadout(event.shiftKey ? size.map(fmt).join(' × ') : fmt(h), event.clientX, event.clientY);
   }
 

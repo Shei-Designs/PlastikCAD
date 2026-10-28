@@ -65,7 +65,15 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
   it (the top and bottom grips pull the height either way), the arrow to lift
   it, the colored arcs to turn it. Click a grip instead of dragging it and a
   box appears on that edge to type the value. Or type exact numbers in the
-  panel on the right.
+  panel on the right. Select several objects and the grips sit on the box
+  round them all: dragging one stretches them together, and clicking the top
+  grip shows their combined height.
+- **Ghosts** – the ghost button (or G) fades the selected objects to faint
+  shadows that nothing picks: a click or a drag goes through them to whatever
+  is around or inside, so a part nested in another can be adjusted without
+  moving the other out of the way. Any number of objects can be ghosts at
+  once; the un-ghost button (Shift+G, or the ghost mark on a row of the
+  Objects list) brings them back.
 - **Import** – the button at the bottom of the library (or Ctrl+I) takes STL,
   OBJ, 3MF and GLB meshes, SVG and DXF drawings (extruded into a plate) and PNG or JPEG
   pictures; meshes and drawings then behave like any other object. Drop files
@@ -308,11 +316,12 @@ plus the thumbnail line at the top.
 | Touch | One finger orbits, two pan and zoom; tap an object to select it, tap the plate to clear; hold an object (on the plate or in the Objects list) to add it to the selection; hold the plate and drag for a box selection |
 | Move | Drag (Shift keeps to one axis); arrow keys nudge by the snap step, Shift ×10 |
 | Raise or lower | Arrow handle; Ctrl+Up / Ctrl+Down |
-| Resize | Corner and edge grips; the top grip pulls the height up, the bottom grip pulls it down; Shift scales evenly |
+| Resize | Corner and edge grips; the top grip pulls the height up, the bottom grip pulls it down; Shift scales evenly. With several objects selected the grips sit on the box round them all and stretch them together |
 | Type a value | Click any grip instead of dragging it, type the value (two for a corner grip, e.g. `20 x 15`), Enter |
 | Turn | Colored arcs, in 15° steps; Shift 45°, Alt 1° |
 | Duplicate / copy / paste | Ctrl+D / Ctrl+C / Ctrl+V |
 | Group / ungroup | Ctrl+G / Ctrl+Shift+G |
+| Ghost / un-ghost all | G / Shift+G |
 | Solid / hole | S / H |
 | Drop onto the plate | D |
 | Flip (mirror) on an axis | X / Y / Z |

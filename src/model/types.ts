@@ -38,6 +38,8 @@ interface NodeBase {
   color: string;
   hidden?: boolean;
   locked?: boolean;
+  /** Faded and out of reach: still in view, but a click goes through it to what is around or inside it. */
+  ghost?: boolean;
   /** A picture stretched over the whole surface (see `Texture`); not shown while the object carries pictures of its own. */
   texture?: Texture;
   /** Words the user attached to the object. They stay with it through grouping: a group's children keep their own. */

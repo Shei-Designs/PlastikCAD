@@ -12,6 +12,8 @@ import {
   endGesture,
   finishEditing,
   getState,
+  ghostSelected,
+  hasGhosts,
   jointSnaps,
   pickJointSnap,
   groupSelected,
@@ -28,6 +30,7 @@ import {
   toggleSelected,
   undo,
   ungroupSelected,
+  unghostAll,
   useEditor,
 } from '../state/store';
 import { boundsSize } from '../model/math';
@@ -45,11 +48,13 @@ import {
   DropIcon,
   DuplicateIcon,
   FitIcon,
+  GhostIcon,
   GroupIcon,
   MirrorIcon,
   RedoIcon,
   TrashIcon,
   UndoIcon,
+  UnghostIcon,
   UngroupIcon,
   WarningIcon,
 } from './icons';
@@ -76,6 +81,7 @@ function Actions() {
   const selection = useEditor((s) => s.selection);
   const picked = useMemo(() => scene.filter((n) => selection.includes(n.id)), [scene, selection]);
   const aligning = useEditor((s) => s.aligning);
+  const ghosts = useEditor(hasGhosts);
   const none = picked.length === 0;
   const hasGroup = picked.some((n) => n.type === 'group');
 
@@ -117,6 +123,14 @@ function Actions() {
         </Popover>
         <button type="button" className="chip icon" title="Drop onto the plate (D)" aria-label="Drop onto the plate" disabled={none} onClick={dropSelected}>
           <DropIcon />
+        </button>
+      </div>
+      <div className="tool-group">
+        <button type="button" className="chip icon" title="Ghost: fades the selection out of reach, so what is around or inside it can be worked on (G)" aria-label="Ghost" disabled={none} onClick={ghostSelected}>
+          <GhostIcon />
+        </button>
+        <button type="button" className="chip icon" title="Un-ghost all: brings every ghost back within reach (Shift+G)" aria-label="Un-ghost all" disabled={!ghosts} onClick={unghostAll}>
+          <UnghostIcon />
         </button>
       </div>
       <div className="tool-group">
@@ -399,7 +413,8 @@ export function Viewport() {
     };
     // A posed robot is drawn with its links moved; the geometry is the same, only the matrices change.
     const shown = pose ? posedScene(scene, pose.solved.frames) : scene;
-    const list: ViewItem[] = shown.map((node) => ({ node, result: ready(node), selected: picked.has(node.id) }));
+    // A ghosted object is drawn faintly and ignored by picking, like a shape being placed.
+    const list: ViewItem[] = shown.map((node) => ({ node, result: ready(node), selected: picked.has(node.id), ...(node.ghost ? { ghost: true } : {}) }));
     if (placing) list.push({ node: placing, result: ready(placing), selected: false, ghost: true });
     return list;
     // `revision` changes when geometry arrives.

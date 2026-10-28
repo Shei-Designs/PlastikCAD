@@ -70,6 +70,7 @@ export function canonical(node: SceneNode): Record<string, unknown> {
     texture: node.texture ? { asset: node.texture.asset, mode: node.texture.mode, scale: node.texture.scale, turn: node.texture.turn || undefined } : undefined,
     hidden: node.hidden || undefined,
     locked: node.locked || undefined,
+    ghost: node.ghost || undefined,
     note: node.note || undefined,
     mixed: node.type === 'group' && node.mixed ? true : undefined,
     children: node.type === 'group' ? node.children.map(canonical) : undefined,
@@ -185,6 +186,7 @@ function readNode(raw: unknown, assets: Record<string, Asset>, depth: number): S
       : {}),
     ...(raw.hidden === true ? { hidden: true } : {}),
     ...(raw.locked === true ? { locked: true } : {}),
+    ...(raw.ghost === true ? { ghost: true } : {}),
     ...(readTexture(raw.texture, assets) ?? {}),
     ...(typeof raw.note === 'string' && raw.note.trim() ? { note: raw.note.slice(0, MAX_NOTE) } : {}),
   };
@@ -193,8 +195,8 @@ function readNode(raw: unknown, assets: Record<string, Asset>, depth: number): S
     const wall = isRecord(raw.params) && typeof raw.params.wall === 'number' ? raw.params.wall : 2;
     const sides = isRecord(raw.params) && typeof raw.params.sides === 'number' ? raw.params.sides : 64;
     const [w, d, h] = base.size;
-    // Hidden, locked, textured and flipped belong to the group, as makeGroup would have it, not to its halves.
-    const { flip: _flip, hidden: _hidden, locked: _locked, texture: _texture, ...plain } = base;
+    // Hidden, locked, ghosted, textured and flipped belong to the group, as makeGroup would have it, not to its halves.
+    const { flip: _flip, hidden: _hidden, locked: _locked, ghost: _ghost, texture: _texture, ...plain } = base;
     const cylinder = (size: Vec3) => clampParams({ shape: 'cylinder', params: { sides, radius: 0 }, size });
     const bore: Vec3 = [Math.max(w - 2 * wall, 0.1), Math.max(d - 2 * wall, 0.1), h * 2];
     const outer: SceneNode = { ...plain, id: `${base.id}o`, name: 'Outer', pos: [0, 0, 0], rot: [0, 0, 0], hole: false, type: 'shape', shape: 'cylinder', params: cylinder(base.size) };

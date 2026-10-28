@@ -146,6 +146,18 @@ export const UnlockIcon = () => (
     <path d="M8 10.5V8a4 4 0 0 1 7.5-2" />
   </Icon>
 );
+export const GhostIcon = ({ small }: { small?: boolean }) => (
+  <Icon {...(small ? { width: 14, height: 14 } : {})}>
+    <path d="M5 20.5V11a7 7 0 0 1 14 0v9.5l-2.3-2-2.35 2-2.35-2-2.35 2-2.35-2z" />
+    <path d="M9.5 11.5h.01M14.5 11.5h.01" strokeWidth="2.6" />
+  </Icon>
+);
+export const UnghostIcon = ({ small }: { small?: boolean }) => (
+  <Icon {...(small ? { width: 14, height: 14 } : {})}>
+    <path d="M5 20.5V11a7 7 0 0 1 14 0v9.5l-2.3-2-2.35 2-2.35-2-2.35 2-2.35-2z" />
+    <path d="M4 4l16 16" />
+  </Icon>
+);
 export const ProjectsIcon = () => (
   <Icon>
     <rect x="4" y="4" width="7" height="7" rx="1.2" />

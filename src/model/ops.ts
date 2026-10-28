@@ -1,6 +1,6 @@
 // Pure editing operations on scene nodes. Nodes are immutable: every
 // operation returns new objects, which is what makes undo cheap.
-import { defaultParams, shapeDef } from '../geometry/shapes';
+import { clampParams, defaultParams, shapeDef } from '../geometry/shapes';
 import {
   add,
   apply,
@@ -101,6 +101,24 @@ export function rotateNodes<T extends SceneNode>(nodes: T[], axis: 0 | 1 | 2, de
       rot: eulerOf(multiply(turn, rotation(node.rot))),
       pos: [pivot[0] + offset[0], pivot[1] + offset[1], pivot[2] + offset[2]],
     };
+  });
+}
+
+/**
+ * Stretch nodes by a factor per fixed axis, about `anchor`, as one box: each
+ * moves with the stretch and takes the size that fits its turned box. Exact
+ * for nodes square to the axes; one turned in between would shear, which a
+ * node cannot express, so it keeps its turn and takes the closest size.
+ */
+export function scaleNodes<T extends SceneNode>(nodes: T[], factor: Vec3, anchor: Vec3, minSize = 0.1): T[] {
+  return nodes.map((node) => {
+    const m = rotation(node.rot);
+    const size: Vec3 = [...node.size];
+    // The length each of the node's own axes would have once the scene is stretched.
+    for (let c = 0; c < 3; c++) size[c] = Math.max(minSize, node.size[c] * Math.hypot(m[c * 3] * factor[0], m[c * 3 + 1] * factor[1], m[c * 3 + 2] * factor[2]));
+    const pos: Vec3 = [0, 1, 2].map((k) => anchor[k] + (node.pos[k] - anchor[k]) * factor[k]) as Vec3;
+    const next = { ...node, size: tidyVec(size), pos: tidyVec(pos) };
+    return next.type === 'shape' ? { ...next, params: clampParams({ shape: next.shape, params: next.params, size: next.size }) } : next;
   });
 }
 
@@ -207,7 +225,7 @@ export function arrayNodes<T extends SceneNode>(nodes: T[], boundsOf: (n: T) => 
 }
 
 /** What `makeGroup` takes over from a group being remade, instead of starting afresh. */
-export type GroupOver = Partial<Pick<GroupNode, 'id' | 'color' | 'hole' | 'hidden' | 'locked' | 'mixed'>>;
+export type GroupOver = Partial<Pick<GroupNode, 'id' | 'color' | 'hole' | 'hidden' | 'locked' | 'ghost' | 'mixed'>>;
 
 /**
  * Combine nodes into a group whose result has the given bounds (measured by
@@ -236,10 +254,12 @@ export function makeGroup(nodes: SceneNode[], bounds: Bounds, name: string, over
     ...((over.mixed ?? true) ? { mixed: true } : {}),
     ...(over.hidden ? { hidden: true } : {}),
     ...(over.locked ? { locked: true } : {}),
+    ...(over.ghost ? { ghost: true } : {}),
     children: nodes.map((n) => {
       const child = { ...n, pos: [n.pos[0] - center[0], n.pos[1] - center[1], n.pos[2] - center[2]] as Vec3 };
       delete child.hidden;
       delete child.locked;
+      delete child.ghost;
       return child;
     }),
   };
@@ -327,6 +347,7 @@ export interface Layer {
   mixed: boolean;
   hidden?: boolean;
   locked?: boolean;
+  ghost?: boolean;
   /** Ids of what was inside it. */
   children: string[];
   /** Of those, the ones that were holes in their own right: taken apart, a hole group shows all its parts as holes. */
@@ -364,6 +385,7 @@ export function dissolve(scene: Scene, path: string[]): { scene: Scene; layers: 
       mixed: Boolean(group.mixed),
       ...(group.hidden ? { hidden: true } : {}),
       ...(group.locked ? { locked: true } : {}),
+      ...(group.ghost ? { ghost: true } : {}),
       children: group.children.map((c) => c.id),
       holes: group.children.filter((c) => c.hole).map((c) => c.id),
     });

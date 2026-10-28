@@ -24,6 +24,7 @@ import {
   startPlacingPart,
   startPlacingPicture,
   startPlacingText,
+  toggleGhost,
   toggleHidden,
   toggleLocked,
   toggleRobotMode,
@@ -32,7 +33,7 @@ import {
 } from '../state/store';
 import { About } from './About';
 import { ExportPanel } from './ExportPanel';
-import { EyeIcon, EyeOffIcon, ImportIcon, LockIcon, Logo, MenuIcon, MoonIcon, ProjectsIcon, RobotIcon, SunIcon, UnlockIcon } from './icons';
+import { EyeIcon, EyeOffIcon, GhostIcon, ImportIcon, LockIcon, Logo, MenuIcon, MoonIcon, ProjectsIcon, RobotIcon, SunIcon, UnlockIcon } from './icons';
 import { RobotExport, RobotModeBar, RobotPanel } from './RobotPanel';
 import { Popover } from './Popover';
 import { CATEGORIES, GENERATORS, getGenerator } from '../parts/generators';
@@ -268,14 +269,16 @@ function Objects() {
         <ul>
           {scene.map((node) => {
             const selected = selection.includes(node.id);
+            // Hidden and ghosted objects are out of reach: their rows do not select.
+            const away = Boolean(node.hidden || node.ghost);
             return (
-              <li key={node.id} className={['object', selected ? 'selected' : '', node.hidden ? 'dim' : ''].join(' ')}>
+              <li key={node.id} className={['object', selected ? 'selected' : '', away ? 'dim' : ''].join(' ')}>
                 <button
                   type="button"
                   className="object-main"
-                  title={describe(node)}
+                  title={node.ghost ? `${describe(node)} (ghost)` : describe(node)}
                   onPointerDown={(e) => {
-                    if (!node.hidden) startHold(e, node.id);
+                    if (!away) startHold(e, node.id);
                   }}
                   onPointerUp={endHold}
                   onPointerCancel={endHold}
@@ -285,13 +288,13 @@ function Objects() {
                       held.current = null;
                       return;
                     }
-                    if (node.hidden) return;
+                    if (away) return;
                     if (e.shiftKey || e.ctrlKey || e.metaKey) toggleSelected(node.id);
                     else select([node.id]);
                   }}
                   // A second click (or tap) goes to the object's structure.
                   onDoubleClick={() => {
-                    if (node.hidden) return;
+                    if (away) return;
                     select([node.id]);
                     showTab('structure');
                   }}
@@ -299,6 +302,16 @@ function Objects() {
                   <span className={node.hole ? 'dot hole' : 'dot'} style={{ background: node.hole ? undefined : node.color, borderColor: node.hole ? HOLE_COLOR : undefined }} />
                   <span className="clip">{node.name}</span>
                   {node.note && <span className="note-mark" title="Has notes" />}
+                </button>
+                <button
+                  type="button"
+                  className={node.ghost ? 'mini on' : 'mini'}
+                  title={node.ghost ? 'Un-ghost' : 'Ghost'}
+                  aria-label={node.ghost ? 'Un-ghost' : 'Ghost'}
+                  aria-pressed={Boolean(node.ghost)}
+                  onClick={() => toggleGhost(node.id)}
+                >
+                  <GhostIcon small />
                 </button>
                 <button
                   type="button"
