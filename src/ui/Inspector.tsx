@@ -5,11 +5,11 @@ import { picturesOf } from '../model/ops';
 import { TEXT_FONTS } from '../model/types';
 import type { ImageAsset, PictureMapping, PictureNode, SceneNode, ShapeNode, TextAlign, TextNode } from '../model/types';
 import { geometry } from '../state/geometry';
-import { editPicture, editText, imageAssets, notify, pickImage, saveAsPart, setColor, setHole, setTexture, toggleLocked, updateNode, updateSelected, useEditor } from '../state/store';
+import { editPicture, editText, imageAssets, notify, pickImage, saveAsPart, setColor, setHole, setSelectedLocked, setTexture, toggleLocked, updateNode, updateSelected, useEditor } from '../state/store';
 import { formatNumber, SliderField } from './Fields';
 import { partFigures } from '../parts/figures';
 import { tell } from './ask';
-import { CloseIcon, LockIcon, PictureIcon, SaveAsPartIcon, WarningIcon } from './icons';
+import { CloseIcon, LockIcon, PictureIcon, SaveAsPartIcon, UnlockIcon, WarningIcon } from './icons';
 import { PartsBin } from './PartsBin';
 import { RobotInspector } from './RobotInspector';
 import { PartFields } from './PartFields';
@@ -399,12 +399,19 @@ function Design() {
 
   if (nodes.length === 0) return bin ? <PartsBin /> : <Overview />;
   if (nodes.length > 1) {
+    const lockedCount = nodes.filter((n) => n.locked).length;
+    const allLocked = lockedCount === nodes.length;
     return (
       <>
         <header className="params-head">
           <div className="grow">
             <h1>{nodes.length} objects</h1>
           </div>
+          <LockToggle
+            locked={allLocked}
+            title={allLocked ? 'Locked: press to unlock all' : lockedCount ? `${lockedCount} of ${nodes.length} locked: press to lock all` : 'Lock all'}
+            onClick={() => setSelectedLocked(!allLocked)}
+          />
           <button
             type="button"
             className="icon-button"
@@ -432,11 +439,7 @@ function Design() {
         <div className="grow">
           <NameField node={node} />
         </div>
-        {node.locked && (
-          <button type="button" className="icon-button lock" title="Locked: press to unlock" aria-label="Unlock" onClick={() => toggleLocked(node.id)}>
-            <LockIcon />
-          </button>
-        )}
+        <LockToggle locked={Boolean(node.locked)} title={node.locked ? 'Locked: press to unlock' : 'Lock: keeps the object from being moved or changed'} onClick={() => toggleLocked(node.id)} />
         <button type="button" className="icon-button" title="Save as a custom part, to place in any design" aria-label="Save as a part" onClick={() => void saveAsPart(node.id)}>
           <SaveAsPartIcon />
         </button>
@@ -444,6 +447,15 @@ function Design() {
       {node.type === 'picture' ? <PictureFields node={node} /> : <Appearance nodes={nodes} />}
       {node.type === 'part' ? <PartFields node={node} /> : <Sections legend="Settings" reset={node.id} sections={own} />}
     </>
+  );
+}
+
+/** The lock in the panel header: the same switch as the one on the object's row in the Objects list. */
+function LockToggle({ locked, title, onClick }: { locked: boolean; title: string; onClick: () => void }) {
+  return (
+    <button type="button" className={locked ? 'icon-button lock on' : 'icon-button'} title={title} aria-label={locked ? 'Unlock' : 'Lock'} aria-pressed={locked} onClick={onClick}>
+      {locked ? <LockIcon /> : <UnlockIcon />}
+    </button>
   );
 }
 

@@ -204,6 +204,9 @@ const THEMES = {
 };
 
 const AXIS_COLORS = ['#e5484d', '#3fae5a', '#4c8dff'];
+/** Rim of the padlock badge: the warm color the hot align dot uses, for something that will not follow a drag. */
+const LOCK_COLOR = '#ff9f4d';
+const LOCK_BADGE_PIXELS = 22;
 
 /** Camera placement in Z-up spherical coordinates around `target`. */
 interface Pose {
@@ -364,6 +367,33 @@ function dotTexture(fill: string): CanvasTexture {
   });
 }
 
+/** Padlock badge for a selected object that is locked: a drag leaves it where it is. */
+function lockTexture(): CanvasTexture {
+  return canvasTexture(64, (g, size) => {
+    g.beginPath();
+    g.arc(size / 2, size / 2, size / 2 - 5, 0, Math.PI * 2);
+    g.fillStyle = '#14171c';
+    g.fill();
+    g.lineWidth = 4;
+    g.strokeStyle = LOCK_COLOR;
+    g.stroke();
+    // Shackle, then body.
+    g.lineWidth = 5;
+    g.strokeStyle = '#ffffff';
+    g.beginPath();
+    g.arc(32, 28, 8, Math.PI, 0);
+    g.stroke();
+    g.fillStyle = '#ffffff';
+    g.beginPath();
+    g.roundRect(19, 28, 26, 20, 4);
+    g.fill();
+    g.fillStyle = '#14171c';
+    g.beginPath();
+    g.arc(32, 37, 3, 0, Math.PI * 2);
+    g.fill();
+  });
+}
+
 /** Up/down arrow for the handle that lifts things off the plate. */
 function liftTexture(): CanvasTexture {
   return canvasTexture(64, (g) => {
@@ -448,7 +478,11 @@ export class Viewer {
   private snapDots: Sprite[] = [];
   private snapHot: number | null = null;
   private snapAxis!: LineSegments<BufferGeometry, LineBasicMaterial>;
-  private grips!: { corner: SpriteMaterial; edge: SpriteMaterial; lift: SpriteMaterial; dot: SpriteMaterial; dotHot: SpriteMaterial };
+  private grips!: { corner: SpriteMaterial; edge: SpriteMaterial; lift: SpriteMaterial; dot: SpriteMaterial; dotHot: SpriteMaterial; lock: SpriteMaterial };
+  /** A padlock over each selected object that is locked, by id: it shows why a drag leaves that one where it is. */
+  private lockBadges = new Map<string, Sprite>();
+  /** How many of the selection a gesture in progress leaves behind for being locked; said in the readout. */
+  private heldBack = 0;
   private arcParts!: { arc: TorusGeometry; head: ConeGeometry; hit: TorusGeometry };
 
   private readonly raycaster = new Raycaster();
@@ -483,7 +517,48 @@ export class Viewer {
     this.assets = assets;
     if (!this.ok || this.disposed) return;
     this.sync();
+    this.syncLockBadges();
     this.requestRender();
+  }
+
+  /** One padlock per selected object that is locked (and in reach). */
+  private syncLockBadges(): void {
+    const wanted = new Set<string>();
+    if (this.options.interactive) {
+      for (const i of this.items) if (i.selected && i.node.locked && !i.node.hidden && !i.ghost) wanted.add(i.node.id);
+    }
+    for (const [id, badge] of this.lockBadges) {
+      if (wanted.has(id)) continue;
+      this.overlay.remove(badge);
+      this.lockBadges.delete(id);
+    }
+    for (const id of wanted) {
+      if (this.lockBadges.has(id)) continue;
+      const badge = new Sprite(this.grips.lock);
+      badge.renderOrder = 12;
+      this.overlay.add(badge);
+      this.lockBadges.set(id, badge);
+    }
+  }
+
+  /** Each padlock over the middle of its object, the same size at any zoom; bigger while a drag is leaving the object behind. */
+  private layoutLockBadges(): void {
+    if (this.lockBadges.size === 0) return;
+    const editing = this.drag !== null && this.drag.mode !== 'pending-move' && this.drag.mode !== 'pending-tap' && this.drag.mode !== 'pending-marquee' && this.drag.mode !== 'marquee';
+    const byId = new Map(this.items.map((i) => [i.node.id, i.node]));
+    for (const [id, badge] of this.lockBadges) {
+      const node = byId.get(id);
+      if (!node) continue;
+      const at = new Vector3(...boundsCenter(this.events.boundsOf(node)));
+      badge.position.copy(at);
+      badge.scale.setScalar(LOCK_BADGE_PIXELS * this.pixelSize(at) * (editing ? 1.4 : 1));
+    }
+  }
+
+  /** The live measurement beside the pointer, with a word on what the drag leaves behind. */
+  private say(text: string, event: PointerEvent): void {
+    const n = this.heldBack;
+    this.events.onReadout(n ? `${text} · ${n} locked ${n === 1 ? 'stays' : 'stay'} put` : text, event.clientX, event.clientY);
   }
 
   setOptions(options: Partial<ViewerOptions>): void {
@@ -491,6 +566,7 @@ export class Viewer {
     if (!this.ok || this.disposed) return;
     this.applyOptions();
     this.sync();
+    this.syncLockBadges();
     this.requestRender();
   }
 
@@ -779,7 +855,8 @@ export class Viewer {
       edge: grip(gripTexture('#14171c', '#ffffff')),
       lift: grip(liftTexture()),
       dot: grip(dotTexture('#14171c')),
-      dotHot: grip(dotTexture('#ff9f4d')),
+      dotHot: grip(dotTexture(LOCK_COLOR)),
+      lock: grip(lockTexture()),
     };
     // One line per axis through its three dots.
     const lines = new BufferGeometry();
@@ -1508,6 +1585,7 @@ export class Viewer {
     const later = touch && !hit.item.selected;
     if (!hit.item.selected && !later) this.events.onSelect([node.id], 'replace');
     const movable = selected.filter((n) => !n.locked);
+    this.heldBack = selected.length - movable.length;
     this.drag = {
       mode: 'pending-move',
       x: event.clientX,
@@ -1548,6 +1626,7 @@ export class Viewer {
     const k = handle.kind;
     const nodes = this.items.filter((i) => i.selected && !i.ghost && !i.node.locked).map((i) => i.node);
     if (nodes.length === 0) return;
+    this.heldBack = this.items.filter((i) => i.selected && !i.ghost && !i.node.hidden).length - nodes.length;
     const box = gripBox(f);
     if (k.type === 'resize') {
       // A corner grip seen with the base edge-on cannot follow both axes: it follows the one seen best.
@@ -2133,7 +2212,7 @@ export class Viewer {
       else dx = 0;
     }
     this.events.onGestureChange(drag.nodes.map((n) => ({ ...n, pos: tidyVec([n.pos[0] + dx, n.pos[1] + dy, n.pos[2]]) })));
-    this.events.onReadout(`${fmt(dx)}, ${fmt(dy)}`, event.clientX, event.clientY);
+    this.say(`${fmt(dx)}, ${fmt(dy)}`, event);
   }
 
   private liftTo(drag: Extract<Drag, { mode: 'lift' }>, event: PointerEvent): void {
@@ -2141,7 +2220,7 @@ export class Viewer {
     if (t === null) return;
     const dz = this.snap(t - drag.grab);
     this.events.onGestureChange(drag.nodes.map((n) => ({ ...n, pos: tidyVec([n.pos[0], n.pos[1], n.pos[2] + dz]) })));
-    this.events.onReadout(`Z ${dz >= 0 ? '+' : ''}${fmt(dz)}`, event.clientX, event.clientY);
+    this.say(`Z ${dz >= 0 ? '+' : ''}${fmt(dz)}`, event);
   }
 
   /** New size for a grip drag, with the opposite side (and the base) staying put. */
@@ -2191,7 +2270,7 @@ export class Viewer {
     }
     // The side opposite the grip stays where it is; so does the base.
     this.events.onGestureChange(this.stretched(box, drag.nodes, size, [-sx as -1 | 0 | 1, -sy as -1 | 0 | 1, event.shiftKey ? -1 : 0]));
-    this.events.onReadout(event.shiftKey ? size.map(fmt).join(' × ') : `${fmt(size[0])} × ${fmt(size[1])}`, event.clientX, event.clientY);
+    this.say(event.shiftKey ? size.map(fmt).join(' × ') : `${fmt(size[0])} × ${fmt(size[1])}`, event);
   }
 
   private heightTo(drag: Extract<Drag, { mode: 'height' }>, event: PointerEvent): void {
@@ -2204,7 +2283,7 @@ export class Viewer {
     const f = h / box.size[2];
     const size: Vec3 = event.shiftKey ? [box.size[0] * f, box.size[1] * f, h] : [box.size[0], box.size[1], h];
     this.events.onGestureChange(this.stretched(box, drag.nodes, size, [0, 0, -side]));
-    this.events.onReadout(event.shiftKey ? size.map(fmt).join(' × ') : fmt(h), event.clientX, event.clientY);
+    this.say(event.shiftKey ? size.map(fmt).join(' × ') : fmt(h), event);
   }
 
   private rotateTo(drag: Extract<Drag, { mode: 'rotate' }>, event: PointerEvent): void {
@@ -2215,7 +2294,7 @@ export class Viewer {
     const step = event.shiftKey ? ROTATE_COARSE : event.altKey || event.ctrlKey ? 1 : ROTATE_STEP;
     delta = Math.round(delta / step) * step;
     this.events.onGestureChange(delta === 0 ? drag.nodes : rotateNodes(drag.nodes, drag.axis, delta, drag.pivot));
-    this.events.onReadout(`${fmt(delta)}°`, event.clientX, event.clientY);
+    this.say(`${fmt(delta)}°`, event);
   }
 
   // --- marquee -------------------------------------------------------------
@@ -2403,8 +2482,9 @@ export class Viewer {
     if (!withOverlays) return;
 
     renderer.autoClear = false;
-    if (this.frame || this.pointer3d.visible || this.snapDots.length) {
+    if (this.frame || this.pointer3d.visible || this.snapDots.length || this.lockBadges.size) {
       this.layoutHandles();
+      this.layoutLockBadges();
       this.layoutSnaps();
       renderer.clearDepth();
       renderer.render(this.overlay, camera);

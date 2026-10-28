@@ -192,6 +192,23 @@ describe('align mode previews', () => {
   });
 });
 
+describe('locking the selection', () => {
+  it('locks and unlocks every selected object at once, and locked ones sit out of edits', () => {
+    const { a, b } = twoBoxes();
+    store.toggleLocked(a);
+    store.setSelectedLocked(true);
+    expect(scene().every((n) => n.locked)).toBe(true);
+    store.nudgeSelected([5, 0, 0]);
+    expect(posOf(a)[0]).toBe(30);
+    expect(posOf(b)[0]).toBe(0);
+    store.setSelectedLocked(false);
+    expect(scene().some((n) => n.locked)).toBe(false);
+    store.nudgeSelected([5, 0, 0]);
+    expect(posOf(a)[0]).toBe(35);
+    expect(posOf(b)[0]).toBe(5);
+  });
+});
+
 describe('ghosts', () => {
   it('ghosts the selection out of the selection, keeps ghosts out of select-all, and brings them all back', () => {
     const { a, b } = twoBoxes();

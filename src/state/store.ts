@@ -1175,6 +1175,21 @@ export function toggleLocked(id: string): void {
   commit(state.doc.scene.map((n) => (n.id === id ? next : n)));
 }
 
+/** Lock or unlock every selected object at once. */
+export function setSelectedLocked(locked: boolean): void {
+  const ids = new Set(state.selection);
+  let touched = false;
+  const scene = state.doc.scene.map((n) => {
+    if (!ids.has(n.id) || Boolean(n.locked) === locked) return n;
+    touched = true;
+    const next = { ...n };
+    if (locked) next.locked = true;
+    else delete next.locked;
+    return next;
+  });
+  if (touched) commit(scene);
+}
+
 /** The node with its ghost flag turned on or off. */
 function withGhost(node: SceneNode, ghost: boolean): SceneNode {
   if (Boolean(node.ghost) === ghost) return node;
