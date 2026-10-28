@@ -457,7 +457,7 @@ platform.
 ```sh
 pnpm install
 pnpm tauri dev      # run the desktop app with hot reload
-pnpm dev            # or just the UI, in a browser at http://localhost:1420
+pnpm dev            # or just the UI, in a browser at http://localhost:1430
 pnpm test           # model, geometry, part and file-format tests
 pnpm typecheck
 pnpm tauri build    # build installers into src-tauri/target/release/bundle
