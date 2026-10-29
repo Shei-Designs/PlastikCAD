@@ -37,6 +37,7 @@ import {
   uniqueName,
   usedAssets,
 } from '../model/ops';
+import { ALIGN_MODES, alignAt, alignDot } from '../model/ops';
 import type { AlignMode, ArraySpec, GridArray, GroupOver, Layer, RingArray } from '../model/ops';
 import type { Asset, Doc, GroupNode, ImageAsset, ImportNode, PartNode, PartParamValue, PictureNode, Scene, SceneNode, ShapeKind, TextNode, Texture, Vec2, Vec3 } from '../model/types';
 import { GENERATORS, getGenerator } from '../parts/generators';
@@ -112,8 +113,10 @@ export interface EditorState {
   /**
    * Align mode: anchor dots sit on `bounds`, the box of the anchor object or,
    * without one, of the whole selection. Frozen while a dot is being previewed.
+   * `done` has one flag per dot (see `alignDot`): true where every object that
+   * could move already sits on that line, so the dot would change nothing.
    */
-  aligning: { anchor: string | null; bounds: Bounds } | null;
+  aligning: { anchor: string | null; bounds: Bounds; done: boolean[] } | null;
   /**
    * Editing inside a group: the layers taken apart to reach a part of it,
    * which are put back together on Done. `before` is the scene for Cancel.
@@ -297,6 +300,8 @@ function commit(scene: Scene, options: { selection?: string[]; merge?: string } 
   // The robot lets go of objects that are gone, and of a pose, which was for the objects as they were.
   const robot = state.doc.robot && pruned(state.doc.robot, scene);
   set({ doc: robot !== state.doc.robot ? { ...state.doc, scene, robot } : { ...state.doc, scene }, selection, pose: null });
+  // The dots follow the objects, and know what is left to line up.
+  if (state.aligning) refreshAlignBounds();
 }
 
 /** Start of a drag: everything until `endGesture` is a single undo step. */
@@ -967,31 +972,39 @@ export function alignSelectedOn(steps: [0 | 1 | 2, AlignMode][]): void {
   let moved = nodes.filter((n) => !n.locked);
   for (const [axis, mode] of steps) moved = alignNodes(moved, (n) => geometry.bounds(n), axis, mode, target);
   replaceNodes(moved);
-  if (state.aligning) refreshAlignBounds();
 }
 
 // --- align mode ---------------------------------------------------------------
 
-/** The box the anchor dots sit on: the anchor object's, or the whole selection's. */
-function alignBounds(anchor: string | null): Bounds | null {
+/** The box the anchor dots sit on (the anchor object's, or the whole selection's) and which dots have nothing left to do. */
+function alignState(anchor: string | null): { anchor: string | null; bounds: Bounds; done: boolean[] } | null {
   const nodes = selectedNodes();
   const target = anchor ? nodes.find((n) => n.id === anchor) : null;
-  return target ? geometry.bounds(target) : selectionBounds(nodes);
+  const bounds = target ? geometry.bounds(target) : selectionBounds(nodes);
+  if (!bounds) return null;
+  // The objects a dot would move: a locked one sits out, and the anchor is what the others come to.
+  const movable = nodes.filter((n) => !n.locked && n.id !== anchor).map((n) => geometry.bounds(n));
+  const done: boolean[] = [];
+  for (const axis of [0, 1, 2] as const) {
+    for (const mode of ALIGN_MODES) {
+      done[alignDot(axis, mode)] = movable.every((b) => Math.abs(alignAt(b, axis, mode) - alignAt(bounds, axis, mode)) < 1e-6);
+    }
+  }
+  return { anchor, bounds, done };
 }
 
 function refreshAlignBounds(): void {
   const aligning = state.aligning;
   if (!aligning) return;
-  const bounds = alignBounds(aligning.anchor);
-  set({ aligning: bounds ? { ...aligning, bounds } : null });
+  set({ aligning: alignState(aligning.anchor) });
 }
 
 /** Show the anchor dots around the selection (two or more objects). */
 export function startAligning(): void {
   if (state.aligning) return;
   if (state.selection.length < 2) return notify('Select two or more objects to line them up.');
-  const bounds = alignBounds(null);
-  if (bounds) set({ aligning: { anchor: null, bounds }, placing: null });
+  const aligning = alignState(null);
+  if (aligning) set({ aligning, placing: null });
 }
 
 export function stopAligning(): void {
@@ -1020,8 +1033,8 @@ export function setAlignAnchor(id: string | null): void {
   const aligning = state.aligning;
   if (!aligning) return;
   const anchor = id === aligning.anchor ? null : id;
-  const bounds = alignBounds(anchor);
-  if (bounds) set({ aligning: { anchor, bounds } });
+  const next = alignState(anchor);
+  if (next) set({ aligning: next });
 }
 
 /** The selection as it would be after lining up on a dot; from the scene before any preview. */
@@ -1054,7 +1067,6 @@ export function commitAlign(axis: 0 | 1 | 2, mode: AlignMode): void {
   // From the scene before the hover, as one step of its own.
   abortAlignPreview();
   replaceNodes(nodes);
-  refreshAlignBounds();
 }
 
 // --- arrays -------------------------------------------------------------------

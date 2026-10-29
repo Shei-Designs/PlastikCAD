@@ -176,6 +176,24 @@ describe('align mode previews', () => {
     expect(group.children.map((c) => c.pos[0] + group.pos[0]).sort((x, y) => x - y)).toEqual([0, 30]);
   });
 
+  it('marks the dots that would change nothing', () => {
+    const { a, b } = twoBoxes();
+    store.startAligning();
+    const done = () => store.getState().aligning!.done;
+    // The boxes differ only along X: every Y and Z dot is already done, no X dot is.
+    expect(done()).toEqual([false, false, false, true, true, true, true, true, true]);
+    store.commitAlign(0, 'center');
+    expect(done()).toEqual([true, true, true, true, true, true, true, true, true]);
+    store.undo();
+    expect(done()[0]).toBe(false);
+    // With `a` as the anchor the X dots bring `b` over, so they are live again at the anchor's box.
+    store.setAlignAnchor(a);
+    expect(done()[0]).toBe(false);
+    // A locked object sits out: with `b` locked nothing is left to move along X, so the X dots are done.
+    store.toggleLocked(b);
+    expect(done()[0]).toBe(true);
+  });
+
   it('still previews and keeps an alignment on a click', () => {
     const { a } = twoBoxes();
     store.startAligning();

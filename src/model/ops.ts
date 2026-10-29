@@ -336,6 +336,11 @@ function orthonormal(axes: Mat, lengths: Vec3, flip: [boolean, boolean, boolean]
 export const boxBoundsOf = (node: SceneNode): Bounds => boxBounds(node);
 
 export type AlignMode = 'min' | 'center' | 'max';
+export const ALIGN_MODES: AlignMode[] = ['min', 'center', 'max'];
+/** Where an anchor dot sits in a list with one entry per dot: the three modes along X, then along Y, then along Z. */
+export const alignDot = (axis: 0 | 1 | 2, mode: AlignMode): number => axis * 3 + ALIGN_MODES.indexOf(mode);
+/** Where a box sits along an axis, for lining up: its low side, its middle or its high side. */
+export const alignAt = (b: Bounds, axis: 0 | 1 | 2, mode: AlignMode): number => (mode === 'min' ? b.min[axis] : mode === 'max' ? b.max[axis] : (b.min[axis] + b.max[axis]) / 2);
 
 /** What it takes to put a dissolved group back together. */
 export interface Layer {
@@ -494,9 +499,8 @@ export function alignNodes<T extends SceneNode>(
   mode: AlignMode,
   target: Bounds,
 ): T[] {
-  const at = (b: Bounds) => (mode === 'min' ? b.min[axis] : mode === 'max' ? b.max[axis] : (b.min[axis] + b.max[axis]) / 2);
   return nodes.map((node) => {
-    const shift = at(target) - at(boundsOf(node));
+    const shift = alignAt(target, axis, mode) - alignAt(boundsOf(node), axis, mode);
     if (shift === 0) return node;
     const pos: Vec3 = [...node.pos];
     // Exact on purpose: the faces are meant to meet.

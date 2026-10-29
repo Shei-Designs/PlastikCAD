@@ -50,7 +50,7 @@ import type { Skin } from '../geometry/skin';
 import { cornerColors, tintKey, underPicture } from '../geometry/tint';
 import { boundsCenter, builtSize, flipSigns, frameMatrix, isEmptyBounds, rotation, tidy, tidyVec, unionBounds } from '../model/math';
 import type { Bounds, Mat } from '../model/math';
-import { HOLE_COLOR, rotateNodes, scaleNodes } from '../model/ops';
+import { ALIGN_MODES, HOLE_COLOR, alignDot, rotateNodes, scaleNodes } from '../model/ops';
 import type { Asset, GroupNode, SceneNode, Vec3 } from '../model/types';
 import type { BuildResult } from '../worker/protocol';
 import { SkinPainter } from './skin';
@@ -65,8 +65,8 @@ export interface ViewerOptions {
   snap: number;
   /** False while an old version is shown: look, don't touch. */
   interactive: boolean;
-  /** Align mode: anchor dots on this box instead of the usual handles. */
-  align: { bounds: Bounds; anchor: string | null } | null;
+  /** Align mode: anchor dots on this box instead of the usual handles; `done` (one flag per dot, see `alignDot`) greys out the dots that would change nothing. */
+  align: { bounds: Bounds; anchor: string | null; done: boolean[] } | null;
   /** A box to point out (a part inside a group): its frame and size. */
   highlight: { matrix: Mat; size: Vec3 } | null;
   /** Points to pick from (Robot mode, placing a joint): dots at each, in the scene. */
@@ -149,7 +149,6 @@ export interface HandlePrompt {
 const DEFAULTS: ViewerOptions = { theme: 'dark', edges: true, grid: true, snap: 1, interactive: true, align: null, highlight: null, snaps: null };
 /** Distance of the anchor dots from the box, in pixels. */
 const ALIGN_GAP = 22;
-const ALIGN_MODES: AlignMode[] = ['min', 'center', 'max'];
 
 const FOV = 35;
 const FIT_MARGIN = 1.25;
@@ -204,6 +203,8 @@ const THEMES = {
 };
 
 const AXIS_COLORS = ['#e5484d', '#3fae5a', '#4c8dff'];
+/** An anchor dot with nothing left to do: grey, dim and not for clicking. */
+const DONE_DOT = { fill: '#3c4146', rim: '#8a9094', opacity: 0.45, scale: 0.8 };
 /** Rim of the padlock badge: the warm color the hot align dot uses, for something that will not follow a drag. */
 const LOCK_COLOR = '#ff9f4d';
 const LOCK_BADGE_PIXELS = 22;
@@ -354,15 +355,15 @@ function gripTexture(fill: string, rim: string): CanvasTexture {
   });
 }
 
-/** Anchor dot for align mode. */
-function dotTexture(fill: string): CanvasTexture {
+/** A round dot: an align anchor or a snap point. */
+function dotTexture(fill: string, rim = '#ffffff'): CanvasTexture {
   return canvasTexture(64, (g, size) => {
     g.beginPath();
     g.arc(size / 2, size / 2, size / 2 - 8, 0, Math.PI * 2);
     g.fillStyle = fill;
     g.fill();
     g.lineWidth = 6;
-    g.strokeStyle = '#ffffff';
+    g.strokeStyle = rim;
     g.stroke();
   });
 }
@@ -478,7 +479,18 @@ export class Viewer {
   private snapDots: Sprite[] = [];
   private snapHot: number | null = null;
   private snapAxis!: LineSegments<BufferGeometry, LineBasicMaterial>;
-  private grips!: { corner: SpriteMaterial; edge: SpriteMaterial; lift: SpriteMaterial; dot: SpriteMaterial; dotHot: SpriteMaterial; lock: SpriteMaterial };
+  private grips!: {
+    corner: SpriteMaterial;
+    edge: SpriteMaterial;
+    lift: SpriteMaterial;
+    dot: SpriteMaterial;
+    dotHot: SpriteMaterial;
+    lock: SpriteMaterial;
+    /** Align anchor dots, one pair per axis in that axis's color: as they sit, and lit under the pointer. */
+    axisDot: { idle: SpriteMaterial; hot: SpriteMaterial }[];
+    /** An anchor dot that would change nothing. */
+    dotDone: SpriteMaterial;
+  };
   /** A padlock over each selected object that is locked, by id: it shows why a drag leaves that one where it is. */
   private lockBadges = new Map<string, Sprite>();
   /** How many of the selection a gesture in progress leaves behind for being locked; said in the readout. */
@@ -857,11 +869,19 @@ export class Viewer {
       dot: grip(dotTexture('#14171c')),
       dotHot: grip(dotTexture(LOCK_COLOR)),
       lock: grip(lockTexture()),
+      axisDot: AXIS_COLORS.map((color) => ({ idle: grip(dotTexture(color)), hot: grip(dotTexture('#ffffff', color)) })),
+      dotDone: grip(dotTexture(DONE_DOT.fill, DONE_DOT.rim)),
     };
-    // One line per axis through its three dots.
+    this.grips.dotDone.opacity = DONE_DOT.opacity;
+    // One line per axis through its three dots, in the axis's color.
     const lines = new BufferGeometry();
     lines.setAttribute('position', new BufferAttribute(new Float32Array(18), 3));
-    this.alignLines = new LineSegments(lines, new LineBasicMaterial({ transparent: true, opacity: 0.55, depthTest: false }));
+    const lineTint = AXIS_COLORS.flatMap((color) => {
+      const c = new Color(color).toArray();
+      return [...c, ...c];
+    });
+    lines.setAttribute('color', new BufferAttribute(new Float32Array(lineTint), 3));
+    this.alignLines = new LineSegments(lines, new LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.55, depthTest: false }));
     this.alignLines.visible = false;
     this.overlay.add(this.alignLines);
     const axisLine = new BufferGeometry();
@@ -908,7 +928,6 @@ export class Viewer {
     this.gridMinor.material.opacity = t.minor;
     this.gridMajor.visible = this.gridMinor.visible = this.axes.visible = grid;
     this.outline.material.color.set(t.accent);
-    this.alignLines.material.color.set(t.accent);
     this.snapAxis.material.color.set(t.accent);
     this.syncSnaps();
     this.pointer3d.material.color.set(theme === 'dark' ? 0xffffff : 0x1b1f27);
@@ -1320,7 +1339,7 @@ export class Viewer {
       this.handles.push({ kind, object, pixels, cursor });
     };
     if (mode === 'align') {
-      for (const axis of [0, 1, 2] as const) for (const m of ALIGN_MODES) add({ type: 'align', axis, mode: m }, new Sprite(this.grips.dot), 15, 'pointer');
+      for (const axis of [0, 1, 2] as const) for (const m of ALIGN_MODES) add({ type: 'align', axis, mode: m }, new Sprite(this.grips.axisDot[axis].idle), 15, 'pointer');
       this.alignLines.visible = true;
       return;
     }
@@ -1426,6 +1445,11 @@ export class Viewer {
     }
   }
 
+  /** Whether an anchor dot has nothing left to do: the objects already line up there. */
+  private alignDone(kind: { axis: 0 | 1 | 2; mode: AlignMode }): boolean {
+    return this.options.align?.done[alignDot(kind.axis, kind.mode)] ?? false;
+  }
+
   /**
    * The nine anchor dots: three along X in front of the box, three along Y
    * beside it, three along Z up its front-left corner, all a little outside.
@@ -1443,10 +1467,12 @@ export class Viewer {
     for (const h of this.handles) {
       if (h.kind.type !== 'align') continue;
       const p = at(h.kind.axis, h.kind.mode);
-      const hot = h === this.hovered;
-      (h.object as Sprite).material = hot ? this.grips.dotHot : this.grips.dot;
+      const done = this.alignDone(h.kind);
+      const hot = !done && h === this.hovered;
+      const dots = this.grips.axisDot[h.kind.axis];
+      (h.object as Sprite).material = done ? this.grips.dotDone : hot ? dots.hot : dots.idle;
       h.object.position.copy(p);
-      h.object.scale.setScalar(h.pixels * this.pixelSize(p) * (hot ? 1.3 : 1) * this.gripScale);
+      h.object.scale.setScalar(h.pixels * this.pixelSize(p) * (done ? DONE_DOT.scale : hot ? 1.3 : 1) * this.gripScale);
     }
     const pts = this.alignLines.geometry.getAttribute('position') as BufferAttribute;
     for (const axis of [0, 1, 2]) {
@@ -1476,6 +1502,8 @@ export class Viewer {
     let best: Handle | null = null;
     let bestDistance = Infinity;
     for (const h of this.handles) {
+      // A greyed anchor dot is not there to be clicked.
+      if (h.kind.type === 'align' && this.alignDone(h.kind)) continue;
       const hit = this.raycaster.intersectObject(h.object, true)[0];
       // Grips win over rings when both are under the pointer: they are the smaller target.
       const distance = hit ? hit.distance - (h.kind.type === 'rotate' ? 0 : 1e6) : Infinity;
