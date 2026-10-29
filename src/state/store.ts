@@ -60,7 +60,7 @@ import { checkRobot } from '../robot/check';
 import { buildMjcfModel, buildRobotPackage, buildSdfModel, packageName } from '../robot/export';
 import { fitFollowers, solvePose } from '../robot/kinematics';
 import type { Solved } from '../robot/kinematics';
-import { jointInChild, jointInDesign as jointInDesignOf, linkNodes, linkOf, pruned, robotOf, sensorInDesign, sensorInLink } from '../robot/model';
+import { jointInChild, jointInDesign as jointInDesignOf, linkNodes, linkOf, meetingPoint, pruned, robotOf, sensorInDesign, sensorInLink, spanningTree } from '../robot/model';
 import { snapPointsOf } from '../robot/snaps';
 import type { SnapPoint } from '../viewer/Viewer';
 import { defaultJoint, defaultSensor, SENSOR_KINDS } from '../robot/types';
@@ -1981,15 +1981,15 @@ const jointName = (robot: Robot, base: string): string => {
 
 /**
  * Hangs `child` from `parent` by a new joint, and picks it. The joint starts
- * on the child's box where it comes nearest the parent's center (an arm's
- * joint sits at the end towards the body), with its axis along the child's Z.
+ * where the two meet (the middle of where their boxes overlap, or of the gap
+ * between them: a wheel's hub on its axle, the end of an arm segment against
+ * the last), with its axis along the child's Z.
  */
 export function addJoint(parent: string, child: string): string | null {
   const childNode = state.doc.scene.find((n) => n.id === child);
   const parentNode = state.doc.scene.find((n) => n.id === parent);
   if (!childNode || !parentNode || parent === child) return null;
-  const towards = jointInChild(parentNode.pos, [0, 0, 1], childNode).origin;
-  const origin = towards.map((x, i) => Math.min(childNode.size[i] / 2, Math.max(-childNode.size[i] / 2, x))) as Vec3;
+  const origin = jointInChild(meetingPoint(geometry.bounds(parentNode), geometry.bounds(childNode)), [0, 0, 1], childNode).origin;
   const id = newId();
   editRobot((r) => ({ ...r, root: r.root ?? parent, joints: [...r.joints, defaultJoint(id, jointName(r, `${childNode.name} joint`), parent, child, tidyVec(origin))] }));
   selectJoint(id);
@@ -2007,6 +2007,48 @@ export function placeJoint(id: string, origin: Vec3, axis: Vec3, merge?: string)
   if (!joint || !child) return;
   const local = jointInChild(origin, axis, child);
   updateJoint(id, { origin: tidyVec(local.origin), axis: tidyVec(local.axis) }, merge);
+}
+
+/** Moves the picked joint or sensor to `origin` (design mm) as a drag goes on; the steps of one drag undo together, and a drag that goes nowhere records nothing. */
+export function dragMarker(origin: Vec3): void {
+  const same = (at: Vec3) => at.every((v, i) => Math.abs(v - origin[i]) < 1e-6);
+  if (state.sensor) {
+    const sensor = robotOf(state.doc).sensors.find((x) => x.id === state.sensor);
+    const link = sensor && state.doc.scene.find((n) => n.id === sensor.link);
+    if (!sensor || !link) return;
+    const placed = sensorInDesign(sensor, link);
+    if (!same(placed.origin)) placeSensor(sensor.id, origin, placed.matrix, 'marker-drag');
+    return;
+  }
+  const joint = state.joint && robotOf(state.doc).joints.find((j) => j.id === state.joint);
+  const child = joint && state.doc.scene.find((n) => n.id === joint.child);
+  if (!joint || !child) return;
+  const placed = jointInDesignOf(joint, child);
+  if (!same(placed.origin)) placeJoint(joint.id, origin, placed.axis, 'marker-drag');
+}
+
+/** The drag is over: the next one is an undo step of its own. */
+export function endMarkerDrag(): void {
+  lastMerge = null;
+}
+
+/** Hangs every link no chain of joints reaches from the base by a fixed joint to the base, where the two meet. One undo step. */
+export function fixLooseLinks(): void {
+  const robot = robotOf(state.doc);
+  const nodes = linkNodes(state.doc.scene);
+  const base = robot.root ? nodes.find((n) => n.id === robot.root) : undefined;
+  if (!base) return;
+  const { unreached } = spanningTree(robot, nodes.map((n) => n.id));
+  const joints: RobotJoint[] = [];
+  for (const id of unreached) {
+    const child = nodes.find((n) => n.id === id);
+    if (!child) continue;
+    const meet = meetingPoint(geometry.bounds(base), geometry.bounds(child));
+    const name = jointName({ ...robot, joints: [...robot.joints, ...joints] }, `${child.name} joint`);
+    joints.push({ ...defaultJoint(newId(), name, base.id, id, tidyVec(jointInChild(meet, [0, 0, 1], child).origin)), type: 'fixed' });
+  }
+  if (joints.length === 0) return;
+  editRobot((r) => ({ ...r, joints: [...r.joints, ...joints] }));
 }
 
 export function deleteJoint(id: string): void {

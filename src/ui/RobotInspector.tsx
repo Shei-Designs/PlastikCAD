@@ -9,7 +9,7 @@ import type { SceneNode, Vec3 } from '../model/types';
 import { geometry } from '../state/geometry';
 import { massOf, principalMoments, tensorOf } from '../robot/inertia';
 import { MATERIALS, materialOf } from '../robot/materials';
-import { jointInDesign, linkOf, sensorInDesign } from '../robot/model';
+import { jointInDesign, linkOf, meetingPoint, sensorInDesign } from '../robot/model';
 import { COLLISION_KINDS, JOINT_TYPES, SENSOR_KINDS } from '../robot/types';
 import type { RobotJoint, RobotLink, RobotSensor, SensorKind } from '../robot/types';
 import type { Problem } from '../robot/check';
@@ -447,6 +447,9 @@ function JointPanel({ joint }: { joint: RobotJoint }) {
             </button>
             <button type="button" className="chip" title="Puts the joint at the center of the parent" onClick={() => centerOf(parent) && put(centerOf(parent)!, placed.axis)}>
               Parent center
+            </button>
+            <button type="button" className="chip" title="Puts the joint in the middle of where the two links overlap or touch: a wheel's hub on its axle, the faces two parts meet at" onClick={() => parent && child && put(meetingPoint(geometry.bounds(parent), geometry.bounds(child)), placed.axis)}>
+              Where they meet
             </button>
           </div>
         </div>

@@ -16,6 +16,10 @@ import {
   hasGhosts,
   jointSnaps,
   pickJointSnap,
+  dragMarker,
+  endMarkerDrag,
+  selectJoint,
+  selectSensor,
   groupSelected,
   mirrorSelected,
   movePlacing,
@@ -33,14 +37,15 @@ import {
   unghostAll,
   useEditor,
 } from '../state/store';
-import { boundsSize } from '../model/math';
+import { apply, rotation } from '../model/math';
 import type { Mat } from '../model/math';
-import type { Vec3 } from '../model/types';
+import type { SceneNode, Vec3 } from '../model/types';
 import { posedScene } from '../robot/kinematics';
 import { jointInDesign, sensorInDesign } from '../robot/model';
+import type { RobotJoint, RobotSensor } from '../robot/types';
 import type { EditorState } from '../state/store';
 import { GIZMO_SIZE, Viewer } from '../viewer/Viewer';
-import type { HandlePrompt, ViewItem, ViewPreset } from '../viewer/Viewer';
+import type { HandlePrompt, Marker, ViewItem, ViewPreset } from '../viewer/Viewer';
 import {
   AlignIcon,
   ArrayIcon,
@@ -301,26 +306,51 @@ function HandleInput({ prompt, onClose }: { prompt: HandlePrompt; onClose: () =>
   );
 }
 
-/** The picked joint, as a thin rod along its axis through its origin, as long as the child's box is wide; a sensor as a stub along where it looks. */
-function jointMarker(s: EditorState): { matrix: Mat; size: Vec3 } | null {
+/** A sensor as the frame the viewer draws it by. */
+function sensorMarkerOf(sensor: RobotSensor, link: SceneNode): Marker {
+  const { matrix } = sensorInDesign(sensor, link);
+  if (sensor.kind === 'camera' || sensor.kind === 'depth') return { kind: 'camera', matrix, hfov: sensor.camera.hfov, aspect: sensor.camera.width / Math.max(sensor.camera.height, 1), depth: sensor.kind === 'depth' };
+  if (sensor.kind === 'lidar') return { kind: 'lidar', matrix, hfov: sensor.lidar.hfov };
+  return { kind: 'imu', matrix };
+}
+
+/** A joint as the frame the viewer draws it by: its Z is the axis, its X the child's own axis nearest to square with it. */
+function jointMarkerOf(joint: RobotJoint, child: SceneNode): Marker {
+  const { origin, axis } = jointInDesign(joint, child);
+  // X follows the child's own X unless that lies along the axis, then its Y; Y completes the right-handed frame.
+  const turn = rotation(child.rot);
+  const own = apply(turn, [1, 0, 0]);
+  const pick: Vec3 = Math.abs(own[0] * axis[0] + own[1] * axis[1] + own[2] * axis[2]) < 0.9 ? own : apply(turn, [0, 1, 0]);
+  const y = normalize(cross(axis, pick));
+  const x = cross(y, axis);
+  const matrix: Mat = [x[0], x[1], x[2], y[0], y[1], y[2], axis[0], axis[1], axis[2], origin[0], origin[1], origin[2]];
+  return { kind: 'joint', type: joint.type, matrix };
+}
+
+/** The picked joint or sensor. */
+function robotMarker(s: EditorState): Marker | null {
   const sensor = s.sensor ? s.doc.robot?.sensors.find((x) => x.id === s.sensor) : undefined;
   const link = sensor && s.doc.scene.find((n) => n.id === sensor.link);
-  if (sensor && link) {
-    const { matrix } = sensorInDesign(sensor, link);
-    // A camera looks along its X; a lidar sweeps about its Z, an IMU stands on it.
-    return { matrix, size: sensor.kind === 'camera' || sensor.kind === 'depth' ? [30, 8, 8] : [8, 8, 30] };
-  }
+  if (sensor && link) return sensorMarkerOf(sensor, link);
   const joint = s.joint ? s.doc.robot?.joints.find((j) => j.id === s.joint) : undefined;
   const child = joint && s.doc.scene.find((n) => n.id === joint.child);
-  if (!joint || !child) return null;
-  const { origin, axis } = jointInDesign(joint, child);
-  // A frame whose Z is the axis: pick any perpendicular for X, and Y follows.
-  const pick: Vec3 = Math.abs(axis[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
-  const x = normalize(cross(pick, axis));
-  const y = cross(axis, x);
-  const matrix: Mat = [x[0], x[1], x[2], y[0], y[1], y[2], axis[0], axis[1], axis[2], origin[0], origin[1], origin[2]];
-  const reach = Math.max(...boundsSize(geometry.bounds(child))) * 1.4 + 10;
-  return { matrix, size: [2, 2, reach] };
+  return joint && child ? jointMarkerOf(joint, child) : null;
+}
+
+/** Every other joint and sensor, for Robot mode when it shows them all. */
+function robotMarkers(s: EditorState): { id: string; marker: Marker }[] | null {
+  if (!s.robot || !s.prefs.robotMarkers || !s.doc.robot) return null;
+  const byId = new Map(s.doc.scene.map((n) => [n.id, n]));
+  const out: { id: string; marker: Marker }[] = [];
+  for (const j of s.doc.robot.joints) {
+    const child = j.id !== s.joint ? byId.get(j.child) : undefined;
+    if (child) out.push({ id: j.id, marker: jointMarkerOf(j, child) });
+  }
+  for (const x of s.doc.robot.sensors) {
+    const link = x.id !== s.sensor ? byId.get(x.link) : undefined;
+    if (link) out.push({ id: x.id, marker: sensorMarkerOf(x, link) });
+  }
+  return out;
 }
 
 const cross = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
@@ -337,7 +367,9 @@ export function Viewport() {
 
   const state = useEditor((s) => s);
   const { prefs, placing, selection, busy, aligning, editing, mating, pose } = state;
-  const highlight = state.highlight ?? jointMarker(state);
+  const highlight = state.highlight;
+  const marker = useMemo(() => robotMarker(state), [state.joint, state.sensor, state.doc]);
+  const markers = useMemo(() => robotMarkers(state), [state.robot, state.joint, state.sensor, state.doc, state.prefs.robotMarkers]);
   const snaps = useMemo(() => (state.jointPick ? jointSnaps(state) : null), [state.jointPick, state.joint, state.sensor, state.doc]);
   // Another selection, or an edit from elsewhere, and the typing boxes no longer belong to anything.
   useEffect(() => {
@@ -380,6 +412,13 @@ export function Viewport() {
           const point = jointSnaps(getState())[index];
           if (point) pickJointSnap(point);
         },
+        onMarkerMove: dragMarker,
+        onMarkerDrop: endMarkerDrag,
+        onMarkerPick: (id) => {
+          const robot = getState().doc.robot;
+          if (robot?.joints.some((j) => j.id === id)) selectJoint(id);
+          else if (robot?.sensors.some((x) => x.id === id)) selectSensor(id);
+        },
       },
       { theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap },
     );
@@ -394,8 +433,8 @@ export function Viewport() {
   }, []);
 
   useEffect(() => {
-    viewer.current?.setOptions({ theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap, interactive: true, align: aligning, highlight, snaps });
-  }, [prefs.theme, prefs.edges, prefs.grid, prefs.snap, aligning, highlight, snaps]);
+    viewer.current?.setOptions({ theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap, interactive: true, align: aligning, highlight, snaps, marker, markers });
+  }, [prefs.theme, prefs.edges, prefs.grid, prefs.snap, aligning, highlight, snaps, marker, markers]);
 
   useEffect(() => {
     viewer.current?.setPlacing(Boolean(placing));

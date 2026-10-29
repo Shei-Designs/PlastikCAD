@@ -1,7 +1,7 @@
 // Reading a robot against its design: which objects are links, what each
 // link's settings are, and how the joints hang the links from the base.
 import { apply, eulerOf, frameMatrix, invert, multiply, rotation } from '../model/math';
-import type { Mat } from '../model/math';
+import type { Bounds, Mat } from '../model/math';
 import type { Doc, Scene, SceneNode, Vec3 } from '../model/types';
 import { defaultLink, emptyRobot } from './types';
 import type { Robot, RobotJoint, RobotLink, RobotSensor } from './types';
@@ -42,6 +42,15 @@ export function sensorInLink(origin: Vec3, rot: Vec3, link: SceneNode): { origin
   const back = invert(frameMatrix(link));
   const local = multiply(invert(rotation(link.rot)), rotation(rot));
   return { origin: apply(back, origin), rot: eulerOf(local) };
+}
+
+/**
+ * Where two links meet: the center of the overlap of their boxes, or, along
+ * an axis where they stand apart, the middle of the gap. A wheel on an axle
+ * gives the hub; two parts set end to end give the center of the faces they touch at.
+ */
+export function meetingPoint(a: Bounds, b: Bounds): Vec3 {
+  return [0, 1, 2].map((i) => (Math.max(a.min[i], b.min[i]) + Math.min(a.max[i], b.max[i])) / 2) as Vec3;
 }
 
 const stripMimic = ({ mimic: _mimic, ...rest }: RobotJoint): RobotJoint => rest;

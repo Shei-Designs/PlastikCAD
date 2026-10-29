@@ -3037,6 +3037,12 @@ kbd {
   color: var(--accent);
 }
 
+.robot-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
 .robot-panel .structure-scroll h2 + h2 {
   margin-top: 14px;
 }
@@ -3170,10 +3176,16 @@ kbd {
   text-overflow: ellipsis;
 }
 
-.field .chip.select.wide:only-child {
+/* On its own row (under a label, or alone) it fills the row: the select stretches and the chevron sits at the right edge. */
+.field:not(.inline) > .chip.select.wide {
   max-width: 100%;
   width: 100%;
   justify-content: space-between;
+}
+
+.field:not(.inline) > .chip.select.wide select {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .number-row.spread {
@@ -3196,6 +3208,15 @@ kbd {
   align-items: center;
   gap: 6px;
   margin-top: 6px;
+}
+
+/* Preset chips keep their words on one line and spill onto a second row when the panel is narrow. */
+.chip-row {
+  flex-wrap: wrap;
+}
+
+.chip-row .chip {
+  white-space: nowrap;
 }
 
 .axis-row .segmented {

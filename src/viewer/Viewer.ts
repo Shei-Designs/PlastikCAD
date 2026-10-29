@@ -5,8 +5,10 @@
 import {
   Box3,
   BufferAttribute,
+  BoxGeometry,
   BufferGeometry,
   CanvasTexture,
+  SphereGeometry,
   ClampToEdgeWrapping,
   Color,
   ConeGeometry,
@@ -71,7 +73,23 @@ export interface ViewerOptions {
   highlight: { matrix: Mat; size: Vec3 } | null;
   /** Points to pick from (Robot mode, placing a joint): dots at each, in the scene. */
   snaps: SnapPoint[] | null;
+  /** The joint or sensor picked in Robot mode, drawn as a frame with its motion or view, with grips to drag it by. */
+  marker: Marker | null;
+  /** The other joints and sensors, drawn small; a click on one picks it. */
+  markers: { id: string; marker: Marker }[] | null;
 }
+
+/**
+ * A joint or sensor pointed out on the plate: a frame (`matrix` holds its X,
+ * Y and Z columns and its origin, in the design) drawn at a fixed size on
+ * screen, the way RViz draws a TF frame. A joint's axis is its Z, a camera
+ * looks along its X, a lidar sweeps about its Z.
+ */
+export type Marker =
+  | { kind: 'joint'; type: 'fixed' | 'revolute' | 'continuous' | 'prismatic'; matrix: Mat }
+  | { kind: 'camera'; matrix: Mat; hfov: number; aspect: number; depth: boolean }
+  | { kind: 'lidar'; matrix: Mat; hfov: number }
+  | { kind: 'imu'; matrix: Mat };
 
 export interface SnapPoint {
   at: Vec3;
@@ -114,6 +132,11 @@ export interface ViewerEvents {
   /** A snap point was hovered (null: left) or clicked. */
   onSnapHover(index: number | null): void;
   onSnapPick(index: number): void;
+  /** Robot mode: the picked joint or sensor is dragged to `origin` (design mm); `onMarkerDrop` ends the drag. */
+  onMarkerMove(origin: Vec3): void;
+  onMarkerDrop(): void;
+  /** Robot mode: one of the other joints or sensors drawn on the plate was clicked. */
+  onMarkerPick(id: string): void;
 }
 
 export interface HandlePrompt {
@@ -146,7 +169,7 @@ export interface HandlePrompt {
   }[];
 }
 
-const DEFAULTS: ViewerOptions = { theme: 'dark', edges: true, grid: true, snap: 1, interactive: true, align: null, highlight: null, snaps: null };
+const DEFAULTS: ViewerOptions = { theme: 'dark', edges: true, grid: true, snap: 1, interactive: true, align: null, highlight: null, snaps: null, marker: null, markers: null };
 /** Distance of the anchor dots from the box, in pixels. */
 const ALIGN_GAP = 22;
 
@@ -203,6 +226,162 @@ const THEMES = {
 };
 
 const AXIS_COLORS = ['#e5484d', '#3fae5a', '#4c8dff'];
+/** On-screen length of a marker's unit, in pixels: the joint axis reaches this far each way from its origin. */
+const MARKER_PIXELS = 60;
+/** The same for the markers of the joints and sensors not picked. */
+const DIM_MARKER_PIXELS = 34;
+
+/**
+ * A marker as solid strokes in its own frame, one unit = `MARKER_PIXELS` on
+ * screen: a small X/Y/Z triad in the axis colors, then what the thing does in
+ * the accent color. A joint's axis with a turn arrow about it (a ring for one
+ * that turns freely), or arrowheads both ways for one that slides; a camera's
+ * frustum with an "up" mark; a lidar's sweep as an arc with its edge rays; an
+ * IMU as a box on a larger triad. Drawn as tubes and cones rather than lines,
+ * which WebGL keeps one pixel wide.
+ */
+function markerObject(mk: Marker, accent: number, dim = false): Group {
+  const group = new Group();
+  group.matrixAutoUpdate = false;
+  const materials = new Map<string, MeshBasicMaterial>();
+  const material = (color: string | number) => {
+    const key = String(color);
+    let m = materials.get(key);
+    if (!m) {
+      m = new MeshBasicMaterial({ color, transparent: true, opacity: dim ? 0.5 : 0.95, depthTest: false });
+      materials.set(key, m);
+    }
+    return m;
+  };
+  const R = 0.028;
+  const put = (geometry: BufferGeometry, color: string | number, at: Vec3, dir?: Vec3, spin?: number) => {
+    const mesh = new Mesh(geometry, material(color));
+    mesh.position.set(at[0], at[1], at[2]);
+    if (dir) mesh.quaternion.setFromUnitVectors(UP, new Vector3(dir[0], dir[1], dir[2]).normalize());
+    if (spin !== undefined) mesh.rotateZ(spin);
+    mesh.renderOrder = 10;
+    group.add(mesh);
+  };
+  const add = (a: Vec3, b: Vec3, k: number): Vec3 => [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k];
+  const unit = (v: Vec3): Vec3 => {
+    const n = Math.hypot(...v) || 1;
+    return [v[0] / n, v[1] / n, v[2] / n];
+  };
+  /** A rod from `a` to `b`. */
+  const rod = (a: Vec3, b: Vec3, color: string | number, r = R) => {
+    const d: Vec3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    const len = Math.hypot(...d);
+    if (len < 1e-6) return;
+    put(new CylinderGeometry(r, r, len, 10), color, add(a, d, 0.5), d);
+  };
+  /** A cone whose point is at `tip`, pointing along `dir`. */
+  const cone = (tip: Vec3, dir: Vec3, color: string | number, h = 0.2, r = 0.075) => {
+    const d = unit(dir);
+    put(new ConeGeometry(r, h, 14), color, add(tip, d, -h / 2), d);
+  };
+  /** The frame's axes with arrowheads; without Z when the axis drawn through the origin is already the Z. */
+  const triad = (len: number, withZ = true) => {
+    const ends: Vec3[] = [
+      [len, 0, 0],
+      [0, len, 0],
+      [0, 0, len],
+    ];
+    ends.slice(0, withZ ? 3 : 2).forEach((end, i) => {
+      rod([0, 0, 0], end, AXIS_COLORS[i]);
+      cone(add(end, unit(end), 0.1), end, AXIS_COLORS[i], 0.12, 0.05);
+    });
+  };
+  const cube = (h: number, color: string | number) => put(new BoxGeometry(2 * h, 2 * h, 2 * h), color, [0, 0, 0]);
+  /** An arc about Z at height `z`, from angle `from` through `sweep` radians, counter-clockwise seen from +Z. */
+  const arc = (radius: number, from: number, sweep: number, z: number, color: string | number) => {
+    const torus = new TorusGeometry(radius, R, 8, Math.max(12, Math.ceil((Math.abs(sweep) / (2 * Math.PI)) * 64)), Math.abs(sweep));
+    put(torus, color, [0, 0, z], [0, 0, 1], sweep < 0 ? from + sweep : from);
+  };
+  switch (mk.kind) {
+    case 'joint': {
+      if (mk.type === 'fixed') {
+        triad(0.45);
+        cube(0.14, accent);
+        break;
+      }
+      triad(0.45, false);
+      rod([0, 0, -1], [0, 0, 1], accent);
+      if (mk.type === 'prismatic') {
+        cone([0, 0, 1.12], [0, 0, 1], accent);
+        cone([0, 0, -1.12], [0, 0, -1], accent);
+      } else {
+        // The positive turn, by the right hand about the axis: an open arc for a joint with limits, a ring for a wheel.
+        const r = 0.6;
+        const start = mk.type === 'continuous' ? -Math.PI / 2 : Math.PI / 6;
+        const end = Math.PI * 1.5;
+        arc(r, start, end - start, 0, accent);
+        cone([r * Math.cos(end), r * Math.sin(end), 0], [-Math.sin(end), Math.cos(end), 0], accent, 0.22, 0.08);
+      }
+      break;
+    }
+    case 'camera': {
+      triad(0.35);
+      const hw = Math.min(Math.tan((Math.min(Math.max(mk.hfov, 10), 170) * Math.PI) / 360), 1.4);
+      const hh = hw / Math.max(mk.aspect, 0.2);
+      const face = (d: number) => {
+        const c = [-1, 1].flatMap((y) => [-1, 1].map((z): Vec3 => [d, y * hw * d, z * hh * d]));
+        rod(c[0], c[1], accent);
+        rod(c[1], c[3], accent);
+        rod(c[3], c[2], accent);
+        rod(c[2], c[0], accent);
+        return c;
+      };
+      for (const c of face(1)) rod([0, 0, 0], c, accent);
+      // The picture's top, so that a camera held sideways shows.
+      rod([1, -hw * 0.35, hh], [1, 0, hh + hw * 0.3], accent);
+      rod([1, 0, hh + hw * 0.3], [1, hw * 0.35, hh], accent);
+      if (mk.depth) face(0.55);
+      break;
+    }
+    case 'lidar': {
+      triad(0.35);
+      const half = (Math.min(Math.max(mk.hfov, 1), 360) * Math.PI) / 360;
+      arc(1, -half, 2 * half, 0, accent);
+      rod([0, 0, 0], [1, 0, 0], accent);
+      if (mk.hfov < 360) {
+        rod([0, 0, 0], [Math.cos(half), Math.sin(half), 0], accent);
+        rod([0, 0, 0], [Math.cos(half), -Math.sin(half), 0], accent);
+      }
+      break;
+    }
+    case 'imu':
+      triad(0.8);
+      cube(0.16, accent);
+      break;
+  }
+  // Unseen targets for the pointer: the axis of a picked joint, to slide it along; the whole of an unpicked marker, to pick it.
+  if (dim) {
+    const hit = new Mesh(new SphereGeometry(0.5, 8, 6), material(accent));
+    hit.visible = false;
+    hit.userData.pick = true;
+    group.add(hit);
+  } else if (mk.kind === 'joint' && mk.type !== 'fixed') {
+    const hit = new Mesh(new CylinderGeometry(0.14, 0.14, 2.3, 8), material(accent));
+    hit.quaternion.setFromUnitVectors(UP, new Vector3(0, 0, 1));
+    hit.visible = false;
+    hit.userData.axis = true;
+    group.add(hit);
+  }
+  return group;
+}
+
+const UP = new Vector3(0, 1, 0);
+
+/** Frees what a marker was built from. */
+function disposeMarker(group: Group): void {
+  for (const child of group.children) {
+    if (child instanceof Mesh) {
+      child.geometry.dispose();
+      (child.material as MeshBasicMaterial).dispose();
+    }
+  }
+  group.clear();
+}
 /** An anchor dot with nothing left to do: grey, dim and not for clicking. */
 const DONE_DOT = { fill: '#3c4146', rim: '#8a9094', opacity: 0.45, scale: 0.8 };
 /** Rim of the padlock badge: the warm color the hot align dot uses, for something that will not follow a drag. */
@@ -302,7 +481,11 @@ type Drag =
   | { mode: 'height'; box: GripBox; nodes: SceneNode[]; side: 1 | -1; grab: number }
   | { mode: 'lift'; nodes: SceneNode[]; origin: Vector3; grab: number }
   | { mode: 'rotate'; nodes: SceneNode[]; axis: 0 | 1 | 2; pivot: Vec3; start: number | null; x: number }
+  /** The picked joint or sensor dragged by its grip (over the plate), its lift arrow (up and down) or its axis (along it). */
+  | { mode: 'marker'; how: MarkerHandle; origin: Vector3; axis: Vector3; plane: Plane; grab: Vector3; grabT: number }
   | { mode: 'place' };
+
+type MarkerHandle = 'move' | 'lift' | 'axis';
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
@@ -471,6 +654,15 @@ export class Viewer {
   private frame: Frame | null = null;
   private outline!: LineSegments<BufferGeometry, LineBasicMaterial>;
   private pointer3d!: LineSegments<BufferGeometry, LineBasicMaterial>;
+  /** The picked joint or sensor (Robot mode), and what its lines were last built for. */
+  private marker!: Group;
+  private markerKey = '';
+  /** Its grips: a dot at its origin to drag it over the plate, and the lift arrow above. */
+  private markerGrip!: Sprite;
+  private markerLift!: Sprite;
+  /** The other joints and sensors, drawn small, by id. */
+  private dimMarkers = new Map<string, Group>();
+  private dimKey = '';
   private handles: Handle[] = [];
   private handleMode: 'none' | 'single' | 'several' | 'locked' | 'align' = 'none';
   private alignLines!: LineSegments<BufferGeometry, LineBasicMaterial>;
@@ -715,6 +907,8 @@ export class Viewer {
       s.edges?.dispose();
     }
     this.shared.clear();
+    disposeMarker(this.marker);
+    for (const g of this.dimMarkers.values()) disposeMarker(g);
     for (const grid of [this.gridMajor, this.gridMinor, this.axes, this.outline, this.pointer3d, this.alignLines]) {
       grid.geometry.dispose();
       grid.material.dispose();
@@ -856,6 +1050,10 @@ export class Viewer {
     this.pointer3d.matrixAutoUpdate = false;
     this.pointer3d.visible = false;
     this.overlay.add(this.pointer3d);
+    this.marker = new Group();
+    this.marker.matrixAutoUpdate = false;
+    this.marker.visible = false;
+    this.overlay.add(this.marker);
 
     const grip = (map: CanvasTexture) => {
       const material = new SpriteMaterial({ map, depthTest: false, toneMapped: false });
@@ -873,6 +1071,13 @@ export class Viewer {
       dotDone: grip(dotTexture(DONE_DOT.fill, DONE_DOT.rim)),
     };
     this.grips.dotDone.opacity = DONE_DOT.opacity;
+    this.markerGrip = new Sprite(this.grips.dot);
+    this.markerLift = new Sprite(this.grips.lift);
+    for (const s of [this.markerGrip, this.markerLift]) {
+      s.renderOrder = 12;
+      s.visible = false;
+      this.overlay.add(s);
+    }
     // One line per axis through its three dots, in the axis's color.
     const lines = new BufferGeometry();
     lines.setAttribute('position', new BufferAttribute(new Float32Array(18), 3));
@@ -939,6 +1144,33 @@ export class Viewer {
       this.pointer3d.matrixWorldNeedsUpdate = true;
     }
     this.pointer3d.visible = Boolean(h);
+    const mk = this.options.marker;
+    const markerKey = mk ? `${theme}:${JSON.stringify({ ...mk, matrix: undefined })}` : '';
+    if (markerKey !== this.markerKey) {
+      this.markerKey = markerKey;
+      disposeMarker(this.marker);
+      if (mk) {
+        const built = markerObject(mk, t.accent);
+        this.marker.add(...built.children);
+      }
+    }
+    this.marker.visible = Boolean(mk);
+    this.markerGrip.visible = this.markerLift.visible = Boolean(mk) && this.options.interactive;
+    const dims = this.options.markers ?? [];
+    const dimKey = `${theme}:${JSON.stringify(dims.map((d) => ({ id: d.id, marker: { ...d.marker, matrix: undefined } })))}`;
+    if (dimKey !== this.dimKey) {
+      this.dimKey = dimKey;
+      for (const g of this.dimMarkers.values()) {
+        disposeMarker(g);
+        this.overlay.remove(g);
+      }
+      this.dimMarkers.clear();
+      for (const d of dims) {
+        const g = markerObject(d.marker, t.accent, true);
+        this.overlay.add(g);
+        this.dimMarkers.set(d.id, g);
+      }
+    }
     for (const d of this.drawn.values()) this.style(d, d.item.selected);
   }
 
@@ -1566,6 +1798,18 @@ export class Viewer {
       claim();
       return;
     }
+    const markerHandle = this.pickMarkerHandle(event);
+    if (markerHandle) {
+      this.startMarkerDrag(markerHandle);
+      claim();
+      return;
+    }
+    const other = this.pickDimMarker();
+    if (other !== null) {
+      this.events.onMarkerPick(other);
+      claim();
+      return;
+    }
     const handle = this.pickHandle(event);
     if (handle?.kind.type === 'align') {
       this.events.onAlignPick(handle.kind.axis, handle.kind.mode);
@@ -2019,8 +2263,13 @@ export class Viewer {
       if (event.buttons === 0 && this.options.interactive) {
         const snap = this.pickSnap(event);
         this.hoverSnap(snap);
-        this.hover(snap === null ? this.pickHandle(event) : null);
-        if (snap !== null) this.renderer.domElement.style.cursor = 'pointer';
+        const markerHandle = snap === null ? this.pickMarkerHandle(event) : null;
+        this.hover(snap === null && !markerHandle ? this.pickHandle(event) : null);
+        const other = snap === null && !markerHandle && !this.hovered ? this.pickDimMarker() : null;
+        const cursor = this.renderer.domElement.style;
+        if (snap !== null || other !== null) cursor.cursor = 'pointer';
+        else if (markerHandle) cursor.cursor = markerHandle === 'lift' ? 'ns-resize' : 'move';
+        else if (!this.hovered && !this.placing) cursor.cursor = '';
       }
       return;
     }
@@ -2068,6 +2317,9 @@ export class Viewer {
       case 'rotate':
         this.rotateTo(drag, event);
         return;
+      case 'marker':
+        this.markerTo(drag, event);
+        return;
     }
   };
 
@@ -2113,6 +2365,9 @@ export class Viewer {
         this.events.onSelect(this.insideMarquee(drag.x, drag.y, event.clientX, event.clientY), drag.additive ? 'add' : 'replace');
         this.hideMarquee();
         return;
+      case 'marker':
+        this.events.onMarkerDrop();
+        return;
       default: {
         // A press without a drag asks for the value instead.
         const press = this.press;
@@ -2154,6 +2409,101 @@ export class Viewer {
     }
     if (this.snapHot !== null && this.snapHot >= wanted) this.hoverSnap(null);
     this.snapAxis.visible = false;
+  }
+
+  /** The markers at their origins, each unit scaled to its pixel size on screen; the picked one's grips beside it. */
+  private layoutMarker(): void {
+    const place = (group: Group, matrix: Mat, pixels: number) => {
+      const scale = pixels * this.pixelSize(new Vector3(matrix[9], matrix[10], matrix[11]));
+      const m = [...matrix] as Mat;
+      for (let i = 0; i < 9; i++) m[i] *= scale;
+      toMatrix4(m, group.matrix);
+      group.matrixWorldNeedsUpdate = true;
+    };
+    const mk = this.options.marker;
+    if (mk) {
+      place(this.marker, mk.matrix, MARKER_PIXELS);
+      const at = new Vector3(mk.matrix[9], mk.matrix[10], mk.matrix[11]);
+      this.markerGrip.position.copy(at);
+      this.markerGrip.scale.setScalar(14 * this.pixelSize(at) * this.gripScale);
+      const up = this.aboveOnScreen(at, liftRise());
+      this.markerLift.position.copy(up);
+      this.markerLift.scale.setScalar(26 * this.pixelSize(up) * this.gripScale);
+    }
+    for (const d of this.options.markers ?? []) {
+      const g = this.dimMarkers.get(d.id);
+      if (g) place(g, d.marker.matrix, DIM_MARKER_PIXELS);
+    }
+  }
+
+  /** Which grip of the picked marker is under the pointer: its dot, the lift arrow above it, or (a joint) its axis. */
+  private pickMarkerHandle(event?: PointerEvent): MarkerHandle | null {
+    if (!this.options.marker || !this.marker.visible || !this.options.interactive) return null;
+    this.gripScale = event?.pointerType === 'touch' ? TOUCH_GRIP_SCALE : 1;
+    this.layoutMarker();
+    this.overlay.updateMatrixWorld();
+    this.gripScale = 1;
+    if (this.raycaster.intersectObject(this.markerGrip, false).length) return 'move';
+    if (this.raycaster.intersectObject(this.markerLift, false).length) return 'lift';
+    const axis = this.marker.children.find((c) => c.userData.axis);
+    if (axis && this.raycaster.intersectObject(axis, false).length) return 'axis';
+    return null;
+  }
+
+  /** The unpicked marker under the pointer, by id. */
+  private pickDimMarker(): string | null {
+    if (this.dimMarkers.size === 0) return null;
+    this.layoutMarker();
+    this.overlay.updateMatrixWorld();
+    let best: string | null = null;
+    let bestDistance = Infinity;
+    for (const [id, g] of this.dimMarkers) {
+      const target = g.children.find((c) => c.userData.pick);
+      const hit = target && this.raycaster.intersectObject(target, false)[0];
+      if (hit && hit.distance < bestDistance) {
+        best = id;
+        bestDistance = hit.distance;
+      }
+    }
+    return best;
+  }
+
+  private startMarkerDrag(how: MarkerHandle): void {
+    const mk = this.options.marker!;
+    const origin = new Vector3(mk.matrix[9], mk.matrix[10], mk.matrix[11]);
+    const axis = how === 'lift' ? new Vector3(0, 0, 1) : new Vector3(mk.matrix[6], mk.matrix[7], mk.matrix[8]).normalize();
+    const plane = new Plane(new Vector3(0, 0, 1), -origin.z);
+    const grab = this.raycaster.ray.intersectPlane(plane, new Vector3()) ?? origin.clone();
+    this.drag = { mode: 'marker', how, origin, axis, plane, grab, grabT: this.alongAxis(origin, axis) ?? 0 };
+    this.renderer.domElement.style.cursor = how === 'lift' ? 'ns-resize' : 'move';
+  }
+
+  /** The marker follows the pointer: over the plate at its own height (Shift keeps to one axis), up and down, or along its axis; steps snap to the grid. */
+  private markerTo(drag: Extract<Drag, { mode: 'marker' }>, event: PointerEvent): void {
+    const { origin } = drag;
+    let next: Vector3;
+    let text: string;
+    if (drag.how === 'move') {
+      if (Math.abs(this.raycaster.ray.direction.z) < 0.04) return;
+      const p = this.raycaster.ray.intersectPlane(drag.plane, new Vector3());
+      if (!p) return;
+      let dx = this.snap(p.x - drag.grab.x);
+      let dy = this.snap(p.y - drag.grab.y);
+      if (event.shiftKey) {
+        if (Math.abs(dx) >= Math.abs(dy)) dy = 0;
+        else dx = 0;
+      }
+      next = new Vector3(origin.x + dx, origin.y + dy, origin.z);
+      text = `${fmt(dx)}, ${fmt(dy)}`;
+    } else {
+      const t = this.alongAxis(origin, drag.axis);
+      if (t === null) return;
+      const d = this.snap(t - drag.grabT);
+      next = origin.clone().addScaledVector(drag.axis, d);
+      text = `${drag.how === 'lift' ? 'Z ' : ''}${d >= 0 ? '+' : ''}${fmt(d)}`;
+    }
+    this.events.onMarkerMove(tidyVec(next.toArray() as Vec3));
+    this.events.onReadout(text, event.clientX, event.clientY);
   }
 
   private layoutSnaps(): void {
@@ -2510,10 +2860,11 @@ export class Viewer {
     if (!withOverlays) return;
 
     renderer.autoClear = false;
-    if (this.frame || this.pointer3d.visible || this.snapDots.length || this.lockBadges.size) {
+    if (this.frame || this.pointer3d.visible || this.marker.visible || this.dimMarkers.size || this.snapDots.length || this.lockBadges.size) {
       this.layoutHandles();
       this.layoutLockBadges();
       this.layoutSnaps();
+      this.layoutMarker();
       renderer.clearDepth();
       renderer.render(this.overlay, camera);
     }

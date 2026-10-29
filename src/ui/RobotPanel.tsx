@@ -10,7 +10,7 @@ import { checkRobot } from '../robot/check';
 import { linkNodes, robotOf, spanningTree } from '../robot/model';
 import type { RobotJoint, RobotSensor } from '../robot/types';
 import { massProps } from '../state/massProps';
-import { exportRobot, leaveRobotMode, select, selectJoint, selectSensor, setPrefs, useEditor } from '../state/store';
+import { exportRobot, fixLooseLinks, leaveRobotMode, select, selectJoint, selectSensor, setPrefs, useEditor } from '../state/store';
 import { ChevronIcon, CloseIcon, DownloadIcon, JointIcon, SensorIcon, WarningIcon } from './icons';
 import { Popover } from './Popover';
 
@@ -150,6 +150,11 @@ export function RobotPanel() {
             <ul className="outline" role="tree" aria-label="Unattached links">
               {loose.map((n) => linkRow(n, 0))}
             </ul>
+            <div className="structure-actions">
+              <button type="button" className="chip" title="Hangs every unattached link from the base by a fixed joint, where the two meet" onClick={fixLooseLinks}>
+                Fix all to the base
+              </button>
+            </div>
           </>
         )}
         {!rooted && nodes.length > 0 && (
@@ -233,13 +238,19 @@ export function RobotExport() {
 /** The row over the left panel in Robot mode, in place of the tabs. */
 export function RobotModeBar() {
   const picking = useEditor((s) => s.jointPick);
+  const all = useEditor((s) => s.prefs.robotMarkers);
   return (
     <div className="tabs robot-bar">
       <div className="page-tabs">
         <span className="robot-mode-title">{picking ? 'Click a point on the plate' : 'Robot mode'}</span>
-        <button type="button" className="icon-button" title="Leave Robot mode" aria-label="Leave Robot mode" onClick={leaveRobotMode}>
-          <CloseIcon />
-        </button>
+        <div className="robot-bar-actions">
+          <button type="button" className={all ? 'icon-button on' : 'icon-button'} aria-pressed={all} title="Shows every joint and sensor on the plate" onClick={() => setPrefs({ robotMarkers: !all })}>
+            <JointIcon />
+          </button>
+          <button type="button" className="icon-button" title="Leave Robot mode" aria-label="Leave Robot mode" onClick={leaveRobotMode}>
+            <CloseIcon />
+          </button>
+        </div>
       </div>
     </div>
   );
