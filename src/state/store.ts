@@ -102,7 +102,8 @@ export interface EditorState {
   /** The sensor picked in Robot mode (nothing else is selected while one is). */
   sensor: string | null;
   /** The picked joint or sensor is being placed: the plate offers the snap points of its links. */
-  jointPick: boolean;
+  /** Placing the picked joint by a click on a snap point: which of its links shows its points (a sensor's link counts as the child). */
+  jointPick: 'child' | 'parent' | null;
   /** The picked joint moved to try the robot: its value, and where every link goes for it (loops solved). */
   pose: { joint: string; value: number; solved: Solved } | null;
   /**
@@ -115,8 +116,10 @@ export interface EditorState {
    * without one, of the whole selection. Frozen while a dot is being previewed.
    * `done` has one flag per dot (see `alignDot`): true where every object that
    * could move already sits on that line, so the dot would change nothing.
+   * `marker`: the dots place the picked joint or sensor instead, on the box of
+   * the anchor object, which a click on any object changes.
    */
-  aligning: { anchor: string | null; bounds: Bounds; done: boolean[] } | null;
+  aligning: { anchor: string | null; bounds: Bounds; done: boolean[]; marker?: boolean } | null;
   /**
    * Editing inside a group: the layers taken apart to reach a part of it,
    * which are put back together on Done. `before` is the scene for Cancel.
@@ -158,7 +161,7 @@ let state: EditorState = {
   robot: false,
   joint: null,
   sensor: null,
-  jointPick: false,
+  jointPick: null,
   pose: null,
   mating: null,
   aligning: null,
@@ -317,8 +320,8 @@ export function endGesture(cancel = false): void {
   alignPreview = false;
   if (!base) return;
   if (cancel) {
-    set({ doc: { ...state.doc, scene: base.scene }, selection: base.selection });
-  } else if (base.scene !== state.doc.scene) {
+    set({ doc: { ...state.doc, scene: base.scene, robot: base.robot }, selection: base.selection });
+  } else if (base.scene !== state.doc.scene || base.robot !== state.doc.robot) {
     past.push(base);
     if (past.length > UNDO_LIMIT) past.shift();
     future = [];
@@ -361,8 +364,10 @@ export function selectedNodes(s: EditorState = state): SceneNode[] {
 
 export function select(ids: string[]): void {
   abortAlignPreview();
+  // The dots of a joint or sensor being lined up go with it (an unchanged empty selection would keep them otherwise).
+  if (state.aligning?.marker) stopAligning();
   // Selecting an object takes the right panel from the custom parts bin; any selection, or none, takes it from a joint or sensor.
-  set(ids.length ? { selection: ids, bin: false, joint: null, sensor: null, jointPick: false, pose: null } : { selection: ids, joint: null, sensor: null, jointPick: false, pose: null });
+  set(ids.length ? { selection: ids, bin: false, joint: null, sensor: null, jointPick: null, pose: null } : { selection: ids, joint: null, sensor: null, jointPick: null, pose: null });
 }
 
 export function toggleSelected(id: string): void {
@@ -977,7 +982,17 @@ export function alignSelectedOn(steps: [0 | 1 | 2, AlignMode][]): void {
 // --- align mode ---------------------------------------------------------------
 
 /** The box the anchor dots sit on (the anchor object's, or the whole selection's) and which dots have nothing left to do. */
-function alignState(anchor: string | null): { anchor: string | null; bounds: Bounds; done: boolean[] } | null {
+function alignState(anchor: string | null): EditorState['aligning'] {
+  // A picked joint or sensor lines up with the anchor object's box, one coordinate at a time.
+  const origin = state.joint || state.sensor ? markerOriginIn(state.doc) : null;
+  if (origin) {
+    const target = anchor ? state.doc.scene.find((n) => n.id === anchor) : undefined;
+    if (!target) return null;
+    const bounds = geometry.bounds(target);
+    const done: boolean[] = [];
+    for (const axis of [0, 1, 2] as const) for (const mode of ALIGN_MODES) done[alignDot(axis, mode)] = Math.abs(origin[axis] - alignAt(bounds, axis, mode)) < 1e-3; // the origin is kept to 1e-4 mm
+    return { anchor, bounds, done, marker: true };
+  }
   const nodes = selectedNodes();
   const target = anchor ? nodes.find((n) => n.id === anchor) : null;
   const bounds = target ? geometry.bounds(target) : selectionBounds(nodes);
@@ -999,9 +1014,14 @@ function refreshAlignBounds(): void {
   set({ aligning: alignState(aligning.anchor) });
 }
 
-/** Show the anchor dots around the selection (two or more objects). */
+/** Show the anchor dots around the selection (two or more objects), or, for a picked joint or sensor, on the box of the link it belongs to. */
 export function startAligning(): void {
   if (state.aligning) return;
+  if (state.joint || state.sensor) {
+    const aligning = alignState(markerLink());
+    if (aligning) set({ aligning, placing: null });
+    return;
+  }
   if (state.selection.length < 2) return notify('Select two or more objects to line them up.');
   const aligning = alignState(null);
   if (aligning) set({ aligning, placing: null });
@@ -1032,7 +1052,8 @@ export const toggleAligning = (): void => (state.aligning ? stopAligning() : sta
 export function setAlignAnchor(id: string | null): void {
   const aligning = state.aligning;
   if (!aligning) return;
-  const anchor = id === aligning.anchor ? null : id;
+  // A joint or sensor always lines up with some object, so its anchor cannot be cleared, only changed.
+  const anchor = id === aligning.anchor && !aligning.marker ? null : id;
   const next = alignState(anchor);
   if (next) set({ aligning: next });
 }
@@ -1047,10 +1068,27 @@ function aligned(axis: 0 | 1 | 2, mode: AlignMode): SceneNode[] | null {
   return alignNodes(nodes, (n) => geometry.bounds(n), axis, mode, aligning.bounds);
 }
 
+/** Where the picked joint or sensor goes when lined up on a dot: that coordinate taken from the anchor's box; from before any preview. */
+function markerAligned(axis: 0 | 1 | 2, mode: AlignMode): Vec3 | null {
+  const aligning = state.aligning;
+  if (!aligning?.marker) return null;
+  const origin = markerOriginIn(gesture ? { ...state.doc, robot: gesture.robot } : state.doc);
+  return origin && (origin.map((v, i) => (i === axis ? alignAt(aligning.bounds, axis, mode) : v)) as Vec3);
+}
+
 /** Hovering a dot moves the objects there for a look; null puts them back. */
 export function previewAlign(axis: 0 | 1 | 2 | null, mode: AlignMode = 'center'): void {
   if (!state.aligning) return;
   if (axis === null) return abortAlignPreview();
+  if (state.aligning.marker) {
+    const origin = markerAligned(axis, mode);
+    if (!origin) return;
+    // The gesture keeps the placing out of the history; letting go of the preview puts the robot back.
+    gesture ??= step();
+    alignPreview = true;
+    placeMarker(origin);
+    return;
+  }
   const nodes = aligned(axis, mode);
   if (!nodes) return;
   // Not through commit, which would take the preview for an edit and let go of it.
@@ -1062,6 +1100,12 @@ export function previewAlign(axis: 0 | 1 | 2 | null, mode: AlignMode = 'center')
 
 /** Clicking a dot keeps the objects where the preview put them. */
 export function commitAlign(axis: 0 | 1 | 2, mode: AlignMode): void {
+  if (state.aligning?.marker) {
+    const origin = markerAligned(axis, mode);
+    abortAlignPreview();
+    if (origin) placeMarker(origin);
+    return;
+  }
   const nodes = aligned(axis, mode);
   if (!nodes) return;
   // From the scene before the hover, as one step of its own.
@@ -1479,7 +1523,7 @@ function adopt(doc: Doc, key: string | null): void {
     robot: false,
     joint: null,
     sensor: null,
-    jointPick: false,
+    jointPick: null,
     pose: null,
     mating: null,
     editing: null,
@@ -1821,23 +1865,28 @@ export function enterRobotMode(): void {
   set({ robot: true, joint: null, bin: false, selection: [] });
 }
 
-export const leaveRobotMode = (): void => set({ robot: false, joint: null, sensor: null, jointPick: false, pose: null });
+export function leaveRobotMode(): void {
+  if (state.aligning) stopAligning();
+  set({ robot: false, joint: null, sensor: null, jointPick: null, pose: null });
+}
 export const toggleRobotMode = (): void => (state.robot ? leaveRobotMode() : enterRobotMode());
 
 export function selectJoint(id: string | null): void {
-  abortAlignPreview();
-  set(id ? { joint: id, sensor: null, selection: [], jointPick: false, pose: null } : { joint: null, jointPick: false, pose: null });
+  if (state.aligning) stopAligning();
+  set(id ? { joint: id, sensor: null, selection: [], jointPick: null, pose: null } : { joint: null, jointPick: null, pose: null });
 }
 
 export function selectSensor(id: string | null): void {
-  abortAlignPreview();
-  set(id ? { sensor: id, joint: null, selection: [], jointPick: false, pose: null } : { sensor: null, jointPick: false });
+  if (state.aligning) stopAligning();
+  set(id ? { sensor: id, joint: null, selection: [], jointPick: null, pose: null } : { sensor: null, jointPick: null });
 }
 
 /** Replaces the robot as one undoable step, like `commit` does the scene. A pose was for the robot as it was. */
 function commitRobot(robot: Robot, merge?: string): void {
   record(merge);
   set({ doc: { ...state.doc, robot }, pose: null });
+  // The dots know what is left to line up; not while one is only being looked at.
+  if (state.aligning && !alignPreview) refreshAlignBounds();
 }
 
 /**
@@ -1854,13 +1903,13 @@ export function jointSnaps(s: EditorState = state): SnapPoint[] {
   }
   const joint = s.joint ? s.doc.robot?.joints.find((j) => j.id === s.joint) : undefined;
   if (!joint) return [];
-  const child = s.doc.scene.find((n) => n.id === joint.child);
-  const parent = s.doc.scene.find((n) => n.id === joint.parent);
-  return [...(child ? snapPointsOf(child) : []), ...(parent ? snapPointsOf(parent) : [])];
+  const link = s.doc.scene.find((n) => n.id === (s.jointPick === 'parent' ? joint.parent : joint.child));
+  return link ? snapPointsOf(link) : [];
 }
 
-export const startJointPick = (): void => set({ jointPick: Boolean(state.joint || state.sensor), pose: null });
-export const stopJointPick = (): void => set({ jointPick: false });
+/** Shows the snap points of one of the picked joint's links (or the picked sensor's link) to click on. */
+export const startJointPick = (side: 'child' | 'parent' = 'child'): void => set({ jointPick: state.joint || state.sensor ? side : null, pose: null });
+export const stopJointPick = (): void => set({ jointPick: null });
 
 /** Puts the picked joint (or sensor) on a snap point; a point that carries an axis (the end of a cylinder) gives a joint that axis too. */
 export function pickJointSnap(point: SnapPoint): void {
@@ -1868,7 +1917,7 @@ export function pickJointSnap(point: SnapPoint): void {
     const sensor = robotOf(state.doc).sensors.find((x) => x.id === state.sensor);
     const link = sensor && state.doc.scene.find((n) => n.id === sensor.link);
     if (sensor && link) placeSensor(sensor.id, point.at, sensorInDesign(sensor, link).matrix);
-    set({ jointPick: false });
+    set({ jointPick: null });
     return;
   }
   const joint = state.joint && robotOf(state.doc).joints.find((j) => j.id === state.joint);
@@ -1876,7 +1925,7 @@ export function pickJointSnap(point: SnapPoint): void {
   if (!joint || !child) return;
   const placed = jointInDesignOf(joint, child);
   placeJoint(joint.id, point.at, point.axis ?? placed.axis);
-  set({ jointPick: false });
+  set({ jointPick: null });
 }
 
 // --- sensors, drive and control ---------------------------------------------------
@@ -2009,22 +2058,43 @@ export function placeJoint(id: string, origin: Vec3, axis: Vec3, merge?: string)
   updateJoint(id, { origin: tidyVec(local.origin), axis: tidyVec(local.axis) }, merge);
 }
 
-/** Moves the picked joint or sensor to `origin` (design mm) as a drag goes on; the steps of one drag undo together, and a drag that goes nowhere records nothing. */
-export function dragMarker(origin: Vec3): void {
-  const same = (at: Vec3) => at.every((v, i) => Math.abs(v - origin[i]) < 1e-6);
+/** Where the picked joint or sensor sits in the design (mm), as `doc` has it; null when none is picked or its link is gone. */
+function markerOriginIn(doc: Doc): Vec3 | null {
+  const robot = robotOf(doc);
+  if (state.sensor) {
+    const sensor = robot.sensors.find((x) => x.id === state.sensor);
+    const link = sensor && doc.scene.find((n) => n.id === sensor.link);
+    return sensor && link ? sensorInDesign(sensor, link).origin : null;
+  }
+  const joint = state.joint ? robot.joints.find((j) => j.id === state.joint) : undefined;
+  const child = joint && doc.scene.find((n) => n.id === joint.child);
+  return joint && child ? jointInDesignOf(joint, child).origin : null;
+}
+
+/** The link the picked sensor sits on, or the one the picked joint hangs from. */
+function markerLink(): string | null {
+  const robot = robotOf(state.doc);
+  if (state.sensor) return robot.sensors.find((x) => x.id === state.sensor)?.link ?? null;
+  return robot.joints.find((j) => j.id === state.joint)?.parent ?? null;
+}
+
+/** Puts the picked joint or sensor at `origin` (design mm), keeping the way it is turned or its axis. */
+function placeMarker(origin: Vec3, merge?: string): void {
   if (state.sensor) {
     const sensor = robotOf(state.doc).sensors.find((x) => x.id === state.sensor);
     const link = sensor && state.doc.scene.find((n) => n.id === sensor.link);
-    if (!sensor || !link) return;
-    const placed = sensorInDesign(sensor, link);
-    if (!same(placed.origin)) placeSensor(sensor.id, origin, placed.matrix, 'marker-drag');
+    if (sensor && link) placeSensor(sensor.id, origin, sensorInDesign(sensor, link).matrix, merge);
     return;
   }
   const joint = state.joint && robotOf(state.doc).joints.find((j) => j.id === state.joint);
   const child = joint && state.doc.scene.find((n) => n.id === joint.child);
-  if (!joint || !child) return;
-  const placed = jointInDesignOf(joint, child);
-  if (!same(placed.origin)) placeJoint(joint.id, origin, placed.axis, 'marker-drag');
+  if (joint && child) placeJoint(joint.id, origin, jointInDesignOf(joint, child).axis, merge);
+}
+
+/** Moves the picked joint or sensor to `origin` (design mm) as a drag goes on; the steps of one drag undo together, and a drag that goes nowhere records nothing. */
+export function dragMarker(origin: Vec3): void {
+  const at = markerOriginIn(state.doc);
+  if (at && at.some((v, i) => Math.abs(v - origin[i]) >= 1e-6)) placeMarker(origin, 'marker-drag');
 }
 
 /** The drag is over: the next one is an undo step of its own. */

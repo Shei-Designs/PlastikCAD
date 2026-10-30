@@ -86,6 +86,8 @@ function Actions() {
   const selection = useEditor((s) => s.selection);
   const picked = useMemo(() => scene.filter((n) => selection.includes(n.id)), [scene, selection]);
   const aligning = useEditor((s) => s.aligning);
+  /** A picked joint or sensor lines up with an object's box, on its own. */
+  const marker = useEditor((s) => Boolean(s.joint || s.sensor));
   const ghosts = useEditor(hasGhosts);
   const none = picked.length === 0;
   const hasGroup = picked.some((n) => n.type === 'group');
@@ -107,7 +109,7 @@ function Actions() {
           title="Align (L)"
           aria-label="Align"
           aria-pressed={Boolean(aligning)}
-          disabled={picked.length < 2 && !aligning}
+          disabled={picked.length < 2 && !aligning && !marker}
           onClick={toggleAligning}
         >
           <AlignIcon />

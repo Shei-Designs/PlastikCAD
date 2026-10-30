@@ -3,6 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseDoc, serializeDoc } from '../model/file';
 import { boxBounds, unionBounds } from '../model/math';
+import { jointInDesign } from '../robot/model';
 import type { Bounds } from '../model/math';
 import type { GroupNode, PartNode, SceneNode } from '../model/types';
 import type { PickedFile } from '../platform';
@@ -111,6 +112,52 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+describe('lining up a joint', () => {
+  /** The picked joint's place in the design. */
+  const jointAt = (): number[] => {
+    const s = store.getState();
+    const joint = s.doc.robot!.joints.find((j) => j.id === s.joint)!;
+    return jointInDesign(joint, scene().find((n) => n.id === joint.child)!).origin;
+  };
+
+  it('puts the joint on the dots of its parent link, previews without touching the history, and takes another object as anchor', () => {
+    const { a, b } = twoBoxes();
+    store.setRobotRoot(a);
+    store.addJoint(a, b);
+    expect(store.getState().joint).not.toBeNull();
+    const before = jointAt();
+    store.startAligning();
+    const aligning = store.getState().aligning!;
+    expect(aligning.marker).toBe(true);
+    expect(aligning.anchor).toBe(a);
+    // `a` stands at x 20..40.
+    store.previewAlign(0, 'max');
+    expect(jointAt()[0]).toBe(40);
+    store.previewAlign(null);
+    expect(jointAt()).toEqual(before);
+    const steps = store.getState().canUndo;
+    store.commitAlign(0, 'max');
+    expect(jointAt()[0]).toBe(40);
+    expect(store.getState().aligning!.done[2]).toBe(true);
+    store.undo();
+    expect(jointAt()).toEqual(before);
+    expect(store.getState().canUndo).toBe(steps);
+    // Any object can be the anchor: `b` stands at x -10..10.
+    store.setAlignAnchor(b);
+    expect(store.getState().aligning!.anchor).toBe(b);
+    store.commitAlign(0, 'min');
+    expect(jointAt()[0]).toBe(-10);
+    // A click on empty space, which selects nothing, takes the dots away too.
+    store.startAligning();
+    expect(store.getState().aligning).not.toBeNull();
+    store.select([]);
+    expect(store.getState().aligning).toBeNull();
+    expect(store.getState().joint).toBeNull();
+    store.leaveRobotMode();
+    expect(store.getState().aligning).toBeNull();
+  });
 });
 
 describe('align mode previews', () => {

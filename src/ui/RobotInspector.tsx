@@ -3,13 +3,12 @@
 // settings, or a joint's kind, place, axis and limits.
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { boundsCenter, eulerOf } from '../model/math';
+import { eulerOf } from '../model/math';
 import type { Mat } from '../model/math';
 import type { SceneNode, Vec3 } from '../model/types';
-import { geometry } from '../state/geometry';
 import { massOf, principalMoments, tensorOf } from '../robot/inertia';
 import { MATERIALS, materialOf } from '../robot/materials';
-import { jointInDesign, linkOf, meetingPoint, sensorInDesign } from '../robot/model';
+import { jointInDesign, linkOf, sensorInDesign } from '../robot/model';
 import { COLLISION_KINDS, JOINT_TYPES, SENSOR_KINDS } from '../robot/types';
 import type { RobotJoint, RobotLink, RobotSensor, SensorKind } from '../robot/types';
 import type { Problem } from '../robot/check';
@@ -386,7 +385,6 @@ function JointPanel({ joint }: { joint: RobotJoint }) {
   const put = (origin: Vec3, axis: Vec3, merge?: string) => placeJoint(joint.id, origin, axis, merge);
   const along = AXES.findIndex((a) => Math.abs(Math.abs(placed.axis[0] * a.vector[0] + placed.axis[1] * a.vector[1] + placed.axis[2] * a.vector[2]) - 1) < 1e-6);
   const flipped = along >= 0 && placed.axis[along] < 0;
-  const centerOf = (node: SceneNode | undefined) => (node ? boundsCenter(geometry.bounds(node)) : null);
   const row = (label: string, content: ReactNode, help?: string) => (
     <div className="field inline">
       <label>
@@ -426,10 +424,18 @@ function JointPanel({ joint }: { joint: RobotJoint }) {
       <fieldset className="group">
         <legend>Place</legend>
         <div className="field">
-          <button type="button" className={picking ? 'chip pick on' : 'chip pick'} aria-pressed={picking} title="Shows points on both links; click one to put the joint there. The end of a round shape gives its axis too." onClick={() => (picking ? stopJointPick() : startJointPick())}>
-            <PinIcon />
-            {picking ? 'Click a point on the plate…' : 'Pick a point on the plate'}
-          </button>
+          <label>
+            Pick a point
+            <Hint text="Shows the corners, edge middles, face centers and axis ends of one link; click one to put the joint there. The end of a round shape gives its axis too." />
+          </label>
+          <div className="chip-row">
+            {(['child', 'parent'] as const).map((side) => (
+              <button key={side} type="button" className={picking === side ? 'chip pick on' : 'chip pick'} aria-pressed={picking === side} title={side === 'child' ? 'Points on the child, the link that moves' : 'Points on the parent, the link it hangs from'} onClick={() => (picking === side ? stopJointPick() : startJointPick(side))}>
+                <PinIcon />
+                {picking === side ? `Click a point on the ${side}…` : `On the ${side}`}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="field">
           <label>
@@ -440,17 +446,6 @@ function JointPanel({ joint }: { joint: RobotJoint }) {
             {(['X', 'Y', 'Z'] as const).map((tag, i) => (
               <NumberBox key={tag} label={`Origin ${tag}`} tag={tag} value={Number(placed.origin[i].toFixed(3))} step={1} places={2} onChange={(v) => put(placed.origin.map((x, k) => (k === i ? v : x)) as Vec3, placed.axis, 'joint-origin')} />
             ))}
-          </div>
-          <div className="chip-row">
-            <button type="button" className="chip" title="Puts the joint at the center of the child" onClick={() => centerOf(child) && put(centerOf(child)!, placed.axis)}>
-              Child center
-            </button>
-            <button type="button" className="chip" title="Puts the joint at the center of the parent" onClick={() => centerOf(parent) && put(centerOf(parent)!, placed.axis)}>
-              Parent center
-            </button>
-            <button type="button" className="chip" title="Puts the joint in the middle of where the two links overlap or touch: a wheel's hub on its axle, the faces two parts meet at" onClick={() => parent && child && put(meetingPoint(geometry.bounds(parent), geometry.bounds(child)), placed.axis)}>
-              Where they meet
-            </button>
           </div>
         </div>
         {joint.type !== 'fixed' && (
@@ -617,7 +612,7 @@ function SensorPanel({ sensor }: { sensor: RobotSensor }) {
       <fieldset className="group">
         <legend>Place</legend>
         <div className="field">
-          <button type="button" className={picking ? 'chip pick on' : 'chip pick'} aria-pressed={picking} title="Shows points on the link; click one to put the sensor there." onClick={() => (picking ? stopJointPick() : startJointPick())}>
+          <button type="button" className={picking ? 'chip pick on' : 'chip pick'} aria-pressed={Boolean(picking)} title="Shows points on the link; click one to put the sensor there." onClick={() => (picking ? stopJointPick() : startJointPick())}>
             <PinIcon />
             {picking ? 'Click a point on the plate…' : 'Pick a point on the plate'}
           </button>

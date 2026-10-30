@@ -67,13 +67,17 @@ export interface ViewerOptions {
   snap: number;
   /** False while an old version is shown: look, don't touch. */
   interactive: boolean;
-  /** Align mode: anchor dots on this box instead of the usual handles; `done` (one flag per dot, see `alignDot`) greys out the dots that would change nothing. */
-  align: { bounds: Bounds; anchor: string | null; done: boolean[] } | null;
+  /**
+   * Align mode: anchor dots on this box instead of the usual handles; `done` (one flag per dot, see
+   * `alignDot`) greys out the dots that would change nothing. With `marker` the dots place the picked
+   * joint or sensor, there need be no selection, and a click on any object makes it the anchor.
+   */
+  align: { bounds: Bounds; anchor: string | null; done: boolean[]; marker?: boolean } | null;
   /** A box to point out (a part inside a group): its frame and size. */
   highlight: { matrix: Mat; size: Vec3 } | null;
   /** Points to pick from (Robot mode, placing a joint): dots at each, in the scene. */
   snaps: SnapPoint[] | null;
-  /** The joint or sensor picked in Robot mode, drawn as a frame with its motion or view, with grips to drag it by. */
+  /** The joint or sensor picked in Robot mode, drawn as a frame with its motion or view, with an arrow per axis to drag it by. */
   marker: Marker | null;
   /** The other joints and sensors, drawn small; a click on one picks it. */
   markers: { id: string; marker: Marker }[] | null;
@@ -188,12 +192,8 @@ const DRAG_THRESHOLD = 4; // px
 const PROMPT_PAD = 14; // px
 /** A box beside a grip starts this far from the grip's center, and no box comes nearer than this to the edge of the view (more at the top, under the toolbar). */
 const PROMPT_BESIDE = 30; // px
-/** How far above the top of the selection the lift arrow floats: further for a finger, so it and the top grip are two targets. */
-const LIFT_RISE = 40; // px
-const TOUCH_LIFT_RISE = 56; // px
-const liftRise = (): number => (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? TOUCH_LIFT_RISE : LIFT_RISE);
-/** The lift arrow is taller than a grip, so its box sits further up. */
-const PROMPT_LIFT_PAD = LIFT_RISE; // px
+/** Size of a unit of the move arrows on a selection, in pixels; the arrows reach `ARROW_TO + ARROW_HEAD` units from the middle. */
+const MOVE_ARROW_PIXELS = 54;
 const PROMPT_MARGIN = 8; // px
 const PROMPT_MARGIN_TOP = 52; // px
 const PROMPT_BOX: [number, number] = [100, 28]; // px, about the size of a box
@@ -292,19 +292,19 @@ function markerObject(mk: Marker, accent: number, dim = false): Group {
     });
   };
   const cube = (h: number, color: string | number) => put(new BoxGeometry(2 * h, 2 * h, 2 * h), color, [0, 0, 0]);
-  /** An arc about Z at height `z`, from angle `from` through `sweep` radians, counter-clockwise seen from +Z. */
+  /** An arc about Z at height `z`, from angle `from` through `sweep` radians, counter-clockwise seen from +Z. The torus lies in XY as made; only its start is turned. */
   const arc = (radius: number, from: number, sweep: number, z: number, color: string | number) => {
     const torus = new TorusGeometry(radius, R, 8, Math.max(12, Math.ceil((Math.abs(sweep) / (2 * Math.PI)) * 64)), Math.abs(sweep));
-    put(torus, color, [0, 0, z], [0, 0, 1], sweep < 0 ? from + sweep : from);
+    put(torus, color, [0, 0, z], undefined, sweep < 0 ? from + sweep : from);
   };
   switch (mk.kind) {
     case 'joint': {
       if (mk.type === 'fixed') {
-        triad(0.45);
+        triad(0.3);
         cube(0.14, accent);
         break;
       }
-      triad(0.45, false);
+      triad(0.3, false);
       rod([0, 0, -1], [0, 0, 1], accent);
       if (mk.type === 'prismatic') {
         cone([0, 0, 1.12], [0, 0, 1], accent);
@@ -350,7 +350,7 @@ function markerObject(mk: Marker, accent: number, dim = false): Group {
       break;
     }
     case 'imu':
-      triad(0.8);
+      triad(0.45);
       cube(0.16, accent);
       break;
   }
@@ -364,13 +364,42 @@ function markerObject(mk: Marker, accent: number, dim = false): Group {
     const hit = new Mesh(new CylinderGeometry(0.14, 0.14, 2.3, 8), material(accent));
     hit.quaternion.setFromUnitVectors(UP, new Vector3(0, 0, 1));
     hit.visible = false;
-    hit.userData.axis = true;
+    hit.userData.slide = true;
     group.add(hit);
   }
   return group;
 }
 
 const UP = new Vector3(0, 1, 0);
+const axisVector = (axis: 0 | 1 | 2): Vector3 => new Vector3(axis === 0 ? 1 : 0, axis === 1 ? 1 : 0, axis === 2 ? 1 : 0);
+
+/** The pieces every move arrow is made of, shared: a shaft, a head, and the fat unseen tube the pointer hits. Built up Y. */
+let arrowParts: { shaft: CylinderGeometry; head: ConeGeometry; hit: CylinderGeometry } | null = null;
+
+/** A move arrow along one of the design's axes in that axis's color, one unit = the pixel size it is laid out at. */
+function moveArrow(axis: 0 | 1 | 2): Group {
+  arrowParts ??= {
+    shaft: new CylinderGeometry(0.045, 0.045, ARROW_TO - ARROW_FROM, 10),
+    head: new ConeGeometry(0.12, ARROW_HEAD, 14),
+    hit: new CylinderGeometry(0.18, 0.18, ARROW_TO + ARROW_HEAD - ARROW_FROM + 0.1, 8),
+  };
+  const material = new MeshBasicMaterial({ color: AXIS_COLORS[axis], transparent: true, opacity: 0.9, depthTest: false, toneMapped: false });
+  const arrow = new Group();
+  arrow.userData.axis = axis;
+  arrow.quaternion.setFromUnitVectors(UP, axisVector(axis));
+  const shaft = new Mesh(arrowParts.shaft, material);
+  shaft.position.y = (ARROW_FROM + ARROW_TO) / 2;
+  const head = new Mesh(arrowParts.head, material);
+  head.position.y = ARROW_TO + ARROW_HEAD / 2;
+  const hit = new Mesh(arrowParts.hit, new MeshBasicMaterial({ colorWrite: false, depthWrite: false, depthTest: false }));
+  hit.position.y = (ARROW_FROM + ARROW_TO + ARROW_HEAD) / 2;
+  hit.userData.hit = true;
+  for (const part of [shaft, head, hit]) {
+    part.renderOrder = 13;
+    arrow.add(part);
+  }
+  return arrow;
+}
 
 /** Frees what a marker was built from. */
 function disposeMarker(group: Group): void {
@@ -436,7 +465,8 @@ export type HandleKind =
   | { type: 'resize'; sx: -1 | 0 | 1; sy: -1 | 0 | 1 }
   /** Height grip at the top (side 1, base stays put) or at the bottom (side -1, top stays put). */
   | { type: 'height'; side: 1 | -1 }
-  | { type: 'lift' }
+  /** An arrow along one of the design's axes, from the middle of the selection, to move it along that axis alone. */
+  | { type: 'move'; axis: 0 | 1 | 2 }
   | { type: 'rotate'; axis: 0 | 1 | 2 }
   | { type: 'align'; axis: 0 | 1 | 2; mode: AlignMode };
 
@@ -479,13 +509,18 @@ type Drag =
   /** A grip pressed from an angle it cannot be dragged from: a click still brings up its typing boxes. */
   | { mode: 'held' }
   | { mode: 'height'; box: GripBox; nodes: SceneNode[]; side: 1 | -1; grab: number }
-  | { mode: 'lift'; nodes: SceneNode[]; origin: Vector3; grab: number }
+  | { mode: 'slide'; nodes: SceneNode[]; origin: Vector3; axis: 0 | 1 | 2; grab: number }
   | { mode: 'rotate'; nodes: SceneNode[]; axis: 0 | 1 | 2; pivot: Vec3; start: number | null; x: number }
-  /** The picked joint or sensor dragged by its grip (over the plate), its lift arrow (up and down) or its axis (along it). */
-  | { mode: 'marker'; how: MarkerHandle; origin: Vector3; axis: Vector3; plane: Plane; grab: Vector3; grabT: number }
+  /** The picked joint or sensor dragged along one of the design's axes by its arrow, or along its own axis by the rod. */
+  | { mode: 'marker'; how: MarkerHandle; origin: Vector3; axis: Vector3; grabT: number }
   | { mode: 'place' };
 
-type MarkerHandle = 'move' | 'lift' | 'axis';
+/** A move arrow (the design's X, Y or Z) or the joint's own axis rod. */
+type MarkerHandle = 0 | 1 | 2 | 'slide';
+/** The move arrows reach from here to here, in marker units, with the head on the end. */
+const ARROW_FROM = 0.5;
+const ARROW_TO = 1.45;
+const ARROW_HEAD = 0.3;
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
@@ -578,26 +613,6 @@ function lockTexture(): CanvasTexture {
   });
 }
 
-/** Up/down arrow for the handle that lifts things off the plate. */
-function liftTexture(): CanvasTexture {
-  return canvasTexture(64, (g) => {
-    g.fillStyle = '#14171c';
-    g.strokeStyle = '#ffffff';
-    g.lineWidth = 5;
-    g.lineJoin = 'round';
-    g.beginPath();
-    g.moveTo(32, 5);
-    g.lineTo(54, 30);
-    g.lineTo(40, 30);
-    g.lineTo(40, 59);
-    g.lineTo(24, 59);
-    g.lineTo(24, 30);
-    g.lineTo(10, 30);
-    g.closePath();
-    g.stroke();
-    g.fill();
-  });
-}
 
 const toMatrix4 = (m: Mat, target: Matrix4): Matrix4 =>
   target.set(m[0], m[3], m[6], m[9], m[1], m[4], m[7], m[10], m[2], m[5], m[8], m[11], 0, 0, 0, 1);
@@ -657,9 +672,9 @@ export class Viewer {
   /** The picked joint or sensor (Robot mode), and what its lines were last built for. */
   private marker!: Group;
   private markerKey = '';
-  /** Its grips: a dot at its origin to drag it over the plate, and the lift arrow above. */
-  private markerGrip!: Sprite;
-  private markerLift!: Sprite;
+  /** Its move arrows, one per design axis in the axis colors, and the one under the pointer. */
+  private markerArrows!: Group;
+  private hotArrow: number | null = null;
   /** The other joints and sensors, drawn small, by id. */
   private dimMarkers = new Map<string, Group>();
   private dimKey = '';
@@ -674,7 +689,6 @@ export class Viewer {
   private grips!: {
     corner: SpriteMaterial;
     edge: SpriteMaterial;
-    lift: SpriteMaterial;
     dot: SpriteMaterial;
     dotHot: SpriteMaterial;
     lock: SpriteMaterial;
@@ -1063,7 +1077,6 @@ export class Viewer {
     this.grips = {
       corner: grip(gripTexture('#ffffff', '#14171c')),
       edge: grip(gripTexture('#14171c', '#ffffff')),
-      lift: grip(liftTexture()),
       dot: grip(dotTexture('#14171c')),
       dotHot: grip(dotTexture(LOCK_COLOR)),
       lock: grip(lockTexture()),
@@ -1071,12 +1084,17 @@ export class Viewer {
       dotDone: grip(dotTexture(DONE_DOT.fill, DONE_DOT.rim)),
     };
     this.grips.dotDone.opacity = DONE_DOT.opacity;
-    this.markerGrip = new Sprite(this.grips.dot);
-    this.markerLift = new Sprite(this.grips.lift);
-    for (const s of [this.markerGrip, this.markerLift]) {
-      s.renderOrder = 12;
-      s.visible = false;
-      this.overlay.add(s);
+    this.markerArrows = new Group();
+    this.markerArrows.matrixAutoUpdate = false;
+    this.markerArrows.visible = false;
+    this.overlay.add(this.markerArrows);
+    for (const axis of [0, 1, 2] as const) {
+      const arrow = moveArrow(axis);
+      arrow.traverse((o) => {
+        const material = (o as Mesh).material as MeshBasicMaterial | undefined;
+        if (material) this.disposables.push(material);
+      });
+      this.markerArrows.add(arrow);
     }
     // One line per axis through its three dots, in the axis's color.
     const lines = new BufferGeometry();
@@ -1155,7 +1173,7 @@ export class Viewer {
       }
     }
     this.marker.visible = Boolean(mk);
-    this.markerGrip.visible = this.markerLift.visible = Boolean(mk) && this.options.interactive;
+    this.markerArrows.visible = Boolean(mk) && this.options.interactive;
     const dims = this.options.markers ?? [];
     const dimKey = `${theme}:${JSON.stringify(dims.map((d) => ({ id: d.id, marker: { ...d.marker, matrix: undefined } })))}`;
     if (dimKey !== this.dimKey) {
@@ -1530,13 +1548,14 @@ export class Viewer {
   /** Recompute the selection's box and which handles it gets. */
   private updateFrame(): void {
     const picked = this.options.interactive ? this.items.filter((i) => i.selected && !i.ghost && !i.node.hidden) : [];
-    if (picked.length === 0) {
+    const align = this.options.align;
+    // Nothing picked and nothing to line up: no frame. (Lining up a joint or sensor has dots with no selection.)
+    if (picked.length === 0 && !align) {
       this.frame = null;
       this.outline.visible = false;
       if (this.handleMode !== 'none') this.clearHandles();
       return;
     }
-    const align = this.options.align;
     const bounds = align ? align.bounds : unionBounds(picked.map((i) => this.events.boundsOf(i.node)));
     const single = !align && picked.length === 1 ? picked[0].node : null;
     if (single) {
@@ -1585,7 +1604,7 @@ export class Viewer {
     }
     add({ type: 'height', side: 1 }, new Sprite(this.grips.corner), 13, 'ns-resize');
     add({ type: 'height', side: -1 }, new Sprite(this.grips.corner), 13, 'ns-resize');
-    add({ type: 'lift' }, new Sprite(this.grips.lift), 26, 'ns-resize');
+    for (const axis of [0, 1, 2] as const) add({ type: 'move', axis }, moveArrow(axis), MOVE_ARROW_PIXELS, 'move');
     for (const axis of [0, 1, 2] as const) {
       const ring = new Group();
       const material = new MeshBasicMaterial({ color: AXIS_COLORS[axis], depthTest: false, toneMapped: false, transparent: true });
@@ -1610,13 +1629,6 @@ export class Viewer {
   private pixelSize(at: Vector3): number {
     const depth = at.clone().sub(this.camera.position).dot(this.camera.getWorldDirection(new Vector3()));
     return (2 * Math.max(depth, 1e-3) * Math.tan((FOV * Math.PI) / 360)) / Math.max(this.height, 1);
-  }
-
-  /** The point `px` pixels straight up the screen from `at`, at the same depth. */
-  private aboveOnScreen(at: Vector3, px: number): Vector3 {
-    const ndc = at.clone().project(this.camera);
-    ndc.y += (2 * px) / Math.max(this.height, 1);
-    return ndc.unproject(this.camera);
   }
 
   private framePoint(local: Vec3): Vector3 {
@@ -1657,15 +1669,11 @@ export class Viewer {
         const at = k.type === 'resize' ? this.framePoint([k.sx * hx, k.sy * hy, -hz]) : this.framePoint([0, 0, k.side * hz]);
         h.object.position.copy(at);
         h.object.scale.setScalar(h.pixels * this.pixelSize(at) * (h === this.hovered ? 1.35 : 1) * this.gripScale);
-      } else if (k.type === 'lift') {
-        // Straight up the screen from the top grip (the middle of the object's top face), never below the
-        // highest point. Up the screen, not up the Z axis: in perspective a world-vertical line leans as
-        // the object moves off center, and the arrow would wander off the grip.
-        const top = this.framePoint([0, 0, hz]);
-        top.z = Math.max(top.z, f.bounds.max[2]);
-        const at = this.aboveOnScreen(top, liftRise());
+      } else if (k.type === 'move') {
+        // From the middle of the selection, along the design's axes whichever way the box is turned.
+        const at = this.framePoint([0, 0, 0]);
         h.object.position.copy(at);
-        h.object.scale.setScalar(h.pixels * this.pixelSize(at) * (h === this.hovered ? 1.2 : 1) * this.gripScale);
+        h.object.scale.setScalar(h.pixels * this.pixelSize(at) * (h === this.hovered ? 1.15 : 1) * this.gripScale);
       } else {
         const { at, from, to } = this.ringPlacement(k.axis);
         // The ring's hit tube is already several times fatter than the drawn arc, so it is not scaled.
@@ -1799,7 +1807,7 @@ export class Viewer {
       return;
     }
     const markerHandle = this.pickMarkerHandle(event);
-    if (markerHandle) {
+    if (markerHandle !== null) {
       this.startMarkerDrag(markerHandle);
       claim();
       return;
@@ -1825,8 +1833,8 @@ export class Viewer {
     const hit = this.pickNode();
     const additive = event.shiftKey || event.ctrlKey || event.metaKey;
     const touch = event.pointerType === 'touch';
-    // In align mode a click on a selected object makes it the anchor instead of starting a drag.
-    if (this.options.align && hit?.item.selected && !additive) {
+    // In align mode a click on a selected object makes it the anchor instead of starting a drag; lining up a joint or sensor, any object will do.
+    if (this.options.align && hit && (hit.item.selected || this.options.align.marker) && !additive) {
       this.events.onAnchor(hit.item.node.id);
       claim();
       return;
@@ -1910,10 +1918,10 @@ export class Viewer {
       // Measured from the end that stays put: the base for the top grip, the top for the bottom one.
       const t = this.alongAxis(this.framePoint([0, 0, -k.side * f.half[2]]), this.boxAxis(box, 2));
       this.drag = t === null ? { mode: 'held' } : { mode: 'height', box, nodes, side: k.side, grab: t - k.side * box.size[2] };
-    } else if (k.type === 'lift') {
+    } else if (k.type === 'move') {
       const origin = handle.object.position.clone();
-      const t = this.alongAxis(origin, new Vector3(0, 0, 1));
-      this.drag = t === null ? { mode: 'held' } : { mode: 'lift', nodes, origin, grab: t };
+      const t = this.alongAxis(origin, axisVector(k.axis));
+      this.drag = t === null ? { mode: 'held' } : { mode: 'slide', nodes, origin, axis: k.axis, grab: t };
     } else if (k.type === 'rotate') {
       const pivot: Vec3 = f.single ? [...f.single.pos] : boundsCenter(f.bounds);
       this.drag = { mode: 'rotate', nodes, axis: k.axis, pivot, start: this.angleAbout(k.axis, pivot), x: event.clientX };
@@ -1994,7 +2002,7 @@ export class Viewer {
     switch (k.type) {
       case 'height':
         // Right beside the height grip, so that it stays to hand on a big object seen close up; level with
-        // the grip, it covers neither the grip nor the lift arrow above it.
+        // the grip, it covers neither the grip nor the move arrows in the middle.
         made = { kind: k, unit: 'mm', center, fields: [{ tag: 'H', value: hz * 2, anchor: handle.object.getWorldPosition(new Vector3()).toArray() as Vec3, beside: true, clientX: 0, clientY: 0 }] };
         break;
       case 'resize': {
@@ -2011,8 +2019,9 @@ export class Viewer {
         made = { kind: k, unit: 'mm', center, fields };
         break;
       }
-      case 'lift':
-        made = { kind: k, unit: 'mm', center, fields: [{ tag: 'Z', value: f.bounds.min[2], anchor: handle.object.position.toArray() as Vec3, out: [0, 0, 1], pad: PROMPT_LIFT_PAD + liftRise() - LIFT_RISE, clientX: 0, clientY: 0 }] };
+      case 'move':
+        // Only the Z arrow has a value worth typing: how high the selection stands. The box sits past the arrow's head.
+        if (k.axis === 2) made = { kind: k, unit: 'mm', center, fields: [{ tag: 'Z', value: f.bounds.min[2], anchor: handle.object.position.toArray() as Vec3, out: [0, 0, 1], pad: MOVE_ARROW_PIXELS * (ARROW_TO + ARROW_HEAD) + PROMPT_PAD, clientX: 0, clientY: 0 }] };
         break;
       case 'rotate': {
         // The arc with its two arrowheads, sampled, so that the box can keep off the whole of it.
@@ -2165,7 +2174,7 @@ export class Viewer {
       if (kind.sx !== 0 && w >= MIN_SIZE) size[0] = w;
       if (kind.sy !== 0 && d >= MIN_SIZE) size[1] = d;
       changed = this.stretched(box, nodes, size, [-kind.sx as -1 | 0 | 1, -kind.sy as -1 | 0 | 1, 0]);
-    } else if (kind.type === 'lift') {
+    } else if (kind.type === 'move' && kind.axis === 2) {
       const dz = v - f.bounds.min[2];
       changed = nodes.map((n) => ({ ...n, pos: [n.pos[0], n.pos[1], n.pos[2] + dz] as Vec3 }));
     } else if (kind.type === 'rotate') {
@@ -2264,11 +2273,12 @@ export class Viewer {
         const snap = this.pickSnap(event);
         this.hoverSnap(snap);
         const markerHandle = snap === null ? this.pickMarkerHandle(event) : null;
-        this.hover(snap === null && !markerHandle ? this.pickHandle(event) : null);
-        const other = snap === null && !markerHandle && !this.hovered ? this.pickDimMarker() : null;
+        this.hoverArrow(markerHandle);
+        this.hover(snap === null && markerHandle === null ? this.pickHandle(event) : null);
+        const other = snap === null && markerHandle === null && !this.hovered ? this.pickDimMarker() : null;
         const cursor = this.renderer.domElement.style;
         if (snap !== null || other !== null) cursor.cursor = 'pointer';
-        else if (markerHandle) cursor.cursor = markerHandle === 'lift' ? 'ns-resize' : 'move';
+        else if (markerHandle !== null) cursor.cursor = 'move';
         else if (!this.hovered && !this.placing) cursor.cursor = '';
       }
       return;
@@ -2311,8 +2321,8 @@ export class Viewer {
       case 'height':
         this.heightTo(drag, event);
         return;
-      case 'lift':
-        this.liftTo(drag, event);
+      case 'slide':
+        this.slideTo(drag, event);
         return;
       case 'rotate':
         this.rotateTo(drag, event);
@@ -2390,6 +2400,7 @@ export class Viewer {
     if (this.placing && !this.drag) this.events.onPlaceMove(null);
     this.hover(null);
     this.hoverSnap(null);
+    this.hoverArrow(null);
   };
 
   // --- snap points (Robot mode) ------------------------------------------------
@@ -2423,12 +2434,9 @@ export class Viewer {
     const mk = this.options.marker;
     if (mk) {
       place(this.marker, mk.matrix, MARKER_PIXELS);
-      const at = new Vector3(mk.matrix[9], mk.matrix[10], mk.matrix[11]);
-      this.markerGrip.position.copy(at);
-      this.markerGrip.scale.setScalar(14 * this.pixelSize(at) * this.gripScale);
-      const up = this.aboveOnScreen(at, liftRise());
-      this.markerLift.position.copy(up);
-      this.markerLift.scale.setScalar(26 * this.pixelSize(up) * this.gripScale);
+      // The arrows stand on the design's axes whatever way the marker is turned; bigger to a finger, and the hot one a little more.
+      place(this.markerArrows, [1, 0, 0, 0, 1, 0, 0, 0, 1, mk.matrix[9], mk.matrix[10], mk.matrix[11]], MARKER_PIXELS * this.gripScale);
+      this.markerArrows.children.forEach((arrow, i) => arrow.scale.setScalar(i === this.hotArrow ? 1.15 : 1));
     }
     for (const d of this.options.markers ?? []) {
       const g = this.dimMarkers.get(d.id);
@@ -2436,18 +2444,33 @@ export class Viewer {
     }
   }
 
-  /** Which grip of the picked marker is under the pointer: its dot, the lift arrow above it, or (a joint) its axis. */
+  /** Which handle of the picked marker is under the pointer: one of its move arrows, or (a joint) its axis rod. */
   private pickMarkerHandle(event?: PointerEvent): MarkerHandle | null {
     if (!this.options.marker || !this.marker.visible || !this.options.interactive) return null;
     this.gripScale = event?.pointerType === 'touch' ? TOUCH_GRIP_SCALE : 1;
     this.layoutMarker();
     this.overlay.updateMatrixWorld();
     this.gripScale = 1;
-    if (this.raycaster.intersectObject(this.markerGrip, false).length) return 'move';
-    if (this.raycaster.intersectObject(this.markerLift, false).length) return 'lift';
-    const axis = this.marker.children.find((c) => c.userData.axis);
-    if (axis && this.raycaster.intersectObject(axis, false).length) return 'axis';
-    return null;
+    let best: MarkerHandle | null = null;
+    let bestDistance = Infinity;
+    for (const arrow of this.markerArrows.children) {
+      const target = arrow.children.find((c) => c.userData.hit);
+      const hit = target && this.raycaster.intersectObject(target, false)[0];
+      if (hit && hit.distance < bestDistance) {
+        best = arrow.userData.axis as 0 | 1 | 2;
+        bestDistance = hit.distance;
+      }
+    }
+    if (best !== null) return best;
+    const slide = this.marker.children.find((c) => c.userData.slide);
+    return slide && this.raycaster.intersectObject(slide, false).length ? 'slide' : null;
+  }
+
+  private hoverArrow(handle: MarkerHandle | null): void {
+    const hot = typeof handle === 'number' ? handle : null;
+    if (hot === this.hotArrow) return;
+    this.hotArrow = hot;
+    this.requestRender();
   }
 
   /** The unpicked marker under the pointer, by id. */
@@ -2471,39 +2494,19 @@ export class Viewer {
   private startMarkerDrag(how: MarkerHandle): void {
     const mk = this.options.marker!;
     const origin = new Vector3(mk.matrix[9], mk.matrix[10], mk.matrix[11]);
-    const axis = how === 'lift' ? new Vector3(0, 0, 1) : new Vector3(mk.matrix[6], mk.matrix[7], mk.matrix[8]).normalize();
-    const plane = new Plane(new Vector3(0, 0, 1), -origin.z);
-    const grab = this.raycaster.ray.intersectPlane(plane, new Vector3()) ?? origin.clone();
-    this.drag = { mode: 'marker', how, origin, axis, plane, grab, grabT: this.alongAxis(origin, axis) ?? 0 };
-    this.renderer.domElement.style.cursor = how === 'lift' ? 'ns-resize' : 'move';
+    const axis = how === 'slide' ? new Vector3(mk.matrix[6], mk.matrix[7], mk.matrix[8]).normalize() : axisVector(how);
+    this.drag = { mode: 'marker', how, origin, axis, grabT: this.alongAxis(origin, axis) ?? 0 };
+    this.renderer.domElement.style.cursor = 'move';
   }
 
-  /** The marker follows the pointer: over the plate at its own height (Shift keeps to one axis), up and down, or along its axis; steps snap to the grid. */
+  /** The marker follows the pointer along the handle's axis; steps snap to the grid. */
   private markerTo(drag: Extract<Drag, { mode: 'marker' }>, event: PointerEvent): void {
-    const { origin } = drag;
-    let next: Vector3;
-    let text: string;
-    if (drag.how === 'move') {
-      if (Math.abs(this.raycaster.ray.direction.z) < 0.04) return;
-      const p = this.raycaster.ray.intersectPlane(drag.plane, new Vector3());
-      if (!p) return;
-      let dx = this.snap(p.x - drag.grab.x);
-      let dy = this.snap(p.y - drag.grab.y);
-      if (event.shiftKey) {
-        if (Math.abs(dx) >= Math.abs(dy)) dy = 0;
-        else dx = 0;
-      }
-      next = new Vector3(origin.x + dx, origin.y + dy, origin.z);
-      text = `${fmt(dx)}, ${fmt(dy)}`;
-    } else {
-      const t = this.alongAxis(origin, drag.axis);
-      if (t === null) return;
-      const d = this.snap(t - drag.grabT);
-      next = origin.clone().addScaledVector(drag.axis, d);
-      text = `${drag.how === 'lift' ? 'Z ' : ''}${d >= 0 ? '+' : ''}${fmt(d)}`;
-    }
+    const t = this.alongAxis(drag.origin, drag.axis);
+    if (t === null) return;
+    const d = this.snap(t - drag.grabT);
+    const next = drag.origin.clone().addScaledVector(drag.axis, d);
     this.events.onMarkerMove(tidyVec(next.toArray() as Vec3));
-    this.events.onReadout(text, event.clientX, event.clientY);
+    this.events.onReadout(`${drag.how === 'slide' ? 'Along the axis' : 'XYZ'[drag.how]} ${d >= 0 ? '+' : ''}${fmt(d)}`, event.clientX, event.clientY);
   }
 
   private layoutSnaps(): void {
@@ -2593,12 +2596,13 @@ export class Viewer {
     this.say(`${fmt(dx)}, ${fmt(dy)}`, event);
   }
 
-  private liftTo(drag: Extract<Drag, { mode: 'lift' }>, event: PointerEvent): void {
-    const t = this.alongAxis(drag.origin, new Vector3(0, 0, 1));
+  /** The selection follows the pointer along one of the design's axes; steps snap to the grid. */
+  private slideTo(drag: Extract<Drag, { mode: 'slide' }>, event: PointerEvent): void {
+    const t = this.alongAxis(drag.origin, axisVector(drag.axis));
     if (t === null) return;
-    const dz = this.snap(t - drag.grab);
-    this.events.onGestureChange(drag.nodes.map((n) => ({ ...n, pos: tidyVec([n.pos[0], n.pos[1], n.pos[2] + dz]) })));
-    this.say(`Z ${dz >= 0 ? '+' : ''}${fmt(dz)}`, event);
+    const d = this.snap(t - drag.grab);
+    this.events.onGestureChange(drag.nodes.map((n) => ({ ...n, pos: tidyVec(n.pos.map((v, i) => (i === drag.axis ? v + d : v)) as Vec3) })));
+    this.say(`${'XYZ'[drag.axis]} ${d >= 0 ? '+' : ''}${fmt(d)}`, event);
   }
 
   /** New size for a grip drag, with the opposite side (and the base) staying put. */
