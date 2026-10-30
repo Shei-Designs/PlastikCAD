@@ -103,7 +103,8 @@ function jointXml(j: SdfJoint): string {
 
 /** `plugins` are model-level plugin elements (the drive, the joint state publisher). */
 /** `fixedToWorld` names the base link when the robot is bolted to the world by a fixed joint. */
-export function writeSdf(name: string, links: SdfLink[], joints: SdfJoint[], plugins: string[] = [], fixedToWorld?: string): string {
+/** `footprint` is a frame on the base link facing the robot's forward along +X, as ROS expects; the base is turned by `turn` radians about Z in it. */
+export function writeSdf(name: string, links: SdfLink[], joints: SdfJoint[], plugins: string[] = [], fixedToWorld?: string, footprint?: { name: string; base: string; turn: number }): string {
   return [
     '<?xml version="1.0"?>',
     `<!-- Made with ${APP_NAME}. Units: meters, kilograms, radians. -->`,
@@ -111,6 +112,7 @@ export function writeSdf(name: string, links: SdfLink[], joints: SdfJoint[], plu
     `<model name="${escapeXml(name)}">`,
     '  <self_collide>false</self_collide>',
     ...links.map(linkXml),
+    ...(footprint ? [`  <frame name="${escapeXml(footprint.name)}" attached_to="${escapeXml(footprint.base)}"><pose>0 0 0 0 0 ${fmt(-footprint.turn || 0, 6)}</pose></frame>`] : []),
     ...(fixedToWorld ? [`  <joint name="world_joint" type="fixed">\n    <parent>world</parent>\n    <child>${escapeXml(fixedToWorld)}</child>\n  </joint>`] : []),
     ...joints.map(jointXml),
     ...plugins.map((p) => pad(p, '  ')),

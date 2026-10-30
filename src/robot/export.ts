@@ -279,6 +279,20 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
   return { pkg, robotName: urdfName(doc.name, 'robot'), files, warnings, order: tree.order, linkNames, jointNames, frames, links, treeJoints, loopJoints, sensors, drive, controlled };
 }
 
+/**
+ * ROS expects a robot's base frame to face +X. A driven robot gets a root frame that does,
+ * `base_footprint`, over the base link, which keeps the design's axes and is turned by `turn`
+ * radians about Z in it. Nothing for an arm bolted down, or a robot without wheels to say.
+ */
+function footprintOf(p: Prepared, robot: Robot, taken: Iterable<string>): { name: string; base: string; turn: number } | undefined {
+  if (!p.drive || robot.base === 'fixed') return undefined;
+  const used = new Set(taken);
+  let name = 'base_footprint';
+  for (let n = 2; used.has(name); n++) name = `base_footprint_${n}`;
+  const [fx, fy] = p.drive.forward;
+  return { name, base: p.linkNames.get(robot.root!)!, turn: -Math.atan2(fy, fx) || 0 };
+}
+
 /** The prepared drive as the Gazebo plugin wants it. */
 function gazeboDrive(d: PreparedDrive, baseFrame: string): GazeboDrive {
   const shared = { baseFrame, wheelRadius: d.wheelRadius, wheelSeparation: d.wheelSeparation };
@@ -350,15 +364,16 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
     }
   }
   const base = p.linkNames.get(robot.root!)!;
-  const plugins = [jointStateXml(), ...(p.drive ? [driveXml(gazeboDrive(p.drive, base))] : [])];
+  const footprint = footprintOf(p, robot, links.map((l) => l.name));
+  const plugins = [jointStateXml(), ...(p.drive ? [driveXml(gazeboDrive(p.drive, footprint?.name ?? base))] : [])];
   const control = p.controlled.length ? { joints: p.controlled, controllersYaml: `${SHARE_PLACEHOLDER}/config/controllers.yaml` } : undefined;
   const controllers = control ? ['joint_state_broadcaster', 'arm_controller'] : [];
   files.unshift(
     { name: 'package.xml', bytes: encodeText(packageXml(pkg, `${doc.name} robot description`, { gazebo: true, control: Boolean(control) })) },
     { name: 'CMakeLists.txt', bytes: encodeText(cmakeLists(pkg)) },
-    { name: 'README.md', bytes: encodeText(readme(pkg, doc.name)) },
-    { name: `urdf/${pkg}.urdf`, bytes: encodeText(writeUrdf(p.robotName, links, joints, { plugins, control, fixedToWorld })) },
-    { name: `urdf/${pkg}.urdf.xacro`, bytes: encodeText(writeUrdf(p.robotName, links, joints, { plugins, control, fixedToWorld, xacro: { package: pkg } })) },
+    { name: 'README.md', bytes: encodeText(readme(pkg, doc.name, footprint)) },
+    { name: `urdf/${pkg}.urdf`, bytes: encodeText(writeUrdf(p.robotName, links, joints, { plugins, control, fixedToWorld, footprint })) },
+    { name: `urdf/${pkg}.urdf.xacro`, bytes: encodeText(writeUrdf(p.robotName, links, joints, { plugins, control, fixedToWorld, footprint, xacro: { package: pkg } })) },
     { name: 'launch/display.launch.py', bytes: encodeText(displayLaunch(pkg)) },
     { name: 'launch/gazebo.launch.py', bytes: encodeText(gazeboLaunch(pkg, { controllers })) },
     { name: 'rviz/display.rviz', bytes: encodeText(rvizConfig(base)) },
@@ -405,17 +420,18 @@ export function buildSdfModel(doc: Doc, geometry: Map<string, LinkGeometry>, rob
     return { name: j.name, type: j.type, parent: j.parent, child: j.child, pose, axis: j.axis, limit: j.limit, dynamics: j.dynamics, ...(j.mimic && !onLoop.has(j.name) ? { mimic: j.mimic } : {}) };
   });
   const base = p.linkNames.get(robot.root!)!;
-  const plugins = [jointStateXml(), ...(p.drive ? [driveXml(gazeboDrive(p.drive, base))] : [])];
+  const footprint = footprintOf(p, robot, links.map((l) => l.name));
+  const plugins = [jointStateXml(), ...(p.drive ? [driveXml(gazeboDrive(p.drive, footprint?.name ?? base))] : [])];
   files.unshift(
     { name: 'model.config', bytes: encodeText(modelConfig(pkg, `${doc.name}, made with PlastikCAD`)) },
-    { name: 'model.sdf', bytes: encodeText(writeSdf(p.robotName, links, joints, plugins, robot.base === 'fixed' ? p.linkNames.get(robot.root!) : undefined)) },
+    { name: 'model.sdf', bytes: encodeText(writeSdf(p.robotName, links, joints, plugins, robot.base === 'fixed' ? p.linkNames.get(robot.root!) : undefined, footprint)) },
     { name: `worlds/${pkg}.sdf`, bytes: encodeText(worldXml(pkg, pkg)) },
-    { name: 'README.md', bytes: encodeText(sdfReadme(pkg, doc.name, Boolean(p.drive))) },
+    { name: 'README.md', bytes: encodeText(sdfReadme(pkg, doc.name, footprint)) },
   );
   return { name: pkg, files, warnings };
 }
 
-function sdfReadme(name: string, robot: string, drive: boolean): string {
+function sdfReadme(name: string, robot: string, footprint: { name: string; base: string } | undefined): string {
   return `# ${robot}
 
 A Gazebo model made with PlastikCAD. With this folder's parent on Gazebo's
@@ -424,8 +440,9 @@ path, the world in \`worlds\` opens with the robot in it:
     export GZ_SIM_RESOURCE_PATH=$GZ_SIM_RESOURCE_PATH:$(pwd)/..
     gz sim worlds/${name}.sdf
 
-Every joint is in \`model.sdf\`, loops included.${drive ? ` The drive takes velocity
-commands on the \`cmd_vel\` topic:
+Every joint is in \`model.sdf\`, loops included.${footprint ? ` The drive takes velocity
+commands on the \`cmd_vel\` topic and publishes odometry against \`${footprint.name}\`,
+a frame on \`${footprint.base}\` facing the robot's forward along +X as ROS expects:
 
     gz topic -t /cmd_vel -m gz.msgs.Twist -p 'linear: {x: 0.2}'` : ''}
 `;

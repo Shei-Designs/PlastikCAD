@@ -5,7 +5,7 @@ import type { LinkGeometry } from '../worker/protocol';
 import { checkRobot } from './check';
 import { buildMjcfModel, buildRobotPackage, buildSdfModel } from './export';
 import { meshProperties } from './inertia';
-import { driveForward, jointInChild, jointInDesign, spanningTree } from './model';
+import { driveForward, jointInChild, jointInDesign, linkNodes, spanningTree } from './model';
 import { defaultJoint, defaultLink, defaultSensor } from './types';
 import { ROBOTS } from './fixtures';
 import type { Robot } from './types';
@@ -401,5 +401,26 @@ describe('the drive wheels set alike', () => {
     expect(problems[0].level).toBe('warning');
     expect(problems[0].joint).toBe(odd.id);
     expect(problems[0].text).toContain(`"${odd.name}" is not set like the other drive wheels: its joint friction is 0.1 N·m where`);
+  });
+});
+
+describe('the footprint ROS expects', () => {
+  const build = (file: string) => {
+    const d = ROBOTS.find((r) => r.file === file)!.make();
+    const geo = new Map(linkNodes(d.scene).map((n) => [n.id, boxGeometry(n)]));
+    return { urdf: text(buildRobotPackage(d, geo).files.find((f) => f.name.endsWith('.urdf'))!.bytes), sdf: text(buildSdfModel(d, geo).files.find((f) => f.name === 'model.sdf')!.bytes) };
+  };
+  it('puts a base_footprint facing +X over a rover built facing +Y', () => {
+    const { urdf, sdf } = build('rover');
+    expect(urdf).toContain('<link name="base_footprint"/>');
+    expect(urdf).toMatch(/<joint name="base_footprint_joint" type="fixed">\s*<parent link="base_footprint"\/>\s*<child link="Body"\/>\s*<origin xyz="0 0 0" rpy="0 0 -1.570796"\/>/);
+    expect(urdf).toContain('<child_frame_id>base_footprint</child_frame_id>');
+    expect(sdf).toContain('<frame name="base_footprint" attached_to="Body"><pose>0 0 0 0 0 1.570796</pose></frame>');
+    expect(sdf).toContain('<child_frame_id>base_footprint</child_frame_id>');
+  });
+  it('leaves an arm bolted down alone', () => {
+    const { urdf, sdf } = build('arm');
+    expect(urdf).not.toContain('base_footprint');
+    expect(sdf).not.toContain('base_footprint');
   });
 });

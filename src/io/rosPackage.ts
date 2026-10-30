@@ -250,7 +250,7 @@ ${joints.map((j) => `      - ${j}`).join('\n')}
 `;
 }
 
-export function readme(name: string, robot: string): string {
+export function readme(name: string, robot: string, footprint?: { name: string; base: string }): string {
   return `# ${robot}
 
 A ROS 2 package made with ${APP_NAME}. Copy this folder into the \`src\` of a
@@ -265,7 +265,7 @@ The robot is \`urdf/${name}.urdf\`. Visual meshes are OBJ files with their
 colors, collision meshes STL, all in meters with Z up, each in the frame of
 its link. Masses and inertias come from the shapes and the materials chosen
 in ${APP_NAME}; check any that were estimated rather than weighed.
-
+${footprint ? `\nThe root link is \`${footprint.name}\`, facing the robot's forward along +X as ROS\nexpects; \`${footprint.base}\` under it is the design's own frame, and the drive's\nodometry is published against \`${footprint.name}\`.\n` : ''}
 Gazebo reads the sensors, the drive and the friction from the \`<gazebo>\`
 blocks in the URDF. \`worlds/${name}.sdf\` is an empty world with the
 sensor systems switched on, \`config/bridge.yaml\` tells ros_gz_bridge which

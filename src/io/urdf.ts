@@ -50,6 +50,8 @@ export interface UrdfExtras {
   xacro?: { package: string };
   /** The base link's name when the robot is bolted to the world: a `world` link and a fixed joint hold it there. */
   fixedToWorld?: string;
+  /** A root link facing the robot's forward along +X, as ROS expects, over the base link, which is turned by `turn` radians about Z in it. */
+  footprint?: { name: string; base: string; turn: number };
 }
 
 export interface UrdfJoint {
@@ -143,7 +145,13 @@ export function writeUrdf(name: string, links: UrdfLink[], joints: UrdfJoint[], 
   const inPackage = (text: string): string => (xacro ? text.split(`package://${xacro.package}/`).join('package://${package}/') : text);
   const body = links.map((l) => inPackage(linkXml(l, materials)));
   if (extras.fixedToWorld) body.unshift('  <link name="world"/>');
-  const jointLines = [...(extras.fixedToWorld ? [`  <joint name="world_joint" type="fixed">\n    <parent link="world"/>\n    <child link="${escapeXml(extras.fixedToWorld)}"/>\n  </joint>`] : []), ...joints.map(jointXml)];
+  const fp = extras.footprint;
+  if (fp) body.unshift(`  <link name="${escapeXml(fp.name)}"/>`);
+  const jointLines = [
+    ...(extras.fixedToWorld ? [`  <joint name="world_joint" type="fixed">\n    <parent link="world"/>\n    <child link="${escapeXml(extras.fixedToWorld)}"/>\n  </joint>`] : []),
+    ...(fp ? [`  <joint name="${escapeXml(fp.name)}_joint" type="fixed">\n    <parent link="${escapeXml(fp.name)}"/>\n    <child link="${escapeXml(fp.base)}"/>\n    <origin xyz="0 0 0" rpy="0 0 ${fmt(fp.turn, 6)}"/>\n  </joint>`] : []),
+    ...joints.map(jointXml),
+  ];
   const head = [...materials].map(([n, rgba]) => `  <material name="${n}">\n    <color rgba="${rgba}"/>\n  </material>`);
   // Gazebo reads friction and sensors from blocks of its own beside the links, and plugins from blocks of the robot's.
   const gazebo: string[] = [];
