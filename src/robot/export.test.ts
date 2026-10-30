@@ -7,6 +7,7 @@ import { buildMjcfModel, buildRobotPackage, buildSdfModel } from './export';
 import { meshProperties } from './inertia';
 import { driveForward, jointInChild, jointInDesign, spanningTree } from './model';
 import { defaultJoint, defaultLink, defaultSensor } from './types';
+import { ROBOTS } from './fixtures';
 import type { Robot } from './types';
 
 const text = (b: Uint8Array) => new TextDecoder().decode(b);
@@ -382,5 +383,23 @@ describe('driveForward', () => {
     expect(driveForward('mecanum', { 'front-left': [[-40, -50, 0]], 'front-right': [[40, -50, 0]], 'rear-left': [[-40, 50, 0]], 'rear-right': [[40, 50, 0]] })).toEqual([0, -1, 0]);
     expect(driveForward('differential', { left: [[0, 0, 0]], right: [[0, 0, 0]] })).toEqual([0, 1, 0]);
     expect(driveForward('differential', { left: [[-40, 0, 0]] })).toEqual([0, 1, 0]);
+  });
+});
+
+describe('the drive wheels set alike', () => {
+  const rover = () => ROBOTS.find((r) => r.file === 'rover')!.make();
+  it('passes when they are', () => {
+    const doc = rover();
+    expect(checkRobot(doc, new Map()).filter((p) => /pull to one side/.test(p.text))).toEqual([]);
+  });
+  it('warns of the odd one out, naming what differs', () => {
+    const doc = rover();
+    const odd = doc.robot!.joints[1];
+    odd.friction = 0.1;
+    const problems = checkRobot(doc, new Map()).filter((p) => /pull to one side/.test(p.text));
+    expect(problems).toHaveLength(1);
+    expect(problems[0].level).toBe('warning');
+    expect(problems[0].joint).toBe(odd.id);
+    expect(problems[0].text).toContain(`"${odd.name}" is not set like the other drive wheels: its joint friction is 0.1 N·m where`);
   });
 });

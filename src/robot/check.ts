@@ -6,6 +6,7 @@ import type { LinkProperties } from '../worker/protocol';
 import { jointFit } from './defaults';
 import { massOf, plausibleInertia, tensorOf } from './inertia';
 import { jointInDesign, linkNodes, linkOf, robotOf, spanningTree } from './model';
+import { motorOf } from './motors';
 import { DRIVE_KINDS, withRole } from './types';
 import type { Robot, RobotJoint } from './types';
 
@@ -98,6 +99,17 @@ export function checkRobot(doc: Doc, props: Map<string, LinkProperties>, robot: 
     const wheels = Object.entries(drive.roles).filter(([, role]) => !role.startsWith('steer')).map(([id]) => joint(id)).filter((j): j is RobotJoint => Boolean(j));
     const axles = wheels.map((j) => jointInDesign(j, nodes.find((n) => n.id === j.child)!).axis);
     if (axles.some((a) => Math.abs(a[0] * axles[0][0] + a[1] * axles[0][1] + a[2] * axles[0][2]) < Math.cos((5 * Math.PI) / 180))) warn("The drive wheels' axles do not all run the same way; a wheel turned differently will drag.");
+    // The wheels of one drive should be set alike: a wheel that drags more, or is driven differently, pulls the robot to one side.
+    const unlike = (what: string, pick: (j: RobotJoint) => string | number | undefined, show: (v: string | number | undefined) => string) => {
+      const first = wheels[0];
+      const odd = wheels.find((j) => pick(j) !== pick(first));
+      if (odd) warn(`"${odd.name}" is not set like the other drive wheels: its ${what} is ${show(pick(odd))} where "${first.name}" has ${show(pick(first))}, so the robot will pull to one side.`, { joint: odd.id });
+    };
+    if (wheels.length > 1) {
+      unlike('motor', (j) => j.motor ?? `${j.effort} N·m at ${j.velocity}°/s`, (v) => (typeof v === 'string' ? (motorOf(v)?.name ?? v) : String(v)));
+      unlike('joint friction', (j) => j.friction, (v) => `${v} N·m`);
+      unlike('damping', (j) => j.damping, (v) => `${v} N·m·s`);
+    }
   }
   if (robot.base === 'free' && !robot.drive && robot.joints.some((j) => j.type === 'continuous')) warn('The base is free to move but nothing drives it: give the wheel joints their parts under Drive, or fix the base for an arm.');
   if (robot.base === 'fixed' && robot.drive) warn('The base is fixed to the world, so the wheels cannot move it.');
