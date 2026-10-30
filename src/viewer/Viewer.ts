@@ -7,6 +7,7 @@ import {
   BufferAttribute,
   BoxGeometry,
   BufferGeometry,
+  DoubleSide,
   CanvasTexture,
   SphereGeometry,
   ClampToEdgeWrapping,
@@ -23,6 +24,7 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  PlaneGeometry,
   MOUSE,
   NeutralToneMapping,
   Object3D,
@@ -56,6 +58,7 @@ import { ALIGN_MODES, HOLE_COLOR, alignDot, rotateNodes, scaleNodes } from '../m
 import type { Asset, GroupNode, SceneNode, Vec3 } from '../model/types';
 import type { BuildResult } from '../worker/protocol';
 import { SkinPainter } from './skin';
+import { terrain } from '../io/mjcf';
 
 export type ViewPreset = 'iso' | 'top' | 'front' | 'side';
 
@@ -81,6 +84,8 @@ export interface ViewerOptions {
   marker: Marker | null;
   /** The other joints and sensors, drawn small; a click on one picks it. */
   markers: { id: string; marker: Marker }[] | null;
+  /** The floor of a test drive when it is not the plate: the rough field or the slope, as the MuJoCo model has them. */
+  ground: 'rough' | 'slope' | null;
 }
 
 /**
@@ -174,7 +179,7 @@ export interface HandlePrompt {
   }[];
 }
 
-const DEFAULTS: ViewerOptions = { theme: 'dark', edges: true, grid: true, snap: 1, interactive: true, align: null, highlight: null, snaps: null, marker: null, markers: null };
+const DEFAULTS: ViewerOptions = { theme: 'dark', edges: true, grid: true, snap: 1, interactive: true, align: null, highlight: null, snaps: null, marker: null, markers: null, ground: null };
 /** Distance of the anchor dots from the box, in pixels. */
 const ALIGN_GAP = 22;
 
@@ -532,6 +537,33 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
 const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 const fmt = (v: number) => String(Number(v.toFixed(2)));
 
+/** The floor of a test drive, as the MuJoCo model has it: the rough field's 64×64 heights over 6 m, 30 mm high, or a 10 m plane tilted 0.14 rad about X. Sand-colored and faceted, so that the bumps read. */
+function groundMesh(kind: 'rough' | 'slope', color: number): Mesh<BufferGeometry, MeshStandardMaterial> {
+  const material = new MeshStandardMaterial({ color, roughness: 0.95, metalness: 0, flatShading: true, side: DoubleSide, polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 2 });
+  let geometry: BufferGeometry;
+  if (kind === 'rough') {
+    const n = 64;
+    const heights = terrain(n);
+    const size = 6000;
+    const plane = new PlaneGeometry(size, size, n - 1, n - 1);
+    const pos = plane.getAttribute('position') as BufferAttribute;
+    for (let v = 0; v < pos.count; v++) {
+      // MuJoCo stores rows along Y, the first row at the least Y; a PlaneGeometry's vertices run from +Y down.
+      const j = Math.round((pos.getX(v) / size + 0.5) * (n - 1));
+      const i = Math.round((pos.getY(v) / size + 0.5) * (n - 1));
+      pos.setZ(v, heights[i * n + j] * 30);
+    }
+    plane.computeVertexNormals();
+    geometry = plane;
+  } else {
+    geometry = new PlaneGeometry(10000, 10000);
+    geometry.rotateX(0.14);
+  }
+  const mesh = new Mesh(geometry, material);
+  mesh.renderOrder = -1;
+  return mesh;
+}
+
 function gridLines(half: number, step: number, skipStep: number): BufferGeometry {
   const pts: number[] = [];
   const n = Math.round(half / step);
@@ -662,6 +694,8 @@ export class Viewer {
   private gridMinor!: LineSegments<BufferGeometry, LineBasicMaterial>;
   private axes!: LineSegments<BufferGeometry, LineBasicMaterial>;
   private gridHalf = 0;
+  private ground: Mesh<BufferGeometry, MeshStandardMaterial> | null = null;
+  private groundKey = '';
   private gridStep = 0;
 
   private triadScene!: Scene;
@@ -812,6 +846,16 @@ export class Viewer {
   }
 
   /** Frame the selection, or everything when nothing is selected. */
+  /** Carries the view along by `delta` (mm), as a camera following a driving robot: the view keeps its angle and distance. */
+  follow(delta: Vec3): void {
+    if (!this.ok || this.disposed || this.animation) return;
+    const d = new Vector3(...delta);
+    this.controls.target.add(d);
+    this.camera.position.add(d);
+    this.controls.update();
+    this.requestRender();
+  }
+
   fit(immediate = false): void {
     if (!this.ok || this.disposed) return;
     const picked = this.items.filter((i) => i.selected && !i.ghost);
@@ -905,6 +949,10 @@ export class Viewer {
     this.marquee?.remove();
     if (!this.ok) return;
     if (this.raf) cancelAnimationFrame(this.raf);
+    if (this.ground) {
+      this.ground.geometry.dispose();
+      this.ground.material.dispose();
+    }
     this.resizeObserver.disconnect();
     const canvas = this.renderer.domElement;
     canvas.removeEventListener('webglcontextlost', this.onContextLost);
@@ -1193,6 +1241,20 @@ export class Viewer {
         const g = markerObject(d.marker, t.accent, true);
         this.overlay.add(g);
         this.dimMarkers.set(d.id, g);
+      }
+    }
+    const groundKey = this.options.ground ? `${theme}:${this.options.ground}` : '';
+    if (groundKey !== this.groundKey) {
+      this.groundKey = groundKey;
+      if (this.ground) {
+        this.scene.remove(this.ground);
+        this.ground.geometry.dispose();
+        this.ground.material.dispose();
+        this.ground = null;
+      }
+      if (this.options.ground) {
+        this.ground = groundMesh(this.options.ground, theme === 'dark' ? 0x4a4639 : 0xd8ccb0);
+        this.scene.add(this.ground);
       }
     }
     for (const d of this.drawn.values()) this.style(d, d.item.selected);

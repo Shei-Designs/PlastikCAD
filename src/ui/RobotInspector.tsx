@@ -1,7 +1,7 @@
 // The right panel in Robot mode: the robot itself while nothing is picked
 // (name, base link, what the checks found), a link's mass and collision
 // settings, or a joint's kind, place, axis and limits.
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { eulerOf } from '../model/math';
 import type { Mat } from '../model/math';
@@ -15,6 +15,7 @@ import type { DriveKind, DriveRole, RobotJoint, RobotLink, RobotSensor, SensorKi
 import type { Problem } from '../robot/check';
 import { addJoint, addSensor, deleteJoint, deleteSensor, fitJointFollowers, placeJoint, placeSensor, select, selectJoint, selectSensor, setBase, setControl, setDriveKind, setDriveRole, setJointMotor, setPose, setRobotRoot, setScripts, setWorld, startJointPick, stopJointPick, updateJoint, updateLink, updateSensor, useEditor } from '../state/store';
 import { rangeOf } from '../robot/kinematics';
+import { sim } from '../state/sim';
 import { formatNumber, NumberBox, selectOnFocus, SliderField } from './Fields';
 import { Hint } from './Hint';
 import { ChevronIcon, JointIcon, PinIcon, SensorIcon, TrashIcon, WarningIcon } from './icons';
@@ -143,6 +144,7 @@ function Overview() {
       </fieldset>
       <Drive />
       <Controllers />
+      <Test />
       <fieldset className="group">
         <legend>Checks</legend>
         <Problems problems={problems} />
@@ -163,7 +165,7 @@ function Drive() {
       <div className="field inline">
         <label>
           Kind
-          <Hint text={kind?.help ?? 'How the robot moves on its wheels; the exports write the matching plugin and motors.'} />
+          <Hint text={`${kind?.help ?? 'How the robot moves on its wheels; the exports write the matching plugin and motors.'} Forward is the design's +Y.`} />
         </label>
         <Select value={robot.drive?.kind ?? 'none'} label="Drive kind" options={[{ value: 'none', label: 'None' }, ...DRIVE_KINDS.map((k) => ({ value: k.id, label: k.name }))]} onChange={(v) => setDriveKind(v === 'none' ? null : (v as DriveKind))} />
       </div>
@@ -228,6 +230,98 @@ function Controllers() {
   );
 }
 
+/** The robot driven on the plate by MuJoCo, built from the design as it stands: run, pause and reset it, steer a rover by the keys, move an arm's servos by sliders. */
+function Test() {
+  const { doc, robot, problems } = useRobot();
+  useSyncExternalStore(sim.subscribe, sim.getRevision);
+  const s = sim.get();
+  const stopped = problems.some((p) => p.level === 'error');
+  const servos = s.actuators.filter((a) => a.kind === 'servo');
+  const jointOf = (id: string | null) => robot.joints.find((j) => j.id === id);
+  return (
+    <fieldset className="group">
+      <legend>Test</legend>
+      {s.status === 'off' && (
+        <div className="field">
+          <button type="button" className="chip" disabled={stopped || !robot.root} title="Builds the robot's MuJoCo model and runs it on the plate" onClick={() => void sim.start(doc)}>
+            Test drive
+          </button>
+          {stopped && <p className="export-note">The problems below stop the test drive, as they do the export.</p>}
+        </div>
+      )}
+      {s.status === 'loading' && <p className="empty">Building the model…</p>}
+      {s.status === 'error' && (
+        <>
+          <p className="export-note problems error">
+            <WarningIcon />
+            <span>{s.error}</span>
+          </p>
+          <div className="chip-row">
+            <button type="button" className="chip" onClick={() => void sim.start(doc)}>
+              Try again
+            </button>
+            <button type="button" className="chip" onClick={() => sim.stop()}>
+              Stop
+            </button>
+          </div>
+        </>
+      )}
+      {s.status === 'ready' && (
+        <>
+          <div className="chip-row">
+            <button type="button" className="chip" title={s.running ? 'Holds time still' : 'Lets time run'} onClick={() => sim.setRunning(!s.running)}>
+              {s.running ? 'Pause' : 'Run'}
+            </button>
+            <button type="button" className="chip" title="Puts the robot back at its start, standing still" onClick={() => sim.reset()}>
+              Reset
+            </button>
+            <button type="button" className="chip" title="Ends the test drive; the plate shows the design again" onClick={() => sim.stop()}>
+              Stop
+            </button>
+          </div>
+          {s.drive && (
+            <p className="export-note">
+              Drive with <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> or the arrow keys{s.drive.kind === 'mecanum' ? (
+                <>
+                  ; <kbd>Q</kbd> and <kbd>E</kbd> slide sideways
+                </>
+              ) : (
+                ''
+              )}
+              .
+            </p>
+          )}
+          {servos.map((a) => {
+            const joint = jointOf(a.jointId);
+            const angular = joint?.type !== 'prismatic';
+            const scale = angular ? 180 / Math.PI : 1000;
+            return <SliderField key={a.name} label={joint?.name ?? a.joint} value={Math.round((s.targets.get(a.name) ?? 0) * scale)} min={Math.ceil(a.min * scale)} max={Math.floor(a.max * scale)} step={1} unit={angular ? '°' : 'mm'} onChange={(v) => sim.setTarget(a.name, v / scale)} />;
+          })}
+          <dl className="facts">
+            <div>
+              <dt>Time</dt>
+              <dd>{formatNumber(s.time, 1)} s</dd>
+            </div>
+            {robot.base === 'free' && s.base && (
+              <>
+                <div>
+                  <dt>Moved</dt>
+                  <dd>{mm(Math.hypot(s.base.pos[0], s.base.pos[1]))}</dd>
+                </div>
+                <div>
+                  <dt>Heading</dt>
+                  <dd>{formatNumber(s.base.yaw, 0)}°</dd>
+                </div>
+              </>
+            )}
+          </dl>
+        </>
+      )}
+    </fieldset>
+  );
+}
+
+const mm = (v: number): string => (v >= 1000 ? `${formatNumber(v / 1000, 2)} m` : `${formatNumber(v, 0)} mm`);
 const grams = (g: number): string => (g >= 1000 ? `${formatNumber(g / 1000, 3)} kg` : `${formatNumber(g, g < 10 ? 2 : 1)} g`);
 const cm3 = (mm3: number): string => `${formatNumber(mm3 / 1000, mm3 < 10000 ? 2 : 1)} cm³`;
 /** g·mm² shown in g·cm², the size robot parts come in. */

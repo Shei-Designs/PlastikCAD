@@ -44,6 +44,7 @@ import { posedScene } from '../robot/kinematics';
 import { jointInDesign, sensorInDesign } from '../robot/model';
 import type { RobotJoint, RobotSensor } from '../robot/types';
 import type { EditorState } from '../state/store';
+import { sim } from '../state/sim';
 import { GIZMO_SIZE, Viewer } from '../viewer/Viewer';
 import type { HandlePrompt, Marker, ViewItem, ViewPreset } from '../viewer/Viewer';
 import {
@@ -370,9 +371,25 @@ export function Viewport() {
 
   const state = useEditor((s) => s);
   const { prefs, placing, selection, busy, aligning, editing, mating, pose } = state;
+  // The test drive: while it runs, the links are drawn where the simulation has them.
+  useSyncExternalStore(sim.subscribe, sim.getRevision);
+  const driven = sim.get();
+  const simFrames = driven.status === 'ready' && driven.frames.size > 0 ? driven.frames : null;
+  useEffect(() => sim.check(state.doc, state.robot), [state.doc.scene, state.doc.robot, state.robot]);
   const highlight = state.highlight;
-  const marker = useMemo(() => robotMarker(state), [state.joint, state.sensor, state.doc]);
-  const markers = useMemo(() => robotMarkers(state), [state.robot, state.joint, state.sensor, state.doc, state.prefs.robotMarkers]);
+  // The markers sit where the design has the joints; while the simulation moves the links they would mislead, so they rest.
+  const marker = useMemo(() => (simFrames ? null : robotMarker(state)), [state.joint, state.sensor, state.doc, simFrames]);
+  const markers = useMemo(() => (simFrames ? null : robotMarkers(state)), [state.robot, state.joint, state.sensor, state.doc, state.prefs.robotMarkers, simFrames]);
+  const ground = simFrames && driven.world !== 'flat' ? driven.world : null;
+  // The view follows a driving robot: it moves by what the base moved since the last frame, and comes back when the drive ends.
+  const followed = useRef<Vec3 | null>(null);
+  useEffect(() => {
+    const at = simFrames ? driven.base?.pos ?? null : null;
+    const from = followed.current ?? [0, 0, 0];
+    const to = at ?? [0, 0, 0];
+    if (at || followed.current) viewer.current?.follow([to[0] - from[0], to[1] - from[1], to[2] - from[2]]);
+    followed.current = at;
+  }, [driven.base, simFrames]);
   const snaps = useMemo(() => (state.jointPick ? jointSnaps(state) : null), [state.jointPick, state.joint, state.sensor, state.doc]);
   // Another selection, or an edit from elsewhere, and the typing boxes no longer belong to anything.
   useEffect(() => {
@@ -436,8 +453,8 @@ export function Viewport() {
   }, []);
 
   useEffect(() => {
-    viewer.current?.setOptions({ theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap, interactive: true, align: aligning, highlight, snaps, marker, markers });
-  }, [prefs.theme, prefs.edges, prefs.grid, prefs.snap, aligning, highlight, snaps, marker, markers]);
+    viewer.current?.setOptions({ theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap, interactive: true, align: aligning, highlight, snaps, marker, markers, ground });
+  }, [prefs.theme, prefs.edges, prefs.grid, prefs.snap, aligning, highlight, snaps, marker, markers, ground]);
 
   useEffect(() => {
     viewer.current?.setPlacing(Boolean(placing));
@@ -454,13 +471,13 @@ export function Viewport() {
       return entry?.state === 'ready' ? entry.result : null;
     };
     // A posed robot is drawn with its links moved; the geometry is the same, only the matrices change.
-    const shown = pose ? posedScene(scene, pose.solved.frames) : scene;
+    const shown = simFrames ? posedScene(scene, simFrames) : pose ? posedScene(scene, pose.solved.frames) : scene;
     // A ghosted object is drawn faintly and ignored by picking, like a shape being placed.
     const list: ViewItem[] = shown.map((node) => ({ node, result: ready(node), selected: picked.has(node.id), ...(node.ghost ? { ghost: true } : {}) }));
     if (placing) list.push({ node: placing, result: ready(placing), selected: false, ghost: true });
     return list;
     // `revision` changes when geometry arrives.
-  }, [scene, selection, placing, revision, pose]);
+  }, [scene, selection, placing, revision, pose, simFrames]);
 
   useEffect(() => {
     viewer.current?.setItems(items, assets);

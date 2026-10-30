@@ -76,6 +76,27 @@ export interface PreparedDrive {
   steeringLimit?: number;
 }
 
+/** What drives what, as drive.json carries it for the scripts and the test drive: the actuators of each role, and the geometry a velocity command needs. */
+export interface DriveSpec {
+  kind: DriveKind;
+  units: string;
+  roles: Partial<Record<DriveRole, string[]>>;
+  wheelRadius: number;
+  wheelSeparation: number;
+  wheelBase?: number;
+  kingpinWidth?: number;
+  steeringLimit?: number;
+}
+
+/** The MuJoCo package, with what the test drive needs to pose the design from the model and name its controls. */
+export interface MjcfPackage extends RobotPackage {
+  /** Each body's link: the node it is, and where its frame sits in the design, mm. */
+  bodies: { body: string; node: string; frame: Vec3 }[];
+  /** Each joint's name in the model, and the design joint it is. */
+  joints: { name: string; id: string }[];
+  drive: DriveSpec | null;
+}
+
 /** What both outputs share: every link and joint in SI, the meshes written, the sensors, the drive. */
 interface Prepared {
   pkg: string;
@@ -153,6 +174,12 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
     links.push({ name, inertial, visual, collision, friction: link.friction, frame, node });
   }
 
+  // A drive wheel rolls forward on a positive command: its axis is written the way round that a positive
+  // turn moves the base toward +Y, the design's front. (A turn about `axis` moves the base along (axis.y, -axis.x, 0).)
+  const forwardAxis = (j: RobotJoint, axis: Vec3): Vec3 => {
+    const role = robot.drive?.roles[j.id];
+    return role && !role.startsWith('steer') && axis[0] > 0 ? (axis.map((x) => -x) as Vec3) : axis;
+  };
   const jointOf = (j: RobotJoint): UrdfJoint => {
     const parentFrame = frames.get(j.parent)!;
     const placed = placedJoints.get(j.id)!;
@@ -165,7 +192,7 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
       parent: linkNames.get(j.parent)!,
       child: linkNames.get(j.child)!,
       origin: placed.origin.map((x, i) => (x - parentFrame[i]) * M) as Vec3,
-      axis: placed.axis,
+      axis: forwardAxis(j, placed.axis),
       limit: j.type === 'fixed' ? undefined : { lower: j.lower * scale, upper: j.upper * scale, effort: j.effort, velocity: j.velocity * scale },
       dynamics: j.type === 'fixed' ? undefined : { damping: j.damping, friction: j.friction },
       armature: motorOf(j.motor)?.armature,
@@ -404,7 +431,7 @@ commands on the \`cmd_vel\` topic:
  * each loop joint together at its point; followers by joint constraints.
  * Lidars have no counterpart and are left out, with a warning.
  */
-export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot = robotOf(doc)): RobotPackage {
+export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot = robotOf(doc)): MjcfPackage {
   const p = prepare(doc, geometry, robot, (path) => path);
   const { pkg, files, warnings } = p;
   const byName = new Map(p.links.map((l) => [l.name, l]));
@@ -451,13 +478,22 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
     files.push({ name: 'drive.py', bytes: encodeText(drivePy(`${pkg}.xml`, kind)) }, { name: 'env.py', bytes: encodeText(envPy(`${pkg}.xml`)) }, { name: 'train.py', bytes: encodeText(trainPy()) });
   }
   // What drives what, for a script: the actuator of each part, and the geometry a velocity command needs.
+  let drive: DriveSpec | null = null;
   if (p.drive) {
     const actuator = (joint: string) => (p.drive!.steer.includes(joint) ? `${joint}_servo` : `${joint}_motor`);
     const roles = Object.fromEntries(Object.entries(p.drive.roles).map(([role, joints]) => [role, (joints ?? []).map(actuator)]));
     const { kind, wheelRadius, wheelSeparation, wheelBase, kingpinWidth, steeringLimit } = p.drive;
-    files.push({ name: 'drive.json', bytes: encodeText(JSON.stringify({ kind, units: 'meters, radians', roles, wheelRadius, wheelSeparation, wheelBase, kingpinWidth, steeringLimit }, null, 2) + '\n') });
+    drive = { kind, units: 'meters, radians', roles, wheelRadius, wheelSeparation, wheelBase, kingpinWidth, steeringLimit };
+    files.push({ name: 'drive.json', bytes: encodeText(JSON.stringify(drive, null, 2) + '\n') });
   }
-  return { name: pkg, files, warnings };
+  return {
+    name: pkg,
+    files,
+    warnings,
+    bodies: p.links.map((l) => ({ body: l.name, node: l.node.id, frame: l.frame })),
+    joints: [...p.jointNames].map(([j, name]) => ({ name, id: j.id })),
+    drive,
+  };
 }
 
 function mjcfReadme(name: string, robot: string, collisions: string[], scripts: boolean): string {
