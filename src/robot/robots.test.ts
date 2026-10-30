@@ -15,6 +15,7 @@ import { jointFit } from './defaults';
 import { buildMjcfModel, buildRobotPackage, buildSdfModel } from './export';
 import type { RobotPackage } from './export';
 import { linkNodes, linkOf } from './model';
+import { motorFigures, motorOf } from './motors';
 import { defaultJoint, defaultLink } from './types';
 import type { CollisionKind, Robot, RobotJoint } from './types';
 
@@ -40,7 +41,7 @@ function design(name: string, scene: SceneNode[], robot: Robot): Doc {
   doc.name = name;
   doc.scene = scene;
   const nodes = linkNodes(scene);
-  doc.robot = { ...robot, joints: robot.joints.map((j) => ({ ...j, ...jointFit(robot, nodes, j), ...(j.velocity !== 90 ? { velocity: j.velocity } : {}) })) };
+  doc.robot = { ...robot, joints: robot.joints.map((j) => ({ ...j, ...(j.motor ? motorFigures(motorOf(j.motor)!) : jointFit(robot, nodes, j)), ...(j.velocity !== 90 ? { velocity: j.velocity } : {}) })) };
   return doc;
 }
 
@@ -48,7 +49,7 @@ function design(name: string, scene: SceneNode[], robot: Robot): Doc {
 function rover(): Doc {
   const body = shape('box', 'Body', [0, 0, 25], [80, 120, 30]);
   const wheels = [-1, 1].flatMap((sx) => [-1, 1].map((sy) => shape('cylinder', `Wheel ${sx < 0 ? 'left' : 'right'} ${sy < 0 ? 'back' : 'front'}`, [sx * 46, sy * 40, 20], [40, 40, 12], [0, 90, 0], '#e8853a')));
-  const joints = wheels.map((w) => joint(`${w.name} joint`, body, w, [0, 0, 0], { type: 'continuous', velocity: 360 }));
+  const joints = wheels.map((w) => joint(`${w.name} joint`, body, w, [0, 0, 0], { type: 'continuous', motor: 'tt-48' }));
   const sideOf = (w: SceneNode) => (w.pos[0] < 0 ? 'left' : 'right');
   return design('Reference rover', [body, ...wheels], {
     root: body.id,
@@ -72,9 +73,9 @@ function arm(): Doc {
     base: 'fixed',
     links: [{ ...defaultLink(plate.id), collision: 'box' }, { ...defaultLink(turret.id), collision: 'cylinder' }, { ...defaultLink(upper.id), collision: 'box' }, { ...defaultLink(fore.id), collision: 'box' }],
     joints: [
-      joint('Turret joint', plate, turret, [0, 0, -15], { axis: [0, 0, 1], lower: -170, upper: 170 }),
-      joint('Shoulder', turret, upper, [0, 0, -60], { axis: [1, 0, 0], lower: -90, upper: 90 }),
-      joint('Elbow', upper, fore, [0, 0, -50], { axis: [1, 0, 0], lower: -120, upper: 120 }),
+      joint('Turret joint', plate, turret, [0, 0, -15], { axis: [0, 0, 1], lower: -170, upper: 170, motor: 'mg996r' }),
+      joint('Shoulder', turret, upper, [0, 0, -60], { axis: [1, 0, 0], lower: -90, upper: 90, motor: 'mg996r' }),
+      joint('Elbow', upper, fore, [0, 0, -50], { axis: [1, 0, 0], lower: -120, upper: 120, motor: 'sg90' }),
     ],
     sensors: [],
     control: true,
@@ -94,7 +95,7 @@ function quadruped(): Doc {
       const lower = shape('box', `Lower leg ${leg}`, [sx * 50, sy * 36, 17.5], [10, 10, 35]);
       scene.push(upper, lower);
       links.push({ ...defaultLink(upper.id), collision: 'box' }, { ...defaultLink(lower.id), collision: 'box', friction: 1 });
-      joints.push(joint(`Hip ${leg}`, body, upper, [0, 0, 20], { axis: [0, 1, 0], lower: -60, upper: 60 }), joint(`Knee ${leg}`, upper, lower, [0, 0, 17.5], { axis: [0, 1, 0], lower: -90, upper: 90 }));
+      joints.push(joint(`Hip ${leg}`, body, upper, [0, 0, 20], { axis: [0, 1, 0], lower: -60, upper: 60, motor: 'sg90' }), joint(`Knee ${leg}`, upper, lower, [0, 0, 17.5], { axis: [0, 1, 0], lower: -90, upper: 90, motor: 'sg90' }));
     }
   }
   return design('Reference quadruped', scene, { root: body.id, base: 'free', links, joints, sensors: [], control: true });

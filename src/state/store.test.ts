@@ -114,6 +114,24 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe('a joint\'s motor', () => {
+  it('takes its figures from the table and goes custom when one is typed', () => {
+    const { a, b } = twoBoxes();
+    store.setRobotRoot(a);
+    store.addJoint(a, b);
+    const jointOf = () => store.getState().doc.robot!.joints[0];
+    const fitted = jointOf().effort;
+    expect(fitted).toBeGreaterThan(0);
+    store.setJointMotor(jointOf().id, 'sg90');
+    expect(jointOf()).toMatchObject({ motor: 'sg90', effort: 0.18, velocity: 600 });
+    store.updateJoint(jointOf().id, { effort: 0.25 });
+    expect(jointOf().motor).toBeUndefined();
+    expect(jointOf().effort).toBe(0.25);
+    // The motor survives a save.
+    expect(parseDoc(serializeDoc({ ...store.getState().doc, robot: { ...store.getState().doc.robot!, joints: [{ ...jointOf(), motor: 'nema17' }] } })).robot!.joints[0].motor).toBe('nema17');
+  });
+});
+
 describe('lining up a joint', () => {
   /** The picked joint's place in the design. */
   const jointAt = (): number[] => {

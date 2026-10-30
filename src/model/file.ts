@@ -137,6 +137,7 @@ export function canonicalRobot(robot: Robot): Record<string, unknown> {
       damping: j.damping,
       friction: j.friction,
       mimic: j.mimic ? { joint: j.mimic.joint, multiplier: j.mimic.multiplier, offset: j.mimic.offset } : undefined,
+      motor: j.motor,
     })),
     sensors: robot.sensors.length
       ? [...robot.sensors].sort(byId((x: RobotSensor) => x.id)).map((x) => ({
@@ -399,6 +400,7 @@ function readRobot(raw: unknown, scene: Scene): Robot | undefined {
         damping: Math.max(0, finite(j.damping, 0)),
         friction: Math.max(0, finite(j.friction, 0)),
         ...(isRecord(j.mimic) && typeof j.mimic.joint === 'string' ? { mimic: { joint: j.mimic.joint, multiplier: finite(j.mimic.multiplier, 1), offset: finite(j.mimic.offset, 0) } } : {}),
+        ...(typeof j.motor === 'string' ? { motor: j.motor } : {}),
       });
     }
   }

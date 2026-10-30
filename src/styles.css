@@ -3267,3 +3267,8 @@ kbd {
   align-items: center;
   gap: 5px;
 }
+
+/* A motor's figures run to several decimals (a servo's damping is thousandths), so the Motion boxes are a little wider. */
+.group.motion .field.inline .number-box {
+  width: 118px;
+}

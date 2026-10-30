@@ -22,6 +22,7 @@ import type { LinkGeometry } from '../worker/protocol';
 import { massOf, tensorOf, toSI } from './inertia';
 import type { Tensor } from './inertia';
 import { jointInDesign, linkNodes, linkOf, robotOf, sensorInDesign, spanningTree } from './model';
+import { motorOf } from './motors';
 import type { Robot, RobotJoint } from './types';
 export interface PackageFile {
   /** Path inside the package folder. */
@@ -147,6 +148,7 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
       axis: placed.axis,
       limit: j.type === 'fixed' ? undefined : { lower: j.lower * scale, upper: j.upper * scale, effort: j.effort, velocity: j.velocity * scale },
       dynamics: j.type === 'fixed' ? undefined : { damping: j.damping, friction: j.friction },
+      armature: motorOf(j.motor)?.armature,
       ...(mimic ? { mimic } : {}),
     };
   };
@@ -372,7 +374,7 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
       visual: l.visual,
       collision: l.collision,
       friction: l.friction,
-      joint: joint ? { name: joint.name, type: joint.type, axis: joint.axis, limit: joint.limit, dynamics: joint.dynamics } : undefined,
+      joint: joint ? { name: joint.name, type: joint.type, axis: joint.axis, limit: joint.limit, dynamics: joint.dynamics, armature: joint.armature } : undefined,
       children: (childrenOf.get(name) ?? []).map((j) => body(j.child, j)),
       ...(cams.length ? { cameras: cams.map((s) => ({ name: s.name, pos: s.xyz, rpy: s.rpy, hfov: s.camera.hfov, aspect: s.camera.width / s.camera.height })) } : {}),
       ...(imus.length ? { imus: imus.map((s) => ({ name: s.name, pos: s.xyz, rpy: s.rpy })) } : {}),

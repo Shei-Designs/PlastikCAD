@@ -9,10 +9,11 @@ import type { SceneNode, Vec3 } from '../model/types';
 import { massOf, principalMoments, tensorOf } from '../robot/inertia';
 import { MATERIALS, materialOf } from '../robot/materials';
 import { jointInDesign, linkOf, sensorInDesign } from '../robot/model';
+import { MOTORS } from '../robot/motors';
 import { COLLISION_KINDS, JOINT_TYPES, SENSOR_KINDS } from '../robot/types';
 import type { RobotJoint, RobotLink, RobotSensor, SensorKind } from '../robot/types';
 import type { Problem } from '../robot/check';
-import { addJoint, addSensor, deleteJoint, deleteSensor, fitJointFollowers, placeJoint, placeSensor, select, selectJoint, selectSensor, setBase, setControl, setDrive, setPose, setRobotRoot, startJointPick, stopJointPick, updateJoint, updateLink, updateSensor, useEditor } from '../state/store';
+import { addJoint, addSensor, deleteJoint, deleteSensor, fitJointFollowers, placeJoint, placeSensor, select, selectJoint, selectSensor, setBase, setControl, setDrive, setJointMotor, setPose, setRobotRoot, startJointPick, stopJointPick, updateJoint, updateLink, updateSensor, useEditor } from '../state/store';
 import { rangeOf } from '../robot/kinematics';
 import { formatNumber, NumberBox, selectOnFocus, SliderField } from './Fields';
 import { Hint } from './Hint';
@@ -505,8 +506,14 @@ function JointPanel({ joint }: { joint: RobotJoint }) {
         </fieldset>
       )}
       {joint.type !== 'fixed' && (
-        <fieldset className="group">
+        <fieldset className="group motion">
           <legend>Motion</legend>
+          {angular &&
+            row(
+              'Motor',
+              <Select value={joint.motor ?? ''} label="Motor" placeholder="Custom" options={MOTORS.map((m) => ({ value: m.id, label: `${m.name} · ${m.torque} N·m, ${m.speed}°/s` }))} onChange={(id) => setJointMotor(joint.id, id)} />,
+              "Sets the effort, speed and damping to the motor's figures; typing any of them makes it custom again.",
+            )}
           {joint.type !== 'continuous' && (
             <>
               {row('Lower limit', <NumberBox label="Lower limit" value={joint.lower} unit={unit} step={angular ? 5 : 1} places={2} onChange={(v) => updateJoint(joint.id, { lower: v }, 'joint-lower')} />)}

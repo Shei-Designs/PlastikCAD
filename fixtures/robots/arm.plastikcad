@@ -2,7 +2,7 @@
   "format": "plastikcad",
   "version": 2,
   "units": "mm",
-  "id": "rq5ch8ec",
+  "id": "twki5k61",
   "name": "Reference arm",
   "scene": [
     {
@@ -120,10 +120,11 @@
         "axis": [0,0,1],
         "lower": -170,
         "upper": 170,
-        "effort": 0.11,
-        "velocity": 90,
-        "damping": 0.0035,
-        "friction": 0
+        "effort": 0.92,
+        "velocity": 350,
+        "damping": 0.00753,
+        "friction": 0,
+        "motor": "mg996r"
       },
       {
         "id": "fx000015",
@@ -135,10 +136,11 @@
         "axis": [1,0,0],
         "lower": -90,
         "upper": 90,
-        "effort": 0.0809,
-        "velocity": 90,
-        "damping": 0.00258,
-        "friction": 0
+        "effort": 0.92,
+        "velocity": 350,
+        "damping": 0.00753,
+        "friction": 0,
+        "motor": "mg996r"
       },
       {
         "id": "fx000016",
@@ -150,10 +152,11 @@
         "axis": [1,0,0],
         "lower": -120,
         "upper": 120,
-        "effort": 0.133,
-        "velocity": 90,
-        "damping": 0.00423,
-        "friction": 0
+        "effort": 0.18,
+        "velocity": 600,
+        "damping": 0.000859,
+        "friction": 0,
+        "motor": "sg90"
       }
     ]
   }

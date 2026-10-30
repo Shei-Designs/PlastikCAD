@@ -73,6 +73,8 @@ export interface RobotJoint {
   friction: number;
   /** Follows another joint (a linkage's passive joint): angle = multiplier × that joint's angle + offset. */
   mimic?: { joint: string; multiplier: number; offset: number };
+  /** Id in `MOTORS` of the motor the figures came from; none once they are typed by hand. */
+  motor?: string;
 }
 
 export type SensorKind = 'camera' | 'depth' | 'lidar' | 'imu';

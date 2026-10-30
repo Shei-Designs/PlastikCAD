@@ -2,7 +2,7 @@
   "format": "plastikcad",
   "version": 2,
   "units": "mm",
-  "id": "kfd0rpem",
+  "id": "lcl725cx",
   "name": "Reference quadruped",
   "scene": [
     {
@@ -239,10 +239,11 @@
         "axis": [0,1,0],
         "lower": -60,
         "upper": 60,
-        "effort": 0.246,
-        "velocity": 90,
-        "damping": 0.00783,
-        "friction": 0
+        "effort": 0.18,
+        "velocity": 600,
+        "damping": 0.000859,
+        "friction": 0,
+        "motor": "sg90"
       },
       {
         "id": "fx000021",
@@ -254,10 +255,11 @@
         "axis": [0,1,0],
         "lower": -90,
         "upper": 90,
-        "effort": 0.248,
-        "velocity": 90,
-        "damping": 0.00789,
-        "friction": 0
+        "effort": 0.18,
+        "velocity": 600,
+        "damping": 0.000859,
+        "friction": 0,
+        "motor": "sg90"
       },
       {
         "id": "fx000024",
@@ -269,10 +271,11 @@
         "axis": [0,1,0],
         "lower": -60,
         "upper": 60,
-        "effort": 0.246,
-        "velocity": 90,
-        "damping": 0.00783,
-        "friction": 0
+        "effort": 0.18,
+        "velocity": 600,
+        "damping": 0.000859,
+        "friction": 0,
+        "motor": "sg90"
       },
       {
         "id": "fx000025",
@@ -284,10 +287,11 @@
         "axis": [0,1,0],
         "lower": -90,
         "upper": 90,
-        "effort": 0.248,
-        "velocity": 90,
-        "damping": 0.00789,
-        "friction": 0
+        "effort": 0.18,
+        "velocity": 600,
+        "damping": 0.000859,
+        "friction": 0,
+        "motor": "sg90"
       },
       {
         "id": "fx000028",
@@ -299,10 +303,11 @@
         "axis": [0,1,0],
         "lower": -60,
         "upper": 60,
-        "effort": 0.246,
-        "velocity": 90,
-        "damping": 0.00783,
-        "friction": 0
+        "effort": 0.18,
+        "velocity": 600,
+        "damping": 0.000859,
+        "friction": 0,
+        "motor": "sg90"
       },
       {
         "id": "fx000029",
@@ -314,10 +319,11 @@
         "axis": [0,1,0],
         "lower": -90,
         "upper": 90,
-        "effort": 0.248,
-        "velocity": 90,
-        "damping": 0.00789,
-        "friction": 0
+        "effort": 0.18,
+        "velocity": 600,
+        "damping": 0.000859,
+        "friction": 0,
+        "motor": "sg90"
       },
       {
         "id": "fx000032",
@@ -329,10 +335,11 @@
         "axis": [0,1,0],
         "lower": -60,
         "upper": 60,
-        "effort": 0.246,
-        "velocity": 90,
-        "damping": 0.00783,
-        "friction": 0
+        "effort": 0.18,
+        "velocity": 600,
+        "damping": 0.000859,
+        "friction": 0,
+        "motor": "sg90"
       },
       {
         "id": "fx000033",
@@ -344,10 +351,11 @@
         "axis": [0,1,0],
         "lower": -90,
         "upper": 90,
-        "effort": 0.248,
-        "velocity": 90,
-        "damping": 0.00789,
-        "friction": 0
+        "effort": 0.18,
+        "velocity": 600,
+        "damping": 0.000859,
+        "friction": 0,
+        "motor": "sg90"
       }
     ]
   }

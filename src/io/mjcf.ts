@@ -32,6 +32,8 @@ export interface MjcfJoint {
   axis: Vec3;
   limit?: { lower: number; upper: number; effort: number; velocity: number };
   dynamics?: { damping: number; friction: number };
+  /** The motor's reflected rotor inertia, kg·m². */
+  armature?: number;
 }
 
 export interface MjcfModel {
@@ -93,8 +95,9 @@ function inertiaAboutJoint(b: MjcfBody, placed: Map<MjcfBody, Vec3>): number {
   const u = b.joint.axis.map((x) => x / n) as Vec3;
   const pivot = placed.get(b)!;
   const below = new Set(collect(b, (x) => [x]));
-  let child = 0;
-  let rest = 0;
+  // The motor's own rotor, through its gears, turns with the joint whichever side moves.
+  let child = b.joint.armature ?? 0;
+  let rest = child;
   for (const [body, at] of placed) {
     if (!body.inertial) continue;
     const i = inertiaAbout(body.inertial, [pivot[0] - at[0], pivot[1] - at[1], pivot[2] - at[2]], u);
@@ -168,7 +171,7 @@ export function writeMjcf(model: MjcfModel): string {
       const j = b.joint;
       const hinge = j.type !== 'prismatic';
       const range = j.limit && j.type !== 'continuous' ? ` range="${fmt(j.limit.lower, 6)} ${fmt(j.limit.upper, 6)}" limited="true"` : '';
-      const dyn = j.dynamics ? ` damping="${fmt(j.dynamics.damping, 6)}" frictionloss="${fmt(j.dynamics.friction, 6)}"` : '';
+      const dyn = (j.dynamics ? ` damping="${sig(j.dynamics.damping)}" frictionloss="${sig(j.dynamics.friction)}"` : '') + (j.armature ? ` armature="${sig(j.armature)}"` : '');
       lines.push(`${indent}  <joint name="${escapeXml(j.name)}" type="${hinge ? 'hinge' : 'slide'}" axis="${vec(j.axis)}"${range}${dyn}/>`);
     }
     if (b.inertial) {

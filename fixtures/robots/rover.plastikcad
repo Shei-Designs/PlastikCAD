@@ -2,7 +2,7 @@
   "format": "plastikcad",
   "version": 2,
   "units": "mm",
-  "id": "1zo41o40",
+  "id": "pmhpdjse",
   "name": "Reference rover",
   "scene": [
     {
@@ -147,10 +147,11 @@
         "axis": [0,0,1],
         "lower": -90,
         "upper": 90,
-        "effort": 0.336,
-        "velocity": 360,
-        "damping": 0.0107,
-        "friction": 0
+        "effort": 0.08,
+        "velocity": 1200,
+        "damping": 0.000191,
+        "friction": 0,
+        "motor": "tt-48"
       },
       {
         "id": "fx000007",
@@ -162,10 +163,11 @@
         "axis": [0,0,1],
         "lower": -90,
         "upper": 90,
-        "effort": 0.336,
-        "velocity": 360,
-        "damping": 0.0107,
-        "friction": 0
+        "effort": 0.08,
+        "velocity": 1200,
+        "damping": 0.000191,
+        "friction": 0,
+        "motor": "tt-48"
       },
       {
         "id": "fx000008",
@@ -177,10 +179,11 @@
         "axis": [0,0,1],
         "lower": -90,
         "upper": 90,
-        "effort": 0.336,
-        "velocity": 360,
-        "damping": 0.0107,
-        "friction": 0
+        "effort": 0.08,
+        "velocity": 1200,
+        "damping": 0.000191,
+        "friction": 0,
+        "motor": "tt-48"
       },
       {
         "id": "fx000009",
@@ -192,10 +195,11 @@
         "axis": [0,0,1],
         "lower": -90,
         "upper": 90,
-        "effort": 0.336,
-        "velocity": 360,
-        "damping": 0.0107,
-        "friction": 0
+        "effort": 0.08,
+        "velocity": 1200,
+        "damping": 0.000191,
+        "friction": 0,
+        "motor": "tt-48"
       }
     ],
     "drive": {

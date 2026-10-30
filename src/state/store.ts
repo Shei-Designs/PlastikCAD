@@ -64,6 +64,7 @@ import { jointInChild, jointInDesign as jointInDesignOf, linkNodes, linkOf, meet
 import { snapPointsOf } from '../robot/snaps';
 import type { SnapPoint } from '../viewer/Viewer';
 import { jointFit } from '../robot/defaults';
+import { motorFigures, motorForPart, motorOf } from '../robot/motors';
 import { massOf } from '../robot/inertia';
 import { defaultJoint, defaultSensor, SENSOR_KINDS } from '../robot/types';
 import type { DiffDrive, Robot, RobotJoint, RobotLink, RobotSensor, SensorKind } from '../robot/types';
@@ -2037,9 +2038,11 @@ export function addJoint(parent: string, child: string): string | null {
   if (!childNode || !parentNode || parent === child) return null;
   const origin = jointInChild(meetingPoint(geometry.bounds(parentNode), geometry.bounds(childNode)), [0, 0, 1], childNode).origin;
   const id = newId();
+  // A mount from the parts library on either side says which motor turns the joint.
+  const motor = motorForPart(parentNode) ?? motorForPart(childNode);
   editRobot((r) => {
     const made = defaultJoint(id, jointName(r, `${childNode.name} joint`), parent, child, tidyVec(origin));
-    return { ...r, root: r.root ?? parent, joints: [...r.joints, { ...made, ...jointFit(r, linkNodes(state.doc.scene), made, (n) => weighed(r, n)) }] };
+    return { ...r, root: r.root ?? parent, joints: [...r.joints, { ...made, ...jointFit(r, linkNodes(state.doc.scene), made, (n) => weighed(r, n)), ...(motor ? motorFigures(motor) : {}) }] };
   });
   selectJoint(id);
   return id;
@@ -2054,7 +2057,15 @@ function weighed(robot: Robot, node: SceneNode): number | null {
 export const setBase = (base: Robot['base']): void => editRobot((r) => ({ ...r, base }));
 
 export function updateJoint(id: string, patch: Partial<Omit<RobotJoint, 'id'>>, merge?: string): void {
-  editRobot((r) => ({ ...r, joints: r.joints.map((j) => (j.id === id ? { ...j, ...patch } : j)) }), merge);
+  // An effort, speed or damping typed by hand makes the motor custom again.
+  const typed = ('effort' in patch || 'velocity' in patch || 'damping' in patch) && !('motor' in patch) ? { ...patch, motor: undefined } : patch;
+  editRobot((r) => ({ ...r, joints: r.joints.map((j) => (j.id === id ? { ...j, ...typed } : j)) }), merge);
+}
+
+/** Gives the joint a motor from the table, and its figures. */
+export function setJointMotor(id: string, motor: string): void {
+  const m = motorOf(motor);
+  if (m) updateJoint(id, motorFigures(m));
 }
 
 /** Puts the joint at a place and direction given in the design's coordinates (it is kept in the child's). */

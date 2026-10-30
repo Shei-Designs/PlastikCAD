@@ -65,6 +65,8 @@ export interface UrdfJoint {
   limit?: { lower: number; upper: number; effort: number; velocity: number };
   dynamics?: { damping: number; friction: number };
   mimic?: { joint: string; multiplier: number; offset: number };
+  /** The motor's reflected rotor inertia, kg·m²; only MuJoCo takes it (as the joint's armature). */
+  armature?: number;
 }
 
 const vec = (v: Vec3): string => v.map((x) => fmt(x, 6)).join(' ');
