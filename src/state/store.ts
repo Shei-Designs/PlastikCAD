@@ -11,6 +11,7 @@ import { zipSync } from 'fflate';
 import { write3mf } from '../io/threemf';
 import type { FormatId } from '../io/export';
 import { centerMesh, centerOutline, fileKind, IMAGE_EXTENSIONS, IMPORT_EXTENSIONS, importFile } from '../io/import';
+import { meshPath, parseUrdf, urdfMeshFiles } from '../io/importUrdf';
 import { bytesToBase64 } from '../io/base64';
 import { exportGlb } from './glbExport';
 import { emptyDoc, HEAD_BYTES, legacyVersions, MAX_NOTE, parseDoc, readHeader, serializeDoc } from '../model/file';
@@ -2591,11 +2592,13 @@ export async function pickImage(): Promise<string | null> {
 
 const IMPORTABLE = [...IMPORT_EXTENSIONS, ...IMAGE_EXTENSIONS];
 
-/** Files picked or dropped: designs are opened, models, drawings and pictures are imported into the current design. */
+/** Files picked or dropped: designs are opened, a URDF brings its robot in, models, drawings and pictures are imported into the current design. */
 export async function receiveFiles(files: PickedFile[]): Promise<void> {
   try {
     const design = files.find((f) => isDesignName(f.name));
     if (design) return await importProjectFile(design);
+    const urdf = files.find((f) => extension(f.name) === 'urdf');
+    if (urdf) return await importRobot(urdf, files.filter((f) => f !== urdf));
     const models = files.filter((f) => IMPORT_EXTENSIONS.includes(fileKind(f.name, f.bytes)));
     const pictures = files.filter((f) => IMAGE_EXTENSIONS.includes(fileKind(f.name, f.bytes)));
     if (models.length === 0 && pictures.length === 0) {
@@ -2612,6 +2615,98 @@ export async function receiveFiles(files: PickedFile[]): Promise<void> {
     if (sheets.length) await importPictures(sheets);
   } catch (e) {
     fail(e);
+  } finally {
+    set({ busy: null });
+  }
+}
+
+const URDF_FILTER = [{ name: 'URDF robot', extensions: ['urdf'] }];
+
+/** "Import URDF…" in Robot mode: brings a robot's links, joints, sensors and meshes into the design. */
+export async function importRobotFile(): Promise<void> {
+  try {
+    const [file] = await platform.pickFiles({ filters: URDF_FILTER });
+    if (file) await importRobot(file, []);
+  } catch (e) {
+    fail(e);
+  }
+}
+
+/**
+ * The mesh files a URDF names, found beside it on disk by their path in the
+ * package, looked for from the URDF's folder upwards (a package keeps its URDF
+ * in urdf/ and its meshes in meshes/). An OBJ brings the material library it
+ * names along for its colors.
+ */
+async function urdfCompanions(file: PickedFile, companions: PickedFile[]): Promise<PickedFile[]> {
+  const found = [...companions];
+  const real = file.path ? await platform.realPath(file.path) : null;
+  if (!real) return found;
+  const dir = folderOf(real);
+  for (const ref of urdfMeshFiles(file.bytes)) {
+    const inside = meshPath(ref);
+    if (found.some((c) => c.name === inside)) continue;
+    const base = inside.split('/').pop()!;
+    for (const candidate of new Set([`${dir}/${inside}`, `${dir}/../${inside}`, `${dir}/../../${inside}`, `${dir}/${base}`])) {
+      const read = await platform.readPath(candidate).catch(() => null);
+      if (!read) continue;
+      found.push({ ...read, name: inside });
+      if (extension(base) === 'obj') {
+        const library = /^\s*mtllib\s+(.+?)\s*$/m.exec(new TextDecoder().decode(read.bytes.subarray(0, 65536)))?.[1];
+        const mtl = library && (await platform.readPath(`${folderOf(candidate)}/${library}`).catch(() => null));
+        if (mtl) found.push({ ...mtl, name: library });
+      }
+      break;
+    }
+  }
+  return found;
+}
+
+/**
+ * Brings a URDF's robot into the design: its links as objects where the file
+ * puts them, its joints, sensors and drive over them. The design's own robot
+ * keeps its base; the newcomer's hangs loose until it is attached. The design
+ * takes the robot's name when it was empty and unnamed.
+ */
+async function importRobot(file: PickedFile, companions: PickedFile[]): Promise<void> {
+  set({ busy: 'Importing…' });
+  await new Promise((r) => setTimeout(r, 30));
+  try {
+    let found = await urdfCompanions(file, companions);
+    let imported = parseUrdf(file.bytes, found);
+    if (imported.missing.length) {
+      const names = imported.missing.map((m) => `"${meshPath(m).split('/').pop()}"`);
+      const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+      const ok = await platform.confirm(`"${file.name}" draws its links with ${list}, which did not come along. Pick ${names.length === 1 ? 'it' : 'them'} now, or import without?`, { title: 'Import', okLabel: 'Pick', cancelLabel: 'Without' });
+      if (ok) {
+        const picked = await platform.pickFiles({ filters: [{ name: 'Meshes', extensions: [...IMPORT_EXTENSIONS, 'mtl'] }], multiple: true });
+        if (picked.length) {
+          found = [...found, ...picked];
+          imported = parseUrdf(file.bytes, found);
+        }
+      }
+    }
+    if (state.aligning) stopAligning();
+    const robot = robotOf(state.doc);
+    const merged: Robot = {
+      ...robot,
+      root: robot.root ?? imported.robot.root,
+      base: robot.root ? robot.base : imported.robot.base,
+      links: [...robot.links, ...imported.robot.links],
+      joints: [...robot.joints, ...imported.robot.joints],
+      sensors: [...robot.sensors, ...imported.robot.sensors],
+      control: robot.root ? robot.control : imported.robot.control,
+    };
+    const drive = robot.drive ?? imported.robot.drive;
+    if (drive) merged.drive = drive;
+    const name = state.doc.scene.length === 0 && state.doc.name === emptyDoc().name ? imported.name : state.doc.name;
+    record();
+    set({ doc: { ...state.doc, name, scene: [...state.doc.scene, ...imported.scene], assets: { ...state.doc.assets, ...imported.assets }, robot: merged }, selection: [], joint: null, sensor: null, jointPick: null, pose: null, placing: null });
+    if (!state.robot) enterRobotMode();
+    const links = imported.scene.length;
+    const summary = `Imported ${links} link${links === 1 ? '' : 's'} and ${imported.robot.joints.length} joint${imported.robot.joints.length === 1 ? '' : 's'} from ${file.name}.`;
+    if (imported.warnings.length) notify(`${summary} ${imported.warnings.join(' ')}`, 'error');
+    else notify(summary, 'ok');
   } finally {
     set({ busy: null });
   }

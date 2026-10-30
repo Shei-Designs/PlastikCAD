@@ -10,7 +10,7 @@ import { checkRobot } from '../robot/check';
 import { linkNodes, robotOf, spanningTree } from '../robot/model';
 import type { RobotJoint, RobotSensor } from '../robot/types';
 import { massProps } from '../state/massProps';
-import { exportRobot, fixLooseLinks, leaveRobotMode, select, selectJoint, selectSensor, setPrefs, useEditor } from '../state/store';
+import { exportRobot, fixLooseLinks, importRobotFile, leaveRobotMode, select, selectJoint, selectSensor, setPrefs, useEditor } from '../state/store';
 import { ChevronIcon, CloseIcon, DownloadIcon, JointIcon, SensorIcon, WarningIcon } from './icons';
 import { Popover } from './Popover';
 
@@ -136,7 +136,7 @@ export function RobotPanel() {
           <span className="count">{nodes.length ? `${nodes.length} link${nodes.length === 1 ? '' : 's'}, ${robot.joints.length} joint${robot.joints.length === 1 ? '' : 's'}` : ''}</span>
         </h2>
         {nodes.length === 0 ? (
-          <p className="empty">Every object in the design is a link. Leave Robot mode to add some.</p>
+          <p className="empty">Every object in the design is a link. Leave Robot mode to add some, or import a URDF.</p>
         ) : !rooted ? (
           <p className="empty">Select the object the rest of the robot hangs from and make it the base link.</p>
         ) : (
@@ -162,6 +162,11 @@ export function RobotPanel() {
             {nodes.map((n) => linkRow(n, 0))}
           </ul>
         )}
+        <div className="structure-actions">
+          <button type="button" className="chip" title="Brings a robot in from a URDF file, with its meshes, as links and joints" onClick={() => void importRobotFile()}>
+            Import URDF…
+          </button>
+        </div>
       </div>
     </div>
   );

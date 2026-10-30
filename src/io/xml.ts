@@ -185,3 +185,52 @@ export class XmlScanner {
     return b.length;
   }
 }
+
+/** An element of a small XML document read whole: its name as written, attributes, children, and the text directly inside it, trimmed. */
+export interface XmlElement {
+  name: string;
+  attrs: Record<string, string>;
+  children: XmlElement[];
+  text: string;
+}
+
+const textOf = (bytes: Uint8Array): string => {
+  const raw = decoder.decode(bytes).replace(/<!--[\s\S]*?-->/g, '').replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1');
+  return raw.includes('&') ? decodeEntities(raw) : raw;
+};
+
+/**
+ * The whole document as a tree, for the small files (a URDF, an SDF) whose
+ * text content matters as much as their tags. Null when the document has no
+ * element. Mismatched closing tags are taken as closing the open element.
+ */
+export function xmlTree(bytes: Uint8Array): XmlElement | null {
+  const scanner = new XmlScanner(bytes);
+  const stack: XmlElement[] = [];
+  let root: XmlElement | null = null;
+  let textFrom = 0;
+  while (scanner.next()) {
+    const tagStart = scanner.nameStart - (scanner.closing ? 2 : 1);
+    const top = stack[stack.length - 1];
+    if (top && tagStart > textFrom) top.text += textOf(bytes.subarray(textFrom, tagStart));
+    textFrom = scanner.attrEnd + (scanner.selfClosing ? 2 : 1);
+    if (scanner.closing) {
+      const closed = stack.pop();
+      if (closed) closed.text = closed.text.trim();
+      continue;
+    }
+    const element: XmlElement = { name: scanner.name(), attrs: scanner.attrs(), children: [], text: '' };
+    if (top) top.children.push(element);
+    else root ??= element;
+    if (!scanner.selfClosing) stack.push(element);
+  }
+  for (const open of stack) open.text = open.text.trim();
+  return root;
+}
+
+/** The local part of an element's name: `xacro:property` → `property`. */
+export const localName = (name: string): string => name.slice(name.indexOf(':') + 1);
+/** The first child element with this local name. */
+export const childOf = (element: XmlElement, name: string): XmlElement | undefined => element.children.find((c) => localName(c.name) === name);
+/** Every child element with this local name. */
+export const childrenOf = (element: XmlElement, name: string): XmlElement[] => element.children.filter((c) => localName(c.name) === name);
