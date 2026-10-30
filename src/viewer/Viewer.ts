@@ -93,7 +93,8 @@ export type Marker =
   | { kind: 'joint'; type: 'fixed' | 'revolute' | 'continuous' | 'prismatic'; matrix: Mat }
   | { kind: 'camera'; matrix: Mat; hfov: number; aspect: number; depth: boolean }
   | { kind: 'lidar'; matrix: Mat; hfov: number }
-  | { kind: 'imu'; matrix: Mat };
+  | { kind: 'imu'; matrix: Mat }
+  | { kind: 'touch'; matrix: Mat };
 
 export interface SnapPoint {
   at: Vec3;
@@ -352,6 +353,11 @@ function markerObject(mk: Marker, accent: number, dim = false): Group {
     case 'imu':
       triad(0.45);
       cube(0.16, accent);
+      break;
+    case 'touch':
+      // A pad where the link meets things: a flat disc with a short stem.
+      put(new CylinderGeometry(0.4, 0.4, 0.08, 24), accent, [0, 0, 0.04], [0, 0, 1]);
+      rod([0, 0, 0.08], [0, 0, 0.4], accent);
       break;
   }
   // Unseen targets for the pointer: the axis of a picked joint, to slide it along; the whole of an unpicked marker, to pick it.

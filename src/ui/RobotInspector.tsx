@@ -10,10 +10,10 @@ import { massOf, principalMoments, tensorOf } from '../robot/inertia';
 import { MATERIALS, materialOf } from '../robot/materials';
 import { jointInDesign, linkOf, sensorInDesign } from '../robot/model';
 import { MOTORS } from '../robot/motors';
-import { COLLISION_KINDS, DRIVE_KINDS, driveJoints, JOINT_TYPES, SENSOR_KINDS } from '../robot/types';
-import type { DriveKind, DriveRole, RobotJoint, RobotLink, RobotSensor, SensorKind } from '../robot/types';
+import { COLLISION_KINDS, DRIVE_KINDS, driveJoints, JOINT_TYPES, SENSOR_KINDS, WORLDS } from '../robot/types';
+import type { DriveKind, DriveRole, RobotJoint, RobotLink, RobotSensor, SensorKind, World } from '../robot/types';
 import type { Problem } from '../robot/check';
-import { addJoint, addSensor, deleteJoint, deleteSensor, fitJointFollowers, placeJoint, placeSensor, select, selectJoint, selectSensor, setBase, setControl, setDriveKind, setDriveRole, setJointMotor, setPose, setRobotRoot, startJointPick, stopJointPick, updateJoint, updateLink, updateSensor, useEditor } from '../state/store';
+import { addJoint, addSensor, deleteJoint, deleteSensor, fitJointFollowers, placeJoint, placeSensor, select, selectJoint, selectSensor, setBase, setControl, setDriveKind, setDriveRole, setJointMotor, setPose, setRobotRoot, setScripts, setWorld, startJointPick, stopJointPick, updateJoint, updateLink, updateSensor, useEditor } from '../state/store';
 import { rangeOf } from '../robot/kinematics';
 import { formatNumber, NumberBox, selectOnFocus, SliderField } from './Fields';
 import { Hint } from './Hint';
@@ -210,6 +210,20 @@ function Controllers() {
         <input type="checkbox" className="switch" checked={robot.control} onChange={(e) => setControl(e.target.checked)} />
       </label>
       {robot.control && rest.length > 0 && <p className="export-note">{rest.map((j) => j.name).join(', ')}</p>}
+      <div className="field inline">
+        <label>
+          World
+          <Hint text={`${WORLDS.find((w) => w.id === (robot.world ?? 'flat'))?.help ?? ''} The floor of the MuJoCo model; Gazebo's world stays flat.`} />
+        </label>
+        <Select value={robot.world ?? 'flat'} label="World" options={WORLDS.map((w) => ({ value: w.id, label: w.name }))} onChange={(w) => setWorld(w as World)} />
+      </div>
+      <label className="field inline">
+        <span className="switch-label">
+          Starter scripts
+          <Hint text="Writes drive.py, a Gymnasium env.py and train.py beside the MuJoCo model." />
+        </span>
+        <input type="checkbox" className="switch" checked={robot.scripts !== false} onChange={(e) => setScripts(e.target.checked)} />
+      </label>
     </fieldset>
   );
 }
@@ -607,6 +621,7 @@ function SensorPanel({ sensor }: { sensor: RobotSensor }) {
   const own = problems.filter((q) => q.sensor === sensor.id);
   const kind = SENSOR_KINDS.find((k) => k.id === sensor.kind)!;
   const camera = sensor.kind === 'camera' || sensor.kind === 'depth';
+  const turned = sensor.kind !== 'touch';
   const along = camera ? 'x' : 'z';
   const facing = placed ? (along === 'x' ? [placed.matrix[0], placed.matrix[1], placed.matrix[2]] : [placed.matrix[6], placed.matrix[7], placed.matrix[8]]) : [1, 0, 0];
   const faces = DIRECTIONS.findIndex((d) => Math.abs(d.vector[0] * facing[0] + d.vector[1] * facing[1] + d.vector[2] * facing[2] - 1) < 1e-6);
@@ -662,20 +677,22 @@ function SensorPanel({ sensor }: { sensor: RobotSensor }) {
                 ))}
               </div>
             </div>
-            <div className="field">
-              <label>
-                {camera ? 'Looks along' : sensor.kind === 'lidar' ? 'Sweeps about' : 'Up axis'}
-                <Hint text={camera ? "The camera's line of sight, in the design's axes." : sensor.kind === 'lidar' ? 'The axis the scan turns about: up, for a scan of the floor plan.' : "The IMU's Z, in the design's axes."} />
-              </label>
-              <div className="segmented small" role="radiogroup" aria-label="Direction">
-                {DIRECTIONS.map((d, i) => (
-                  <button key={d.label} type="button" role="radio" aria-checked={faces === i} className={faces === i ? 'on' : ''} onClick={() => put(placed.origin, frameFacing(d.vector, along))}>
-                    {d.label}
-                  </button>
-                ))}
+            {turned && (
+              <div className="field">
+                <label>
+                  {camera ? 'Looks along' : sensor.kind === 'lidar' ? 'Sweeps about' : 'Up axis'}
+                  <Hint text={camera ? "The camera's line of sight, in the design's axes." : sensor.kind === 'lidar' ? 'The axis the scan turns about: up, for a scan of the floor plan.' : "The IMU's Z, in the design's axes."} />
+                </label>
+                <div className="segmented small" role="radiogroup" aria-label="Direction">
+                  {DIRECTIONS.map((d, i) => (
+                    <button key={d.label} type="button" role="radio" aria-checked={faces === i} className={faces === i ? 'on' : ''} onClick={() => put(placed.origin, frameFacing(d.vector, along))}>
+                      {d.label}
+                    </button>
+                  ))}
+                </div>
+                {faces < 0 && <p className="export-note">{eulerOf(placed.matrix).map((v) => formatNumber(v, 1)).join(', ')}° (set by the link's turn)</p>}
               </div>
-              {faces < 0 && <p className="export-note">{eulerOf(placed.matrix).map((v) => formatNumber(v, 1)).join(', ')}° (set by the link's turn)</p>}
-            </div>
+            )}
           </>
         )}
       </fieldset>

@@ -77,13 +77,14 @@ export interface RobotJoint {
   motor?: string;
 }
 
-export type SensorKind = 'camera' | 'depth' | 'lidar' | 'imu';
+export type SensorKind = 'camera' | 'depth' | 'lidar' | 'imu' | 'touch';
 
 export const SENSOR_KINDS: { id: SensorKind; name: string; help: string }[] = [
   { id: 'camera', name: 'Camera', help: 'A color camera looking along its X axis.' },
   { id: 'depth', name: 'Depth camera', help: 'A camera that also gives the distance to everything it sees, as a point cloud.' },
   { id: 'lidar', name: 'Lidar', help: 'A laser scanner sweeping a plane about its Z axis.' },
   { id: 'imu', name: 'IMU', help: 'Measures turn rate and acceleration, for odometry.' },
+  { id: 'touch', name: 'Touch', help: 'Feels the force of whatever the link presses on: a foot on the floor.' },
 ];
 
 /** A sensor fixed to a link, as a frame of its own with a Gazebo sensor in it. */
@@ -111,7 +112,7 @@ export const defaultSensor = (id: string, name: string, kind: SensorKind, link: 
   link,
   origin,
   rot: [0, 0, 0],
-  rate: kind === 'imu' ? 100 : kind === 'lidar' ? 10 : 30,
+  rate: kind === 'imu' || kind === 'touch' ? 100 : kind === 'lidar' ? 10 : 30,
   camera: { hfov: 80, width: 640, height: 480, near: 50, far: 10000 },
   lidar: { samples: 360, hfov: 360, min: 100, max: 12000 },
 });
@@ -178,7 +179,18 @@ export interface Robot {
   drive?: Drive;
   /** Write ros2_control for every actuated joint not driven as a wheel, with a trajectory controller over them. */
   control: boolean;
+  /** The floor the MuJoCo model stands on; flat when left out. Gazebo's world stays flat. */
+  world?: World;
+  /** Write the starter scripts (drive, Gymnasium environment, training) into the MuJoCo export; yes when left out. */
+  scripts?: boolean;
 }
+
+export type World = 'flat' | 'rough' | 'slope';
+export const WORLDS: { id: World; name: string; help: string }[] = [
+  { id: 'flat', name: 'Flat', help: 'A level floor.' },
+  { id: 'rough', name: 'Rough', help: 'Gentle bumps a few centimeters high around a flat start; for walkers and rovers.' },
+  { id: 'slope', name: 'Slope', help: 'A floor tilted eight degrees.' },
+];
 
 export const emptyRobot = (): Robot => ({ root: null, base: 'free', links: [], joints: [], sensors: [], control: true });
 

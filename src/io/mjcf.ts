@@ -23,6 +23,8 @@ export interface MjcfBody {
   cameras?: { name: string; pos: Vec3; rpy: Vec3; hfov: number; aspect: number }[];
   /** Sites for IMUs: a gyro and an accelerometer each. */
   imus?: { name: string; pos: Vec3; rpy: Vec3 }[];
+  /** Touch sensors: a sphere site of `size` radius, m, summing the contact forces inside it. */
+  touches?: { name: string; pos: Vec3; size: number }[];
 }
 
 export interface MjcfJoint {
@@ -48,6 +50,24 @@ export interface MjcfModel {
   /** Position servos over these joints, velocity motors over the wheels. */
   servos: string[];
   wheels: string[];
+  /** The floor: level, bumpy around a flat start, or tilted. */
+  world: 'flat' | 'rough' | 'slope';
+}
+
+/** Terrain for the rough floor: smooth bumps from a few sines, flat within `clear` of the middle so the robot starts level. 0..1 per cell, row by row. */
+export function terrain(n: number, clear = 0.25): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      const x = i / (n - 1) - 0.5;
+      const y = j / (n - 1) - 0.5;
+      const bumps = 0.5 + 0.25 * Math.sin(12.9 * x + 1.3) * Math.cos(9.7 * y) + 0.15 * Math.sin(23 * x * y + 0.7) + 0.1 * Math.cos(17 * y + 5 * x);
+      const r = Math.hypot(x, y);
+      const ramp = Math.min(1, Math.max(0, (r - clear) / 0.15));
+      out.push(Math.min(1, Math.max(0, bumps * ramp)));
+    }
+  }
+  return out;
 }
 
 const vec = (v: Vec3): string => v.map((x) => fmt(x, 6)).join(' ');
@@ -187,12 +207,31 @@ export function writeMjcf(model: MjcfModel): string {
       lines.push(`${indent}  <camera name="${escapeXml(cam.name)}" pos="${vec(cam.pos)}" quat="${q}" fovy="${fmt(fovy, 3)}"/>`);
     }
     for (const imu of b.imus ?? []) lines.push(`${indent}  <site name="${escapeXml(imu.name)}" pos="${vec(imu.pos)}" quat="${quatOf(imu.rpy)}" size="0.005"/>`);
+    for (const t of b.touches ?? []) lines.push(`${indent}  <site name="${escapeXml(t.name)}_site" type="sphere" pos="${vec(t.pos)}" size="${sig(t.size)}" rgba="1 0.5 0 0.3"/>`);
+    // A site at the base's origin carries its orientation, turn rate and velocity for a controller.
+    if (b === model.base && model.floating) lines.push(`${indent}  <site name="base_site" pos="0 0 0" size="0.005"/>`);
     for (const child of b.children) lines.push(...bodyXml(child, `${indent}  `));
     lines.push(`${indent}</body>`);
     return lines;
   };
   const body = bodyXml(model.base, '    ');
   const imus = collect(model.base, (b) => b.imus ?? []);
+  const touches = collect(model.base, (b) => b.touches ?? []);
+  // Joints in the order the file gives them, which is the order of qpos.
+  const joints = collect(model.base, (b) => (b.joint && b.joint.type !== 'fixed' ? [b.joint] : []));
+  const home = [...(model.floating ? ['0 0 0 1 0 0 0'] : []), ...joints.map(() => '0')].join(' ');
+  const sensors = [
+    ...joints.flatMap((j) => [`    <jointpos name="${escapeXml(j.name)}_pos" joint="${escapeXml(j.name)}"/>`, `    <jointvel name="${escapeXml(j.name)}_vel" joint="${escapeXml(j.name)}"/>`]),
+    ...(model.floating ? ['    <framequat name="base_quat" objtype="site" objname="base_site"/>', '    <gyro name="base_gyro" site="base_site"/>', '    <velocimeter name="base_vel" site="base_site"/>', '    <accelerometer name="base_acc" site="base_site"/>'] : []),
+    ...imus.flatMap((imu) => [`    <gyro name="${escapeXml(imu.name)}_gyro" site="${escapeXml(imu.name)}"/>`, `    <accelerometer name="${escapeXml(imu.name)}_accel" site="${escapeXml(imu.name)}"/>`]),
+    ...touches.map((t) => `    <touch name="${escapeXml(t.name)}" site="${escapeXml(t.name)}_site"/>`),
+  ];
+  const floor =
+    model.world === 'rough'
+      ? '    <geom name="floor" type="hfield" hfield="terrain" material="floor" friction="1 0.005 0.0001"/>'
+      : model.world === 'slope'
+        ? '    <geom name="floor" type="plane" size="5 5 0.1" euler="0.14 0 0" material="floor" friction="1 0.005 0.0001"/>'
+        : '    <geom name="floor" type="plane" size="5 5 0.1" material="floor" friction="1 0.005 0.0001"/>';
   const placed = placeBodies(model.base);
   const jointed = new Map(collect(model.base, (b) => (b.joint ? [b] : [])).map((b) => [b.joint!.name, b]));
   const gainsOf = (name: string) => actuatorGains(jointed.get(name), placed);
@@ -224,15 +263,17 @@ export function writeMjcf(model: MjcfModel): string {
     ...[...materials].map(([n, rgba]) => `    <material name="${n}" rgba="${rgba}"/>`),
     '    <texture name="grid" type="2d" builtin="checker" rgb1="0.2 0.3 0.4" rgb2="0.1 0.15 0.2" width="300" height="300"/>',
     '    <material name="floor" texture="grid" texrepeat="8 8" reflectance="0.1"/>',
+    ...(model.world === 'rough' ? [`    <hfield name="terrain" nrow="64" ncol="64" size="3 3 0.03 0.02" elevation="${terrain(64).map((v) => v.toFixed(3)).join(' ')}"/>`] : []),
     '  </asset>',
     '  <worldbody>',
     '    <light pos="0 0 3" dir="0 0 -1" directional="true"/>',
-    '    <geom name="floor" type="plane" size="5 5 0.1" material="floor" friction="1 0.005 0.0001"/>',
+    floor,
     ...body,
     '  </worldbody>',
     ...(actuators.length ? ['  <actuator>', ...actuators, '  </actuator>'] : []),
     ...(equality.length ? ['  <equality>', ...equality, '  </equality>'] : []),
-    ...(imus.length ? ['  <sensor>', ...imus.flatMap((imu) => [`    <gyro name="${escapeXml(imu.name)}_gyro" site="${escapeXml(imu.name)}"/>`, `    <accelerometer name="${escapeXml(imu.name)}_accel" site="${escapeXml(imu.name)}"/>`]), '  </sensor>'] : []),
+    ...(sensors.length ? ['  <sensor>', ...sensors, '  </sensor>'] : []),
+    ...(home ? ['  <keyframe>', `    <key name="home" qpos="${home}"/>`, '  </keyframe>'] : []),
     '</mujoco>',
     '',
   ].join('\n');

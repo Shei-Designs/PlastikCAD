@@ -24,6 +24,7 @@ import { massOf, tensorOf, toSI } from './inertia';
 import type { Tensor } from './inertia';
 import { jointInDesign, linkNodes, linkOf, robotOf, sensorInDesign, spanningTree } from './model';
 import { motorOf } from './motors';
+import { drivePy, envPy, trainPy } from '../io/scripts';
 import { DRIVE_KINDS, driveJoints, withRole } from './types';
 import type { DriveKind, DriveRole, Robot, RobotJoint } from './types';
 export interface PackageFile {
@@ -90,7 +91,7 @@ interface Prepared {
   treeJoints: UrdfJoint[];
   /** The joints that close loops, which only SDF carries. */
   loopJoints: UrdfJoint[];
-  sensors: (GazeboSensor & { link: string; xyz: Vec3; rpy: Vec3 })[];
+  sensors: (GazeboSensor & { link: string; xyz: Vec3; rpy: Vec3; touch: number })[];
   drive: PreparedDrive | null;
   /** Joints under ros2_control. */
   controlled: string[];
@@ -194,6 +195,9 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
         link: linkNames.get(x.link)!,
         xyz: placed.origin.map((v, i) => (v - frame[i]) * M) as Vec3,
         rpy,
+        // A touch sensor feels within a quarter of the link's smallest side.
+        touch: (geometry.get(x.link) ? Math.min(...boundsSize(geometry.get(x.link)!.bounds)) / 4 : 5) * M,
+        collision: `${linkNames.get(x.link)!}_collision`,
       };
     });
 
@@ -272,6 +276,8 @@ function bridgeTopics(p: Prepared): BridgeTopic[] {
     } else if (s.kind === 'lidar') {
       out.push({ ros: topic, gz: topic, rosType: 'sensor_msgs/msg/LaserScan', gzType: 'gz.msgs.LaserScan', direction: 'GZ_TO_ROS' });
       out.push({ ros: `${topic}/points`, gz: `${topic}/points`, rosType: 'sensor_msgs/msg/PointCloud2', gzType: 'gz.msgs.PointCloudPacked', direction: 'GZ_TO_ROS' });
+    } else if (s.kind === 'touch') {
+      out.push({ ros: topic, gz: topic, rosType: 'ros_gz_interfaces/msg/Contacts', gzType: 'gz.msgs.Contacts', direction: 'GZ_TO_ROS' });
     } else {
       out.push({ ros: topic, gz: topic, rosType: 'sensor_msgs/msg/Imu', gzType: 'gz.msgs.IMU', direction: 'GZ_TO_ROS' });
     }
@@ -296,7 +302,13 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
   const links: UrdfLink[] = p.links.map(({ frame: _f, node: _n, ...l }) => l);
   const joints: UrdfJoint[] = [...p.treeJoints];
   // Each sensor is a frame of its own on a fixed joint; a camera also gets the optical frame ROS expects (Z forward, X right).
+  // A touch sensor feels a collision, so it sits on the link that has one.
   for (const s of p.sensors) {
+    if (s.kind === 'touch') {
+      const link = links.find((l) => l.name === s.link);
+      if (link) link.sensors = [...(link.sensors ?? []), sensorXml({ ...s, frame: s.link })];
+      continue;
+    }
     links.push({ name: s.frame, inertial: null, visual: [], collision: [], sensors: [sensorXml(s)] });
     joints.push({ name: `${s.name}_joint`, type: 'fixed', parent: s.link, child: s.frame, origin: s.xyz, rpy: s.rpy, axis: [0, 0, 1] });
     if (s.kind === 'camera' || s.kind === 'depth') {
@@ -404,6 +416,7 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
     const l = byName.get(name)!;
     const cams = sensorsOf(name).filter((s) => s.kind === 'camera' || s.kind === 'depth');
     const imus = sensorsOf(name).filter((s) => s.kind === 'imu');
+    const touches = sensorsOf(name).filter((s) => s.kind === 'touch');
     return {
       name,
       pos: joint ? joint.origin : [0, 0, 0],
@@ -415,6 +428,7 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
       children: (childrenOf.get(name) ?? []).map((j) => body(j.child, j)),
       ...(cams.length ? { cameras: cams.map((s) => ({ name: s.name, pos: s.xyz, rpy: s.rpy, hfov: s.camera.hfov, aspect: s.camera.width / s.camera.height })) } : {}),
       ...(imus.length ? { imus: imus.map((s) => ({ name: s.name, pos: s.xyz, rpy: s.rpy })) } : {}),
+      ...(touches.length ? { touches: touches.map((s) => ({ name: s.name, pos: s.xyz, size: s.touch })) } : {}),
     };
   };
   const base = p.linkNames.get(robot.root!)!;
@@ -422,6 +436,7 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
     name: p.robotName,
     base: body(base, undefined),
     floating: robot.base === 'free',
+    world: robot.world ?? 'flat',
     // A loop joint's origin is given in its parent's frame; the connect anchor is in the first body's frame.
     connects: p.loopJoints.map((j) => ({ body1: j.parent, body2: j.child, anchor: j.origin })),
     followers: [...p.treeJoints, ...p.loopJoints].filter((j) => j.mimic && p.treeJoints.some((t) => t.name === j.name)).map((j) => ({ joint: j.name, leader: j.mimic!.joint, multiplier: j.mimic!.multiplier, offset: j.mimic!.offset })),
@@ -429,7 +444,12 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
     // The wheels get velocity motors; steering joints position servos, as the simulator has no plugin to turn them.
     wheels: p.drive?.wheels ?? [],
   };
-  files.unshift({ name: `${pkg}.xml`, bytes: encodeText(writeMjcf(model)) }, { name: 'README.md', bytes: encodeText(mjcfReadme(pkg, doc.name)) });
+  const collisions = p.links.map((l) => `${l.name}: ${linkOf(robot, l.node.id).collision}`);
+  files.unshift({ name: `${pkg}.xml`, bytes: encodeText(writeMjcf(model)) }, { name: 'README.md', bytes: encodeText(mjcfReadme(pkg, doc.name, collisions, robot.scripts !== false)) });
+  if (robot.scripts !== false) {
+    const kind = p.drive ? 'rover' : robot.base === 'fixed' ? 'arm' : 'walker';
+    files.push({ name: 'drive.py', bytes: encodeText(drivePy(`${pkg}.xml`, kind)) }, { name: 'env.py', bytes: encodeText(envPy(`${pkg}.xml`)) }, { name: 'train.py', bytes: encodeText(trainPy()) });
+  }
   // What drives what, for a script: the actuator of each part, and the geometry a velocity command needs.
   if (p.drive) {
     const actuator = (joint: string) => (p.drive!.steer.includes(joint) ? `${joint}_servo` : `${joint}_motor`);
@@ -440,7 +460,7 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
   return { name: pkg, files, warnings };
 }
 
-function mjcfReadme(name: string, robot: string): string {
+function mjcfReadme(name: string, robot: string, collisions: string[], scripts: boolean): string {
   return `# ${robot}
 
 A MuJoCo model made with PlastikCAD. Open it with the viewer:
@@ -451,5 +471,25 @@ Visual meshes are OBJ files with their colors, collision meshes STL (MuJoCo
 makes a convex hull of each), all in meters with Z up. Joints under control
 have position servos, wheels velocity motors; the Control tab of the viewer
 drives them. Loops are closed by connect constraints at their joints.
-`;
+
+The \`home\` keyframe is the design's pose. Every joint has a position and a
+velocity sensor; a free base has its orientation, turn rate, velocity and
+acceleration at \`base_site\`; touch sensors sum the contact force in their site.
+
+Collisions (box, cylinder and sphere are fast in MJX; hull and mesh are not):
+${collisions.map((c) => `- ${c}`).join('\n')}
+${
+  scripts
+    ? `
+Scripts (\`pip install mujoco imageio imageio-ffmpeg gymnasium stable-baselines3\`):
+
+- \`drive.py\` moves the robot: a rover from velocity commands, an arm by
+  sweeping its servos, a walker with a simple gait. Opens the viewer, or
+  renders a video with \`--video out.mp4\`.
+- \`env.py\` is a Gymnasium environment over the model, with the observation
+  and action spaces wired and a reward to replace.
+- \`train.py\` trains a PPO policy on it and saves \`policy.zip\`.
+`
+    : ''
+}`;
 }

@@ -154,6 +154,8 @@ export function canonicalRobot(robot: Robot): Record<string, unknown> {
       : undefined,
     drive: robot.drive ? { kind: robot.drive.kind, roles: Object.fromEntries(Object.entries(robot.drive.roles).sort(([a], [b]) => a.localeCompare(b))) } : undefined,
     control: robot.control ? undefined : false,
+    world: robot.world && robot.world !== 'flat' ? robot.world : undefined,
+    scripts: robot.scripts === false ? false : undefined,
   };
 }
 
@@ -433,6 +435,8 @@ function readRobot(raw: unknown, scene: Scene): Robot | undefined {
     sensors: readSensors(raw.sensors, ids),
     ...(drive ? { drive } : {}),
     control: raw.control !== false,
+    ...(raw.world === 'rough' || raw.world === 'slope' ? { world: raw.world } : {}),
+    ...(raw.scripts === false ? { scripts: false } : {}),
   };
 }
 

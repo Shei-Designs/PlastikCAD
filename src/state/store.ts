@@ -67,7 +67,7 @@ import { jointFit } from '../robot/defaults';
 import { motorFigures, motorForPart, motorOf } from '../robot/motors';
 import { massOf } from '../robot/inertia';
 import { DRIVE_KINDS, defaultJoint, defaultSensor, SENSOR_KINDS } from '../robot/types';
-import type { DriveKind, DriveRole, Robot, RobotJoint, RobotLink, RobotSensor, SensorKind } from '../robot/types';
+import type { DriveKind, DriveRole, Robot, RobotJoint, RobotLink, RobotSensor, SensorKind, World } from '../robot/types';
 import { massProps } from './massProps';
 
 export interface Notice {
@@ -1945,7 +1945,10 @@ export function addSensor(link: string, kind: SensorKind): string | null {
   if (!node) return null;
   const id = newId();
   const base = SENSOR_KINDS.find((k) => k.id === kind)?.name.toLowerCase().replace(/\s+/g, '_') ?? kind;
-  const local = sensorInLink(node.pos, [0, 0, 0], node);
+  // A touch sensor starts at the link's lowest point, where a foot meets the floor; the others at its middle.
+  const bounds = geometry.bounds(node);
+  const at: Vec3 = kind === 'touch' ? [(bounds.min[0] + bounds.max[0]) / 2, (bounds.min[1] + bounds.max[1]) / 2, bounds.min[2]] : node.pos;
+  const local = sensorInLink(at, [0, 0, 0], node);
   editRobot((r) => ({ ...r, sensors: [...r.sensors, { ...defaultSensor(id, sensorName(r, base), kind, link, tidyVec(local.origin)), rot: tidyVec(local.rot) }] }));
   selectSensor(id);
   return id;
@@ -1991,6 +1994,8 @@ export function setDriveRole(joint: string, role: DriveRole | null): void {
 }
 
 export const setControl = (control: boolean): void => editRobot((r) => ({ ...r, control }));
+export const setWorld = (world: World): void => editRobot((r) => ({ ...r, world }));
+export const setScripts = (scripts: boolean): void => editRobot((r) => ({ ...r, scripts }));
 
 /**
  * Moves the picked joint to `value` for a look, every other free joint going

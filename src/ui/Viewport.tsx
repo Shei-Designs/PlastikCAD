@@ -313,6 +313,7 @@ function sensorMarkerOf(sensor: RobotSensor, link: SceneNode): Marker {
   const { matrix } = sensorInDesign(sensor, link);
   if (sensor.kind === 'camera' || sensor.kind === 'depth') return { kind: 'camera', matrix, hfov: sensor.camera.hfov, aspect: sensor.camera.width / Math.max(sensor.camera.height, 1), depth: sensor.kind === 'depth' };
   if (sensor.kind === 'lidar') return { kind: 'lidar', matrix, hfov: sensor.lidar.hfov };
+  if (sensor.kind === 'touch') return { kind: 'touch', matrix };
   return { kind: 'imu', matrix };
 }
 

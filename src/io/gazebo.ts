@@ -18,6 +18,8 @@ export interface GazeboSensor {
   lidar: { samples: number; hfov: number; min: number; max: number };
   /** Where it sits in the link, m and radians; at the link's origin when left out (the frame is the sensor's own). */
   pose?: { xyz: Vec3; rpy: Vec3 };
+  /** A touch sensor: the name of the collision it feels (the link's). */
+  collision?: string;
 }
 
 const pad = (text: string, indent: string): string =>
@@ -28,7 +30,7 @@ const pad = (text: string, indent: string): string =>
 
 /** One <sensor> element, its pose at the frame's origin (the frame is the sensor's own link). */
 export function sensorXml(s: GazeboSensor): string {
-  const type = s.kind === 'camera' ? 'camera' : s.kind === 'depth' ? 'depth_camera' : s.kind === 'lidar' ? 'gpu_lidar' : 'imu';
+  const type = s.kind === 'camera' ? 'camera' : s.kind === 'depth' ? 'depth_camera' : s.kind === 'lidar' ? 'gpu_lidar' : s.kind === 'touch' ? 'contact' : 'imu';
   const topic = sensorTopic(s);
   const lines = [`<sensor name="${escapeXml(s.name)}" type="${type}">`, ...(s.pose ? [`  <pose>${[...s.pose.xyz, ...s.pose.rpy].map((x) => fmt(x, 6)).join(' ')}</pose>`] : []), `  <always_on>true</always_on>`, `  <update_rate>${fmt(s.rate, 3)}</update_rate>`, `  <visualize>true</visualize>`, `  <topic>${topic}</topic>`, `  <gz_frame_id>${escapeXml(s.frame)}</gz_frame_id>`];
   if (s.kind === 'camera' || s.kind === 'depth') {
@@ -49,12 +51,13 @@ export function sensorXml(s: GazeboSensor): string {
       '  </lidar>',
     );
   }
+  if (s.kind === 'touch') lines.push('  <contact>', `    <collision>${escapeXml(s.collision ?? `${s.frame}_collision`)}</collision>`, '  </contact>');
   lines.push('</sensor>');
   return lines.join('\n');
 }
 
 /** The Gazebo topic a sensor publishes on. */
-export const sensorTopic = (s: { name: string; kind: SensorKind }): string => (s.kind === 'camera' ? `${s.name}/image` : s.kind === 'depth' ? `${s.name}/depth` : s.kind === 'lidar' ? `${s.name}/scan` : `${s.name}/imu`);
+export const sensorTopic = (s: { name: string; kind: SensorKind }): string => (s.kind === 'camera' ? `${s.name}/image` : s.kind === 'depth' ? `${s.name}/depth` : s.kind === 'lidar' ? `${s.name}/scan` : s.kind === 'touch' ? `${s.name}/contacts` : `${s.name}/imu`);
 
 /** The drive as a Gazebo plugin wants it: joint names by part, and the geometry in meters (radians for the steering reach). */
 export type GazeboDrive = {

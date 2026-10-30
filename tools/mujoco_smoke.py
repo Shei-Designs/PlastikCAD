@@ -40,8 +40,14 @@ for xml in xmls:
     steps = lambda seconds: range(int(seconds / m.opt.timestep))  # noqa: E731
     for _ in steps(1.0):
         mujoco.mj_step(m, d)
-    # The base frame may sit on the floor: the robot's center of mass says how high it stands.
+    # The base frame may sit on the floor: the robot's center of mass says how high it stands, measured square to the floor when it is a tilted plane.
+    floor = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_GEOM, "floor")
+    up = np.array([0.0, 0.0, 1.0])
+    if floor >= 0 and m.geom_type[floor] == mujoco.mjtGeom.mjGEOM_PLANE:
+        up = d.geom_xmat[floor].reshape(3, 3)[:, 2]
+    height = lambda: float(np.dot(d.subtree_com[base], up))  # noqa: E731
     start = d.subtree_com[base].copy()
+    start_height = height()
     q0 = d.qpos.copy()
     servos = [a for a in range(m.nu) if m.actuator_biasprm[a, 1] != 0]
     motors = [a for a in range(m.nu) if a not in servos]
@@ -60,9 +66,9 @@ for xml in xmls:
         if free:
             for _ in steps(1.0):
                 mujoco.mj_step(m, d)
-            standing = float(d.subtree_com[base][2])
-            notes.append(f"stood at {standing * 1000:.1f} mm of {start[2] * 1000:.1f}")
-            ok &= standing >= 0.9 * start[2]
+            standing = height()
+            notes.append(f"stood at {standing * 1000:.1f} mm of {start_height * 1000:.1f}")
+            ok &= standing >= 0.9 * start_height
         asked = 0.1 if free else 0.3
         for a in servos:
             d.ctrl[a] = asked
@@ -73,13 +79,33 @@ for xml in xmls:
         notes.append(f"servos swung up to {np.degrees(swung):.1f} deg of {np.degrees(asked):.1f} asked")
         ok &= swung >= asked / 3
     if free:
-        height = float(d.subtree_com[base][2])
-        notes.append(f"base at {height * 1000:.1f} mm, was {start[2] * 1000:.1f}")
-        ok &= height >= 0.7 * start[2]
+        now = height()
+        notes.append(f"base at {now * 1000:.1f} mm, was {start_height * 1000:.1f}")
+        ok &= now >= 0.7 * start_height
     warned = [mujoco.mjtWarning(i).name for i, w in enumerate(d.warning) if w.number]
     if warned:
         ok = False
         notes.append("warnings " + ", ".join(warned))
+    # The starter scripts beside the model must run: drive.py headless, env.py's self-test when gymnasium is there.
+    folder = os.path.dirname(xml)
+    for script, args in (("drive.py", ["--headless", "--seconds", "0.5"]), ("env.py", [])):
+        path = os.path.join(folder, script)
+        if not os.path.exists(path):
+            continue
+        if script == "env.py":
+            try:
+                import gymnasium  # noqa: F401
+            except ImportError:
+                notes.append("env.py not run (no gymnasium)")
+                continue
+        import subprocess
+
+        run = subprocess.run([sys.executable, "-I", os.path.abspath(path), *args], capture_output=True, text=True, cwd=folder)
+        if run.returncode != 0:
+            ok = False
+            notes.append(f"{script} failed: {run.stderr.strip().splitlines()[-1] if run.stderr.strip() else run.returncode}")
+        else:
+            notes.append(f"{script} ok")
     print("PASS" if ok else "FAIL", name, "·", "; ".join(notes))
     failures += 0 if ok else 1
 sys.exit(1 if failures else 0)

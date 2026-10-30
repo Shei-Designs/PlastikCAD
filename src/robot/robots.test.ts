@@ -16,7 +16,7 @@ import { buildMjcfModel, buildRobotPackage, buildSdfModel } from './export';
 import type { RobotPackage } from './export';
 import { linkNodes, linkOf } from './model';
 import { motorFigures, motorOf } from './motors';
-import { defaultJoint, defaultLink } from './types';
+import { defaultJoint, defaultLink, defaultSensor } from './types';
 import type { CollisionKind, Robot, RobotJoint } from './types';
 
 beforeAll(async () => {
@@ -88,6 +88,7 @@ function quadruped(): Doc {
   const scene = [body];
   const joints: RobotJoint[] = [];
   const links = [{ ...defaultLink(body.id), collision: 'box' as CollisionKind }];
+  const feet: Robot['sensors'] = [];
   for (const sx of [-1, 1]) {
     for (const sy of [-1, 1]) {
       const leg = `${sy < 0 ? 'rear' : 'front'} ${sx < 0 ? 'left' : 'right'}`;
@@ -96,9 +97,11 @@ function quadruped(): Doc {
       scene.push(upper, lower);
       links.push({ ...defaultLink(upper.id), collision: 'box' }, { ...defaultLink(lower.id), collision: 'box', friction: 1 });
       joints.push(joint(`Hip ${leg}`, body, upper, [0, 0, 20], { axis: [0, 1, 0], lower: -60, upper: 60, motor: 'sg90' }), joint(`Knee ${leg}`, upper, lower, [0, 0, 17.5], { axis: [0, 1, 0], lower: -90, upper: 90, motor: 'sg90' }));
+      // The foot feels the floor: a touch sensor at the shin's bottom.
+      feet.push(defaultSensor(id(), `Foot ${leg}`, 'touch', lower.id, [0, 0, -17.5]));
     }
   }
-  return design('Reference quadruped', scene, { root: body.id, base: 'free', links, joints, sensors: [], control: true });
+  return design('Reference quadruped', scene, { root: body.id, base: 'free', links, joints, sensors: feet, control: true });
 }
 
 /** A car: driven rear wheels, and front wheels on knuckles that steering joints turn, as an Ackermann drive. */
@@ -140,6 +143,9 @@ function write(pkg: RobotPackage, out: string): void {
 describe.each(ROBOTS)('the reference $file', ({ file, make }) => {
   it('passes the checks and exports in every format', () => {
     const doc = make();
+    // ROBOT_FIXTURES_WORLD=rough|slope puts every reference robot on that floor, for the smoke test.
+    const world = process.env.ROBOT_FIXTURES_WORLD;
+    if (world === 'rough' || world === 'slope') doc.robot!.world = world;
     const robot = doc.robot!;
     const nodes = linkNodes(doc.scene);
     const geo = robotGeometry(nodes, Object.fromEntries(nodes.map((n) => [n.id, linkOf(robot, n.id).collision])), true);

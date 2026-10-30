@@ -182,21 +182,31 @@ describe('buildRobotPackage', () => {
   });
 });
 
+/** The test robot as a rover: sensors of every kind, one wheel joint each side, the base free. */
+const rover = () => {
+  const d = doc();
+  const r = d.robot!;
+  r.sensors = [
+    { ...defaultSensor('s1', 'front cam', 'camera', body.id, [50, 0, 10]) },
+    { ...defaultSensor('s2', 'top lidar', 'lidar', body.id, [0, 0, 10]), rot: [0, 0, 90] },
+    { ...defaultSensor('s3', 'imu', 'imu', body.id, [0, 0, 0]) },
+    { ...defaultSensor('s4', 'tread', 'touch', wheel.id, [0, 0, -10]) },
+  ];
+  // The wheel joint drives the left side; a mirrored one would drive the right. Here one joint each side, the arm's shoulder stays under ros2_control.
+  r.joints.push({ ...defaultJoint('j3', 'right wheel joint', body.id, arm.id, [0, 0, -20]), type: 'continuous', axis: [0, 1, 0] });
+  r.drive = { kind: 'differential', roles: { j1: 'left', j3: 'right' } };
+  r.base = 'free';
+  return d;
+};
+
 describe('sensors, drive and control', () => {
-  const rover = () => {
-    const d = doc();
-    const r = d.robot!;
-    r.sensors = [
-      { ...defaultSensor('s1', 'front cam', 'camera', body.id, [50, 0, 10]) },
-      { ...defaultSensor('s2', 'top lidar', 'lidar', body.id, [0, 0, 10]), rot: [0, 0, 90] },
-      { ...defaultSensor('s3', 'imu', 'imu', body.id, [0, 0, 0]) },
-    ];
-    // The wheel joint drives the left side; a mirrored one would drive the right. Here one joint each side, the arm's shoulder stays under ros2_control.
-    r.joints.push({ ...defaultJoint('j3', 'right wheel joint', body.id, arm.id, [0, 0, -20]), type: 'continuous', axis: [0, 1, 0] });
-    r.drive = { kind: 'differential', roles: { j1: 'left', j3: 'right' } };
-    r.base = 'free';
-    return d;
-  };
+
+  it('puts a touch sensor on its link as a contact sensor over the link\'s collision', () => {
+    const urdf = text(buildRobotPackage(rover(), geometry()).files.find((f) => f.name === 'urdf/test_rover.urdf')!.bytes);
+    expect(urdf).toMatch(/<gazebo reference="Left_wheel">[\s\S]*?<sensor name="tread" type="contact">[\s\S]*?<collision>Left_wheel_collision<\/collision>/);
+    expect(urdf).not.toContain('tread_link');
+    expect(text(buildRobotPackage(rover(), geometry()).files.find((f) => f.name === 'config/bridge.yaml')!.bytes)).toContain('ros_gz_interfaces/msg/Contacts');
+  });
 
   it('writes sensor frames, Gazebo blocks, the drive and ros2_control into the package', () => {
     const d = rover();
@@ -329,6 +339,29 @@ describe('xacro and MuJoCo', () => {
     expect(xml).toMatch(/<camera name="cam" pos="0.05 0 0.02" quat="0.5 -0.5 0.5 -0.5" fovy="/);
     expect(xml).toContain('<site name="imu" pos="0 0 0.01"');
     expect(xml).toContain('<gyro name="imu_gyro" site="imu"/>');
+    // For a controller: every joint's position and velocity, the free base's orientation, turn rate and velocity, the home pose, and what a foot feels.
+    expect(xml).toContain('<jointpos name="left_wheel_joint_pos" joint="left_wheel_joint"/>');
+    expect(xml).toContain('<jointvel name="shoulder_vel" joint="shoulder"/>');
+    expect(xml).toMatch(/<framequat name="base_quat" objtype="site" objname="base_site"\/>\s*<gyro name="base_gyro" site="base_site"\/>\s*<velocimeter name="base_vel" site="base_site"\/>/);
+    expect(xml).toMatch(/<key name="home" qpos="0 0 0 1 0 0 0 0 0"\/>/);
+    const touchy = buildMjcfModel(rover(), geometry());
+    const txml = text(touchy.files.find((f) => f.name === 'test_rover.xml')!.bytes);
+    expect(txml).toMatch(/<site name="tread_site" type="sphere" pos="[-0-9. ]+" size="0.002"/);
+    expect(txml).toContain('<touch name="tread" site="tread_site"/>');
+    // The scripts ride along, and a rover's drive.py reads drive.json.
+    expect(touchy.files.map((f) => f.name)).toEqual(expect.arrayContaining(['drive.py', 'env.py', 'train.py', 'drive.json']));
+    expect(text(touchy.files.find((f) => f.name === 'drive.py')!.bytes)).toContain('KIND = "rover"');
+  });
+
+  it('puts a rough floor under the model and leaves the scripts out when asked', () => {
+    const d = rover();
+    d.robot!.world = 'rough';
+    d.robot!.scripts = false;
+    const pkg = buildMjcfModel(d, geometry());
+    const xml = text(pkg.files.find((f) => f.name === 'test_rover.xml')!.bytes);
+    expect(xml).toMatch(/<hfield name="terrain" nrow="64" ncol="64" size="3 3 0.03 0.02" elevation="[0-9. ]+"\/>/);
+    expect(xml).toContain('<geom name="floor" type="hfield" hfield="terrain"');
+    expect(pkg.files.some((f) => f.name.endsWith('.py'))).toBe(false);
   });
 
   it('welds an arm to the world and gives its joints position servos', () => {
