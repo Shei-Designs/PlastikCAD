@@ -124,6 +124,8 @@ export interface DiffDrive {
 export interface Robot {
   /** Node id of the base link, which everything else hangs from. Null until chosen. */
   root: string | null;
+  /** Whether the base stands free on the floor (a rover, a walker) or is bolted to the world (an arm on a bench). */
+  base: 'free' | 'fixed';
   links: RobotLink[];
   joints: RobotJoint[];
   sensors: RobotSensor[];
@@ -132,7 +134,7 @@ export interface Robot {
   control: boolean;
 }
 
-export const emptyRobot = (): Robot => ({ root: null, links: [], joints: [], sensors: [], control: true });
+export const emptyRobot = (): Robot => ({ root: null, base: 'free', links: [], joints: [], sensors: [], control: true });
 
 export const DEFAULT_MASS: MassSpec = { kind: 'material', material: 'pla', infill: 20, shell: 1.2 };
 

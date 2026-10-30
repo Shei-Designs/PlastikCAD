@@ -252,6 +252,7 @@ const OPTICAL: Vec3 = [-Math.PI / 2, 0, -Math.PI / 2];
 export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot = robotOf(doc)): RobotPackage {
   const p = prepare(doc, geometry, robot, (path) => `package://${packageName(doc.name)}/${path}`);
   const { pkg, files, warnings } = p;
+  const fixedToWorld = robot.base === 'fixed' ? p.linkNames.get(robot.root!) : undefined;
   for (const j of p.loopJoints) warnings.push(`"${j.name}" closes a loop and was left out of the URDF (the SDF export keeps it).`);
   const links: UrdfLink[] = p.links.map(({ frame: _f, node: _n, ...l }) => l);
   const joints: UrdfJoint[] = [...p.treeJoints];
@@ -272,8 +273,8 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
     { name: 'package.xml', bytes: encodeText(packageXml(pkg, `${doc.name} robot description`, { gazebo: true, control: Boolean(control) })) },
     { name: 'CMakeLists.txt', bytes: encodeText(cmakeLists(pkg)) },
     { name: 'README.md', bytes: encodeText(readme(pkg, doc.name)) },
-    { name: `urdf/${pkg}.urdf`, bytes: encodeText(writeUrdf(p.robotName, links, joints, { plugins, control })) },
-    { name: `urdf/${pkg}.urdf.xacro`, bytes: encodeText(writeUrdf(p.robotName, links, joints, { plugins, control, xacro: { package: pkg } })) },
+    { name: `urdf/${pkg}.urdf`, bytes: encodeText(writeUrdf(p.robotName, links, joints, { plugins, control, fixedToWorld })) },
+    { name: `urdf/${pkg}.urdf.xacro`, bytes: encodeText(writeUrdf(p.robotName, links, joints, { plugins, control, fixedToWorld, xacro: { package: pkg } })) },
     { name: 'launch/display.launch.py', bytes: encodeText(displayLaunch(pkg)) },
     { name: 'launch/gazebo.launch.py', bytes: encodeText(gazeboLaunch(pkg, { controllers })) },
     { name: 'rviz/display.rviz', bytes: encodeText(rvizConfig(base)) },
@@ -323,7 +324,7 @@ export function buildSdfModel(doc: Doc, geometry: Map<string, LinkGeometry>, rob
   const plugins = [jointStateXml(), ...(p.drive ? [diffDriveXml({ ...p.drive, baseFrame: base })] : [])];
   files.unshift(
     { name: 'model.config', bytes: encodeText(modelConfig(pkg, `${doc.name}, made with PlastikCAD`)) },
-    { name: 'model.sdf', bytes: encodeText(writeSdf(p.robotName, links, joints, plugins)) },
+    { name: 'model.sdf', bytes: encodeText(writeSdf(p.robotName, links, joints, plugins, robot.base === 'fixed' ? p.linkNames.get(robot.root!) : undefined)) },
     { name: `worlds/${pkg}.sdf`, bytes: encodeText(worldXml(pkg, pkg)) },
     { name: 'README.md', bytes: encodeText(sdfReadme(pkg, doc.name, Boolean(p.drive))) },
   );
@@ -381,7 +382,7 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
   const model: MjcfModel = {
     name: p.robotName,
     base: body(base, undefined),
-    floating: Boolean(p.drive),
+    floating: robot.base === 'free',
     // A loop joint's origin is given in its parent's frame; the connect anchor is in the first body's frame.
     connects: p.loopJoints.map((j) => ({ body1: j.parent, body2: j.child, anchor: j.origin })),
     followers: [...p.treeJoints, ...p.loopJoints].filter((j) => j.mimic && p.treeJoints.some((t) => t.name === j.name)).map((j) => ({ joint: j.name, leader: j.mimic!.joint, multiplier: j.mimic!.multiplier, offset: j.mimic!.offset })),

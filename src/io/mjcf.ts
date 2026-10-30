@@ -49,6 +49,80 @@ export interface MjcfModel {
 }
 
 const vec = (v: Vec3): string => v.map((x) => fmt(x, 6)).join(' ');
+/** A gain or limit to four figures, whatever its size (a toy's motor is a few millinewton-meters). */
+const sig = (x: number): string => String(Number(x.toPrecision(4)));
+
+/** The simulation's step, s. */
+const TIMESTEP = 0.002;
+/** A position servo pushes with its full effort from this far off its target, rad. */
+const SERVO_BAND = 0.5;
+/** The app's joint defaults in SI, for a joint exported without limits. */
+const DEFAULT_EFFORT = 10;
+const DEFAULT_VELOCITY = Math.PI / 2;
+
+/** A body's moment of inertia about an axis `u` through `at` (both in the body's frame), kg·m²: its own about its center of mass, plus its mass at the center's distance from the line. */
+function inertiaAbout(inertial: NonNullable<MjcfBody['inertial']>, at: Vec3, u: Vec3): number {
+  const [ixx, iyy, izz, ixy, ixz, iyz] = inertial.inertia;
+  const [ux, uy, uz] = u;
+  const own = ixx * ux * ux + iyy * uy * uy + izz * uz * uz + 2 * (ixy * ux * uy + ixz * ux * uz + iyz * uy * uz);
+  const c = inertial.origin.map((x, i) => x - at[i]);
+  const along = c[0] * ux + c[1] * uy + c[2] * uz;
+  return own + inertial.mass * Math.max(c[0] ** 2 + c[1] ** 2 + c[2] ** 2 - along * along, 0);
+}
+
+/** Every body's origin in the base's frame (the frames are parallel), by body. */
+function placeBodies(base: MjcfBody): Map<MjcfBody, Vec3> {
+  const out = new Map<MjcfBody, Vec3>();
+  const walk = (b: MjcfBody, at: Vec3) => {
+    out.set(b, at);
+    for (const c of b.children) walk(c, [at[0] + c.pos[0], at[1] + c.pos[1], at[2] + c.pos[2]]);
+  };
+  walk(base, [0, 0, 0]);
+  return out;
+}
+
+/**
+ * The inertia a joint works against, kg·m²: the heavier of the two sides it
+ * separates (the body it hangs and everything below, or everything else)
+ * about its axis. A knee carries the body as much as the shin; a wheel's
+ * motor pushes the rover.
+ */
+function inertiaAboutJoint(b: MjcfBody, placed: Map<MjcfBody, Vec3>): number {
+  if (!b.joint) return 0;
+  const n = Math.hypot(...b.joint.axis) || 1;
+  const u = b.joint.axis.map((x) => x / n) as Vec3;
+  const pivot = placed.get(b)!;
+  const below = new Set(collect(b, (x) => [x]));
+  let child = 0;
+  let rest = 0;
+  for (const [body, at] of placed) {
+    if (!body.inertial) continue;
+    const i = inertiaAbout(body.inertial, [pivot[0] - at[0], pivot[1] - at[1], pivot[2] - at[2]], u);
+    if (below.has(body)) child += i;
+    else rest += i;
+  }
+  return Math.max(child, rest);
+}
+
+/**
+ * An actuator's gains and limits from the joint's effort and velocity, held
+ * back where the part is too light for them: the joint's velocity feedback
+ * (kv) is integrated implicitly and safe at any size, but a position gain or
+ * a torque the time step cannot follow would blow the simulation up, so kp is
+ * kept under what the inertia can take in a step, and the torque under what
+ * takes the part to full speed in one. Velocity feedback at full effort over
+ * the velocity limit makes a motor that stalls at its speed limit, like a
+ * real one.
+ */
+function actuatorGains(b: MjcfBody | undefined, placed: Map<MjcfBody, Vec3>): { kp: number; kv: number; effort: number; velocity: number } {
+  const effort = b?.joint?.limit?.effort ?? DEFAULT_EFFORT;
+  const velocity = b?.joint?.limit?.velocity ?? DEFAULT_VELOCITY;
+  const inertia = b ? inertiaAboutJoint(b, placed) : 0;
+  const torque = inertia > 0 ? Math.min(effort, (inertia * velocity) / TIMESTEP) : effort;
+  const kp = inertia > 0 ? Math.min(torque / SERVO_BAND, inertia / TIMESTEP ** 2) : torque / SERVO_BAND;
+  const kv = inertia > 0 ? Math.min(torque / velocity, 2 * Math.sqrt(kp * inertia)) : torque / velocity;
+  return { kp, kv, effort: torque, velocity };
+}
 
 /** Roll, pitch, yaw (radians, about the fixed X, Y, Z) as a MuJoCo quaternion "w x y z". */
 export function quatOf(rpy: Vec3): string {
@@ -116,9 +190,18 @@ export function writeMjcf(model: MjcfModel): string {
   };
   const body = bodyXml(model.base, '    ');
   const imus = collect(model.base, (b) => b.imus ?? []);
+  const placed = placeBodies(model.base);
+  const jointed = new Map(collect(model.base, (b) => (b.joint ? [b] : [])).map((b) => [b.joint!.name, b]));
+  const gainsOf = (name: string) => actuatorGains(jointed.get(name), placed);
   const actuators = [
-    ...model.servos.map((j) => `    <position name="${escapeXml(j)}_servo" joint="${escapeXml(j)}" kp="50" ctrllimited="false"/>`),
-    ...model.wheels.map((j) => `    <velocity name="${escapeXml(j)}_motor" joint="${escapeXml(j)}" kv="1"/>`),
+    ...model.servos.map((j) => {
+      const g = gainsOf(j);
+      return `    <position name="${escapeXml(j)}_servo" joint="${escapeXml(j)}" kp="${sig(g.kp)}" kv="${sig(g.kv)}" forcerange="-${sig(g.effort)} ${sig(g.effort)}"/>`;
+    }),
+    ...model.wheels.map((j) => {
+      const g = gainsOf(j);
+      return `    <velocity name="${escapeXml(j)}_motor" joint="${escapeXml(j)}" kv="${sig(g.effort / g.velocity)}" ctrlrange="-${sig(g.velocity)} ${sig(g.velocity)}" forcerange="-${sig(g.effort)} ${sig(g.effort)}"/>`;
+    }),
   ];
   const equality = [
     ...model.connects.map((c) => `    <connect body1="${escapeXml(c.body1)}" body2="${escapeXml(c.body2)}" anchor="${vec(c.anchor)}"/>`),
@@ -128,7 +211,7 @@ export function writeMjcf(model: MjcfModel): string {
     `<!-- Made with ${APP_NAME}. Units: meters, kilograms, radians. -->`,
     `<mujoco model="${escapeXml(model.name)}">`,
     '  <compiler angle="radian" meshdir="meshes" autolimits="true"/>',
-    '  <option timestep="0.002" gravity="0 0 -9.81"/>',
+    `  <option timestep="${TIMESTEP}" gravity="0 0 -9.81" integrator="implicitfast"/>`,
     '  <default>',
     '    <default class="visual"><geom contype="0" conaffinity="0" group="2"/></default>',
     '    <default class="collision"><geom group="3" rgba="0.6 0.6 0.9 0.3"/></default>',

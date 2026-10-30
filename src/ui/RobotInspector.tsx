@@ -12,7 +12,7 @@ import { jointInDesign, linkOf, sensorInDesign } from '../robot/model';
 import { COLLISION_KINDS, JOINT_TYPES, SENSOR_KINDS } from '../robot/types';
 import type { RobotJoint, RobotLink, RobotSensor, SensorKind } from '../robot/types';
 import type { Problem } from '../robot/check';
-import { addJoint, addSensor, deleteJoint, deleteSensor, fitJointFollowers, placeJoint, placeSensor, select, selectJoint, selectSensor, setControl, setDrive, setPose, setRobotRoot, startJointPick, stopJointPick, updateJoint, updateLink, updateSensor, useEditor } from '../state/store';
+import { addJoint, addSensor, deleteJoint, deleteSensor, fitJointFollowers, placeJoint, placeSensor, select, selectJoint, selectSensor, setBase, setControl, setDrive, setPose, setRobotRoot, startJointPick, stopJointPick, updateJoint, updateLink, updateSensor, useEditor } from '../state/store';
 import { rangeOf } from '../robot/kinematics';
 import { formatNumber, NumberBox, selectOnFocus, SliderField } from './Fields';
 import { Hint } from './Hint';
@@ -111,6 +111,19 @@ function Overview() {
             <Hint text="The link the rest hangs from: a body, a chassis, a mounting plate." />
           </label>
           <Select value={robot.root ?? ''} label="Base link" placeholder="Choose an object…" options={nodes.map((n) => ({ value: n.id, label: n.name }))} onChange={(id) => setRobotRoot(id)} />
+        </div>
+        <div className="field inline">
+          <label>
+            Base
+            <Hint text="Free: the robot stands on the floor and can drive or walk. Fixed: the base is bolted to the world, as an arm on a bench." />
+          </label>
+          <div className="segmented small" role="radiogroup" aria-label="Base">
+            {(['free', 'fixed'] as const).map((b) => (
+              <button key={b} type="button" role="radio" aria-checked={robot.base === b} className={robot.base === b ? 'on' : ''} onClick={() => setBase(b)}>
+                {b === 'free' ? 'Free' : 'Fixed'}
+              </button>
+            ))}
+          </div>
         </div>
         <dl className="facts">
           <div>
@@ -500,10 +513,10 @@ function JointPanel({ joint }: { joint: RobotJoint }) {
               {row('Upper limit', <NumberBox label="Upper limit" value={joint.upper} unit={unit} step={angular ? 5 : 1} places={2} onChange={(v) => updateJoint(joint.id, { upper: v }, 'joint-upper')} />)}
             </>
           )}
-          {row('Effort', <NumberBox label="Effort" value={joint.effort} unit={angular ? 'N·m' : 'N'} min={0} step={angular ? 0.5 : 5} places={3} onChange={(v) => updateJoint(joint.id, { effort: v }, 'joint-effort')} />, 'The most the actuator can push with: a servo\'s torque, a linear actuator\'s force.')}
+          {row('Effort', <NumberBox label="Effort" value={joint.effort} unit={angular ? 'N·m' : 'N'} min={0} step={angular ? 0.5 : 5} places={6} onChange={(v) => updateJoint(joint.id, { effort: v }, 'joint-effort')} />, 'The most the actuator can push with: a servo\'s torque, a linear actuator\'s force.')}
           {row('Velocity', <NumberBox label="Velocity" value={joint.velocity} unit={angular ? '°/s' : 'mm/s'} min={0} step={angular ? 10 : 5} places={2} onChange={(v) => updateJoint(joint.id, { velocity: v }, 'joint-velocity')} />, 'The fastest it moves under no load.')}
-          {row('Damping', <NumberBox label="Damping" value={joint.damping} unit={angular ? 'N·m·s' : 'N·s/m'} min={0} step={0.1} places={3} onChange={(v) => updateJoint(joint.id, { damping: v }, 'joint-damping')} />, 'Resistance that grows with speed; a little keeps a simulation calm.')}
-          {row('Friction', <NumberBox label="Joint friction" value={joint.friction} unit={angular ? 'N·m' : 'N'} min={0} step={0.1} places={3} onChange={(v) => updateJoint(joint.id, { friction: v }, 'joint-friction')} />, 'Resistance that is there at any speed: gearbox drag, seals.')}
+          {row('Damping', <NumberBox label="Damping" value={joint.damping} unit={angular ? 'N·m·s' : 'N·s/m'} min={0} step={0.1} places={6} onChange={(v) => updateJoint(joint.id, { damping: v }, 'joint-damping')} />, 'Resistance that grows with speed; a little keeps a simulation calm.')}
+          {row('Friction', <NumberBox label="Joint friction" value={joint.friction} unit={angular ? 'N·m' : 'N'} min={0} step={0.1} places={6} onChange={(v) => updateJoint(joint.id, { friction: v }, 'joint-friction')} />, 'Resistance that is there at any speed: gearbox drag, seals.')}
           {row(
             'Follows',
             <Select

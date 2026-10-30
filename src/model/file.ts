@@ -114,6 +114,7 @@ export function canonicalRobot(robot: Robot): Record<string, unknown> {
   const byId = <T>(key: (item: T) => string) => (a: T, b: T) => key(a).localeCompare(key(b));
   return {
     root: robot.root ?? undefined,
+    base: robot.base,
     links: [...robot.links].sort(byId((l: RobotLink) => l.node)).map((l) => ({
       node: l.node,
       name: l.name,
@@ -407,6 +408,8 @@ function readRobot(raw: unknown, scene: Scene): Robot | undefined {
   const drive = isRecord(raw.drive) ? { left: jointList(raw.drive.left), right: jointList(raw.drive.right) } : undefined;
   return {
     root: typeof raw.root === 'string' && ids.has(raw.root) ? raw.root : null,
+    // Files from before the setting: a robot with a drive stood free, any other was welded down.
+    base: raw.base === 'fixed' || raw.base === 'free' ? raw.base : isRecord(raw.drive) ? 'free' : 'fixed',
     links,
     joints,
     sensors: readSensors(raw.sensors, ids),

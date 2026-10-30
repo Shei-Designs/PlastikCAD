@@ -222,10 +222,14 @@ export function RobotExport() {
             )}
           </Popover>
         </div>
-        <button type="button" className={errors ? 'export-note problems error' : warnings ? 'export-note problems warn' : 'export-note problems'} title="Shows the list" onClick={() => select([])}>
-          {problems.length > 0 && <WarningIcon />}
-          <span className="clip">{status}</span>
-        </button>
+        {problems.length > 0 ? (
+          <button type="button" className={errors ? 'export-note problems error' : 'export-note problems warn'} title="Shows the list" onClick={() => select([])}>
+            <WarningIcon />
+            <span className="clip">{status}</span>
+          </button>
+        ) : (
+          <p className="export-note">{status}</p>
+        )}
         <button type="button" className="primary" disabled={Boolean(busy) || errors > 0 || nodes.length === 0} onClick={() => void exportRobot()}>
           <DownloadIcon />
           {busy ? 'Exporting…' : format === 'urdf' ? 'Export package' : 'Export model'}

@@ -48,6 +48,8 @@ export interface UrdfExtras {
    * so one file serves RViz alone, Gazebo, and a real robot.
    */
   xacro?: { package: string };
+  /** The base link's name when the robot is bolted to the world: a `world` link and a fixed joint hold it there. */
+  fixedToWorld?: string;
 }
 
 export interface UrdfJoint {
@@ -138,6 +140,8 @@ export function writeUrdf(name: string, links: UrdfLink[], joints: UrdfJoint[], 
   // In xacro the package is a property, so the meshes follow a rename.
   const inPackage = (text: string): string => (xacro ? text.split(`package://${xacro.package}/`).join('package://${package}/') : text);
   const body = links.map((l) => inPackage(linkXml(l, materials)));
+  if (extras.fixedToWorld) body.unshift('  <link name="world"/>');
+  const jointLines = [...(extras.fixedToWorld ? [`  <joint name="world_joint" type="fixed">\n    <parent link="world"/>\n    <child link="${escapeXml(extras.fixedToWorld)}"/>\n  </joint>`] : []), ...joints.map(jointXml)];
   const head = [...materials].map(([n, rgba]) => `  <material name="${n}">\n    <color rgba="${rgba}"/>\n  </material>`);
   // Gazebo reads friction and sensors from blocks of its own beside the links, and plugins from blocks of the robot's.
   const gazebo: string[] = [];
@@ -164,7 +168,7 @@ export function writeUrdf(name: string, links: UrdfLink[], joints: UrdfJoint[], 
       '  </gazebo>',
     );
   }
-  if (!xacro) return [`<?xml version="1.0"?>`, `<!-- Made with ${APP_NAME}. Units: meters, kilograms, radians. -->`, `<robot name="${escapeXml(name)}">`, ...head, ...body, ...joints.map(jointXml), ...gazebo, ...control, '</robot>', ''].join('\n');
+  if (!xacro) return [`<?xml version="1.0"?>`, `<!-- Made with ${APP_NAME}. Units: meters, kilograms, radians. -->`, `<robot name="${escapeXml(name)}">`, ...head, ...body, ...jointLines, ...gazebo, ...control, '</robot>', ''].join('\n');
   const guarded = (arg: string, lines: string[]): string[] => (lines.length ? [`  <xacro:if value="$(arg ${arg})">`, ...lines.map((l) => (l ? `  ${l}` : l)), '  </xacro:if>'] : []);
   return [
     `<?xml version="1.0"?>`,
@@ -176,7 +180,7 @@ export function writeUrdf(name: string, links: UrdfLink[], joints: UrdfJoint[], 
     '  <xacro:arg name="use_ros2_control" default="true"/>',
     ...head,
     ...body,
-    ...joints.map(jointXml),
+    ...jointLines,
     ...guarded('use_gazebo', gazebo),
     ...guarded('use_ros2_control', control),
     '</robot>',

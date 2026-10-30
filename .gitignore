@@ -51,3 +51,6 @@ coverage/
 /*.svg
 /*.plastikcad
 /*.bashcad
+
+# Reference robots exported for the MuJoCo smoke test
+/fixtures/out

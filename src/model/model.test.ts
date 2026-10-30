@@ -732,6 +732,7 @@ describe('the robot in a file', () => {
     doc.scene = [base('aaaaaaaa', 'Body'), base('bbbbbbbb', 'Arm')];
     doc.robot = {
       root: 'aaaaaaaa',
+      base: 'free',
       sensors: [],
       control: true,
       links: [

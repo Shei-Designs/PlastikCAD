@@ -63,6 +63,8 @@ import type { Solved } from '../robot/kinematics';
 import { jointInChild, jointInDesign as jointInDesignOf, linkNodes, linkOf, meetingPoint, pruned, robotOf, sensorInDesign, sensorInLink, spanningTree } from '../robot/model';
 import { snapPointsOf } from '../robot/snaps';
 import type { SnapPoint } from '../viewer/Viewer';
+import { jointFit } from '../robot/defaults';
+import { massOf } from '../robot/inertia';
 import { defaultJoint, defaultSensor, SENSOR_KINDS } from '../robot/types';
 import type { DiffDrive, Robot, RobotJoint, RobotLink, RobotSensor, SensorKind } from '../robot/types';
 import { massProps } from './massProps';
@@ -2035,10 +2037,21 @@ export function addJoint(parent: string, child: string): string | null {
   if (!childNode || !parentNode || parent === child) return null;
   const origin = jointInChild(meetingPoint(geometry.bounds(parentNode), geometry.bounds(childNode)), [0, 0, 1], childNode).origin;
   const id = newId();
-  editRobot((r) => ({ ...r, root: r.root ?? parent, joints: [...r.joints, defaultJoint(id, jointName(r, `${childNode.name} joint`), parent, child, tidyVec(origin))] }));
+  editRobot((r) => {
+    const made = defaultJoint(id, jointName(r, `${childNode.name} joint`), parent, child, tidyVec(origin));
+    return { ...r, root: r.root ?? parent, joints: [...r.joints, { ...made, ...jointFit(r, linkNodes(state.doc.scene), made, (n) => weighed(r, n)) }] };
+  });
   selectJoint(id);
   return id;
 }
+
+/** The link's mass in grams as the kernel has weighed it, or null before it has. */
+function weighed(robot: Robot, node: SceneNode): number | null {
+  const p = massProps.known([node]).get(node.id);
+  return p ? massOf(linkOf(robot, node.id).mass, p) : null;
+}
+
+export const setBase = (base: Robot['base']): void => editRobot((r) => ({ ...r, base }));
 
 export function updateJoint(id: string, patch: Partial<Omit<RobotJoint, 'id'>>, merge?: string): void {
   editRobot((r) => ({ ...r, joints: r.joints.map((j) => (j.id === id ? { ...j, ...patch } : j)) }), merge);
@@ -2110,7 +2123,8 @@ export function fixLooseLinks(): void {
     if (!child) continue;
     const meet = meetingPoint(geometry.bounds(base), geometry.bounds(child));
     const name = jointName({ ...robot, joints: [...robot.joints, ...joints] }, `${child.name} joint`);
-    joints.push({ ...defaultJoint(newId(), name, base.id, id, tidyVec(jointInChild(meet, [0, 0, 1], child).origin)), type: 'fixed' });
+    const made = { ...defaultJoint(newId(), name, base.id, id, tidyVec(jointInChild(meet, [0, 0, 1], child).origin)), type: 'fixed' as const };
+    joints.push({ ...made, ...jointFit({ ...robot, joints: [...robot.joints, ...joints] }, nodes, made, (n) => weighed(robot, n)) });
   }
   if (joints.length === 0) return;
   editRobot((r) => ({ ...r, joints: [...r.joints, ...joints] }));

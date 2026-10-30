@@ -1,0 +1,160 @@
+{
+  "format": "plastikcad",
+  "version": 2,
+  "units": "mm",
+  "id": "rq5ch8ec",
+  "name": "Reference arm",
+  "scene": [
+    {
+      "id": "fx000010",
+      "type": "shape",
+      "name": "Base plate",
+      "shape": "box",
+      "params": {
+        "radius": 0
+      },
+      "pos": [0,0,5],
+      "rot": [0,0,0],
+      "size": [80,80,10],
+      "color": "#8fa3bf"
+    },
+    {
+      "id": "fx000011",
+      "type": "shape",
+      "name": "Turret",
+      "shape": "cylinder",
+      "params": {
+        "radius": 0,
+        "sides": 64
+      },
+      "pos": [0,0,25],
+      "rot": [0,0,0],
+      "size": [50,50,30],
+      "color": "#e8853a"
+    },
+    {
+      "id": "fx000012",
+      "type": "shape",
+      "name": "Upper arm",
+      "shape": "box",
+      "params": {
+        "radius": 0
+      },
+      "pos": [0,0,100],
+      "rot": [0,0,0],
+      "size": [20,20,120],
+      "color": "#8fa3bf"
+    },
+    {
+      "id": "fx000013",
+      "type": "shape",
+      "name": "Forearm",
+      "shape": "box",
+      "params": {
+        "radius": 0
+      },
+      "pos": [0,0,210],
+      "rot": [0,0,0],
+      "size": [16,16,100],
+      "color": "#8fa3bf"
+    }
+  ],
+  "assets": {},
+  "robot": {
+    "root": "fx000010",
+    "base": "fixed",
+    "links": [
+      {
+        "node": "fx000010",
+        "mass": {
+          "kind": "material",
+          "material": "pla",
+          "infill": 20,
+          "shell": 1.2
+        },
+        "collision": "box",
+        "friction": 0.8
+      },
+      {
+        "node": "fx000011",
+        "mass": {
+          "kind": "material",
+          "material": "pla",
+          "infill": 20,
+          "shell": 1.2
+        },
+        "collision": "cylinder",
+        "friction": 0.8
+      },
+      {
+        "node": "fx000012",
+        "mass": {
+          "kind": "material",
+          "material": "pla",
+          "infill": 20,
+          "shell": 1.2
+        },
+        "collision": "box",
+        "friction": 0.8
+      },
+      {
+        "node": "fx000013",
+        "mass": {
+          "kind": "material",
+          "material": "pla",
+          "infill": 20,
+          "shell": 1.2
+        },
+        "collision": "box",
+        "friction": 0.8
+      }
+    ],
+    "joints": [
+      {
+        "id": "fx000014",
+        "name": "Turret joint",
+        "type": "revolute",
+        "parent": "fx000010",
+        "child": "fx000011",
+        "origin": [0,0,-15],
+        "axis": [0,0,1],
+        "lower": -170,
+        "upper": 170,
+        "effort": 0.11,
+        "velocity": 90,
+        "damping": 0.0035,
+        "friction": 0
+      },
+      {
+        "id": "fx000015",
+        "name": "Shoulder",
+        "type": "revolute",
+        "parent": "fx000011",
+        "child": "fx000012",
+        "origin": [0,0,-60],
+        "axis": [1,0,0],
+        "lower": -90,
+        "upper": 90,
+        "effort": 0.0809,
+        "velocity": 90,
+        "damping": 0.00258,
+        "friction": 0
+      },
+      {
+        "id": "fx000016",
+        "name": "Elbow",
+        "type": "revolute",
+        "parent": "fx000012",
+        "child": "fx000013",
+        "origin": [0,0,-50],
+        "axis": [1,0,0],
+        "lower": -120,
+        "upper": 120,
+        "effort": 0.133,
+        "velocity": 90,
+        "damping": 0.00423,
+        "friction": 0
+      }
+    ]
+  }
+}

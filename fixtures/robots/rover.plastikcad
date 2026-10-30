@@ -1,0 +1,206 @@
+{
+  "format": "plastikcad",
+  "version": 2,
+  "units": "mm",
+  "id": "1zo41o40",
+  "name": "Reference rover",
+  "scene": [
+    {
+      "id": "fx000001",
+      "type": "shape",
+      "name": "Body",
+      "shape": "box",
+      "params": {
+        "radius": 0
+      },
+      "pos": [0,0,25],
+      "rot": [0,0,0],
+      "size": [80,120,30],
+      "color": "#8fa3bf"
+    },
+    {
+      "id": "fx000002",
+      "type": "shape",
+      "name": "Wheel left back",
+      "shape": "cylinder",
+      "params": {
+        "radius": 0,
+        "sides": 64
+      },
+      "pos": [-46,-40,20],
+      "rot": [0,90,0],
+      "size": [40,40,12],
+      "color": "#e8853a"
+    },
+    {
+      "id": "fx000003",
+      "type": "shape",
+      "name": "Wheel left front",
+      "shape": "cylinder",
+      "params": {
+        "radius": 0,
+        "sides": 64
+      },
+      "pos": [-46,40,20],
+      "rot": [0,90,0],
+      "size": [40,40,12],
+      "color": "#e8853a"
+    },
+    {
+      "id": "fx000004",
+      "type": "shape",
+      "name": "Wheel right back",
+      "shape": "cylinder",
+      "params": {
+        "radius": 0,
+        "sides": 64
+      },
+      "pos": [46,-40,20],
+      "rot": [0,90,0],
+      "size": [40,40,12],
+      "color": "#e8853a"
+    },
+    {
+      "id": "fx000005",
+      "type": "shape",
+      "name": "Wheel right front",
+      "shape": "cylinder",
+      "params": {
+        "radius": 0,
+        "sides": 64
+      },
+      "pos": [46,40,20],
+      "rot": [0,90,0],
+      "size": [40,40,12],
+      "color": "#e8853a"
+    }
+  ],
+  "assets": {},
+  "robot": {
+    "root": "fx000001",
+    "base": "free",
+    "links": [
+      {
+        "node": "fx000001",
+        "mass": {
+          "kind": "material",
+          "material": "pla",
+          "infill": 20,
+          "shell": 1.2
+        },
+        "collision": "box",
+        "friction": 0.8
+      },
+      {
+        "node": "fx000002",
+        "mass": {
+          "kind": "material",
+          "material": "pla",
+          "infill": 20,
+          "shell": 1.2
+        },
+        "collision": "cylinder",
+        "friction": 1
+      },
+      {
+        "node": "fx000003",
+        "mass": {
+          "kind": "material",
+          "material": "pla",
+          "infill": 20,
+          "shell": 1.2
+        },
+        "collision": "cylinder",
+        "friction": 1
+      },
+      {
+        "node": "fx000004",
+        "mass": {
+          "kind": "material",
+          "material": "pla",
+          "infill": 20,
+          "shell": 1.2
+        },
+        "collision": "cylinder",
+        "friction": 1
+      },
+      {
+        "node": "fx000005",
+        "mass": {
+          "kind": "material",
+          "material": "pla",
+          "infill": 20,
+          "shell": 1.2
+        },
+        "collision": "cylinder",
+        "friction": 1
+      }
+    ],
+    "joints": [
+      {
+        "id": "fx000006",
+        "name": "Wheel left back joint",
+        "type": "continuous",
+        "parent": "fx000001",
+        "child": "fx000002",
+        "origin": [0,0,0],
+        "axis": [0,0,1],
+        "lower": -90,
+        "upper": 90,
+        "effort": 0.336,
+        "velocity": 360,
+        "damping": 0.0107,
+        "friction": 0
+      },
+      {
+        "id": "fx000007",
+        "name": "Wheel left front joint",
+        "type": "continuous",
+        "parent": "fx000001",
+        "child": "fx000003",
+        "origin": [0,0,0],
+        "axis": [0,0,1],
+        "lower": -90,
+        "upper": 90,
+        "effort": 0.336,
+        "velocity": 360,
+        "damping": 0.0107,
+        "friction": 0
+      },
+      {
+        "id": "fx000008",
+        "name": "Wheel right back joint",
+        "type": "continuous",
+        "parent": "fx000001",
+        "child": "fx000004",
+        "origin": [0,0,0],
+        "axis": [0,0,1],
+        "lower": -90,
+        "upper": 90,
+        "effort": 0.336,
+        "velocity": 360,
+        "damping": 0.0107,
+        "friction": 0
+      },
+      {
+        "id": "fx000009",
+        "name": "Wheel right front joint",
+        "type": "continuous",
+        "parent": "fx000001",
+        "child": "fx000005",
+        "origin": [0,0,0],
+        "axis": [0,0,1],
+        "lower": -90,
+        "upper": 90,
+        "effort": 0.336,
+        "velocity": 360,
+        "damping": 0.0107,
+        "friction": 0
+      }
+    ],
+    "drive": {
+      "left": ["fx000006","fx000007"],
+      "right": ["fx000008","fx000009"]
+    }
+  }
+}

@@ -22,6 +22,7 @@ const rocker = node('rocker', 'Rocker', [100, 0, 25], [8, 8, 50]);
 const scene = [ground, crank, coupler, rocker];
 const fourBar = (): Robot => ({
   root: ground.id,
+  base: 'fixed',
   sensors: [],
   control: true,
   links: [],

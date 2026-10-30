@@ -30,6 +30,7 @@ const arm = node('arm00001', 'Arm (upper)', [0, 0, 40], [10, 10, 40]);
 function robot(): Robot {
   return {
     root: body.id,
+    base: 'fixed',
     sensors: [],
     control: true,
     links: [{ ...defaultLink(wheel.id), mass: { kind: 'measured', grams: 50 }, collision: 'hull', friction: 1.2 }, { ...defaultLink(arm.id), collision: 'box' }],
@@ -80,14 +81,27 @@ describe('checkRobot', () => {
     const d = doc();
     const props = new Map([...geometry()].map(([id, g]) => [id, g.props]));
     expect(checkRobot(d, props)).toEqual([]);
+    // A motor and damping a hundred times beyond what the shoulder's sides ask for: told, not stopped.
+    d.robot!.joints[1].effort = 1000;
+    d.robot!.joints[1].damping = 100;
+    const told = checkRobot(d, props);
+    expect(told.map((p) => p.level)).toEqual(['warning', 'warning']);
+    expect(told.map((p) => p.joint)).toEqual(['j2', 'j2']);
+    expect(told[0].text).toMatch(/far stronger/);
+    expect(told[1].text).toMatch(/damped far too stiffly/);
+    d.robot!.joints[1].effort = 10;
+    d.robot!.joints[1].damping = 0.1;
     d.robot!.root = null;
     d.robot!.joints[1].lower = 100;
     d.robot!.links[0].mass = { kind: 'measured', grams: 0 };
+    // Three errors; the weightless wheel also makes its motor look far too strong, which is only a warning.
     const problems = checkRobot(d, props);
-    expect(problems.map((p) => p.level)).toEqual(['error', 'error', 'error']);
-    expect(problems[0].text).toMatch(/base link/);
-    expect(problems[1].joint).toBe('j2');
-    expect(problems[2].link).toBe(wheel.id);
+    const errors = problems.filter((p) => p.level === 'error');
+    expect(errors.length).toBe(3);
+    expect(errors[0].text).toMatch(/base link/);
+    expect(errors[1].joint).toBe('j2');
+    expect(errors[2].link).toBe(wheel.id);
+    expect(problems.filter((p) => p.level === 'warning').every((p) => p.joint === 'j1')).toBe(true);
   });
 
   it('warns about loops and open meshes', () => {
@@ -180,6 +194,7 @@ describe('sensors, drive and control', () => {
     // The wheel joint drives the left side; a mirrored one would drive the right. Here one joint each side, the arm's shoulder stays under ros2_control.
     r.joints.push({ ...defaultJoint('j3', 'right wheel joint', body.id, arm.id, [0, 0, -20]), type: 'continuous', axis: [0, 1, 0] });
     r.drive = { left: ['j1'], right: ['j3'] };
+    r.base = 'free';
     return d;
   };
 
@@ -281,8 +296,9 @@ describe('xacro and MuJoCo', () => {
 
   it('writes a MuJoCo model: nested bodies, joints, actuators, a loop as a connect, a camera and an IMU', () => {
     const d = doc();
-    // Both joints drive (the shoulder standing in for a right wheel), so the base floats.
+    // Both joints drive (the shoulder standing in for a right wheel), and the base stands free, so it floats.
     d.robot!.drive = { left: ['j1'], right: ['j2'] };
+    d.robot!.base = 'free';
     d.robot!.joints.push({ ...defaultJoint('j4', 'closing', arm.id, wheel.id, [0, 0, 0]) });
     d.robot!.sensors = [defaultSensor('s1', 'cam', 'camera', body.id, [50, 0, 10]), defaultSensor('s2', 'scan', 'lidar', body.id, [0, 0, 10]), defaultSensor('s3', 'imu', 'imu', body.id, [0, 0, 0])];
     const model = buildMjcfModel(d, geometry());
@@ -301,9 +317,11 @@ describe('xacro and MuJoCo', () => {
     expect(xml).toMatch(/<inertial pos="0 0.004 0" mass="0.05" fullinertia="/);
     expect(xml).toContain('<geom type="mesh" mesh="visual_Body_obj" class="visual" material="color_ff8800"/>');
     expect(xml).toContain('<geom type="box" size="0.005 0.005 0.02" pos="0 0 0.02" class="collision" friction="0.8 0.005 0.0001"/>');
-    // Actuators: the wheels velocity motors.
-    expect(xml).toContain('<velocity name="left_wheel_joint_motor" joint="left_wheel_joint" kv="1"/>');
-    expect(xml).toContain('<velocity name="shoulder_motor" joint="shoulder" kv="1"/>');
+    // Actuators: the wheels velocity motors, with the motor's gain from its effort over its speed and both as limits. The implicit integrator takes the gain and the damping at any size.
+    expect(xml).toContain('integrator="implicitfast"');
+    // The torque is held to what takes the heavier side to full speed in one step (I·v/dt), and the gain follows.
+    expect(xml).toMatch(/<velocity name="left_wheel_joint_motor" joint="left_wheel_joint" kv="[0-9.e-]+" ctrlrange="-12.57 12.57" forcerange="-([0-9.e-]+) \1"\/>/);
+    expect(xml).toMatch(/<velocity name="shoulder_motor" joint="shoulder" kv="[0-9.e-]+" ctrlrange="-1.571 1.571" forcerange="-([0-9.e-]+) \1"\/>/);
     expect(xml).not.toContain('<position');
     // The loop: arm and wheel pinned at the closing joint, given in the arm's frame (the wheel's center, 40 mm out and 10 down from the shoulder).
     expect(xml).toContain('<connect body1="Arm_upper" body2="Left_wheel" anchor="0 0.04 -0.01"/>');
@@ -316,7 +334,8 @@ describe('xacro and MuJoCo', () => {
   it('welds an arm to the world and gives its joints position servos', () => {
     const xml = text(buildMjcfModel(doc(), geometry()).files.find((f) => f.name === 'test_rover.xml')!.bytes);
     expect(xml).not.toContain('<freejoint');
-    expect(xml).toContain('<position name="shoulder_servo" joint="shoulder" kp="50" ctrllimited="false"/>');
-    expect(xml).toContain('<position name="left_wheel_joint_servo" joint="left_wheel_joint" kp="50" ctrllimited="false"/>');
+    // Full effort half a radian off target, damped so as not to overshoot, no more torque than the limit.
+    expect(xml).toMatch(/<position name="shoulder_servo" joint="shoulder" kp="[0-9.e-]+" kv="[0-9.e-]+" forcerange="-([0-9.e-]+) \1"\/>/);
+    expect(xml).toMatch(/<position name="left_wheel_joint_servo" joint="left_wheel_joint" kp="[0-9.e-]+" kv="[0-9.e-]+" forcerange="-([0-9.e-]+) \1"\/>/);
   });
 });

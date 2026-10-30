@@ -3,6 +3,7 @@
 // link or joint it is about, so the panel can take the user there.
 import type { Doc } from '../model/types';
 import type { LinkProperties } from '../worker/protocol';
+import { jointFit } from './defaults';
 import { massOf, plausibleInertia, tensorOf } from './inertia';
 import { linkNodes, linkOf, robotOf, spanningTree } from './model';
 import type { Robot } from './types';
@@ -54,6 +55,17 @@ export function checkRobot(doc: Doc, props: Map<string, LinkProperties>, robot: 
     if (j.type !== 'fixed' && !j.axis.some((x) => x !== 0)) error(`"${j.name}" has no axis.`, { joint: j.id });
     if ((j.type === 'revolute' || j.type === 'prismatic') && !(j.lower < j.upper)) error(`"${j.name}": the lower limit must be below the upper one.`, { joint: j.id });
     if (j.type !== 'fixed' && !(j.effort > 0 && j.velocity > 0)) warn(`"${j.name}" has no effort or no velocity, so a controller cannot move it.`, { joint: j.id });
+    // A motor a hundred times stronger, or damping a hundred times stiffer, than the parts ask for: a simulator blows up or stalls.
+    if (j.type === 'revolute' || j.type === 'continuous') {
+      const child = nodes.find((n) => n.id === j.child)!;
+      const fit = jointFit(robot, nodes, j, (n) => {
+        const p = props.get(n.id);
+        return p ? massOf(linkOf(robot, n.id).mass, p) : null;
+      });
+      const about = (x: number) => Number(x.toPrecision(2));
+      if (j.effort > 100 * fit.effort) warn(`"${j.name}" is far stronger than "${child.name}" needs (${about(j.effort)} N·m where about ${about(fit.effort)} would do): simulators will misbehave or hold it back. Set the motor's real torque.`, { joint: j.id });
+      if (j.damping > 100 * fit.damping) warn(`"${j.name}" is damped far too stiffly for "${child.name}" (${about(j.damping)} N·m·s where about ${about(fit.damping)} would do): it will barely move.`, { joint: j.id });
+    }
     if (j.mimic) {
       if (j.mimic.joint === j.id) error(`"${j.name}" follows itself.`, { joint: j.id });
       else if (!jointIds.has(j.mimic.joint)) error(`"${j.name}" follows a joint that is gone.`, { joint: j.id });
@@ -76,6 +88,8 @@ export function checkRobot(doc: Doc, props: Map<string, LinkProperties>, robot: 
     }
     if (robot.drive.left.some((id) => robot.drive!.right.includes(id))) error('A wheel joint is on both sides of the drive.');
   }
+  if (robot.base === 'free' && !robot.drive && robot.joints.some((j) => j.type === 'continuous')) warn('The base is free to move but nothing drives it: mark each wheel joint\'s side under Control, or fix the base for an arm.');
+  if (robot.base === 'fixed' && robot.drive) warn('The base is fixed to the world, so the wheels cannot move it.');
 
   for (const node of nodes) {
     const link = linkOf(robot, node.id);
