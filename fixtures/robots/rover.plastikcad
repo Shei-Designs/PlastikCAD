@@ -2,7 +2,7 @@
   "format": "plastikcad",
   "version": 2,
   "units": "mm",
-  "id": "pmhpdjse",
+  "id": "dk2vxs9z",
   "name": "Reference rover",
   "scene": [
     {
@@ -203,8 +203,13 @@
       }
     ],
     "drive": {
-      "left": ["fx000006","fx000007"],
-      "right": ["fx000008","fx000009"]
+      "kind": "differential",
+      "roles": {
+        "fx000006": "left",
+        "fx000007": "left",
+        "fx000008": "right",
+        "fx000009": "right"
+      }
     }
   }
 }

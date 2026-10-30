@@ -5,8 +5,9 @@ import type { Doc } from '../model/types';
 import type { LinkProperties } from '../worker/protocol';
 import { jointFit } from './defaults';
 import { massOf, plausibleInertia, tensorOf } from './inertia';
-import { linkNodes, linkOf, robotOf, spanningTree } from './model';
-import type { Robot } from './types';
+import { jointInDesign, linkNodes, linkOf, robotOf, spanningTree } from './model';
+import { DRIVE_KINDS, withRole } from './types';
+import type { Robot, RobotJoint } from './types';
 
 export interface Problem {
   level: 'error' | 'warning';
@@ -78,17 +79,27 @@ export function checkRobot(doc: Doc, props: Map<string, LinkProperties>, robot: 
     if (x.kind === 'lidar' && !(x.lidar.min < x.lidar.max)) error(`"${x.name}" sees nothing: its nearest range must be below its farthest.`, { sensor: x.id });
   }
   if (robot.drive) {
-    const wheel = (id: string) => robot.joints.find((j) => j.id === id);
-    if (robot.drive.left.length === 0 || robot.drive.right.length === 0) error('The drive needs at least one wheel joint on each side.');
-    for (const id of [...robot.drive.left, ...robot.drive.right]) {
-      const j = wheel(id);
+    const drive = robot.drive;
+    const kind = DRIVE_KINDS.find((k) => k.id === drive.kind)!;
+    const joint = (id: string) => robot.joints.find((j) => j.id === id);
+    const count = (role: Parameters<typeof withRole>[1]) => withRole(drive, role).filter(joint).length;
+    for (const [id, role] of Object.entries(drive.roles)) {
+      const j = joint(id);
       if (!j) continue;
-      if (j.type !== 'continuous' && j.type !== 'revolute') error(`"${j.name}" drives a wheel but does not turn.`, { joint: j.id });
-      if (j.mimic) error(`"${j.name}" drives a wheel and follows another joint; it cannot do both.`, { joint: j.id });
+      if (role.startsWith('steer')) {
+        if (j.type !== 'revolute') error(`"${j.name}" steers, so it must be a revolute joint with limits.`, { joint: j.id });
+      } else if (j.type !== 'continuous' && j.type !== 'revolute') error(`"${j.name}" drives a wheel but does not turn.`, { joint: j.id });
+      if (j.mimic) error(`"${j.name}" is in the drive and follows another joint; it cannot do both.`, { joint: j.id });
     }
-    if (robot.drive.left.some((id) => robot.drive!.right.includes(id))) error('A wheel joint is on both sides of the drive.');
+    if (kind.id === 'differential' && (count('left') === 0 || count('right') === 0)) error('The drive needs at least one wheel joint on each side.');
+    if (kind.id === 'ackermann' && (count('left') === 0 || count('right') === 0 || count('steer-left') !== 1 || count('steer-right') !== 1)) error('An Ackermann drive needs a driven wheel on each side and one steering joint on each side.');
+    if (kind.id === 'mecanum' && (['front-left', 'front-right', 'rear-left', 'rear-right'] as const).some((r) => count(r) !== 1)) error('A mecanum drive needs one wheel at each corner.');
+    // The wheels' axles should run the same way; a wheel turned another way drags.
+    const wheels = Object.entries(drive.roles).filter(([, role]) => !role.startsWith('steer')).map(([id]) => joint(id)).filter((j): j is RobotJoint => Boolean(j));
+    const axles = wheels.map((j) => jointInDesign(j, nodes.find((n) => n.id === j.child)!).axis);
+    if (axles.some((a) => Math.abs(a[0] * axles[0][0] + a[1] * axles[0][1] + a[2] * axles[0][2]) < Math.cos((5 * Math.PI) / 180))) warn("The drive wheels' axles do not all run the same way; a wheel turned differently will drag.");
   }
-  if (robot.base === 'free' && !robot.drive && robot.joints.some((j) => j.type === 'continuous')) warn('The base is free to move but nothing drives it: mark each wheel joint\'s side under Control, or fix the base for an arm.');
+  if (robot.base === 'free' && !robot.drive && robot.joints.some((j) => j.type === 'continuous')) warn('The base is free to move but nothing drives it: give the wheel joints their parts under Drive, or fix the base for an arm.');
   if (robot.base === 'fixed' && robot.drive) warn('The base is fixed to the world, so the wheels cannot move it.');
 
   for (const node of nodes) {

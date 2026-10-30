@@ -66,8 +66,8 @@ import type { SnapPoint } from '../viewer/Viewer';
 import { jointFit } from '../robot/defaults';
 import { motorFigures, motorForPart, motorOf } from '../robot/motors';
 import { massOf } from '../robot/inertia';
-import { defaultJoint, defaultSensor, SENSOR_KINDS } from '../robot/types';
-import type { DiffDrive, Robot, RobotJoint, RobotLink, RobotSensor, SensorKind } from '../robot/types';
+import { DRIVE_KINDS, defaultJoint, defaultSensor, SENSOR_KINDS } from '../robot/types';
+import type { DriveKind, DriveRole, Robot, RobotJoint, RobotLink, RobotSensor, SensorKind } from '../robot/types';
 import { massProps } from './massProps';
 
 export interface Notice {
@@ -1970,10 +1970,23 @@ export function deleteSensor(id: string): void {
 }
 
 /** Sets which wheel joints the differential drive turns on each side; nothing on either side removes the drive. */
-export function setDrive(drive: DiffDrive | null): void {
+/** Picks how the robot drives, or none; the roles that fit the new kind are kept. */
+export function setDriveKind(kind: DriveKind | null): void {
   editRobot((r) => {
-    const { drive: _old, ...rest } = r;
-    return drive && (drive.left.length || drive.right.length) ? { ...rest, drive } : rest;
+    const { drive: old, ...rest } = r;
+    const def = DRIVE_KINDS.find((k) => k.id === kind);
+    if (!def) return rest;
+    const roles = Object.fromEntries(Object.entries(old?.roles ?? {}).filter(([, role]) => def.roles.some((x) => x.id === role)));
+    return { ...rest, drive: { kind: def.id, roles } };
+  });
+}
+
+/** Gives a joint its part in the drive, or none. */
+export function setDriveRole(joint: string, role: DriveRole | null): void {
+  editRobot((r) => {
+    if (!r.drive) return r;
+    const { [joint]: _old, ...roles } = r.drive.roles;
+    return { ...r, drive: { ...r.drive, roles: role ? { ...roles, [joint]: role } : roles } };
   });
 }
 

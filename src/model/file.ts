@@ -9,8 +9,8 @@ import { sanitizeParams } from '../parts/generators/types';
 import { newId, usedAssets } from './ops';
 import { TEXT_FONTS } from './types';
 import type { Asset, Doc, OutlineShape, PartParamValue, Scene, SceneNode, ShapeKind, Texture, Vec3 } from './types';
-import { COLLISION_KINDS, JOINT_TYPES, SENSOR_KINDS, defaultSensor } from '../robot/types';
-import type { CollisionKind, JointType, MassSpec, Robot, RobotJoint, RobotLink, RobotSensor, SensorKind } from '../robot/types';
+import { COLLISION_KINDS, DRIVE_KINDS, JOINT_TYPES, SENSOR_KINDS, defaultSensor } from '../robot/types';
+import type { CollisionKind, Drive, DriveRole, JointType, MassSpec, Robot, RobotJoint, RobotLink, RobotSensor, SensorKind } from '../robot/types';
 
 export function emptyDoc(): Doc {
   return { id: newId(), name: 'Untitled', scene: [], assets: {} };
@@ -152,7 +152,7 @@ export function canonicalRobot(robot: Robot): Record<string, unknown> {
           lidar: x.kind === 'lidar' ? { samples: x.lidar.samples, hfov: x.lidar.hfov, min: x.lidar.min, max: x.lidar.max } : undefined,
         }))
       : undefined,
-    drive: robot.drive ? { left: [...robot.drive.left].sort(), right: [...robot.drive.right].sort() } : undefined,
+    drive: robot.drive ? { kind: robot.drive.kind, roles: Object.fromEntries(Object.entries(robot.drive.roles).sort(([a], [b]) => a.localeCompare(b))) } : undefined,
     control: robot.control ? undefined : false,
   };
 }
@@ -358,6 +358,23 @@ function readMass(raw: unknown): MassSpec {
   return { kind: 'material', material: typeof r.material === 'string' ? r.material : 'pla', infill: Math.min(100, Math.max(0, finite(r.infill, 20))), shell: Math.max(0, finite(r.shell, 1.2)) };
 }
 
+/** The drive of a file: its kind and each joint's role, or the two sides of the differential drive files once held. Undefined without a kind or a joint. */
+function readDrive(raw: unknown, joints: Set<string>): Drive | undefined {
+  if (!isRecord(raw)) return undefined;
+  const roles: Record<string, DriveRole> = {};
+  const kinds = DRIVE_KINDS.find((k) => k.id === raw.kind);
+  if (kinds && isRecord(raw.roles)) {
+    for (const [id, role] of Object.entries(raw.roles)) if (joints.has(id) && kinds.roles.some((r) => r.id === role)) roles[id] = role as DriveRole;
+    return { kind: kinds.id, roles };
+  }
+  const side = (v: unknown, role: DriveRole) => {
+    if (Array.isArray(v)) for (const id of v) if (typeof id === 'string' && joints.has(id)) roles[id] = role;
+  };
+  side(raw.left, 'left');
+  side(raw.right, 'right');
+  return Object.keys(roles).length ? { kind: 'differential', roles } : undefined;
+}
+
 /** The robot of a file, with anything that names an object the scene no longer has left off. Undefined when there is none. */
 function readRobot(raw: unknown, scene: Scene): Robot | undefined {
   if (!isRecord(raw)) return undefined;
@@ -406,8 +423,7 @@ function readRobot(raw: unknown, scene: Scene): Robot | undefined {
   }
   // A follower whose leader is gone follows nothing.
   for (const j of joints) if (j.mimic && !seenJoints.has(j.mimic.joint)) delete j.mimic;
-  const jointList = (v: unknown): string[] => (Array.isArray(v) ? v.filter((id): id is string => typeof id === 'string' && seenJoints.has(id)) : []);
-  const drive = isRecord(raw.drive) ? { left: jointList(raw.drive.left), right: jointList(raw.drive.right) } : undefined;
+  const drive = readDrive(raw.drive, seenJoints);
   return {
     root: typeof raw.root === 'string' && ids.has(raw.root) ? raw.root : null,
     // Files from before the setting: a robot with a drive stood free, any other was welded down.
@@ -415,7 +431,7 @@ function readRobot(raw: unknown, scene: Scene): Robot | undefined {
     links,
     joints,
     sensors: readSensors(raw.sensors, ids),
-    ...(drive && (drive.left.length || drive.right.length) ? { drive } : {}),
+    ...(drive ? { drive } : {}),
     control: raw.control !== false,
   };
 }

@@ -56,30 +56,66 @@ export function sensorXml(s: GazeboSensor): string {
 /** The Gazebo topic a sensor publishes on. */
 export const sensorTopic = (s: { name: string; kind: SensorKind }): string => (s.kind === 'camera' ? `${s.name}/image` : s.kind === 'depth' ? `${s.name}/depth` : s.kind === 'lidar' ? `${s.name}/scan` : `${s.name}/imu`);
 
-export interface GazeboDrive {
-  leftJoints: string[];
-  rightJoints: string[];
-  /** Meters. */
-  wheelSeparation: number;
-  wheelRadius: number;
+/** The drive as a Gazebo plugin wants it: joint names by part, and the geometry in meters (radians for the steering reach). */
+export type GazeboDrive = {
   /** Name of the base link, the odometry's child frame. */
   baseFrame: string;
-}
+  wheelRadius: number;
+  wheelSeparation: number;
+} & (
+  | { kind: 'differential'; leftJoints: string[]; rightJoints: string[] }
+  | { kind: 'ackermann'; leftJoints: string[]; rightJoints: string[]; leftSteer: string; rightSteer: string; wheelBase: number; kingpinWidth: number; steeringLimit: number }
+  | { kind: 'mecanum'; frontLeft: string; frontRight: string; rearLeft: string; rearRight: string; wheelBase: number }
+);
 
-/** The differential drive plugin: velocity commands in on cmd_vel, odometry and its transform out. */
-export function diffDriveXml(d: GazeboDrive): string {
-  return [
-    '<plugin filename="gz-sim-diff-drive-system" name="gz::sim::systems::DiffDrive">',
-    ...d.leftJoints.map((j) => `  <left_joint>${escapeXml(j)}</left_joint>`),
-    ...d.rightJoints.map((j) => `  <right_joint>${escapeXml(j)}</right_joint>`),
-    `  <wheel_separation>${fmt(d.wheelSeparation, 5)}</wheel_separation>`,
-    `  <wheel_radius>${fmt(d.wheelRadius, 5)}</wheel_radius>`,
+/** The drive plugin: velocity commands in on cmd_vel, odometry and its transform out. */
+export function driveXml(d: GazeboDrive): string {
+  const odometry = [
     '  <topic>cmd_vel</topic>',
     '  <odom_topic>odom</odom_topic>',
     '  <tf_topic>tf</tf_topic>',
     '  <frame_id>odom</frame_id>',
     `  <child_frame_id>${escapeXml(d.baseFrame)}</child_frame_id>`,
     '  <odom_publish_frequency>50</odom_publish_frequency>',
+  ];
+  const m = (v: number) => fmt(v, 5);
+  if (d.kind === 'ackermann') {
+    return [
+      '<plugin filename="gz-sim-ackermann-steering-system" name="gz::sim::systems::AckermannSteering">',
+      ...d.leftJoints.map((j) => `  <left_joint>${escapeXml(j)}</left_joint>`),
+      ...d.rightJoints.map((j) => `  <right_joint>${escapeXml(j)}</right_joint>`),
+      `  <left_steering_joint>${escapeXml(d.leftSteer)}</left_steering_joint>`,
+      `  <right_steering_joint>${escapeXml(d.rightSteer)}</right_steering_joint>`,
+      `  <kingpin_width>${m(d.kingpinWidth)}</kingpin_width>`,
+      `  <steering_limit>${m(d.steeringLimit)}</steering_limit>`,
+      `  <wheel_base>${m(d.wheelBase)}</wheel_base>`,
+      `  <wheel_separation>${m(d.wheelSeparation)}</wheel_separation>`,
+      `  <wheel_radius>${m(d.wheelRadius)}</wheel_radius>`,
+      ...odometry,
+      '</plugin>',
+    ].join('\n');
+  }
+  if (d.kind === 'mecanum') {
+    return [
+      '<plugin filename="gz-sim-mecanum-drive-system" name="gz::sim::systems::MecanumDrive">',
+      `  <front_left_joint>${escapeXml(d.frontLeft)}</front_left_joint>`,
+      `  <front_right_joint>${escapeXml(d.frontRight)}</front_right_joint>`,
+      `  <back_left_joint>${escapeXml(d.rearLeft)}</back_left_joint>`,
+      `  <back_right_joint>${escapeXml(d.rearRight)}</back_right_joint>`,
+      `  <wheelbase>${m(d.wheelBase)}</wheelbase>`,
+      `  <wheel_separation>${m(d.wheelSeparation)}</wheel_separation>`,
+      `  <wheel_radius>${m(d.wheelRadius)}</wheel_radius>`,
+      ...odometry,
+      '</plugin>',
+    ].join('\n');
+  }
+  return [
+    '<plugin filename="gz-sim-diff-drive-system" name="gz::sim::systems::DiffDrive">',
+    ...d.leftJoints.map((j) => `  <left_joint>${escapeXml(j)}</left_joint>`),
+    ...d.rightJoints.map((j) => `  <right_joint>${escapeXml(j)}</right_joint>`),
+    `  <wheel_separation>${m(d.wheelSeparation)}</wheel_separation>`,
+    `  <wheel_radius>${m(d.wheelRadius)}</wheel_radius>`,
+    ...odometry,
     '</plugin>',
   ].join('\n');
 }

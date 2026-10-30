@@ -24,8 +24,8 @@ export function pruned(robot: Robot, scene: Scene): Robot {
   const followers = joints.map((j) => (j.mimic && !jointIds.has(j.mimic.joint) ? { ...j, mimic: undefined } : j));
   const root = robot.root && ids.has(robot.root) ? robot.root : null;
   const sensors = robot.sensors.filter((x) => ids.has(x.link));
-  const drive = robot.drive && { left: robot.drive.left.filter((id) => jointIds.has(id)), right: robot.drive.right.filter((id) => jointIds.has(id)) };
-  const sameDrive = !robot.drive || (drive!.left.length === robot.drive.left.length && drive!.right.length === robot.drive.right.length);
+  const drive = robot.drive && { kind: robot.drive.kind, roles: Object.fromEntries(Object.entries(robot.drive.roles).filter(([id]) => jointIds.has(id))) };
+  const sameDrive = !robot.drive || Object.keys(drive!.roles).length === Object.keys(robot.drive.roles).length;
   if (links.length === robot.links.length && joints.length === robot.joints.length && followers.every((j, i) => j === joints[i]) && root === robot.root && sensors.length === robot.sensors.length && sameDrive) return robot;
   return { ...robot, root, links, joints: followers.map((j) => (j.mimic === undefined ? stripMimic(j) : j)), sensors, ...(drive ? { drive } : {}) };
 }

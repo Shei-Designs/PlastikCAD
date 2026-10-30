@@ -2,11 +2,11 @@
   "format": "plastikcad",
   "version": 2,
   "units": "mm",
-  "id": "twki5k61",
+  "id": "kuwa2tb8",
   "name": "Reference arm",
   "scene": [
     {
-      "id": "fx000010",
+      "id": "fx000023",
       "type": "shape",
       "name": "Base plate",
       "shape": "box",
@@ -19,7 +19,7 @@
       "color": "#8fa3bf"
     },
     {
-      "id": "fx000011",
+      "id": "fx000024",
       "type": "shape",
       "name": "Turret",
       "shape": "cylinder",
@@ -33,7 +33,7 @@
       "color": "#e8853a"
     },
     {
-      "id": "fx000012",
+      "id": "fx000025",
       "type": "shape",
       "name": "Upper arm",
       "shape": "box",
@@ -46,7 +46,7 @@
       "color": "#8fa3bf"
     },
     {
-      "id": "fx000013",
+      "id": "fx000026",
       "type": "shape",
       "name": "Forearm",
       "shape": "box",
@@ -61,11 +61,11 @@
   ],
   "assets": {},
   "robot": {
-    "root": "fx000010",
+    "root": "fx000023",
     "base": "fixed",
     "links": [
       {
-        "node": "fx000010",
+        "node": "fx000023",
         "mass": {
           "kind": "material",
           "material": "pla",
@@ -76,7 +76,7 @@
         "friction": 0.8
       },
       {
-        "node": "fx000011",
+        "node": "fx000024",
         "mass": {
           "kind": "material",
           "material": "pla",
@@ -87,7 +87,7 @@
         "friction": 0.8
       },
       {
-        "node": "fx000012",
+        "node": "fx000025",
         "mass": {
           "kind": "material",
           "material": "pla",
@@ -98,7 +98,7 @@
         "friction": 0.8
       },
       {
-        "node": "fx000013",
+        "node": "fx000026",
         "mass": {
           "kind": "material",
           "material": "pla",
@@ -111,11 +111,11 @@
     ],
     "joints": [
       {
-        "id": "fx000014",
+        "id": "fx000027",
         "name": "Turret joint",
         "type": "revolute",
-        "parent": "fx000010",
-        "child": "fx000011",
+        "parent": "fx000023",
+        "child": "fx000024",
         "origin": [0,0,-15],
         "axis": [0,0,1],
         "lower": -170,
@@ -127,11 +127,11 @@
         "motor": "mg996r"
       },
       {
-        "id": "fx000015",
+        "id": "fx000028",
         "name": "Shoulder",
         "type": "revolute",
-        "parent": "fx000011",
-        "child": "fx000012",
+        "parent": "fx000024",
+        "child": "fx000025",
         "origin": [0,0,-60],
         "axis": [1,0,0],
         "lower": -90,
@@ -143,11 +143,11 @@
         "motor": "mg996r"
       },
       {
-        "id": "fx000016",
+        "id": "fx000029",
         "name": "Elbow",
         "type": "revolute",
-        "parent": "fx000012",
-        "child": "fx000013",
+        "parent": "fx000025",
+        "child": "fx000026",
         "origin": [0,0,-50],
         "axis": [1,0,0],
         "lower": -120,

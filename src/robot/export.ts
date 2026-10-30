@@ -6,7 +6,8 @@ import type { MeshData } from '../geometry/mesh';
 import { boundsSize, eulerOf, multiply, rotation } from '../model/math';
 import type { Doc, SceneNode, Vec3 } from '../model/types';
 import { encodeText } from '../io/format';
-import { diffDriveXml, jointStateXml, sensorTopic, sensorXml, worldXml } from '../io/gazebo';
+import { driveXml, jointStateXml, sensorTopic, sensorXml, worldXml } from '../io/gazebo';
+import type { GazeboDrive } from '../io/gazebo';
 import type { BridgeTopic } from '../io/rosPackage';
 import type { GazeboSensor } from '../io/gazebo';
 import { writeObj } from '../io/obj';
@@ -23,7 +24,8 @@ import { massOf, tensorOf, toSI } from './inertia';
 import type { Tensor } from './inertia';
 import { jointInDesign, linkNodes, linkOf, robotOf, sensorInDesign, spanningTree } from './model';
 import { motorOf } from './motors';
-import type { Robot, RobotJoint } from './types';
+import { DRIVE_KINDS, driveJoints, withRole } from './types';
+import type { DriveKind, DriveRole, Robot, RobotJoint } from './types';
 export interface PackageFile {
   /** Path inside the package folder. */
   name: string;
@@ -56,6 +58,23 @@ const rgb = (hex: string): [number, number, number] => [parseInt(hex.slice(1, 3)
 /** The name a robot is exported under, from its design's: a ROS package name, lowercase. */
 export const packageName = (designName: string): string => urdfName(designName, 'robot').toLowerCase();
 
+/** The drive measured off the design: joint names by part, and its geometry in meters (the steering reach in radians). Null until every part it needs is filled. */
+export interface PreparedDrive {
+  kind: DriveKind;
+  roles: Partial<Record<DriveRole, string[]>>;
+  /** The driven wheels' joints, and the steering joints'. */
+  wheels: string[];
+  steer: string[];
+  wheelRadius: number;
+  /** Between the left and right wheels. */
+  wheelSeparation: number;
+  /** Between the front and rear axles. */
+  wheelBase?: number;
+  /** Between the two steering joints. */
+  kingpinWidth?: number;
+  steeringLimit?: number;
+}
+
 /** What both outputs share: every link and joint in SI, the meshes written, the sensors, the drive. */
 interface Prepared {
   pkg: string;
@@ -72,7 +91,7 @@ interface Prepared {
   /** The joints that close loops, which only SDF carries. */
   loopJoints: UrdfJoint[];
   sensors: (GazeboSensor & { link: string; xyz: Vec3; rpy: Vec3 })[];
-  drive: { leftJoints: string[]; rightJoints: string[]; wheelSeparation: number; wheelRadius: number } | null;
+  drive: PreparedDrive | null;
   /** Joints under ros2_control. */
   controlled: string[];
 }
@@ -178,20 +197,22 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
       };
     });
 
-  // The drive: the wheels' joints by name, the wheels' radius from their boxes, the track from where the joints sit.
-  let drive: Prepared['drive'] = null;
-  if (robot.drive && robot.drive.left.length && robot.drive.right.length) {
-    const side = (ids: string[]) => ids.map((id) => allJoints.find((j) => j.id === id)).filter((j): j is RobotJoint => Boolean(j));
-    const left = side(robot.drive.left);
-    const right = side(robot.drive.right);
-    if (left.length && right.length) {
-      const mean = (js: RobotJoint[]): Vec3 => {
-        const sum = js.reduce((acc, j) => acc.map((v, i) => v + placedJoints.get(j.id)!.origin[i]) as Vec3, [0, 0, 0] as Vec3);
-        return sum.map((v) => v / js.length) as Vec3;
-      };
-      const l = mean(left);
-      const r = mean(right);
-      const radii = [...left, ...right].map((j) => {
+  // The drive: each part's joints by name, the wheels' radius from their boxes, the track and wheelbase from where the joints sit.
+  let drive: PreparedDrive | null = null;
+  if (robot.drive) {
+    const def = DRIVE_KINDS.find((k) => k.id === robot.drive!.kind)!;
+    const named = (role: DriveRole) => withRole(robot.drive, role).map((id) => allJoints.find((j) => j.id === id)).filter((j): j is RobotJoint => Boolean(j));
+    const parts = Object.fromEntries(def.roles.map((r) => [r.id, named(r.id)])) as Record<DriveRole, RobotJoint[]>;
+    const has = (role: DriveRole, n?: number) => (n === undefined ? parts[role].length > 0 : parts[role].length === n);
+    const complete =
+      def.id === 'differential' ? has('left') && has('right') : def.id === 'ackermann' ? has('left') && has('right') && has('steer-left', 1) && has('steer-right', 1) : (['front-left', 'front-right', 'rear-left', 'rear-right'] as const).every((r) => has(r, 1));
+    if (complete) {
+      const at = (j: RobotJoint): Vec3 => placedJoints.get(j.id)!.origin;
+      const mean = (js: RobotJoint[]): Vec3 => js.reduce((acc, j) => acc.map((v, i) => v + at(j)[i] / js.length) as Vec3, [0, 0, 0] as Vec3);
+      const apart = (a: Vec3, b: Vec3) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) * M;
+      const wheelJoints = def.roles.filter((r) => !r.id.startsWith('steer')).flatMap((r) => parts[r.id]);
+      const steerJoints = def.roles.filter((r) => r.id.startsWith('steer')).flatMap((r) => parts[r.id]);
+      const radii = wheelJoints.map((j) => {
         const geo = geometry.get(j.child);
         const axis = placedJoints.get(j.id)!.axis;
         if (!geo) return 0;
@@ -199,18 +220,34 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
         const axle = axis.map(Math.abs).indexOf(Math.max(...axis.map(Math.abs)));
         return Math.max(...size.filter((_, i) => i !== axle)) / 2;
       });
-      drive = {
-        leftJoints: left.map((j) => jointNames.get(j)!),
-        rightJoints: right.map((j) => jointNames.get(j)!),
-        wheelSeparation: Math.hypot(l[0] - r[0], l[1] - r[1], l[2] - r[2]) * M,
-        wheelRadius: (radii.reduce((a, b) => a + b, 0) / radii.length) * M,
-      };
+      const names = (js: RobotJoint[]) => js.map((j) => jointNames.get(j)!);
+      const base = { kind: def.id, roles: Object.fromEntries(def.roles.map((r) => [r.id, names(parts[r.id])])), wheels: names(wheelJoints), steer: names(steerJoints), wheelRadius: (radii.reduce((a, b) => a + b, 0) / radii.length) * M };
+      if (def.id === 'mecanum') {
+        const [fl, fr, rl, rr] = [parts['front-left'][0], parts['front-right'][0], parts['rear-left'][0], parts['rear-right'][0]];
+        drive = { ...base, wheelSeparation: (apart(at(fl), at(fr)) + apart(at(rl), at(rr))) / 2, wheelBase: (apart(at(fl), at(rl)) + apart(at(fr), at(rr))) / 2 };
+      } else {
+        drive = { ...base, wheelSeparation: apart(mean(parts.left), mean(parts.right)) };
+        if (def.id === 'ackermann') {
+          const [sl, sr] = [parts['steer-left'][0], parts['steer-right'][0]];
+          drive.kingpinWidth = apart(at(sl), at(sr));
+          drive.wheelBase = apart(mean([...parts.left, ...parts.right]), mean([sl, sr]));
+          drive.steeringLimit = (Math.min(...[sl, sr].map((j) => Math.min(Math.abs(j.lower), Math.abs(j.upper)))) * Math.PI) / 180;
+        }
+      }
     }
   }
-  const driven = new Set([...(robot.drive?.left ?? []), ...(robot.drive?.right ?? [])]);
+  const driven = new Set(driveJoints(robot.drive));
   const controlled = robot.control ? tree.order.slice(1).map((id) => tree.parentJoint.get(id)!).filter((j) => j.type !== 'fixed' && !j.mimic && !driven.has(j.id)).map((j) => jointNames.get(j)!) : [];
 
   return { pkg, robotName: urdfName(doc.name, 'robot'), files, warnings, order: tree.order, linkNames, jointNames, frames, links, treeJoints, loopJoints, sensors, drive, controlled };
+}
+
+/** The prepared drive as the Gazebo plugin wants it. */
+function gazeboDrive(d: PreparedDrive, baseFrame: string): GazeboDrive {
+  const shared = { baseFrame, wheelRadius: d.wheelRadius, wheelSeparation: d.wheelSeparation };
+  if (d.kind === 'mecanum') return { ...shared, kind: 'mecanum', frontLeft: d.roles['front-left']![0], frontRight: d.roles['front-right']![0], rearLeft: d.roles['rear-left']![0], rearRight: d.roles['rear-right']![0], wheelBase: d.wheelBase! };
+  if (d.kind === 'ackermann') return { ...shared, kind: 'ackermann', leftJoints: d.roles.left!, rightJoints: d.roles.right!, leftSteer: d.roles['steer-left']![0], rightSteer: d.roles['steer-right']![0], wheelBase: d.wheelBase!, kingpinWidth: d.kingpinWidth!, steeringLimit: d.steeringLimit! };
+  return { ...shared, kind: 'differential', leftJoints: d.roles.left!, rightJoints: d.roles.right! };
 }
 
 /** The Gazebo sensor topics a ROS 2 bridge carries across, and the robot's own. */
@@ -268,7 +305,7 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
     }
   }
   const base = p.linkNames.get(robot.root!)!;
-  const plugins = [jointStateXml(), ...(p.drive ? [diffDriveXml({ ...p.drive, baseFrame: base })] : [])];
+  const plugins = [jointStateXml(), ...(p.drive ? [driveXml(gazeboDrive(p.drive, base))] : [])];
   const control = p.controlled.length ? { joints: p.controlled, controllersYaml: `${SHARE_PLACEHOLDER}/config/controllers.yaml` } : undefined;
   const controllers = control ? ['joint_state_broadcaster', 'arm_controller'] : [];
   files.unshift(
@@ -323,7 +360,7 @@ export function buildSdfModel(doc: Doc, geometry: Map<string, LinkGeometry>, rob
     return { name: j.name, type: j.type, parent: j.parent, child: j.child, pose, axis: j.axis, limit: j.limit, dynamics: j.dynamics, ...(j.mimic && !onLoop.has(j.name) ? { mimic: j.mimic } : {}) };
   });
   const base = p.linkNames.get(robot.root!)!;
-  const plugins = [jointStateXml(), ...(p.drive ? [diffDriveXml({ ...p.drive, baseFrame: base })] : [])];
+  const plugins = [jointStateXml(), ...(p.drive ? [driveXml(gazeboDrive(p.drive, base))] : [])];
   files.unshift(
     { name: 'model.config', bytes: encodeText(modelConfig(pkg, `${doc.name}, made with PlastikCAD`)) },
     { name: 'model.sdf', bytes: encodeText(writeSdf(p.robotName, links, joints, plugins, robot.base === 'fixed' ? p.linkNames.get(robot.root!) : undefined)) },
@@ -388,10 +425,18 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
     // A loop joint's origin is given in its parent's frame; the connect anchor is in the first body's frame.
     connects: p.loopJoints.map((j) => ({ body1: j.parent, body2: j.child, anchor: j.origin })),
     followers: [...p.treeJoints, ...p.loopJoints].filter((j) => j.mimic && p.treeJoints.some((t) => t.name === j.name)).map((j) => ({ joint: j.name, leader: j.mimic!.joint, multiplier: j.mimic!.multiplier, offset: j.mimic!.offset })),
-    servos: p.controlled,
-    wheels: p.drive ? [...p.drive.leftJoints, ...p.drive.rightJoints] : [],
+    servos: [...p.controlled, ...(p.drive?.steer ?? [])],
+    // The wheels get velocity motors; steering joints position servos, as the simulator has no plugin to turn them.
+    wheels: p.drive?.wheels ?? [],
   };
   files.unshift({ name: `${pkg}.xml`, bytes: encodeText(writeMjcf(model)) }, { name: 'README.md', bytes: encodeText(mjcfReadme(pkg, doc.name)) });
+  // What drives what, for a script: the actuator of each part, and the geometry a velocity command needs.
+  if (p.drive) {
+    const actuator = (joint: string) => (p.drive!.steer.includes(joint) ? `${joint}_servo` : `${joint}_motor`);
+    const roles = Object.fromEntries(Object.entries(p.drive.roles).map(([role, joints]) => [role, (joints ?? []).map(actuator)]));
+    const { kind, wheelRadius, wheelSeparation, wheelBase, kingpinWidth, steeringLimit } = p.drive;
+    files.push({ name: 'drive.json', bytes: encodeText(JSON.stringify({ kind, units: 'meters, radians', roles, wheelRadius, wheelSeparation, wheelBase, kingpinWidth, steeringLimit }, null, 2) + '\n') });
+  }
   return { name: pkg, files, warnings };
 }
 

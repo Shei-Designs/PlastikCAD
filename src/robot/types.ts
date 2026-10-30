@@ -116,11 +116,55 @@ export const defaultSensor = (id: string, name: string, kind: SensorKind, link: 
   lidar: { samples: 360, hfov: 360, min: 100, max: 12000 },
 });
 
-/** A differential drive: the wheel joints on each side, driven together by a Gazebo plugin that takes velocity commands. */
-export interface DiffDrive {
-  left: string[];
-  right: string[];
+export type DriveKind = 'differential' | 'ackermann' | 'mecanum';
+
+/** What a joint does in the drive: a driven wheel on a side, a steering joint on a side, or a wheel at a corner. */
+export type DriveRole = 'left' | 'right' | 'steer-left' | 'steer-right' | 'front-left' | 'front-right' | 'rear-left' | 'rear-right';
+
+export const DRIVE_KINDS: { id: DriveKind; name: string; help: string; roles: { id: DriveRole; name: string }[] }[] = [
+  {
+    id: 'differential',
+    name: 'Differential',
+    help: 'Turns the left and right wheels together from velocity commands (cmd_vel) and reports odometry. A track is all of its wheels on one side.',
+    roles: [
+      { id: 'left', name: 'Left' },
+      { id: 'right', name: 'Right' },
+    ],
+  },
+  {
+    id: 'ackermann',
+    name: 'Ackermann',
+    help: 'Drives the wheels on each side and steers like a car: one steering joint each side turns a front wheel mount.',
+    roles: [
+      { id: 'left', name: 'Drive left' },
+      { id: 'right', name: 'Drive right' },
+      { id: 'steer-left', name: 'Steer left' },
+      { id: 'steer-right', name: 'Steer right' },
+    ],
+  },
+  {
+    id: 'mecanum',
+    name: 'Mecanum',
+    help: 'Four rollered wheels, one at each corner, that move the robot any way.',
+    roles: [
+      { id: 'front-left', name: 'Front left' },
+      { id: 'front-right', name: 'Front right' },
+      { id: 'rear-left', name: 'Rear left' },
+      { id: 'rear-right', name: 'Rear right' },
+    ],
+  },
+];
+
+/** How the robot moves on its wheels: the kind, and what each wheel or steering joint does, by joint id. */
+export interface Drive {
+  kind: DriveKind;
+  roles: Record<string, DriveRole>;
 }
+
+/** The joint ids with a role in the drive. */
+export const driveJoints = (drive: Drive | undefined): string[] => (drive ? Object.keys(drive.roles) : []);
+/** The joint ids with `role` in the drive. */
+export const withRole = (drive: Drive | undefined, role: DriveRole): string[] => (drive ? Object.entries(drive.roles).filter(([, r]) => r === role).map(([id]) => id) : []);
 
 /** A robot is named after its design: the exports take the design's name. */
 export interface Robot {
@@ -131,7 +175,7 @@ export interface Robot {
   links: RobotLink[];
   joints: RobotJoint[];
   sensors: RobotSensor[];
-  drive?: DiffDrive;
+  drive?: Drive;
   /** Write ros2_control for every actuated joint not driven as a wheel, with a trajectory controller over them. */
   control: boolean;
 }

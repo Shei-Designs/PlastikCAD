@@ -193,7 +193,7 @@ describe('sensors, drive and control', () => {
     ];
     // The wheel joint drives the left side; a mirrored one would drive the right. Here one joint each side, the arm's shoulder stays under ros2_control.
     r.joints.push({ ...defaultJoint('j3', 'right wheel joint', body.id, arm.id, [0, 0, -20]), type: 'continuous', axis: [0, 1, 0] });
-    r.drive = { left: ['j1'], right: ['j3'] };
+    r.drive = { kind: 'differential', roles: { j1: 'left', j3: 'right' } };
     r.base = 'free';
     return d;
   };
@@ -234,7 +234,7 @@ describe('sensors, drive and control', () => {
 
   it('puts the joints that are not wheels under ros2_control', () => {
     const d = rover();
-    d.robot!.drive = { left: ['j1'], right: [] };
+    d.robot!.drive = { kind: 'differential', roles: { j1: 'left' } };
     d.robot!.joints.pop();
     // Left only: the check would stop this, but the writer still writes what it can: no drive, the shoulder controlled.
     const pkg = buildRobotPackage(d, geometry());
@@ -297,7 +297,7 @@ describe('xacro and MuJoCo', () => {
   it('writes a MuJoCo model: nested bodies, joints, actuators, a loop as a connect, a camera and an IMU', () => {
     const d = doc();
     // Both joints drive (the shoulder standing in for a right wheel), and the base stands free, so it floats.
-    d.robot!.drive = { left: ['j1'], right: ['j2'] };
+    d.robot!.drive = { kind: 'differential', roles: { j1: 'left', j2: 'right' } };
     d.robot!.base = 'free';
     d.robot!.joints.push({ ...defaultJoint('j4', 'closing', arm.id, wheel.id, [0, 0, 0]) });
     d.robot!.sensors = [defaultSensor('s1', 'cam', 'camera', body.id, [50, 0, 10]), defaultSensor('s2', 'scan', 'lidar', body.id, [0, 0, 10]), defaultSensor('s3', 'imu', 'imu', body.id, [0, 0, 0])];

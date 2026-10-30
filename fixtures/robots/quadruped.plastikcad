@@ -2,11 +2,11 @@
   "format": "plastikcad",
   "version": 2,
   "units": "mm",
-  "id": "lcl725cx",
+  "id": "mqd45b0r",
   "name": "Reference quadruped",
   "scene": [
     {
-      "id": "fx000017",
+      "id": "fx000030",
       "type": "shape",
       "name": "Body",
       "shape": "box",
@@ -19,7 +19,7 @@
       "color": "#8fa3bf"
     },
     {
-      "id": "fx000018",
+      "id": "fx000031",
       "type": "shape",
       "name": "Upper leg rear left",
       "shape": "box",
@@ -32,7 +32,7 @@
       "color": "#e8853a"
     },
     {
-      "id": "fx000019",
+      "id": "fx000032",
       "type": "shape",
       "name": "Lower leg rear left",
       "shape": "box",
@@ -45,7 +45,7 @@
       "color": "#8fa3bf"
     },
     {
-      "id": "fx000022",
+      "id": "fx000035",
       "type": "shape",
       "name": "Upper leg front left",
       "shape": "box",
@@ -58,7 +58,7 @@
       "color": "#e8853a"
     },
     {
-      "id": "fx000023",
+      "id": "fx000036",
       "type": "shape",
       "name": "Lower leg front left",
       "shape": "box",
@@ -71,7 +71,7 @@
       "color": "#8fa3bf"
     },
     {
-      "id": "fx000026",
+      "id": "fx000039",
       "type": "shape",
       "name": "Upper leg rear right",
       "shape": "box",
@@ -84,7 +84,7 @@
       "color": "#e8853a"
     },
     {
-      "id": "fx000027",
+      "id": "fx000040",
       "type": "shape",
       "name": "Lower leg rear right",
       "shape": "box",
@@ -97,7 +97,7 @@
       "color": "#8fa3bf"
     },
     {
-      "id": "fx000030",
+      "id": "fx000043",
       "type": "shape",
       "name": "Upper leg front right",
       "shape": "box",
@@ -110,7 +110,7 @@
       "color": "#e8853a"
     },
     {
-      "id": "fx000031",
+      "id": "fx000044",
       "type": "shape",
       "name": "Lower leg front right",
       "shape": "box",
@@ -125,86 +125,9 @@
   ],
   "assets": {},
   "robot": {
-    "root": "fx000017",
+    "root": "fx000030",
     "base": "free",
     "links": [
-      {
-        "node": "fx000017",
-        "mass": {
-          "kind": "material",
-          "material": "pla",
-          "infill": 20,
-          "shell": 1.2
-        },
-        "collision": "box",
-        "friction": 0.8
-      },
-      {
-        "node": "fx000018",
-        "mass": {
-          "kind": "material",
-          "material": "pla",
-          "infill": 20,
-          "shell": 1.2
-        },
-        "collision": "box",
-        "friction": 0.8
-      },
-      {
-        "node": "fx000019",
-        "mass": {
-          "kind": "material",
-          "material": "pla",
-          "infill": 20,
-          "shell": 1.2
-        },
-        "collision": "box",
-        "friction": 1
-      },
-      {
-        "node": "fx000022",
-        "mass": {
-          "kind": "material",
-          "material": "pla",
-          "infill": 20,
-          "shell": 1.2
-        },
-        "collision": "box",
-        "friction": 0.8
-      },
-      {
-        "node": "fx000023",
-        "mass": {
-          "kind": "material",
-          "material": "pla",
-          "infill": 20,
-          "shell": 1.2
-        },
-        "collision": "box",
-        "friction": 1
-      },
-      {
-        "node": "fx000026",
-        "mass": {
-          "kind": "material",
-          "material": "pla",
-          "infill": 20,
-          "shell": 1.2
-        },
-        "collision": "box",
-        "friction": 0.8
-      },
-      {
-        "node": "fx000027",
-        "mass": {
-          "kind": "material",
-          "material": "pla",
-          "infill": 20,
-          "shell": 1.2
-        },
-        "collision": "box",
-        "friction": 1
-      },
       {
         "node": "fx000030",
         "mass": {
@@ -225,128 +148,205 @@
           "shell": 1.2
         },
         "collision": "box",
+        "friction": 0.8
+      },
+      {
+        "node": "fx000032",
+        "mass": {
+          "kind": "material",
+          "material": "pla",
+          "infill": 20,
+          "shell": 1.2
+        },
+        "collision": "box",
+        "friction": 1
+      },
+      {
+        "node": "fx000035",
+        "mass": {
+          "kind": "material",
+          "material": "pla",
+          "infill": 20,
+          "shell": 1.2
+        },
+        "collision": "box",
+        "friction": 0.8
+      },
+      {
+        "node": "fx000036",
+        "mass": {
+          "kind": "material",
+          "material": "pla",
+          "infill": 20,
+          "shell": 1.2
+        },
+        "collision": "box",
+        "friction": 1
+      },
+      {
+        "node": "fx000039",
+        "mass": {
+          "kind": "material",
+          "material": "pla",
+          "infill": 20,
+          "shell": 1.2
+        },
+        "collision": "box",
+        "friction": 0.8
+      },
+      {
+        "node": "fx000040",
+        "mass": {
+          "kind": "material",
+          "material": "pla",
+          "infill": 20,
+          "shell": 1.2
+        },
+        "collision": "box",
+        "friction": 1
+      },
+      {
+        "node": "fx000043",
+        "mass": {
+          "kind": "material",
+          "material": "pla",
+          "infill": 20,
+          "shell": 1.2
+        },
+        "collision": "box",
+        "friction": 0.8
+      },
+      {
+        "node": "fx000044",
+        "mass": {
+          "kind": "material",
+          "material": "pla",
+          "infill": 20,
+          "shell": 1.2
+        },
+        "collision": "box",
         "friction": 1
       }
     ],
     "joints": [
       {
-        "id": "fx000020",
-        "name": "Hip rear left",
-        "type": "revolute",
-        "parent": "fx000017",
-        "child": "fx000018",
-        "origin": [0,0,20],
-        "axis": [0,1,0],
-        "lower": -60,
-        "upper": 60,
-        "effort": 0.18,
-        "velocity": 600,
-        "damping": 0.000859,
-        "friction": 0,
-        "motor": "sg90"
-      },
-      {
-        "id": "fx000021",
-        "name": "Knee rear left",
-        "type": "revolute",
-        "parent": "fx000018",
-        "child": "fx000019",
-        "origin": [0,0,17.5],
-        "axis": [0,1,0],
-        "lower": -90,
-        "upper": 90,
-        "effort": 0.18,
-        "velocity": 600,
-        "damping": 0.000859,
-        "friction": 0,
-        "motor": "sg90"
-      },
-      {
-        "id": "fx000024",
-        "name": "Hip front left",
-        "type": "revolute",
-        "parent": "fx000017",
-        "child": "fx000022",
-        "origin": [0,0,20],
-        "axis": [0,1,0],
-        "lower": -60,
-        "upper": 60,
-        "effort": 0.18,
-        "velocity": 600,
-        "damping": 0.000859,
-        "friction": 0,
-        "motor": "sg90"
-      },
-      {
-        "id": "fx000025",
-        "name": "Knee front left",
-        "type": "revolute",
-        "parent": "fx000022",
-        "child": "fx000023",
-        "origin": [0,0,17.5],
-        "axis": [0,1,0],
-        "lower": -90,
-        "upper": 90,
-        "effort": 0.18,
-        "velocity": 600,
-        "damping": 0.000859,
-        "friction": 0,
-        "motor": "sg90"
-      },
-      {
-        "id": "fx000028",
-        "name": "Hip rear right",
-        "type": "revolute",
-        "parent": "fx000017",
-        "child": "fx000026",
-        "origin": [0,0,20],
-        "axis": [0,1,0],
-        "lower": -60,
-        "upper": 60,
-        "effort": 0.18,
-        "velocity": 600,
-        "damping": 0.000859,
-        "friction": 0,
-        "motor": "sg90"
-      },
-      {
-        "id": "fx000029",
-        "name": "Knee rear right",
-        "type": "revolute",
-        "parent": "fx000026",
-        "child": "fx000027",
-        "origin": [0,0,17.5],
-        "axis": [0,1,0],
-        "lower": -90,
-        "upper": 90,
-        "effort": 0.18,
-        "velocity": 600,
-        "damping": 0.000859,
-        "friction": 0,
-        "motor": "sg90"
-      },
-      {
-        "id": "fx000032",
-        "name": "Hip front right",
-        "type": "revolute",
-        "parent": "fx000017",
-        "child": "fx000030",
-        "origin": [0,0,20],
-        "axis": [0,1,0],
-        "lower": -60,
-        "upper": 60,
-        "effort": 0.18,
-        "velocity": 600,
-        "damping": 0.000859,
-        "friction": 0,
-        "motor": "sg90"
-      },
-      {
         "id": "fx000033",
-        "name": "Knee front right",
+        "name": "Hip rear left",
         "type": "revolute",
         "parent": "fx000030",
         "child": "fx000031",
+        "origin": [0,0,20],
+        "axis": [0,1,0],
+        "lower": -60,
+        "upper": 60,
+        "effort": 0.18,
+        "velocity": 600,
+        "damping": 0.000859,
+        "friction": 0,
+        "motor": "sg90"
+      },
+      {
+        "id": "fx000034",
+        "name": "Knee rear left",
+        "type": "revolute",
+        "parent": "fx000031",
+        "child": "fx000032",
+        "origin": [0,0,17.5],
+        "axis": [0,1,0],
+        "lower": -90,
+        "upper": 90,
+        "effort": 0.18,
+        "velocity": 600,
+        "damping": 0.000859,
+        "friction": 0,
+        "motor": "sg90"
+      },
+      {
+        "id": "fx000037",
+        "name": "Hip front left",
+        "type": "revolute",
+        "parent": "fx000030",
+        "child": "fx000035",
+        "origin": [0,0,20],
+        "axis": [0,1,0],
+        "lower": -60,
+        "upper": 60,
+        "effort": 0.18,
+        "velocity": 600,
+        "damping": 0.000859,
+        "friction": 0,
+        "motor": "sg90"
+      },
+      {
+        "id": "fx000038",
+        "name": "Knee front left",
+        "type": "revolute",
+        "parent": "fx000035",
+        "child": "fx000036",
+        "origin": [0,0,17.5],
+        "axis": [0,1,0],
+        "lower": -90,
+        "upper": 90,
+        "effort": 0.18,
+        "velocity": 600,
+        "damping": 0.000859,
+        "friction": 0,
+        "motor": "sg90"
+      },
+      {
+        "id": "fx000041",
+        "name": "Hip rear right",
+        "type": "revolute",
+        "parent": "fx000030",
+        "child": "fx000039",
+        "origin": [0,0,20],
+        "axis": [0,1,0],
+        "lower": -60,
+        "upper": 60,
+        "effort": 0.18,
+        "velocity": 600,
+        "damping": 0.000859,
+        "friction": 0,
+        "motor": "sg90"
+      },
+      {
+        "id": "fx000042",
+        "name": "Knee rear right",
+        "type": "revolute",
+        "parent": "fx000039",
+        "child": "fx000040",
+        "origin": [0,0,17.5],
+        "axis": [0,1,0],
+        "lower": -90,
+        "upper": 90,
+        "effort": 0.18,
+        "velocity": 600,
+        "damping": 0.000859,
+        "friction": 0,
+        "motor": "sg90"
+      },
+      {
+        "id": "fx000045",
+        "name": "Hip front right",
+        "type": "revolute",
+        "parent": "fx000030",
+        "child": "fx000043",
+        "origin": [0,0,20],
+        "axis": [0,1,0],
+        "lower": -60,
+        "upper": 60,
+        "effort": 0.18,
+        "velocity": 600,
+        "damping": 0.000859,
+        "friction": 0,
+        "motor": "sg90"
+      },
+      {
+        "id": "fx000046",
+        "name": "Knee front right",
+        "type": "revolute",
+        "parent": "fx000043",
+        "child": "fx000044",
         "origin": [0,0,17.5],
         "axis": [0,1,0],
         "lower": -90,

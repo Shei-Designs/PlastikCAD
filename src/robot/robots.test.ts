@@ -57,7 +57,7 @@ function rover(): Doc {
     links: [{ ...defaultLink(body.id), collision: 'box' }, ...wheels.map((w) => ({ ...defaultLink(w.id), collision: 'cylinder' as CollisionKind, friction: 1 }))],
     joints,
     sensors: [],
-    drive: { left: joints.filter((_j, i) => sideOf(wheels[i]) === 'left').map((j) => j.id), right: joints.filter((_j, i) => sideOf(wheels[i]) === 'right').map((j) => j.id) },
+    drive: { kind: 'differential', roles: Object.fromEntries(joints.map((j, i) => [j.id, sideOf(wheels[i])])) },
     control: true,
   });
 }
@@ -101,8 +101,30 @@ function quadruped(): Doc {
   return design('Reference quadruped', scene, { root: body.id, base: 'free', links, joints, sensors: [], control: true });
 }
 
+/** A car: driven rear wheels, and front wheels on knuckles that steering joints turn, as an Ackermann drive. */
+function car(): Doc {
+  const body = shape('box', 'Body', [0, 0, 25], [80, 140, 30]);
+  const rear = [-1, 1].map((sx) => shape('cylinder', `Rear wheel ${sx < 0 ? 'left' : 'right'}`, [sx * 46, -50, 20], [40, 40, 12], [0, 90, 0], '#e8853a'));
+  const knuckles = [-1, 1].map((sx) => shape('box', `Knuckle ${sx < 0 ? 'left' : 'right'}`, [sx * 47, 50, 20], [14, 14, 14]));
+  const front = [-1, 1].map((sx) => shape('cylinder', `Front wheel ${sx < 0 ? 'left' : 'right'}`, [sx * 60, 50, 20], [40, 40, 12], [0, 90, 0], '#e8853a'));
+  const drive = rear.map((w) => joint(`${w.name} joint`, body, w, [0, 0, 0], { type: 'continuous', motor: 'tt-48' }));
+  const steer = knuckles.map((k) => joint(`${k.name} steering`, body, k, [0, 0, 0], { axis: [0, 0, 1], lower: -30, upper: 30, motor: 'sg90' }));
+  const roll = front.map((w, i) => joint(`${w.name} joint`, knuckles[i], w, [0, 0, 0], { type: 'continuous' }));
+  const scene = [body, ...rear, ...knuckles, ...front];
+  return design('Reference car', scene, {
+    root: body.id,
+    base: 'free',
+    links: [{ ...defaultLink(body.id), collision: 'box' }, ...knuckles.map((k) => ({ ...defaultLink(k.id), collision: 'box' as CollisionKind })), ...[...rear, ...front].map((w) => ({ ...defaultLink(w.id), collision: 'cylinder' as CollisionKind, friction: 1 }))],
+    joints: [...drive, ...steer, ...roll],
+    sensors: [],
+    drive: { kind: 'ackermann', roles: { [drive[0].id]: 'left', [drive[1].id]: 'right', [steer[0].id]: 'steer-left', [steer[1].id]: 'steer-right' } },
+    control: false,
+  });
+}
+
 const ROBOTS: { file: string; make: () => Doc }[] = [
   { file: 'rover', make: rover },
+  { file: 'car', make: car },
   { file: 'arm', make: arm },
   { file: 'quadruped', make: quadruped },
 ];

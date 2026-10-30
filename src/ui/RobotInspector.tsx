@@ -10,10 +10,10 @@ import { massOf, principalMoments, tensorOf } from '../robot/inertia';
 import { MATERIALS, materialOf } from '../robot/materials';
 import { jointInDesign, linkOf, sensorInDesign } from '../robot/model';
 import { MOTORS } from '../robot/motors';
-import { COLLISION_KINDS, JOINT_TYPES, SENSOR_KINDS } from '../robot/types';
-import type { RobotJoint, RobotLink, RobotSensor, SensorKind } from '../robot/types';
+import { COLLISION_KINDS, DRIVE_KINDS, driveJoints, JOINT_TYPES, SENSOR_KINDS } from '../robot/types';
+import type { DriveKind, DriveRole, RobotJoint, RobotLink, RobotSensor, SensorKind } from '../robot/types';
 import type { Problem } from '../robot/check';
-import { addJoint, addSensor, deleteJoint, deleteSensor, fitJointFollowers, placeJoint, placeSensor, select, selectJoint, selectSensor, setBase, setControl, setDrive, setJointMotor, setPose, setRobotRoot, startJointPick, stopJointPick, updateJoint, updateLink, updateSensor, useEditor } from '../state/store';
+import { addJoint, addSensor, deleteJoint, deleteSensor, fitJointFollowers, placeJoint, placeSensor, select, selectJoint, selectSensor, setBase, setControl, setDriveKind, setDriveRole, setJointMotor, setPose, setRobotRoot, startJointPick, stopJointPick, updateJoint, updateLink, updateSensor, useEditor } from '../state/store';
 import { rangeOf } from '../robot/kinematics';
 import { formatNumber, NumberBox, selectOnFocus, SliderField } from './Fields';
 import { Hint } from './Hint';
@@ -141,7 +141,8 @@ function Overview() {
           </div>
         </dl>
       </fieldset>
-      <Control />
+      <Drive />
+      <Controllers />
       <fieldset className="group">
         <legend>Checks</legend>
         <Problems problems={problems} />
@@ -150,50 +151,61 @@ function Overview() {
   );
 }
 
-/** The drive and the controllers: which wheel joints turn on each side, and whether the rest go under ros2_control. */
-function Control() {
+/** How the robot drives: the kind, and each turning joint's part in it. */
+function Drive() {
   const { robot } = useRobot();
+  const kind = DRIVE_KINDS.find((k) => k.id === robot.drive?.kind);
   const wheels = robot.joints.filter((j) => j.type === 'continuous' || j.type === 'revolute');
-  const side = (id: string): 'left' | 'right' | '' => (robot.drive?.left.includes(id) ? 'left' : robot.drive?.right.includes(id) ? 'right' : '');
-  const put = (id: string, to: 'left' | 'right' | '') => {
-    const left = (robot.drive?.left ?? []).filter((x) => x !== id);
-    const right = (robot.drive?.right ?? []).filter((x) => x !== id);
-    if (to === 'left') left.push(id);
-    if (to === 'right') right.push(id);
-    setDrive({ left, right });
-  };
-  const rest = robot.joints.filter((j) => j.type !== 'fixed' && !j.mimic && side(j.id) === '');
+  const roleOf = (id: string): DriveRole | 'none' => robot.drive?.roles[id] ?? 'none';
   return (
     <fieldset className="group">
-      <legend>Control</legend>
-      <div className="field">
+      <legend>Drive</legend>
+      <div className="field inline">
         <label>
-          Wheels
-          <Hint text="A differential drive turns the left and right wheels together from velocity commands (cmd_vel) and reports odometry. Mark each wheel joint's side." />
+          Kind
+          <Hint text={kind?.help ?? 'How the robot moves on its wheels; the exports write the matching plugin and motors.'} />
         </label>
-        {wheels.length === 0 ? (
+        <Select value={robot.drive?.kind ?? 'none'} label="Drive kind" options={[{ value: 'none', label: 'None' }, ...DRIVE_KINDS.map((k) => ({ value: k.id, label: k.name }))]} onChange={(v) => setDriveKind(v === 'none' ? null : (v as DriveKind))} />
+      </div>
+      {kind &&
+        (wheels.length === 0 ? (
           <p className="empty">Add a turning joint for each wheel first.</p>
         ) : (
           <ul className="drive-list">
             {wheels.map((j) => (
               <li key={j.id}>
                 <span className="clip">{j.name}</span>
-                <div className="segmented small" role="radiogroup" aria-label={`${j.name} drives`}>
-                  {(['', 'left', 'right'] as const).map((to) => (
-                    <button key={to || 'none'} type="button" role="radio" aria-checked={side(j.id) === to} className={side(j.id) === to ? 'on' : ''} onClick={() => put(j.id, to)}>
-                      {to === '' ? 'No' : to === 'left' ? 'Left' : 'Right'}
-                    </button>
-                  ))}
-                </div>
+                {kind.roles.length <= 2 ? (
+                  <div className="segmented small" role="radiogroup" aria-label={`${j.name} drives`}>
+                    {(['none', ...kind.roles.map((r) => r.id)] as const).map((to) => (
+                      <button key={to} type="button" role="radio" aria-checked={roleOf(j.id) === to} className={roleOf(j.id) === to ? 'on' : ''} onClick={() => setDriveRole(j.id, to === 'none' ? null : to)}>
+                        {to === 'none' ? 'No' : kind.roles.find((r) => r.id === to)!.name}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <Select value={roleOf(j.id)} label={`${j.name} drives`} options={[{ value: 'none', label: 'No' }, ...kind.roles.map((r) => ({ value: r.id, label: r.name }))]} onChange={(v) => setDriveRole(j.id, v === 'none' ? null : (v as DriveRole))} />
+                )}
               </li>
             ))}
           </ul>
-        )}
-      </div>
+        ))}
+    </fieldset>
+  );
+}
+
+/** Whether the joints outside the drive go under ros2_control. */
+function Controllers() {
+  const { robot } = useRobot();
+  const driven = new Set(driveJoints(robot.drive));
+  const rest = robot.joints.filter((j) => j.type !== 'fixed' && !j.mimic && !driven.has(j.id));
+  return (
+    <fieldset className="group">
+      <legend>Controllers</legend>
       <label className="field inline">
         <span className="switch-label">
           Controllers for the other joints
-          <Hint text="Writes ros2_control over every actuated joint that is not a wheel, with a joint trajectory controller (arm_controller) and a joint state broadcaster." />
+          <Hint text="Writes ros2_control over every actuated joint that is not in the drive, with a joint trajectory controller (arm_controller) and a joint state broadcaster." />
         </span>
         <input type="checkbox" className="switch" checked={robot.control} onChange={(e) => setControl(e.target.checked)} />
       </label>

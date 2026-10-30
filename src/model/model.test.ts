@@ -5,6 +5,7 @@ import { apply, axisRotation, determinant, eulerOf, multiply, nodeMatrix, rotati
 import type { Mat } from './math';
 import { alignNodes, arrayNodes, arrayPlaces, boxBoundsOf, cloneNode, dissolve, frameAlong, layerMembers, makeGroup, makeShape, mirrorNodes, nodeAt, picturesOf, regroup, rotateNodes, scaleNodes, sourceColor, ungroup, usedAssets } from './ops';
 import type { Doc, GroupNode, PictureNode, SceneNode, ShapeNode, Vec3 } from './types';
+import { defaultJoint } from '../robot/types';
 
 const close = (a: number[], b: number[], eps = 1e-6) => {
   expect(a.length).toBe(b.length);
@@ -755,6 +756,15 @@ describe('the robot in a file', () => {
     expect(back.robot?.joints).toEqual([{ ...doc.robot!.joints[0], mimic: undefined }].map(({ mimic: _m, ...j }) => j));
     // Reading what was written gives the same text again.
     expect(serializeDoc(parseDoc(serializeDoc(back)))).toBe(serializeDoc(back));
+  });
+
+  it('reads the two sides of a drive from before drive kinds as a differential drive', () => {
+    const doc = emptyDoc();
+    doc.scene = [base('aaaaaaaa', 'Body'), base('bbbbbbbb', 'Wheel')];
+    doc.robot = { root: 'aaaaaaaa', base: 'free', links: [], joints: [{ ...defaultJoint('j1', 'wheel', 'aaaaaaaa', 'bbbbbbbb', [0, 0, 0]), type: 'continuous' }], sensors: [], control: true };
+    const text = serializeDoc(doc).replace('"root": "aaaaaaaa"', '"root": "aaaaaaaa", "drive": { "left": ["j1"], "right": ["gone"] }');
+    expect(text).toContain('"left"');
+    expect(parseDoc(text).robot?.drive).toEqual({ kind: 'differential', roles: { j1: 'left' } });
   });
 
   it('leaves a design without a robot without one', () => {
