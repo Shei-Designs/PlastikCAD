@@ -731,7 +731,6 @@ describe('the robot in a file', () => {
     const doc = emptyDoc();
     doc.scene = [base('aaaaaaaa', 'Body'), base('bbbbbbbb', 'Arm')];
     doc.robot = {
-      name: 'Rover',
       root: 'aaaaaaaa',
       sensors: [],
       control: true,
@@ -749,7 +748,6 @@ describe('the robot in a file', () => {
     expect(text.indexOf('"robot"')).toBeGreaterThan(text.indexOf('"scene"'));
     expect(readHeader(text)?.name).toBe('Untitled');
     const back = parseDoc(text);
-    expect(back.robot?.name).toBe('Rover');
     expect(back.robot?.root).toBe('aaaaaaaa');
     expect(back.robot?.links).toEqual([doc.robot!.links[0]]);
     // The follower of a joint that is gone follows nothing.

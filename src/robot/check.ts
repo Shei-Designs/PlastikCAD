@@ -36,7 +36,6 @@ export function checkRobot(doc: Doc, props: Map<string, LinkProperties>, robot: 
     return out;
   }
   if (!robot.root || !nodes.some((n) => n.id === robot.root)) error('No base link is chosen. Pick the object the rest of the robot hangs from.');
-  if (!robot.name.trim()) warn('The robot has no name; it will be called "robot".');
 
   const ids = new Set(nodes.map((n) => n.id));
   const tree = spanningTree(robot, [...ids]);

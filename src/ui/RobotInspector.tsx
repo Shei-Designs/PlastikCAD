@@ -12,7 +12,7 @@ import { jointInDesign, linkOf, sensorInDesign } from '../robot/model';
 import { COLLISION_KINDS, JOINT_TYPES, SENSOR_KINDS } from '../robot/types';
 import type { RobotJoint, RobotLink, RobotSensor, SensorKind } from '../robot/types';
 import type { Problem } from '../robot/check';
-import { addJoint, addSensor, deleteJoint, deleteSensor, fitJointFollowers, placeJoint, placeSensor, select, selectJoint, selectSensor, setControl, setDrive, setPose, setRobotName, setRobotRoot, startJointPick, stopJointPick, updateJoint, updateLink, updateSensor, useEditor } from '../state/store';
+import { addJoint, addSensor, deleteJoint, deleteSensor, fitJointFollowers, placeJoint, placeSensor, select, selectJoint, selectSensor, setControl, setDrive, setPose, setRobotRoot, startJointPick, stopJointPick, updateJoint, updateLink, updateSensor, useEditor } from '../state/store';
 import { rangeOf } from '../robot/kinematics';
 import { formatNumber, NumberBox, selectOnFocus, SliderField } from './Fields';
 import { Hint } from './Hint';
@@ -89,7 +89,7 @@ function Problems({ problems }: { problems: Problem[] }) {
 }
 
 function Overview() {
-  const { robot, nodes, props, problems } = useRobot();
+  const { doc, robot, nodes, props, problems } = useRobot();
   const total = nodes.reduce((sum, n) => {
     const p = props.get(n.id);
     return p ? sum + massOf(linkOf(robot, n.id).mass, p) : sum;
@@ -99,7 +99,7 @@ function Overview() {
     <>
       <header className="params-head">
         <div className="grow">
-          <TextField className="name-input" value={robot.name} label="Robot name" onCommit={setRobotName} />
+          <h1>{doc.name}</h1>
           <p>{nodes.length ? 'Pick a link or a joint on the left to set it up.' : 'Every object in the design is a link.'}</p>
         </div>
       </header>

@@ -21,7 +21,6 @@ const coupler = node('coupler', 'Coupler', [50, 0, 50], [100, 8, 8]);
 const rocker = node('rocker', 'Rocker', [100, 0, 25], [8, 8, 50]);
 const scene = [ground, crank, coupler, rocker];
 const fourBar = (): Robot => ({
-  name: 'linkage',
   root: ground.id,
   sensors: [],
   control: true,

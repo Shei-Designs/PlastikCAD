@@ -103,7 +103,7 @@ export function serializeDoc(doc: Doc): string {
     thumb: doc.thumb,
     scene: doc.scene.map(canonical),
     assets: liveAssets(doc),
-    // After the scene: a robot has a "name" line of its own, which must not pass for the header's.
+    // After the scene: a robot's links carry "name" lines of their own, which must not pass for the header's.
     robot: doc.robot ? canonicalRobot(doc.robot) : undefined,
   };
   return pretty(file, 0) + '\n';
@@ -113,7 +113,6 @@ export function serializeDoc(doc: Doc): string {
 export function canonicalRobot(robot: Robot): Record<string, unknown> {
   const byId = <T>(key: (item: T) => string) => (a: T, b: T) => key(a).localeCompare(key(b));
   return {
-    name: robot.name,
     root: robot.root ?? undefined,
     links: [...robot.links].sort(byId((l: RobotLink) => l.node)).map((l) => ({
       node: l.node,
@@ -407,7 +406,6 @@ function readRobot(raw: unknown, scene: Scene): Robot | undefined {
   const jointList = (v: unknown): string[] => (Array.isArray(v) ? v.filter((id): id is string => typeof id === 'string' && seenJoints.has(id)) : []);
   const drive = isRecord(raw.drive) ? { left: jointList(raw.drive.left), right: jointList(raw.drive.right) } : undefined;
   return {
-    name: typeof raw.name === 'string' && raw.name.trim() ? raw.name : 'robot',
     root: typeof raw.root === 'string' && ids.has(raw.root) ? raw.root : null,
     links,
     joints,

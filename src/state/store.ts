@@ -2009,11 +2009,6 @@ export function fitJointFollowers(id: string): void {
 
 const editRobot = (change: (robot: Robot) => Robot, merge?: string): void => commitRobot(change(robotOf(state.doc)), merge);
 
-export function setRobotName(name: string): void {
-  const clean = name.trim();
-  if (clean) editRobot((r) => ({ ...r, name: clean }), 'robot-name');
-}
-
 export function setRobotRoot(node: string | null): void {
   editRobot((r) => ({ ...r, root: node }));
 }
@@ -2146,7 +2141,7 @@ export async function exportRobot(format: 'urdf' | 'sdf' | 'mjcf' = state.prefs.
     return true;
   };
   if (await stop(checkRobot(doc, massProps.known(nodes), robot))) return false;
-  const name = await exportName(packageName(robot), 'zip');
+  const name = await exportName(packageName(doc.name), 'zip');
   if (!name) return false;
   set({ busy: 'Exporting the robot…' });
   try {

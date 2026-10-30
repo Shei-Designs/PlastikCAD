@@ -120,9 +120,8 @@ export interface DiffDrive {
   right: string[];
 }
 
+/** A robot is named after its design: the exports take the design's name. */
 export interface Robot {
-  /** Name of the robot, and of the package it is exported as. */
-  name: string;
   /** Node id of the base link, which everything else hangs from. Null until chosen. */
   root: string | null;
   links: RobotLink[];
@@ -133,7 +132,7 @@ export interface Robot {
   control: boolean;
 }
 
-export const emptyRobot = (name = 'robot'): Robot => ({ name, root: null, links: [], joints: [], sensors: [], control: true });
+export const emptyRobot = (): Robot => ({ root: null, links: [], joints: [], sensors: [], control: true });
 
 export const DEFAULT_MASS: MassSpec = { kind: 'material', material: 'pla', infill: 20, shell: 1.2 };
 

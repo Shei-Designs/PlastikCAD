@@ -52,8 +52,8 @@ function inFrame(mesh: MeshData, frame: Vec3): MeshData {
 
 const rgb = (hex: string): [number, number, number] => [parseInt(hex.slice(1, 3), 16) / 255, parseInt(hex.slice(3, 5), 16) / 255, parseInt(hex.slice(5, 7), 16) / 255];
 
-/** The name a robot is exported under: a ROS package name, lowercase. */
-export const packageName = (robot: Robot): string => urdfName(robot.name, 'robot').toLowerCase();
+/** The name a robot is exported under, from its design's: a ROS package name, lowercase. */
+export const packageName = (designName: string): string => urdfName(designName, 'robot').toLowerCase();
 
 /** What both outputs share: every link and joint in SI, the meshes written, the sensors, the drive. */
 interface Prepared {
@@ -81,7 +81,7 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
   const nodes = linkNodes(doc.scene);
   const tree = spanningTree(robot, nodes.map((n) => n.id));
   if (tree.order.length === 0) throw new Error('The robot has no base link.');
-  const pkg = packageName(robot);
+  const pkg = packageName(doc.name);
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
   const linkNames = uniqueNames(tree.order, (id) => urdfName(linkOf(robot, id).name ?? nodeById.get(id)!.name));
   const allJoints = [...tree.order.slice(1).map((id) => tree.parentJoint.get(id)!), ...tree.loops];
@@ -208,7 +208,7 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
   const driven = new Set([...(robot.drive?.left ?? []), ...(robot.drive?.right ?? [])]);
   const controlled = robot.control ? tree.order.slice(1).map((id) => tree.parentJoint.get(id)!).filter((j) => j.type !== 'fixed' && !j.mimic && !driven.has(j.id)).map((j) => jointNames.get(j)!) : [];
 
-  return { pkg, robotName: urdfName(robot.name, 'robot'), files, warnings, order: tree.order, linkNames, jointNames, frames, links, treeJoints, loopJoints, sensors, drive, controlled };
+  return { pkg, robotName: urdfName(doc.name, 'robot'), files, warnings, order: tree.order, linkNames, jointNames, frames, links, treeJoints, loopJoints, sensors, drive, controlled };
 }
 
 /** The Gazebo sensor topics a ROS 2 bridge carries across, and the robot's own. */
@@ -250,7 +250,7 @@ const OPTICAL: Vec3 = [-Math.PI / 2, 0, -Math.PI / 2];
  * `geometry` is what the kernel made of each link, by node id.
  */
 export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot = robotOf(doc)): RobotPackage {
-  const p = prepare(doc, geometry, robot, (path) => `package://${packageName(robot)}/${path}`);
+  const p = prepare(doc, geometry, robot, (path) => `package://${packageName(doc.name)}/${path}`);
   const { pkg, files, warnings } = p;
   for (const j of p.loopJoints) warnings.push(`"${j.name}" closes a loop and was left out of the URDF (the SDF export keeps it).`);
   const links: UrdfLink[] = p.links.map(({ frame: _f, node: _n, ...l }) => l);
@@ -269,9 +269,9 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
   const control = p.controlled.length ? { joints: p.controlled, controllersYaml: `${SHARE_PLACEHOLDER}/config/controllers.yaml` } : undefined;
   const controllers = control ? ['joint_state_broadcaster', 'arm_controller'] : [];
   files.unshift(
-    { name: 'package.xml', bytes: encodeText(packageXml(pkg, `${robot.name} robot description`, { gazebo: true, control: Boolean(control) })) },
+    { name: 'package.xml', bytes: encodeText(packageXml(pkg, `${doc.name} robot description`, { gazebo: true, control: Boolean(control) })) },
     { name: 'CMakeLists.txt', bytes: encodeText(cmakeLists(pkg)) },
-    { name: 'README.md', bytes: encodeText(readme(pkg, robot.name)) },
+    { name: 'README.md', bytes: encodeText(readme(pkg, doc.name)) },
     { name: `urdf/${pkg}.urdf`, bytes: encodeText(writeUrdf(p.robotName, links, joints, { plugins, control })) },
     { name: `urdf/${pkg}.urdf.xacro`, bytes: encodeText(writeUrdf(p.robotName, links, joints, { plugins, control, xacro: { package: pkg } })) },
     { name: 'launch/display.launch.py', bytes: encodeText(displayLaunch(pkg)) },
@@ -289,7 +289,7 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
  * included, the meshes, a world that includes it, and a note on running it.
  */
 export function buildSdfModel(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot = robotOf(doc)): RobotPackage {
-  const p = prepare(doc, geometry, robot, (path) => `model://${packageName(robot)}/${path}`);
+  const p = prepare(doc, geometry, robot, (path) => `model://${packageName(doc.name)}/${path}`);
   const { pkg, files, warnings } = p;
   const sensorsByLink = new Map<string, string[]>();
   for (const s of p.sensors) {
@@ -322,10 +322,10 @@ export function buildSdfModel(doc: Doc, geometry: Map<string, LinkGeometry>, rob
   const base = p.linkNames.get(robot.root!)!;
   const plugins = [jointStateXml(), ...(p.drive ? [diffDriveXml({ ...p.drive, baseFrame: base })] : [])];
   files.unshift(
-    { name: 'model.config', bytes: encodeText(modelConfig(pkg, `${robot.name}, made with PlastikCAD`)) },
+    { name: 'model.config', bytes: encodeText(modelConfig(pkg, `${doc.name}, made with PlastikCAD`)) },
     { name: 'model.sdf', bytes: encodeText(writeSdf(p.robotName, links, joints, plugins)) },
     { name: `worlds/${pkg}.sdf`, bytes: encodeText(worldXml(pkg, pkg)) },
-    { name: 'README.md', bytes: encodeText(sdfReadme(pkg, robot.name, Boolean(p.drive))) },
+    { name: 'README.md', bytes: encodeText(sdfReadme(pkg, doc.name, Boolean(p.drive))) },
   );
   return { name: pkg, files, warnings };
 }
@@ -388,7 +388,7 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
     servos: p.controlled,
     wheels: p.drive ? [...p.drive.leftJoints, ...p.drive.rightJoints] : [],
   };
-  files.unshift({ name: `${pkg}.xml`, bytes: encodeText(writeMjcf(model)) }, { name: 'README.md', bytes: encodeText(mjcfReadme(pkg, robot.name)) });
+  files.unshift({ name: `${pkg}.xml`, bytes: encodeText(writeMjcf(model)) }, { name: 'README.md', bytes: encodeText(mjcfReadme(pkg, doc.name)) });
   return { name: pkg, files, warnings };
 }
 

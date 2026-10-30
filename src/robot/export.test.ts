@@ -29,7 +29,6 @@ const arm = node('arm00001', 'Arm (upper)', [0, 0, 40], [10, 10, 40]);
 
 function robot(): Robot {
   return {
-    name: 'Test Rover',
     root: body.id,
     sensors: [],
     control: true,

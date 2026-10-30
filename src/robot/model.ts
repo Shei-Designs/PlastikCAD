@@ -10,7 +10,7 @@ import type { Robot, RobotJoint, RobotLink, RobotSensor } from './types';
 export const linkNodes = (scene: Scene): SceneNode[] => scene.filter((n) => !n.hidden && !n.hole && n.type !== 'picture');
 
 /** The design's robot, or an untouched one named after the design. */
-export const robotOf = (doc: Doc): Robot => doc.robot ?? emptyRobot(doc.name);
+export const robotOf = (doc: Doc): Robot => doc.robot ?? emptyRobot();
 
 /** A link's settings, the defaults for an object nobody has touched. */
 export const linkOf = (robot: Robot, node: string): RobotLink => robot.links.find((l) => l.node === node) ?? defaultLink(node);
