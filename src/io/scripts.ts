@@ -190,8 +190,10 @@ Observations: every joint's position and velocity, and for a free base its
 orientation, turn rate and velocity (the model's sensors, in order), then the
 touch sensors. Actions: one per actuator in -1..1, scaled to a velocity motor's
 range or a servo's joint range. The reward is a stub to replace: speed along
-the robot's own forward (+Y of the base) less a little for effort.
+the robot's own forward (the way its wheels face, from drive.json; +Y of the
+base when it has none) less a little for effort.
 """
+import json
 import os
 
 import gymnasium as gym
@@ -200,6 +202,7 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MODEL = os.path.join(HERE, ${JSON.stringify(model)})
+DRIVE = os.path.join(HERE, "drive.json")
 
 
 class RobotEnv(gym.Env):
@@ -213,6 +216,11 @@ class RobotEnv(gym.Env):
         self.max_steps = max_steps
         self.home = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_KEY, "home")
         self.base = 1
+        # The way the robot faces in its base frame: from drive.json when it has wheels, +Y otherwise.
+        self.forward = np.array([0.0, 1.0, 0.0])
+        if os.path.exists(DRIVE):
+            with open(DRIVE) as f:
+                self.forward = np.array(json.load(f).get("forward", self.forward), dtype=float)
         self.free = any(self.model.jnt_type[j] == mujoco.mjtJoint.mjJNT_FREE for j in range(self.model.njnt))
         self.action_space = gym.spaces.Box(-1.0, 1.0, (self.model.nu,), np.float32)
         self.observation_space = gym.spaces.Box(-np.inf, np.inf, (self.model.nsensordata,), np.float64)
@@ -254,10 +262,10 @@ class RobotEnv(gym.Env):
         for _ in range(self.frame_skip):
             mujoco.mj_step(self.model, self.data)
         self._steps += 1
-        # Reward: how fast the base moves along its own +Y, less a little for effort. Replace with what you want the robot to do.
+        # Reward: how fast the base moves the way it faces, less a little for effort. Replace with what you want the robot to do.
         forward = 0.0
         if self.free:
-            heading = self.data.xmat[self.base].reshape(3, 3)[:, 1]
+            heading = self.data.xmat[self.base].reshape(3, 3) @ self.forward
             forward = float(np.dot(self.data.cvel[self.base][3:], heading))
         reward = forward - 0.001 * float(np.sum(np.square(action)))
         fell = self.free and float(self.data.subtree_com[self.base][2]) < 0.5 * self._home_height

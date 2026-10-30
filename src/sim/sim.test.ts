@@ -76,6 +76,24 @@ describe('the rover', () => {
     sim.dispose();
   });
 
+  it('faces the way its wheels are labelled: left and right swapped, it drives -Y and still turns left', () => {
+    const doc = make('rover');
+    const drive = doc.robot!.drive!;
+    drive.roles = Object.fromEntries(Object.entries(drive.roles).map(([id, r]) => [id, r === 'left' ? 'right' : 'left'])) as typeof drive.roles;
+    const { sim, base } = simulate(doc);
+    sim.step(0.5);
+    const start = position(sim, base);
+    sim.drive(1, 0);
+    sim.step(2);
+    expect(position(sim, base)[1] - start[1]).toBeLessThan(-0.3);
+    expect(Math.abs(yaw(sim, base))).toBeLessThan(10);
+    // Left is still a turn to the robot's own left: counter-clockwise seen from above.
+    sim.drive(0, 1);
+    sim.step(0.5);
+    expect(yaw(sim, base)).toBeGreaterThan(30);
+    sim.dispose();
+  });
+
   it('goes back to the start on reset', () => {
     const { sim, base } = simulate(make('rover'));
     sim.drive(1, 0);

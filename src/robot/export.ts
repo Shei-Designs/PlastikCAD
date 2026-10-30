@@ -22,7 +22,7 @@ import type { UrdfJoint, UrdfLink, UrdfShape } from '../io/urdf';
 import type { LinkGeometry } from '../worker/protocol';
 import { massOf, tensorOf, toSI } from './inertia';
 import type { Tensor } from './inertia';
-import { jointInDesign, linkNodes, linkOf, robotOf, sensorInDesign, spanningTree } from './model';
+import { jointInDesign, linkNodes, linkOf, robotForward, robotOf, sensorInDesign, spanningTree } from './model';
 import { motorOf } from './motors';
 import { drivePy, envPy, trainPy } from '../io/scripts';
 import { DRIVE_KINDS, driveJoints, withRole } from './types';
@@ -62,6 +62,8 @@ export const packageName = (designName: string): string => urdfName(designName, 
 /** The drive measured off the design: joint names by part, and its geometry in meters (the steering reach in radians). Null until every part it needs is filled. */
 export interface PreparedDrive {
   kind: DriveKind;
+  /** The way the robot faces, read off its wheel labels: a unit vector along ±X or ±Y of the base. */
+  forward: Vec3;
   roles: Partial<Record<DriveRole, string[]>>;
   /** The driven wheels' joints, and the steering joints'. */
   wheels: string[];
@@ -80,6 +82,8 @@ export interface PreparedDrive {
 export interface DriveSpec {
   kind: DriveKind;
   units: string;
+  /** The way the robot faces in its base frame: a unit vector along ±X or ±Y. */
+  forward: Vec3;
   roles: Partial<Record<DriveRole, string[]>>;
   wheelRadius: number;
   wheelSeparation: number;
@@ -175,10 +179,12 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
   }
 
   // A drive wheel rolls forward on a positive command: its axis is written the way round that a positive
-  // turn moves the base toward +Y, the design's front. (A turn about `axis` moves the base along (axis.y, -axis.x, 0).)
+  // turn moves the base the way the robot faces, which its wheel labels tell. (A turn about `axis` moves
+  // the base along (axis.y, -axis.x, 0).)
+  const forward = robotForward(robot, nodeById);
   const forwardAxis = (j: RobotJoint, axis: Vec3): Vec3 => {
     const role = robot.drive?.roles[j.id];
-    return role && !role.startsWith('steer') && axis[0] > 0 ? (axis.map((x) => -x) as Vec3) : axis;
+    return role && !role.startsWith('steer') && axis[1] * forward[0] - axis[0] * forward[1] < 0 ? (axis.map((x) => -x) as Vec3) : axis;
   };
   const jointOf = (j: RobotJoint): UrdfJoint => {
     const parentFrame = frames.get(j.parent)!;
@@ -252,7 +258,7 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
         return Math.max(...size.filter((_, i) => i !== axle)) / 2;
       });
       const names = (js: RobotJoint[]) => js.map((j) => jointNames.get(j)!);
-      const base = { kind: def.id, roles: Object.fromEntries(def.roles.map((r) => [r.id, names(parts[r.id])])), wheels: names(wheelJoints), steer: names(steerJoints), wheelRadius: (radii.reduce((a, b) => a + b, 0) / radii.length) * M };
+      const base = { kind: def.id, forward, roles: Object.fromEntries(def.roles.map((r) => [r.id, names(parts[r.id])])), wheels: names(wheelJoints), steer: names(steerJoints), wheelRadius: (radii.reduce((a, b) => a + b, 0) / radii.length) * M };
       if (def.id === 'mecanum') {
         const [fl, fr, rl, rr] = [parts['front-left'][0], parts['front-right'][0], parts['rear-left'][0], parts['rear-right'][0]];
         drive = { ...base, wheelSeparation: (apart(at(fl), at(fr)) + apart(at(rl), at(rr))) / 2, wheelBase: (apart(at(fl), at(rl)) + apart(at(fr), at(rr))) / 2 };
@@ -482,8 +488,8 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
   if (p.drive) {
     const actuator = (joint: string) => (p.drive!.steer.includes(joint) ? `${joint}_servo` : `${joint}_motor`);
     const roles = Object.fromEntries(Object.entries(p.drive.roles).map(([role, joints]) => [role, (joints ?? []).map(actuator)]));
-    const { kind, wheelRadius, wheelSeparation, wheelBase, kingpinWidth, steeringLimit } = p.drive;
-    drive = { kind, units: 'meters, radians', roles, wheelRadius, wheelSeparation, wheelBase, kingpinWidth, steeringLimit };
+    const { kind, forward, wheelRadius, wheelSeparation, wheelBase, kingpinWidth, steeringLimit } = p.drive;
+    drive = { kind, units: 'meters, radians', forward, roles, wheelRadius, wheelSeparation, wheelBase, kingpinWidth, steeringLimit };
     files.push({ name: 'drive.json', bytes: encodeText(JSON.stringify(drive, null, 2) + '\n') });
   }
   return {

@@ -8,7 +8,7 @@ import type { Mat } from '../model/math';
 import type { SceneNode, Vec3 } from '../model/types';
 import { massOf, principalMoments, tensorOf } from '../robot/inertia';
 import { MATERIALS, materialOf } from '../robot/materials';
-import { jointInDesign, linkOf, sensorInDesign } from '../robot/model';
+import { jointInDesign, linkOf, robotForward, sensorInDesign } from '../robot/model';
 import { MOTORS } from '../robot/motors';
 import { COLLISION_KINDS, DRIVE_KINDS, driveJoints, JOINT_TYPES, SENSOR_KINDS, WORLDS } from '../robot/types';
 import type { DriveKind, DriveRole, RobotJoint, RobotLink, RobotSensor, SensorKind, World } from '../robot/types';
@@ -155,8 +155,10 @@ function Overview() {
 
 /** How the robot drives: the kind, and each turning joint's part in it. */
 function Drive() {
-  const { robot } = useRobot();
+  const { robot, nodes } = useRobot();
   const kind = DRIVE_KINDS.find((k) => k.id === robot.drive?.kind);
+  const faces = kind && driveJoints(robot.drive).length ? robotForward(robot, new Map(nodes.map((n) => [n.id, n]))) : null;
+  const facing = faces ? DIRECTIONS.find((d) => d.vector.every((v, i) => v === faces[i]))?.label : null;
   const wheels = robot.joints.filter((j) => j.type === 'continuous' || j.type === 'revolute');
   const roleOf = (id: string): DriveRole | 'none' => robot.drive?.roles[id] ?? 'none';
   return (
@@ -165,7 +167,7 @@ function Drive() {
       <div className="field inline">
         <label>
           Kind
-          <Hint text={`${kind?.help ?? 'How the robot moves on its wheels; the exports write the matching plugin and motors.'} Forward is the design's +Y.`} />
+          <Hint text={`${kind?.help ?? 'How the robot moves on its wheels; the exports write the matching plugin and motors.'} The wheel labels set which way is forward${facing ? `: this robot faces ${facing}` : ''}.`} />
         </label>
         <Select value={robot.drive?.kind ?? 'none'} label="Drive kind" options={[{ value: 'none', label: 'None' }, ...DRIVE_KINDS.map((k) => ({ value: k.id, label: k.name }))]} onChange={(v) => setDriveKind(v === 'none' ? null : (v as DriveKind))} />
       </div>

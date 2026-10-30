@@ -4,7 +4,7 @@ import { apply, eulerOf, frameMatrix, invert, multiply, rotation } from '../mode
 import type { Bounds, Mat } from '../model/math';
 import type { Doc, Scene, SceneNode, Vec3 } from '../model/types';
 import { defaultLink, emptyRobot } from './types';
-import type { Robot, RobotJoint, RobotLink, RobotSensor } from './types';
+import type { DriveKind, DriveRole, Robot, RobotJoint, RobotLink, RobotSensor } from './types';
 
 /** The objects that are links: every top-level solid that is shown. Holes cut nothing at the top level, and pictures are flat. */
 export const linkNodes = (scene: Scene): SceneNode[] => scene.filter((n) => !n.hidden && !n.hole && n.type !== 'picture');
@@ -111,4 +111,39 @@ export function spanningTree(robot: Robot, links: string[]): Tree {
   }
   // A joint whose parent is never reached cannot be walked over, but still counts as a loop if its child was reached otherwise.
   return { order, parentJoint, loops, unreached: links.filter((id) => !reached.has(id)) };
+}
+
+/**
+ * The way a driven robot faces, read off its wheel labels: a unit vector along ±X or ±Y of the
+ * design. Seen from behind, the right wheels stand to the right of the left ones; a mecanum
+ * drive's front wheels stand ahead of its rear ones. +Y when the wheels do not say.
+ */
+export function driveForward(kind: DriveKind, at: Partial<Record<DriveRole, Vec3[]>>): Vec3 {
+  const mean = (ps: Vec3[]): Vec3 | null => (ps.length ? ps.reduce((acc, p) => acc.map((v, i) => v + p[i] / ps.length) as Vec3, [0, 0, 0] as Vec3) : null);
+  let ahead: Vec3 | null = null;
+  if (kind === 'mecanum') {
+    const front = mean([...(at['front-left'] ?? []), ...(at['front-right'] ?? [])]);
+    const rear = mean([...(at['rear-left'] ?? []), ...(at['rear-right'] ?? [])]);
+    if (front && rear) ahead = [front[0] - rear[0], front[1] - rear[1], 0];
+  } else {
+    const left = mean(at.left ?? []);
+    const right = mean(at.right ?? []);
+    // Facing forward, the right side lies a quarter turn clockwise from the front.
+    if (left && right) ahead = [left[1] - right[1], right[0] - left[0], 0];
+  }
+  if (!ahead || Math.hypot(ahead[0], ahead[1]) < 1e-6) return [0, 1, 0];
+  return Math.abs(ahead[0]) > Math.abs(ahead[1]) ? [ahead[0] > 0 ? 1 : -1, 0, 0] : [0, ahead[1] > 0 ? 1 : -1, 0];
+}
+
+/** `driveForward` for a robot as designed, its wheel joints placed in the design. */
+export function robotForward(robot: Robot, nodeById: Map<string, SceneNode>): Vec3 {
+  if (!robot.drive) return [0, 1, 0];
+  const at: Partial<Record<DriveRole, Vec3[]>> = {};
+  for (const j of robot.joints) {
+    const role = robot.drive.roles[j.id];
+    const child = nodeById.get(j.child);
+    if (!role || !child) continue;
+    (at[role] ??= []).push(jointInDesign(j, child).origin);
+  }
+  return driveForward(robot.drive.kind, at);
 }

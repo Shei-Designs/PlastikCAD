@@ -5,7 +5,7 @@ import type { LinkGeometry } from '../worker/protocol';
 import { checkRobot } from './check';
 import { buildMjcfModel, buildRobotPackage, buildSdfModel } from './export';
 import { meshProperties } from './inertia';
-import { jointInChild, jointInDesign, spanningTree } from './model';
+import { driveForward, jointInChild, jointInDesign, spanningTree } from './model';
 import { defaultJoint, defaultLink, defaultSensor } from './types';
 import type { Robot } from './types';
 
@@ -370,5 +370,17 @@ describe('xacro and MuJoCo', () => {
     // Full effort half a radian off target, damped so as not to overshoot, no more torque than the limit.
     expect(xml).toMatch(/<position name="shoulder_servo" joint="shoulder" kp="[0-9.e-]+" kv="[0-9.e-]+" forcerange="-([0-9.e-]+) \1"\/>/);
     expect(xml).toMatch(/<position name="left_wheel_joint_servo" joint="left_wheel_joint" kp="[0-9.e-]+" kv="[0-9.e-]+" forcerange="-([0-9.e-]+) \1"\/>/);
+  });
+});
+
+describe('driveForward', () => {
+  it('reads the front off the wheel labels, +Y when they do not say', () => {
+    expect(driveForward('differential', { left: [[-40, 0, 0]], right: [[40, 0, 0]] })).toEqual([0, 1, 0]);
+    // Left wheels at +X: the robot faces -Y.
+    expect(driveForward('differential', { left: [[8, 15, 0], [8, -22, 0]], right: [[-20, -22, 0], [-25, 15, 0]] })).toEqual([0, -1, 0]);
+    expect(driveForward('ackermann', { left: [[0, 40, 0]], right: [[0, -40, 0]], 'steer-left': [[60, 40, 0]], 'steer-right': [[60, -40, 0]] })).toEqual([1, 0, 0]);
+    expect(driveForward('mecanum', { 'front-left': [[-40, -50, 0]], 'front-right': [[40, -50, 0]], 'rear-left': [[-40, 50, 0]], 'rear-right': [[40, 50, 0]] })).toEqual([0, -1, 0]);
+    expect(driveForward('differential', { left: [[0, 0, 0]], right: [[0, 0, 0]] })).toEqual([0, 1, 0]);
+    expect(driveForward('differential', { left: [[-40, 0, 0]] })).toEqual([0, 1, 0]);
   });
 });
