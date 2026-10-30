@@ -25,6 +25,8 @@ export interface MjcfBody {
   imus?: { name: string; pos: Vec3; rpy: Vec3 }[];
   /** Touch sensors: a sphere site of `size` radius, m, summing the contact forces inside it. */
   touches?: { name: string; pos: Vec3; size: number }[];
+  /** Lidars: a fan of `rays` rangefinders about the sensor's Z, `hfov` radians wide and centred on its X, each reading up to `max` m. */
+  lidars?: { name: string; pos: Vec3; rpy: Vec3; rays: number; hfov: number; max: number }[];
 }
 
 export interface MjcfJoint {
@@ -154,6 +156,23 @@ export function quatOf(rpy: Vec3): string {
   return [cr * cp * cy + sr * sp * sy, sr * cp * cy - cr * sp * sy, cr * sp * cy + sr * cp * sy, cr * cp * sy - sr * sp * cy].map((x) => fmt(x, 6)).join(' ');
 }
 
+/** `v` turned by roll, pitch and yaw about the fixed X, Y and Z axes, in that order. */
+function turned(v: Vec3, [r, p, y]: Vec3): Vec3 {
+  const [x1, y1, z1] = [v[0], v[1] * Math.cos(r) - v[2] * Math.sin(r), v[1] * Math.sin(r) + v[2] * Math.cos(r)];
+  const [x2, y2, z2] = [x1 * Math.cos(p) + z1 * Math.sin(p), y1, -x1 * Math.sin(p) + z1 * Math.cos(p)];
+  return [x2 * Math.cos(y) - y2 * Math.sin(y), x2 * Math.sin(y) + y2 * Math.cos(y), z2];
+}
+
+/** A lidar's rays in its link's frame: unit directions spread over the sweep, from its right-hand end round to its left, as a laser scan lists them. */
+function lidarRays(l: NonNullable<MjcfBody['lidars']>[number]): Vec3[] {
+  const full = l.hfov >= 2 * Math.PI - 1e-6;
+  const step = l.rays > 1 ? l.hfov / (full ? l.rays : l.rays - 1) : 0;
+  return Array.from({ length: l.rays }, (_, i) => {
+    const a = -l.hfov / 2 + i * step;
+    return turned([Math.cos(a), Math.sin(a), 0], l.rpy);
+  });
+}
+
 /** Multiplies two "w x y z" quaternions given as arrays. */
 const qmul = (a: number[], b: number[]): number[] => [
   a[0] * b[0] - a[1] * b[1] - a[2] * b[2] - a[3] * b[3],
@@ -208,6 +227,8 @@ export function writeMjcf(model: MjcfModel): string {
     }
     for (const imu of b.imus ?? []) lines.push(`${indent}  <site name="${escapeXml(imu.name)}" pos="${vec(imu.pos)}" quat="${quatOf(imu.rpy)}" size="0.005"/>`);
     for (const t of b.touches ?? []) lines.push(`${indent}  <site name="${escapeXml(t.name)}_site" type="sphere" pos="${vec(t.pos)}" size="${sig(t.size)}" rgba="1 0.5 0 0.3"/>`);
+    // A lidar is a fan of rangefinders: one site per ray, its Z along the ray.
+    for (const l of b.lidars ?? []) lidarRays(l).forEach((ray, i) => lines.push(`${indent}  <site name="${escapeXml(l.name)}_ray${i}" pos="${vec(l.pos)}" zaxis="${vec(ray)}" size="0.002" rgba="1 0 0 0.3"/>`));
     // A site at the base's origin carries its orientation, turn rate and velocity for a controller.
     if (b === model.base && model.floating) lines.push(`${indent}  <site name="base_site" pos="0 0 0" size="0.005"/>`);
     for (const child of b.children) lines.push(...bodyXml(child, `${indent}  `));
@@ -217,6 +238,7 @@ export function writeMjcf(model: MjcfModel): string {
   const body = bodyXml(model.base, '    ');
   const imus = collect(model.base, (b) => b.imus ?? []);
   const touches = collect(model.base, (b) => b.touches ?? []);
+  const lidars = collect(model.base, (b) => b.lidars ?? []);
   // Joints in the order the file gives them, which is the order of qpos.
   const joints = collect(model.base, (b) => (b.joint && b.joint.type !== 'fixed' ? [b.joint] : []));
   const home = [...(model.floating ? ['0 0 0 1 0 0 0'] : []), ...joints.map(() => '0')].join(' ');
@@ -225,6 +247,7 @@ export function writeMjcf(model: MjcfModel): string {
     ...(model.floating ? ['    <framequat name="base_quat" objtype="site" objname="base_site"/>', '    <gyro name="base_gyro" site="base_site"/>', '    <velocimeter name="base_vel" site="base_site"/>', '    <accelerometer name="base_acc" site="base_site"/>'] : []),
     ...imus.flatMap((imu) => [`    <gyro name="${escapeXml(imu.name)}_gyro" site="${escapeXml(imu.name)}"/>`, `    <accelerometer name="${escapeXml(imu.name)}_accel" site="${escapeXml(imu.name)}"/>`]),
     ...touches.map((t) => `    <touch name="${escapeXml(t.name)}" site="${escapeXml(t.name)}_site"/>`),
+    ...lidars.flatMap((l) => Array.from({ length: l.rays }, (_, i) => `    <rangefinder name="${escapeXml(l.name)}_${i}" site="${escapeXml(l.name)}_ray${i}" cutoff="${sig(l.max)}"/>`)),
   ];
   const floor =
     model.world === 'rough'

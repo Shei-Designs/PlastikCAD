@@ -314,10 +314,14 @@ describe('xacro and MuJoCo', () => {
     d.robot!.sensors = [defaultSensor('s1', 'cam', 'camera', body.id, [50, 0, 10]), defaultSensor('s2', 'scan', 'lidar', body.id, [0, 0, 10]), defaultSensor('s3', 'imu', 'imu', body.id, [0, 0, 0])];
     const model = buildMjcfModel(d, geometry());
     expect(model.name).toBe('test_rover');
-    expect(model.warnings.some((w) => w.includes('lidar'))).toBe(true);
+    // The default lidar sweeps 360 rays; MuJoCo gets 90 of them as rangefinders, the first looking back along -X, each reaching the lidar's 12 m.
+    expect(model.warnings).toContainEqual(expect.stringContaining('"scan" sweeps 360 rays; MuJoCo gets 90 of them'));
     const names = model.files.map((f) => f.name);
     expect(names).toEqual(expect.arrayContaining(['test_rover.xml', 'README.md', 'meshes/visual/Body.obj', 'meshes/collision/Body.stl']));
     const xml = text(model.files.find((f) => f.name === 'test_rover.xml')!.bytes);
+    expect(xml).toMatch(/<site name="scan_ray0" pos="0 0 0.02" zaxis="-1 0 0" size="0.002"/);
+    expect(xml.match(/<rangefinder /g)).toHaveLength(90);
+    expect(xml).toContain('<rangefinder name="scan_89" site="scan_ray89" cutoff="12"/>');
     expect(xml).toContain('<mujoco model="Test_Rover">');
     expect(xml).toContain('<compiler angle="radian" meshdir="meshes" autolimits="true"/>');
     expect(xml).toContain('<mesh name="visual_Body_obj" file="visual/Body.obj"/>');

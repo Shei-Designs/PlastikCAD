@@ -43,6 +43,8 @@ export class Simulation {
   readonly actuators: SimActuator[];
   private readonly index = new Map<string, number>();
   private readonly joints = new Map<string, number>();
+  /** Sensor name → where its reading starts in sensordata, and how many numbers it is. */
+  private readonly sensors = new Map<string, { at: number; dim: number }>();
 
   private constructor(
     private readonly mj: MainModule,
@@ -55,6 +57,9 @@ export class Simulation {
     const name = (kind: number, i: number): string => mj.mj_id2name(model, kind, i);
     this.bodies = Array.from({ length: model.nbody }, (_, i) => name(mj.mjtObj.mjOBJ_BODY.value, i));
     for (let j = 0; j < model.njnt; j++) this.joints.set(name(mj.mjtObj.mjOBJ_JOINT.value, j), j);
+    const sensorAdr = model.sensor_adr as Int32Array;
+    const sensorDim = model.sensor_dim as Int32Array;
+    for (let s = 0; s < model.nsensor; s++) this.sensors.set(name(mj.mjtObj.mjOBJ_SENSOR.value, s), { at: sensorAdr[s], dim: sensorDim[s] });
     const nbias = mj.mjNBIAS as number;
     const biasprm = model.actuator_biasprm as Float64Array;
     const trnid = model.actuator_trnid as Int32Array;
@@ -127,6 +132,13 @@ export class Simulation {
     const j = this.joints.get(joint);
     if (j === undefined) return NaN;
     return (this.data.qpos as Float64Array)[(this.model.jnt_qposadr as Int32Array)[j]];
+  }
+
+  /** A sensor's reading as it stands; empty for a sensor the model lacks. */
+  sensorValue(sensor: string): number[] {
+    const s = this.sensors.get(sensor);
+    if (!s) return [];
+    return Array.from((this.data.sensordata as Float64Array).subarray(s.at, s.at + s.dim));
   }
 
   /** Sets an actuator's control, within its range. */

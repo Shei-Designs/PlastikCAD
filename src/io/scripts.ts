@@ -188,7 +188,8 @@ export function envPy(model: string): string {
 
 Observations: every joint's position and velocity, and for a free base its
 orientation, turn rate and velocity (the model's sensors, in order), then the
-touch sensors. Actions: one per actuator in -1..1, scaled to a velocity motor's
+touch sensors and each lidar's rays (a distance, or -1 where nothing is hit).
+Actions: one per actuator in -1..1, scaled to a velocity motor's
 range or a servo's joint range. The reward is a stub to replace: speed along
 the robot's own forward (the way its wheels face, from drive.json; +Y of the
 base when it has none) less a little for effort.

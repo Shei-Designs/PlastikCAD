@@ -38,12 +38,14 @@ function rover(): Doc {
   const wheels = [-1, 1].flatMap((sx) => [-1, 1].map((sy) => shape('cylinder', `Wheel ${sx < 0 ? 'left' : 'right'} ${sy < 0 ? 'back' : 'front'}`, [sx * 46, sy * 40, 20], [40, 40, 12], [0, 90, 0], '#e8853a')));
   const joints = wheels.map((w) => joint(`${w.name} joint`, body, w, [0, 0, 0], { type: 'continuous', motor: 'tt-48' }));
   const sideOf = (w: SceneNode) => (w.pos[0] < 0 ? 'left' : 'right');
+  // A coarse scanner on the body's top, above the wheels.
+  const lidar = { ...defaultSensor(id(), 'Lidar', 'lidar', body.id, [0, 0, 20]), lidar: { samples: 36, hfov: 360, min: 100, max: 6000 } };
   return design('Reference rover', [body, ...wheels], {
     root: body.id,
     base: 'free',
     links: [{ ...defaultLink(body.id), collision: 'box' }, ...wheels.map((w) => ({ ...defaultLink(w.id), collision: 'cylinder' as CollisionKind, friction: 1 }))],
     joints,
-    sensors: [],
+    sensors: [lidar],
     drive: { kind: 'differential', roles: Object.fromEntries(joints.map((j, i) => [j.id, sideOf(wheels[i])])) },
     control: true,
   });

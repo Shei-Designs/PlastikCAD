@@ -2,7 +2,7 @@
   "format": "plastikcad",
   "version": 2,
   "units": "mm",
-  "id": "597s5a1j",
+  "id": "p8pra8ug",
   "name": "Reference rover",
   "scene": [
     {
@@ -200,6 +200,23 @@
         "damping": 0.000191,
         "friction": 0,
         "motor": "tt-48"
+      }
+    ],
+    "sensors": [
+      {
+        "id": "fx000010",
+        "name": "Lidar",
+        "kind": "lidar",
+        "link": "fx000001",
+        "origin": [0,0,20],
+        "rot": [0,0,0],
+        "rate": 10,
+        "lidar": {
+          "samples": 36,
+          "hfov": 360,
+          "min": 100,
+          "max": 6000
+        }
       }
     ],
     "drive": {

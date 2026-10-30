@@ -452,8 +452,11 @@ a frame on \`${footprint.base}\` facing the robot's forward along +X as ROS expe
  * The robot as a MuJoCo model: one XML with the bodies nested down the
  * tree, the meshes beside it. Loops are closed by pinning the two links of
  * each loop joint together at its point; followers by joint constraints.
- * Lidars have no counterpart and are left out, with a warning.
+ * A lidar becomes a fan of rangefinders, one ray each, up to MAX_LIDAR_RAYS.
  */
+/** A lidar's rays in MuJoCo, at most: each is a ray cast every step, and a policy wants a coarse scan anyway. */
+export const MAX_LIDAR_RAYS = 90;
+
 export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot = robotOf(doc)): MjcfPackage {
   const p = prepare(doc, geometry, robot, (path) => path);
   const { pkg, files, warnings } = p;
@@ -461,12 +464,13 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
   const childrenOf = new Map<string, UrdfJoint[]>();
   for (const j of p.treeJoints) childrenOf.set(j.parent, [...(childrenOf.get(j.parent) ?? []), j]);
   const sensorsOf = (link: string) => p.sensors.filter((s) => s.link === link);
-  for (const s of p.sensors) if (s.kind === 'lidar') warnings.push(`"${s.name}" is a lidar, which MuJoCo has no sensor for; it was left out.`);
+  for (const s of p.sensors) if (s.kind === 'lidar' && s.lidar.samples > MAX_LIDAR_RAYS) warnings.push(`"${s.name}" sweeps ${s.lidar.samples} rays; MuJoCo gets ${MAX_LIDAR_RAYS} of them, spread over the same sweep, to keep it quick.`);
   const body = (name: string, joint: UrdfJoint | undefined): MjcfBody => {
     const l = byName.get(name)!;
     const cams = sensorsOf(name).filter((s) => s.kind === 'camera' || s.kind === 'depth');
     const imus = sensorsOf(name).filter((s) => s.kind === 'imu');
     const touches = sensorsOf(name).filter((s) => s.kind === 'touch');
+    const lidars = sensorsOf(name).filter((s) => s.kind === 'lidar');
     return {
       name,
       pos: joint ? joint.origin : [0, 0, 0],
@@ -479,6 +483,7 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
       ...(cams.length ? { cameras: cams.map((s) => ({ name: s.name, pos: s.xyz, rpy: s.rpy, hfov: s.camera.hfov, aspect: s.camera.width / s.camera.height })) } : {}),
       ...(imus.length ? { imus: imus.map((s) => ({ name: s.name, pos: s.xyz, rpy: s.rpy })) } : {}),
       ...(touches.length ? { touches: touches.map((s) => ({ name: s.name, pos: s.xyz, size: s.touch })) } : {}),
+      ...(lidars.length ? { lidars: lidars.map((s) => ({ name: s.name, pos: s.xyz, rpy: s.rpy, rays: Math.min(s.lidar.samples, MAX_LIDAR_RAYS), hfov: s.lidar.hfov, max: s.lidar.max })) } : {}),
     };
   };
   const base = p.linkNames.get(robot.root!)!;
@@ -495,7 +500,7 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
     wheels: p.drive?.wheels ?? [],
   };
   const collisions = p.links.map((l) => `${l.name}: ${linkOf(robot, l.node.id).collision}`);
-  files.unshift({ name: `${pkg}.xml`, bytes: encodeText(writeMjcf(model)) }, { name: 'README.md', bytes: encodeText(mjcfReadme(pkg, doc.name, collisions, robot.scripts !== false)) });
+  files.unshift({ name: `${pkg}.xml`, bytes: encodeText(writeMjcf(model)) }, { name: 'README.md', bytes: encodeText(mjcfReadme(pkg, doc.name, collisions, robot.scripts !== false, p.sensors.some((s) => s.kind === 'lidar'))) });
   if (robot.scripts !== false) {
     const kind = p.drive ? 'rover' : robot.base === 'fixed' ? 'arm' : 'walker';
     files.push({ name: 'drive.py', bytes: encodeText(drivePy(`${pkg}.xml`, kind)) }, { name: 'env.py', bytes: encodeText(envPy(`${pkg}.xml`)) }, { name: 'train.py', bytes: encodeText(trainPy()) });
@@ -519,7 +524,7 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
   };
 }
 
-function mjcfReadme(name: string, robot: string, collisions: string[], scripts: boolean): string {
+function mjcfReadme(name: string, robot: string, collisions: string[], scripts: boolean, lidars: boolean): string {
   return `# ${robot}
 
 A MuJoCo model made with PlastikCAD. Open it with the viewer:
@@ -533,7 +538,15 @@ drives them. Loops are closed by connect constraints at their joints.
 
 The \`home\` keyframe is the design's pose. Every joint has a position and a
 velocity sensor; a free base has its orientation, turn rate, velocity and
-acceleration at \`base_site\`; touch sensors sum the contact force in their site.
+acceleration at \`base_site\`; touch sensors sum the contact force in their site.${
+    lidars
+      ? ` A lidar
+is a fan of rangefinders, one per ray about its Z from its right-hand end round
+to its left: each reads the distance to the nearest surface, the lidar's range
+when nothing is nearer, and -1 when nothing is hit at all. The nearest it can
+see is not modelled.`
+      : ''
+  }
 
 Collisions (box, cylinder and sphere are fast in MJX; hull and mesh are not):
 ${collisions.map((c) => `- ${c}`).join('\n')}

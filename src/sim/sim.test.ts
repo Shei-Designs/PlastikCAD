@@ -19,12 +19,12 @@ beforeAll(async () => {
 const make = (file: string): Doc => ROBOTS.find((r) => r.file === file)!.make();
 
 /** The robot's MuJoCo package loaded, as the app loads it: without visual meshes, which the plate draws itself. */
-function simulate(doc: Doc): { sim: Simulation; base: string } {
+function simulate(doc: Doc, patch: (xml: string) => string = (xml) => xml): { sim: Simulation; base: string } {
   const robot = doc.robot!;
   const nodes = linkNodes(doc.scene);
   const geo = robotGeometry(nodes, Object.fromEntries(nodes.map((n) => [n.id, linkOf(robot, n.id).collision])), false);
   const pkg = buildMjcfModel(doc, new Map(geo.map((g) => [g.id, { ...g, visual: [] }])), robot);
-  const xml = new TextDecoder().decode(pkg.files.find((f) => f.name.endsWith('.xml'))!.bytes);
+  const xml = patch(new TextDecoder().decode(pkg.files.find((f) => f.name.endsWith('.xml'))!.bytes));
   const files = pkg.files.filter((f) => f.name.startsWith('meshes/'));
   const sim = Simulation.load(mj, xml, files, pkg.drive);
   return { sim, base: pkg.bodies[0].body };
@@ -91,6 +91,17 @@ describe('the rover', () => {
     sim.drive(0, 1);
     sim.step(0.5);
     expect(yaw(sim, base)).toBeGreaterThan(30);
+    sim.dispose();
+  });
+
+  it('sees a wall with its lidar, ray by ray', () => {
+    // A wall across the rover's path, a meter ahead along +Y, and nothing behind.
+    const wall = (xml: string) => xml.replace(/(<geom name="floor"[^>]*\/>)/, '$1\n    <geom name="wall" type="box" pos="0 1 0.25" size="0.5 0.05 0.25"/>');
+    const { sim } = simulate(make('rover'), wall);
+    // 36 rays over the full circle from -180°, 10° apart: ray 27 looks along +Y, ray 9 along -Y.
+    expect(sim.sensorValue('Lidar_27')[0]).toBeCloseTo(0.95, 2);
+    expect(sim.sensorValue('Lidar_9')[0]).toBe(-1);
+    expect(sim.sensorValue('Lidar_36')).toEqual([]);
     sim.dispose();
   });
 
