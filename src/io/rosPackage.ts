@@ -279,5 +279,10 @@ drive), and \`config/controllers.yaml\` sets up ros2_control when the robot
 has joints under it: \`/arm_controller\` takes joint trajectories. The URDF
 says \`${SHARE_PLACEHOLDER}\` where it means the package's share folder; the
 launch files fill that in, so no xacro is needed.
+
+Isaac Sim opens the URDF as it is (File > Import). Add \`${name}\` and this
+folder to the importer's ROS package list so the \`package://\` mesh paths
+resolve, or import from a sourced workspace where the package is built; the
+importer writes the USD itself.
 `;
 }

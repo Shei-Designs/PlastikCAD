@@ -162,15 +162,17 @@ to Google Drive with them.
 ## Robot mode
 
 The robot button in the project bar turns the design into a robot for ROS 2,
-RViz, Gazebo and anything else that reads URDF. Every top-level object is a
-link (group what belongs together first); joints say how the links move
-against each other. The left panel shows the links as a tree hanging from the
+RViz, Gazebo, MuJoCo, Isaac Sim and anything else that reads URDF. Every
+top-level object is a link (group what belongs together first); joints say
+how the links move against each other. The left panel shows the links as a tree hanging from the
 base link, the right panel sets up whatever is picked, and the design itself
 is not touched: leave the mode and everything is as it was. The robot is saved
 in the design file and synced with it.
 
 - **Base link.** Pick the object the rest hangs from, on the right while
-  nothing is selected or with *Make base* on a link.
+  nothing is selected or with *Make base* on a link, and say whether the base
+  is *free* (it stands on the floor and can drive or walk) or *fixed* to the
+  world, as an arm bolted to a bench.
 - **Joints.** Select a link and attach it to another: a joint is made with the
   link as the child, placed on the child's box where it comes nearest the
   parent, and picked, drawn as a rod along its axis on the plate. *Pick a
@@ -178,9 +180,11 @@ in the design file and synced with it.
   centers, and the ends of a round shape's axis, which set the axis too):
   click one to move the joint there. Set its kind (revolute, continuous,
   prismatic, fixed), its origin and axis in the design's coordinates, its
-  limits, effort, velocity, damping and friction, and whether it follows
-  another joint (URDF `mimic`). A joint stays with its child: move the child
-  and the joint comes along.
+  limits, effort, velocity, damping and friction, or pick its *Motor* (hobby
+  servos, Dynamixel and Feetech smart servos, N20 to 37 mm gearmotors, 28BYJ-48
+  and NEMA steppers) and those figures come from its datasheet; and whether it
+  follows another joint (URDF `mimic`). A joint stays with its child: move the
+  child and the joint comes along.
 - **Try it.** The slider in a joint's panel moves it on the plate, the links
   below it following, to see the range of motion and catch an axis pointing
   the wrong way. The design is not touched; *Reset* puts the robot back.
@@ -201,23 +205,41 @@ in the design file and synced with it.
 - **Collision.** A convex hull by default, or the object's box, a cylinder
   or a sphere filling it (turned as the object is), the exact mesh, or none;
   and the surface's coefficient of friction for Gazebo.
-- **Sensors.** A link's panel adds a camera, depth camera, lidar or IMU to
-  it: a frame of its own, placed by a point on the plate or by numbers,
-  turned to look (or sweep) along any of the design's axes, with its rate and,
-  for a camera, field of view, picture size and clip distances, for a lidar
-  the rays, sweep and range. The export writes each as a Gazebo sensor and
-  bridges its topics to ROS 2; a camera also gets the optical frame ROS
-  expects.
-- **Control.** In the overview, mark each wheel joint's side for a
-  differential drive: Gazebo's DiffDrive plugin then takes velocity commands
-  on `cmd_vel` and reports odometry, with the track and wheel radius measured
-  from the design. The other actuated joints go under `ros2_control` with a
-  joint trajectory controller (`arm_controller`) and a joint state
-  broadcaster, unless switched off.
+- **Sensors.** A link's panel adds a camera, depth camera, lidar, IMU or
+  touch sensor to it: a frame of its own, placed by a point on the plate or
+  by numbers, turned to look (or sweep) along any of the design's axes,
+  tilted up or down and, for a camera, rolled about its line of sight, with
+  its rate and, for a camera, field of view, picture size and clip distances,
+  for a lidar the rays, sweep and range; a touch sensor feels what its link
+  touches. The export writes each as a Gazebo sensor and bridges its topics
+  to ROS 2; a camera also gets the optical frame ROS expects.
+- **Drive.** In the overview, pick the drive kind (differential, Ackermann
+  or mecanum) and give each wheel joint its part: left or right, a steering
+  side, a corner. The wheel labels say which way the robot faces, and the
+  track and wheel radius are measured from the design. Gazebo's matching
+  plugin takes velocity commands on `cmd_vel` and reports odometry; a driven
+  robot gets a `base_footprint` root facing +X as ROS expects.
+- **Controllers.** The actuated joints outside the drive go under
+  `ros2_control` with a joint trajectory controller (`arm_controller`) and a
+  joint state broadcaster, unless switched off. *World* picks the floor of
+  the MuJoCo model and the test drive (flat, gentle bumps, or an eight-degree
+  slope; Gazebo's world stays flat), and *Scripts* whether the MuJoCo export
+  brings its Python starters.
 - **Checks.** The overview lists what stops an export (no base, a link no
-  joint reaches, limits the wrong way round, a link with no mass or an
-  impossible inertia) and what is only worth knowing (a joint that closes a
-  loop, an open mesh, a heavy collision mesh), each with a *Show* button.
+  joint reaches, limits the wrong way round, a drive missing a wheel on a
+  side, a link with no mass or an impossible inertia) and what is only worth
+  knowing (a joint that closes a loop, a motor far stronger or a joint far
+  stiffer than its link needs, a drive wheel set unlike the others, an open
+  mesh, a heavy collision mesh), each with a *Show* button.
+- **Test drive.** *Test drive* in the overview builds the MuJoCo model of the
+  robot as it stands and runs it on the plate (MuJoCo compiled to
+  WebAssembly, in a worker), every link drawn where the simulation has it
+  and the view following the base. Drive a rover with W A S D or the arrow
+  keys (Q and E slide a mecanum robot sideways), move an arm's servos with a
+  slider each, and read the time, the distance moved and the heading; *Pause*,
+  *Reset* and *Stop* do what they say. The floor is the one *World* chose.
+  Whatever stops the export stops the test drive too; the design is not
+  touched.
 - **Export** writes a zip in one of three forms. A *ROS 2 package*:
   `urdf/<name>.urdf` with the sensors, drive and friction in `<gazebo>`
   blocks (and `<name>.urdf.xacro` beside it, the same with the Gazebo blocks
@@ -233,11 +255,30 @@ in the design file and synced with it.
   Or a *MuJoCo model*: one MJCF file with the bodies nested down the tree,
   position servos on the controlled joints and velocity motors on the
   wheels, loops closed by connect constraints, followers by joint
-  constraints, cameras and IMUs (lidars have no MuJoCo counterpart), and the
-  meshes beside it. Meters, kilograms and radians, Z up; every link's frame is parallel to the
+  constraints, cameras, IMUs, touch sensors and lidars (a fan of
+  rangefinders, up to 90 rays), a `home` keyframe, the floor *World* chose,
+  the meshes beside it and, with *Scripts* on, `drive.py` to drive it in
+  MuJoCo's viewer, a Gymnasium `env.py` and a Stable-Baselines3 `train.py`. Meters, kilograms and radians, Z up; every link's frame is parallel to the
   design's axes and sits at its joint, with its meshes written in that frame.
   The URDF says `__PACKAGE_SHARE__` where it means the package's share
-  folder; the launch files fill that in, so no xacro is needed.
+  folder; the launch files fill that in, so no xacro is needed. Isaac Sim
+  opens the same package: unzip it, pick the URDF with *File > Import*, and
+  add the package's name and its unzipped folder to the importer's ROS
+  package list so the `package://` mesh paths resolve (a sourced ROS 2
+  workspace with the package built needs no mapping). The importer writes the
+  USD itself, so there is no USD export.
+- **Import URDF**, under the robot tree, brings a robot in from a `.urdf`
+  file. Every link with a shape becomes an object standing where the file
+  puts it, its meshes read from `meshes/` beside the file as a package keeps
+  them, or asked for when they are not there (an OBJ brings its `.mtl`);
+  the joints, their `mimic` lines, and the sensors, friction and drive in
+  the `<gazebo>` blocks come along, and `ros2_control` switches the
+  controllers on. Links without a shape (`base_footprint`, `world`, frames)
+  fold into the link they are fixed to; floating and planar joints are made
+  fixed; a link two joints reach keeps the first; a xacro file must be run
+  through `xacro` first. Whatever was dropped or stood in for is said in the
+  message. The newcomer joins the robot the design already has, which keeps
+  its base, and is left loose until it is attached.
 
 ## Projects
 
@@ -402,6 +443,8 @@ left alone, since that is its shape.
   laser-cutter drawings work (including a gear profile exported from PlastikCAD
   as SVG). Convert text to paths first; `<use>`, images and CSS classes are
   not read.
+- **URDF** is imported from Robot mode (*Import URDF…* under the robot
+  tree), with its meshes; see there.
 - **DXF**: lines, polylines, circles, arcs, ellipses and splines are chained
   end to end into closed outlines and grouped by color (the entity's, else its
   layer's); a contour inside another is a hole. Blocks placed with INSERT are
@@ -576,7 +619,8 @@ never touch the mesh kernel, which keeps them easy to test.
 - More parts: throated worm wheel, planetary set helper, V-belt pulleys,
   imperial threads.
 - Assembly preview of meshing gears.
-- Robot mode: URDF import, Isaac Sim USD.
+- Robot mode: Collada meshes on URDF import, sensor readouts while test
+  driving, slopes and steps in the worlds.
 - STEP export. Shapes and parts are already described as profiles and
   operations rather than triangles, so a B-rep backend can evaluate the same
   descriptions.
