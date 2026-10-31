@@ -274,10 +274,12 @@ function shapeOf(link: Link, companions: Companion[], warnings: string[], missin
         warnings.push(`"${link.name}" is drawn with "${name}", which could not be read: ${e instanceof Error ? e.message : String(e)}`);
         continue;
       }
-      // The file is in meters, scaled as the URDF says; the design holds mm.
+      // An STL or OBJ is in meters, scaled as the URDF says; the design holds mm. Collada and glTF say their own
+      // units and are read into mm already.
+      const inMm = ['dae', 'glb', 'gltf'].includes(extensionOf(name));
       const scaled: Mat = [...s.pose] as Mat;
       for (let k = 0; k < 3; k++) {
-        const f = g.scale[k] * MM;
+        const f = g.scale[k] * (inMm ? 1 : MM);
         scaled[3 * k] *= f;
         scaled[3 * k + 1] *= f;
         scaled[3 * k + 2] *= f;

@@ -121,14 +121,14 @@ function asciiStl(facets: number[][], number = (v: number) => v.toExponential(6)
 
 describe('importFile', () => {
   it('dispatches on the extension, whatever its case', () => {
-    expect(IMPORT_EXTENSIONS).toEqual(['stl', 'obj', '3mf', 'glb', 'gltf', 'svg', 'dxf']);
+    expect(IMPORT_EXTENSIONS).toEqual(['stl', 'obj', '3mf', 'glb', 'gltf', 'dae', 'svg', 'dxf']);
     expect(importFile('Part.STL', binaryStl(cubeFacets())).kind).toBe('model');
     expect(importFile('C:\\models\\my.part.Obj', bytes('v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n')).kind).toBe('model');
     expect(importFile('a.SVG', bytes('<svg><rect width="1" height="1"/></svg>')).kind).toBe('outline');
   });
 
   it('names the formats it can read when given another', () => {
-    expect(() => importFile('part.step', new Uint8Array(4))).toThrow(/\.step files can't be imported.*STL, OBJ, 3MF, GLB, GLTF, SVG/);
+    expect(() => importFile('part.step', new Uint8Array(4))).toThrow(/\.step files can't be imported.*STL, OBJ, 3MF, GLB, GLTF, DAE, SVG/);
     expect(() => importFile('README', new Uint8Array(4))).toThrow(/can't be imported/);
   });
 

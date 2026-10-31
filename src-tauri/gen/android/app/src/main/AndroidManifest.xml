@@ -43,6 +43,7 @@
                 <data android:mimeType="model/obj" />
                 <data android:mimeType="application/x-tgif" />
                 <data android:mimeType="model/gltf-binary" />
+                <data android:mimeType="model/vnd.collada+xml" />
                 <data android:mimeType="model/3mf" />
                 <data android:mimeType="application/vnd.ms-3mfdocument" />
                 <data android:mimeType="image/svg+xml" />

@@ -70,7 +70,7 @@ describe('parseUrdf', () => {
     close(camera.origin, [0, 62, 15], 0.01);
     close(camera.rot, [0, 20, 90], 0.01);
     expect(camera.rate).toBe(30);
-    expect(camera.camera).toEqual({ hfov: 80, width: 320, height: 240, near: 50, far: 10000 });
+    expect(camera.camera).toEqual({ hfov: 80, width: 320, height: 240, near: 20, far: 10000 });
     const imu = robot.sensors.find((s) => s.kind === 'imu')!;
     expect(imu.name).toBe('IMU');
     expect(imu.link).toBe(robot.root);
@@ -81,10 +81,35 @@ describe('parseUrdf', () => {
     expect(lidar.name).toBe('Lidar');
     expect(lidar.link).toBe(robot.root);
     close(lidar.origin, [0, 0, 20], 0.01);
-    expect(lidar.lidar).toEqual({ samples: 36, hfov: 360, min: 100, max: 6000 });
+    expect(lidar.lidar).toEqual({ samples: 36, hfov: 360, min: 100, max: 4000 });
     expect(lidar.rate).toBe(10);
     // Every joint is a wheel, so the package had no ros2_control to bring back.
     expect(robot.control).toBe(false);
+  });
+
+  it('reads a link drawn with a Collada mesh, in the units the file declares', () => {
+    const dae = `<?xml version="1.0"?><COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
+      <asset><unit meter="1"/><up_axis>Z_UP</up_axis></asset>
+      <library_geometries><geometry id="box"><mesh>
+        <source id="p"><float_array id="pa" count="24">-0.05 -0.05 0 0.05 -0.05 0 0.05 0.05 0 -0.05 0.05 0 -0.05 -0.05 0.1 0.05 -0.05 0.1 0.05 0.05 0.1 -0.05 0.05 0.1</float_array>
+          <technique_common><accessor source="#pa" count="8" stride="3"><param name="X" type="float"/><param name="Y" type="float"/><param name="Z" type="float"/></accessor></technique_common></source>
+        <vertices id="v"><input semantic="POSITION" source="#p"/></vertices>
+        <polylist count="6"><input semantic="VERTEX" source="#v" offset="0"/><vcount>4 4 4 4 4 4</vcount><p>0 3 2 1 4 5 6 7 0 1 5 4 1 2 6 5 2 3 7 6 3 0 4 7</p></polylist>
+      </mesh></geometry></library_geometries>
+      <library_visual_scenes><visual_scene id="s"><node id="n"><instance_geometry url="#box"/></node></visual_scene></library_visual_scenes>
+      <scene><instance_visual_scene url="#s"/></scene></COLLADA>`;
+    const urdf = `<robot name="t"><link name="Base">
+      <inertial><mass value="0.1"/><inertia ixx="1e-4" iyy="1e-4" izz="1e-4" ixy="0" ixz="0" iyz="0"/></inertial>
+      <visual><geometry><mesh filename="package://t/meshes/box.dae" scale="2 1 1"/></geometry></visual>
+    </link></robot>`;
+    const encode = (s: string) => new TextEncoder().encode(s);
+    const imported = parseUrdf(encode(urdf), [{ name: 'meshes/box.dae', bytes: encode(dae) }]);
+    expect(imported.warnings).toEqual([]);
+    expect(imported.missing).toEqual([]);
+    expect(imported.scene).toHaveLength(1);
+    // A 100 mm cube, stretched to 200 along X by the URDF's scale, standing on the floor.
+    close(boundsSize(boxBounds(imported.scene[0])), [200, 100, 100]);
+    close([boxBounds(imported.scene[0]).min[2]], [0]);
   });
 
   it('brings the arm back bolted to the world, with its joints turning where they did', () => {
@@ -131,7 +156,7 @@ describe('parseUrdf', () => {
     <visual><origin xyz="0 0 0.1" rpy="0 0 0"/><geometry><cylinder radius="0.01" length="0.2"/></geometry></visual>
   </link>
   <link name="finger">
-    <visual><geometry><mesh filename="package://test_bot/meshes/finger.dae"/></geometry></visual>
+    <visual><geometry><mesh filename="package://test_bot/meshes/finger.mesh"/></geometry></visual>
     <collision><geometry><sphere radius="0.01"/></geometry></collision>
   </link>
   <link name="finger2">
@@ -167,7 +192,7 @@ describe('parseUrdf', () => {
     expect(imported.name).toBe('test bot');
     expect(imported.missing).toEqual(['package://test_bot/meshes/finger2.stl']);
     expect(imported.warnings).toEqual([
-      '"finger" is drawn with "finger.dae", a kind of mesh file that cannot be read.',
+      '"finger" is drawn with "finger.mesh", a kind of mesh file that cannot be read.',
       '"finger" is shown by its collision shape, as its visual could not be read.',
       '"finger2" moves but has no shape; a small box stands for it.',
     ]);

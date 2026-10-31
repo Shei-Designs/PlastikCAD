@@ -38,12 +38,12 @@ function rover(): Doc {
   const wheels = [-1, 1].flatMap((sx) => [-1, 1].map((sy) => shape('cylinder', `Wheel ${sx < 0 ? 'left' : 'right'} ${sy < 0 ? 'back' : 'front'}`, [sx * 46, sy * 40, 20], [40, 40, 12], [0, 90, 0], '#e8853a')));
   const joints = wheels.map((w) => joint(`${w.name} joint`, body, w, [0, 0, 0], { type: 'continuous', motor: 'tt-48' }));
   const sideOf = (w: SceneNode) => (w.pos[0] < 0 ? 'left' : 'right');
-  // A coarse scanner on the body's top, above the wheels.
-  const lidar = { ...defaultSensor(id(), 'Lidar', 'lidar', body.id, [0, 0, 20]), lidar: { samples: 36, hfov: 360, min: 100, max: 6000 } };
+  // A coarse scanner on the body's top, above the wheels: 45 mm up, so a range much past 4 m would read the floor at the far end.
+  const lidar = { ...defaultSensor(id(), 'Lidar', 'lidar', body.id, [0, 0, 20]), lidar: { samples: 36, hfov: 360, min: 100, max: 4000 } };
   // An IMU at the body's center, for odometry.
   const imu = defaultSensor(id(), 'IMU', 'imu', body.id, [0, 0, 0]);
-  // A small color camera at the front of the body's top, turned to look the way the rover drives (+Y) and tilted 20° down at the floor ahead.
-  const camera = { ...defaultSensor(id(), 'Camera', 'camera', body.id, [0, 62, 15]), rot: [0, 20, 90] as Vec3, camera: { hfov: 80, width: 320, height: 240, near: 50, far: 10000 } };
+  // A small color camera at the front of the body's top, turned to look the way the rover drives (+Y) and tilted 20° down at the floor ahead; its near clip is short so the floor at the bottom of the picture stays inside it.
+  const camera = { ...defaultSensor(id(), 'Camera', 'camera', body.id, [0, 62, 15]), rot: [0, 20, 90] as Vec3, camera: { hfov: 80, width: 320, height: 240, near: 20, far: 10000 } };
   return design('Reference rover', [body, ...wheels], {
     root: body.id,
     base: 'free',

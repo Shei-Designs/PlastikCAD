@@ -377,7 +377,8 @@ def check_ros_package(pkg_dir, env):
                 detail = f', {msg.get("points")} points ({", ".join(msg.get("fields") or [])}), frame {msg.get("frame")}'
                 if msg.get('nearest') is not None:
                     detail += f', nearest {msg["nearest"]:.2f} m'
-                if not msg.get('points'):
+                # A lidar's cloud is empty when its scan has nothing in range, as in an empty world; a depth camera always sees the floor.
+                if not msg.get('points') and not t['ros_topic_name'].endswith('scan/points'):
                     fail(name, f'{t["ros_topic_name"]} carries no points')
             elif t['ros_type_name'] == 'sensor_msgs/msg/Imu':
                 # Standing still: gravity alone, straight up, and no turning.

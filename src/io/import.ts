@@ -1,6 +1,7 @@
 import type { MeshData, MeshWithUV } from '../geometry/mesh';
 import type { OutlineShape, Vec2, Vec3 } from '../model/types';
 import { parse3mf } from './import3mf';
+import { parseCollada } from './importCollada';
 import { parseDxf } from './importDxf';
 import { parseGlb } from './importGlb';
 import { parseObj } from './importObj';
@@ -51,7 +52,7 @@ export interface Companion {
   bytes: Uint8Array;
 }
 
-export const IMPORT_EXTENSIONS = ['stl', 'obj', '3mf', 'glb', 'gltf', 'svg', 'dxf'];
+export const IMPORT_EXTENSIONS = ['stl', 'obj', '3mf', 'glb', 'gltf', 'dae', 'svg', 'dxf'];
 /** Pictures, which come in as picture sheets rather than solids. */
 export const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg'];
 
@@ -85,6 +86,7 @@ function sniff(bytes: Uint8Array): string {
   if (/^\s*solid\b/.test(head)) return 'stl';
   if (/^\s*0\s*\r?\n\s*SECTION\b/.test(head) || /^\s*999\s*\r?\n/.test(head)) return 'dxf';
   if (/^\s*(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*(<!DOCTYPE[^>]*>\s*)?<svg\b/i.test(head)) return 'svg';
+  if (/<COLLADA[\s>]/.test(head)) return 'dae';
   if (/^\s*\{[\s\S]*"asset"/.test(head)) return 'gltf';
   if (/^(\s*(#[^\n]*)?\r?\n)*\s*(v|vn|vt|o|g|mtllib|usemtl)\s/.test(head)) return 'obj';
   return '';
@@ -105,6 +107,8 @@ export function importFile(fileName: string, bytes: Uint8Array, companions: Comp
     case 'glb':
     case 'gltf':
       return checkedModel(parseGlb(bytes, name));
+    case 'dae':
+      return checkedModel(parseCollada(bytes, name, companions));
     case 'svg':
       return { kind: 'outline', parts: parseSvg(bytes).map((part) => ({ ...part, shapes: checkedOutline(part.shapes) })) };
     case 'dxf':

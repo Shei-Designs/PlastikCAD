@@ -229,8 +229,10 @@ in the design file and synced with it.
   joint reaches, limits the wrong way round, a drive missing a wheel on a
   side, a link with no mass or an impossible inertia) and what is only worth
   knowing (a joint that closes a loop, a motor far stronger or a joint far
-  stiffer than its link needs, a drive wheel set unlike the others, an open
-  mesh, a heavy collision mesh), each with a *Show* button.
+  stiffer than its link needs, a drive wheel set unlike the others, a lidar
+  low or tipped enough to read the floor inside its range, a camera whose
+  near plane clips the floor out of its picture, an open mesh, a heavy
+  collision mesh), each with a *Show* button.
 - **Test drive.** *Test drive* in the overview builds the MuJoCo model of the
   robot as it stands and runs it on the plate (MuJoCo compiled to
   WebAssembly, in a worker), every link drawn where the simulation has it
@@ -272,8 +274,9 @@ in the design file and synced with it.
   importer writes the USD itself, so there is no USD export.
 - **Import URDF**, under the robot tree, brings a robot in from a `.urdf`
   file. Every link with a shape becomes an object standing where the file
-  puts it, its meshes read from `meshes/` beside the file as a package keeps
-  them, or asked for when they are not there (an OBJ brings its `.mtl`);
+  puts it, its meshes (STL, OBJ or Collada) read from `meshes/` beside the
+  file as a package keeps them, or asked for when they are not there (an OBJ
+  brings its `.mtl`);
   the joints, their `mimic` lines, and the sensors, friction and drive in
   the `<gazebo>` blocks come along, and `ros2_control` switches the
   controllers on. Links without a shape (`base_footprint`, `world`, frames)
@@ -414,7 +417,8 @@ left alone, since that is its shape.
 
 ## Import notes
 
-- **STL / OBJ** carry no units; coordinates are taken as millimeters.
+- **STL / OBJ** carry no units; coordinates are taken as millimeters (a URDF
+  says its meshes are in meters, and the robot importer scales them so).
 - A mesh that is not watertight can be placed, scaled and exported as it is,
   but cannot be grouped: there is no telling its inside from its outside.
 - A file of several parts (the objects of a 3MF, the materials of an OBJ, the
@@ -439,6 +443,11 @@ left alone, since that is its shape.
   its buffers; one that keeps them in separate files should be saved as a
   `.glb` first. Files with Draco or meshopt compression are refused; export
   them again without compression.
+- **Collada (.dae)**: the meshes of the visual scene, placed by its nodes,
+  one part per material with its diffuse color and, when the picture it names
+  came along, its texture; the file's own unit and up axis are honored, so a
+  Blender or ROS mesh in meters, Z up, comes in at size. Skins and morphs
+  show their base mesh; animation is ignored.
 - An imported picture shows on the mesh in the **Imported** texture mode; the
   mesh can still be given any other texture, wrapped or tiled.
 - **SVG**: shapes are grouped by fill color, each group a part of its own.
@@ -572,7 +581,7 @@ src/
   state/              the editor: selection, undo, files, preferences
   viewer/             three.js view: drawing, picking, handles
   parts/              the gear, pulley, sprocket and thread generators
-  io/                 STL, 3MF, OBJ, GLB, SVG, DXF, URDF, SDF, MJCF writers; STL, OBJ, 3MF, GLB, SVG, DXF readers
+  io/                 STL, 3MF, OBJ, GLB, SVG, DXF, URDF, SDF, MJCF writers; STL, OBJ, 3MF, GLB, Collada, SVG, DXF, URDF readers
   robot/              Robot mode: links and joints, materials and mass properties, checks, the ROS 2 package
   sync/               Google sign-in (PKCE, loopback), Drive remote, three-way merge, sync engine
   text/               fonts, and laying words out as outlines
@@ -625,8 +634,8 @@ never touch the mesh kernel, which keeps them easy to test.
 - More parts: throated worm wheel, planetary set helper, V-belt pulleys,
   imperial threads.
 - Assembly preview of meshing gears.
-- Robot mode: Collada meshes on URDF import, sensor readouts while test
-  driving, slopes and steps in the worlds.
+- Robot mode: sensor readouts while test driving, slopes and steps in the
+  worlds.
 - STEP export. Shapes and parts are already described as profiles and
   operations rather than triangles, so a B-rep backend can evaluate the same
   descriptions.

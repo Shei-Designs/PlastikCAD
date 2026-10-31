@@ -5,7 +5,8 @@ import type { Doc } from '../model/types';
 import type { LinkProperties } from '../worker/protocol';
 import { jointFit } from './defaults';
 import { massOf, plausibleInertia, tensorOf } from './inertia';
-import { jointInDesign, linkNodes, linkOf, robotOf, spanningTree } from './model';
+import { boxBounds } from '../model/math';
+import { jointInDesign, linkNodes, linkOf, robotOf, sensorInDesign, spanningTree } from './model';
 import { motorOf } from './motors';
 import { DRIVE_KINDS, withRole } from './types';
 import type { Robot, RobotJoint } from './types';
@@ -23,6 +24,8 @@ export interface Problem {
 
 /** The collision mesh past which a simulator slows down noticeably. */
 export const HEAVY_COLLISION = 20_000;
+/** A level lidar lower than this share of its range grazes the floor at the far end (the reference rover's 360° lidar 45 mm up read the floor at 5.8 m of 6). */
+export const LOW_LIDAR = 0.01;
 
 /**
  * Checks the robot against its design. `props` are the mass properties the
@@ -74,10 +77,44 @@ export function checkRobot(doc: Doc, props: Map<string, LinkProperties>, robot: 
     }
   }
 
+  // The floor is where the robot's lowest point rests: the simulators drop it there.
+  const floor = Math.min(...nodes.map((n) => boxBounds(n).min[2]));
   for (const x of robot.sensors) {
-    if (!ids.has(x.link)) error(`The sensor "${x.name}" sits on an object that is hidden, a hole or gone.`, { sensor: x.id });
+    const host = nodes.find((n) => n.id === x.link);
+    if (!host) {
+      error(`The sensor "${x.name}" sits on an object that is hidden, a hole or gone.`, { sensor: x.id });
+      continue;
+    }
     if ((x.kind === 'camera' || x.kind === 'depth') && !(x.camera.near < x.camera.far)) error(`"${x.name}" sees nothing: its nearest distance must be below its farthest.`, { sensor: x.id });
     if (x.kind === 'lidar' && !(x.lidar.min < x.lidar.max)) error(`"${x.name}" sees nothing: its nearest range must be below its farthest.`, { sensor: x.id });
+    const { origin, matrix } = sensorInDesign(x, host);
+    const height = origin[2] - floor;
+    if (x.kind === 'camera' || x.kind === 'depth') {
+      // The floor must not come inside the near plane anywhere in the picture, or those pixels read nothing (-inf in a depth
+      // picture). The near plane clips on depth along the line of sight, so each ray round the picture's edge is followed to
+      // the floor and its depth measured along the camera's X.
+      const tx = Math.tan((x.camera.hfov * Math.PI) / 360);
+      const ty = (tx * x.camera.height) / x.camera.width;
+      const edge = [[tx, ty], [-tx, ty], [tx, -ty], [-tx, -ty], [0, ty], [0, -ty], [tx, 0], [-tx, 0]];
+      let nearest = Infinity;
+      for (const [sy, sz] of edge) {
+        const n = Math.hypot(1, sy, sz);
+        // The ray in the design: the camera's X forward, Y left, Z up, as its frame turns them.
+        const dz = (matrix[2] + sy * matrix[5] + sz * matrix[8]) / n;
+        if (dz >= 0) continue;
+        nearest = Math.min(nearest, (height / -dz) * (1 / n));
+      }
+      if (nearest < x.camera.near) warn(`"${x.name}" sits ${Math.round(height)} mm above the floor and sees it ${Math.round(nearest)} mm deep at the edge of its picture, inside its ${x.camera.near} mm near distance, so those pixels read nothing. Raise it, look up, or bring the near distance in.`, { sensor: x.id });
+    } else if (x.kind === 'lidar' && x.lidar.min < x.lidar.max) {
+      // A sweep tipped toward the floor meets it within range; a level sweep grazes it when mounted very low.
+      const axis = [matrix[6], matrix[7], matrix[8]];
+      const tilt = Math.acos(Math.max(-1, Math.min(1, Math.abs(axis[2]))));
+      if (tilt < Math.PI / 4) {
+        const ahead = tilt > 1e-6 ? height / Math.sin(tilt) : Infinity;
+        if (ahead < x.lidar.max) warn(`"${x.name}" is tipped ${Math.round((tilt * 180) / Math.PI)}°, so its sweep meets the floor ${Math.round(ahead)} mm out, inside its ${x.lidar.max} mm range; those rays read the floor, not the room. Level it or shorten the range.`, { sensor: x.id });
+        else if (height < x.lidar.max * LOW_LIDAR) warn(`"${x.name}" sits only ${Math.round(height)} mm above the floor for a ${x.lidar.max} mm range; a level sweep that low grazes the floor at the far end. Raise it or shorten the range.`, { sensor: x.id });
+      }
+    }
   }
   if (robot.drive) {
     const drive = robot.drive;

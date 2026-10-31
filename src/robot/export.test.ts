@@ -105,6 +105,33 @@ describe('checkRobot', () => {
     expect(problems.filter((p) => p.level === 'warning').every((p) => p.joint === 'j1')).toBe(true);
   });
 
+  it('warns when a sensor would read the floor: a low lidar, a tipped lidar, a camera whose near plane clips it', () => {
+    const d = doc();
+    const props = new Map([...geometry()].map(([id, g]) => [id, g.props]));
+    // The body spans z 0–20, so a lidar at its top is 20 mm up: far too low for the default 12 m range.
+    d.robot!.sensors = [{ ...defaultSensor('s1', 'scanner', 'lidar', body.id, [0, 0, 10]) }];
+    let told = checkRobot(d, props);
+    expect(told.map((p) => [p.level, p.sensor])).toEqual([['warning', 's1']]);
+    expect(told[0].text).toMatch(/only 20 mm above the floor for a 12000 mm range/);
+    // Within 1.5 m it is fine level; tipped 10° it meets the floor 115 mm out.
+    d.robot!.sensors[0].lidar = { ...d.robot!.sensors[0].lidar, max: 1500 };
+    expect(checkRobot(d, props)).toEqual([]);
+    d.robot!.sensors[0].rot = [0, 10, 0];
+    told = checkRobot(d, props);
+    expect(told.map((p) => p.sensor)).toEqual(['s1']);
+    expect(told[0].text).toMatch(/tipped 10°, so its sweep meets the floor 115 mm out/);
+    // A level camera 20 mm up sees the floor 32 mm deep at the bottom of its picture: inside the 50 mm near plane. Looking up, or a 20 mm near plane, clears it.
+    d.robot!.sensors = [{ ...defaultSensor('s2', 'cam', 'camera', body.id, [50, 0, 10]) }];
+    told = checkRobot(d, props);
+    expect(told.map((p) => p.sensor)).toEqual(['s2']);
+    expect(told[0].text).toMatch(/sees it 32 mm deep at the edge of its picture, inside its 50 mm near distance/);
+    d.robot!.sensors[0].rot = [0, -40, 0];
+    expect(checkRobot(d, props)).toEqual([]);
+    d.robot!.sensors[0].rot = [0, 0, 0];
+    d.robot!.sensors[0].camera = { ...d.robot!.sensors[0].camera, near: 20 };
+    expect(checkRobot(d, props)).toEqual([]);
+  });
+
   it('warns about loops and open meshes', () => {
     const d = doc();
     d.robot!.joints.push({ ...defaultJoint('j3', 'closing', arm.id, wheel.id, [0, 0, 0]) });

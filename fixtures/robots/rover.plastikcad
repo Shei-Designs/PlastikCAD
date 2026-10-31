@@ -2,7 +2,7 @@
   "format": "plastikcad",
   "version": 2,
   "units": "mm",
-  "id": "vm6sq7t5",
+  "id": "dyymdag4",
   "name": "Reference rover",
   "scene": [
     {
@@ -215,7 +215,7 @@
           "samples": 36,
           "hfov": 360,
           "min": 100,
-          "max": 6000
+          "max": 4000
         }
       },
       {
@@ -239,7 +239,7 @@
           "hfov": 80,
           "width": 320,
           "height": 240,
-          "near": 50,
+          "near": 20,
           "far": 10000
         }
       }
