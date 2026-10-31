@@ -62,8 +62,21 @@ describe('parseUrdf', () => {
     }
     expect(robot.drive?.kind).toBe('differential');
     expect(Object.values(robot.drive!.roles).sort()).toEqual(['left', 'left', 'right', 'right']);
-    expect(robot.sensors).toHaveLength(1);
-    const lidar = robot.sensors[0];
+    expect(robot.sensors).toHaveLength(3);
+    // The camera on the body's top comes back turned to look along +Y and tilted 20° down, with its picture size and reach.
+    const camera = robot.sensors.find((s) => s.kind === 'camera')!;
+    expect(camera.name).toBe('Camera');
+    expect(camera.link).toBe(robot.root);
+    close(camera.origin, [0, 62, 15], 0.01);
+    close(camera.rot, [0, 20, 90], 0.01);
+    expect(camera.rate).toBe(30);
+    expect(camera.camera).toEqual({ hfov: 80, width: 320, height: 240, near: 50, far: 10000 });
+    const imu = robot.sensors.find((s) => s.kind === 'imu')!;
+    expect(imu.name).toBe('IMU');
+    expect(imu.link).toBe(robot.root);
+    close(imu.origin, [0, 0, 0], 0.01);
+    expect(imu.rate).toBe(100);
+    const lidar = robot.sensors.find((s) => s.kind === 'lidar')!;
     expect(lidar.kind).toBe('lidar');
     expect(lidar.name).toBe('Lidar');
     expect(lidar.link).toBe(robot.root);

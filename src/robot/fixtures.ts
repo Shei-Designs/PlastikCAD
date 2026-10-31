@@ -40,12 +40,16 @@ function rover(): Doc {
   const sideOf = (w: SceneNode) => (w.pos[0] < 0 ? 'left' : 'right');
   // A coarse scanner on the body's top, above the wheels.
   const lidar = { ...defaultSensor(id(), 'Lidar', 'lidar', body.id, [0, 0, 20]), lidar: { samples: 36, hfov: 360, min: 100, max: 6000 } };
+  // An IMU at the body's center, for odometry.
+  const imu = defaultSensor(id(), 'IMU', 'imu', body.id, [0, 0, 0]);
+  // A small color camera at the front of the body's top, turned to look the way the rover drives (+Y) and tilted 20° down at the floor ahead.
+  const camera = { ...defaultSensor(id(), 'Camera', 'camera', body.id, [0, 62, 15]), rot: [0, 20, 90] as Vec3, camera: { hfov: 80, width: 320, height: 240, near: 50, far: 10000 } };
   return design('Reference rover', [body, ...wheels], {
     root: body.id,
     base: 'free',
     links: [{ ...defaultLink(body.id), collision: 'box' }, ...wheels.map((w) => ({ ...defaultLink(w.id), collision: 'cylinder' as CollisionKind, friction: 1 }))],
     joints,
-    sensors: [lidar],
+    sensors: [lidar, imu, camera],
     drive: { kind: 'differential', roles: Object.fromEntries(joints.map((j, i) => [j.id, sideOf(wheels[i])])) },
     control: true,
   });
@@ -90,7 +94,9 @@ function quadruped(): Doc {
       feet.push(defaultSensor(id(), `Foot ${leg}`, 'touch', lower.id, [0, 0, -17.5]));
     }
   }
-  return design('Reference quadruped', scene, { root: body.id, base: 'free', links, joints, sensors: feet, control: true });
+  // An IMU at the body's center: what a gait controller reads first.
+  const imu = defaultSensor(id(), 'IMU', 'imu', body.id, [0, 0, 0]);
+  return design('Reference quadruped', scene, { root: body.id, base: 'free', links, joints, sensors: [...feet, imu], control: true });
 }
 
 /** A car: driven rear wheels, and front wheels on knuckles that steering joints turn, as an Ackermann drive. */
@@ -103,12 +109,14 @@ function car(): Doc {
   const steer = knuckles.map((k) => joint(`${k.name} steering`, body, k, [0, 0, 0], { axis: [0, 0, 1], lower: -30, upper: 30, motor: 'sg90' }));
   const roll = front.map((w, i) => joint(`${w.name} joint`, knuckles[i], w, [0, 0, 0], { type: 'continuous' }));
   const scene = [body, ...rear, ...knuckles, ...front];
+  // A depth camera at the front of the body's top, looking the way the car drives (+Y).
+  const depth = { ...defaultSensor(id(), 'Depth', 'depth', body.id, [0, 72, 15]), rot: [0, 0, 90] as Vec3, camera: { hfov: 80, width: 320, height: 240, near: 50, far: 10000 } };
   return design('Reference car', scene, {
     root: body.id,
     base: 'free',
     links: [{ ...defaultLink(body.id), collision: 'box' }, ...knuckles.map((k) => ({ ...defaultLink(k.id), collision: 'box' as CollisionKind })), ...[...rear, ...front].map((w) => ({ ...defaultLink(w.id), collision: 'cylinder' as CollisionKind, friction: 1 }))],
     joints: [...drive, ...steer, ...roll],
-    sensors: [],
+    sensors: [depth],
     drive: { kind: 'ackermann', roles: { [drive[0].id]: 'left', [drive[1].id]: 'right', [steer[0].id]: 'steer-left', [steer[1].id]: 'steer-right' } },
     control: false,
   });

@@ -2,11 +2,11 @@
   "format": "plastikcad",
   "version": 2,
   "units": "mm",
-  "id": "cy52plkn",
+  "id": "cbu8i4kk",
   "name": "Reference car",
   "scene": [
     {
-      "id": "fx000010",
+      "id": "fx000013",
       "type": "shape",
       "name": "Body",
       "shape": "box",
@@ -19,7 +19,7 @@
       "color": "#8fa3bf"
     },
     {
-      "id": "fx000011",
+      "id": "fx000014",
       "type": "shape",
       "name": "Rear wheel left",
       "shape": "cylinder",
@@ -33,7 +33,7 @@
       "color": "#e8853a"
     },
     {
-      "id": "fx000012",
+      "id": "fx000015",
       "type": "shape",
       "name": "Rear wheel right",
       "shape": "cylinder",
@@ -47,7 +47,7 @@
       "color": "#e8853a"
     },
     {
-      "id": "fx000013",
+      "id": "fx000016",
       "type": "shape",
       "name": "Knuckle left",
       "shape": "box",
@@ -60,7 +60,7 @@
       "color": "#8fa3bf"
     },
     {
-      "id": "fx000014",
+      "id": "fx000017",
       "type": "shape",
       "name": "Knuckle right",
       "shape": "box",
@@ -73,7 +73,7 @@
       "color": "#8fa3bf"
     },
     {
-      "id": "fx000015",
+      "id": "fx000018",
       "type": "shape",
       "name": "Front wheel left",
       "shape": "cylinder",
@@ -87,7 +87,7 @@
       "color": "#e8853a"
     },
     {
-      "id": "fx000016",
+      "id": "fx000019",
       "type": "shape",
       "name": "Front wheel right",
       "shape": "cylinder",
@@ -103,42 +103,9 @@
   ],
   "assets": {},
   "robot": {
-    "root": "fx000010",
+    "root": "fx000013",
     "base": "free",
     "links": [
-      {
-        "node": "fx000010",
-        "mass": {
-          "kind": "material",
-          "material": "pla",
-          "infill": 20,
-          "shell": 1.2
-        },
-        "collision": "box",
-        "friction": 0.8
-      },
-      {
-        "node": "fx000011",
-        "mass": {
-          "kind": "material",
-          "material": "pla",
-          "infill": 20,
-          "shell": 1.2
-        },
-        "collision": "cylinder",
-        "friction": 1
-      },
-      {
-        "node": "fx000012",
-        "mass": {
-          "kind": "material",
-          "material": "pla",
-          "infill": 20,
-          "shell": 1.2
-        },
-        "collision": "cylinder",
-        "friction": 1
-      },
       {
         "node": "fx000013",
         "mass": {
@@ -158,8 +125,8 @@
           "infill": 20,
           "shell": 1.2
         },
-        "collision": "box",
-        "friction": 0.8
+        "collision": "cylinder",
+        "friction": 1
       },
       {
         "node": "fx000015",
@@ -180,78 +147,63 @@
           "infill": 20,
           "shell": 1.2
         },
+        "collision": "box",
+        "friction": 0.8
+      },
+      {
+        "node": "fx000017",
+        "mass": {
+          "kind": "material",
+          "material": "pla",
+          "infill": 20,
+          "shell": 1.2
+        },
+        "collision": "box",
+        "friction": 0.8
+      },
+      {
+        "node": "fx000018",
+        "mass": {
+          "kind": "material",
+          "material": "pla",
+          "infill": 20,
+          "shell": 1.2
+        },
+        "collision": "cylinder",
+        "friction": 1
+      },
+      {
+        "node": "fx000019",
+        "mass": {
+          "kind": "material",
+          "material": "pla",
+          "infill": 20,
+          "shell": 1.2
+        },
         "collision": "cylinder",
         "friction": 1
       }
     ],
     "joints": [
       {
-        "id": "fx000017",
+        "id": "fx000020",
         "name": "Rear wheel left joint",
         "type": "continuous",
-        "parent": "fx000010",
-        "child": "fx000011",
-        "origin": [0,0,0],
-        "axis": [0,0,1],
-        "lower": -90,
-        "upper": 90,
-        "effort": 0.08,
-        "velocity": 1200,
-        "damping": 0.000191,
-        "friction": 0,
-        "motor": "tt-48"
-      },
-      {
-        "id": "fx000018",
-        "name": "Rear wheel right joint",
-        "type": "continuous",
-        "parent": "fx000010",
-        "child": "fx000012",
-        "origin": [0,0,0],
-        "axis": [0,0,1],
-        "lower": -90,
-        "upper": 90,
-        "effort": 0.08,
-        "velocity": 1200,
-        "damping": 0.000191,
-        "friction": 0,
-        "motor": "tt-48"
-      },
-      {
-        "id": "fx000019",
-        "name": "Knuckle left steering",
-        "type": "revolute",
-        "parent": "fx000010",
-        "child": "fx000013",
-        "origin": [0,0,0],
-        "axis": [0,0,1],
-        "lower": -30,
-        "upper": 30,
-        "effort": 0.18,
-        "velocity": 600,
-        "damping": 0.000859,
-        "friction": 0,
-        "motor": "sg90"
-      },
-      {
-        "id": "fx000020",
-        "name": "Knuckle right steering",
-        "type": "revolute",
-        "parent": "fx000010",
+        "parent": "fx000013",
         "child": "fx000014",
         "origin": [0,0,0],
         "axis": [0,0,1],
-        "lower": -30,
-        "upper": 30,
-        "effort": 0.18,
-        "velocity": 600,
-        "damping": 0.000859,
+        "lower": -90,
+        "upper": 90,
+        "effort": 0.08,
+        "velocity": 1200,
+        "damping": 0.000191,
         "friction": 0,
-        "motor": "sg90"
+        "motor": "tt-48"
       },
       {
         "id": "fx000021",
-        "name": "Front wheel left joint",
+        "name": "Rear wheel right joint",
         "type": "continuous",
         "parent": "fx000013",
         "child": "fx000015",
@@ -259,34 +211,100 @@
         "axis": [0,0,1],
         "lower": -90,
         "upper": 90,
-        "effort": 0.451,
-        "velocity": 90,
-        "damping": 0.0144,
-        "friction": 0
+        "effort": 0.08,
+        "velocity": 1200,
+        "damping": 0.000191,
+        "friction": 0,
+        "motor": "tt-48"
       },
       {
         "id": "fx000022",
-        "name": "Front wheel right joint",
-        "type": "continuous",
-        "parent": "fx000014",
+        "name": "Knuckle left steering",
+        "type": "revolute",
+        "parent": "fx000013",
         "child": "fx000016",
+        "origin": [0,0,0],
+        "axis": [0,0,1],
+        "lower": -30,
+        "upper": 30,
+        "effort": 0.18,
+        "velocity": 600,
+        "damping": 0.000859,
+        "friction": 0,
+        "motor": "sg90"
+      },
+      {
+        "id": "fx000023",
+        "name": "Knuckle right steering",
+        "type": "revolute",
+        "parent": "fx000013",
+        "child": "fx000017",
+        "origin": [0,0,0],
+        "axis": [0,0,1],
+        "lower": -30,
+        "upper": 30,
+        "effort": 0.18,
+        "velocity": 600,
+        "damping": 0.000859,
+        "friction": 0,
+        "motor": "sg90"
+      },
+      {
+        "id": "fx000024",
+        "name": "Front wheel left joint",
+        "type": "continuous",
+        "parent": "fx000016",
+        "child": "fx000018",
         "origin": [0,0,0],
         "axis": [0,0,1],
         "lower": -90,
         "upper": 90,
-        "effort": 0.451,
-        "velocity": 90,
-        "damping": 0.0144,
+        "effort": 0.00701,
+        "velocity": 360,
+        "damping": 0.0000558,
         "friction": 0
+      },
+      {
+        "id": "fx000025",
+        "name": "Front wheel right joint",
+        "type": "continuous",
+        "parent": "fx000017",
+        "child": "fx000019",
+        "origin": [0,0,0],
+        "axis": [0,0,1],
+        "lower": -90,
+        "upper": 90,
+        "effort": 0.00701,
+        "velocity": 360,
+        "damping": 0.0000558,
+        "friction": 0
+      }
+    ],
+    "sensors": [
+      {
+        "id": "fx000026",
+        "name": "Depth",
+        "kind": "depth",
+        "link": "fx000013",
+        "origin": [0,72,15],
+        "rot": [0,0,90],
+        "rate": 30,
+        "camera": {
+          "hfov": 80,
+          "width": 320,
+          "height": 240,
+          "near": 50,
+          "far": 10000
+        }
       }
     ],
     "drive": {
       "kind": "ackermann",
       "roles": {
-        "fx000017": "left",
-        "fx000018": "right",
-        "fx000019": "steer-left",
-        "fx000020": "steer-right"
+        "fx000020": "left",
+        "fx000021": "right",
+        "fx000022": "steer-left",
+        "fx000023": "steer-right"
       }
     },
     "control": false

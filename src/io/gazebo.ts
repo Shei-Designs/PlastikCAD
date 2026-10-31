@@ -51,7 +51,8 @@ export function sensorXml(s: GazeboSensor): string {
       '  </lidar>',
     );
   }
-  if (s.kind === 'touch') lines.push('  <contact>', `    <collision>${escapeXml(s.collision ?? `${s.frame}_collision`)}</collision>`, '  </contact>');
+  // Gazebo's Contact system takes its topic from inside <contact>; the sensor's own <topic> is ignored.
+  if (s.kind === 'touch') lines.push('  <contact>', `    <collision>${escapeXml(s.collision ?? `${s.frame}_collision`)}</collision>`, `    <topic>${topic}</topic>`, '  </contact>');
   lines.push('</sensor>');
   return lines.join('\n');
 }

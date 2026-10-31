@@ -37,7 +37,7 @@ function robot(): Robot {
     links: [{ ...defaultLink(wheel.id), mass: { kind: 'measured', grams: 50 }, collision: 'hull', friction: 1.2 }, { ...defaultLink(arm.id), collision: 'box' }],
     joints: [
       // In the child's frame: the wheel's axle 4 mm inboard of its center, the shoulder at the arm's lower end.
-      { ...defaultJoint('j1', 'left wheel joint', body.id, wheel.id, [0, -4, 0]), type: 'continuous', axis: [0, 1, 0], effort: 2, velocity: 720 },
+      { ...defaultJoint('j1', 'left wheel joint', body.id, wheel.id, [0, -4, 0]), type: 'continuous', axis: [0, 1, 0], effort: 2, velocity: 720, damping: 0.001 },
       { ...defaultJoint('j2', 'shoulder', body.id, arm.id, [0, 0, -20]), axis: [0, 1, 0], lower: -90, upper: 90 },
     ],
   };
@@ -204,9 +204,20 @@ describe('sensors, drive and control', () => {
 
   it('puts a touch sensor on its link as a contact sensor over the link\'s collision', () => {
     const urdf = text(buildRobotPackage(rover(), geometry()).files.find((f) => f.name === 'urdf/test_rover.urdf')!.bytes);
-    expect(urdf).toMatch(/<gazebo reference="Left_wheel">[\s\S]*?<sensor name="tread" type="contact">[\s\S]*?<collision>Left_wheel_collision<\/collision>/);
+    // Gazebo's Contact system reads the topic from inside <contact>; the sensor's own <topic> is ignored.
+    expect(urdf).toMatch(/<gazebo reference="Left_wheel">[\s\S]*?<sensor name="tread" type="contact">[\s\S]*?<contact>\s*<collision>Left_wheel_collision<\/collision>\s*<topic>tread\/contacts<\/topic>\s*<\/contact>/);
     expect(urdf).not.toContain('tread_link');
+    expect(urdf).not.toContain('preserveFixedJoint');
     expect(text(buildRobotPackage(rover(), geometry()).files.find((f) => f.name === 'config/bridge.yaml')!.bytes)).toContain('ros_gz_interfaces/msg/Contacts');
+  });
+
+  it('keeps the fixed joint under a touch sensor, or Gazebo folds the link away and renames its collision', () => {
+    const d = rover();
+    d.robot!.joints[1].type = 'fixed';
+    d.robot!.sensors.push({ ...defaultSensor('s5', 'palm', 'touch', arm.id, [0, 0, 0]) });
+    const urdf = text(buildRobotPackage(d, geometry()).files.find((f) => f.name === 'urdf/test_rover.urdf')!.bytes);
+    expect(urdf).toMatch(/<gazebo reference="Arm_upper">[\s\S]*?<sensor name="palm" type="contact">[\s\S]*?<collision>Arm_upper_collision<\/collision>/);
+    expect(urdf).toMatch(/<gazebo reference="shoulder">\s*<preserveFixedJoint>true<\/preserveFixedJoint>\s*<\/gazebo>/);
   });
 
   it('writes sensor frames, Gazebo blocks, the drive and ros2_control into the package', () => {
@@ -327,7 +338,7 @@ describe('xacro and MuJoCo', () => {
     expect(xml).toContain('<mesh name="visual_Body_obj" file="visual/Body.obj"/>');
     // The base floats (there is a drive); the wheel hangs from it 36 mm out with a hinge about Y, no range; the arm's shoulder has one in radians.
     expect(xml).toMatch(/<body name="Body" pos="0 0 0">\s*<freejoint name="root"\/>/);
-    expect(xml).toMatch(/<body name="Left_wheel" pos="0 0.036 0.01">\s*<joint name="left_wheel_joint" type="hinge" axis="0 1 0" damping="0.1" frictionloss="0"\/>/);
+    expect(xml).toMatch(/<body name="Left_wheel" pos="0 0.036 0.01">\s*<joint name="left_wheel_joint" type="hinge" axis="0 1 0" damping="0.001" frictionloss="0"\/>/);
     expect(xml).toMatch(/<joint name="shoulder" type="hinge" axis="0 1 0" range="-1.570796 1.570796" limited="true"/);
     expect(xml).toMatch(/<inertial pos="0 0.004 0" mass="0.05" fullinertia="/);
     expect(xml).toContain('<geom type="mesh" mesh="visual_Body_obj" class="visual" material="color_ff8800"/>');
@@ -341,7 +352,7 @@ describe('xacro and MuJoCo', () => {
     // The loop: arm and wheel pinned at the closing joint, given in the arm's frame (the wheel's center, 40 mm out and 10 down from the shoulder).
     expect(xml).toContain('<connect body1="Arm_upper" body2="Left_wheel" anchor="0 0.04 -0.01"/>');
     // The camera 50 mm forward of the body's center, the IMU a site with a gyro and an accelerometer.
-    expect(xml).toMatch(/<camera name="cam" pos="0.05 0 0.02" quat="0.5 -0.5 0.5 -0.5" fovy="/);
+    expect(xml).toMatch(/<camera name="cam" pos="0.05 0 0.02" quat="0.5 0.5 -0.5 -0.5" fovy="/);
     expect(xml).toContain('<site name="imu" pos="0 0 0.01"');
     expect(xml).toContain('<gyro name="imu_gyro" site="imu"/>');
     // For a controller: every joint's position and velocity, the free base's orientation, turn rate and velocity, the home pose, and what a foot feels.

@@ -21,7 +21,8 @@ except ImportError:
 import numpy as np
 
 root = sys.argv[1] if len(sys.argv) > 1 else "fixtures/out"
-xmls = sorted(glob.glob(os.path.join(root, "**", "*.xml"), recursive=True))
+# Each MuJoCo model is <name>/<name>.xml; the ROS and SDF packages beside them carry XML of their own.
+xmls = sorted(x for x in glob.glob(os.path.join(root, "*", "*.xml")) if os.path.basename(x) == os.path.basename(os.path.dirname(x)) + ".xml")
 if not xmls:
     print(f"no models under {root}")
     sys.exit(1)
@@ -82,6 +83,34 @@ for xml in xmls:
         now = height()
         notes.append(f"base at {now * 1000:.1f} mm, was {start_height * 1000:.1f}")
         ok &= now >= 0.7 * start_height
+    # Every camera must render a picture of something, and a depth picture of the floor that runs away to the top.
+    if m.ncam:
+        try:
+            renderer = mujoco.Renderer(m, 48, 64)
+        except Exception as e:  # noqa: BLE001
+            renderer = None
+            notes.append(f"{m.ncam} camera(s) not rendered: no OpenGL here ({str(e).splitlines()[0][:60]}); try MUJOCO_GL=egl")
+        for c in range(m.ncam):
+            if not renderer:
+                break
+            cam = mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_CAMERA, c)
+            renderer.disable_depth_rendering()
+            renderer.update_scene(d, cam)
+            colours = len(np.unique(renderer.render().reshape(-1, 3), axis=0))
+            renderer.enable_depth_rendering()
+            renderer.update_scene(d, cam)
+            depth = renderer.render()
+            bottom, top = float(np.median(depth[-1])), float(np.median(depth[0]))
+            # The horizon (the first row that is not sky) must sit where the camera's tilt and field of view put it.
+            rows = np.median(depth, axis=1)
+            horizon = int(np.argmax(rows < 0.9 * rows.max())) if (rows < 0.9 * rows.max()).any() else None
+            look = -d.cam_xmat[c].reshape(3, 3)[:, 2]
+            pitch = np.arcsin(-look[2])
+            expected = depth.shape[0] / 2 - depth.shape[0] / 2 / np.tan(np.radians(m.cam_fovy[c]) / 2) * np.tan(pitch)
+            notes.append(f"camera {cam}: {colours} colours, depth {bottom:.2f} m at the bottom, {top:.2f} m at the top, horizon at row {horizon} (expected {expected:.0f} for a {np.degrees(pitch):.0f} deg tilt)")
+            ok &= colours >= 2 and 0 < bottom < top and horizon is not None and abs(horizon - expected) <= 2
+        if renderer:
+            renderer.close()
     warned = [mujoco.mjtWarning(i).name for i, w in enumerate(d.warning) if w.number]
     if warned:
         ok = False

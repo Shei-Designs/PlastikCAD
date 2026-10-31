@@ -1,8 +1,9 @@
 // The reference robots (fixtures.ts) built with the real kernel. They must
 // pass the checks and export cleanly in every format; with ROBOT_FIXTURES_OUT
-// set, their MuJoCo models are written there
-// for tools/mujoco_smoke.py to simulate, and the designs themselves are saved
-// under fixtures/robots for opening in the app.
+// set, their MuJoCo models are written there for tools/mujoco_smoke.py to
+// simulate, their ROS and SDF packages under its ros/ and sdf/ for
+// tools/ros_smoke.sh, and the designs themselves are saved under
+// fixtures/robots for opening in the app.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -41,6 +42,8 @@ describe.each(ROBOTS)('the reference $file', ({ file, make }) => {
     for (const pkg of packages) expect(pkg.warnings).toEqual([]);
     const out = process.env.ROBOT_FIXTURES_OUT;
     if (out) {
+      write(packages[0], join(out, 'ros'));
+      write(packages[1], join(out, 'sdf'));
       write(packages[2], out);
       writeFileSync(join('fixtures', 'robots', `${file}.plastikcad`), serializeDoc(doc));
     }

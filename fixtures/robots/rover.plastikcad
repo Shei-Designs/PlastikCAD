@@ -2,7 +2,7 @@
   "format": "plastikcad",
   "version": 2,
   "units": "mm",
-  "id": "p8pra8ug",
+  "id": "vm6sq7t5",
   "name": "Reference rover",
   "scene": [
     {
@@ -216,6 +216,31 @@
           "hfov": 360,
           "min": 100,
           "max": 6000
+        }
+      },
+      {
+        "id": "fx000011",
+        "name": "IMU",
+        "kind": "imu",
+        "link": "fx000001",
+        "origin": [0,0,0],
+        "rot": [0,0,0],
+        "rate": 100
+      },
+      {
+        "id": "fx000012",
+        "name": "Camera",
+        "kind": "camera",
+        "link": "fx000001",
+        "origin": [0,62,15],
+        "rot": [0,20,90],
+        "rate": 30,
+        "camera": {
+          "hfov": 80,
+          "width": 320,
+          "height": 240,
+          "near": 50,
+          "far": 10000
         }
       }
     ],

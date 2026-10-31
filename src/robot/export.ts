@@ -349,11 +349,14 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
   const links: UrdfLink[] = p.links.map(({ frame: _f, node: _n, ...l }) => l);
   const joints: UrdfJoint[] = [...p.treeJoints];
   // Each sensor is a frame of its own on a fixed joint; a camera also gets the optical frame ROS expects (Z forward, X right).
-  // A touch sensor feels a collision, so it sits on the link that has one.
+  // A touch sensor feels a collision, so it sits on the link that has one; Gazebo must then keep that link
+  // as one of its own, since a link folded into its parent across a fixed joint has its collision renamed.
   for (const s of p.sensors) {
     if (s.kind === 'touch') {
       const link = links.find((l) => l.name === s.link);
       if (link) link.sensors = [...(link.sensors ?? []), sensorXml({ ...s, frame: s.link })];
+      const carrier = joints.find((j) => j.child === s.link);
+      if (carrier?.type === 'fixed') carrier.preserve = true;
       continue;
     }
     links.push({ name: s.frame, inertial: null, visual: [], collision: [], sensors: [sensorXml(s)] });

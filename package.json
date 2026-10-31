@@ -12,6 +12,7 @@
     "test": "vitest run",
     "typecheck": "tsc",
     "smoke:robots": "ROBOT_FIXTURES_OUT=fixtures/out vitest run src/robot/robots.test.ts && python3 tools/mujoco_smoke.py fixtures/out",
+    "smoke:ros": "ROBOT_FIXTURES_OUT=fixtures/out vitest run src/robot/robots.test.ts && tools/ros_smoke.sh fixtures/out",
     "tauri": "tauri"
   },
   "dependencies": {

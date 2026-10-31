@@ -69,6 +69,8 @@ export interface UrdfJoint {
   mimic?: { joint: string; multiplier: number; offset: number };
   /** The motor's reflected rotor inertia, kg·m²; only MuJoCo takes it (as the joint's armature). */
   armature?: number;
+  /** Keep this fixed joint in Gazebo instead of folding its child into the parent, for a child whose collision a sensor names. */
+  preserve?: boolean;
 }
 
 const vec = (v: Vec3): string => v.map((x) => fmt(x, 6)).join(' ');
@@ -161,6 +163,7 @@ export function writeUrdf(name: string, links: UrdfLink[], joints: UrdfJoint[], 
     for (const s of l.sensors ?? []) inner.push(indent(s, '    '));
     if (inner.length) gazebo.push(`  <gazebo reference="${escapeXml(l.name)}">`, ...inner, '  </gazebo>');
   }
+  for (const j of joints) if (j.preserve) gazebo.push(`  <gazebo reference="${escapeXml(j.name)}">`, '    <preserveFixedJoint>true</preserveFixedJoint>', '  </gazebo>');
   for (const p of extras.plugins ?? []) gazebo.push('  <gazebo>', indent(p, '    '), '  </gazebo>');
   const control: string[] = [];
   if (extras.control && extras.control.joints.length) {

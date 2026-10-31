@@ -164,12 +164,15 @@ export function gazeboLaunch(name: string, needs: GazeboLaunchNeeds = { controll
     .join('');
   return `# Made with ${APP_NAME}. Spawns the robot in Gazebo (Harmonic or later, through ros_gz) with the bridge to ROS 2:
 #   ros2 launch ${name} gazebo.launch.py
+# On a machine without a display, headless:=true runs the server alone, sensors included:
+#   ros2 launch ${name} gazebo.launch.py headless:=true
 import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, SetEnvironmentVariable
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, SetEnvironmentVariable
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 
 
@@ -181,12 +184,14 @@ def generate_launch_description():
     with open(urdf, 'r') as f:
         robot_description = f.read().replace('${SHARE_PLACEHOLDER}', share)
 
+    headless = LaunchConfiguration('headless')
     gz_sim = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(get_package_share_directory('ros_gz_sim'), 'launch', 'gz_sim.launch.py')),
-        launch_arguments={'gz_args': f'-r {world}'}.items(),
+        launch_arguments={'gz_args': [PythonExpression(["'-r -s --headless-rendering' if '", headless, "' == 'true' else '-r'"]), f' {world}']}.items(),
     )
 
     return LaunchDescription([
+        DeclareLaunchArgument('headless', default_value='false', description='Run the Gazebo server without the window'),
         # So that Gazebo can find package://${name}/meshes/...
         SetEnvironmentVariable('GZ_SIM_RESOURCE_PATH', os.path.dirname(share)),
         gz_sim,
@@ -259,7 +264,7 @@ ROS 2 workspace, then:
     colcon build --packages-select ${name}
     source install/setup.bash
     ros2 launch ${name} display.launch.py      # RViz, with a slider for every joint
-    ros2 launch ${name} gazebo.launch.py       # Gazebo (needs ros_gz)
+    ros2 launch ${name} gazebo.launch.py       # Gazebo (needs ros_gz); add headless:=true on a machine without a display
 
 The robot is \`urdf/${name}.urdf\`. Visual meshes are OBJ files with their
 colors, collision meshes STL, all in meters with Z up, each in the frame of

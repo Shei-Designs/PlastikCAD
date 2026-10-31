@@ -181,7 +181,7 @@ const qmul = (a: number[], b: number[]): number[] => [
   a[0] * b[3] + a[1] * b[2] - a[2] * b[1] + a[3] * b[0],
 ];
 /** A MuJoCo camera looks down its -Z with +Y up; ours looks along +X with +Z up: the turn between the two. */
-const CAMERA_TURN = [0.5, -0.5, 0.5, -0.5];
+const CAMERA_TURN = [0.5, 0.5, -0.5, -0.5];
 
 export function writeMjcf(model: MjcfModel): string {
   const meshes = new Map<string, string>();

@@ -19,12 +19,16 @@ const lever = (side: SceneNode[], grams: (node: SceneNode) => number | null): nu
  * (`grams` gives a part's mass when known): torque to hold the heavier side
  * straight out five times over (N·m), since a knee carries the body as much
  * as a shoulder carries the arm; a quarter turn a second (90°/s); and damping
- * that costs a twentieth of the effort at full speed (N·m·s).
+ * that costs a twentieth of the effort at full speed (N·m·s). A continuous
+ * joint is a wheel, a turret or a spinner: it only ever spins its child side
+ * and never holds it up, so it is fitted to that side alone, at a turn a
+ * second. Fitting a free wheel to the body it carries gave it damping that
+ * braked the whole robot.
  */
-export function jointDefaults(childSide: SceneNode[], parentSide: SceneNode[], grams: (node: SceneNode) => number | null = () => null): Pick<RobotJoint, 'effort' | 'velocity' | 'damping'> {
-  const load = Math.max(lever(childSide, grams), lever(parentSide, grams));
+export function jointDefaults(childSide: SceneNode[], parentSide: SceneNode[], grams: (node: SceneNode) => number | null = () => null, continuous = false): Pick<RobotJoint, 'effort' | 'velocity' | 'damping'> {
+  const load = continuous ? lever(childSide, grams) : Math.max(lever(childSide, grams), lever(parentSide, grams));
   const effort = round3(Math.max(5 * load, 1e-4));
-  const velocity = 90;
+  const velocity = continuous ? 360 : 90;
   const damping = round3((0.05 * effort) / ((velocity * Math.PI) / 180));
   return { effort, velocity, damping };
 }
@@ -58,5 +62,5 @@ export function jointSides(robot: Robot, nodes: SceneNode[], joint: Pick<RobotJo
 /** The defaults that fit `joint` in `robot` (which may already hold it, or not yet). */
 export function jointFit(robot: Robot, nodes: SceneNode[], joint: RobotJoint, grams: (node: SceneNode) => number | null = () => null): Pick<RobotJoint, 'effort' | 'velocity' | 'damping'> {
   const [childSide, parentSide] = jointSides(robot.joints.some((j) => j.id === joint.id) ? robot : { ...robot, joints: [...robot.joints, joint] }, nodes, joint);
-  return jointDefaults(childSide, parentSide, grams);
+  return jointDefaults(childSide, parentSide, grams, joint.type === 'continuous');
 }
