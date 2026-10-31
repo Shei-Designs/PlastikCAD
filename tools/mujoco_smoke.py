@@ -101,14 +101,19 @@ for xml in xmls:
             renderer.update_scene(d, cam)
             depth = renderer.render()
             bottom, top = float(np.median(depth[-1])), float(np.median(depth[0]))
-            # The horizon (the first row that is not sky) must sit where the camera's tilt and field of view put it.
+            # The horizon (where sky turns to floor) must sit where the camera's tilt and field of view put it;
+            # a camera whose up points down (mounted upside down) has the sky at the bottom instead.
             rows = np.median(depth, axis=1)
-            horizon = int(np.argmax(rows < 0.9 * rows.max())) if (rows < 0.9 * rows.max()).any() else None
-            look = -d.cam_xmat[c].reshape(3, 3)[:, 2]
+            sky = rows >= 0.9 * rows.max()
+            horizon = int(np.argmax(sky != sky[0])) if (sky != sky[0]).any() else None
+            frame = d.cam_xmat[c].reshape(3, 3)
+            look, up = -frame[:, 2], frame[:, 1]
+            flipped = up[2] < 0
             pitch = np.arcsin(-look[2])
-            expected = depth.shape[0] / 2 - depth.shape[0] / 2 / np.tan(np.radians(m.cam_fovy[c]) / 2) * np.tan(pitch)
-            notes.append(f"camera {cam}: {colours} colours, depth {bottom:.2f} m at the bottom, {top:.2f} m at the top, horizon at row {horizon} (expected {expected:.0f} for a {np.degrees(pitch):.0f} deg tilt)")
-            ok &= colours >= 2 and 0 < bottom < top and horizon is not None and abs(horizon - expected) <= 2
+            offset = depth.shape[0] / 2 / np.tan(np.radians(m.cam_fovy[c]) / 2) * np.tan(pitch)
+            expected = depth.shape[0] / 2 + (offset if flipped else -offset)
+            notes.append(f"camera {cam}: {colours} colours, depth {bottom:.2f} m at the bottom, {top:.2f} m at the top, horizon at row {horizon} (expected {expected:.0f} for a {np.degrees(pitch):.0f} deg tilt{', upside down' if flipped else ''})")
+            ok &= colours >= 2 and horizon is not None and abs(horizon - expected) <= 2 and bool(sky[0]) != bool(flipped) and (top < bottom if flipped else bottom < top)
         if renderer:
             renderer.close()
     warned = [mujoco.mjtWarning(i).name for i, w in enumerate(d.warning) if w.number]

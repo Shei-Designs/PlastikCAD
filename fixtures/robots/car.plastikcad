@@ -2,7 +2,7 @@
   "format": "plastikcad",
   "version": 2,
   "units": "mm",
-  "id": "cbu8i4kk",
+  "id": "wse57fj1",
   "name": "Reference car",
   "scene": [
     {
@@ -287,7 +287,7 @@
         "kind": "depth",
         "link": "fx000013",
         "origin": [0,72,15],
-        "rot": [0,0,90],
+        "rot": [180,0,90],
         "rate": 30,
         "camera": {
           "hfov": 80,

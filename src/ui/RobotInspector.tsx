@@ -701,19 +701,36 @@ function tilted(frame: Mat, tilt: number): Mat {
   return [...x.map((v, i) => v * c - z[i] * s), frame[3], frame[4], frame[5], ...z.map((v, i) => v * c + x[i] * s), frame[9], frame[10], frame[11]] as Mat;
 }
 
+/** `frame` turned about its own X by `roll` degrees: a camera rolled clockwise as seen from behind it. */
+function rolled(frame: Mat, roll: number): Mat {
+  const a = (roll * Math.PI) / 180;
+  const [c, s] = [Math.cos(a), Math.sin(a)];
+  const y = frame.slice(3, 6) as Vec3;
+  const z = frame.slice(6, 9) as Vec3;
+  return [frame[0], frame[1], frame[2], ...y.map((v, i) => v * c + z[i] * s), ...z.map((v, i) => v * c - y[i] * s), frame[9], frame[10], frame[11]] as Mat;
+}
+
+const degrees = (radians: number): number => (Math.abs(radians) < 1e-5 ? 0 : (radians * 180) / Math.PI);
+
 /**
  * Which of the six directions a sensor's frame faces (its X for a camera, its Z for a lidar) once the tilt about
- * its own Y is taken off, and that tilt in degrees, down positive. `faces` is -1 when the frame is turned some other way.
+ * its own Y and, for a camera, the roll about its X are taken off; both in degrees, tilt down positive.
+ * `faces` is -1 when the frame is turned some other way (a lidar rolled about its sweep, say).
  */
-function facingOf(matrix: Mat, along: 'x' | 'z'): { faces: number; tilt: number } {
+function facingOf(matrix: Mat, along: 'x' | 'z'): { faces: number; tilt: number; roll: number } {
   const look = (along === 'x' ? matrix.slice(0, 3) : matrix.slice(6, 9)) as Vec3;
   const y = matrix.slice(3, 6) as Vec3;
-  let best = { faces: -1, tilt: 0 };
+  let best = { faces: -1, tilt: 0, roll: 0 };
   DIRECTIONS.forEach((d, i) => {
     const frame = frameFacing(d.vector, along);
-    if (dot([frame[3], frame[4], frame[5]], y) < 1 - 1e-5) return;
-    const tilt = (Math.atan2(dot(look, cross(y, d.vector)), dot(look, d.vector)) * 180) / Math.PI;
-    if (best.faces < 0 || Math.abs(tilt) < Math.abs(best.tilt)) best = { faces: i, tilt: Math.abs(tilt) < 1e-3 ? 0 : tilt };
+    const y0 = frame.slice(3, 6) as Vec3;
+    // The look must lie in the plane the tilt sweeps it through, square to the untilted frame's Y.
+    if (Math.abs(dot(look, y0)) > 1e-5) return;
+    const tilt = Math.atan2(dot(look, cross(y0, d.vector)), dot(look, d.vector));
+    const upright = tilted(frame, (tilt * 180) / Math.PI);
+    const roll = Math.atan2(dot(y, upright.slice(6, 9) as Vec3), dot(y, upright.slice(3, 6) as Vec3));
+    if (along === 'z' && Math.abs(roll) > 1e-5) return;
+    if (best.faces < 0 || Math.abs(tilt) < Math.abs((best.tilt * Math.PI) / 180)) best = { faces: i, tilt: degrees(tilt), roll: degrees(roll) };
   });
   return best;
 }
@@ -746,9 +763,10 @@ function SensorPanel({ sensor }: { sensor: RobotSensor }) {
   const camera = sensor.kind === 'camera' || sensor.kind === 'depth';
   const turned = sensor.kind !== 'touch';
   const along = camera ? 'x' : 'z';
-  const { faces, tilt } = placed ? facingOf(placed.matrix, along) : { faces: 0, tilt: 0 };
-  // A tilt tips a level camera's view down, or an upright lidar's sweep down at its front.
+  const { faces, tilt, roll } = placed ? facingOf(placed.matrix, along) : { faces: 0, tilt: 0, roll: 0 };
+  // A tilt tips a level camera's view down, or an upright lidar's sweep down at its front; a roll turns a camera about its look.
   const tiltable = (dir: Vec3) => (camera ? dir[2] === 0 : sensor.kind === 'lidar' && dir[2] !== 0);
+  const turn = (dir: Vec3, tiltBy: number, rollBy: number) => rolled(tilted(frameFacing(dir, along), tiltable(dir) ? tiltBy : 0), camera ? rollBy : 0);
   const put = (origin: Vec3, matrix: Mat, merge?: string) => placeSensor(sensor.id, origin, matrix, merge);
   const row = (label: string, content: ReactNode, help?: string) => (
     <div className="field inline">
@@ -809,7 +827,7 @@ function SensorPanel({ sensor }: { sensor: RobotSensor }) {
                 </label>
                 <div className="segmented small" role="radiogroup" aria-label="Direction">
                   {DIRECTIONS.map((d, i) => (
-                    <button key={d.label} type="button" role="radio" aria-checked={faces === i} className={faces === i ? 'on' : ''} onClick={() => put(placed.origin, tilted(frameFacing(d.vector, along), tiltable(d.vector) ? tilt : 0))}>
+                    <button key={d.label} type="button" role="radio" aria-checked={faces === i} className={faces === i ? 'on' : ''} onClick={() => put(placed.origin, turn(d.vector, tilt, roll))}>
                       {d.label}
                     </button>
                   ))}
@@ -821,9 +839,12 @@ function SensorPanel({ sensor }: { sensor: RobotSensor }) {
               tiltable(DIRECTIONS[faces].vector) &&
               row(
                 'Tilt',
-                <NumberBox label="Tilt" value={Number(tilt.toFixed(3))} unit="°" min={-90} max={90} step={5} places={1} onChange={(v) => put(placed.origin, tilted(frameFacing(DIRECTIONS[faces].vector, along), v), 'sensor-tilt')} />,
+                <NumberBox label="Tilt" value={Number(tilt.toFixed(3))} unit="°" min={-90} max={90} step={5} places={1} onChange={(v) => put(placed.origin, turn(DIRECTIONS[faces].vector, v, roll), 'sensor-tilt')} />,
                 camera ? 'Tips the view down from level; negative looks up.' : 'Tips the front of the sweep down; negative tips it up.',
               )}
+            {faces >= 0 &&
+              camera &&
+              row('Roll', <NumberBox label="Roll" value={Number(roll.toFixed(3))} unit="°" min={-180} max={180} step={5} places={1} onChange={(v) => put(placed.origin, turn(DIRECTIONS[faces].vector, tilt, v), 'sensor-roll')} />, 'Turns the camera about its line of sight, clockwise seen from behind; 180 for one mounted upside down.')}
           </>
         )}
       </fieldset>

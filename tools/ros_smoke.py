@@ -196,26 +196,35 @@ class Launched:
         return [l for l in lines if not any(n in l for n in noise)]
 
 
-def camera_pitch(urdf_path, sensor):
-    """How far a camera's fixed joint tips it down from level, in radians (the pitch of its rpy in the level body), or None."""
+def camera_turn(urdf_path, sensor):
+    """How a camera's fixed joint turns it in the level body: (pitch down, roll) in radians, or None."""
     tree = ET.parse(urdf_path)
     for j in tree.getroot().findall('joint'):
         if j.get('name') == f'{sensor}_joint':
-            rpy = (j.find('origin').get('rpy') or '0 0 0').split()
-            return float(rpy[1])
+            rpy = [float(v) for v in (j.find('origin').get('rpy') or '0 0 0').split()]
+            return rpy[1], rpy[0]
     return None
 
 
+def upside_down(urdf, sensor):
+    turn = camera_turn(urdf, sensor)
+    return bool(turn) and abs(abs(turn[1]) - math.pi) < 0.01
+
+
 def horizon_check(name, topic, urdf, sensor, w, h, horizon):
-    """The horizon must sit where the camera's tilt and field of view put it."""
-    hfov, pitch = camera_hfov(urdf, sensor), camera_pitch(urdf, sensor)
-    if hfov is None or pitch is None or horizon is None:
+    """The horizon must sit where the camera's tilt, roll and field of view put it (a camera rolled 180° sees the floor above the sky)."""
+    hfov, turn = camera_hfov(urdf, sensor), camera_turn(urdf, sensor)
+    if hfov is None or turn is None or horizon is None:
         return ''
+    pitch, roll = turn
+    if abs(roll) > 0.01 and not upside_down(urdf, sensor):
+        return f', horizon at row {horizon} (not checked: camera rolled {math.degrees(roll):.0f}°)'
     fx = w / 2 / math.tan(hfov / 2)
-    expected = h / 2 - fx * math.tan(pitch)
-    detail = f', horizon at row {horizon} (expected {expected:.0f} for a {math.degrees(pitch):.0f}° tilt)'
+    expected = h / 2 + (fx * math.tan(pitch) if upside_down(urdf, sensor) else -fx * math.tan(pitch))
+    how = f'a {math.degrees(pitch):.0f}° tilt' + (', upside down' if upside_down(urdf, sensor) else '')
+    detail = f', horizon at row {horizon} (expected {expected:.0f} for {how})'
     if abs(horizon - expected) > max(4, 0.02 * h):
-        fail(name, f'{topic} puts the horizon at row {horizon}, not {expected:.0f}: the camera is not tilted {math.degrees(pitch):.0f}° down')
+        fail(name, f'{topic} puts the horizon at row {horizon}, not {expected:.0f}: the camera is not turned as designed ({how})')
     return detail
 
 
@@ -325,6 +334,7 @@ def check_ros_package(pkg_dir, env):
                     fail(name, f'{t["ros_topic_name"]} sees something at {min(low):.2f} m in an empty world')
             elif t['ros_type_name'] == 'sensor_msgs/msg/Image':
                 w, h = msg.get('width') or 0, msg.get('height') or 0
+                sensor_name = t['ros_topic_name'].split('/')[1]
                 detail = f', {w}x{h} {msg.get("encoding")}, frame {msg.get("frame")}'
                 if not w or not h:
                     fail(name, f'{t["ros_topic_name"]} is an empty image')
@@ -337,16 +347,20 @@ def check_ros_package(pkg_dir, env):
                         detail += f', {msg["too_near"]} pixels nearer than the near clip'
                     if not rows:
                         fail(name, f'{t["ros_topic_name"]} sees nothing: not even the floor')
+                    elif upside_down(urdf, sensor_name):
+                        # Mounted upside down: the floor fills the top of the picture, nearest at the very top.
+                        if rows[0] > h // 4 or rows[1] > h * 3 // 4 or not msg['floor_top'] < msg['floor_bottom']:
+                            fail(name, f'{t["ros_topic_name"]} does not look out over the floor upside down{detail}')
                     elif rows[0] < h // 4 or rows[1] < h * 3 // 4 or not msg['floor_bottom'] < msg['floor_top']:
                         fail(name, f'{t["ros_topic_name"]} does not look out over the floor{detail}')
                     if rows:
-                        detail += horizon_check(name, t['ros_topic_name'], urdf, t['ros_topic_name'].split('/')[1], w, h, rows[0])
+                        detail += horizon_check(name, t['ros_topic_name'], urdf, sensor_name, w, h, rows[1] + 1 if upside_down(urdf, sensor_name) else rows[0])
                 elif msg.get('distinct') is not None:
                     detail += f', {msg["distinct"]} colours, top row {msg["top"]:.0f} bottom row {msg["bottom"]:.0f}'
                     if msg['distinct'] < 2 or msg['bytes'] != w * h * 3:
                         fail(name, f'{t["ros_topic_name"]} renders a blank picture{detail}')
                     else:
-                        detail += horizon_check(name, t['ros_topic_name'], urdf, t['ros_topic_name'].split('/')[1], w, h, msg.get('horizon'))
+                        detail += horizon_check(name, t['ros_topic_name'], urdf, sensor_name, w, h, msg.get('horizon'))
                     if picture:
                         detail += f', saved as {os.path.basename(picture)}'
                 else:

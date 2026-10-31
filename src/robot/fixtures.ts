@@ -109,8 +109,8 @@ function car(): Doc {
   const steer = knuckles.map((k) => joint(`${k.name} steering`, body, k, [0, 0, 0], { axis: [0, 0, 1], lower: -30, upper: 30, motor: 'sg90' }));
   const roll = front.map((w, i) => joint(`${w.name} joint`, knuckles[i], w, [0, 0, 0], { type: 'continuous' }));
   const scene = [body, ...rear, ...knuckles, ...front];
-  // A depth camera at the front of the body's top, looking the way the car drives (+Y).
-  const depth = { ...defaultSensor(id(), 'Depth', 'depth', body.id, [0, 72, 15]), rot: [0, 0, 90] as Vec3, camera: { hfov: 80, width: 320, height: 240, near: 50, far: 10000 } };
+  // A depth camera at the front of the body's top, looking the way the car drives (+Y), mounted upside down (rolled 180°) as a bracket often has it.
+  const depth = { ...defaultSensor(id(), 'Depth', 'depth', body.id, [0, 72, 15]), rot: [180, 0, 90] as Vec3, camera: { hfov: 80, width: 320, height: 240, near: 50, far: 10000 } };
   return design('Reference car', scene, {
     root: body.id,
     base: 'free',

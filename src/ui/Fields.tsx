@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Hint } from './Hint';
 import { enterByTouch } from './TouchEntry';
@@ -39,20 +39,30 @@ interface NumberBoxProps {
 /**
  * Text box for a number. Typing commits on Enter or when the box is left, so
  * half-typed values never reach the model; arrow keys step (Shift: by ten).
+ * A value that changes from outside while the box is being typed in (an undo,
+ * or the selection moving to another object that the same box now edits)
+ * drops what was typed, so the text never lands on something it was not typed for.
  */
 export function NumberBox({ value, onChange, tag, unit, step = 1, min = -Infinity, max = Infinity, integer, places = 2, disabled, label, id }: NumberBoxProps) {
   const [text, setText] = useState(formatNumber(value, places));
   const [editing, setEditing] = useState(false);
+  // The last value this box itself sent out, to tell its own commits from changes made elsewhere.
+  const sent = useRef<number | null>(null);
   useEffect(() => {
-    if (!editing) setText(formatNumber(value, places));
+    if (!editing || sent.current !== value) setText(formatNumber(value, places));
+    sent.current = null;
   }, [value, places, editing]);
 
   const clamp = (v: number) => Math.min(max, Math.max(min, integer ? Math.round(v) : v));
+  const send = (next: number) => {
+    sent.current = next;
+    onChange(next);
+  };
   const commit = (raw: string) => {
     const parsed = Number(raw.replace(',', '.'));
     if (raw.trim() === '' || !Number.isFinite(parsed)) return;
     const next = clamp(parsed);
-    if (next !== value) onChange(next);
+    if (next !== value) send(next);
   };
 
   return (
@@ -83,7 +93,7 @@ export function NumberBox({ value, onChange, tag, unit, step = 1, min = -Infinit
             e.preventDefault();
             const next = clamp(Number((value + (e.key === 'ArrowUp' ? 1 : -1) * step * (e.shiftKey ? 10 : 1)).toFixed(6)));
             setText(formatNumber(next, places));
-            if (next !== value) onChange(next);
+            if (next !== value) send(next);
           } else if (e.key === 'Enter') {
             commit(text);
             e.currentTarget.select();
