@@ -265,8 +265,11 @@ in the design file and synced with it.
   opens the same package: unzip it, pick the URDF with *File > Import*, and
   add the package's name and its unzipped folder to the importer's ROS
   package list so the `package://` mesh paths resolve (a sourced ROS 2
-  workspace with the package built needs no mapping). The importer writes the
-  USD itself, so there is no USD export.
+  workspace with the package built needs no mapping). Set *Base Type* to
+  *Mobile* for a rover or a walker, as the importer otherwise bolts the base
+  to the world, and give the joints drive gains (velocity drives on the
+  wheels, position drives on the servos), which URDF does not carry. The
+  importer writes the USD itself, so there is no USD export.
 - **Import URDF**, under the robot tree, brings a robot in from a `.urdf`
   file. Every link with a shape becomes an object standing where the file
   puts it, its meshes read from `meshes/` beside the file as a package keeps
@@ -511,6 +514,9 @@ pnpm install
 pnpm tauri dev      # run the desktop app with hot reload
 pnpm dev            # or just the UI, in a browser at http://localhost:1430
 pnpm test           # model, geometry, part and file-format tests
+pnpm smoke:robots   # exports the reference robots and runs them in MuJoCo (pip install mujoco)
+pnpm smoke:ros      # the same in ROS 2 Jazzy and Gazebo, in Docker
+pnpm smoke:isaac    # the same in Isaac Sim (ISAACSIM_PYTHON=~/isaacsim-env/bin/python)
 pnpm typecheck
 pnpm tauri build    # build installers into src-tauri/target/release/bundle
 ```

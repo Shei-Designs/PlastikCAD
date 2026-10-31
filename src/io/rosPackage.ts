@@ -282,7 +282,9 @@ launch files fill that in, so no xacro is needed.
 
 Isaac Sim opens the URDF as it is (File > Import). Add \`${name}\` and this
 folder to the importer's ROS package list so the \`package://\` mesh paths
-resolve, or import from a sourced workspace where the package is built; the
-importer writes the USD itself.
+resolve, or import from a sourced workspace where the package is built; set
+Base Type to Mobile unless the robot is bolted down, and give the joints
+drive gains (velocity on wheels, position on servos), which URDF does not
+carry. The importer writes the USD itself.
 `;
 }
