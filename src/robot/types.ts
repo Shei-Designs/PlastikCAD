@@ -186,6 +186,17 @@ export interface Robot {
 }
 
 export type World = 'flat' | 'rough' | 'slope';
+/**
+ * A lidar's rays as angles from its X about its Z, radians: from the right-hand
+ * end of the sweep round to the left, as a laser scan lists them. A full circle
+ * stops one step short of where it began.
+ */
+export function lidarAngles(rays: number, hfov: number): number[] {
+  const full = hfov >= 2 * Math.PI - 1e-6;
+  const step = rays > 1 ? hfov / (full ? rays : rays - 1) : 0;
+  return Array.from({ length: rays }, (_, i) => -hfov / 2 + i * step);
+}
+
 export const WORLDS: { id: World; name: string; help: string }[] = [
   { id: 'flat', name: 'Flat', help: 'A level floor.' },
   { id: 'rough', name: 'Rough', help: 'Gentle bumps a few centimeters high around a flat start; for walkers and rovers.' },

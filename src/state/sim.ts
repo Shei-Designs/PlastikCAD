@@ -36,6 +36,8 @@ export interface SimState {
   targets: Map<string, number>;
   /** The rover command as held. */
   command: { forward: number; turn: number; side: number };
+  /** Each lidar's rays by the design sensor's id, mm from its origin; -1 where a ray hits nothing. */
+  readings: Map<string, number[]>;
 }
 
 /** What each key does to a rover. */
@@ -52,7 +54,7 @@ const DRIVE_KEYS: Record<string, string> = {
   e: 'slide-right',
 };
 
-const OFF: SimState = { status: 'off', error: null, running: false, time: 0, frames: new Map(), base: null, actuators: [], drive: null, world: 'flat', targets: new Map(), command: { forward: 0, turn: 0, side: 0 } };
+const OFF: SimState = { status: 'off', error: null, running: false, time: 0, frames: new Map(), base: null, actuators: [], drive: null, world: 'flat', targets: new Map(), command: { forward: 0, turn: 0, side: 0 }, readings: new Map() };
 
 /** The transform taking a link from where it is designed to where the simulation has its body: a turn by the quaternion about the body's frame origin, and a move. */
 function frameOf(poses: Float64Array, at: number, origin: Vec3): Mat {
@@ -85,6 +87,8 @@ class SimStore {
   private bodyOrder: string[] = [];
   /** Joint name in the model → the design joint, for naming the controls. */
   private jointIds = new Map<string, string>();
+  /** The lidars the worker reads with every frame, in the order their rays arrive. */
+  private lidars: { name: string; id: string; rays: number }[] = [];
   /** Counts starts, so that a start overtaken by a stop or another start lets go. */
   private starts = 0;
   private held = new Set<string>();
@@ -129,8 +133,9 @@ class SimStore {
       const files = pkg.files.filter((f) => f.name.startsWith('meshes/'));
       this.bodies = new Map(pkg.bodies.map((b) => [b.body, { node: b.node, frame: b.frame }]));
       this.jointIds = new Map(pkg.joints.map((j) => [j.name, j.id]));
+      this.lidars = pkg.lidars;
       this.set({ drive: pkg.drive });
-      this.send({ type: 'load', xml, files, drive: pkg.drive });
+      this.send({ type: 'load', xml, files, drive: pkg.drive, lidars: pkg.lidars.map(({ name, rays }) => ({ name, rays })) });
       this.listen(true);
     } catch (e) {
       if (turn !== this.starts) return;
@@ -265,7 +270,13 @@ class SimStore {
           frames.set(body.node, frameOf(message.poses, at, body.frame));
           base ??= { pos: [message.poses[at] / M, message.poses[at + 1] / M, message.poses[at + 2] / M], yaw: yawOf(message.poses, at) };
         }
-        this.set({ frames, base, time: message.time });
+        const readings = new Map<string, number[]>();
+        let from = 0;
+        for (const l of this.lidars) {
+          readings.set(l.id, Array.from(message.ranges.subarray(from, from + l.rays), (v) => (v < 0 ? -1 : v / M)));
+          from += l.rays;
+        }
+        this.set({ frames, base, time: message.time, readings });
         break;
       }
       case 'error':

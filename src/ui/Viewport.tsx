@@ -37,7 +37,7 @@ import {
   unghostAll,
   useEditor,
 } from '../state/store';
-import { apply, rotation } from '../model/math';
+import { apply, multiply, rotation } from '../model/math';
 import type { Mat } from '../model/math';
 import type { SceneNode, Vec3 } from '../model/types';
 import { posedScene } from '../robot/kinematics';
@@ -357,6 +357,23 @@ function robotMarkers(s: EditorState): { id: string; marker: Marker }[] | null {
   return out;
 }
 
+/** While the test drive runs: every sensor on its link where the simulation has it, a lidar's with what its rays read, for the plate to draw the readouts. */
+function drivenMarkers(s: EditorState, frames: Map<string, Mat>, readings: Map<string, number[]>): { id: string; marker: Marker }[] | null {
+  if (!s.robot || !s.doc.robot) return null;
+  const byId = new Map(s.doc.scene.map((n) => [n.id, n]));
+  const out: { id: string; marker: Marker }[] = [];
+  for (const x of s.doc.robot.sensors) {
+    const link = byId.get(x.link);
+    const frame = frames.get(x.link);
+    if (!link || !frame) continue;
+    const marker = sensorMarkerOf(x, link);
+    marker.matrix = multiply(frame, marker.matrix);
+    if (marker.kind === 'lidar') marker.ranges = readings.get(x.id);
+    out.push({ id: x.id, marker });
+  }
+  return out;
+}
+
 const cross = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const normalize = (v: Vec3): Vec3 => {
   const n = Math.hypot(...v) || 1;
@@ -377,9 +394,10 @@ export function Viewport() {
   const simFrames = driven.status === 'ready' && driven.frames.size > 0 ? driven.frames : null;
   useEffect(() => sim.check(state.doc, state.robot), [state.doc.scene, state.doc.robot, state.robot]);
   const highlight = state.highlight;
-  // The markers sit where the design has the joints; while the simulation moves the links they would mislead, so they rest.
+  // The joint markers sit where the design has the joints; while the simulation moves the links they would mislead, so they rest.
+  // The sensors ride their links instead, a lidar's rays reaching to what they read, so a tilt or a range can be judged on the move.
   const marker = useMemo(() => (simFrames ? null : robotMarker(state)), [state.joint, state.sensor, state.doc, simFrames]);
-  const markers = useMemo(() => (simFrames ? null : robotMarkers(state)), [state.robot, state.joint, state.sensor, state.doc, state.prefs.robotMarkers, simFrames]);
+  const markers = useMemo(() => (simFrames ? drivenMarkers(state, simFrames, driven.readings) : robotMarkers(state)), [state.robot, state.joint, state.sensor, state.doc, state.prefs.robotMarkers, simFrames, driven.readings]);
   const ground = simFrames && driven.world !== 'flat' ? driven.world : null;
   // The view follows a driving robot: it moves by what the base moved since the last frame, and comes back when the drive ends.
   const followed = useRef<Vec3 | null>(null);

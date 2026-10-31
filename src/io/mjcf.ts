@@ -5,6 +5,7 @@
 import { APP_NAME } from '../app';
 import type { Vec3 } from '../model/types';
 import type { Tensor } from '../robot/inertia';
+import { lidarAngles } from '../robot/types';
 import type { JointType } from '../robot/types';
 import { escapeXml, fmt } from './format';
 import type { UrdfGeometry } from './urdf';
@@ -165,12 +166,7 @@ function turned(v: Vec3, [r, p, y]: Vec3): Vec3 {
 
 /** A lidar's rays in its link's frame: unit directions spread over the sweep, from its right-hand end round to its left, as a laser scan lists them. */
 function lidarRays(l: NonNullable<MjcfBody['lidars']>[number]): Vec3[] {
-  const full = l.hfov >= 2 * Math.PI - 1e-6;
-  const step = l.rays > 1 ? l.hfov / (full ? l.rays : l.rays - 1) : 0;
-  return Array.from({ length: l.rays }, (_, i) => {
-    const a = -l.hfov / 2 + i * step;
-    return turned([Math.cos(a), Math.sin(a), 0], l.rpy);
-  });
+  return lidarAngles(l.rays, l.hfov).map((a) => turned([Math.cos(a), Math.sin(a), 0], l.rpy));
 }
 
 /** Multiplies two "w x y z" quaternions given as arrays. */

@@ -239,7 +239,9 @@ in the design file and synced with it.
   and the view following the base. Drive a rover with W A S D or the arrow
   keys (Q and E slide a mecanum robot sideways), move an arm's servos with a
   slider each, and read the time, the distance moved and the heading; *Pause*,
-  *Reset* and *Stop* do what they say. The floor is the one *World* chose.
+  *Reset* and *Stop* do what they say. The sensors ride their links while it
+  drives, and a lidar's rays reach to whatever they measure, so a tilt or a
+  range can be judged on the move. The floor is the one *World* chose.
   Whatever stops the export stops the test drive too; the design is not
   touched.
 - **Export** writes a zip in one of three forms. A *ROS 2 package*:
@@ -634,8 +636,8 @@ never touch the mesh kernel, which keeps them easy to test.
 - More parts: throated worm wheel, planetary set helper, V-belt pulleys,
   imperial threads.
 - Assembly preview of meshing gears.
-- Robot mode: sensor readouts while test driving, slopes and steps in the
-  worlds.
+- Robot mode: steps and ramps in the worlds; a camera's picture while test
+  driving.
 - STEP export. Shapes and parts are already described as profiles and
   operations rather than triangles, so a B-rep backend can evaluate the same
   descriptions.

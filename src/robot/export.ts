@@ -99,6 +99,8 @@ export interface MjcfPackage extends RobotPackage {
   /** Each joint's name in the model, and the design joint it is. */
   joints: { name: string; id: string }[];
   drive: DriveSpec | null;
+  /** Each lidar's name in the model, the design sensor it is, and how many rays (`<name>_<i>` rangefinders) it casts. */
+  lidars: { name: string; id: string; rays: number }[];
 }
 
 /** What both outputs share: every link and joint in SI, the meshes written, the sensors, the drive. */
@@ -116,7 +118,7 @@ interface Prepared {
   treeJoints: UrdfJoint[];
   /** The joints that close loops, which only SDF carries. */
   loopJoints: UrdfJoint[];
-  sensors: (GazeboSensor & { link: string; xyz: Vec3; rpy: Vec3; touch: number })[];
+  sensors: (GazeboSensor & { id: string; link: string; xyz: Vec3; rpy: Vec3; touch: number })[];
   drive: PreparedDrive | null;
   /** Joints under ros2_control. */
   controlled: string[];
@@ -219,6 +221,7 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
       const rpy = eulerOf(multiply(rotation(node.rot), rotation(x.rot))).map((d) => d * RAD) as Vec3;
       const name = sensorNames.get(x)!;
       return {
+        id: x.id,
         name,
         frame: `${name}_link`,
         kind: x.kind,
@@ -524,6 +527,7 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
     bodies: p.links.map((l) => ({ body: l.name, node: l.node.id, frame: l.frame })),
     joints: [...p.jointNames].map(([j, name]) => ({ name, id: j.id })),
     drive,
+    lidars: p.sensors.filter((s) => s.kind === 'lidar').map((s) => ({ name: s.name, id: s.id, rays: Math.min(s.lidar.samples, MAX_LIDAR_RAYS) })),
   };
 }
 

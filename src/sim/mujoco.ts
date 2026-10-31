@@ -134,6 +134,20 @@ export class Simulation {
     return (this.data.qpos as Float64Array)[(this.model.jnt_qposadr as Int32Array)[j]];
   }
 
+  /** The readings of these lidars' rays (`<name>_<i>`), one after another, meters; -1 where a ray hits nothing or the model lacks it. */
+  lidarRanges(lidars: { name: string; rays: number }[]): Float32Array {
+    const out = new Float32Array(lidars.reduce((n, l) => n + l.rays, 0));
+    const data = this.data.sensordata as Float64Array;
+    let at = 0;
+    for (const l of lidars) {
+      for (let i = 0; i < l.rays; i++) {
+        const s = this.sensors.get(`${l.name}_${i}`);
+        out[at++] = s ? data[s.at] : -1;
+      }
+    }
+    return out;
+  }
+
   /** A sensor's reading as it stands; empty for a sensor the model lacks. */
   sensorValue(sensor: string): number[] {
     const s = this.sensors.get(sensor);

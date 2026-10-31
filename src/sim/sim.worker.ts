@@ -14,6 +14,8 @@ let mj: MainModule | null = null;
 let sim: Simulation | null = null;
 let timer: ReturnType<typeof setInterval> | undefined;
 let last = 0;
+/** The lidars whose rays go out with every frame. */
+let lidars: { name: string; rays: number }[] = [];
 /** Counts loads, so that a load still waiting for the engine gives way to a later one. */
 let loads = 0;
 
@@ -24,7 +26,8 @@ const post = (message: SimResponse, transfer?: Transferable[]): void => {
 function frame(): void {
   if (!sim) return;
   const poses = sim.poses();
-  post({ type: 'frame', time: sim.time, poses }, [poses.buffer]);
+  const ranges = sim.lidarRanges(lidars);
+  post({ type: 'frame', time: sim.time, poses, ranges }, [poses.buffer, ranges.buffer]);
 }
 
 function tick(): void {
@@ -62,6 +65,7 @@ async function load(req: Extract<SimRequest, { type: 'load' }>): Promise<void> {
   mj ??= await loadMujoco(wasmUrl);
   if (turn !== loads) return;
   sim = Simulation.load(mj, req.xml, req.files, req.drive);
+  lidars = req.lidars;
   post({ type: 'loaded', bodies: sim.bodies, actuators: sim.actuators, timestep: sim.timestep });
   frame();
 }

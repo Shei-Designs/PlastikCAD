@@ -59,6 +59,7 @@ import type { Asset, GroupNode, SceneNode, Vec3 } from '../model/types';
 import type { BuildResult } from '../worker/protocol';
 import { SkinPainter } from './skin';
 import { terrain } from '../io/mjcf';
+import { lidarAngles } from '../robot/types';
 
 export type ViewPreset = 'iso' | 'top' | 'front' | 'side';
 
@@ -97,7 +98,8 @@ export interface ViewerOptions {
 export type Marker =
   | { kind: 'joint'; type: 'fixed' | 'revolute' | 'continuous' | 'prismatic'; matrix: Mat }
   | { kind: 'camera'; matrix: Mat; hfov: number; aspect: number; depth: boolean }
-  | { kind: 'lidar'; matrix: Mat; hfov: number }
+  /** `ranges`: what each ray measures while the test drive runs, mm from the origin, -1 for a miss; drawn as rays in the design's own scale. */
+  | { kind: 'lidar'; matrix: Mat; hfov: number; ranges?: number[] }
   | { kind: 'imu'; matrix: Mat }
   | { kind: 'touch'; matrix: Mat };
 
@@ -718,6 +720,8 @@ export class Viewer {
   /** The other joints and sensors, drawn small, by id. */
   private dimMarkers = new Map<string, Group>();
   private dimKey = '';
+  /** The rays of the lidars among the dim markers, by marker id, while the test drive reports them. */
+  private rays = new Map<string, LineSegments<BufferGeometry, LineBasicMaterial>>();
   private handles: Handle[] = [];
   private handleMode: 'none' | 'single' | 'several' | 'locked' | 'align' = 'none';
   private alignLines!: LineSegments<BufferGeometry, LineBasicMaterial>;
@@ -977,6 +981,7 @@ export class Viewer {
     this.shared.clear();
     disposeMarker(this.marker);
     for (const g of this.dimMarkers.values()) disposeMarker(g);
+    this.disposeRays();
     for (const grid of [this.gridMajor, this.gridMinor, this.axes, this.outline, this.pointer3d, this.alignLines]) {
       grid.geometry.dispose();
       grid.material.dispose();
@@ -1217,7 +1222,7 @@ export class Viewer {
     }
     this.pointer3d.visible = Boolean(h);
     const mk = this.options.marker;
-    const markerKey = mk ? `${theme}:${JSON.stringify({ ...mk, matrix: undefined })}` : '';
+    const markerKey = mk ? `${theme}:${JSON.stringify({ ...mk, matrix: undefined, ranges: undefined })}` : '';
     if (markerKey !== this.markerKey) {
       this.markerKey = markerKey;
       disposeMarker(this.marker);
@@ -1229,7 +1234,7 @@ export class Viewer {
     this.marker.visible = Boolean(mk);
     this.markerArrows.visible = Boolean(mk) && this.options.interactive;
     const dims = this.options.markers ?? [];
-    const dimKey = `${theme}:${JSON.stringify(dims.map((d) => ({ id: d.id, marker: { ...d.marker, matrix: undefined } })))}`;
+    const dimKey = `${theme}:${JSON.stringify(dims.map((d) => ({ id: d.id, marker: { ...d.marker, matrix: undefined, ranges: d.marker.kind === 'lidar' ? d.marker.ranges?.length : undefined } })))}`;
     if (dimKey !== this.dimKey) {
       this.dimKey = dimKey;
       for (const g of this.dimMarkers.values()) {
@@ -1237,10 +1242,22 @@ export class Viewer {
         this.overlay.remove(g);
       }
       this.dimMarkers.clear();
+      this.disposeRays();
       for (const d of dims) {
         const g = markerObject(d.marker, t.accent, true);
         this.overlay.add(g);
         this.dimMarkers.set(d.id, g);
+        if (d.marker.kind === 'lidar' && d.marker.ranges) {
+          // One line per ray, from the lidar to what the ray met; laid out with the readings every frame.
+          const geometry = new BufferGeometry();
+          geometry.setAttribute('position', new BufferAttribute(new Float32Array(d.marker.ranges.length * 6), 3));
+          const rays = new LineSegments(geometry, new LineBasicMaterial({ color: t.accent, transparent: true, opacity: 0.8, depthTest: false }));
+          rays.matrixAutoUpdate = false;
+          rays.renderOrder = 9;
+          rays.frustumCulled = false;
+          this.overlay.add(rays);
+          this.rays.set(d.id, rays);
+        }
       }
     }
     const groundKey = this.options.ground ? `${theme}:${this.options.ground}` : '';
@@ -2509,7 +2526,43 @@ export class Viewer {
     for (const d of this.options.markers ?? []) {
       const g = this.dimMarkers.get(d.id);
       if (g) place(g, d.marker.matrix, DIM_MARKER_PIXELS);
+      const rays = d.marker.kind === 'lidar' ? this.rays.get(d.id) : undefined;
+      if (rays && d.marker.kind === 'lidar' && d.marker.ranges) this.layoutRays(rays, d.marker.matrix, d.marker.hfov, d.marker.ranges);
     }
+  }
+
+  /** A lidar's rays in the design's own scale: each from the origin to the point its reading puts, in the sweep's plane; misses are left out. */
+  private layoutRays(rays: LineSegments<BufferGeometry, LineBasicMaterial>, matrix: Mat, hfov: number, ranges: number[]): void {
+    const angles = lidarAngles(ranges.length, (Math.min(Math.max(hfov, 1), 360) * Math.PI) / 180);
+    const position = rays.geometry.getAttribute('position') as BufferAttribute;
+    const p = position.array as Float32Array;
+    const [ox, oy, oz] = [matrix[9], matrix[10], matrix[11]];
+    let n = 0;
+    for (let i = 0; i < ranges.length && n * 6 + 5 < p.length; i++) {
+      const r = ranges[i];
+      if (!(r >= 0)) continue;
+      const c = Math.cos(angles[i]);
+      const s = Math.sin(angles[i]);
+      p[n * 6] = ox;
+      p[n * 6 + 1] = oy;
+      p[n * 6 + 2] = oz;
+      p[n * 6 + 3] = ox + (matrix[0] * c + matrix[3] * s) * r;
+      p[n * 6 + 4] = oy + (matrix[1] * c + matrix[4] * s) * r;
+      p[n * 6 + 5] = oz + (matrix[2] * c + matrix[5] * s) * r;
+      n++;
+    }
+    position.needsUpdate = true;
+    rays.geometry.setDrawRange(0, n * 2);
+    rays.visible = n > 0;
+  }
+
+  private disposeRays(): void {
+    for (const r of this.rays.values()) {
+      r.geometry.dispose();
+      r.material.dispose();
+      this.overlay.remove(r);
+    }
+    this.rays.clear();
   }
 
   /** Which handle of the picked marker is under the pointer: one of its move arrows, or (a joint) its axis rod. */
