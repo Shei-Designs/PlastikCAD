@@ -172,7 +172,10 @@ in the design file and synced with it.
 - **Base link.** Pick the object the rest hangs from, on the right while
   nothing is selected or with *Make base* on a link, and say whether the base
   is *free* (it stands on the floor and can drive or walk) or *fixed* to the
-  world, as an arm bolted to a bench.
+  world, as an arm bolted to a bench. A project holds one robot: the base
+  link and everything a chain of joints reaches from it. Objects no chain
+  reaches are listed as *Not attached*, noted as a warning and left out of
+  the exports and the test drive.
 - **Joints.** Select a link and attach it to another: a joint is made with the
   link as the child, placed on the child's box where it comes nearest the
   parent, and picked, drawn as a rod along its axis on the plate. *Pick a
@@ -221,10 +224,8 @@ in the design file and synced with it.
   robot gets a `base_footprint` root facing +X as ROS expects.
 - **Controllers.** The actuated joints outside the drive go under
   `ros2_control` with a joint trajectory controller (`arm_controller`) and a
-  joint state broadcaster, unless switched off. *World* picks the floor of
-  the MuJoCo model and the test drive (flat, gentle bumps, an eight-degree
-  slope, three low steps or a ramp ahead of the robot; Gazebo's world stays
-  flat), and *Scripts* whether the MuJoCo export brings its Python starters.
+  joint state broadcaster, unless switched off, and *Scripts* whether the
+  MuJoCo export brings its Python starters.
 - **Checks.** The overview lists what stops an export (no base, a link no
   joint reaches, limits the wrong way round, a drive missing a wheel on a
   side, a link with no mass or an impossible inertia) and what is only worth
@@ -241,10 +242,15 @@ in the design file and synced with it.
   slider each, and read the time, the distance moved and the heading; *Pause*,
   *Reset* and *Stop* do what they say. The sensors ride their links while it
   drives, and a lidar's rays reach to whatever they measure, so a tilt or a
-  range can be judged on the move. The floor is the one *World* chose.
-  Whatever stops the export stops the test drive too; the design is not
-  touched.
-- **Export** writes a zip in one of three forms. A *ROS 2 package*:
+  range can be judged on the move. *Floor* picks what it drives on: flat,
+  gentle bumps, an eight-degree slope, three low steps or a ramp ahead of
+  the robot. That floor is only for the test drive. PlastikCAD builds
+  robots, not worlds: every export stands the robot on a flat floor, and the
+  world it goes into is made in the simulator. Whatever stops the export
+  stops the test drive too; the design is not touched.
+- **Export** first says what goes out, the base and everything joined to
+  it, whether other objects will be ignored, and any warnings; then writes
+  a zip in one of three forms. A *ROS 2 package*:
   `urdf/<name>.urdf` with the sensors, drive and friction in `<gazebo>`
   blocks (and `<name>.urdf.xacro` beside it, the same with the Gazebo blocks
   behind `use_gazebo:=false` and the controllers behind
@@ -530,6 +536,7 @@ pnpm smoke:ros      # the same in ROS 2 Jazzy and Gazebo, in Docker
 pnpm smoke:isaac    # the same in Isaac Sim (ISAACSIM_PYTHON=~/isaacsim-env/bin/python)
 pnpm typecheck
 pnpm tauri build    # build installers into src-tauri/target/release/bundle
+pnpm tauri android build --apk   # the Android app, with the Tauri Android prerequisites installed
 ```
 
 The icon and the banner follow the Shei Designs product rules: the shared

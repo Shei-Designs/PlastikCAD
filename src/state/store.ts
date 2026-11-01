@@ -58,7 +58,7 @@ import { initSync, linkAccount, requestSync, unlinkAccount } from '../sync/sync'
 import type { SyncReport } from '../sync/engine';
 import { mergeDocs } from '../sync/merge';
 import { checkRobot } from '../robot/check';
-import { buildMjcfModel, buildRobotPackage, buildSdfModel, packageName } from '../robot/export';
+import { buildMjcfModel, buildRobotPackage, buildSdfModel, exportSummary, EXPORT_FORMATS, packageName } from '../robot/export';
 import { fitFollowers, solvePose } from '../robot/kinematics';
 import type { Solved } from '../robot/kinematics';
 import { jointInChild, jointInDesign as jointInDesignOf, linkNodes, linkOf, meetingPoint, pruned, robotOf, sensorInDesign, sensorInLink, spanningTree } from '../robot/model';
@@ -2184,7 +2184,14 @@ export async function exportRobot(format: 'urdf' | 'sdf' | 'mjcf' = state.prefs.
     await tell({ title: 'Robot', text: `${errors.length === 1 ? 'One problem stops' : `${errors.length} problems stop`} the export. ${errors[0].text}`, actions: ['OK'] });
     return true;
   };
-  if (await stop(checkRobot(doc, massProps.known(nodes), robot))) return false;
+  const problems = checkRobot(doc, massProps.known(nodes), robot);
+  if (await stop(problems)) return false;
+  // What goes out and what the checks warn of, before anything is written. Ignored objects are said in the sentence, not listed.
+  const unreached = new Set(spanningTree(robot, nodes.map((n) => n.id)).unreached);
+  const lines = problems.filter((p) => !(p.link && unreached.has(p.link))).map((p) => p.text);
+  const label = EXPORT_FORMATS.find((f) => f.id === format)!.label;
+  set({ selection: [], joint: null, sensor: null });
+  if ((await tell({ title: `Export ${label}`, text: exportSummary(doc, format, robot), lines, actions: ['Export', 'Cancel'] })) !== 'Export') return false;
   const name = await exportName(packageName(doc.name), 'zip');
   if (!name) return false;
   set({ busy: 'Exporting the robot…' });

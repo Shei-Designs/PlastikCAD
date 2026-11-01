@@ -128,7 +128,7 @@ class SimStore {
       const geo = await worker.robotGeometry(nodes, collisions, false);
       if (turn !== this.starts) return;
       // The plate draws the links itself: the model needs no visual meshes.
-      const pkg = buildMjcfModel(doc, new Map(geo.map((g) => [g.id, { ...g, visual: [] }])), robot);
+      const pkg = buildMjcfModel(doc, new Map(geo.map((g) => [g.id, { ...g, visual: [] }])), robot, robot.world ?? 'flat');
       const xml = new TextDecoder().decode(pkg.files.find((f) => f.name.endsWith('.xml'))!.bytes);
       const files = pkg.files.filter((f) => f.name.startsWith('meshes/'));
       this.bodies = new Map(pkg.bodies.map((b) => [b.body, { node: b.node, frame: b.frame }]));

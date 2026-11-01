@@ -23,7 +23,7 @@ function simulate(doc: Doc, patch: (xml: string) => string = (xml) => xml): { si
   const robot = doc.robot!;
   const nodes = linkNodes(doc.scene);
   const geo = robotGeometry(nodes, Object.fromEntries(nodes.map((n) => [n.id, linkOf(robot, n.id).collision])), false);
-  const pkg = buildMjcfModel(doc, new Map(geo.map((g) => [g.id, { ...g, visual: [] }])), robot);
+  const pkg = buildMjcfModel(doc, new Map(geo.map((g) => [g.id, { ...g, visual: [] }])), robot, robot.world ?? 'flat');
   const xml = patch(new TextDecoder().decode(pkg.files.find((f) => f.name.endsWith('.xml'))!.bytes));
   const files = pkg.files.filter((f) => f.name.startsWith('meshes/'));
   const sim = Simulation.load(mj, xml, files, pkg.drive);

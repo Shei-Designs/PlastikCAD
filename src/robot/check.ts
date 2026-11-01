@@ -46,7 +46,7 @@ export function checkRobot(doc: Doc, props: Map<string, LinkProperties>, robot: 
   const ids = new Set(nodes.map((n) => n.id));
   const tree = spanningTree(robot, [...ids]);
   if (robot.root && ids.has(robot.root)) {
-    for (const id of tree.unreached) error(`"${nameOf(id)}" is not joined to the base by any chain of joints.`, { link: id });
+    for (const id of tree.unreached) warn(`"${nameOf(id)}" is not joined to the base by any chain of joints, so it is left out of the robot.`, { link: id });
   }
   for (const j of tree.loops) warn(`"${j.name}" closes a loop. SDF keeps it; URDF cannot, so there it is left out, and the passive joints should follow the driven one (mimic).`, { joint: j.id });
 

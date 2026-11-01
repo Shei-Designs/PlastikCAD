@@ -272,8 +272,9 @@ its link. Masses and inertias come from the shapes and the materials chosen
 in ${APP_NAME}; check any that were estimated rather than weighed.
 ${footprint ? `\nThe root link is \`${footprint.name}\`, facing the robot's forward along +X as ROS\nexpects; \`${footprint.base}\` under it is the design's own frame, and the drive's\nodometry is published against \`${footprint.name}\`.\n` : ''}
 Gazebo reads the sensors, the drive and the friction from the \`<gazebo>\`
-blocks in the URDF. \`worlds/${name}.sdf\` is an empty world with the
-sensor systems switched on, \`config/bridge.yaml\` tells ros_gz_bridge which
+blocks in the URDF. \`worlds/${name}.sdf\` is a flat floor with the sensor
+systems switched on, a stand-in until the robot is spawned into a world of
+your own; \`config/bridge.yaml\` tells ros_gz_bridge which
 topics to carry across (sensors, clock, joint states, cmd_vel and odom for a
 drive), and \`config/controllers.yaml\` sets up ros2_control when the robot
 has joints under it: \`/arm_controller\` takes joint trajectories. The URDF

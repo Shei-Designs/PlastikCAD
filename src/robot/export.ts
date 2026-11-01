@@ -26,7 +26,7 @@ import { jointInDesign, linkNodes, linkOf, robotForward, robotOf, sensorInDesign
 import { motorOf } from './motors';
 import { drivePy, envPy, trainPy } from '../io/scripts';
 import { DRIVE_KINDS, driveJoints, withRole } from './types';
-import type { DriveKind, DriveRole, Robot, RobotJoint } from './types';
+import type { DriveKind, DriveRole, Robot, RobotJoint, World } from './types';
 export interface PackageFile {
   /** Path inside the package folder. */
   name: string;
@@ -441,7 +441,8 @@ function sdfReadme(name: string, robot: string, footprint: { name: string; base:
   return `# ${robot}
 
 A Gazebo model made with PlastikCAD. With this folder's parent on Gazebo's
-path, the world in \`worlds\` opens with the robot in it:
+path, the world in \`worlds\`, a flat floor to stand in for your own, opens
+with the robot in it:
 
     export GZ_SIM_RESOURCE_PATH=$GZ_SIM_RESOURCE_PATH:$(pwd)/..
     gz sim worlds/${name}.sdf
@@ -460,10 +461,36 @@ a frame on \`${footprint.base}\` facing the robot's forward along +X as ROS expe
  * each loop joint together at its point; followers by joint constraints.
  * A lidar becomes a fan of rangefinders, one ray each, up to MAX_LIDAR_RAYS.
  */
+/** The forms a robot is exported in, as the panel offers them. */
+export const EXPORT_FORMATS: { id: 'urdf' | 'sdf' | 'mjcf'; label: string; description: string }[] = [
+  { id: 'urdf', label: 'ROS 2 package', description: 'URDF and xacro with meshes, launch files, bridge and controllers' },
+  { id: 'sdf', label: 'Gazebo model', description: 'SDF with every joint, loops included, and a flat world' },
+  { id: 'mjcf', label: 'MuJoCo model', description: 'MJCF with actuators, loops as constraints' },
+];
+
+/**
+ * What an export of the robot holds, in a sentence: everything a chain of
+ * joints reaches from the base, and a word that the rest is ignored when
+ * there is a rest. The dialog before an export shows it.
+ */
+export function exportSummary(doc: Doc, format: 'urdf' | 'sdf' | 'mjcf', robot: Robot = robotOf(doc)): string {
+  const nodes = linkNodes(doc.scene);
+  const tree = spanningTree(robot, nodes.map((n) => n.id));
+  const base = nodes.find((n) => n.id === robot.root)?.name ?? 'the base';
+  const label = EXPORT_FORMATS.find((f) => f.id === format)!.label;
+  const strays = tree.unreached.length;
+  return `Writes "${doc.name}" as a ${label}: the base ${base} and everything joined to it.${strays ? ` ${strays === 1 ? 'One object is' : `${strays} objects are`} not joined to the base and will be ignored.` : ''}`;
+}
+
 /** A lidar's rays in MuJoCo, at most: each is a ray cast every step, and a policy wants a coarse scan anyway. */
 export const MAX_LIDAR_RAYS = 90;
 
-export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot = robotOf(doc)): MjcfPackage {
+/**
+ * `world` is the floor the model stands on. An export gets the flat one: a
+ * world is the simulator's business, not the robot's. The test drive passes
+ * the floor the user picked for it.
+ */
+export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot = robotOf(doc), world: World = 'flat'): MjcfPackage {
   const p = prepare(doc, geometry, robot, (path) => path);
   const { pkg, files, warnings } = p;
   const byName = new Map(p.links.map((l) => [l.name, l]));
@@ -497,7 +524,7 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
     name: p.robotName,
     base: body(base, undefined),
     floating: robot.base === 'free',
-    world: robot.world ?? 'flat',
+    world,
     forward: robotForward(robot, new Map(p.links.map((l) => [l.node.id, l.node]))),
     // A loop joint's origin is given in its parent's frame; the connect anchor is in the first body's frame.
     connects: p.loopJoints.map((j) => ({ body1: j.parent, body2: j.child, anchor: j.origin })),

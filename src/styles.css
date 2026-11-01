@@ -504,6 +504,23 @@ ul {
   -webkit-user-select: text;
 }
 
+.ask-lines {
+  margin: -4px 0 0;
+  padding: 0 0 0 18px;
+  list-style: disc;
+  max-height: 40vh;
+  overflow-y: auto;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.ask-lines li + li {
+  margin-top: 4px;
+}
+
 .ask-field {
   display: flex;
   flex-direction: column;
@@ -3124,20 +3141,23 @@ kbd {
 
 /* The status line over the robot export button doubles as the way to the list. */
 .export-note.problems {
+  /* A row, against the `.problems` list it shares a class with. */
   display: flex;
+  flex-direction: row;
   flex-wrap: nowrap;
   align-items: center;
   justify-content: flex-start;
   gap: 6px;
   width: 100%;
-  height: auto;
-  min-height: 1.4em;
-  margin: 0 0 8px;
+  height: 1.4em;
+  margin: 2px 0 8px;
   padding: 0;
   border: 0;
   background: none;
   color: var(--muted);
-  font: inherit;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.4;
   text-align: left;
   cursor: pointer;
 }

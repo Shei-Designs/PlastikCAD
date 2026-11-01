@@ -3,7 +3,7 @@ import { emptyDoc } from '../model/file';
 import type { SceneNode } from '../model/types';
 import type { LinkGeometry } from '../worker/protocol';
 import { checkRobot } from './check';
-import { buildMjcfModel, buildRobotPackage, buildSdfModel } from './export';
+import { buildMjcfModel, buildRobotPackage, buildSdfModel, exportSummary } from './export';
 import { meshProperties } from './inertia';
 import { driveForward, jointInChild, jointInDesign, linkNodes, spanningTree } from './model';
 import { defaultJoint, defaultLink, defaultSensor } from './types';
@@ -61,6 +61,17 @@ describe('spanningTree', () => {
     expect(tree.order).toEqual([body.id, wheel.id, arm.id]);
     expect(tree.loops.map((j) => j.id)).toEqual(['j3']);
     expect(tree.unreached).toEqual(['stray001']);
+  });
+});
+
+describe('exportSummary', () => {
+  it('says what goes out and that the rest is ignored', () => {
+    const d = doc();
+    expect(exportSummary(d, 'urdf')).toBe('Writes "Test Rover" as a ROS 2 package: the base Body and everything joined to it.');
+    d.scene.push(node('stray001', 'Spare bracket', [50, 50, 5], [10, 10, 10]));
+    expect(exportSummary(d, 'mjcf')).toBe('Writes "Test Rover" as a MuJoCo model: the base Body and everything joined to it. One object is not joined to the base and will be ignored.');
+    d.scene.push(node('stray002', 'Other bracket', [70, 50, 5], [10, 10, 10]));
+    expect(exportSummary(d, 'sdf')).toMatch(/2 objects are not joined to the base and will be ignored\.$/);
   });
 });
 
@@ -343,12 +354,11 @@ describe('xacro and MuJoCo', () => {
     expect(urdf).not.toContain('xacro');
   });
 
-  it('stands a course of steps or a ramp ahead of the robot in the MuJoCo world', () => {
+  it('stands a course of steps or a ramp ahead of the robot for the test drive, never in an export', () => {
     const d = doc();
     d.robot!.drive = { kind: 'differential', roles: { j1: 'left', j2: 'right' } };
     d.robot!.base = 'free';
-    d.robot!.world = 'steps';
-    const steps = text(buildMjcfModel(d, geometry()).files.find((f) => f.name === 'test_rover.xml')!.bytes);
+    const steps = text(buildMjcfModel(d, geometry(), undefined, 'steps').files.find((f) => f.name === 'test_rover.xml')!.bytes);
     // Three boxes from each riser to the end of the course (0.3 m ahead, 3 × 0.12 m of treads, a 0.6 m landing), 10 mm higher each, a meter wide.
     const boxes = [...steps.matchAll(/<geom name="course(\d)" type="box" pos="([^"]+)" size="([^"]+)" quat="([^"]+)" material="floor"/g)];
     expect(boxes.map((m) => m[1])).toEqual(['1', '2', '3']);
@@ -356,8 +366,7 @@ describe('xacro and MuJoCo', () => {
     const along = (pos: string) => Math.hypot(...pos.split(' ').slice(0, 2).map(Number));
     expect(along(boxes[0][2])).toBeCloseTo(0.78, 3);
     expect(boxes[0][2].split(' ')[2]).toBe('0.005');
-    d.robot!.world = 'ramp';
-    const ramp = text(buildMjcfModel(d, geometry()).files.find((f) => f.name === 'test_rover.xml')!.bytes);
+    const ramp = text(buildMjcfModel(d, geometry(), undefined, 'ramp').files.find((f) => f.name === 'test_rover.xml')!.bytes);
     const slabs = [...ramp.matchAll(/<geom name="course(\d)" type="box" pos="([^"]+)" size="([^"]+)" quat="([^"]+)"/g)];
     // A 0.6 m slab, 20 mm thick, tipped 10°, then a flat top as high as it climbs (0.6 sin 10° = 104 mm).
     expect(slabs[0][3]).toBe('0.3 0.5 0.01');
@@ -365,8 +374,11 @@ describe('xacro and MuJoCo', () => {
     expect(slabs[0][4]).not.toBe('1 0 0 0');
     expect(Number(slabs[1][2].split(' ')[2])).toBeCloseTo(0.052095, 5);
     expect(steps).toContain('<geom name="floor" type="plane"');
-    d.robot!.world = 'flat';
-    expect(text(buildMjcfModel(d, geometry()).files.find((f) => f.name === 'test_rover.xml')!.bytes)).not.toContain('course');
+    // The World picked for the test drive does not reach the export: that stands on a flat floor whatever was chosen.
+    d.robot!.world = 'steps';
+    const exported = text(buildMjcfModel(d, geometry()).files.find((f) => f.name === 'test_rover.xml')!.bytes);
+    expect(exported).not.toContain('course');
+    expect(exported).toContain('<geom name="floor" type="plane" size="5 5 0.1" material="floor"');
   });
 
   it('writes a MuJoCo model: nested bodies, joints, actuators, a loop as a connect, a camera and an IMU', () => {
@@ -422,11 +434,10 @@ describe('xacro and MuJoCo', () => {
     expect(text(touchy.files.find((f) => f.name === 'drive.py')!.bytes)).toContain('KIND = "rover"');
   });
 
-  it('puts a rough floor under the model and leaves the scripts out when asked', () => {
+  it('puts a rough floor under the test drive and leaves the scripts out when asked', () => {
     const d = rover();
-    d.robot!.world = 'rough';
     d.robot!.scripts = false;
-    const pkg = buildMjcfModel(d, geometry());
+    const pkg = buildMjcfModel(d, geometry(), undefined, 'rough');
     const xml = text(pkg.files.find((f) => f.name === 'test_rover.xml')!.bytes);
     expect(xml).toMatch(/<hfield name="terrain" nrow="64" ncol="64" size="3 3 0.03 0.02" elevation="[0-9. ]+"\/>/);
     expect(xml).toContain('<geom name="floor" type="hfield" hfield="terrain"');

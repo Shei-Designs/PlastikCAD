@@ -91,12 +91,14 @@ function Problems({ problems }: { problems: Problem[] }) {
 }
 
 function Overview() {
-  const { doc, robot, nodes, props, problems } = useRobot();
-  const total = nodes.reduce((sum, n) => {
+  const { doc, robot, nodes, tree, props, problems } = useRobot();
+  // The robot is the base and whatever hangs from it; objects no joint reaches are not counted or weighed.
+  const attached = tree.order.length ? nodes.filter((n) => tree.order.includes(n.id)) : nodes;
+  const total = attached.reduce((sum, n) => {
     const p = props.get(n.id);
     return p ? sum + massOf(linkOf(robot, n.id).mass, p) : sum;
   }, 0);
-  const weighed = nodes.every((n) => props.has(n.id));
+  const weighed = attached.every((n) => props.has(n.id));
   return (
     <>
       <header className="params-head">
@@ -130,7 +132,7 @@ function Overview() {
         <dl className="facts">
           <div>
             <dt>Links</dt>
-            <dd>{nodes.length}</dd>
+            <dd>{attached.length}</dd>
           </div>
           <div>
             <dt>Joints</dt>
@@ -214,13 +216,6 @@ function Controllers() {
         <input type="checkbox" className="switch" checked={robot.control} onChange={(e) => setControl(e.target.checked)} />
       </label>
       {robot.control && rest.length > 0 && <p className="export-note">{rest.map((j) => j.name).join(', ')}</p>}
-      <div className="field inline">
-        <label>
-          World
-          <Hint text={`${WORLDS.find((w) => w.id === (robot.world ?? 'flat'))?.help ?? ''} The floor of the MuJoCo model; Gazebo's world stays flat.`} />
-        </label>
-        <Select value={robot.world ?? 'flat'} label="World" options={WORLDS.map((w) => ({ value: w.id, label: w.name }))} onChange={(w) => setWorld(w as World)} />
-      </div>
       <label className="field inline">
         <span className="switch-label">
           Starter scripts
@@ -244,12 +239,21 @@ function Test() {
     <fieldset className="group">
       <legend>Test</legend>
       {s.status === 'off' && (
-        <div className="field">
-          <button type="button" className="chip" disabled={stopped || !robot.root} title="Builds the robot's MuJoCo model and runs it on the plate" onClick={() => void sim.start(doc)}>
-            Test drive
-          </button>
-          {stopped && <p className="export-note">The problems below stop the test drive, as they do the export.</p>}
-        </div>
+        <>
+          <div className="field inline">
+            <label>
+              Floor
+              <Hint text={`${WORLDS.find((w) => w.id === (robot.world ?? 'flat'))?.help ?? ''} Only under the test drive: every export stands the robot on a flat floor.`} />
+            </label>
+            <Select value={robot.world ?? 'flat'} label="Floor" options={WORLDS.map((w) => ({ value: w.id, label: w.name }))} onChange={(w) => setWorld(w as World)} />
+          </div>
+          <div className="field">
+            <button type="button" className="chip" disabled={stopped || !robot.root} title="Builds the robot's MuJoCo model and runs it on the plate" onClick={() => void sim.start(doc)}>
+              Test drive
+            </button>
+            {stopped && <p className="export-note">The problems below stop the test drive, as they do the export.</p>}
+          </div>
+        </>
       )}
       {s.status === 'loading' && <p className="empty">Building the model…</p>}
       {s.status === 'error' && (

@@ -30,15 +30,14 @@ function write(pkg: RobotPackage, out: string): void {
 describe.each(ROBOTS)('the reference $file', ({ file, make }) => {
   it('passes the checks and exports in every format', () => {
     const doc = make();
-    // ROBOT_FIXTURES_WORLD=rough|slope puts every reference robot on that floor, for the smoke test.
+    // ROBOT_FIXTURES_WORLD=rough|slope puts every reference robot's MuJoCo model on that floor, for the smoke test.
     const world = process.env.ROBOT_FIXTURES_WORLD;
-    if (world === 'rough' || world === 'slope') doc.robot!.world = world;
     const robot = doc.robot!;
     const nodes = linkNodes(doc.scene);
     const geo = robotGeometry(nodes, Object.fromEntries(nodes.map((n) => [n.id, linkOf(robot, n.id).collision])), true);
     const geometry = new Map(geo.map((g) => [g.id, g]));
     expect(checkRobot(doc, new Map(geo.map((g) => [g.id, g.props])), robot)).toEqual([]);
-    const packages = [buildRobotPackage(doc, geometry, robot), buildSdfModel(doc, geometry, robot), buildMjcfModel(doc, geometry, robot)];
+    const packages = [buildRobotPackage(doc, geometry, robot), buildSdfModel(doc, geometry, robot), buildMjcfModel(doc, geometry, robot, world === 'rough' || world === 'slope' ? world : 'flat')];
     for (const pkg of packages) expect(pkg.warnings).toEqual([]);
     const out = process.env.ROBOT_FIXTURES_OUT;
     if (out) {

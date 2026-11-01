@@ -7,6 +7,7 @@ import type { ReactNode } from 'react';
 import { HOLE_COLOR } from '../model/ops';
 import type { SceneNode } from '../model/types';
 import { checkRobot } from '../robot/check';
+import { EXPORT_FORMATS } from '../robot/export';
 import { linkNodes, robotOf, spanningTree } from '../robot/model';
 import type { RobotJoint, RobotSensor } from '../robot/types';
 import { massProps } from '../state/massProps';
@@ -128,12 +129,14 @@ export function RobotPanel() {
 
   const rooted = robot.root !== null && byId.has(robot.root);
   const loose = tree.unreached.map((id) => byId.get(id)!).filter(Boolean);
+  // Counted as the robot: the base and what hangs from it; before a base is chosen, everything.
+  const linked = rooted ? nodes.length - loose.length : nodes.length;
   return (
     <div className="structure-tab robot-panel">
       <div className="structure-scroll">
         <h2 title="The links hang from the base by their joints. Pick one to set it up on the right.">
           Robot
-          <span className="count">{nodes.length ? `${nodes.length} link${nodes.length === 1 ? '' : 's'}, ${robot.joints.length} joint${robot.joints.length === 1 ? '' : 's'}` : ''}</span>
+          <span className="count">{nodes.length ? `${linked} link${linked === 1 ? '' : 's'}, ${robot.joints.length} joint${robot.joints.length === 1 ? '' : 's'}` : ''}</span>
         </h2>
         {nodes.length === 0 ? (
           <p className="empty">Every object in the design is a link. Leave Robot mode to add some, or import a URDF.</p>
@@ -146,7 +149,7 @@ export function RobotPanel() {
         )}
         {loose.length > 0 && rooted && (
           <>
-            <h2 title="Objects no chain of joints reaches from the base: select one and attach it to a link.">Not attached</h2>
+            <h2 title="Objects no chain of joints reaches from the base. They are left out of the robot: select one and attach it to a link.">Not attached</h2>
             <ul className="outline" role="tree" aria-label="Unattached links">
               {loose.map((n) => linkRow(n, 0))}
             </ul>
@@ -173,17 +176,11 @@ export function RobotPanel() {
 }
 
 /** At the foot of the left panel in Robot mode: what the checks say, and the export. */
-const ROBOT_FORMATS: { id: 'urdf' | 'sdf' | 'mjcf'; label: string; description: string }[] = [
-  { id: 'urdf', label: 'ROS 2 package', description: 'URDF and xacro with meshes, launch files, bridge and controllers' },
-  { id: 'sdf', label: 'Gazebo model', description: 'SDF with every joint, loops included, and a world' },
-  { id: 'mjcf', label: 'MuJoCo model', description: 'MJCF with actuators, loops as constraints' },
-];
-
 export function RobotExport() {
   const { problems, nodes } = useRobot();
   const busy = useEditor((s) => s.busy);
   const format = useEditor((s) => s.prefs.robotFormat);
-  const active = ROBOT_FORMATS.find((f) => f.id === format) ?? ROBOT_FORMATS[0];
+  const active = EXPORT_FORMATS.find((f) => f.id === format) ?? EXPORT_FORMATS[0];
   const errors = problems.filter((p) => p.level === 'error').length;
   const warnings = problems.length - errors;
   const status = errors ? `${errors} problem${errors === 1 ? '' : 's'} to fix${warnings ? `, ${warnings} warning${warnings === 1 ? '' : 's'}` : ''}` : warnings ? `${warnings} warning${warnings === 1 ? '' : 's'}` : nodes.length ? 'Ready to export' : 'Nothing to export yet';
@@ -207,7 +204,7 @@ export function RobotExport() {
           >
             {(close) => (
               <div className="menu" role="listbox" aria-label="Robot format">
-                {ROBOT_FORMATS.map((f) => (
+                {EXPORT_FORMATS.map((f) => (
                   <button
                     key={f.id}
                     type="button"
@@ -228,7 +225,7 @@ export function RobotExport() {
           </Popover>
         </div>
         {problems.length > 0 ? (
-          <button type="button" className={errors ? 'export-note problems error' : 'export-note problems warn'} title="Shows the list" onClick={() => select([])}>
+          <button type="button" className={errors ? 'export-note problems error' : 'export-note problems warn'} title={problems.map((p) => p.text).join('\n')} onClick={() => select([])}>
             <WarningIcon />
             <span className="clip">{status}</span>
           </button>

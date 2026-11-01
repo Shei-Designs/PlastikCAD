@@ -20,6 +20,8 @@ export interface ChoiceQuestion {
   kind: 'choice';
   title: string;
   text: string;
+  /** Points listed under the text, one line each. */
+  lines?: string[];
   /** The last one is the plain way out (Escape, the backdrop); the first is the primary. */
   actions: string[];
   resolve: (action: string) => void;

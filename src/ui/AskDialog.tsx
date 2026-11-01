@@ -64,6 +64,13 @@ export function AskDialog() {
         <div className="ask-body">
           <h2>{question.title}</h2>
           <p>{question.text}</p>
+          {question.lines && question.lines.length > 0 && (
+            <ul className="ask-lines">
+              {question.lines.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          )}
           <div className="ask-buttons">
             {[...question.actions].reverse().map((action, i, all) => (
               <button key={action} type="button" className={i === all.length - 1 ? 'primary' : 'chip'} onClick={() => answer(action)}>
