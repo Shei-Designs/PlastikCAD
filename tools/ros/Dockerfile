@@ -13,3 +13,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1-mesa-dri libegl-mesa0 libegl1 libgles2 mesa-utils \
     python3-colcon-common-extensions \
   && rm -rf /var/lib/apt/lists/*
+# A virtual display, the joint sliders and a screenshot tool, so RViz can be run and pictured without a monitor.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ros-jazzy-joint-state-publisher-gui \
+    xvfb x11-apps imagemagick python3-pil \
+  && rm -rf /var/lib/apt/lists/*

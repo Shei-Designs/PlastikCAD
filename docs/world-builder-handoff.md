@@ -37,9 +37,12 @@ Everything is millimeters and Z up inside PlastikCAD; exports convert.
   `config/controllers.yaml`, an RViz layout, `worlds/<name>.sdf` which is
   the flat stand-in world); a Gazebo model folder (`model.sdf`, meshes,
   the same stand-in world); a MuJoCo model (one MJCF with meshes beside it,
-  optional Python starters). All in meters, Z up, every link frame parallel
-  to the design axes. A driven robot's root is `base_footprint`, facing +X
-  as ROS expects.
+  optional Python starters); an Isaac Sim stage (one `.usda` with the PhysX
+  articulation, Isaac sensor prims, a floor, lights and a ROS 2 action graph
+  under `/World/ROS2`; the robot is the `/World/<Name>` prim, ready to be
+  referenced into another stage). All in meters, Z up, every link frame
+  parallel to the design axes. A driven robot's root is `base_footprint`,
+  facing +X as ROS expects (URDF and SDF; the USD keeps the design frame).
 - **The design file** `.plastikcad` (JSON, `format: "plastikcad"`,
   `version` 2): the scene as shapes, parts and operations rather than
   triangles, plus the robot description under `robot`. The world builder
@@ -65,15 +68,13 @@ One scene, written for each engine in its own terms:
   `hfield` for terrain) and the robot brought in with `<include>` or by
   attaching its model; `src/io/mjcf.ts` in PlastikCAD shows a working
   floor, hfield, slope and the steps/ramp blocks (`worldBlocks`).
-- **Isaac Sim**: a USD stage. The robot comes in through Isaac's URDF
-  importer (the ROS package), so the world builder's job is the stage
-  around it: ground, props as USD meshes with collision, lights, and a
-  reference to the imported robot. Writing USD from TypeScript is not
-  solved; options are a Python side using `pxr` (Isaac's own Python), or
-  writing USDA text by hand (it is a text format). PlastikCAD's
-  `tools/isaac_smoke.py` is a working example of driving Isaac headless
-  and importing a package with the right base type, drive gains and camera
-  clip.
+- **Isaac Sim**: a USD stage. PlastikCAD exports one (`src/io/usd.ts`
+  writes USDA text by hand, no `pxr` needed), so the world builder's job is
+  the stage around it: ground, props as USD meshes with collision, lights,
+  and a reference to the robot prim of PlastikCAD's stage (drop its own
+  floor and lights, or reference only `/World/<Name>` and `/World/ROS2`).
+  `tools/isaac_stage_smoke.py` shows Isaac driven headless, a stage opened,
+  played and talked to over ROS 2 with Isaac's bundled libraries.
 - **Blender** (for animation): a GLB of the whole scene, props and robot
   posed; or nothing, since Blender reads GLB from PlastikCAD already.
 

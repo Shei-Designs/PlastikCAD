@@ -36,6 +36,7 @@ import {
   Raycaster,
   RepeatWrapping,
   Scene,
+  ShaderMaterial,
   Sprite,
   SpriteMaterial,
   SRGBColorSpace,
@@ -89,6 +90,11 @@ export interface ViewerOptions {
   /** The floor of a test drive when it is not the plate: the rough field or the slope, as the MuJoCo model has them. */
   /** The floor of a test drive when it is not the plate itself, with which way the robot faces for a course of steps or a ramp. */
   ground: { world: Exclude<World, 'flat'>; forward: Vec3 } | null;
+  /**
+   * The picked camera's picture: a small inset in the bottom-right corner shows the scene from this frame, with its field
+   * of view and clip distances; a depth camera's in greys, near light and far dark. Null for no inset.
+   */
+  preview: Extract<Marker, { kind: 'camera' }> | null;
 }
 
 /**
@@ -99,11 +105,13 @@ export interface ViewerOptions {
  */
 export type Marker =
   | { kind: 'joint'; type: 'fixed' | 'revolute' | 'continuous' | 'prismatic'; matrix: Mat }
-  | { kind: 'camera'; matrix: Mat; hfov: number; aspect: number; depth: boolean }
+  /** `hfov` degrees across the picture; `near` and `far` the clip distances, mm. */
+  | { kind: 'camera'; matrix: Mat; hfov: number; aspect: number; depth: boolean; near: number; far: number }
   /** `ranges`: what each ray measures while the test drive runs, mm from the origin, -1 for a miss; drawn as rays in the design's own scale. */
   | { kind: 'lidar'; matrix: Mat; hfov: number; ranges?: number[] }
   | { kind: 'imu'; matrix: Mat }
-  | { kind: 'touch'; matrix: Mat };
+  /** `pressed`: the pad feels a force while the test drive runs; drawn lit. */
+  | { kind: 'touch'; matrix: Mat; pressed?: boolean };
 
 export interface SnapPoint {
   at: Vec3;
@@ -183,7 +191,7 @@ export interface HandlePrompt {
   }[];
 }
 
-const DEFAULTS: ViewerOptions = { theme: 'dark', edges: true, grid: true, snap: 1, interactive: true, align: null, highlight: null, snaps: null, marker: null, markers: null, ground: null };
+const DEFAULTS: ViewerOptions = { theme: 'dark', edges: true, grid: true, snap: 1, interactive: true, align: null, highlight: null, snaps: null, marker: null, markers: null, ground: null, preview: null };
 /** Distance of the anchor dots from the box, in pixels. */
 const ALIGN_GAP = 22;
 
@@ -363,11 +371,17 @@ function markerObject(mk: Marker, accent: number, dim = false): Group {
       triad(0.45);
       cube(0.16, accent);
       break;
-    case 'touch':
-      // A pad where the link meets things: a flat disc with a short stem.
-      put(new CylinderGeometry(0.4, 0.4, 0.08, 24), accent, [0, 0, 0.04], [0, 0, 1]);
+    case 'touch': {
+      // A pad where the link meets things: a flat disc with a short stem. The disc lights up (full strength, its own material) while the pad is pressed.
+      const pad = new Mesh(new CylinderGeometry(0.4, 0.4, 0.08, 24), new MeshBasicMaterial({ color: accent, transparent: true, opacity: dim ? 0.5 : 0.95, depthTest: false }));
+      pad.position.set(0, 0, 0.04);
+      pad.quaternion.setFromUnitVectors(UP, new Vector3(0, 0, 1));
+      pad.userData.pad = true;
+      pad.renderOrder = 10;
+      group.add(pad);
       rod([0, 0, 0.08], [0, 0, 0.4], accent);
       break;
+    }
   }
   // Unseen targets for the pointer: the axis of a picked joint, to slide it along; the whole of an unpicked marker, to pick it.
   if (dim) {
@@ -386,6 +400,15 @@ function markerObject(mk: Marker, accent: number, dim = false): Group {
 }
 
 const UP = new Vector3(0, 1, 0);
+
+/** A touch marker's disc lit while its pad is pressed: solid, and half again as wide. */
+function lightPad(group: Group, pressed: boolean): void {
+  for (const child of group.children) {
+    if (!child.userData.pad || !(child instanceof Mesh)) continue;
+    (child.material as MeshBasicMaterial).opacity = pressed ? 1 : 0.5;
+    child.scale.setScalar(pressed ? 1.5 : 1);
+  }
+}
 const axisVector = (axis: 0 | 1 | 2): Vector3 => new Vector3(axis === 0 ? 1 : 0, axis === 1 ? 1 : 0, axis === 2 ? 1 : 0);
 
 /** The pieces every move arrow is made of, shared: a shaft, a head, and the fat unseen tube the pointer hits. Built up Y. */
@@ -735,6 +758,14 @@ export class Viewer {
   private triadCamera!: OrthographicCamera;
   /** Where the triad is drawn, from the canvas's bottom-left corner; the view widget around it sets this. */
   private triadOrigin = { x: GIZMO_MARGIN, y: GIZMO_MARGIN };
+  /** The camera the preview inset is drawn from, posed from the picked sensor's frame each draw. */
+  private readonly previewCamera = new PerspectiveCamera();
+  /** What everything is drawn with for a depth camera's inset: a grey for its distance from the camera, white at `near`, black at `far`. */
+  private readonly depthMaterial = new ShaderMaterial({
+    uniforms: { near: { value: 1 }, far: { value: 1000 } },
+    vertexShader: 'varying float vDepth; void main() { vec4 mv = modelViewMatrix * vec4(position, 1.0); vDepth = -mv.z; gl_Position = projectionMatrix * mv; }',
+    fragmentShader: 'uniform float near; uniform float far; varying float vDepth; void main() { float t = clamp((vDepth - near) / (far - near), 0.0, 1.0); gl_FragColor = vec4(vec3(1.0 - t), 1.0); }',
+  });
   private disposables: { dispose(): void }[] = [];
 
   // Handles around the selection, drawn over everything else.
@@ -987,6 +1018,7 @@ export class Viewer {
     if (this.ground) {
       disposeGround(this.ground);
     }
+    this.depthMaterial.dispose();
     this.resizeObserver.disconnect();
     const canvas = this.renderer.domElement;
     canvas.removeEventListener('webglcontextlost', this.onContextLost);
@@ -1264,7 +1296,7 @@ export class Viewer {
     this.marker.visible = Boolean(mk);
     this.markerArrows.visible = Boolean(mk) && this.options.interactive;
     const dims = this.options.markers ?? [];
-    const dimKey = `${theme}:${JSON.stringify(dims.map((d) => ({ id: d.id, marker: { ...d.marker, matrix: undefined, ranges: d.marker.kind === 'lidar' ? d.marker.ranges?.length : undefined } })))}`;
+    const dimKey = `${theme}:${JSON.stringify(dims.map((d) => ({ id: d.id, marker: { ...d.marker, matrix: undefined, pressed: undefined, ranges: d.marker.kind === 'lidar' ? d.marker.ranges?.length : undefined } })))}`;
     if (dimKey !== this.dimKey) {
       this.dimKey = dimKey;
       for (const g of this.dimMarkers.values()) {
@@ -2557,6 +2589,7 @@ export class Viewer {
       if (g) place(g, d.marker.matrix, DIM_MARKER_PIXELS);
       const rays = d.marker.kind === 'lidar' ? this.rays.get(d.id) : undefined;
       if (rays && d.marker.kind === 'lidar' && d.marker.ranges) this.layoutRays(rays, d.marker.matrix, d.marker.hfov, d.marker.ranges);
+      if (g && d.marker.kind === 'touch') lightPad(g, Boolean(d.marker.pressed));
     }
   }
 
@@ -3013,6 +3046,7 @@ export class Viewer {
     renderer.render(this.scene, camera);
     if (!withOverlays) return;
 
+    this.drawPreview();
     renderer.autoClear = false;
     if (this.frame || this.pointer3d.visible || this.marker.visible || this.dimMarkers.size || this.snapDots.length || this.lockBadges.size) {
       this.layoutHandles();
@@ -3029,6 +3063,65 @@ export class Viewer {
     renderer.clearDepth();
     renderer.setViewport(this.triadOrigin.x, this.triadOrigin.y, GIZMO_SIZE, GIZMO_SIZE);
     renderer.render(this.triadScene, this.triadCamera);
+    renderer.autoClear = true;
+    renderer.setViewport(0, 0, width, height);
+  }
+
+  /**
+   * The picked camera's picture in the bottom-right corner: the scene from the sensor's frame (it looks along its X, Z up),
+   * with its own field of view and clip distances, so what it sees and what the near plane cuts off can be judged.
+   * A depth camera's picture is in greys, near light and far dark. Up to about a quarter of the plate wide; on a narrow
+   * plate it sits above the view buttons.
+   */
+  private drawPreview(): void {
+    const p = this.options.preview;
+    if (!p) return;
+    const { renderer, width, height } = this;
+    const aspect = Math.min(Math.max(p.aspect, 0.2), 5);
+    let w = Math.min(width * 0.28, 320);
+    let h = w / aspect;
+    if (h > height * 0.4) {
+      h = height * 0.4;
+      w = h * aspect;
+    }
+    w = Math.round(w);
+    h = Math.round(h);
+    if (w < 40 || h < 30) return;
+    const x = width - w - GIZMO_MARGIN;
+    const y = width < 600 ? 52 : GIZMO_MARGIN;
+    const m = p.matrix;
+    const camera = this.previewCamera;
+    camera.matrixAutoUpdate = false;
+    // The sensor's frame as a camera: right is the frame's -Y, up its Z, and the camera looks down its own -Z, the frame's X.
+    camera.matrix.set(-m[3], m[6], -m[0], m[9], -m[4], m[7], -m[1], m[10], -m[5], m[8], -m[2], m[11], 0, 0, 0, 1);
+    camera.matrixWorldNeedsUpdate = true;
+    camera.aspect = w / h;
+    camera.fov = (2 * Math.atan(Math.tan((Math.min(Math.max(p.hfov, 1), 179) * Math.PI) / 360) / camera.aspect) * 180) / Math.PI;
+    camera.near = Math.max(p.near, 0.1);
+    camera.far = Math.max(p.far, camera.near + 1);
+    camera.updateProjectionMatrix();
+    const t = THEMES[this.options.theme];
+    renderer.autoClear = false;
+    renderer.setScissorTest(true);
+    // A one-pixel rim in the accent color, then the picture's own backdrop: the stage, or for depth the black of nothing seen.
+    renderer.setScissor(x - 1, y - 1, w + 2, h + 2);
+    renderer.setClearColor(t.accent, 1);
+    renderer.clear(true, true, false);
+    renderer.setScissor(x, y, w, h);
+    renderer.setViewport(x, y, w, h);
+    renderer.setClearColor(p.depth ? 0x000000 : t.stage[1], 1);
+    renderer.clear(true, true, false);
+    if (p.depth) {
+      // Greys over the distances the scene actually spans from the camera, not the far clip, which may be meters off.
+      const reach = Math.hypot(m[9] - this.center.x, m[10] - this.center.y, m[11] - this.center.z) + this.radius;
+      this.depthMaterial.uniforms.near.value = camera.near;
+      this.depthMaterial.uniforms.far.value = Math.min(camera.far, Math.max(reach, camera.near + 1));
+      this.scene.overrideMaterial = this.depthMaterial;
+    }
+    renderer.render(this.scene, camera);
+    this.scene.overrideMaterial = null;
+    renderer.setScissorTest(false);
+    renderer.setClearColor(0x000000, 0);
     renderer.autoClear = true;
     renderer.setViewport(0, 0, width, height);
   }

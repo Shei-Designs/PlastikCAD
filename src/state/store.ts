@@ -58,7 +58,8 @@ import { initSync, linkAccount, requestSync, unlinkAccount } from '../sync/sync'
 import type { SyncReport } from '../sync/engine';
 import { mergeDocs } from '../sync/merge';
 import { checkRobot } from '../robot/check';
-import { buildMjcfModel, buildRobotPackage, buildSdfModel, exportSummary, EXPORT_FORMATS, packageName } from '../robot/export';
+import { buildIsaacStage, buildMjcfModel, buildRobotPackage, buildSdfModel, exportSummary, EXPORT_FORMATS, packageName } from '../robot/export';
+import type { ExportFormat } from '../robot/export';
 import { fitFollowers, solvePose } from '../robot/kinematics';
 import type { Solved } from '../robot/kinematics';
 import { jointInChild, jointInDesign as jointInDesignOf, linkNodes, linkOf, meetingPoint, pruned, robotOf, sensorInDesign, sensorInLink, spanningTree } from '../robot/model';
@@ -2173,7 +2174,7 @@ export function deleteJoint(id: string): void {
  * Stopped by any error the checks find; the overview lists them. False if
  * nothing was written.
  */
-export async function exportRobot(format: 'urdf' | 'sdf' | 'mjcf' = state.prefs.robotFormat): Promise<boolean> {
+export async function exportRobot(format: ExportFormat = state.prefs.robotFormat): Promise<boolean> {
   const doc = state.doc;
   const robot = robotOf(doc);
   const nodes = linkNodes(doc.scene);
@@ -2201,7 +2202,7 @@ export async function exportRobot(format: 'urdf' | 'sdf' | 'mjcf' = state.prefs.
     const geo = await worker.robotGeometry(nodes, collisions, true);
     // Checked again with every link weighed, in case some had not been when the first check ran.
     if (await stop(checkRobot(doc, new Map(geo.map((g) => [g.id, g.props])), robot))) return false;
-    const build = format === 'sdf' ? buildSdfModel : format === 'mjcf' ? buildMjcfModel : buildRobotPackage;
+    const build = format === 'sdf' ? buildSdfModel : format === 'mjcf' ? buildMjcfModel : format === 'usd' ? buildIsaacStage : buildRobotPackage;
     const pkg = build(doc, new Map(geo.map((g) => [g.id, g])), robot);
     for (const w of pkg.warnings.filter((text) => text.includes('left out'))) notify(w, 'error');
     const bytes = zipSync(Object.fromEntries(pkg.files.map((f) => [`${pkg.name}/${f.name}`, f.bytes])), { level: 6 });

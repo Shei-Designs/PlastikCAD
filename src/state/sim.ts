@@ -36,7 +36,7 @@ export interface SimState {
   targets: Map<string, number>;
   /** The rover command as held. */
   command: { forward: number; turn: number; side: number };
-  /** Each lidar's rays by the design sensor's id, mm from its origin; -1 where a ray hits nothing. */
+  /** By the design sensor's id: a lidar's rays, mm from its origin, -1 where a ray hits nothing; a touch sensor's one number, the force it feels in newtons. */
   readings: Map<string, number[]>;
 }
 
@@ -89,6 +89,8 @@ class SimStore {
   private jointIds = new Map<string, string>();
   /** The lidars the worker reads with every frame, in the order their rays arrive. */
   private lidars: { name: string; id: string; rays: number }[] = [];
+  /** The touch sensors the worker reads with every frame, in the order their forces arrive. */
+  private touches: { name: string; id: string }[] = [];
   /** Counts starts, so that a start overtaken by a stop or another start lets go. */
   private starts = 0;
   private held = new Set<string>();
@@ -134,8 +136,9 @@ class SimStore {
       this.bodies = new Map(pkg.bodies.map((b) => [b.body, { node: b.node, frame: b.frame }]));
       this.jointIds = new Map(pkg.joints.map((j) => [j.name, j.id]));
       this.lidars = pkg.lidars;
+      this.touches = pkg.touches;
       this.set({ drive: pkg.drive });
-      this.send({ type: 'load', xml, files, drive: pkg.drive, lidars: pkg.lidars.map(({ name, rays }) => ({ name, rays })) });
+      this.send({ type: 'load', xml, files, drive: pkg.drive, lidars: pkg.lidars.map(({ name, rays }) => ({ name, rays })), touches: pkg.touches.map((t) => t.name) });
       this.listen(true);
     } catch (e) {
       if (turn !== this.starts) return;
@@ -276,6 +279,7 @@ class SimStore {
           readings.set(l.id, Array.from(message.ranges.subarray(from, from + l.rays), (v) => (v < 0 ? -1 : v / M)));
           from += l.rays;
         }
+        this.touches.forEach((t, i) => readings.set(t.id, [message.touches[i]]));
         this.set({ frames, base, time: message.time, readings });
         break;
       }

@@ -3,7 +3,7 @@
 // a Gazebo model (SDF, which keeps loops). Pure: the kernel's answers come
 // in, files go out.
 import type { MeshData } from '../geometry/mesh';
-import { boundsSize, eulerOf, multiply, rotation } from '../model/math';
+import { boundsCenter, boundsSize, eulerOf, multiply, rotation, unionBounds } from '../model/math';
 import type { Doc, SceneNode, Vec3 } from '../model/types';
 import { encodeText } from '../io/format';
 import { driveXml, jointStateXml, sensorTopic, sensorXml, worldXml } from '../io/gazebo';
@@ -17,6 +17,8 @@ import type { MjcfBody, MjcfModel } from '../io/mjcf';
 import { modelConfig, writeSdf } from '../io/sdf';
 import type { SdfJoint, SdfLink } from '../io/sdf';
 import { writeStl } from '../io/stl';
+import { writeUsda } from '../io/usd';
+import type { UsdCollision, UsdJoint, UsdModel } from '../io/usd';
 import { uniqueNames, urdfName, writeUrdf } from '../io/urdf';
 import type { UrdfJoint, UrdfLink, UrdfShape } from '../io/urdf';
 import type { LinkGeometry } from '../worker/protocol';
@@ -26,6 +28,8 @@ import { jointInDesign, linkNodes, linkOf, robotForward, robotOf, sensorInDesign
 import { motorOf } from './motors';
 import { drivePy, envPy, trainPy } from '../io/scripts';
 import { DRIVE_KINDS, driveJoints, withRole } from './types';
+import { usdName } from '../io/usd';
+import { APP_NAME } from '../app';
 import type { DriveKind, DriveRole, Robot, RobotJoint, World } from './types';
 export interface PackageFile {
   /** Path inside the package folder. */
@@ -101,6 +105,8 @@ export interface MjcfPackage extends RobotPackage {
   drive: DriveSpec | null;
   /** Each lidar's name in the model, the design sensor it is, and how many rays (`<name>_<i>` rangefinders) it casts. */
   lidars: { name: string; id: string; rays: number }[];
+  /** Each touch sensor's name in the model and the design sensor it is. */
+  touches: { name: string; id: string }[];
 }
 
 /** What both outputs share: every link and joint in SI, the meshes written, the sensors, the drive. */
@@ -231,8 +237,9 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
         link: linkNames.get(x.link)!,
         xyz: placed.origin.map((v, i) => (v - frame[i]) * M) as Vec3,
         rpy,
-        // A touch sensor feels within a quarter of the link's smallest side.
-        touch: (geometry.get(x.link) ? Math.min(...boundsSize(geometry.get(x.link)!.bounds)) / 4 : 5) * M,
+        // A touch sensor feels contacts within half the link's diagonal of where it sits: the whole of the face it is set on,
+        // whose corners are where a box meets the floor. (Gazebo's contact sensor covers the whole link.)
+        touch: (geometry.get(x.link) ? Math.hypot(...boundsSize(geometry.get(x.link)!.bounds)) / 2 : 5) * M,
         collision: `${linkNames.get(x.link)!}_collision`,
       };
     });
@@ -370,6 +377,8 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
     }
   }
   const base = p.linkNames.get(robot.root!)!;
+  // The robot's box in the design, for RViz to look at: the base link's frame is the design's origin.
+  const extent = unionBounds(p.links.map((l) => geometry.get(l.node.id)!.bounds));
   const footprint = footprintOf(p, robot, links.map((l) => l.name));
   const plugins = [jointStateXml(), ...(p.drive ? [driveXml(gazeboDrive(p.drive, footprint?.name ?? base))] : [])];
   const control = p.controlled.length ? { joints: p.controlled, controllersYaml: `${SHARE_PLACEHOLDER}/config/controllers.yaml` } : undefined;
@@ -382,7 +391,7 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
     { name: `urdf/${pkg}.urdf.xacro`, bytes: encodeText(writeUrdf(p.robotName, links, joints, { plugins, control, fixedToWorld, footprint, xacro: { package: pkg } })) },
     { name: 'launch/display.launch.py', bytes: encodeText(displayLaunch(pkg)) },
     { name: 'launch/gazebo.launch.py', bytes: encodeText(gazeboLaunch(pkg, { controllers })) },
-    { name: 'rviz/display.rviz', bytes: encodeText(rvizConfig(base)) },
+    { name: 'rviz/display.rviz', bytes: encodeText(rvizConfig(base, boundsCenter(extent).map((x) => x * M) as Vec3, Math.max(...boundsSize(extent)) * M)) },
     { name: `worlds/${pkg}.sdf`, bytes: encodeText(worldXml(pkg)) },
     { name: 'config/bridge.yaml', bytes: encodeText(bridgeYaml(bridgeTopics(p))) },
     ...(control ? [{ name: 'config/controllers.yaml', bytes: encodeText(controllersYaml(p.controlled)) }] : []),
@@ -462,10 +471,12 @@ a frame on \`${footprint.base}\` facing the robot's forward along +X as ROS expe
  * A lidar becomes a fan of rangefinders, one ray each, up to MAX_LIDAR_RAYS.
  */
 /** The forms a robot is exported in, as the panel offers them. */
-export const EXPORT_FORMATS: { id: 'urdf' | 'sdf' | 'mjcf'; label: string; description: string }[] = [
+export type ExportFormat = 'urdf' | 'sdf' | 'mjcf' | 'usd';
+export const EXPORT_FORMATS: { id: ExportFormat; label: string; description: string }[] = [
   { id: 'urdf', label: 'ROS 2 package', description: 'URDF and xacro with meshes, launch files, bridge and controllers' },
   { id: 'sdf', label: 'Gazebo model', description: 'SDF with every joint, loops included, and a flat world' },
   { id: 'mjcf', label: 'MuJoCo model', description: 'MJCF with actuators, loops as constraints' },
+  { id: 'usd', label: 'Isaac Sim stage', description: 'USD with the articulation, drives, sensors and a ROS 2 graph; opens and runs as it is' },
 ];
 
 /**
@@ -473,13 +484,113 @@ export const EXPORT_FORMATS: { id: 'urdf' | 'sdf' | 'mjcf'; label: string; descr
  * joints reaches from the base, and a word that the rest is ignored when
  * there is a rest. The dialog before an export shows it.
  */
-export function exportSummary(doc: Doc, format: 'urdf' | 'sdf' | 'mjcf', robot: Robot = robotOf(doc)): string {
+export function exportSummary(doc: Doc, format: ExportFormat, robot: Robot = robotOf(doc)): string {
   const nodes = linkNodes(doc.scene);
   const tree = spanningTree(robot, nodes.map((n) => n.id));
   const base = nodes.find((n) => n.id === robot.root)?.name ?? 'the base';
   const label = EXPORT_FORMATS.find((f) => f.id === format)!.label;
   const strays = tree.unreached.length;
   return `Writes "${doc.name}" as a ${label}: the base ${base} and everything joined to it.${strays ? ` ${strays === 1 ? 'One object is' : `${strays} objects are`} not joined to the base and will be ignored.` : ''}`;
+}
+
+/**
+ * The robot as a USD stage for Isaac Sim: one .usda holding the articulation,
+ * its meshes, drives, sensors, a floor, lights and a ROS 2 graph, and a note
+ * on running it. Opens and plays as it is.
+ */
+export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot = robotOf(doc)): RobotPackage {
+  const p = prepare(doc, geometry, robot, (path) => path);
+  const { pkg, warnings } = p;
+  const velocity = new Set(p.drive?.wheels ?? []);
+  const position = new Set([...p.controlled, ...(p.drive?.steer ?? [])]);
+  // An Ackermann car in Isaac: the controller speaks for all four wheels, front left, front right, rear left, rear right,
+  // so the front wheels, which turn free on their knuckles in the design, get velocity drives too.
+  let ackermannWheels: string[] | undefined;
+  if (p.drive?.kind === 'ackermann') {
+    const r = p.drive.roles;
+    const frontOf = (steer?: string) => p.treeJoints.find((j) => j.type === 'continuous' && j.parent === p.treeJoints.find((s) => s.name === steer)?.child)?.name;
+    const fronts = [frontOf(r['steer-left']?.[0]), frontOf(r['steer-right']?.[0])];
+    ackermannWheels = [...fronts, r.left?.[0], r.right?.[0]].filter((n): n is string => Boolean(n));
+    for (const n of ackermannWheels) velocity.add(n);
+    if (ackermannWheels.length !== 4) warnings.push('Isaac Sim steers a car by four wheels, two on the knuckles and two behind; this one has another layout, so cmd_vel will not drive it there.');
+  }
+  const jointOf = (j: UrdfJoint, loop: boolean): UsdJoint => ({
+    name: j.name,
+    type: j.type,
+    parent: j.parent,
+    child: j.child,
+    origin: j.origin,
+    axis: j.axis,
+    limit: j.limit,
+    dynamics: j.dynamics,
+    mimic: j.mimic,
+    armature: j.armature,
+    loop,
+    drive: velocity.has(j.name) ? 'velocity' : position.has(j.name) ? 'position' : null,
+  });
+  const links: UsdModel['links'] = p.links.map((l) => {
+    const geo = geometry.get(l.node.id)!;
+    const kind = linkOf(robot, l.node.id).collision;
+    const collision: UsdCollision[] = [];
+    for (const c of l.collision) {
+      if ('mesh' in c.geometry) {
+        if (geo.collision) collision.push({ mesh: inFrame(geo.collision, l.frame), convex: kind !== 'mesh' });
+      } else collision.push({ ...c.geometry, origin: c.origin ?? [0, 0, 0], rpy: c.rpy ?? [0, 0, 0] } as UsdCollision);
+    }
+    return { name: l.name, pos: l.frame.map((x) => x * M) as Vec3, inertial: l.inertial, visual: geo.visual.map((v) => ({ mesh: inFrame(v.mesh, l.frame), color: rgb(v.color) })), collision, friction: l.friction ?? 0.5 };
+  });
+  let drive: UsdModel['drive'] = null;
+  if (p.drive) {
+    const r = p.drive.roles;
+    const left = r.left ?? [...(r['front-left'] ?? []), ...(r['rear-left'] ?? [])];
+    const right = r.right ?? [...(r['front-right'] ?? []), ...(r['rear-right'] ?? [])];
+    const speeds = p.treeJoints.filter((j) => p.drive!.wheels.includes(j.name) && j.limit?.velocity).map((j) => j.limit!.velocity);
+    const steer = p.drive.kind === 'ackermann' ? [r['steer-left']?.[0], r['steer-right']?.[0]].filter((n): n is string => Boolean(n)) : p.drive.steer;
+    drive = { kind: p.drive.kind, left, right, steer, ackermannWheels, wheelRadius: p.drive.wheelRadius, wheelSeparation: p.drive.wheelSeparation, wheelBase: p.drive.wheelBase, maxWheelSpeed: speeds.length ? Math.min(...speeds) : 10, steeringLimit: p.drive.steeringLimit };
+    if (p.drive.kind === 'mecanum') warnings.push('Isaac Sim drives the mecanum wheels like a differential pair: cmd_vel moves it forward and turns it, not sideways.');
+  }
+  const model: UsdModel = {
+    name: p.robotName,
+    root: p.linkNames.get(robot.root!)!,
+    fixedBase: robot.base === 'fixed',
+    links,
+    joints: [...p.treeJoints.map((j) => jointOf(j, false)), ...p.loopJoints.map((j) => jointOf(j, true))],
+    sensors: p.sensors.map((s) => ({ name: s.name, kind: s.kind, link: s.link, xyz: s.xyz, rpy: s.rpy, rate: s.rate, camera: s.camera, lidar: s.lidar, touch: s.touch })),
+    drive,
+    controlled: p.controlled,
+  };
+  const files: PackageFile[] = [{ name: `${pkg}.usda`, bytes: encodeText(writeUsda(model)) }, { name: 'README.md', bytes: encodeText(usdReadme(pkg, doc.name, model)) }];
+  return { name: pkg, files, warnings };
+}
+
+function usdReadme(name: string, robot: string, model: UsdModel): string {
+  const d = model.drive;
+  const topics = [
+    '`/joint_states`, `/tf` and `/clock`',
+    ...(model.fixedBase ? [] : ['`/odom`, with the odom → base transform']),
+    ...(d && d.kind !== 'ackermann' ? ['`/cmd_vel` (geometry_msgs/Twist) drives it'] : []),
+    ...(d && d.kind === 'ackermann' ? ['`/ackermann_cmd` (ackermann_msgs/AckermannDriveStamped) drives it: speed and steering angle'] : []),
+    ...(model.controlled.length ? ['`/joint_command` (sensor_msgs/JointState) positions the joints by name'] : []),
+    ...model.sensors.filter((s) => s.kind !== 'touch').map((s) => `\`/${s.name}/${s.kind === 'camera' ? 'image` and `/' + s.name + '/camera_info' : s.kind === 'depth' ? 'depth` and `/' + s.name + '/camera_info' : s.kind === 'lidar' ? 'scan' : 'imu'}\` from the ${s.name} sensor`),
+  ];
+  return `# ${robot}
+
+A stage for Isaac Sim made with ${APP_NAME}: \`${name}.usda\`, meters, Z up.
+Open it (File > Open) and press Play. The robot is a PhysX articulation
+standing on a flat floor, with its masses, collision shapes and joint drives
+written in; nothing needs importing or setting up.
+
+The ROS 2 graph in the stage starts with the ROS 2 bridge extension, which
+Isaac Sim loads when a ROS 2 environment is sourced before launch (Jazzy or
+Humble; without one, Isaac's bundled libraries serve). It publishes:
+
+${topics.map((t) => `- ${t}`).join('\n')}
+
+Sensor frames are named after the sensors; the base frame is \`${model.root}\`.
+${model.sensors.some((s) => s.kind === 'touch') ? '\nTouch sensors are Isaac contact sensors on their links; read them from a\nscript or the Contact Sensor window, as the ROS 2 bridge has no publisher\nfor them.\n' : ''}
+The floor is a stand-in: place the robot in a world of your own by
+referencing this stage, or copy the \`${usdName(model.name)}\` prim into it.
+`;
 }
 
 /** A lidar's rays in MuJoCo, at most: each is a ray cast every step, and a policy wants a coarse scan anyway. */
@@ -556,6 +667,7 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
     joints: [...p.jointNames].map(([j, name]) => ({ name, id: j.id })),
     drive,
     lidars: p.sensors.filter((s) => s.kind === 'lidar').map((s) => ({ name: s.name, id: s.id, rays: Math.min(s.lidar.samples, MAX_LIDAR_RAYS) })),
+    touches: p.sensors.filter((s) => s.kind === 'touch').map((s) => ({ name: s.name, id: s.id })),
   };
 }
 

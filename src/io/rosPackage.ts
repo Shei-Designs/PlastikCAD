@@ -2,6 +2,7 @@
 // source the workspace, and the launch file shows the robot in RViz with
 // sliders for its joints. Plain text, written once per export.
 import { APP_NAME } from '../app';
+import { fmt } from './format';
 import { escapeXml } from './format';
 
 export interface PackageNeeds {
@@ -95,8 +96,14 @@ def generate_launch_description():
 `;
 }
 
-/** An RViz layout with the robot model and its frames, fixed on the base link. */
-export function rvizConfig(baseLink: string): string {
+/**
+ * An RViz layout with the robot model and its frames, fixed on the base link,
+ * the view and the frame markers sized to the robot (`center` and `extent` in
+ * meters, in the base link's frame): a palm-sized robot is not lost under
+ * meter-long axes two meters away.
+ */
+export function rvizConfig(baseLink: string, center: [number, number, number] = [0, 0, 0.1], extent = 0.5): string {
+  const size = Math.max(extent, 0.05);
   return `Panels:
   - Class: rviz_common/Displays
     Name: Displays
@@ -120,6 +127,7 @@ Visualization Manager:
       Name: TF
       Enabled: true
       Show Names: true
+      Marker Scale: ${fmt(size / 2, 3)}
   Global Options:
     Fixed Frame: ${baseLink}
     Frame Rate: 30
@@ -129,13 +137,13 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 1.5
+      Distance: ${fmt(size * 3, 3)}
       Pitch: 0.5
       Yaw: 0.8
       Focal Point:
-        X: 0
-        Y: 0
-        Z: 0.1
+        X: ${fmt(center[0], 4)}
+        Y: ${fmt(center[1], 4)}
+        Z: ${fmt(center[2], 4)}
 Window Geometry:
   Height: 800
   Width: 1200

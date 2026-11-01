@@ -3,7 +3,7 @@ import { emptyDoc } from '../model/file';
 import type { SceneNode } from '../model/types';
 import type { LinkGeometry } from '../worker/protocol';
 import { checkRobot } from './check';
-import { buildMjcfModel, buildRobotPackage, buildSdfModel, exportSummary } from './export';
+import { buildIsaacStage, buildMjcfModel, buildRobotPackage, buildSdfModel, exportSummary } from './export';
 import { meshProperties } from './inertia';
 import { driveForward, jointInChild, jointInDesign, linkNodes, spanningTree } from './model';
 import { defaultJoint, defaultLink, defaultSensor } from './types';
@@ -337,6 +337,45 @@ describe('sensors, drive and control', () => {
   });
 });
 
+describe('Isaac Sim stage', () => {
+  it('writes one stage with the articulation, every sensor, the drive graph and a readme', () => {
+    const pkg = buildIsaacStage(rover(), geometry());
+    expect(pkg.name).toBe('test_rover');
+    expect(pkg.warnings).toEqual([]);
+    expect(pkg.files.map((f) => f.name)).toEqual(['test_rover.usda', 'README.md']);
+    const usda = text(pkg.files[0].bytes);
+    expect(usda).toContain('def Xform "Test_Rover" (\n        prepend apiSchemas = ["PhysicsArticulationRootAPI", "PhysxArticulationAPI"]');
+    expect(usda).not.toContain('root_joint');
+    for (const link of ['Body', 'Left_wheel', 'Arm_upper']) expect(usda).toContain(`def Xform "${link}" (`);
+    // The wheel joint sits where the design has it, in meters; the shoulder holds a position, the wheels run at a speed.
+    expect(usda).toContain('def PhysicsRevoluteJoint "left_wheel_joint"');
+    // The wheel joint sits 4 mm inboard of the wheel's center (y 40, z 10), in the body's frame at the origin.
+    expect(usda).toMatch(/def PhysicsRevoluteJoint "left_wheel_joint"[\s\S]*?point3f physics:localPos0 = \(0, 0.036, 0.01\)/);
+    expect(usda).toMatch(/def PhysicsRevoluteJoint "shoulder"[\s\S]*?float physics:lowerLimit = -90[\s\S]*?float physics:upperLimit = 90[\s\S]*?float drive:angular:physics:stiffness = 10/);
+    expect(usda).toContain('def Camera "front_cam"');
+    expect(usda).toContain('def OmniLidar "top_lidar"');
+    expect(usda).toContain('def IsaacImuSensor "imu"');
+    expect(usda).toContain('def IsaacContactSensor "tread"');
+    expect(usda).toContain('"PhysxContactReportAPI"');
+    expect(usda).toContain('custom token[] inputs:jointNames = ["left_wheel_joint", "right_wheel_joint"]');
+    expect(usda).toContain('custom string inputs:topicName = "joint_command"');
+    const readme = text(pkg.files[1].bytes);
+    expect(readme).toContain('`/cmd_vel` (geometry_msgs/Twist) drives it');
+    expect(readme).toContain('`/top_lidar/scan` from the top_lidar sensor');
+    expect(readme).toContain('Touch sensors are Isaac contact sensors');
+  });
+
+  it('bolts a fixed base down and leaves the drive graph out without a drive', () => {
+    const d = rover();
+    d.robot!.base = 'fixed';
+    d.robot!.drive = undefined;
+    const usda = text(buildIsaacStage(d, geometry()).files[0].bytes);
+    expect(usda).toContain('def PhysicsFixedJoint "root_joint"');
+    expect(usda).not.toContain('ROS2SubscribeTwist');
+    expect(usda).not.toContain('IsaacComputeOdometry');
+  });
+});
+
 describe('xacro and MuJoCo', () => {
   it('writes a xacro beside the URDF with the Gazebo and control blocks behind arguments', () => {
     const d = doc();
@@ -427,8 +466,10 @@ describe('xacro and MuJoCo', () => {
     expect(xml).toMatch(/<key name="home" qpos="0 0 0 1 0 0 0 0 0"\/>/);
     const touchy = buildMjcfModel(rover(), geometry());
     const txml = text(touchy.files.find((f) => f.name === 'test_rover.xml')!.bytes);
-    expect(txml).toMatch(/<site name="tread_site" type="sphere" pos="[-0-9. ]+" size="0.002"/);
+    // The touch sphere reaches half the wheel's diagonal: the whole tread face it sits on.
+    expect(txml).toMatch(/<site name="tread_site" type="sphere" pos="[-0-9. ]+" size="0.0147"/);
     expect(txml).toContain('<touch name="tread" site="tread_site"/>');
+    expect(touchy.touches).toEqual([{ name: 'tread', id: 's4' }]);
     // The scripts ride along, and a rover's drive.py reads drive.json.
     expect(touchy.files.map((f) => f.name)).toEqual(expect.arrayContaining(['drive.py', 'env.py', 'train.py', 'drive.json']));
     expect(text(touchy.files.find((f) => f.name === 'drive.py')!.bytes)).toContain('KIND = "rover"');

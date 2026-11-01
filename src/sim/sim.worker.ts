@@ -16,6 +16,8 @@ let timer: ReturnType<typeof setInterval> | undefined;
 let last = 0;
 /** The lidars whose rays go out with every frame. */
 let lidars: { name: string; rays: number }[] = [];
+/** The touch sensors whose forces go out with every frame. */
+let touches: string[] = [];
 /** Counts loads, so that a load still waiting for the engine gives way to a later one. */
 let loads = 0;
 
@@ -27,7 +29,8 @@ function frame(): void {
   if (!sim) return;
   const poses = sim.poses();
   const ranges = sim.lidarRanges(lidars);
-  post({ type: 'frame', time: sim.time, poses, ranges }, [poses.buffer, ranges.buffer]);
+  const forces = sim.touchForces(touches);
+  post({ type: 'frame', time: sim.time, poses, ranges, touches: forces }, [poses.buffer, ranges.buffer, forces.buffer]);
 }
 
 function tick(): void {
@@ -66,6 +69,7 @@ async function load(req: Extract<SimRequest, { type: 'load' }>): Promise<void> {
   if (turn !== loads) return;
   sim = Simulation.load(mj, req.xml, req.files, req.drive);
   lidars = req.lidars;
+  touches = req.touches;
   post({ type: 'loaded', bodies: sim.bodies, actuators: sim.actuators, timestep: sim.timestep });
   frame();
 }

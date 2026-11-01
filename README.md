@@ -214,7 +214,9 @@ in the design file and synced with it.
   tilted up or down and, for a camera, rolled about its line of sight, with
   its rate and, for a camera, field of view, picture size and clip distances,
   for a lidar the rays, sweep and range; a touch sensor feels what its link
-  touches. The export writes each as a Gazebo sensor and bridges its topics
+  touches. A picked camera shows its picture in the corner of the plate, a
+  depth camera's in greys, so what it sees and what its near plane cuts off
+  can be checked before anything is exported. The export writes each as a Gazebo sensor and bridges its topics
   to ROS 2; a camera also gets the optical frame ROS expects.
 - **Drive.** In the overview, pick the drive kind (differential, Ackermann
   or mecanum) and give each wheel joint its part: left or right, a steering
@@ -241,8 +243,10 @@ in the design file and synced with it.
   keys (Q and E slide a mecanum robot sideways), move an arm's servos with a
   slider each, and read the time, the distance moved and the heading; *Pause*,
   *Reset* and *Stop* do what they say. The sensors ride their links while it
-  drives, and a lidar's rays reach to whatever they measure, so a tilt or a
-  range can be judged on the move. *Floor* picks what it drives on: flat,
+  drives, a lidar's rays reach to whatever they measure, a touch sensor's
+  pad lights while it presses on something and a picked camera's picture
+  follows it, so a tilt, a range or a foot that misses the floor can be
+  judged on the move. *Floor* picks what it drives on: flat,
   gentle bumps, an eight-degree slope, three low steps or a ramp ahead of
   the robot. That floor is only for the test drive. PlastikCAD builds
   robots, not worlds: every export stands the robot on a flat floor, and the
@@ -259,7 +263,8 @@ in the design file and synced with it.
   with joint sliders, one for Gazebo through `ros_gz` that opens the
   package's world (`worlds/<name>.sdf`, with the sensor systems on), spawns
   the robot, starts the bridge from `config/bridge.yaml` and the controllers
-  from `config/controllers.yaml`, and an RViz layout. Or a *Gazebo model*:
+  from `config/controllers.yaml`, and an RViz layout framed on the robot's
+  own size. Or a *Gazebo model*:
   `model.sdf` with every joint (loops included), `model.config`, the meshes
   and a world that includes the model, to open with `gz sim` and no ROS.
   Or a *MuJoCo model*: one MJCF file with the bodies nested down the tree,
@@ -271,15 +276,18 @@ in the design file and synced with it.
   MuJoCo's viewer, a Gymnasium `env.py` and a Stable-Baselines3 `train.py`. Meters, kilograms and radians, Z up; every link's frame is parallel to the
   design's axes and sits at its joint, with its meshes written in that frame.
   The URDF says `__PACKAGE_SHARE__` where it means the package's share
-  folder; the launch files fill that in, so no xacro is needed. Isaac Sim
-  opens the same package: unzip it, pick the URDF with *File > Import*, and
-  add the package's name and its unzipped folder to the importer's ROS
-  package list so the `package://` mesh paths resolve (a sourced ROS 2
-  workspace with the package built needs no mapping). Set *Base Type* to
-  *Mobile* for a rover or a walker, as the importer otherwise bolts the base
-  to the world, and give the joints drive gains (velocity drives on the
-  wheels, position drives on the servos), which URDF does not carry. The
-  importer writes the USD itself, so there is no USD export.
+  folder; the launch files fill that in, so no xacro is needed. Or an *Isaac
+  Sim stage*: one `.usda` file holding the robot as a PhysX articulation
+  (rigid links with their masses, meshes and collision shapes, joints with
+  limits and drives, loops as plain joints), its sensors as Isaac's own prims
+  (cameras with their clip planes, an RTX lidar with the design's rays and
+  sweep, IMUs, contact sensors), a floor, lights, and a ROS 2 action graph
+  that drives it from `cmd_vel` (`ackermann_cmd` for a car, `joint_command`
+  for an arm) and publishes joint states, clock, odometry, TF and every
+  sensor. *File > Open*, Play, and it runs; nothing is imported or set up on
+  the Isaac side. Isaac Sim can still import the ROS 2 package's URDF, but
+  the stage carries what the importer cannot read from URDF: drive gains, a
+  free base, sensors and clip planes.
 - **Import URDF**, under the robot tree, brings a robot in from a `.urdf`
   file. Every link with a shape becomes an object standing where the file
   puts it, its meshes (STL, OBJ or Collada) read from `meshes/` beside the
@@ -532,8 +540,9 @@ pnpm tauri dev      # run the desktop app with hot reload
 pnpm dev            # or just the UI, in a browser at http://localhost:1430
 pnpm test           # model, geometry, part and file-format tests
 pnpm smoke:robots   # exports the reference robots and runs them in MuJoCo (pip install mujoco)
-pnpm smoke:ros      # the same in ROS 2 Jazzy and Gazebo, in Docker
-pnpm smoke:isaac    # the same in Isaac Sim (ISAACSIM_PYTHON=~/isaacsim-env/bin/python)
+pnpm smoke:ros      # the same in ROS 2 Jazzy, RViz (screenshots) and Gazebo, in Docker
+pnpm smoke:isaac    # the same in Isaac Sim through its URDF importer (ISAACSIM_PYTHON=~/isaacsim-env/bin/python)
+pnpm smoke:usd      # the exported Isaac Sim stages opened, played and driven over ROS 2 in Isaac Sim
 pnpm typecheck
 pnpm tauri build    # build installers into src-tauri/target/release/bundle
 pnpm tauri android build --apk   # the Android app, with the Tauri Android prerequisites installed
@@ -643,7 +652,6 @@ never touch the mesh kernel, which keeps them easy to test.
 - More parts: throated worm wheel, planetary set helper, V-belt pulleys,
   imperial threads.
 - Assembly preview of meshing gears.
-- Robot mode: a camera's picture while test driving.
 - STEP export. Shapes and parts are already described as profiles and
   operations rather than triangles, so a B-rep backend can evaluate the same
   descriptions.

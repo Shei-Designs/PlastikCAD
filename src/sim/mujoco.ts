@@ -148,6 +148,15 @@ export class Simulation {
     return out;
   }
 
+  /** The force each of these touch sensors feels, newtons; -1 for a sensor the model lacks. */
+  touchForces(touches: string[]): Float32Array {
+    const data = this.data.sensordata as Float64Array;
+    return Float32Array.from(touches, (name) => {
+      const s = this.sensors.get(name);
+      return s ? data[s.at] : -1;
+    });
+  }
+
   /** A sensor's reading as it stands; empty for a sensor the model lacks. */
   sensorValue(sensor: string): number[] {
     const s = this.sensors.get(sensor);

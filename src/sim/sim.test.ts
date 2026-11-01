@@ -186,4 +186,14 @@ describe('the quadruped', () => {
     for (const leg of ['front_left', 'rear_right']) expect(Math.abs(sim.jointValue(`Knee_${leg}`))).toBeLessThan(0.2);
     sim.dispose();
   });
+
+  it('feels the floor under every foot, and nothing under a sensor the model lacks', () => {
+    const { sim } = simulate(make('quadruped'));
+    sim.step(2);
+    const forces = sim.touchForces(['Foot_front_left', 'Foot_rear_left', 'Foot_front_right', 'Foot_rear_right', 'Foot_fifth']);
+    // Each foot carries a share of the body: a few newtons; a name the model has no sensor for reads -1.
+    for (let i = 0; i < 4; i++) expect(forces[i]).toBeGreaterThan(0.1);
+    expect(forces[4]).toBe(-1);
+    sim.dispose();
+  });
 });

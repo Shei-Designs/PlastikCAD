@@ -234,7 +234,7 @@ export function RobotExport() {
         )}
         <button type="button" className="primary" disabled={Boolean(busy) || errors > 0 || nodes.length === 0} onClick={() => void exportRobot()}>
           <DownloadIcon />
-          {busy ? 'Exporting…' : format === 'urdf' ? 'Export package' : 'Export model'}
+          {busy ? 'Exporting…' : format === 'urdf' ? 'Export package' : format === 'usd' ? 'Export stage' : 'Export model'}
         </button>
       </section>
     </div>

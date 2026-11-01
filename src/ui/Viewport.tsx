@@ -312,7 +312,7 @@ function HandleInput({ prompt, onClose }: { prompt: HandlePrompt; onClose: () =>
 /** A sensor as the frame the viewer draws it by. */
 function sensorMarkerOf(sensor: RobotSensor, link: SceneNode): Marker {
   const { matrix } = sensorInDesign(sensor, link);
-  if (sensor.kind === 'camera' || sensor.kind === 'depth') return { kind: 'camera', matrix, hfov: sensor.camera.hfov, aspect: sensor.camera.width / Math.max(sensor.camera.height, 1), depth: sensor.kind === 'depth' };
+  if (sensor.kind === 'camera' || sensor.kind === 'depth') return { kind: 'camera', matrix, hfov: sensor.camera.hfov, aspect: sensor.camera.width / Math.max(sensor.camera.height, 1), depth: sensor.kind === 'depth', near: sensor.camera.near, far: sensor.camera.far };
   if (sensor.kind === 'lidar') return { kind: 'lidar', matrix, hfov: sensor.lidar.hfov };
   if (sensor.kind === 'touch') return { kind: 'touch', matrix };
   return { kind: 'imu', matrix };
@@ -357,7 +357,7 @@ function robotMarkers(s: EditorState): { id: string; marker: Marker }[] | null {
   return out;
 }
 
-/** While the test drive runs: every sensor on its link where the simulation has it, a lidar's with what its rays read, for the plate to draw the readouts. */
+/** While the test drive runs: every sensor on its link where the simulation has it, a lidar's with what its rays read and a touch sensor's with whether it is pressed, for the plate to draw the readouts. */
 function drivenMarkers(s: EditorState, frames: Map<string, Mat>, readings: Map<string, number[]>): { id: string; marker: Marker }[] | null {
   if (!s.robot || !s.doc.robot) return null;
   const byId = new Map(s.doc.scene.map((n) => [n.id, n]));
@@ -369,6 +369,7 @@ function drivenMarkers(s: EditorState, frames: Map<string, Mat>, readings: Map<s
     const marker = sensorMarkerOf(x, link);
     marker.matrix = multiply(frame, marker.matrix);
     if (marker.kind === 'lidar') marker.ranges = readings.get(x.id);
+    if (marker.kind === 'touch') marker.pressed = (readings.get(x.id)?.[0] ?? 0) > 0;
     out.push({ id: x.id, marker });
   }
   return out;
@@ -398,6 +399,12 @@ export function Viewport() {
   // The sensors ride their links instead, a lidar's rays reaching to what they read, so a tilt or a range can be judged on the move.
   const marker = useMemo(() => (simFrames ? null : robotMarker(state)), [state.joint, state.sensor, state.doc, simFrames]);
   const markers = useMemo(() => (simFrames ? drivenMarkers(state, simFrames, driven.readings) : robotMarkers(state)), [state.robot, state.joint, state.sensor, state.doc, state.prefs.robotMarkers, simFrames, driven.readings]);
+  // The picked camera's picture, from where the design has it or, while the test drive runs, from where the simulation carries it.
+  const preview = useMemo(() => {
+    if (!state.robot || !state.sensor) return null;
+    const mk = simFrames ? markers?.find((d) => d.id === state.sensor)?.marker : marker;
+    return mk?.kind === 'camera' ? mk : null;
+  }, [state.robot, state.sensor, simFrames, marker, markers]);
   const ground = useMemo(() => (simFrames && driven.world !== 'flat' ? { world: driven.world, forward: driven.drive?.forward ?? ([0, 1, 0] as Vec3) } : null), [simFrames, driven.world, driven.drive]);
   // The view follows a driving robot: it moves by what the base moved since the last frame, and comes back when the drive ends.
   const followed = useRef<Vec3 | null>(null);
@@ -471,8 +478,8 @@ export function Viewport() {
   }, []);
 
   useEffect(() => {
-    viewer.current?.setOptions({ theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap, interactive: true, align: aligning, highlight, snaps, marker, markers, ground });
-  }, [prefs.theme, prefs.edges, prefs.grid, prefs.snap, aligning, highlight, snaps, marker, markers, ground]);
+    viewer.current?.setOptions({ theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap, interactive: true, align: aligning, highlight, snaps, marker, markers, ground, preview });
+  }, [prefs.theme, prefs.edges, prefs.grid, prefs.snap, aligning, highlight, snaps, marker, markers, ground, preview]);
 
   useEffect(() => {
     viewer.current?.setPlacing(Boolean(placing));

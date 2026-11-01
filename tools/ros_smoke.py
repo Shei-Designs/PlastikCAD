@@ -5,7 +5,10 @@ Meant to run inside the tools/ros Docker image (tools/ros_smoke.sh does that):
 
     python3 ros_smoke.py <dir of ROS packages> [<dir of SDF model packages>]
 
-For every ROS package: colcon builds it, Gazebo converts the URDF (gz sdf -p)
+For every ROS package: colcon builds it, display.launch.py runs on a virtual
+display (every link must get a TF frame, RViz must stay up without errors
+and its screenshot, saved beside the camera pictures, must show the robot),
+Gazebo converts the URDF (gz sdf -p)
 and checks the world, then gazebo.launch.py runs headless; the robot must
 publish its joints, every bridged sensor must publish, a drive must move the
 robot in Gazebo when told to on /cmd_vel, and ros2_control's controllers must
@@ -259,6 +262,90 @@ def drive_and_measure(model, world, publish, seconds=3.0):
     return math.hypot(dx, dy), after, before
 
 
+def check_rviz(name, urdf, env):
+    """display.launch.py on a virtual display: every link gets a frame, RViz stays up with no error, and a screenshot shows the robot in color."""
+    links = [l.get('name') for l in ET.parse(urdf).getroot().findall('link')]
+    base = ET.parse(urdf).getroot()
+    xvfb = subprocess.Popen(['Xvfb', ':99', '-screen', '0', '1280x800x24', '-nolisten', 'tcp'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    denv = dict(env, DISPLAY=':99', LIBGL_ALWAYS_SOFTWARE='1', QT_X11_NO_MITSHM='1', XDG_RUNTIME_DIR='/tmp/runtime-smoke')
+    os.makedirs('/tmp/runtime-smoke', exist_ok=True)
+    time.sleep(1)
+    launched = Launched(['ros2', 'launch', name, 'display.launch.py'], f'/tmp/{name}.display.log', env=denv)
+    try:
+        if not wait_for(lambda: topic_once('/joint_states', 5), 40):
+            fail(name, 'display.launch.py published no /joint_states within 40 s (joint_state_publisher_gui)')
+            return
+        # Frames: fixed joints go out once on /tf_static, moving ones with every joint state.
+        def frames():
+            seen = set()
+            try:
+                r = run(['ros2', 'topic', 'echo', '--once', '--qos-durability', 'transient_local', '--qos-reliability', 'reliable', '/tf_static'], timeout=10, env=denv)
+                seen.update(re.findall(r'child_frame_id: (\S+)', r.stdout))
+            except subprocess.TimeoutExpired:
+                pass
+            tf = topic_once('/tf', 10)
+            if tf:
+                seen.update(t.get('child_frame_id') for t in tf.get('transforms', []))
+            return seen
+        got = wait_for(lambda: (lambda f: f if len(f) >= len(links) - 1 else None)(frames()), 30) or frames()
+        missing = [l for l in links if l not in got and base.find(f"joint/child[@link='{l}']") is not None]
+        if missing:
+            fail(name, f"TF lacks frames for: {', '.join(missing)}")
+        else:
+            ok(f'robot_state_publisher gives every link a frame ({len(got)} transforms)')
+        # RViz has had time to load the meshes; the picture must show the robot, not just the grid.
+        time.sleep(20)
+        if run(['pgrep', '-f', 'rviz2'], env=denv).returncode:
+            fail(name, 'rviz2 is no longer running')
+            return
+        picture = os.path.join(os.environ.get('SMOKE_PICTURES', '/tmp'), f'rviz_{name}.png')
+        r = run(f'xwd -root -silent -display :99 | convert xwd:- png:{picture}', timeout=30, env=denv)
+        if r.returncode or not os.path.exists(picture):
+            fail(name, f'no screenshot of RViz: {r.stderr.strip()[:200]}')
+            return
+        # The robot's own colors from the URDF, so the frame axes and the grid do not pass for it.
+        colors = sorted({m.get('rgba') for m in base.iter('color') if m.get('rgba')})
+        r = run(['python3', '-c', PICTURE_STATS, picture, json.dumps(colors)], timeout=60)
+        stats = json.loads(r.stdout.strip() or '{}') if r.returncode == 0 else {}
+        if stats.get('robot', 0) < 300:
+            fail(name, f"RViz's picture shows {stats.get('robot', 0)} pixels in the robot's colors: it did not render ({picture})")
+        else:
+            ok(f"RViz shows the robot: {stats['robot']} pixels in its colors of {stats['total']} ({picture})")
+    finally:
+        errs = [l for l in launched.errors() if 'joint_state_publisher_gui' not in l or 'error' in l.lower()]
+        launched.stop()
+        subprocess.run(['pkill', '-9', '-f', 'rviz2'], capture_output=True)
+        subprocess.run(['pkill', '-9', '-f', 'joint_state_publisher'], capture_output=True)
+        subprocess.run(['pkill', '-9', '-f', 'robot_state_publisher'], capture_output=True)
+        xvfb.terminate()
+        time.sleep(1)
+        if errs:
+            print(f'  RViz/ROS reported {len(errs)} error line(s):')
+            for l in errs[:12]:
+                print('       ' + l.strip()[:220])
+            fail(name, f'{len(errs)} error line(s) in the display launch log')
+
+
+PICTURE_STATS = r"""
+import colorsys, json, sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert('RGB')
+# The robot's colors as hues; a pixel of one of them, shaded or not, is the robot. Grey materials cannot be told from the grid and are skipped.
+hues = []
+for rgba in json.loads(sys.argv[2]):
+    r, g, b = [float(v) for v in rgba.split()[:3]]
+    h, s, v = colorsys.rgb_to_hsv(r, g, b)
+    if s > 0.25:
+        hues.append(h)
+robot = 0
+for r, g, b in im.getdata():
+    h, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
+    if s > 0.2 and v > 0.15 and any(min(abs(h - x), 1 - abs(h - x)) < 0.04 for x in hues):
+        robot += 1
+print(json.dumps({'total': im.width * im.height, 'robot': robot, 'hues': len(hues)}))
+"""
+
+
 def check_ros_package(pkg_dir, env):
     name = os.path.basename(pkg_dir)
     print(f'\n== {name} (ROS package)', flush=True)
@@ -267,6 +354,7 @@ def check_ros_package(pkg_dir, env):
     world = os.path.join(share, 'worlds', f'{name}.sdf')
     if not os.path.exists(urdf):
         return fail(name, f'{urdf} was not installed')
+    check_rviz(name, urdf, env)
 
     # Gazebo's own reading of the URDF and the world.
     with open(urdf) as f:
