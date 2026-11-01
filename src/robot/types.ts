@@ -185,7 +185,7 @@ export interface Robot {
   scripts?: boolean;
 }
 
-export type World = 'flat' | 'rough' | 'slope';
+export type World = 'flat' | 'rough' | 'slope' | 'steps' | 'ramp';
 /**
  * A lidar's rays as angles from its X about its Z, radians: from the right-hand
  * end of the sweep round to the left, as a laser scan lists them. A full circle
@@ -201,6 +201,8 @@ export const WORLDS: { id: World; name: string; help: string }[] = [
   { id: 'flat', name: 'Flat', help: 'A level floor.' },
   { id: 'rough', name: 'Rough', help: 'Gentle bumps a few centimeters high around a flat start; for walkers and rovers.' },
   { id: 'slope', name: 'Slope', help: 'A floor tilted eight degrees.' },
+  { id: 'steps', name: 'Steps', help: 'Three 10 mm steps, 120 mm deep, starting 300 mm ahead of the robot.' },
+  { id: 'ramp', name: 'Ramp', help: 'A 10° ramp 600 mm long starting 300 mm ahead, onto a flat top.' },
 ];
 
 export const emptyRobot = (): Robot => ({ root: null, base: 'free', links: [], joints: [], sensors: [], control: true });

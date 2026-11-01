@@ -343,6 +343,32 @@ describe('xacro and MuJoCo', () => {
     expect(urdf).not.toContain('xacro');
   });
 
+  it('stands a course of steps or a ramp ahead of the robot in the MuJoCo world', () => {
+    const d = doc();
+    d.robot!.drive = { kind: 'differential', roles: { j1: 'left', j2: 'right' } };
+    d.robot!.base = 'free';
+    d.robot!.world = 'steps';
+    const steps = text(buildMjcfModel(d, geometry()).files.find((f) => f.name === 'test_rover.xml')!.bytes);
+    // Three boxes from each riser to the end of the course (0.3 m ahead, 3 × 0.12 m of treads, a 0.6 m landing), 10 mm higher each, a meter wide.
+    const boxes = [...steps.matchAll(/<geom name="course(\d)" type="box" pos="([^"]+)" size="([^"]+)" quat="([^"]+)" material="floor"/g)];
+    expect(boxes.map((m) => m[1])).toEqual(['1', '2', '3']);
+    expect(boxes.map((m) => m[3])).toEqual(['0.48 0.5 0.005', '0.42 0.5 0.01', '0.36 0.5 0.015']);
+    const along = (pos: string) => Math.hypot(...pos.split(' ').slice(0, 2).map(Number));
+    expect(along(boxes[0][2])).toBeCloseTo(0.78, 3);
+    expect(boxes[0][2].split(' ')[2]).toBe('0.005');
+    d.robot!.world = 'ramp';
+    const ramp = text(buildMjcfModel(d, geometry()).files.find((f) => f.name === 'test_rover.xml')!.bytes);
+    const slabs = [...ramp.matchAll(/<geom name="course(\d)" type="box" pos="([^"]+)" size="([^"]+)" quat="([^"]+)"/g)];
+    // A 0.6 m slab, 20 mm thick, tipped 10°, then a flat top as high as it climbs (0.6 sin 10° = 104 mm).
+    expect(slabs[0][3]).toBe('0.3 0.5 0.01');
+    expect(slabs[1][3].split(' ').map(Number)).toEqual([0.3, 0.5, expect.closeTo(0.052095, 5)]);
+    expect(slabs[0][4]).not.toBe('1 0 0 0');
+    expect(Number(slabs[1][2].split(' ')[2])).toBeCloseTo(0.052095, 5);
+    expect(steps).toContain('<geom name="floor" type="plane"');
+    d.robot!.world = 'flat';
+    expect(text(buildMjcfModel(d, geometry()).files.find((f) => f.name === 'test_rover.xml')!.bytes)).not.toContain('course');
+  });
+
   it('writes a MuJoCo model: nested bodies, joints, actuators, a loop as a connect, a camera and an IMU', () => {
     const d = doc();
     // Both joints drive (the shoulder standing in for a right wheel), and the base stands free, so it floats.

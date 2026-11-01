@@ -435,7 +435,7 @@ function readRobot(raw: unknown, scene: Scene): Robot | undefined {
     sensors: readSensors(raw.sensors, ids),
     ...(drive ? { drive } : {}),
     control: raw.control !== false,
-    ...(raw.world === 'rough' || raw.world === 'slope' ? { world: raw.world } : {}),
+    ...(raw.world === 'rough' || raw.world === 'slope' || raw.world === 'steps' || raw.world === 'ramp' ? { world: raw.world } : {}),
     ...(raw.scripts === false ? { scripts: false } : {}),
   };
 }

@@ -58,7 +58,8 @@ import { ALIGN_MODES, HOLE_COLOR, alignDot, rotateNodes, scaleNodes } from '../m
 import type { Asset, GroupNode, SceneNode, Vec3 } from '../model/types';
 import type { BuildResult } from '../worker/protocol';
 import { SkinPainter } from './skin';
-import { terrain } from '../io/mjcf';
+import { terrain, worldBlocks } from '../io/mjcf';
+import type { World } from '../robot/types';
 import { lidarAngles } from '../robot/types';
 
 export type ViewPreset = 'iso' | 'top' | 'front' | 'side';
@@ -86,7 +87,8 @@ export interface ViewerOptions {
   /** The other joints and sensors, drawn small; a click on one picks it. */
   markers: { id: string; marker: Marker }[] | null;
   /** The floor of a test drive when it is not the plate: the rough field or the slope, as the MuJoCo model has them. */
-  ground: 'rough' | 'slope' | null;
+  /** The floor of a test drive when it is not the plate itself, with which way the robot faces for a course of steps or a ramp. */
+  ground: { world: Exclude<World, 'flat'>; forward: Vec3 } | null;
 }
 
 /**
@@ -539,9 +541,26 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
 const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 const fmt = (v: number) => String(Number(v.toFixed(2)));
 
-/** The floor of a test drive, as the MuJoCo model has it: the rough field's 64×64 heights over 6 m, 30 mm high, or a 10 m plane tilted 0.14 rad about X. Sand-colored and faceted, so that the bumps read. */
-function groundMesh(kind: 'rough' | 'slope', color: number): Mesh<BufferGeometry, MeshStandardMaterial> {
+/**
+ * The floor of a test drive, as the MuJoCo model has it: the rough field's
+ * 64×64 heights over 6 m, 30 mm high; a 10 m plane tilted 0.14 rad about X;
+ * or the blocks of a course of steps or a ramp standing on the plate ahead of
+ * the robot. Sand-colored and faceted, so that the bumps read.
+ */
+function groundMesh(ground: NonNullable<ViewerOptions['ground']>, color: number): Object3D {
   const material = new MeshStandardMaterial({ color, roughness: 0.95, metalness: 0, flatShading: true, side: DoubleSide, polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 2 });
+  const kind = ground.world;
+  if (kind === 'steps' || kind === 'ramp') {
+    const group = new Group();
+    for (const b of worldBlocks(kind, ground.forward)) {
+      const mesh = new Mesh(new BoxGeometry(b.size[0] * 1000, b.size[1] * 1000, b.size[2] * 1000), material);
+      mesh.position.set(b.pos[0] * 1000, b.pos[1] * 1000, b.pos[2] * 1000);
+      mesh.rotation.set(0, -b.pitch, b.yaw, 'ZYX');
+      mesh.renderOrder = -1;
+      group.add(mesh);
+    }
+    return group;
+  }
   let geometry: BufferGeometry;
   if (kind === 'rough') {
     const n = 64;
@@ -564,6 +583,18 @@ function groundMesh(kind: 'rough' | 'slope', color: number): Mesh<BufferGeometry
   const mesh = new Mesh(geometry, material);
   mesh.renderOrder = -1;
   return mesh;
+}
+
+/** Frees a ground's meshes; a course shares one material among its blocks. */
+function disposeGround(ground: Object3D): void {
+  const materials = new Set<MeshStandardMaterial>();
+  ground.traverse((o) => {
+    if (o instanceof Mesh) {
+      o.geometry.dispose();
+      materials.add(o.material as MeshStandardMaterial);
+    }
+  });
+  for (const m of materials) m.dispose();
 }
 
 function gridLines(half: number, step: number, skipStep: number): BufferGeometry {
@@ -696,7 +727,7 @@ export class Viewer {
   private gridMinor!: LineSegments<BufferGeometry, LineBasicMaterial>;
   private axes!: LineSegments<BufferGeometry, LineBasicMaterial>;
   private gridHalf = 0;
-  private ground: Mesh<BufferGeometry, MeshStandardMaterial> | null = null;
+  private ground: Object3D | null = null;
   private groundKey = '';
   private gridStep = 0;
 
@@ -954,8 +985,7 @@ export class Viewer {
     if (!this.ok) return;
     if (this.raf) cancelAnimationFrame(this.raf);
     if (this.ground) {
-      this.ground.geometry.dispose();
-      this.ground.material.dispose();
+      disposeGround(this.ground);
     }
     this.resizeObserver.disconnect();
     const canvas = this.renderer.domElement;
@@ -1260,13 +1290,12 @@ export class Viewer {
         }
       }
     }
-    const groundKey = this.options.ground ? `${theme}:${this.options.ground}` : '';
+    const groundKey = this.options.ground ? `${theme}:${this.options.ground.world}:${this.options.ground.forward.join(',')}` : '';
     if (groundKey !== this.groundKey) {
       this.groundKey = groundKey;
       if (this.ground) {
         this.scene.remove(this.ground);
-        this.ground.geometry.dispose();
-        this.ground.material.dispose();
+        disposeGround(this.ground);
         this.ground = null;
       }
       if (this.options.ground) {

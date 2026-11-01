@@ -222,9 +222,9 @@ in the design file and synced with it.
 - **Controllers.** The actuated joints outside the drive go under
   `ros2_control` with a joint trajectory controller (`arm_controller`) and a
   joint state broadcaster, unless switched off. *World* picks the floor of
-  the MuJoCo model and the test drive (flat, gentle bumps, or an eight-degree
-  slope; Gazebo's world stays flat), and *Scripts* whether the MuJoCo export
-  brings its Python starters.
+  the MuJoCo model and the test drive (flat, gentle bumps, an eight-degree
+  slope, three low steps or a ramp ahead of the robot; Gazebo's world stays
+  flat), and *Scripts* whether the MuJoCo export brings its Python starters.
 - **Checks.** The overview lists what stops an export (no base, a link no
   joint reaches, limits the wrong way round, a drive missing a wheel on a
   side, a link with no mass or an impossible inertia) and what is only worth
@@ -636,8 +636,7 @@ never touch the mesh kernel, which keeps them easy to test.
 - More parts: throated worm wheel, planetary set helper, V-belt pulleys,
   imperial threads.
 - Assembly preview of meshing gears.
-- Robot mode: steps and ramps in the worlds; a camera's picture while test
-  driving.
+- Robot mode: a camera's picture while test driving.
 - STEP export. Shapes and parts are already described as profiles and
   operations rather than triangles, so a B-rep backend can evaluate the same
   descriptions.

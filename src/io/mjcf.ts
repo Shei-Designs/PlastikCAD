@@ -6,7 +6,7 @@ import { APP_NAME } from '../app';
 import type { Vec3 } from '../model/types';
 import type { Tensor } from '../robot/inertia';
 import { lidarAngles } from '../robot/types';
-import type { JointType } from '../robot/types';
+import type { JointType, World } from '../robot/types';
 import { escapeXml, fmt } from './format';
 import type { UrdfGeometry } from './urdf';
 
@@ -53,8 +53,61 @@ export interface MjcfModel {
   /** Position servos over these joints, velocity motors over the wheels. */
   servos: string[];
   wheels: string[];
-  /** The floor: level, bumpy around a flat start, or tilted. */
-  world: 'flat' | 'rough' | 'slope';
+  /** The floor: level, bumpy around a flat start, tilted, or level with steps or a ramp ahead. */
+  world: World;
+  /** Which way the robot faces, a unit vector in the design's axes: the steps and the ramp stand that way. */
+  forward: Vec3;
+}
+
+/** A block of a world's course: its center and full size (along the robot's way, across it, up) in meters, turned to face `yaw` and tipped up ahead by `pitch`, radians. */
+export interface WorldBlock {
+  pos: Vec3;
+  size: Vec3;
+  yaw: number;
+  pitch: number;
+}
+
+/** How far ahead of the robot a course begins, m. */
+const COURSE_AHEAD = 0.3;
+const COURSE_WIDTH = 1;
+const STEP_RISE = 0.01;
+const STEP_DEPTH = 0.12;
+const STEPS = 3;
+const RAMP_PITCH = (10 * Math.PI) / 180;
+const RAMP_LENGTH = 0.6;
+const RAMP_THICKNESS = 0.02;
+const TOP_LENGTH = 0.6;
+
+/**
+ * The blocks a world puts ahead of the robot, facing the way it faces: three
+ * low steps, each a box from its riser to the course's end so the treads
+ * join; or a ramp (a thin slab tipped up, its top surface meeting the floor at
+ * the start) onto a flat top as high as it climbs. Nothing for the floors.
+ */
+export function worldBlocks(world: World, forward: Vec3): WorldBlock[] {
+  const n = Math.hypot(forward[0], forward[1]) || 1;
+  const f: Vec3 = [forward[0] / n, forward[1] / n, 0];
+  const yaw = Math.atan2(f[1], f[0]);
+  const at = (along: number, z: number): Vec3 => [f[0] * along, f[1] * along, z];
+  if (world === 'steps') {
+    const end = COURSE_AHEAD + STEPS * STEP_DEPTH + TOP_LENGTH;
+    return Array.from({ length: STEPS }, (_, k) => {
+      const start = COURSE_AHEAD + k * STEP_DEPTH;
+      const height = (k + 1) * STEP_RISE;
+      return { pos: at((start + end) / 2, height / 2), size: [end - start, COURSE_WIDTH, height], yaw, pitch: 0 };
+    });
+  }
+  if (world === 'ramp') {
+    const c = Math.cos(RAMP_PITCH);
+    const s = Math.sin(RAMP_PITCH);
+    const height = RAMP_LENGTH * s;
+    const topStart = COURSE_AHEAD + RAMP_LENGTH * c;
+    return [
+      { pos: at(COURSE_AHEAD + (RAMP_LENGTH / 2) * c + (RAMP_THICKNESS / 2) * s, (RAMP_LENGTH / 2) * s - (RAMP_THICKNESS / 2) * c), size: [RAMP_LENGTH, COURSE_WIDTH, RAMP_THICKNESS], yaw, pitch: RAMP_PITCH },
+      { pos: at(topStart + TOP_LENGTH / 2, height / 2), size: [TOP_LENGTH, COURSE_WIDTH, height], yaw, pitch: 0 },
+    ];
+  }
+  return [];
 }
 
 /** Terrain for the rough floor: smooth bumps from a few sines, flat within `clear` of the middle so the robot starts level. 0..1 per cell, row by row. */
@@ -245,12 +298,18 @@ export function writeMjcf(model: MjcfModel): string {
     ...touches.map((t) => `    <touch name="${escapeXml(t.name)}" site="${escapeXml(t.name)}_site"/>`),
     ...lidars.flatMap((l) => Array.from({ length: l.rays }, (_, i) => `    <rangefinder name="${escapeXml(l.name)}_${i}" site="${escapeXml(l.name)}_ray${i}" cutoff="${sig(l.max)}"/>`)),
   ];
-  const floor =
+  const floor = [
     model.world === 'rough'
       ? '    <geom name="floor" type="hfield" hfield="terrain" material="floor" friction="1 0.005 0.0001"/>'
       : model.world === 'slope'
         ? '    <geom name="floor" type="plane" size="5 5 0.1" euler="0.14 0 0" material="floor" friction="1 0.005 0.0001"/>'
-        : '    <geom name="floor" type="plane" size="5 5 0.1" material="floor" friction="1 0.005 0.0001"/>';
+        : '    <geom name="floor" type="plane" size="5 5 0.1" material="floor" friction="1 0.005 0.0001"/>',
+    // A course's blocks stand still in the world, facing the robot's way, tipped up ahead where a ramp is.
+    ...worldBlocks(model.world, model.forward).map((b, i) => {
+      const q = qmul([Math.cos(b.yaw / 2), 0, 0, Math.sin(b.yaw / 2)], [Math.cos(-b.pitch / 2), 0, Math.sin(-b.pitch / 2), 0]).map((x) => fmt(x, 6)).join(' ');
+      return `    <geom name="course${i + 1}" type="box" pos="${vec(b.pos)}" size="${vec(b.size.map((v) => v / 2) as Vec3)}" quat="${q}" material="floor" friction="1 0.005 0.0001"/>`;
+    }),
+  ];
   const placed = placeBodies(model.base);
   const jointed = new Map(collect(model.base, (b) => (b.joint ? [b] : [])).map((b) => [b.joint!.name, b]));
   const gainsOf = (name: string) => actuatorGains(jointed.get(name), placed);
@@ -286,7 +345,7 @@ export function writeMjcf(model: MjcfModel): string {
     '  </asset>',
     '  <worldbody>',
     '    <light pos="0 0 3" dir="0 0 -1" directional="true"/>',
-    floor,
+    ...floor,
     ...body,
     '  </worldbody>',
     ...(actuators.length ? ['  <actuator>', ...actuators, '  </actuator>'] : []),

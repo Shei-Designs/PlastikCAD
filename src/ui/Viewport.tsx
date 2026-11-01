@@ -398,7 +398,7 @@ export function Viewport() {
   // The sensors ride their links instead, a lidar's rays reaching to what they read, so a tilt or a range can be judged on the move.
   const marker = useMemo(() => (simFrames ? null : robotMarker(state)), [state.joint, state.sensor, state.doc, simFrames]);
   const markers = useMemo(() => (simFrames ? drivenMarkers(state, simFrames, driven.readings) : robotMarkers(state)), [state.robot, state.joint, state.sensor, state.doc, state.prefs.robotMarkers, simFrames, driven.readings]);
-  const ground = simFrames && driven.world !== 'flat' ? driven.world : null;
+  const ground = useMemo(() => (simFrames && driven.world !== 'flat' ? { world: driven.world, forward: driven.drive?.forward ?? ([0, 1, 0] as Vec3) } : null), [simFrames, driven.world, driven.drive]);
   // The view follows a driving robot: it moves by what the base moved since the last frame, and comes back when the drive ends.
   const followed = useRef<Vec3 | null>(null);
   useEffect(() => {
