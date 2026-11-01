@@ -52,6 +52,7 @@ def read_stage(path):
         'topics': topics,
         'cameras': re.findall(r'def Camera "([^"]+)"', text),
         'imus': re.findall(r'def IsaacImuSensor "([^"]+)"', text),
+        'touches': re.findall(r'def IsaacContactSensor "([^"]+)"', text),
         'lidars': lidars,
         'joints': re.findall(r'def Physics(?:Revolute|Prismatic)Joint "([^"]+)"', text),
         'fixed_base': 'def PhysicsFixedJoint "root_joint"' in text,
@@ -72,7 +73,7 @@ def one(path, pictures):
         import omni.usd
         from pxr import Gf, Usd, UsdGeom, UsdPhysics, UsdShade
         from isaacsim.core.utils.extensions import enable_extension
-        for ext in ('isaacsim.core.nodes', 'isaacsim.sensors.physics', 'isaacsim.sensors.rtx', 'isaacsim.robot.wheeled_robots', 'isaacsim.ros2.bridge'):
+        for ext in ('isaacsim.core.nodes', 'isaacsim.sensors.physics', 'isaacsim.sensors.experimental.physics', 'isaacsim.sensors.rtx', 'isaacsim.robot.wheeled_robots', 'isaacsim.ros2.bridge'):
             enable_extension(ext)
         app.update()
         app.update()
@@ -270,6 +271,23 @@ def one(path, pictures):
                 result['problems'].append(f'no pictures from {cam}')
             else:
                 result[f'{cam}_px'] = f'{msgs[-1].width}x{msgs[-1].height}'
+        # Touch sensors: Isaac's contact sensor interface must read a force on each pad that stands on the floor.
+        if info['touches']:
+            touched = {}
+            try:
+                from isaacsim.sensors.experimental.physics import ContactSensor
+                sensors = [(prim.GetName(), ContactSensor(str(prim.GetPath()))) for prim in stage.Traverse() if prim.GetTypeName() == 'IsaacContactSensor']
+                # A few more steps, so each sensor has a reading of the robot as it stands.
+                run(0.2, lambda i: None)
+                for pad, sensor in sensors:
+                    reading = sensor.get_sensor_reading()
+                    touched[pad] = round(float(reading.value), 3) if reading.is_valid else None
+            except Exception as e:  # noqa: BLE001
+                result['problems'].append(f'contact sensors could not be read: {type(e).__name__}: {e}')
+            result['touch_N'] = touched
+            quiet = [k for k, v in touched.items() if not v]
+            if len(quiet) == len(touched) and touched:
+                result['problems'].append('no contact sensor feels any force')
 
         # A picture, aimed at the robot where it ended up.
         cache = UsdGeom.BBoxCache(Usd.TimeCode.Default(), ['default'], useExtentsHint=False)

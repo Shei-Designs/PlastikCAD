@@ -299,12 +299,15 @@ function collisionPrim(c: UsdCollision, i: number, material: string): string[] {
   return [...head('Sphere'), ...indent([...common, `double radius = ${fmt(c.sphere.radius)}`, ...xformOps(c.origin, rot)], 1), '}'];
 }
 
-/** The attributes of a one-beam spinning lidar, as Isaac's generic lidar schema wants them: the sweep, its rate, its reach. */
+/**
+ * The attributes of a one-beam spinning lidar, as Isaac's generic lidar schema wants them: its rate and reach, and
+ * the rays of a full turn. Isaac's laser scan is always the whole circle (a narrower valid window silences it), so a
+ * partial sweep keeps the design's angular step over 360°, and the scan has 360/hfov times as many rays.
+ */
 function lidarLines(s: UsdSensor): string[] {
-  const rays = Math.max(1, Math.round(s.lidar.samples));
+  const hfov = Math.min(Math.max(s.lidar.hfov * DEG, 1), 360);
+  const rays = Math.max(1, Math.round((Math.max(1, s.lidar.samples) * 360) / hfov));
   const hz = Math.max(1, Math.round(s.rate));
-  const full = s.lidar.hfov * DEG >= 359.9;
-  const half = (s.lidar.hfov * DEG) / 2;
   const u = (n: number) => String(Math.max(0, Math.round(n)));
   return [
     'bool omni:sensor:Core:accumulateOutputs = 1',
@@ -383,8 +386,8 @@ function lidarLines(s: UsdSensor): string[] {
     'uint omni:sensor:Core:stateResolutionStep = 1',
     'uint omni:sensor:Core:tiledSubSampling = 0',
     'float omni:sensor:Core:transmissionPowerFraction = 1',
-    `float omni:sensor:Core:validEndAzimuthDeg = ${full ? '360' : fmt(half, 3)}`,
-    `float omni:sensor:Core:validStartAzimuthDeg = ${full ? '0' : fmt(-half, 3)}`,
+    'float omni:sensor:Core:validEndAzimuthDeg = 360',
+    'float omni:sensor:Core:validStartAzimuthDeg = 0',
     'float omni:sensor:Core:waveLengthNm = 903',
     'uchar[] omni:sensor:encryption:params = []',
     `string omni:sensor:marketName = ${str(`${APP_NAME} lidar`)}`,

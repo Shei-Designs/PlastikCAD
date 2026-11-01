@@ -586,7 +586,7 @@ Humble; without one, Isaac's bundled libraries serve). It publishes:
 
 ${topics.map((t) => `- ${t}`).join('\n')}
 
-Sensor frames are named after the sensors; the base frame is \`${model.root}\`.
+Sensor frames are named after the sensors; the base frame is \`${model.root}\`.${model.sensors.some((s) => s.kind === 'lidar') ? ' A lidar\nscans the whole circle in Isaac Sim, at the angular step of the design.' : ''}
 ${model.sensors.some((s) => s.kind === 'touch') ? '\nTouch sensors are Isaac contact sensors on their links; read them from a\nscript or the Contact Sensor window, as the ROS 2 bridge has no publisher\nfor them.\n' : ''}
 The floor is a stand-in: place the robot in a world of your own by
 referencing this stage, or copy the \`${usdName(model.name)}\` prim into it.

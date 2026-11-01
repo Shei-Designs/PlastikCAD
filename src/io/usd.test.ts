@@ -87,7 +87,7 @@ describe('writeUsda', () => {
     expect(graph).toContain('custom string inputs:topicName = "cam/image"');
   });
 
-  it('bolts a fixed base to the world and wires joint_command for controlled joints; a partial lidar sweeps about its X', () => {
+  it('bolts a fixed base to the world and wires joint_command for controlled joints; a partial lidar keeps its step over a full turn', () => {
     const m = cart();
     m.fixedBase = true;
     m.drive = null;
@@ -103,9 +103,10 @@ describe('writeUsda', () => {
     expect(usda).toContain('float drive:angular:physics:damping = 1');
     expect(usda).toContain('token node:type = "isaacsim.ros2.bridge.ROS2SubscribeJointState"');
     expect(usda).not.toContain('IsaacComputeOdometry');
-    expect(usda).toContain('float omni:sensor:Core:validStartAzimuthDeg = -45');
-    expect(usda).toContain('float omni:sensor:Core:validEndAzimuthDeg = 45');
-    expect(usda).toContain('uint omni:sensor:Core:reportRateBaseHz = 900');
+    // 90 rays over 90° is a ray a degree; Isaac scans the whole circle, so 360 rays a turn at 10 Hz.
+    expect(usda).toContain('float omni:sensor:Core:validStartAzimuthDeg = 0');
+    expect(usda).toContain('float omni:sensor:Core:validEndAzimuthDeg = 360');
+    expect(usda).toContain('uint omni:sensor:Core:reportRateBaseHz = 3600');
   });
 
   it('names prims the way USD allows', () => {

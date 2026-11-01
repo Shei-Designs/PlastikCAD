@@ -280,8 +280,9 @@ in the design file and synced with it.
   Sim stage*: one `.usda` file holding the robot as a PhysX articulation
   (rigid links with their masses, meshes and collision shapes, joints with
   limits and drives, loops as plain joints), its sensors as Isaac's own prims
-  (cameras with their clip planes, an RTX lidar with the design's rays and
-  sweep, IMUs, contact sensors), a floor, lights, and a ROS 2 action graph
+  (cameras with their clip planes, an RTX lidar at the design's angular step
+  over a full turn, since Isaac's laser scan is always the whole circle,
+  IMUs, contact sensors), a floor, lights, and a ROS 2 action graph
   that drives it from `cmd_vel` (`ackermann_cmd` for a car, `joint_command`
   for an arm) and publishes joint states, clock, odometry, TF and every
   sensor. *File > Open*, Play, and it runs; nothing is imported or set up on
