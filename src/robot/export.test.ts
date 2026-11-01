@@ -93,49 +93,34 @@ describe('checkRobot', () => {
     const d = doc();
     const props = new Map([...geometry()].map(([id, g]) => [id, g.props]));
     expect(checkRobot(d, props)).toEqual([]);
-    // A motor and damping a hundred times beyond what the shoulder's sides ask for: told, not stopped.
+    // Figures that only look odd are not faulted: an effort and damping far beyond what the shoulder's sides ask for.
     d.robot!.joints[1].effort = 1000;
     d.robot!.joints[1].damping = 100;
-    const told = checkRobot(d, props);
-    expect(told.map((p) => p.level)).toEqual(['warning', 'warning']);
-    expect(told.map((p) => p.joint)).toEqual(['j2', 'j2']);
-    expect(told[0].text).toMatch(/far stronger/);
-    expect(told[1].text).toMatch(/damped far too stiffly/);
-    d.robot!.joints[1].effort = 10;
-    d.robot!.joints[1].damping = 0.1;
+    expect(checkRobot(d, props)).toEqual([]);
     d.robot!.root = null;
     d.robot!.joints[1].lower = 100;
     d.robot!.links[0].mass = { kind: 'measured', grams: 0 };
-    // Three errors; the weightless wheel also makes its motor look far too strong, which is only a warning.
+    // Three errors and nothing else: a weightless wheel is a fault, a motor too strong for it is not.
     const problems = checkRobot(d, props);
-    const errors = problems.filter((p) => p.level === 'error');
-    expect(errors.length).toBe(3);
-    expect(errors[0].text).toMatch(/base link/);
-    expect(errors[1].joint).toBe('j2');
-    expect(errors[2].link).toBe(wheel.id);
-    expect(problems.filter((p) => p.level === 'warning').every((p) => p.joint === 'j1')).toBe(true);
+    expect(problems.map((p) => p.level)).toEqual(['error', 'error', 'error']);
+    expect(problems[0].text).toMatch(/base link/);
+    expect(problems[1].joint).toBe('j2');
+    expect(problems[2].link).toBe(wheel.id);
   });
 
-  it('warns when a sensor would read the floor: a low lidar, a tipped lidar, a camera whose near plane clips it', () => {
+  it('warns only when the camera near plane clips the floor; a lidar that reads the floor is reading what is there', () => {
     const d = doc();
     const props = new Map([...geometry()].map(([id, g]) => [id, g.props]));
-    // The body spans z 0–20, so a lidar at its top is 20 mm up: far too low for the default 12 m range.
+    // The body spans z 0–20, so a lidar at its top is 20 mm up for a 12 m sweep, and tipped 10° it meets the floor 115 mm out: both read the floor, neither is a fault.
     d.robot!.sensors = [{ ...defaultSensor('s1', 'scanner', 'lidar', body.id, [0, 0, 10]) }];
-    let told = checkRobot(d, props);
-    expect(told.map((p) => [p.level, p.sensor])).toEqual([['warning', 's1']]);
-    expect(told[0].text).toMatch(/only 20 mm above the floor for a 12000 mm range/);
-    // Within 1.5 m it is fine level; tipped 10° it meets the floor 115 mm out.
-    d.robot!.sensors[0].lidar = { ...d.robot!.sensors[0].lidar, max: 1500 };
     expect(checkRobot(d, props)).toEqual([]);
     d.robot!.sensors[0].rot = [0, 10, 0];
-    told = checkRobot(d, props);
-    expect(told.map((p) => p.sensor)).toEqual(['s1']);
-    expect(told[0].text).toMatch(/tipped 10°, so its sweep meets the floor 115 mm out/);
+    expect(checkRobot(d, props)).toEqual([]);
     // A level camera 20 mm up sees the floor 32 mm deep at the bottom of its picture: inside the 50 mm near plane. Looking up, or a 20 mm near plane, clears it.
     d.robot!.sensors = [{ ...defaultSensor('s2', 'cam', 'camera', body.id, [50, 0, 10]) }];
-    told = checkRobot(d, props);
-    expect(told.map((p) => p.sensor)).toEqual(['s2']);
-    expect(told[0].text).toMatch(/sees it 32 mm deep at the edge of its picture, inside its 50 mm near distance/);
+    const told = checkRobot(d, props);
+    expect(told.map((p) => [p.level, p.sensor])).toEqual([['warning', 's2']]);
+    expect(told[0].text).toMatch(/the floor is 32 mm away at the picture's edge, inside the 50 mm near clip/);
     d.robot!.sensors[0].rot = [0, -40, 0];
     expect(checkRobot(d, props)).toEqual([]);
     d.robot!.sensors[0].rot = [0, 0, 0];
@@ -503,24 +488,6 @@ describe('driveForward', () => {
     expect(driveForward('mecanum', { 'front-left': [[-40, -50, 0]], 'front-right': [[40, -50, 0]], 'rear-left': [[-40, 50, 0]], 'rear-right': [[40, 50, 0]] })).toEqual([0, -1, 0]);
     expect(driveForward('differential', { left: [[0, 0, 0]], right: [[0, 0, 0]] })).toEqual([0, 1, 0]);
     expect(driveForward('differential', { left: [[-40, 0, 0]] })).toEqual([0, 1, 0]);
-  });
-});
-
-describe('the drive wheels set alike', () => {
-  const rover = () => ROBOTS.find((r) => r.file === 'rover')!.make();
-  it('passes when they are', () => {
-    const doc = rover();
-    expect(checkRobot(doc, new Map()).filter((p) => /pull to one side/.test(p.text))).toEqual([]);
-  });
-  it('warns of the odd one out, naming what differs', () => {
-    const doc = rover();
-    const odd = doc.robot!.joints[1];
-    odd.friction = 0.1;
-    const problems = checkRobot(doc, new Map()).filter((p) => /pull to one side/.test(p.text));
-    expect(problems).toHaveLength(1);
-    expect(problems[0].level).toBe('warning');
-    expect(problems[0].joint).toBe(odd.id);
-    expect(problems[0].text).toContain(`"${odd.name}" is not set like the other drive wheels: its joint friction is 0.1 N·m where`);
   });
 });
 

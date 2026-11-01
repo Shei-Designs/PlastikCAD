@@ -230,12 +230,13 @@ in the design file and synced with it.
   MuJoCo export brings its Python starters.
 - **Checks.** The overview lists what stops an export (no base, a link no
   joint reaches, limits the wrong way round, a drive missing a wheel on a
-  side, a link with no mass or an impossible inertia) and what is only worth
-  knowing (a joint that closes a loop, a motor far stronger or a joint far
-  stiffer than its link needs, a drive wheel set unlike the others, a lidar
-  low or tipped enough to read the floor inside its range, a camera whose
-  near plane clips the floor out of its picture, an open mesh, a heavy
-  collision mesh), each with a *Show* button.
+  side, a link with no mass or an impossible inertia) and what goes through
+  with a note (a joint that closes a loop, a joint with no effort or speed,
+  drive wheels whose axles do not run the same way, a camera whose near
+  plane clips the floor out of its picture, an open mesh, a heavy collision
+  mesh), each with a *Show* button. Neither says how the robot might be
+  designed better: a motor far stronger than its part needs is the builder's
+  choice and passes in silence.
 - **Test drive.** *Test drive* in the overview builds the MuJoCo model of the
   robot as it stands and runs it on the plate (MuJoCo compiled to
   WebAssembly, in a worker), every link drawn where the simulation has it
