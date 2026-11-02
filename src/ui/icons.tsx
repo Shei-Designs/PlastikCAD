@@ -112,6 +112,71 @@ export const AlignIcon = () => (
     <rect x="8" y="13.5" width="7" height="5" rx="1" />
   </Icon>
 );
+/** A ruler, on the slant. */
+export const RulerIcon = () => (
+  <Icon>
+    <path d="M3.5 16.5 16.5 3.5l4 4L7.5 20.5z" />
+    <path d="M7 13l2 2M10 10l2 2M13 7l2 2" />
+  </Icon>
+);
+
+/* The Measure tool's snaps, in the drafting tradition: a square for a point, a triangle for a middle, a diamond for a quadrant. */
+export const SnapPointIcon = () => (
+  <Icon>
+    <path d="M3 21l6-6" />
+    <rect x="9" y="5" width="10" height="10" />
+  </Icon>
+);
+
+export const SnapMiddleIcon = () => (
+  <Icon>
+    <path d="M3 14h18" />
+    <path d="M12 7.5 17 16H7z" />
+  </Icon>
+);
+
+export const SnapEdgeIcon = () => (
+  <Icon>
+    <path d="M4 19 20 5" />
+    <circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none" />
+  </Icon>
+);
+
+export const SnapCircleIcon = () => (
+  <Icon>
+    <circle cx="12" cy="12" r="7.5" />
+    <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
+  </Icon>
+);
+
+export const SnapQuadrantIcon = () => (
+  <Icon>
+    <circle cx="11" cy="12" r="7.5" />
+    <path d="M21.5 12 18.5 9l-3 3 3 3z" fill="var(--panel, #fff)" />
+  </Icon>
+);
+
+export const SnapFaceCenterIcon = () => (
+  <Icon>
+    <path d="M3 17.5 8 6.5h13l-5 11z" />
+    <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
+  </Icon>
+);
+
+export const SnapFaceIcon = () => (
+  <Icon>
+    <path d="M3 17.5 8 6.5h13l-5 11z" fill="currentColor" fillOpacity="0.25" />
+  </Icon>
+);
+
+export const SnapCenterIcon = () => (
+  <Icon>
+    <circle cx="12" cy="12" r="6.5" />
+    <path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4" />
+    <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
+  </Icon>
+);
+
 export const MirrorIcon = () => (
   <Icon>
     <path d="M12 3v18" strokeDasharray="2.5 3" />

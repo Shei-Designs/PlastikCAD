@@ -455,7 +455,7 @@ describe('design files', () => {
     const drawing: SceneNode = { ...shape('box'), type: 'import', asset: 'outline-1', natural: [10, 10, 1] } as unknown as SceneNode;
     delete (drawing as { shape?: unknown }).shape;
     delete (drawing as { params?: unknown }).params;
-    const label: SceneNode = { ...shape('box'), type: 'text', text: 'M8\nleft', font: 'stencil', align: 'center', natural: [14, 16, 1] } as unknown as SceneNode;
+    const label: SceneNode = { ...shape('box'), type: 'text', text: 'M8\nleft', font: 'stencil', align: 'center', curve: { kind: 'arc', angle: 120, flip: true, thickness: 1.5 }, natural: [14, 16, 1] } as unknown as SceneNode;
     delete (label as { shape?: unknown }).shape;
     delete (label as { params?: unknown }).params;
     return {

@@ -1,13 +1,15 @@
 // Solid modeling backend: turns scene nodes into meshes with the Manifold
 // kernel, which guarantees watertight (printable) output from boolean
 // operations. Runs inside the geometry worker (and directly under vitest).
+import { curveStep, textWarp } from '../text/curve';
+import type { TextCurve } from '../text/curve';
 import Module from 'manifold-3d';
 import type { CrossSection, Manifold, ManifoldToplevel, Mat4, Mesh } from 'manifold-3d';
-import { geomKey, textAssetKey } from '../model/geomKey';
+import { geomKey, textAssetKey, textThickness } from '../model/geomKey';
 import { paintOf } from '../model/ops';
 import { apply, determinant, emptyBounds, expandBounds, isEmptyBounds, nodeMatrix, unionBounds } from '../model/math';
 import type { Bounds, Mat } from '../model/math';
-import type { Asset, GroupNode, ImportNode, MeshAsset, OutlineAsset, PartNode, PictureNode, Polygon, SceneNode } from '../model/types';
+import type { Asset, GroupNode, ImportNode, MeshAsset, OutlineAsset, PartNode, PictureNode, Polygon, SceneNode, TextNode, Vec2 } from '../model/types';
 import type { BuildResult, ColoredExport, ColoredObject, ColoredPart, ExportResult, LinkGeometry, LinkProperties } from '../worker/protocol';
 import { meshProperties } from '../robot/inertia';
 import type { CollisionKind } from '../robot/types';
@@ -294,7 +296,8 @@ function construct(k: ManifoldToplevel, node: SceneNode): Built {
       // The outlines of lettering are sent along like imported drawings (see `textAssetKey`).
       const asset = assets.get(textAssetKey(node));
       if (asset?.kind !== 'outline') throw new Error(`"${node.name}" has no letters that can be drawn.`);
-      return solidEntry(outlineSolid(k, node, asset));
+      if (!node.curve) return solidEntry(outlineSolid(k, node, asset));
+      return solidEntry(curvedText(k, node, asset, node.curve));
     }
     case 'picture':
       return solidEntry(scoped((keep) => pictureSheet(k, node, keep)));
@@ -397,7 +400,7 @@ export function partBox(node: PartNode): Bounds | null {
   return operation((k) => scoped((keep) => toBounds(partAsBuilt(k, node, keep).boundingBox())));
 }
 
-function outlineSolid(k: ManifoldToplevel, node: SceneNode, asset: OutlineAsset): Manifold {
+function outlineSolid(k: ManifoldToplevel, node: SceneNode, asset: OutlineAsset, thickness = 1): Manifold {
   return scoped((keep) => {
     const parts: CrossSection[] = [];
     for (const shape of asset.shapes) {
@@ -407,10 +410,43 @@ function outlineSolid(k: ManifoldToplevel, node: SceneNode, asset: OutlineAsset)
     }
     const section = parts.length === 1 ? parts[0] : keep(k.CrossSection.union(parts));
     if (section.isEmpty()) throw new Error(`"${node.name}" has no filled areas to extrude.`);
-    // 1 mm thick, centered like the artwork itself already is. Not with the binding's own `center`
-    // option, which leaks the uncentered solid. (Polygons going into and out of a CrossSection leak
-    // a little too, some bytes a point; that is tolerable once per asset, and nothing here repeats it.)
-    return checked(keep(keep(section.extrude(1, 0, 0, [1, 1])).translate([0, 0, -0.5])));
+    // 1 mm thick (or as asked), centered like the artwork itself already is. Not with the binding's own
+    // `center` option, which leaks the uncentered solid. (Polygons going into and out of a CrossSection
+    // leak a little too, some bytes a point; that is tolerable once per asset, and nothing here repeats it.)
+    return checked(keep(keep(section.extrude(thickness, 0, 0, [1, 1])).translate([0, 0, -thickness / 2])));
+  });
+}
+
+/**
+ * Lettering bent round a cylinder or laid along an arc: the flat letters, as
+ * thick as the curve asks in their own scale, cut finely along their length
+ * and every point moved by the curve's sums, then centered on the result.
+ */
+function curvedText(k: ManifoldToplevel, node: TextNode, asset: OutlineAsset, curve: TextCurve): Manifold {
+  return scoped((keep) => {
+    const thickness = textThickness(node);
+    const flat: Vec2 = [node.natural[0], node.natural[1]];
+    // The natural box of curved lettering is the curved box; the flat one is the outlines' own.
+    let w = 0;
+    let h = 0;
+    for (const shape of asset.shapes) for (const contour of shape.contours) for (const [x, y] of contour) {
+      w = Math.max(w, Math.abs(x));
+      h = Math.max(h, Math.abs(y));
+    }
+    flat[0] = 2 * w;
+    flat[1] = 2 * h;
+    const warp = textWarp(curve, flat, thickness);
+    const fine = keep(keep(outlineSolid(k, node, asset, thickness)).refineToLength(curveStep(curve, flat[0])));
+    const bent = keep(
+      fine.warp((v) => {
+        const [x, y, z] = warp([v[0], v[1], v[2]]);
+        v[0] = x;
+        v[1] = y;
+        v[2] = z;
+      }),
+    );
+    const box = bent.boundingBox();
+    return checked(keep(bent.translate([-(box.min[0] + box.max[0]) / 2, -(box.min[1] + box.max[1]) / 2, -(box.min[2] + box.max[2]) / 2])));
   });
 }
 

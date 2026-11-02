@@ -37,6 +37,7 @@ import {
   RepeatWrapping,
   Scene,
   ShaderMaterial,
+  Line,
   Sprite,
   SpriteMaterial,
   SRGBColorSpace,
@@ -62,6 +63,11 @@ import { SkinPainter } from './skin';
 import { terrain, worldBlocks } from '../io/mjcf';
 import type { World } from '../robot/types';
 import { lidarAngles } from '../robot/types';
+import { indexFeatures, nearestFeature } from '../geometry/features';
+import type { Feature, FeatureIndex } from '../geometry/features';
+import type { FeatureKind } from '../geometry/features';
+import { describe as describeFeature } from '../geometry/measure';
+import type { Measurement } from '../geometry/measure';
 
 export type ViewPreset = 'iso' | 'top' | 'front' | 'side';
 
@@ -95,6 +101,11 @@ export interface ViewerOptions {
    * of view and clip distances; a depth camera's in greys, near light and far dark. Null for no inset.
    */
   preview: Extract<Marker, { kind: 'camera' }> | null;
+  /**
+   * Measure mode: the kinds of feature the pointer takes hold of, the one or two picked (drawn lit), and what
+   * they measure, drawn as a line between the nearest points with the figure on it.
+   */
+  measure: { kinds: FeatureKind[]; picks: Feature[]; result: Measurement | null } | null;
 }
 
 /**
@@ -159,6 +170,8 @@ export interface ViewerEvents {
   onMarkerDrop(): void;
   /** Robot mode: one of the other joints or sensors drawn on the plate was clicked. */
   onMarkerPick(id: string): void;
+  /** Measure mode: a feature clicked on the plate. */
+  onMeasurePick(feature: Feature): void;
 }
 
 export interface HandlePrompt {
@@ -191,7 +204,7 @@ export interface HandlePrompt {
   }[];
 }
 
-const DEFAULTS: ViewerOptions = { theme: 'dark', edges: true, grid: true, snap: 1, interactive: true, align: null, highlight: null, snaps: null, marker: null, markers: null, ground: null, preview: null };
+const DEFAULTS: ViewerOptions = { theme: 'dark', edges: true, grid: true, snap: 1, interactive: true, align: null, highlight: null, snaps: null, marker: null, markers: null, ground: null, preview: null, measure: null };
 /** Distance of the anchor dots from the box, in pixels. */
 const ALIGN_GAP = 22;
 
@@ -210,7 +223,7 @@ const DRAG_THRESHOLD = 4; // px
 const PROMPT_PAD = 14; // px
 /** A box beside a grip starts this far from the grip's center, and no box comes nearer than this to the edge of the view (more at the top, under the toolbar). */
 const PROMPT_BESIDE = 30; // px
-/** Size of a unit of the move arrows on a selection, in pixels; the arrows reach `ARROW_TO + ARROW_HEAD` units from the middle. */
+/** Size of a unit of the move arrows on a selection, in pixels; each arrow stands out from a face of the selection's box, `SLIDE_ARROW` units long. */
 const MOVE_ARROW_PIXELS = 54;
 const PROMPT_MARGIN = 8; // px
 const PROMPT_MARGIN_TOP = 52; // px
@@ -219,6 +232,10 @@ const PROMPT_BOX: [number, number] = [100, 28]; // px, about the size of a box
 const TOUCH_DRAG_THRESHOLD = 10; // px
 /** How much bigger a grip is to a finger than to the eye. */
 const TOUCH_GRIP_SCALE = 2.5;
+/** How far from a point or edge (px) the Measure tool still takes hold of it. */
+const MEASURE_REACH = 10;
+/** Height of the figure on a measuring line, px. */
+const MEASURE_LABEL_PIXELS = 20;
 /** A finger held still this long means "more": add to the selection, or box-select. */
 const LONG_PRESS_MS = 450;
 const dragThreshold = (event: PointerEvent) => (event.pointerType === 'touch' ? TOUCH_DRAG_THRESHOLD : DRAG_THRESHOLD);
@@ -411,26 +428,37 @@ function lightPad(group: Group, pressed: boolean): void {
 }
 const axisVector = (axis: 0 | 1 | 2): Vector3 => new Vector3(axis === 0 ? 1 : 0, axis === 1 ? 1 : 0, axis === 2 ? 1 : 0);
 
-/** The pieces every move arrow is made of, shared: a shaft, a head, and the fat unseen tube the pointer hits. Built up Y. */
-let arrowParts: { shaft: CylinderGeometry; head: ConeGeometry; hit: CylinderGeometry } | null = null;
+/** The pieces a move arrow of each length is made of, shared: a shaft, a head, and the fat unseen tube the pointer hits. Built up Y. */
+const arrowParts = new Map<string, { shaft: CylinderGeometry; head: ConeGeometry; hit: CylinderGeometry }>();
+
+/** How far a move arrow reaches, in units from where it is placed: its shaft from `from` to `to`, then the head. */
+interface ArrowReach {
+  from: number;
+  to: number;
+}
 
 /** A move arrow along one of the design's axes in that axis's color, one unit = the pixel size it is laid out at. */
-function moveArrow(axis: 0 | 1 | 2): Group {
-  arrowParts ??= {
-    shaft: new CylinderGeometry(0.045, 0.045, ARROW_TO - ARROW_FROM, 10),
-    head: new ConeGeometry(0.12, ARROW_HEAD, 14),
-    hit: new CylinderGeometry(0.18, 0.18, ARROW_TO + ARROW_HEAD - ARROW_FROM + 0.1, 8),
-  };
+function moveArrow(axis: 0 | 1 | 2, { from, to }: ArrowReach): Group {
+  const key = `${from}:${to}`;
+  let parts = arrowParts.get(key);
+  if (!parts) {
+    parts = {
+      shaft: new CylinderGeometry(0.045, 0.045, to - from, 10),
+      head: new ConeGeometry(0.12, ARROW_HEAD, 14),
+      hit: new CylinderGeometry(0.18, 0.18, to + ARROW_HEAD - from + 0.1, 8),
+    };
+    arrowParts.set(key, parts);
+  }
   const material = new MeshBasicMaterial({ color: AXIS_COLORS[axis], transparent: true, opacity: 0.9, depthTest: false, toneMapped: false });
   const arrow = new Group();
   arrow.userData.axis = axis;
   arrow.quaternion.setFromUnitVectors(UP, axisVector(axis));
-  const shaft = new Mesh(arrowParts.shaft, material);
-  shaft.position.y = (ARROW_FROM + ARROW_TO) / 2;
-  const head = new Mesh(arrowParts.head, material);
-  head.position.y = ARROW_TO + ARROW_HEAD / 2;
-  const hit = new Mesh(arrowParts.hit, new MeshBasicMaterial({ colorWrite: false, depthWrite: false, depthTest: false }));
-  hit.position.y = (ARROW_FROM + ARROW_TO + ARROW_HEAD) / 2;
+  const shaft = new Mesh(parts.shaft, material);
+  shaft.position.y = (from + to) / 2;
+  const head = new Mesh(parts.head, material);
+  head.position.y = to + ARROW_HEAD / 2;
+  const hit = new Mesh(parts.hit, new MeshBasicMaterial({ colorWrite: false, depthWrite: false, depthTest: false }));
+  hit.position.y = (from + to + ARROW_HEAD) / 2;
   hit.userData.hit = true;
   for (const part of [shaft, head, hit]) {
     part.renderOrder = 13;
@@ -449,6 +477,57 @@ function disposeMarker(group: Group): void {
   }
   group.clear();
 }
+/** Whether two features are the one thing: the same kind on the same object at the same place. */
+function sameFeature(a: Feature | null, b: Feature | null): boolean {
+  if (!a || !b) return a === b;
+  if (a.kind !== b.kind || a.node !== b.node) return false;
+  const at = (f: Feature): number[] => (f.kind === 'edge' ? [...f.a, ...f.b] : f.kind === 'circle' ? [...f.center, f.radius] : f.kind === 'face' ? [f.region] : [...f.at]);
+  const p = at(a);
+  const q = at(b);
+  return p.length === q.length && p.every((v, i) => Math.abs(v - q[i]) < 1e-6);
+}
+
+/** Any unit vector at right angles to `n`. */
+function perpendicular(n: Vec3): Vec3 {
+  const v = new Vector3(...n).cross(Math.abs(n[0]) < 0.9 ? new Vector3(1, 0, 0) : new Vector3(0, 1, 0)).normalize();
+  return [v.x, v.y, v.z];
+}
+
+/** The figure on a measuring line: a rounded pill with the text, sized to fit it. */
+function textTexture(text: string, theme: 'dark' | 'light'): { texture: CanvasTexture; aspect: number } {
+  const canvas = document.createElement('canvas');
+  const height = 64;
+  const g = canvas.getContext('2d');
+  const font = `600 ${height * 0.5}px system-ui, sans-serif`;
+  if (g) g.font = font;
+  const width = Math.ceil((g?.measureText(text).width ?? height) + height * 0.8);
+  canvas.width = width;
+  canvas.height = height;
+  if (g) {
+    g.font = font;
+    const r = height / 2;
+    g.beginPath();
+    g.moveTo(r, 0);
+    g.arcTo(width, 0, width, height, r);
+    g.arcTo(width, height, 0, height, r);
+    g.arcTo(0, height, 0, 0, r);
+    g.arcTo(0, 0, width, 0, r);
+    g.closePath();
+    g.fillStyle = theme === 'dark' ? '#14171c' : '#ffffff';
+    g.fill();
+    g.lineWidth = 4;
+    g.strokeStyle = theme === 'dark' ? '#17cdd3' : '#0f9ea3';
+    g.stroke();
+    g.fillStyle = theme === 'dark' ? '#e8ecef' : '#1b1f27';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(text, width / 2, height / 2 + 1);
+  }
+  const texture = new CanvasTexture(canvas);
+  texture.colorSpace = SRGBColorSpace;
+  return { texture, aspect: width / height };
+}
+
 /** An anchor dot with nothing left to do: grey, dim and not for clicking. */
 const DONE_DOT = { fill: '#3c4146', rim: '#8a9094', opacity: 0.45, scale: 0.8 };
 /** Rim of the padlock badge: the warm color the hot align dot uses, for something that will not follow a drag. */
@@ -555,10 +634,16 @@ type Drag =
 
 /** A move arrow (the design's X, Y or Z) or the joint's own axis rod. */
 type MarkerHandle = 0 | 1 | 2 | 'slide';
-/** The move arrows reach from here to here, in marker units, with the head on the end. */
-const ARROW_FROM = 0.5;
-const ARROW_TO = 1.45;
+/** The move arrows of a joint or sensor reach from here to here from its origin, in marker units, with the head on the end. */
+const MARKER_ARROW: ArrowReach = { from: 0.5, to: 1.45 };
+/**
+ * The move arrows of a selection stand out from the middle of its faces (+X, +Y and the top), a gap
+ * first so that they keep clear of the grips there; shorter than a marker's, which start in the middle.
+ */
+const SLIDE_ARROW: ArrowReach = { from: 0.4, to: 1.1 };
 const ARROW_HEAD = 0.3;
+/** A move arrow seen this nearly end-on is hidden: it would sit over the grip it stands out from, and the pointer cannot drag along it. */
+const ARROW_END_ON = 0.97;
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
@@ -791,6 +876,13 @@ export class Viewer {
   /** Dots at the snap points on offer, one sprite each, and the hovered one. */
   private snapDots: Sprite[] = [];
   private snapHot: number | null = null;
+  /** Measure mode: what is drawn (the hovered feature, the picks, the line between them), the centre dots on offer and the indexed meshes. */
+  private measureGroup!: Group;
+  private measureHot: Feature | null = null;
+  private measureDots: { sprite: Sprite; feature: Feature }[] = [];
+  private measureLabel: { sprite: Sprite; aspect: number } | null = null;
+  private measureIndexes = new Map<string, { shown: BuildResult; key: string; index: FeatureIndex }>();
+  private measureMaterials: { dot: SpriteMaterial; dotHot: SpriteMaterial } | null = null;
   private snapAxis!: LineSegments<BufferGeometry, LineBasicMaterial>;
   private grips!: {
     corner: SpriteMaterial;
@@ -1168,6 +1260,8 @@ export class Viewer {
 
   private initOverlay(): void {
     this.overlay = new Scene();
+    this.measureGroup = new Group();
+    this.overlay.add(this.measureGroup);
     // Unit cube edges; scaled to the selection's box.
     const c = 0.5;
     const corners = [-c, -c, -c, c, -c, -c, c, c, -c, -c, c, -c, -c, -c, c, c, -c, c, c, c, c, -c, c, c];
@@ -1210,7 +1304,7 @@ export class Viewer {
     this.markerArrows.visible = false;
     this.overlay.add(this.markerArrows);
     for (const axis of [0, 1, 2] as const) {
-      const arrow = moveArrow(axis);
+      const arrow = moveArrow(axis, MARKER_ARROW);
       arrow.traverse((o) => {
         const material = (o as Mesh).material as MeshBasicMaterial | undefined;
         if (material) this.disposables.push(material);
@@ -1274,6 +1368,7 @@ export class Viewer {
     this.outline.material.color.set(t.accent);
     this.snapAxis.material.color.set(t.accent);
     this.syncSnaps();
+    this.syncMeasure();
     this.pointer3d.material.color.set(theme === 'dark' ? 0xffffff : 0x1b1f27);
     const h = this.options.highlight;
     if (h) {
@@ -1750,7 +1845,7 @@ export class Viewer {
     }
     add({ type: 'height', side: 1 }, new Sprite(this.grips.corner), 13, 'ns-resize');
     add({ type: 'height', side: -1 }, new Sprite(this.grips.corner), 13, 'ns-resize');
-    for (const axis of [0, 1, 2] as const) add({ type: 'move', axis }, moveArrow(axis), MOVE_ARROW_PIXELS, 'move');
+    for (const axis of [0, 1, 2] as const) add({ type: 'move', axis }, moveArrow(axis, SLIDE_ARROW), MOVE_ARROW_PIXELS, 'move');
     for (const axis of [0, 1, 2] as const) {
       const ring = new Group();
       const material = new MeshBasicMaterial({ color: AXIS_COLORS[axis], depthTest: false, toneMapped: false, transparent: true });
@@ -1769,6 +1864,12 @@ export class Viewer {
       ring.matrixAutoUpdate = false;
       add({ type: 'rotate', axis }, ring, 30, 'grab');
     }
+  }
+
+  /** Whether the line along a design axis through a point is seen nearly end-on. */
+  private endOn(at: Vector3, axis: 0 | 1 | 2): boolean {
+    const view = at.clone().sub(this.camera.position).normalize();
+    return Math.abs(view.getComponent(axis)) > ARROW_END_ON;
   }
 
   /** World length of one pixel at a point, for handles that keep their size on screen. */
@@ -1797,7 +1898,8 @@ export class Viewer {
     const cy = (min[1] + max[1]) / 2;
     if (axis === 2) return { at: new Vector3(max[0], min[1], min[2]), from: new Vector3(0, -1, 0), to: new Vector3(1, 0, 0) };
     if (axis === 0) return { at: new Vector3(cx, min[1], max[2]), from: new Vector3(0, -1, 0), to: new Vector3(0, 0, 1) };
-    return { at: new Vector3(max[0], cy, max[2]), from: new Vector3(1, 0, 0), to: new Vector3(0, 0, 1) };
+    // On the -X side: the +X side has the X move arrow.
+    return { at: new Vector3(min[0], cy, max[2]), from: new Vector3(-1, 0, 0), to: new Vector3(0, 0, 1) };
   }
 
   /** Put every handle where it belongs for the current camera. Called before each draw. */
@@ -1816,10 +1918,13 @@ export class Viewer {
         h.object.position.copy(at);
         h.object.scale.setScalar(h.pixels * this.pixelSize(at) * (h === this.hovered ? 1.35 : 1) * this.gripScale);
       } else if (k.type === 'move') {
-        // From the middle of the selection, along the design's axes whichever way the box is turned.
-        const at = this.framePoint([0, 0, 0]);
+        // Out of the selection along the design's axes, whichever way the box is turned: from the middle of
+        // its +X and +Y sides, and straight up from the top grip, past the highest point.
+        const at = k.axis === 2 ? this.framePoint([0, 0, hz]) : this.framePoint([0, 0, 0]);
+        at.setComponent(k.axis, Math.max(at.getComponent(k.axis), f.bounds.max[k.axis]));
         h.object.position.copy(at);
         h.object.scale.setScalar(h.pixels * this.pixelSize(at) * (h === this.hovered ? 1.15 : 1) * this.gripScale);
+        h.object.visible = !this.endOn(at, k.axis);
       } else {
         const { at, from, to } = this.ringPlacement(k.axis);
         // The ring's hit tube is already several times fatter than the drawn arc, so it is not scaled.
@@ -1888,8 +1993,8 @@ export class Viewer {
     let best: Handle | null = null;
     let bestDistance = Infinity;
     for (const h of this.handles) {
-      // A greyed anchor dot is not there to be clicked.
-      if (h.kind.type === 'align' && this.alignDone(h.kind)) continue;
+      // A greyed anchor dot is not there to be clicked, nor a hidden move arrow.
+      if ((h.kind.type === 'align' && this.alignDone(h.kind)) || !h.object.visible) continue;
       const hit = this.raycaster.intersectObject(h.object, true)[0];
       // Grips win over rings when both are under the pointer: they are the smaller target.
       const distance = hit ? hit.distance - (h.kind.type === 'rotate' ? 0 : 1e6) : Infinity;
@@ -1901,7 +2006,7 @@ export class Viewer {
     return best;
   }
 
-  private pickNode(): { item: ViewItem; point: Vector3; normal: Vector3 } | null {
+  private pickNode(): { item: ViewItem; point: Vector3; normal: Vector3; triangle: number; drawn: Drawn } | null {
     const meshes: Mesh[] = [];
     for (const d of this.drawn.values()) if (d.mesh.visible && !d.item.ghost) meshes.push(d.mesh);
     const hit = this.raycaster.intersectObjects(meshes, false)[0];
@@ -1909,7 +2014,10 @@ export class Viewer {
     const d = this.drawn.get(hit.object.userData.id as string);
     if (!d) return null;
     const normal = hit.face ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld) : new Vector3(0, 0, 1);
-    return { item: d.item, point: hit.point, normal };
+    // The triangle of the built mesh that was hit; a picture's cut-up geometry maps its triangles back to the mesh's.
+    const face = hit.faceIndex ?? -1;
+    const triangle = d.skin?.faces && face >= 0 ? d.skin.faces[face] ?? -1 : face;
+    return { item: d.item, point: hit.point, normal, triangle, drawn: d };
   }
 
   private readonly onPointerDown = (event: PointerEvent): void => {
@@ -1946,6 +2054,15 @@ export class Viewer {
     }
     if (!this.options.interactive) return;
 
+    // Measuring, a press takes hold of a feature; on empty space it is the camera's.
+    if (this.options.measure) {
+      const feature = this.pickMeasure(event);
+      if (feature) {
+        this.events.onMeasurePick(feature);
+        claim();
+      }
+      return;
+    }
     const snap = this.pickSnap(event);
     if (snap !== null) {
       this.events.onSnapPick(snap);
@@ -2167,7 +2284,7 @@ export class Viewer {
       }
       case 'move':
         // Only the Z arrow has a value worth typing: how high the selection stands. The box sits past the arrow's head.
-        if (k.axis === 2) made = { kind: k, unit: 'mm', center, fields: [{ tag: 'Z', value: f.bounds.min[2], anchor: handle.object.position.toArray() as Vec3, out: [0, 0, 1], pad: MOVE_ARROW_PIXELS * (ARROW_TO + ARROW_HEAD) + PROMPT_PAD, clientX: 0, clientY: 0 }] };
+        if (k.axis === 2) made = { kind: k, unit: 'mm', center, fields: [{ tag: 'Z', value: f.bounds.min[2], anchor: handle.object.position.toArray() as Vec3, out: [0, 0, 1], pad: MOVE_ARROW_PIXELS * (SLIDE_ARROW.to + ARROW_HEAD) + PROMPT_PAD, clientX: 0, clientY: 0 }] };
         break;
       case 'rotate': {
         // The arc with its two arrowheads, sampled, so that the box can keep off the whole of it.
@@ -2416,6 +2533,10 @@ export class Viewer {
     }
     if (!drag) {
       if (event.buttons === 0 && this.options.interactive) {
+        if (this.options.measure) {
+          this.hoverMeasure(this.pickMeasure(event), event);
+          return;
+        }
         const snap = this.pickSnap(event);
         this.hoverSnap(snap);
         const markerHandle = snap === null ? this.pickMarkerHandle(event) : null;
@@ -2547,7 +2668,209 @@ export class Viewer {
     this.hover(null);
     this.hoverSnap(null);
     this.hoverArrow(null);
+    if (this.measureHot) {
+      this.measureHot = null;
+      this.events.onReadout(null, 0, 0);
+      this.syncMeasure();
+      this.requestRender();
+    }
   };
+
+  // --- measure mode ------------------------------------------------------------
+
+  /** The features of a drawn object as placed, indexed once per geometry and placement and kept while they last. */
+  private featureIndexOf(d: Drawn): FeatureIndex | null {
+    const shown = d.shown;
+    if (!shown) return null;
+    d.mesh.updateMatrixWorld();
+    const key = d.mesh.matrixWorld.elements.map((v) => v.toFixed(5)).join(',');
+    const had = this.measureIndexes.get(d.item.node.id);
+    if (had && had.shown === shown && had.key === key) return had.index;
+    const src = shown.render.positions;
+    const out = new Float32Array(src.length);
+    const v = new Vector3();
+    for (let i = 0; i < src.length; i += 3) {
+      v.set(src[i], src[i + 1], src[i + 2]).applyMatrix4(d.mesh.matrixWorld);
+      out[i] = v.x;
+      out[i + 1] = v.y;
+      out[i + 2] = v.z;
+    }
+    const index = indexFeatures(out);
+    this.measureIndexes.set(d.item.node.id, { shown, key, index });
+    return index;
+  }
+
+  /** The feature under the pointer: a centre dot first (the smaller target, and inside the object), else the nearest feature on the surface hit. */
+  private pickMeasure(event?: PointerEvent): Feature | null {
+    const m = this.options.measure;
+    if (!m) return null;
+    this.gripScale = event?.pointerType === 'touch' ? TOUCH_GRIP_SCALE : 1;
+    this.layoutMeasure();
+    this.overlay.updateMatrixWorld();
+    this.gripScale = 1;
+    let best: Feature | null = null;
+    let bestDistance = Infinity;
+    for (const dot of this.measureDots) {
+      const hit = this.raycaster.intersectObject(dot.sprite, false)[0];
+      if (hit && hit.distance < bestDistance) {
+        best = dot.feature;
+        bestDistance = hit.distance;
+      }
+    }
+    if (best) return best;
+    const hit = this.pickNode();
+    if (!hit) return null;
+    const index = this.featureIndexOf(hit.drawn);
+    if (!index) return null;
+    return nearestFeature(index, hit.item.node.id, [hit.point.x, hit.point.y, hit.point.z], hit.triangle, new Set(m.kinds), MEASURE_REACH * this.pixelSize(hit.point));
+  }
+
+  private hoverMeasure(feature: Feature | null, event: PointerEvent): void {
+    const same = sameFeature(this.measureHot, feature);
+    this.measureHot = feature;
+    this.renderer.domElement.style.cursor = feature ? 'crosshair' : '';
+    this.events.onReadout(feature ? describeFeature(feature).lines.join(' · ') : null, event.clientX, event.clientY);
+    if (same) return;
+    this.syncMeasure();
+    this.requestRender();
+  }
+
+  /** Redraws what measure mode shows: the picks, the hovered feature, the line between the picks with its figure, and the centre dots on offer. */
+  private syncMeasure(): void {
+    for (const child of [...this.measureGroup.children]) {
+      this.measureGroup.remove(child);
+      if (child instanceof Mesh || child instanceof Line) {
+        child.geometry.dispose();
+        (child.material as MeshBasicMaterial | LineBasicMaterial).dispose();
+      } else if (child instanceof Sprite && child === this.measureLabel?.sprite) {
+        child.material.map?.dispose();
+        child.material.dispose();
+      }
+    }
+    this.measureDots = [];
+    this.measureLabel = null;
+    const m = this.options.measure;
+    if (!m) {
+      this.measureHot = null;
+      return;
+    }
+    const t = THEMES[this.options.theme];
+    const hotColor = this.options.theme === 'dark' ? 0xffffff : 0x1b1f27;
+    this.measureMaterials ??= {
+      dot: new SpriteMaterial({ map: dotTexture('#17cdd3'), depthTest: false, depthWrite: false, transparent: true }),
+      dotHot: new SpriteMaterial({ map: dotTexture(this.options.theme === 'dark' ? '#ffffff' : '#1b1f27', '#17cdd3'), depthTest: false, depthWrite: false, transparent: true }),
+    };
+    for (const pick of m.picks) this.drawFeature(pick, t.accent, false);
+    if (this.measureHot && !m.picks.some((p) => sameFeature(p, this.measureHot))) this.drawFeature(this.measureHot, hotColor, true);
+    const r = m.result;
+    if (r?.to) {
+      const material = new LineBasicMaterial({ color: t.accent, transparent: true, opacity: 0.95, depthTest: false });
+      const geometry = new BufferGeometry().setAttribute('position', new BufferAttribute(new Float32Array([...r.from, ...r.to]), 3));
+      const line = new Line(geometry, material);
+      line.renderOrder = 13;
+      this.measureGroup.add(line);
+      for (const end of [r.from, r.to]) {
+        const dot = new Sprite(this.measureMaterials.dot);
+        dot.position.set(end[0], end[1], end[2]);
+        dot.renderOrder = 13;
+        dot.userData.pixels = 7;
+        this.measureGroup.add(dot);
+      }
+      const label = textTexture(r.text, this.options.theme);
+      const sprite = new Sprite(new SpriteMaterial({ map: label.texture, depthTest: false, depthWrite: false, transparent: true }));
+      sprite.position.set((r.from[0] + r.to[0]) / 2, (r.from[1] + r.to[1]) / 2, (r.from[2] + r.to[2]) / 2);
+      sprite.renderOrder = 14;
+      this.measureGroup.add(sprite);
+      this.measureLabel = { sprite, aspect: label.aspect };
+    }
+    // The centre of each object, a dot inside it to take hold of.
+    if (m.kinds.includes('center')) {
+      for (const d of this.drawn.values()) {
+        if (!d.mesh.visible || d.item.ghost) continue;
+        const index = this.featureIndexOf(d);
+        if (!index) continue;
+        const at = index.center;
+        const feature: Feature = { kind: 'center', node: d.item.node.id, at };
+        const lit = sameFeature(feature, this.measureHot) || m.picks.some((p) => sameFeature(p, feature));
+        const sprite = new Sprite(lit ? this.measureMaterials.dotHot : this.measureMaterials.dot);
+        sprite.position.set(at[0], at[1], at[2]);
+        sprite.renderOrder = 12;
+        sprite.userData.pixels = lit ? 15 : 10;
+        this.measureGroup.add(sprite);
+        this.measureDots.push({ sprite, feature });
+      }
+    }
+    this.layoutMeasure();
+  }
+
+  /** One feature, drawn in a colour: a dot, a line, a ring or the face's own triangles. */
+  private drawFeature(f: Feature, color: number, hot: boolean): void {
+    const materials = this.measureMaterials!;
+    switch (f.kind) {
+      case 'center':
+        return; // drawn among the centre dots
+      case 'point':
+      case 'middle':
+      case 'quadrant':
+      case 'facecenter': {
+        const dot = new Sprite(hot ? materials.dotHot : materials.dot);
+        dot.position.set(f.at[0], f.at[1], f.at[2]);
+        dot.renderOrder = 13;
+        dot.userData.pixels = hot ? 15 : 11;
+        this.measureGroup.add(dot);
+        return;
+      }
+      case 'edge':
+      case 'circle': {
+        const pts: number[] = [];
+        if (f.kind === 'edge') pts.push(...f.a, ...f.b);
+        else {
+          // Round the circle from its start (an arc's first end, or anywhere) through its sweep.
+          const n = f.normal;
+          const start = f.ends ? [f.ends[0][0] - f.center[0], f.ends[0][1] - f.center[1], f.ends[0][2] - f.center[2]] : perpendicular(n);
+          const u = new Vector3(...start).normalize();
+          const v = new Vector3(...n).cross(u).normalize();
+          const steps = Math.max(8, Math.ceil(f.sweep / 5));
+          for (let i = 0; i <= steps; i++) {
+            const a = ((f.sweep * i) / steps) * (Math.PI / 180);
+            pts.push(f.center[0] + f.radius * (u.x * Math.cos(a) + v.x * Math.sin(a)), f.center[1] + f.radius * (u.y * Math.cos(a) + v.y * Math.sin(a)), f.center[2] + f.radius * (u.z * Math.cos(a) + v.z * Math.sin(a)));
+          }
+        }
+        const geometry = new BufferGeometry().setAttribute('position', new BufferAttribute(new Float32Array(pts), 3));
+        const line = new Line(geometry, new LineBasicMaterial({ color, transparent: true, opacity: hot ? 0.9 : 1, depthTest: false }));
+        line.renderOrder = 13;
+        this.measureGroup.add(line);
+        return;
+      }
+      case 'face': {
+        const d = this.drawn.get(f.node);
+        const index = d ? this.featureIndexOf(d) : null;
+        const region = index?.regions[f.region];
+        if (!d?.shown || !region) return;
+        const src = d.shown.render.positions;
+        const pts = new Float32Array(region.triangles.length * 9);
+        region.triangles.forEach((tri, i) => pts.set(src.subarray(tri * 9, tri * 9 + 9), i * 9));
+        const geometry = new BufferGeometry().setAttribute('position', new BufferAttribute(pts, 3));
+        const mesh = new Mesh(geometry, new MeshBasicMaterial({ color, transparent: true, opacity: hot ? 0.3 : 0.45, depthTest: false, side: DoubleSide }));
+        mesh.matrixAutoUpdate = false;
+        mesh.matrix.copy(d.mesh.matrixWorld);
+        mesh.renderOrder = 12;
+        this.measureGroup.add(mesh);
+        return;
+      }
+    }
+  }
+
+  /** Dots and the figure at the same size on screen whatever the zoom. */
+  private layoutMeasure(): void {
+    for (const child of this.measureGroup.children) {
+      if (!(child instanceof Sprite)) continue;
+      if (child === this.measureLabel?.sprite) {
+        const h = MEASURE_LABEL_PIXELS * this.pixelSize(child.position);
+        child.scale.set(h * this.measureLabel.aspect, h, 1);
+      } else child.scale.setScalar(((child.userData.pixels as number) ?? 10) * this.pixelSize(child.position) * this.gripScale);
+    }
+  }
 
   // --- snap points (Robot mode) ------------------------------------------------
 
@@ -3048,10 +3371,11 @@ export class Viewer {
 
     this.drawPreview();
     renderer.autoClear = false;
-    if (this.frame || this.pointer3d.visible || this.marker.visible || this.dimMarkers.size || this.snapDots.length || this.lockBadges.size) {
+    if (this.frame || this.pointer3d.visible || this.marker.visible || this.dimMarkers.size || this.snapDots.length || this.lockBadges.size || this.options.measure) {
       this.layoutHandles();
       this.layoutLockBadges();
       this.layoutSnaps();
+      this.layoutMeasure();
       this.layoutMarker();
       renderer.clearDepth();
       renderer.render(this.overlay, camera);

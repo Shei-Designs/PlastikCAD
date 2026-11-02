@@ -39,6 +39,9 @@ import {
   stopAligning,
   stopJointPick,
   toggleAligning,
+  toggleMeasuring,
+  stopMeasuring,
+  clearMeasure,
   undo,
   ungroupSelected,
   unghostAll,
@@ -88,6 +91,8 @@ function onKeyDown(e: KeyboardEvent): void {
     if (viewerRef.current?.cancelGesture()) return;
     const s = getState();
     if (s.mating) cancelMate();
+    else if (s.measuring?.picks.length) clearMeasure();
+    else if (s.measuring) stopMeasuring();
     else if (s.aligning) stopAligning();
     else if (s.placing) cancelPlacing();
     else if (s.jointPick) stopJointPick();
@@ -175,6 +180,7 @@ function onKeyDown(e: KeyboardEvent): void {
     // G ghosts the selection; Shift+G brings every ghost back.
     g: () => (e.shiftKey ? unghostAll() : ghostSelected()),
     l: toggleAligning,
+    m: toggleMeasuring,
     x: () => mirrorSelected(0),
     y: () => mirrorSelected(1),
     z: () => mirrorSelected(2),

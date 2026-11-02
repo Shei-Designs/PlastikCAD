@@ -35,6 +35,9 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
 - **Text** – lettering in four print-friendly fonts (sans, slab serif,
   monospace, stencil), on one line or several. Put it on a face and group it
   to emboss; make it a hole and sink it in a little (Ctrl+Down) to engrave.
+  Bend it round a cylinder (set the reach, or the diameter it has to fit,
+  outside or inside) or lay it along an arc that rises or hangs, with its
+  thickness kept in millimetres; the box then follows the curve.
 - **Fillet** – an edge cutter that comes in as a hole. Line it up with an edge
   (select both, then Align), group, and the edge is rounded; with one step it
   cuts a straight chamfer instead.
@@ -397,6 +400,7 @@ plus the thumbnail line at the top.
 | Flip (mirror) on an axis | X / Y / Z |
 | Turn 90° about an axis | Shift+X / Shift+Y / Shift+Z; add Alt to turn the other way |
 | Align | L shows anchor dots on the selection: hover one to preview, click to apply; click one of the objects to make it the anchor, Esc to finish |
+| Measure | M: click a feature, then another, for the distance (with its X, Y and Z parts), the angle between edges or faces, or a circle's diameter; the snap symbols on the bar choose what the pointer takes hold of (points, edge middles, edges, circles, quadrants, face centres, faces, object centres), mixed as in a drafting program; Esc clears, then finishes |
 | Align by key | Alt+← / → / ↓ / ↑ (left / right / front / back), Alt+PgDn / PgUp (bottom / top); add Shift to center on that axis; Alt+C centers on X and Y |
 | Fit to view | F |
 | Undo / redo | Ctrl+Z / Ctrl+Y |
@@ -654,8 +658,7 @@ never touch the mesh kernel, which keeps them easy to test.
 
 ## Roadmap
 
-- Work plane on any face, ruler and snapping to other objects.
-- Text on curved surfaces; more scripts and fonts.
+- More scripts and fonts for lettering.
 - More parts: throated worm wheel, planetary set helper, V-belt pulleys,
   imperial threads.
 - Assembly preview of meshing gears.

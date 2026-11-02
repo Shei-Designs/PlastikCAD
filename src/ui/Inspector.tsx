@@ -1,3 +1,6 @@
+import { CURVE_KINDS, MAX_CURVE_ANGLE, MIN_CURVE_ANGLE, clampAngle, curveRadius } from '../text/curve';
+import type { TextCurve } from '../text/curve';
+import { outlineOf } from '../text/fonts';
 import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { PALETTE, paramMax, polygonExtent, shapeDef } from '../geometry/shapes';
 import { boundsSize, tidyVec, unionBounds } from '../model/math';
@@ -6,7 +9,8 @@ import { TEXT_FONTS } from '../model/types';
 import type { ImageAsset, PictureMapping, PictureNode, SceneNode, ShapeNode, TextAlign, TextNode } from '../model/types';
 import { geometry } from '../state/geometry';
 import { editPicture, editText, imageAssets, notify, pickImage, saveAsPart, setColor, setHole, setSelectedLocked, setTexture, toggleLocked, updateNode, updateSelected, useEditor } from '../state/store';
-import { formatNumber, SliderField } from './Fields';
+import { formatNumber, NumberBox, SliderField } from './Fields';
+import { Hint } from './Hint';
 import { partFigures } from '../parts/figures';
 import { tell } from './ask';
 import { CloseIcon, LockIcon, PictureIcon, SaveAsPartIcon, UnlockIcon, WarningIcon } from './icons';
@@ -218,6 +222,16 @@ function TextFields({ node }: { node: TextNode }) {
           ))}
         </select>
       </div>
+      <div className="field">
+        <div className="segmented" role="radiogroup" aria-label="How the letters run">
+          {CURVE_KINDS.map((c) => (
+            <button key={c.id} type="button" role="radio" aria-checked={(node.curve?.kind ?? 'none') === c.id} className={(node.curve?.kind ?? 'none') === c.id ? 'on' : ''} title={c.title} disabled={locked} onClick={() => void editText(node.id, { curve: c.id === 'none' ? null : { kind: c.id, angle: node.curve?.angle ?? 90, flip: node.curve?.flip ?? false, thickness: node.curve?.thickness ?? node.size[2] } })}>
+              {c.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {node.curve && <CurveFields node={node} curve={node.curve} />}
       {node.text.includes('\n') && (
         <div className="field">
           <div className="segmented" role="radiogroup" aria-label="Alignment of the lines">
@@ -229,6 +243,52 @@ function TextFields({ node }: { node: TextNode }) {
           </div>
         </div>
       )}
+    </>
+  );
+}
+
+/** The curve of bent or arced lettering: how far round, which way, how thick, and the circle it fits. */
+function CurveFields({ node, curve }: { node: TextNode; curve: TextCurve }) {
+  const id = useId();
+  const locked = Boolean(node.locked);
+  const bend = curve.kind === 'bend';
+  // The letters' scale, and from it the flat width in mm the curve is wound from.
+  const scale = node.natural[1] > 0 ? node.size[1] / node.natural[1] : 1;
+  const flat = (outlineOf(node)?.size[0] ?? 0) * scale;
+  const diameter = 2 * curveRadius(curve, flat);
+  const set = (change: Partial<TextCurve>) => void editText(node.id, { curve: { ...curve, ...change } });
+  const sides = bend
+    ? [
+        { flip: false, label: 'Outside', title: 'The letters stand on the outside of the cylinder.' },
+        { flip: true, label: 'Inside', title: 'The letters stand on the inside, read from the middle.' },
+      ]
+    : [
+        { flip: false, label: 'Arch', title: 'The arc rises in the middle.' },
+        { flip: true, label: 'Hang', title: 'The arc dips in the middle.' },
+      ];
+  return (
+    <>
+      <SliderField label={bend ? 'Reach around' : 'Sweep'} help={bend ? 'Sets how far round the cylinder the letters reach.' : 'Sets how much of a circle the letters follow.'} value={curve.angle} min={MIN_CURVE_ANGLE} max={MAX_CURVE_ANGLE} step={1} integer unit="°" disabled={locked} onChange={(v) => set({ angle: v })} />
+      <div className="field">
+        <label htmlFor={`${id}-d`}>
+          {bend ? 'Fits' : 'Circle'}
+          <Hint text={bend ? 'Sets the diameter of the cylinder the letters sit on, by changing the reach.' : 'Sets the diameter of the circle the baseline follows, by changing the sweep.'} />
+        </label>
+        <NumberBox id={`${id}-d`} label="Diameter" value={diameter} unit="mm" min={0.1} step={1} places={1} disabled={locked || flat <= 0} onChange={(d) => set({ angle: clampAngle((360 * flat) / (Math.PI * Math.max(d, 0.1))) })} />
+      </div>
+      <div className="field">
+        <label htmlFor={`${id}-t`}>Thickness</label>
+        <NumberBox id={`${id}-t`} label="Thickness" value={curve.thickness} unit="mm" min={0.1} step={0.5} places={2} disabled={locked} onChange={(t) => set({ thickness: Math.max(0.1, t) })} />
+      </div>
+      <div className="field">
+        <div className="segmented" role="radiogroup" aria-label={bend ? 'Which side of the cylinder' : 'Which way the arc goes'}>
+          {sides.map((s) => (
+            <button key={s.label} type="button" role="radio" aria-checked={curve.flip === s.flip} className={curve.flip === s.flip ? 'on' : ''} title={s.title} disabled={locked} onClick={() => set({ flip: s.flip })}>
+              {s.label}
+            </button>
+          ))}
+        </div>
+      </div>
     </>
   );
 }

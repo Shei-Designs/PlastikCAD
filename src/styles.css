@@ -2031,6 +2031,40 @@ kbd {
   pointer-events: none;
 }
 
+/* The Measure tool's bar takes clicks: chips for what to take hold of, then the figures. */
+.hint-bar.measure {
+  pointer-events: auto;
+  flex-wrap: wrap;
+  justify-content: center;
+  row-gap: 6px;
+  padding: 6px 12px;
+  border-radius: 14px;
+  color: var(--text);
+  white-space: normal;
+}
+
+.measure-kinds {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: center;
+  gap: 2px;
+}
+
+.measure-kinds .chip.icon {
+  width: 30px;
+  height: 28px;
+}
+
+.measure-kinds .chip svg {
+  width: 18px;
+  height: 18px;
+}
+
+.measure-result {
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
 /* ---------- toast ---------- */
 
 /* Along the bottom of the window, over everything, as a toast on a phone. */

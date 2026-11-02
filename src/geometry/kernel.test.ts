@@ -1,3 +1,4 @@
+import { curvedSize } from '../text/curve';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { geomKey, textAssetKey } from '../model/geomKey';
 import { add, apply, emptyBounds, expandBounds, nodeMatrix } from '../model/math';
@@ -470,6 +471,31 @@ describe('lettering', () => {
   it('says so when the outlines are missing', () => {
     const node = text({ text: 'never sent' });
     expect(() => build(geomKey(node), node)).toThrow(/no letters/);
+  });
+
+  it('bends lettering round a cylinder and lays it along an arc, keeping its volume and filling the box the editor expects', () => {
+    for (const curve of [
+      { kind: 'bend', angle: 180, flip: false, thickness: 1 },
+      { kind: 'bend', angle: 120, flip: true, thickness: 2 },
+      { kind: 'arc', angle: 90, flip: false, thickness: 1 },
+    ] as const) {
+      const natural = curvedSize(curve, [10, 10], curve.thickness);
+      const node = text({ curve, natural, size: natural });
+      setAssets({ [textAssetKey(node)]: { kind: 'outline', shapes: [{ contours: ring(), evenodd: false }] } });
+      const r = build(geomKey(node), node);
+      expect(r.watertight, curve.kind).toBe(true);
+      // The back face (or the baseline) keeps the flat length on its circle, so the letters' middle runs a longer
+      // (or, inside, a shorter) way round: the volume grows by the middle radius over the back's.
+      const radius = 10 / ((curve.angle * Math.PI) / 180);
+      const middle = curve.kind === 'bend' ? radius + (curve.flip ? -1 : 1) * (curve.thickness / 2) : radius + 5;
+      expect(r.volume).toBeCloseTo((84 * curve.thickness * middle) / radius, 0);
+      for (let k = 0; k < 3; k++) {
+        expect(r.bounds.max[k] - r.bounds.min[k], `${curve.kind} ${k}`).toBeCloseTo(natural[k], 1);
+        expect(r.bounds.max[k] + r.bounds.min[k], `${curve.kind} centre ${k}`).toBeCloseTo(0, 6);
+      }
+      // A different curve is different geometry.
+      expect(geomKey(node)).not.toBe(geomKey(text({ curve: { ...curve, angle: curve.angle + 10 }, natural, size: natural })));
+    }
   });
 });
 

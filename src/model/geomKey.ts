@@ -33,7 +33,8 @@ export function geomKey(node: SceneNode): string {
     case 'import':
       return `i:${node.asset}`;
     case 'text':
-      return `t:${textKey(node)}`;
+      // Curved lettering is built with its thickness in the letters' own scale, so the key follows the size.
+      return `t:${textKey(node)}${node.curve ? `:${node.curve.kind}:${node.curve.angle}:${node.curve.flip ? 'in' : 'out'}:${textThickness(node).toFixed(3)}` : ''}`;
     case 'part':
       return `p:${partKey(node)}`;
     case 'group':
@@ -50,6 +51,16 @@ export const partKey = (node: Pick<PartNode, 'part' | 'params'>): string =>
     .sort()
     .map((k) => `${k}=${JSON.stringify(node.params[k])}`)
     .join(',')}`;
+
+/**
+ * The thickness of curved lettering in the letters' own units (the 10 mm em the outlines are laid out
+ * at): the mm asked for over the letters' scale, which the height axis carries whatever the curve.
+ */
+export const textThickness = (node: Pick<TextNode, 'curve' | 'size' | 'natural'>): number => {
+  if (!node.curve) return 1;
+  const scale = node.natural[1] > 0 ? node.size[1] / node.natural[1] : 1;
+  return Math.max(1e-3, node.curve.thickness / (scale || 1));
+};
 
 /** Identifies the outlines of a piece of lettering: its words, font and alignment. */
 export const textKey = (node: Pick<TextNode, 'text' | 'font' | 'align'>): string => `${node.font}:${node.align}:${JSON.stringify(node.text)}`;

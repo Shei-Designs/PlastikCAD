@@ -2,6 +2,8 @@
 // holds the scene and any imported data. It is laid out to diff well, so
 // designs can also live in a git repository: keys come in a fixed order, one
 // node property per line, numbers kept short.
+import { clampAngle } from '../text/curve';
+import type { TextCurve } from '../text/curve';
 import { FILE_FORMAT, FILE_VERSION, LEGACY_FORMAT } from '../app';
 import { SHAPES, clampParams, defaultParams } from '../geometry/shapes';
 import { GENERATORS, RENAMED_PARTS, getGenerator } from '../parts/generators';
@@ -60,6 +62,7 @@ export function canonical(node: SceneNode): Record<string, unknown> {
     text: node.type === 'text' ? node.text : undefined,
     font: node.type === 'text' ? node.font : undefined,
     align: node.type === 'text' && node.align !== 'left' ? node.align : undefined,
+    curve: node.type === 'text' ? node.curve : undefined,
     natural: node.type === 'shape' ? undefined : node.natural,
     pos: node.pos,
     rot: node.rot,
@@ -167,6 +170,17 @@ const KINDS = new Set<string>(SHAPES.map((s) => s.kind));
 /** Groups within groups, past which a design is refused rather than read recursively. */
 const MAX_NESTING = 64;
 
+/** A text curve as saved, if it is one: a kind, an angle in range, a side and a thickness. */
+function curveOf(raw: unknown): TextCurve | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const c = raw as Record<string, unknown>;
+  if (c.kind !== 'bend' && c.kind !== 'arc') return null;
+  const angle = typeof c.angle === 'number' && Number.isFinite(c.angle) ? clampAngle(c.angle) : null;
+  const thickness = typeof c.thickness === 'number' && Number.isFinite(c.thickness) && c.thickness > 0 ? c.thickness : null;
+  if (angle === null || thickness === null) return null;
+  return { kind: c.kind, angle, flip: c.flip === true, thickness };
+}
+
 function vec3(v: unknown, fallback: Vec3, positive = false): Vec3 {
   if (!Array.isArray(v) || v.length !== 3) return fallback;
   const out = v.map((x, i) => (typeof x === 'number' && Number.isFinite(x) && (!positive || x > 0) ? x : fallback[i]));
@@ -256,6 +270,7 @@ function readNode(raw: unknown, assets: Record<string, Asset>, depth: number): S
       text: raw.text,
       font: TEXT_FONTS.some((f) => f.id === raw.font) ? (raw.font as string) : TEXT_FONTS[0].id,
       align: raw.align === 'center' || raw.align === 'right' ? raw.align : 'left',
+      ...(curveOf(raw.curve) ? { curve: curveOf(raw.curve)! } : {}),
       natural: vec3(raw.natural, base.size, true),
     };
   }

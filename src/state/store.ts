@@ -1,6 +1,8 @@
 // The editor: one design, what is selected in it, and every action that can
 // be taken on it. Kept outside React so that the viewer, keyboard shortcuts
 // and menus all drive the same functions.
+import { clampAngle, curvedSize } from '../text/curve';
+import type { TextCurve } from '../text/curve';
 import { useSyncExternalStore } from 'react';
 import { APP_NAME, FILE_EXTENSION, isDesignName } from '../app';
 import { clampParams } from '../geometry/shapes';
@@ -64,6 +66,8 @@ import { fitFollowers, solvePose } from '../robot/kinematics';
 import type { Solved } from '../robot/kinematics';
 import { jointInChild, jointInDesign as jointInDesignOf, linkNodes, linkOf, meetingPoint, pruned, robotOf, sensorInDesign, sensorInLink, spanningTree } from '../robot/model';
 import { snapPointsOf } from '../robot/snaps';
+import { FEATURE_KINDS } from '../geometry/features';
+import type { Feature, FeatureKind } from '../geometry/features';
 import type { SnapPoint } from '../viewer/Viewer';
 import { jointFit } from '../robot/defaults';
 import { motorFigures, motorForPart, motorOf } from '../robot/motors';
@@ -125,6 +129,8 @@ export interface EditorState {
    * the anchor object, which a click on any object changes.
    */
   aligning: { anchor: string | null; bounds: Bounds; done: boolean[]; marker?: boolean } | null;
+  /** Measure mode: the kinds of feature the pointer takes hold of, and the one or two picked so far. */
+  measuring: { kinds: FeatureKind[]; picks: Feature[] } | null;
   /**
    * Editing inside a group: the layers taken apart to reach a part of it,
    * which are put back together on Done. `before` is the scene for Cancel.
@@ -170,6 +176,7 @@ let state: EditorState = {
   pose: null,
   mating: null,
   aligning: null,
+  measuring: null,
   editing: null,
   highlight: null,
   prefs: loadPrefs(),
@@ -493,11 +500,14 @@ export async function addText(): Promise<void> {
 }
 
 /**
- * Change the words, font or alignment of lettering. Its letters keep their
- * scale: the box grows or shrinks around them. Returns false if the change
- * would leave nothing to draw (the node then stays as it was).
+ * Change the words, font, alignment or curve of lettering. Its letters keep
+ * their scale: the box grows or shrinks around them. Curved lettering's box is
+ * the box round the curve, scaled evenly from the letters' height; its
+ * thickness lives in the curve, since the box's depth takes in the sag too.
+ * Returns false if the change would leave nothing to draw (the node then stays
+ * as it was).
  */
-export async function editText(id: string, change: Partial<Pick<TextNode, 'text' | 'font' | 'align'>>): Promise<boolean> {
+export async function editText(id: string, change: Partial<Pick<TextNode, 'text' | 'font' | 'align'>> & { curve?: TextCurve | null }): Promise<boolean> {
   try {
     const before = state.doc.scene.find((n) => n.id === id);
     if (before?.type !== 'text') return false;
@@ -505,13 +515,26 @@ export async function editText(id: string, change: Partial<Pick<TextNode, 'text'
     // Typing is faster than fonts load: work from the node as it is by now.
     const node = state.doc.scene.find((n) => n.id === id);
     if (node?.type !== 'text' || node.locked) return false;
-    const next = { text: node.text, font: node.font, align: node.align, ...change };
+    const { curve: curveChange, ...rest } = change;
+    const next = { text: node.text, font: node.font, align: node.align, ...rest };
     const outline = outlineOf(next);
     if (!outline) return false;
-    const natural: Vec3 = [outline.size[0], outline.size[1], 1];
-    const size = tidyVec([(node.size[0] / node.natural[0]) * natural[0], (node.size[1] / node.natural[1]) * natural[1], node.size[2]]);
+    // The letters' scale is what the height axis carries, curved or not; the thickness is the box's depth when straight.
+    const scale = node.natural[1] > 0 ? node.size[1] / node.natural[1] : 1;
+    const thickness = node.curve ? node.curve.thickness : node.size[2];
+    const wanted = curveChange === undefined ? node.curve : curveChange;
+    const curve: TextCurve | undefined = wanted ? { ...wanted, angle: clampAngle(wanted.angle), thickness: wanted.thickness > 0 ? wanted.thickness : thickness } : undefined;
+    let natural: Vec3;
+    let size: Vec3;
+    if (curve) {
+      natural = curvedSize(curve, outline.size, curve.thickness / scale);
+      size = tidyVec([natural[0] * scale, natural[1] * scale, natural[2] * scale]);
+    } else {
+      natural = [outline.size[0], outline.size[1], 1];
+      size = tidyVec([node.curve ? natural[0] * scale : (node.size[0] / node.natural[0]) * natural[0], natural[1] * scale, thickness]);
+    }
     const name = node.name === textLabel(node.text) ? textLabel(next.text) : node.name;
-    updateNode(id, { ...next, natural, size, name } as Partial<SceneNode>, `text:${id}`);
+    updateNode(id, { ...next, curve, natural, size, name } as Partial<SceneNode>, `text:${id}`);
     return true;
   } catch (e) {
     fail(e);
@@ -1024,12 +1047,12 @@ export function startAligning(): void {
   if (state.aligning) return;
   if (state.joint || state.sensor) {
     const aligning = alignState(markerLink());
-    if (aligning) set({ aligning, placing: null });
+    if (aligning) set({ aligning, placing: null, measuring: null });
     return;
   }
   if (state.selection.length < 2) return notify('Select two or more objects to line them up.');
   const aligning = alignState(null);
-  if (aligning) set({ aligning, placing: null });
+  if (aligning) set({ aligning, placing: null, measuring: null });
 }
 
 export function stopAligning(): void {
@@ -1052,6 +1075,39 @@ function abortAlignPreview(): void {
 }
 
 export const toggleAligning = (): void => (state.aligning ? stopAligning() : startAligning());
+
+// --- measuring ----------------------------------------------------------------
+
+/** The kinds last chosen, kept while the app runs so the tool comes back as it was left. */
+let measureKinds: FeatureKind[] = FEATURE_KINDS.map((k) => k.id);
+
+/** Measure mode: the pointer takes hold of points, edges, faces and circles, and two picks are measured against each other. */
+export function startMeasuring(): void {
+  stopAligning();
+  set({ measuring: { kinds: measureKinds, picks: [] }, placing: null });
+}
+
+export function stopMeasuring(): void {
+  if (state.measuring) set({ measuring: null });
+}
+
+export const toggleMeasuring = (): void => (state.measuring ? stopMeasuring() : startMeasuring());
+
+export function setMeasureKinds(kinds: FeatureKind[]): void {
+  measureKinds = kinds;
+  if (state.measuring) set({ measuring: { ...state.measuring, kinds } });
+}
+
+/** A feature picked on the plate: the first of a pair, the second, or after a pair a fresh first. */
+export function pickMeasure(feature: Feature): void {
+  const m = state.measuring;
+  if (!m) return;
+  set({ measuring: { ...m, picks: m.picks.length >= 2 ? [feature] : [...m.picks, feature] } });
+}
+
+export function clearMeasure(): void {
+  if (state.measuring?.picks.length) set({ measuring: { ...state.measuring, picks: [] } });
+}
 
 /** Make one of the selected objects the one the others line up with; the same one again clears it. */
 export function setAlignAnchor(id: string | null): void {
@@ -1366,7 +1422,7 @@ export function editInside(path: string[]): void {
   if (root.locked) return notify('Unlock the object before editing inside it.', 'error');
   const { scene, layers } = dissolve(state.doc.scene, path);
   const target = path[path.length - 1];
-  state = { ...state, editing: { root: root.id, target, layers, before: state.doc.scene }, highlight: null, aligning: null };
+  state = { ...state, editing: { root: root.id, target, layers, before: state.doc.scene }, highlight: null, aligning: null, measuring: null };
   commit(scene, { selection: scene.some((n) => n.id === target) ? [target] : [] });
 }
 

@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import type { JSX } from 'react';
 import { geometry } from '../state/geometry';
 import { SNAP_STEPS } from '../state/persist';
 import {
@@ -31,6 +32,9 @@ import {
   setAlignAnchor,
   setPrefs,
   toggleAligning,
+  toggleMeasuring,
+  setMeasureKinds,
+  pickMeasure,
   toggleSelected,
   undo,
   ungroupSelected,
@@ -38,6 +42,9 @@ import {
   useEditor,
 } from '../state/store';
 import { apply, multiply, rotation } from '../model/math';
+import { FEATURE_KINDS } from '../geometry/features';
+import type { FeatureKind } from '../geometry/features';
+import { describe as describeFeature, measure as measureBetween } from '../geometry/measure';
 import type { Mat } from '../model/math';
 import type { SceneNode, Vec3 } from '../model/types';
 import { posedScene } from '../robot/kinematics';
@@ -49,6 +56,15 @@ import { GIZMO_SIZE, Viewer } from '../viewer/Viewer';
 import type { HandlePrompt, Marker, ViewItem, ViewPreset } from '../viewer/Viewer';
 import {
   AlignIcon,
+  RulerIcon,
+  SnapCenterIcon,
+  SnapCircleIcon,
+  SnapEdgeIcon,
+  SnapFaceCenterIcon,
+  SnapFaceIcon,
+  SnapMiddleIcon,
+  SnapPointIcon,
+  SnapQuadrantIcon,
   ArrayIcon,
   ChevronIcon,
   DropIcon,
@@ -87,6 +103,7 @@ function Actions() {
   const selection = useEditor((s) => s.selection);
   const picked = useMemo(() => scene.filter((n) => selection.includes(n.id)), [scene, selection]);
   const aligning = useEditor((s) => s.aligning);
+  const measuring = useEditor((s) => Boolean(s.measuring));
   /** A picked joint or sensor lines up with an object's box, on its own. */
   const marker = useEditor((s) => Boolean(s.joint || s.sensor));
   const ghosts = useEditor(hasGhosts);
@@ -114,6 +131,9 @@ function Actions() {
           onClick={toggleAligning}
         >
           <AlignIcon />
+        </button>
+        <button type="button" className={measuring ? 'chip icon on' : 'chip icon'} title="Measure (M)" aria-label="Measure" aria-pressed={measuring} onClick={toggleMeasuring}>
+          <RulerIcon />
         </button>
         <Popover className="chip icon" title="Mirror (X / Y / Z)" button={<MirrorIcon />} disabled={none} align="right">
           {() => (
@@ -155,6 +175,38 @@ function Actions() {
     </>
   );
 }
+
+/** Measure mode's bar: which kinds of feature to take hold of, and what the picks measure. */
+function MeasureBar({ kinds, picks, result }: { kinds: FeatureKind[]; picks: number; result: string[] | null }) {
+  const toggle = (id: FeatureKind) => setMeasureKinds(kinds.includes(id) ? kinds.filter((k) => k !== id) : [...kinds, id]);
+  return (
+    <div className="hint-bar measure" role="status">
+      <div className="measure-kinds" role="group" aria-label="Snaps">
+        {FEATURE_KINDS.map((k) => {
+          const Snap = SNAP_ICONS[k.id];
+          return (
+            <button key={k.id} type="button" className={kinds.includes(k.id) ? 'chip icon on' : 'chip icon'} aria-pressed={kinds.includes(k.id)} aria-label={k.label} title={`${k.label}: ${k.help}`} onClick={() => toggle(k.id)}>
+              <Snap />
+            </button>
+          );
+        })}
+      </div>
+      <span className="measure-result">{result ? result.join(' · ') : picks === 0 ? 'Click a point, edge, face or circle, then another · Esc to finish' : 'Click another feature to measure to it'}</span>
+    </div>
+  );
+}
+
+/** The symbol on each snap's chip. */
+const SNAP_ICONS: Record<FeatureKind, () => JSX.Element> = {
+  point: SnapPointIcon,
+  middle: SnapMiddleIcon,
+  edge: SnapEdgeIcon,
+  circle: SnapCircleIcon,
+  quadrant: SnapQuadrantIcon,
+  facecenter: SnapFaceCenterIcon,
+  face: SnapFaceIcon,
+  center: SnapCenterIcon,
+};
 
 /** Undo and redo, at the left end of the bar. */
 function History() {
@@ -416,6 +468,14 @@ export function Viewport() {
     followed.current = at;
   }, [driven.base, simFrames]);
   const snaps = useMemo(() => (state.jointPick ? jointSnaps(state) : null), [state.jointPick, state.joint, state.sensor, state.doc]);
+  // Measure mode: the picks and what they say, for the plate to draw and the bar to show.
+  const measuring = state.measuring;
+  const measureResult = useMemo(() => {
+    if (!measuring) return null;
+    const [a, b] = measuring.picks;
+    return b ? measureBetween(a, b) : a ? describeFeature(a) : null;
+  }, [measuring]);
+  const measure = useMemo(() => (measuring ? { kinds: measuring.kinds, picks: measuring.picks, result: measureResult } : null), [measuring, measureResult]);
   // Another selection, or an edit from elsewhere, and the typing boxes no longer belong to anything.
   useEffect(() => {
     viewer.current?.dismissPrompt();
@@ -459,6 +519,7 @@ export function Viewport() {
         },
         onMarkerMove: dragMarker,
         onMarkerDrop: endMarkerDrag,
+        onMeasurePick: pickMeasure,
         onMarkerPick: (id) => {
           const robot = getState().doc.robot;
           if (robot?.joints.some((j) => j.id === id)) selectJoint(id);
@@ -478,8 +539,8 @@ export function Viewport() {
   }, []);
 
   useEffect(() => {
-    viewer.current?.setOptions({ theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap, interactive: true, align: aligning, highlight, snaps, marker, markers, ground, preview });
-  }, [prefs.theme, prefs.edges, prefs.grid, prefs.snap, aligning, highlight, snaps, marker, markers, ground, preview]);
+    viewer.current?.setOptions({ theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap, interactive: true, align: aligning, highlight, snaps, marker, markers, ground, preview, measure });
+  }, [prefs.theme, prefs.edges, prefs.grid, prefs.snap, aligning, highlight, snaps, marker, markers, ground, preview, measure]);
 
   useEffect(() => {
     viewer.current?.setPlacing(Boolean(placing));
@@ -577,6 +638,7 @@ export function Viewport() {
           {aligning.anchor ? 'Aligning to the anchor' : 'Click a dot to align'} · click an object to set the anchor · Esc to finish
         </div>
       )}
+      {measuring && !placing && <MeasureBar kinds={measuring.kinds} picks={measuring.picks.length} result={measureResult?.lines ?? null} />}
 
       {mating && <MatePanel key={mating.id} />}
 

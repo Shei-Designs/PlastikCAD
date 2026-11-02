@@ -103,7 +103,12 @@ export interface TextNode extends NodeBase {
   /** Id of a built-in font (see `TEXT_FONTS`). */
   font: string;
   align: TextAlign;
-  /** Bounding box of the lettering as laid out (10 mm em, 1 mm thick); `size / natural` is its scale. */
+  /** Bent round a cylinder or laid along an arc; straight when absent (see `src/text/curve.ts`). */
+  curve?: TextCurve;
+  /**
+   * Bounding box of the lettering as laid out (10 mm em, 1 mm thick; curved, the box round the curved
+   * lettering at that scale); `size / natural` is its scale.
+   */
   natural: Vec3;
 }
 
@@ -144,6 +149,7 @@ export interface PictureNode extends NodeBase {
 
 export type SceneNode = ShapeNode | GroupNode | ImportNode | TextNode | PartNode | PictureNode;
 
+import type { TextCurve } from '../text/curve';
 import type { Robot } from '../robot/types';
 export type { Robot };
 
