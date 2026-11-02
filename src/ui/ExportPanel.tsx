@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { APP_NAME } from '../app';
+import { APP_NAME } from '../appInfo';
 import { FORMATS } from '../io/export';
 import { skinOf } from '../geometry/skin';
 import { confirm } from '../platform';

@@ -3,7 +3,7 @@
 // window, webview and dialog modules are imported on demand, so the browser
 // never loads them.
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import { APP_NAME } from './app';
+import { APP_NAME } from './appInfo';
 
 export interface FileFilter {
   name: string;

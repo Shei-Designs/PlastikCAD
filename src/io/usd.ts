@@ -5,7 +5,7 @@
 // joint states, odometry, TF and every sensor. File > Open, Play, and the
 // robot runs; nothing has to be imported or scripted on the Isaac side.
 // Meters, Z up, degrees where USD Physics wants them.
-import { APP_NAME } from '../app';
+import { APP_NAME } from '../appInfo';
 import type { MeshData } from '../geometry/mesh';
 import { rotation } from '../model/math';
 import type { Mat } from '../model/math';

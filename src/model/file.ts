@@ -4,7 +4,7 @@
 // node property per line, numbers kept short.
 import { clampAngle } from '../text/curve';
 import type { TextCurve } from '../text/curve';
-import { FILE_FORMAT, FILE_VERSION, LEGACY_FORMAT } from '../app';
+import { FILE_FORMAT, FILE_VERSION, LEGACY_FORMAT } from '../appInfo';
 import { SHAPES, clampParams, defaultParams } from '../geometry/shapes';
 import { GENERATORS, RENAMED_PARTS, getGenerator } from '../parts/generators';
 import { sanitizeParams } from '../parts/generators/types';

@@ -2,7 +2,7 @@
 // pictures along with the mesh. One node per object, each with its own
 // material; images go in as the PNG or JPEG they are. glTF is Y up and in
 // meters, so Z-up millimeters are turned on the way out.
-import { APP_NAME } from '../app';
+import { APP_NAME } from '../appInfo';
 import { determinant } from '../model/math';
 import type { Mat } from '../model/math';
 

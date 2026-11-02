@@ -1,7 +1,7 @@
 // The files around a URDF that make it a ROS 2 package: `colcon build` it,
 // source the workspace, and the launch file shows the robot in RViz with
 // sliders for its joints. Plain text, written once per export.
-import { APP_NAME } from '../app';
+import { APP_NAME } from '../appInfo';
 import { fmt } from './format';
 import { escapeXml } from './format';
 

@@ -1,4 +1,15 @@
-PlastikCAD is a desktop app for fast solid modelling for 3D printing: combine simple shapes into a part and export it for your slicer.
+PlastikCAD is a desktop app for fast solid modelling for 3D printing: drop shapes and parametric parts on the plate, turn some into holes, group, and export for your slicer. It runs locally; nothing leaves your machine unless you link a Google Drive. Free software under the GPL-3.0.
+
+## What's in it
+
+- **Shapes and holes** – boxes, cylinders, wedges, domes and more; any object adds material or cuts it away, and groups never bake anything in.
+- **Parametric parts** – spur, helical, herringbone, ring, rack, bevel and worm gears, timing pulleys and sprockets, metric screws and nuts, aluminium rails, pipes and ducts, fan cutouts, panel connectors, motor mounts, and dev boards (Raspberry Pi, Arduino, ESP32, Jetson) with their holes and sockets.
+- **Mating gear wizard** – pick a gear and add its mate (gear, ring, rack, worm wheel or bevel pair) with a live preview, meshed and placed at the right centre distance.
+- **Text** – four print-friendly fonts, bent round a cylinder or laid along an arc.
+- **Pictures and textures** – wrap a picture round an object or tile it over every side; imported meshes keep their own UV layout. Pictures and textures travel in GLB exports.
+- **Robot mode** – make the design a robot: links, joints with real motor figures, sensors (camera, lidar, IMU, touch), drive setup, and a MuJoCo test drive right on the plate. Exports a ROS 2 package (RViz and Gazebo), an SDF model, a MuJoCo model with Python starters, or an Isaac Sim stage.
+- **Import and export** – STL, OBJ, 3MF and GLB meshes, SVG and DXF drawings and PNG/JPEG pictures in; STL, 3MF, OBJ, GLB, SVG and DXF out.
+- **Projects** – autosaved locally, with optional Google Drive sync.
 
 ## Download
 

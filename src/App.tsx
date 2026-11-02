@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { APP_NAME } from './app';
+import { APP_NAME } from './appInfo';
 import * as platform from './platform';
 import {
   alignSelected,

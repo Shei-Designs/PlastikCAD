@@ -3,7 +3,7 @@
 // is made of components, one closed mesh per color, so that a slicer can
 // give each its own material. Colors travel as base materials.
 import { zipSync } from 'fflate';
-import { APP_NAME } from '../app';
+import { APP_NAME } from '../appInfo';
 import { PALETTE } from '../geometry/shapes';
 import type { ColoredObject } from '../worker/protocol';
 import { encodeText, escapeXml, fmt } from './format';

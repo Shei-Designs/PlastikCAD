@@ -4,7 +4,7 @@
 import { clampAngle, curvedSize } from '../text/curve';
 import type { TextCurve } from '../text/curve';
 import { useSyncExternalStore } from 'react';
-import { APP_NAME, FILE_EXTENSION, isDesignName } from '../app';
+import { APP_NAME, FILE_EXTENSION, isDesignName } from '../appInfo';
 import { clampParams } from '../geometry/shapes';
 import { encodeFloat32, encodeUint32 } from '../io/base64';
 import { exportMesh, exportOutline, FORMATS } from '../io/export';

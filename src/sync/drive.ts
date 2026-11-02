@@ -3,7 +3,7 @@
 // With the drive.file scope the app sees only files it created, which is all
 // it needs, and nothing else in the Drive. The custom parts are a second
 // remote, in a "Parts" folder inside the app's folder.
-import { APP_NAME, FILE_EXTENSION, FILE_FORMAT, isDesignName } from '../app';
+import { APP_NAME, FILE_EXTENSION, FILE_FORMAT, isDesignName } from '../appInfo';
 import type { Remote, RemoteFile } from './engine';
 
 const API = 'https://www.googleapis.com/drive/v3';

@@ -1,7 +1,7 @@
 // Writes a robot as URDF (Unified Robot Description Format), the file ROS 2,
 // RViz, Gazebo, Isaac Sim and MuJoCo all read. Everything here is already in
 // SI (meters, kilograms, radians, kg·m²): the caller converts from the design.
-import { APP_NAME } from '../app';
+import { APP_NAME } from '../appInfo';
 import type { Vec3 } from '../model/types';
 import type { Tensor } from '../robot/inertia';
 import type { JointType } from '../robot/types';

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
-import { APP_NAME } from '../app';
+import { APP_NAME } from '../appInfo';
 import { SHAPES } from '../geometry/shapes';
 import { HOLE_COLOR } from '../model/ops';
 import type { SceneNode } from '../model/types';

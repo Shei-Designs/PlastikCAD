@@ -4,7 +4,7 @@
 // A project is addressed by its key: the file's path on disk, a record key in
 // the browser. The id inside the file identifies the project across copies
 // and devices (that is what sync will use); the key says where it is now.
-import { FILE_EXTENSION, FILE_FORMAT } from '../app';
+import { FILE_EXTENSION, FILE_FORMAT } from '../appInfo';
 import { HEAD_BYTES, parseDoc, readHeader, serializeDoc } from '../model/file';
 import type { DocHeader } from '../model/file';
 import { newId } from '../model/ops';

@@ -2,7 +2,7 @@
 // URDF it holds loops, so every joint goes in. Every link's pose is given in
 // the model frame with no turn (the frames are parallel), and each joint's
 // pose in its child's frame. SI units.
-import { APP_NAME } from '../app';
+import { APP_NAME } from '../appInfo';
 import type { Vec3 } from '../model/types';
 import type { Tensor } from '../robot/inertia';
 import type { JointType } from '../robot/types';

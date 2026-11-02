@@ -2,7 +2,7 @@
 // its inertia, mesh geoms and the joint it hangs by; loops closed by
 // connect constraints, followers by joint constraints, actuators on the
 // driven joints. SI units, radians. Mesh files sit under `meshes/`.
-import { APP_NAME } from '../app';
+import { APP_NAME } from '../appInfo';
 import type { Vec3 } from '../model/types';
 import type { Tensor } from '../robot/inertia';
 import { lidarAngles } from '../robot/types';

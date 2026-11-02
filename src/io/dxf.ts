@@ -1,4 +1,4 @@
-import { APP_NAME } from '../app';
+import { APP_NAME } from '../appInfo';
 import type { Polygon } from '../model/types';
 import { encodeText, fmt } from './format';
 import { bounds } from './outline';

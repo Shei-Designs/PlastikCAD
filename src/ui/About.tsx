@@ -1,7 +1,7 @@
 // The About box: name, version and license, opened from the File menu.
 import { useEffect, useRef } from 'react';
 import type React from 'react';
-import { APP_NAME, APP_URL, APP_VERSION, AUTHOR, AUTHOR_URL, PUBLISHER, PUBLISHER_URL } from '../app';
+import { APP_NAME, APP_URL, APP_VERSION, AUTHOR, AUTHOR_URL, PUBLISHER, PUBLISHER_URL } from '../appInfo';
 import { isDesktop } from '../platform';
 import { Logo } from './icons';
 

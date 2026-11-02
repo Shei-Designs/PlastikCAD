@@ -29,7 +29,7 @@ import { motorOf } from './motors';
 import { drivePy, envPy, trainPy } from '../io/scripts';
 import { DRIVE_KINDS, driveJoints, withRole } from './types';
 import { usdName } from '../io/usd';
-import { APP_NAME } from '../app';
+import { APP_NAME } from '../appInfo';
 import type { DriveKind, DriveRole, Robot, RobotJoint, World } from './types';
 export interface PackageFile {
   /** Path inside the package folder. */

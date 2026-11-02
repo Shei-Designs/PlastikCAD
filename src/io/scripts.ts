@@ -1,7 +1,7 @@
 // The starter scripts written beside a MuJoCo export: something that moves
 // the robot, a Gymnasium environment to train in, and a training run. Plain
 // Python the user is meant to read and change.
-import { APP_NAME } from '../app';
+import { APP_NAME } from '../appInfo';
 
 export type ScriptKind = 'rover' | 'arm' | 'walker';
 

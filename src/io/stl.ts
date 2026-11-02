@@ -1,4 +1,4 @@
-import { APP_NAME } from '../app';
+import { APP_NAME } from '../appInfo';
 import type { MeshData } from '../geometry/mesh';
 
 /** Binary STL: 80-byte header, uint32 triangle count, then 50 bytes per facet. */

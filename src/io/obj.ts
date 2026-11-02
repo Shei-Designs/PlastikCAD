@@ -1,4 +1,4 @@
-import { APP_NAME } from '../app';
+import { APP_NAME } from '../appInfo';
 import { PALETTE } from '../geometry/shapes';
 import type { ColoredObject } from '../worker/protocol';
 import { encodeText, fmt } from './format';

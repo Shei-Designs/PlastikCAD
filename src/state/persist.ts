@@ -1,6 +1,6 @@
 // Preferences, kept in localStorage. Projects themselves live in the projects
 // store (see projects.ts), not here.
-import { FILE_FORMAT } from '../app';
+import { FILE_FORMAT } from '../appInfo';
 import type { FormatId } from '../io/export';
 import { newId } from '../model/ops';
 

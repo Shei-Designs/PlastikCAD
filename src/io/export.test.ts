@@ -1,6 +1,6 @@
 import { strFromU8, unzipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
-import { APP_NAME } from '../app';
+import { APP_NAME } from '../appInfo';
 import type { MeshData } from '../geometry/mesh';
 import type { Polygon } from '../model/types';
 import { exportMesh, exportOutline, FORMATS } from './export';

@@ -2,7 +2,7 @@
 // rename, duplicate or delete; plus where they are kept.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
-import { APP_NAME } from '../app';
+import { APP_NAME } from '../appInfo';
 import { isDesktop } from '../platform';
 import type { ProjectInfo } from '../state/projects';
 import {
