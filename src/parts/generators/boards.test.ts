@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { evaluate, initKernel } from '../evaluate';
 import { QUALITY } from '../types';
-import { ALL_BOARDS, BOARDS, arduino, esp32, raspberryPi } from './boards';
+import { ALL_BOARDS, BOARDS, arduino, esp32, jetson, raspberryPi } from './boards';
 import { defaultParams } from './types';
 import type { GeneratorDef, Params } from './types';
 
@@ -148,10 +148,35 @@ describe('dev board mounts', () => {
     expect(flush.stats.max[0]).toBeCloseTo(85 + 3, 3);
     expect(flush.stats.min[1]).toBeCloseTo(-2.5, 3);
     expect(flush.stats.volume).toBeLessThan(r.stats.volume);
-    // Boards with sockets on the left edge reach -X; a board with none recorded is the blank with a warning.
+    // Boards with sockets on the left edge reach -X.
     const uno = made(arduino, { board: 'uno', form: 'connectors', reach: 10, fit: 'body' });
     expect(uno.stats.min[0]).toBeCloseTo(-10, 3);
-    const nano = made(arduino, { board: 'nano', form: 'connectors' });
-    expect(nano.warnings.some((w) => w.includes('No socket positions'))).toBe(true);
+    // The Nano's one socket stands for every Nano's: the classic's mini-B body 1.8 mm out, centered on the 17.78 mm width, with an
+    // opening that takes a USB-C plug's width and a micro-B plug's height.
+    const nano = made(arduino, { board: 'nano', form: 'connectors', reach: 0, fit: 'body' });
+    expect(nano.warnings).toEqual([]);
+    expect(nano.stats.min[0]).toBeCloseTo(-1.8, 3);
+    const nanoPlug = made(arduino, { board: 'nano', form: 'connectors', reach: 10, fit: 'plug' });
+    expect(nanoPlug.stats.min[0]).toBeCloseTo(-10, 3);
+    expect(nanoPlug.stats.max[2]).toBeCloseTo(1.6 + 3.9 / 2 + 8.5 / 2, 3);
+    expect(nanoPlug.info.find((i) => i.label.startsWith('USB'))?.value).toContain('plug 12.35 × 8.5');
+    // The Jetson carriers put every port along the bottom long edge: the parts reach -Y by the protrusion, and the HDMI and
+    // DisplayPort stack is the tallest body on the Nano kit, the USB pairs on the Orin kit.
+    const nanoKit = made(jetson, { board: 'jetson-nano', form: 'connectors', reach: 0, fit: 'body' });
+    expect(nanoKit.warnings).toEqual([]);
+    expect(nanoKit.stats.min[1]).toBeCloseTo(-1.6, 3);
+    expect(nanoKit.stats.max[1]).toBeCloseTo(79, 3);
+    expect(nanoKit.stats.max[2]).toBeCloseTo(1.6 + 19.4, 3);
+    const orin = made(jetson, { board: 'jetson-orin-nano', form: 'connectors', reach: 0, fit: 'body' });
+    expect(orin.stats.max[2]).toBeCloseTo(1.6 + 16.5, 3);
+    expect(orin.info.find((i) => i.label === 'DisplayPort')?.value).toContain('22.80 mm along the bottom edge');
+    // The two ESP32 kits without a maker drawing have their micro USB centered on the width, 1 mm out.
+    for (const [board, width] of [['esp32-devkit-v1', 28.2], ['nodemcu-32s', 25.4]] as const) {
+      const r = made(esp32, { board, form: 'connectors', reach: 0, fit: 'body' });
+      expect(r.warnings).toEqual([]);
+      expect(r.stats.min[0]).toBeCloseTo(-1, 3);
+      const usb = r.info.find((i) => i.label === 'Micro USB')!.value;
+      expect(usb).toContain(`${(Math.round(width * 5) / 10).toFixed(2)} mm along the left edge`);
+    }
   });
 });

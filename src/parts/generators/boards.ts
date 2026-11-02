@@ -1,5 +1,6 @@
 // Mounts for the development boards that end up in most enclosures: the
-// Raspberry Pi range, the common Arduinos and the ESP32 dev kits. Each board
+// Raspberry Pi range, the common Arduinos, the ESP32 dev kits and the NVIDIA
+// Jetson developer-kit carriers. Each board
 // is a table row read from its maker's mechanical drawing: outline, corner
 // radius and the mounting holes with the screw they take. From that one row
 // the part can be:
@@ -53,15 +54,19 @@ export interface Board {
 }
 
 /** The kinds of socket found along a board's edge, each with the envelope of the plug that mates with it. */
-type Socket = 'usb-c' | 'micro-usb' | 'micro-hdmi' | 'mini-hdmi' | 'hdmi' | 'usb-a-stack' | 'rj45' | 'av-jack' | 'barrel' | 'usb-b';
+type Socket = 'usb-c' | 'micro-usb' | 'mini-usb' | 'micro-hdmi' | 'mini-hdmi' | 'hdmi' | 'displayport' | 'hdmi-dp-stack' | 'usb-a-stack' | 'rj45' | 'av-jack' | 'barrel' | 'usb-b';
 
-/** Plug envelopes (width along the edge × height), centered on the socket: the USB-IF overmold maxima, typical HDMI and AV plugs, a stacked pair of USB-A plugs. */
-const PLUGS: Record<Socket, { w: number; h: number; r: number }> = {
+/** Plug envelopes (width along the edge × height), centered on the socket: the USB-IF overmold maxima, typical HDMI, DisplayPort and AV plugs, a stacked pair of USB-A plugs, an HDMI plug under a DisplayPort one. */
+type Plug = { w: number; h: number; r: number };
+const PLUGS: Record<Socket, Plug> = {
   'usb-c': { w: 12.35, h: 6.5, r: 2.5 },
   'micro-usb': { w: 10.6, h: 8.5, r: 1.5 },
+  'mini-usb': { w: 11.5, h: 8, r: 1.5 },
   'micro-hdmi': { w: 12.6, h: 7, r: 2 },
   'mini-hdmi': { w: 13.5, h: 8, r: 2 },
   hdmi: { w: 20.5, h: 10.5, r: 2.5 },
+  displayport: { w: 20, h: 10, r: 2.5 },
+  'hdmi-dp-stack': { w: 20.5, h: 22, r: 2.5 },
   'usb-a-stack': { w: 16, h: 17, r: 1.5 },
   rj45: { w: 16.4, h: 13.5, r: 0.5 },
   'av-jack': { w: 9, h: 9, r: 4.5 },
@@ -82,11 +87,17 @@ export interface EdgeSocket {
   w: number;
   h: number;
   out: number;
+  /** A plug envelope other than the socket kind's usual one: an opening that takes every plug a board family uses. */
+  plug?: Plug;
 }
 
+const plugOf = (s: EdgeSocket): Plug => s.plug ?? PLUGS[s.socket];
+
 // Socket positions and widths are read from the boards' drawings (the Pi drawings print the positions,
-// widths are measured off them to ±0.3), the Uno's from Arduino's Eagle outlines, the DevKitC's from
-// Espressif's DXF. Heights the drawings omit (micro USB 2.9, the Uno's jack and USB-B 11) are typical.
+// widths are measured off them to ±0.3), the Uno's and Nano's from Arduino's Eagle and STEP files, the
+// DevKitC's from Espressif's DXF; the DevKit V1 and NodeMCU-32S, which have no maker drawing, from a
+// real-size community drawing and the maker's photo. Heights the drawings omit (micro USB 2.9, the
+// Uno's jack and USB-B 11) are typical.
 const PI_END = (ports: [string, Socket, number, number, number, number][]): EdgeSocket[] => ports.map(([name, socket, at, w, h, out]) => ({ name, socket, edge: 'right', at, w, h, out }));
 const PI_LONG = (ports: [string, Socket, number, number, number, number][]): EdgeSocket[] => ports.map(([name, socket, at, w, h, out]) => ({ name, socket, edge: 'bottom', at, w, h, out }));
 const PI5_SOCKETS: EdgeSocket[] = [
@@ -229,8 +240,11 @@ export const ARDUINO: Board[] = [
     ],
     holeDiameter: 1.8,
     screw: 'M1.6',
-    layout: 'USB on the left. Usually held by its header pins instead; the corner holes, 1.27 mm in from every edge, take M1.6 screws.',
-    note: 'Four M1.6 holes 1.27 mm in from the corners. USB on the left; usually held by its header pins.',
+    layout: 'USB on the left, centered on the board\'s width on every Nano: mini USB on the classic, micro USB on the Every, USB-C on the Nano ESP32. Usually held by its header pins instead; the corner holes, 1.27 mm in from every edge, take M1.6 screws.',
+    // One socket stands for the three connectors: the classic's mini-B body (the tallest and the furthest out) and an
+    // opening wide enough for a USB-C plug and tall enough for a micro-B one.
+    sockets: [{ name: 'USB (mini-B; micro-B on the Every, C on the Nano ESP32)', socket: 'mini-usb', edge: 'left', at: 8.89, w: 7.7, h: 3.9, out: 1.8, plug: { w: 12.35, h: 8.5, r: 1.5 } }],
+    note: 'Four M1.6 holes 1.27 mm in from the corners. USB on the left, centered, whichever Nano; usually held by its header pins.',
   },
 ];
 
@@ -263,8 +277,9 @@ export const ESP32: Board[] = [
     ],
     holeDiameter: 2.8,
     screw: 'M2.5',
-    layout: 'Micro USB on the left, antenna on the right. The holes sit 2.2 mm in from every edge.',
-    note: 'Four holes 2.2 mm in from the corners; USB left, antenna right. Clones differ, some have no holes.',
+    layout: 'Micro USB on the left, centered on the board\'s width, antenna on the right. The holes sit 2.2 mm in from every edge.',
+    sockets: [{ name: 'Micro USB', socket: 'micro-usb', edge: 'left', at: 14.1, w: 7.5, h: 2.9, out: 1 }],
+    note: 'Four holes 2.2 mm in from the corners; USB left, antenna right. No maker drawing: the size, holes and USB are measured, and clones differ, some without holes.',
   },
   {
     id: 'nodemcu-32s',
@@ -275,8 +290,76 @@ export const ESP32: Board[] = [
     holes: [],
     holeDiameter: 0,
     screw: 'M3',
-    layout: 'Micro USB on the left, antenna on the right. No mounting holes.',
-    note: 'No holes: blank, pocket or corner stops. Only the overall size is published; measure yours.',
+    layout: 'Micro USB on the left, centered on the board\'s width, antenna on the right. No mounting holes.',
+    sockets: [{ name: 'Micro USB', socket: 'micro-usb', edge: 'left', at: 12.7, w: 7.5, h: 2.9, out: 1 }],
+    note: 'No holes: blank, pocket or corner stops. Only the overall size is published, the USB is read off the maker\'s photo; measure yours.',
+  },
+];
+
+// The Jetson developer kits all come on the same 100 × 79 carrier with the same M2.5 holes, the ports along
+// one long edge in the same order. The Orin Nano carrier's drawing (NVIDIA SP-11324) gives the holes and the
+// ports to ±0.3 mm; the Xavier NX kit's drawing (SP-09765) and the Nano kit's layout, which NVIDIA keeps behind
+// a login and is known from a posted screenshot, agree with it to a millimetre. Heights are the connectors'
+// usual ones; the module stack above the carrier is for the case lid.
+const JETSON_HOLES = (third: boolean): Vec2[] => [
+  [4, 17],
+  [90, 17],
+  ...(third ? ([[96, 17]] as Vec2[]) : []),
+  [4, 75],
+  [90, 75],
+  ...(third ? ([[96, 75]] as Vec2[]) : []),
+];
+const JETSON_PORTS = (display: EdgeSocket, last: EdgeSocket): EdgeSocket[] => [
+  { name: 'Power jack', socket: 'barrel', edge: 'bottom', at: 6, w: 9, h: 11, out: 1.6 },
+  display,
+  { name: 'USB pair', socket: 'usb-a-stack', edge: 'bottom', at: 42.6, w: 13.4, h: 16.5, out: 1.6 },
+  { name: 'USB pair', socket: 'usb-a-stack', edge: 'bottom', at: 59.6, w: 13.3, h: 16.5, out: 1.6 },
+  { name: 'Ethernet', socket: 'rj45', edge: 'bottom', at: 77, w: 16.1, h: 13.5, out: 1.6 },
+  last,
+];
+const HDMI_DP: EdgeSocket = { name: 'HDMI and DisplayPort', socket: 'hdmi-dp-stack', edge: 'bottom', at: 23, w: 16.3, h: 19.4, out: 1.6 };
+const JETSON_MICRO_USB: EdgeSocket = { name: 'Micro USB', socket: 'micro-usb', edge: 'bottom', at: 92, w: 7.5, h: 2.9, out: 1 };
+const JETSON_LAYOUT = 'Ports along the bottom long edge, left to right: power jack, display, two USB pairs, Ethernet and the small USB. Camera connectors on the left end, the 40-pin header along the right end. The module and its heatsink stand on the far half of the board.';
+
+export const JETSON: Board[] = [
+  {
+    id: 'jetson-nano',
+    label: 'Jetson Nano Developer Kit (A02 / B01)',
+    length: 100,
+    width: 79,
+    corner: 2,
+    holes: JETSON_HOLES(false),
+    holeDiameter: 2.75,
+    screw: 'M2.5',
+    layout: `${JETSON_LAYOUT} Module and heatsink reach about 27 mm above the carrier.`,
+    sockets: JETSON_PORTS(HDMI_DP, JETSON_MICRO_USB),
+    note: 'Four M2.5 holes, 86 × 58 mm. Ports along the bottom edge; the module and heatsink reach about 27 mm up. The sold kit measures 100 × 80 with the ports.',
+  },
+  {
+    id: 'jetson-orin-nano',
+    label: 'Jetson Orin Nano / Orin NX Developer Kit',
+    length: 100,
+    width: 79,
+    corner: 2,
+    holes: JETSON_HOLES(true),
+    holeDiameter: 2.7,
+    screw: 'M2.5',
+    layout: `${JETSON_LAYOUT} The outer four holes carry the kit's base plate. Module, heatsink and fan reach about 28.5 mm above the carrier; the M.2 cards underneath need 4.3 mm.`,
+    sockets: JETSON_PORTS({ name: 'DisplayPort', socket: 'displayport', edge: 'bottom', at: 22.8, w: 16.4, h: 7, out: 1.6 }, { name: 'USB-C', socket: 'usb-c', edge: 'bottom', at: 91.9, w: 9.2, h: 3.3, out: 1 }),
+    note: 'Six M2.5 holes: the Nano\'s four plus two by the header end. DisplayPort and USB-C; the module, heatsink and fan reach about 28.5 mm up, the M.2 cards 4.3 mm down.',
+  },
+  {
+    id: 'jetson-xavier-nx',
+    label: 'Jetson Xavier NX Developer Kit',
+    length: 100,
+    width: 79,
+    corner: 2,
+    holes: JETSON_HOLES(true),
+    holeDiameter: 2.7,
+    screw: 'M2.5',
+    layout: `${JETSON_LAYOUT} The outer four holes carry the kit's base plate. Module, heatsink and fan reach about 28.5 mm above the carrier.`,
+    sockets: JETSON_PORTS(HDMI_DP, JETSON_MICRO_USB),
+    note: 'The Orin Nano kit\'s carrier and holes with the Nano kit\'s HDMI and DisplayPort stack and micro USB. Module, heatsink and fan reach about 28.5 mm up.',
   },
 ];
 
@@ -525,7 +608,7 @@ function build(boards: Board[], p: Params, q: Quality): BuildResult {
       else pieces.push(box(-bodyOut, s.at - s.w / 2, INBOARD, s.at + s.w / 2, PCB, PCB + s.h));
       if (forPlug && reach > 0) {
         // The plug envelope, from the edge outwards, centered on the socket.
-        const plug = PLUGS[s.socket];
+        const plug = plugOf(s);
         const face = roundedRect(-plug.w / 2, -plug.h / 2, plug.w, plug.h, plug.r, q);
         const along = extrude([face], reach);
         const zc = PCB + s.h / 2;
@@ -535,13 +618,13 @@ function build(boards: Board[], p: Params, q: Quality): BuildResult {
       }
     }
     // A plug body can hang below the PCB: say so, since the part then stands that much lower than the board.
-    const lowest = forPlug ? Math.min(0, ...sockets.map((s) => PCB + s.h / 2 - PLUGS[s.socket].h / 2)) : 0;
+    const lowest = forPlug ? Math.min(0, ...sockets.map((s) => PCB + s.h / 2 - plugOf(s).h / 2)) : 0;
     info.push(
       { label: 'PCB', value: `${PCB} mm thick, holes included` },
       ...(lowest < 0 ? [{ label: 'Base', value: `${(-lowest).toFixed(1)} mm below the PCB underside: a plug hangs lower than the board` }] : []),
       ...sockets.map((s) => ({
         label: s.name,
-        value: `${s.w.toFixed(1)} × ${s.h.toFixed(1)} mm, ${s.at.toFixed(2)} mm along the ${s.edge} edge${forPlug ? `, plug ${PLUGS[s.socket].w} × ${PLUGS[s.socket].h}` : ''}`,
+        value: `${s.w.toFixed(1)} × ${s.h.toFixed(1)} mm, ${s.at.toFixed(2)} mm along the ${s.edge} edge${forPlug ? `, plug ${plugOf(s).w} × ${plugOf(s).h}` : ''}`,
       })),
       { label: 'Reach', value: mm(reach, 1) },
     );
@@ -599,6 +682,7 @@ function family(id: string, name: string, summary: string, boards: Board[], defa
 export const raspberryPi = family('raspberry-pi', 'Raspberry Pi', 'Mounts and cutouts for Raspberry Pi boards.', RASPBERRY_PI, 'standoffs');
 export const arduino = family('arduino', 'Arduino', 'Mounts and cutouts for Arduino boards.', ARDUINO, 'standoffs');
 export const esp32 = family('esp32', 'ESP32', 'Mounts and cutouts for ESP32 dev kits.', ESP32, 'corners');
+export const jetson = family('jetson', 'NVIDIA Jetson', 'Mounts and cutouts for Jetson developer kits.', JETSON, 'standoffs');
 
-export const BOARDS: GeneratorDef[] = [raspberryPi, arduino, esp32];
-export const ALL_BOARDS: Board[] = [...RASPBERRY_PI, ...ARDUINO, ...ESP32];
+export const BOARDS: GeneratorDef[] = [raspberryPi, arduino, esp32, jetson];
+export const ALL_BOARDS: Board[] = [...RASPBERRY_PI, ...ARDUINO, ...ESP32, ...JETSON];

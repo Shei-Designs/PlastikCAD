@@ -101,7 +101,7 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
 | Spur gear | GT2 timing pulley (2 / 3 / 5 mm) | Metric bolt / threaded rod (M3–M20) | Aluminum rail: 20, 30 and 40 mm series, V-slot or T-slot, one to four cells in one or two rows (2020, 2040, 4040, 3030, 3060, 6060, 4080...) | Straight pipe or duct | Raspberry Pi 5, 4, 3, Zero 2 W, Pico | Fan, 25–140 mm: the cutout (clear, or with a guard pattern of rings, slots, honeycomb or grid cut into the wall) | Panel connector: Neutrik D-series, IEC C14 / C13 / C8, D-sub 9 / 15 / 25, XT60, with their screw holes | Stepper: NEMA 8, 11, 14, 17, 23 and the 28BYJ-48 |
 | Helical gear | HTD timing pulley (3M / 5M / 8M) | Metric nut | | Elbow (any angle and bend radius, legs either side) | Arduino Uno R3/R4, Mega 2560, Nano | Screw holes only, for an opening of your own | | Gearmotor: N20, TT, 25 mm (JGA25), 37 mm (JGB37) |
 | Herringbone gear | T-series timing pulley (T2.5 / T5 / T10) | Trapezoidal lead screw (multi-start) | | Reducer (in line or eccentric) | ESP32-DevKitC V4, DevKit V1, NodeMCU-32S | Printed grill with the same patterns, to screw over the fan | | Servo: SG90, MG996R |
-| Internal ring gear | MXL / XL timing pulley | Lead screw nut (flanged) | | Tee / wye (branch at any angle) | | The fan itself: frame, hub and blades of a typical fan, to check clearance | | DC motor: 775, 130 |
+| Internal ring gear | MXL / XL timing pulley | Lead screw nut (flanged) | | Tee / wye (branch at any angle) | NVIDIA Jetson Nano, Orin Nano / Orin NX and Xavier NX developer kits | The fan itself: frame, hub and blades of a typical fan, to check clearance | | DC motor: 775, 130 |
 | Gear rack (straight, helical, herringbone) | Chain sprocket (#25–#41, 05B–08B, bicycle) | | | | | | | |
 | Bevel gear (90° shafts) | | | | | | | | |
 | Worm | | | | | | | | |
@@ -119,8 +119,13 @@ with a floor or lid as a hole; a blank the shape of the board, to check fit
 or, grown by a gap, to pocket a floor; the board with its connectors in place,
 each reaching out past the edge, to design a case round and, made a hole, to
 cut the wall openings exactly where the plugs go; or corner stops, which hold
-the ESP32 dev kits and anything else without holes. The ESP32 figures are the least certain: only
-Espressif's own DevKitC has a published drawing, so the part says so.
+the ESP32 dev kits and anything else without holes. The Jetson developer
+kits are their carrier boards, all on the same 100 × 79 mm outline with the
+ports along one long edge, and say how far the module stack reaches up. Every
+board has its sockets recorded; the Nano's one USB opening takes the classic's mini plug,
+the Every's micro plug and the Nano ESP32's USB-C, which all sit on the same
+centre. The ESP32 figures are the least certain: only Espressif's own DevKitC
+has a published drawing, so the part says so.
 A motor mount knows the motor's mounting face from its maker's drawing: the
 bolt pattern, the pilot boss or the body that drops through, and the shaft.
 It makes a plate with the holes and the bore, the holes alone as a cutter, the
