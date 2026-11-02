@@ -2,7 +2,7 @@
   "format": "plastikcad",
   "version": 2,
   "units": "mm",
-  "id": "61e6ym2h",
+  "id": "0bwp59u2",
   "name": "Reference quadruped",
   "scene": [
     {
@@ -13,9 +13,9 @@
       "params": {
         "radius": 0
       },
-      "pos": [0,0,90],
+      "pos": [0,0,230],
       "rot": [0,0,0],
-      "size": [120,60,30],
+      "size": [260,120,60],
       "color": "#8fa3bf"
     },
     {
@@ -26,9 +26,9 @@
       "params": {
         "radius": 0
       },
-      "pos": [-50,-36,55],
+      "pos": [-110,-72,150],
       "rot": [0,0,0],
-      "size": [12,12,40],
+      "size": [24,24,100],
       "color": "#e8853a"
     },
     {
@@ -39,9 +39,9 @@
       "params": {
         "radius": 0
       },
-      "pos": [-50,-36,17.5],
+      "pos": [-110,-72,50],
       "rot": [0,0,0],
-      "size": [10,10,35],
+      "size": [20,20,100],
       "color": "#8fa3bf"
     },
     {
@@ -52,9 +52,9 @@
       "params": {
         "radius": 0
       },
-      "pos": [-50,36,55],
+      "pos": [-110,72,150],
       "rot": [0,0,0],
-      "size": [12,12,40],
+      "size": [24,24,100],
       "color": "#e8853a"
     },
     {
@@ -65,9 +65,9 @@
       "params": {
         "radius": 0
       },
-      "pos": [-50,36,17.5],
+      "pos": [-110,72,50],
       "rot": [0,0,0],
-      "size": [10,10,35],
+      "size": [20,20,100],
       "color": "#8fa3bf"
     },
     {
@@ -78,9 +78,9 @@
       "params": {
         "radius": 0
       },
-      "pos": [50,-36,55],
+      "pos": [110,-72,150],
       "rot": [0,0,0],
-      "size": [12,12,40],
+      "size": [24,24,100],
       "color": "#e8853a"
     },
     {
@@ -91,9 +91,9 @@
       "params": {
         "radius": 0
       },
-      "pos": [50,-36,17.5],
+      "pos": [110,-72,50],
       "rot": [0,0,0],
-      "size": [10,10,35],
+      "size": [20,20,100],
       "color": "#8fa3bf"
     },
     {
@@ -104,9 +104,9 @@
       "params": {
         "radius": 0
       },
-      "pos": [50,36,55],
+      "pos": [110,72,150],
       "rot": [0,0,0],
-      "size": [12,12,40],
+      "size": [24,24,100],
       "color": "#e8853a"
     },
     {
@@ -117,9 +117,9 @@
       "params": {
         "radius": 0
       },
-      "pos": [50,36,17.5],
+      "pos": [110,72,50],
       "rot": [0,0,0],
-      "size": [10,10,35],
+      "size": [20,20,100],
       "color": "#8fa3bf"
     }
   ],
@@ -235,15 +235,15 @@
         "type": "revolute",
         "parent": "fx000034",
         "child": "fx000035",
-        "origin": [0,0,20],
+        "origin": [0,0,50],
         "axis": [0,1,0],
         "lower": -60,
         "upper": 60,
-        "effort": 0.18,
-        "velocity": 600,
-        "damping": 0.000859,
+        "effort": 1.9,
+        "velocity": 270,
+        "damping": 0.0202,
         "friction": 0,
-        "motor": "sg90"
+        "motor": "sts3215"
       },
       {
         "id": "fx000038",
@@ -251,15 +251,15 @@
         "type": "revolute",
         "parent": "fx000035",
         "child": "fx000036",
-        "origin": [0,0,17.5],
+        "origin": [0,0,50],
         "axis": [0,1,0],
         "lower": -90,
         "upper": 90,
-        "effort": 0.18,
-        "velocity": 600,
-        "damping": 0.000859,
+        "effort": 1.9,
+        "velocity": 270,
+        "damping": 0.0202,
         "friction": 0,
-        "motor": "sg90"
+        "motor": "sts3215"
       },
       {
         "id": "fx000042",
@@ -267,15 +267,15 @@
         "type": "revolute",
         "parent": "fx000034",
         "child": "fx000040",
-        "origin": [0,0,20],
+        "origin": [0,0,50],
         "axis": [0,1,0],
         "lower": -60,
         "upper": 60,
-        "effort": 0.18,
-        "velocity": 600,
-        "damping": 0.000859,
+        "effort": 1.9,
+        "velocity": 270,
+        "damping": 0.0202,
         "friction": 0,
-        "motor": "sg90"
+        "motor": "sts3215"
       },
       {
         "id": "fx000043",
@@ -283,15 +283,15 @@
         "type": "revolute",
         "parent": "fx000040",
         "child": "fx000041",
-        "origin": [0,0,17.5],
+        "origin": [0,0,50],
         "axis": [0,1,0],
         "lower": -90,
         "upper": 90,
-        "effort": 0.18,
-        "velocity": 600,
-        "damping": 0.000859,
+        "effort": 1.9,
+        "velocity": 270,
+        "damping": 0.0202,
         "friction": 0,
-        "motor": "sg90"
+        "motor": "sts3215"
       },
       {
         "id": "fx000047",
@@ -299,15 +299,15 @@
         "type": "revolute",
         "parent": "fx000034",
         "child": "fx000045",
-        "origin": [0,0,20],
+        "origin": [0,0,50],
         "axis": [0,1,0],
         "lower": -60,
         "upper": 60,
-        "effort": 0.18,
-        "velocity": 600,
-        "damping": 0.000859,
+        "effort": 1.9,
+        "velocity": 270,
+        "damping": 0.0202,
         "friction": 0,
-        "motor": "sg90"
+        "motor": "sts3215"
       },
       {
         "id": "fx000048",
@@ -315,15 +315,15 @@
         "type": "revolute",
         "parent": "fx000045",
         "child": "fx000046",
-        "origin": [0,0,17.5],
+        "origin": [0,0,50],
         "axis": [0,1,0],
         "lower": -90,
         "upper": 90,
-        "effort": 0.18,
-        "velocity": 600,
-        "damping": 0.000859,
+        "effort": 1.9,
+        "velocity": 270,
+        "damping": 0.0202,
         "friction": 0,
-        "motor": "sg90"
+        "motor": "sts3215"
       },
       {
         "id": "fx000052",
@@ -331,15 +331,15 @@
         "type": "revolute",
         "parent": "fx000034",
         "child": "fx000050",
-        "origin": [0,0,20],
+        "origin": [0,0,50],
         "axis": [0,1,0],
         "lower": -60,
         "upper": 60,
-        "effort": 0.18,
-        "velocity": 600,
-        "damping": 0.000859,
+        "effort": 1.9,
+        "velocity": 270,
+        "damping": 0.0202,
         "friction": 0,
-        "motor": "sg90"
+        "motor": "sts3215"
       },
       {
         "id": "fx000053",
@@ -347,15 +347,15 @@
         "type": "revolute",
         "parent": "fx000050",
         "child": "fx000051",
-        "origin": [0,0,17.5],
+        "origin": [0,0,50],
         "axis": [0,1,0],
         "lower": -90,
         "upper": 90,
-        "effort": 0.18,
-        "velocity": 600,
-        "damping": 0.000859,
+        "effort": 1.9,
+        "velocity": 270,
+        "damping": 0.0202,
         "friction": 0,
-        "motor": "sg90"
+        "motor": "sts3215"
       }
     ],
     "sensors": [
@@ -364,7 +364,7 @@
         "name": "Foot rear left",
         "kind": "touch",
         "link": "fx000036",
-        "origin": [0,0,-17.5],
+        "origin": [0,0,-50],
         "rot": [0,0,0],
         "rate": 100
       },
@@ -373,7 +373,7 @@
         "name": "Foot front left",
         "kind": "touch",
         "link": "fx000041",
-        "origin": [0,0,-17.5],
+        "origin": [0,0,-50],
         "rot": [0,0,0],
         "rate": 100
       },
@@ -382,7 +382,7 @@
         "name": "Foot rear right",
         "kind": "touch",
         "link": "fx000046",
-        "origin": [0,0,-17.5],
+        "origin": [0,0,-50],
         "rot": [0,0,0],
         "rate": 100
       },
@@ -391,7 +391,7 @@
         "name": "Foot front right",
         "kind": "touch",
         "link": "fx000051",
-        "origin": [0,0,-17.5],
+        "origin": [0,0,-50],
         "rot": [0,0,0],
         "rate": 100
       },

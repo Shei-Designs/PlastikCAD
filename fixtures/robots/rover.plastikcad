@@ -2,7 +2,7 @@
   "format": "plastikcad",
   "version": 2,
   "units": "mm",
-  "id": "dyymdag4",
+  "id": "73dnutbn",
   "name": "Reference rover",
   "scene": [
     {
@@ -13,9 +13,9 @@
       "params": {
         "radius": 0
       },
-      "pos": [0,0,25],
+      "pos": [0,0,80],
       "rot": [0,0,0],
-      "size": [80,120,30],
+      "size": [240,320,80],
       "color": "#8fa3bf"
     },
     {
@@ -27,9 +27,9 @@
         "radius": 0,
         "sides": 64
       },
-      "pos": [-46,-40,20],
+      "pos": [-140,-110,50],
       "rot": [0,90,0],
-      "size": [40,40,12],
+      "size": [100,100,40],
       "color": "#e8853a"
     },
     {
@@ -41,9 +41,9 @@
         "radius": 0,
         "sides": 64
       },
-      "pos": [-46,40,20],
+      "pos": [-140,110,50],
       "rot": [0,90,0],
-      "size": [40,40,12],
+      "size": [100,100,40],
       "color": "#e8853a"
     },
     {
@@ -55,9 +55,9 @@
         "radius": 0,
         "sides": 64
       },
-      "pos": [46,-40,20],
+      "pos": [140,-110,50],
       "rot": [0,90,0],
-      "size": [40,40,12],
+      "size": [100,100,40],
       "color": "#e8853a"
     },
     {
@@ -69,9 +69,9 @@
         "radius": 0,
         "sides": 64
       },
-      "pos": [46,40,20],
+      "pos": [140,110,50],
       "rot": [0,90,0],
-      "size": [40,40,12],
+      "size": [100,100,40],
       "color": "#e8853a"
     }
   ],
@@ -147,11 +147,11 @@
         "axis": [0,0,1],
         "lower": -90,
         "upper": 90,
-        "effort": 0.08,
-        "velocity": 1200,
-        "damping": 0.000191,
+        "effort": 2.6,
+        "velocity": 900,
+        "damping": 0.00828,
         "friction": 0,
-        "motor": "tt-48"
+        "motor": "37d-70"
       },
       {
         "id": "fx000007",
@@ -163,11 +163,11 @@
         "axis": [0,0,1],
         "lower": -90,
         "upper": 90,
-        "effort": 0.08,
-        "velocity": 1200,
-        "damping": 0.000191,
+        "effort": 2.6,
+        "velocity": 900,
+        "damping": 0.00828,
         "friction": 0,
-        "motor": "tt-48"
+        "motor": "37d-70"
       },
       {
         "id": "fx000008",
@@ -179,11 +179,11 @@
         "axis": [0,0,1],
         "lower": -90,
         "upper": 90,
-        "effort": 0.08,
-        "velocity": 1200,
-        "damping": 0.000191,
+        "effort": 2.6,
+        "velocity": 900,
+        "damping": 0.00828,
         "friction": 0,
-        "motor": "tt-48"
+        "motor": "37d-70"
       },
       {
         "id": "fx000009",
@@ -195,11 +195,11 @@
         "axis": [0,0,1],
         "lower": -90,
         "upper": 90,
-        "effort": 0.08,
-        "velocity": 1200,
-        "damping": 0.000191,
+        "effort": 2.6,
+        "velocity": 900,
+        "damping": 0.00828,
         "friction": 0,
-        "motor": "tt-48"
+        "motor": "37d-70"
       }
     ],
     "sensors": [
@@ -208,7 +208,7 @@
         "name": "Lidar",
         "kind": "lidar",
         "link": "fx000001",
-        "origin": [0,0,20],
+        "origin": [0,0,50],
         "rot": [0,0,0],
         "rate": 10,
         "lidar": {
@@ -232,14 +232,14 @@
         "name": "Camera",
         "kind": "camera",
         "link": "fx000001",
-        "origin": [0,62,15],
+        "origin": [0,165,40],
         "rot": [0,20,90],
         "rate": 30,
         "camera": {
           "hfov": 80,
           "width": 320,
           "height": 240,
-          "near": 20,
+          "near": 50,
           "far": 10000
         }
       }

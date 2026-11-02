@@ -2,24 +2,24 @@
   "format": "plastikcad",
   "version": 2,
   "units": "mm",
-  "id": "14m7uygi",
+  "id": "uetl8fw5",
   "name": "Reference arm",
   "scene": [
     {
-      "id": "fx000023",
+      "id": "fx000027",
       "type": "shape",
       "name": "Base plate",
       "shape": "box",
       "params": {
         "radius": 0
       },
-      "pos": [0,0,5],
+      "pos": [0,0,7.5],
       "rot": [0,0,0],
-      "size": [80,80,10],
+      "size": [120,120,15],
       "color": "#8fa3bf"
     },
     {
-      "id": "fx000024",
+      "id": "fx000028",
       "type": "shape",
       "name": "Turret",
       "shape": "cylinder",
@@ -27,45 +27,45 @@
         "radius": 0,
         "sides": 64
       },
-      "pos": [0,0,25],
+      "pos": [0,0,37.5],
       "rot": [0,0,0],
-      "size": [50,50,30],
+      "size": [75,75,45],
       "color": "#e8853a"
     },
     {
-      "id": "fx000025",
+      "id": "fx000029",
       "type": "shape",
       "name": "Upper arm",
       "shape": "box",
       "params": {
         "radius": 0
       },
-      "pos": [0,0,100],
+      "pos": [0,0,150],
       "rot": [0,0,0],
-      "size": [20,20,120],
+      "size": [30,30,180],
       "color": "#8fa3bf"
     },
     {
-      "id": "fx000026",
+      "id": "fx000030",
       "type": "shape",
       "name": "Forearm",
       "shape": "box",
       "params": {
         "radius": 0
       },
-      "pos": [0,0,210],
+      "pos": [0,0,315],
       "rot": [0,0,0],
-      "size": [16,16,100],
+      "size": [24,24,150],
       "color": "#8fa3bf"
     }
   ],
   "assets": {},
   "robot": {
-    "root": "fx000023",
+    "root": "fx000027",
     "base": "fixed",
     "links": [
       {
-        "node": "fx000023",
+        "node": "fx000027",
         "mass": {
           "kind": "material",
           "material": "pla",
@@ -76,7 +76,7 @@
         "friction": 0.8
       },
       {
-        "node": "fx000024",
+        "node": "fx000028",
         "mass": {
           "kind": "material",
           "material": "pla",
@@ -87,7 +87,7 @@
         "friction": 0.8
       },
       {
-        "node": "fx000025",
+        "node": "fx000029",
         "mass": {
           "kind": "material",
           "material": "pla",
@@ -98,7 +98,7 @@
         "friction": 0.8
       },
       {
-        "node": "fx000026",
+        "node": "fx000030",
         "mass": {
           "kind": "material",
           "material": "pla",
@@ -111,52 +111,52 @@
     ],
     "joints": [
       {
-        "id": "fx000027",
+        "id": "fx000031",
         "name": "Turret joint",
         "type": "revolute",
-        "parent": "fx000023",
-        "child": "fx000024",
-        "origin": [0,0,-15],
+        "parent": "fx000027",
+        "child": "fx000028",
+        "origin": [0,0,-22.5],
         "axis": [0,0,1],
         "lower": -170,
         "upper": 170,
-        "effort": 0.92,
-        "velocity": 350,
-        "damping": 0.00753,
+        "effort": 1.9,
+        "velocity": 270,
+        "damping": 0.0202,
         "friction": 0,
-        "motor": "mg996r"
+        "motor": "sts3215"
       },
       {
-        "id": "fx000028",
+        "id": "fx000032",
         "name": "Shoulder",
         "type": "revolute",
-        "parent": "fx000024",
-        "child": "fx000025",
-        "origin": [0,0,-60],
+        "parent": "fx000028",
+        "child": "fx000029",
+        "origin": [0,0,-90],
         "axis": [1,0,0],
         "lower": -90,
         "upper": 90,
-        "effort": 0.92,
-        "velocity": 350,
-        "damping": 0.00753,
+        "effort": 1.9,
+        "velocity": 270,
+        "damping": 0.0202,
         "friction": 0,
-        "motor": "mg996r"
+        "motor": "sts3215"
       },
       {
-        "id": "fx000029",
+        "id": "fx000033",
         "name": "Elbow",
         "type": "revolute",
-        "parent": "fx000025",
-        "child": "fx000026",
-        "origin": [0,0,-50],
+        "parent": "fx000029",
+        "child": "fx000030",
+        "origin": [0,0,-75],
         "axis": [1,0,0],
         "lower": -120,
         "upper": 120,
-        "effort": 0.18,
-        "velocity": 600,
-        "damping": 0.000859,
+        "effort": 1.4,
+        "velocity": 342,
+        "damping": 0.0117,
         "friction": 0,
-        "motor": "sg90"
+        "motor": "xl430"
       }
     ]
   }

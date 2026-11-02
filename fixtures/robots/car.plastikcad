@@ -2,7 +2,7 @@
   "format": "plastikcad",
   "version": 2,
   "units": "mm",
-  "id": "wse57fj1",
+  "id": "erdklgfr",
   "name": "Reference car",
   "scene": [
     {
@@ -13,9 +13,9 @@
       "params": {
         "radius": 0
       },
-      "pos": [0,0,25],
+      "pos": [0,0,70],
       "rot": [0,0,0],
-      "size": [80,140,30],
+      "size": [200,440,80],
       "color": "#8fa3bf"
     },
     {
@@ -27,9 +27,9 @@
         "radius": 0,
         "sides": 64
       },
-      "pos": [-46,-50,20],
+      "pos": [-120,-160,45],
       "rot": [0,90,0],
-      "size": [40,40,12],
+      "size": [90,90,36],
       "color": "#e8853a"
     },
     {
@@ -41,9 +41,9 @@
         "radius": 0,
         "sides": 64
       },
-      "pos": [46,-50,20],
+      "pos": [120,-160,45],
       "rot": [0,90,0],
-      "size": [40,40,12],
+      "size": [90,90,36],
       "color": "#e8853a"
     },
     {
@@ -54,9 +54,9 @@
       "params": {
         "radius": 0
       },
-      "pos": [-47,50,20],
+      "pos": [-122,160,45],
       "rot": [0,0,0],
-      "size": [14,14,14],
+      "size": [40,40,40],
       "color": "#8fa3bf"
     },
     {
@@ -67,9 +67,9 @@
       "params": {
         "radius": 0
       },
-      "pos": [47,50,20],
+      "pos": [122,160,45],
       "rot": [0,0,0],
-      "size": [14,14,14],
+      "size": [40,40,40],
       "color": "#8fa3bf"
     },
     {
@@ -81,9 +81,9 @@
         "radius": 0,
         "sides": 64
       },
-      "pos": [-60,50,20],
+      "pos": [-162,160,45],
       "rot": [0,90,0],
-      "size": [40,40,12],
+      "size": [90,90,36],
       "color": "#e8853a"
     },
     {
@@ -95,9 +95,9 @@
         "radius": 0,
         "sides": 64
       },
-      "pos": [60,50,20],
+      "pos": [162,160,45],
       "rot": [0,90,0],
-      "size": [40,40,12],
+      "size": [90,90,36],
       "color": "#e8853a"
     }
   ],
@@ -195,11 +195,11 @@
         "axis": [0,0,1],
         "lower": -90,
         "upper": 90,
-        "effort": 0.08,
-        "velocity": 1200,
-        "damping": 0.000191,
+        "effort": 2.6,
+        "velocity": 900,
+        "damping": 0.00828,
         "friction": 0,
-        "motor": "tt-48"
+        "motor": "37d-70"
       },
       {
         "id": "fx000021",
@@ -211,11 +211,11 @@
         "axis": [0,0,1],
         "lower": -90,
         "upper": 90,
-        "effort": 0.08,
-        "velocity": 1200,
-        "damping": 0.000191,
+        "effort": 2.6,
+        "velocity": 900,
+        "damping": 0.00828,
         "friction": 0,
-        "motor": "tt-48"
+        "motor": "37d-70"
       },
       {
         "id": "fx000022",
@@ -227,11 +227,11 @@
         "axis": [0,0,1],
         "lower": -30,
         "upper": 30,
-        "effort": 0.18,
-        "velocity": 600,
-        "damping": 0.000859,
+        "effort": 0.92,
+        "velocity": 350,
+        "damping": 0.00753,
         "friction": 0,
-        "motor": "sg90"
+        "motor": "mg996r"
       },
       {
         "id": "fx000023",
@@ -243,11 +243,11 @@
         "axis": [0,0,1],
         "lower": -30,
         "upper": 30,
-        "effort": 0.18,
-        "velocity": 600,
-        "damping": 0.000859,
+        "effort": 0.92,
+        "velocity": 350,
+        "damping": 0.00753,
         "friction": 0,
-        "motor": "sg90"
+        "motor": "mg996r"
       },
       {
         "id": "fx000024",
@@ -259,9 +259,9 @@
         "axis": [0,0,1],
         "lower": -90,
         "upper": 90,
-        "effort": 0.00701,
+        "effort": 0.239,
         "velocity": 360,
-        "damping": 0.0000558,
+        "damping": 0.0019,
         "friction": 0
       },
       {
@@ -274,9 +274,9 @@
         "axis": [0,0,1],
         "lower": -90,
         "upper": 90,
-        "effort": 0.00701,
+        "effort": 0.239,
         "velocity": 360,
-        "damping": 0.0000558,
+        "damping": 0.0019,
         "friction": 0
       }
     ],
@@ -286,14 +286,14 @@
         "name": "Depth",
         "kind": "depth",
         "link": "fx000013",
-        "origin": [0,72,15],
+        "origin": [0,225,40],
         "rot": [180,0,90],
         "rate": 30,
         "camera": {
           "hfov": 80,
           "width": 320,
           "height": 240,
-          "near": 50,
+          "near": 100,
           "far": 10000
         }
       }
