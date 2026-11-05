@@ -120,6 +120,15 @@ export const RulerIcon = () => (
   </Icon>
 );
 
+/* Object axes: a turned box with arrows along its own sides. */
+export const ObjectAxesIcon = () => (
+  <Icon>
+    <path d="M4 12.5 11.5 9l3.5 7.5L7.5 20z" />
+    <path d="M9.5 14.5 19.5 9.8M17 9.2l2.5.6-1.2 2.3" />
+    <path d="M9.5 14.5 6.6 8.3 5 3.5M3.6 5.5 5 3.5l2 1.3" />
+  </Icon>
+);
+
 /* The Measure tool's snaps, in the drafting tradition: a square for a point, a triangle for a middle, a diamond for a quadrant. */
 export const SnapPointIcon = () => (
   <Icon>

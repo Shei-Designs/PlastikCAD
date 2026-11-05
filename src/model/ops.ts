@@ -10,6 +10,7 @@ import {
   flipSigns,
   frameMatrix,
   IDENTITY,
+  invert,
   localScale,
   multiply,
   nodeMatrix,
@@ -91,9 +92,12 @@ function withFlip<T extends SceneNode>(node: T, flip: [boolean, boolean, boolean
   return next;
 }
 
-/** Turn nodes by `degrees` about a fixed axis through `pivot`. */
-export function rotateNodes<T extends SceneNode>(nodes: T[], axis: 0 | 1 | 2, degrees: number, pivot: Vec3): T[] {
-  const turn = axisRotation(axis, degrees);
+/**
+ * Turn nodes by `degrees` about a fixed axis through `pivot`: one of the design's axes, or with `frame`
+ * (a rotation, no translation) that frame's axis instead.
+ */
+export function rotateNodes<T extends SceneNode>(nodes: T[], axis: 0 | 1 | 2, degrees: number, pivot: Vec3, frame?: Mat): T[] {
+  const turn = frame ? multiply(multiply(frame, axisRotation(axis, degrees)), invert(frame)) : axisRotation(axis, degrees);
   return nodes.map((node) => {
     const offset = apply(turn, [node.pos[0] - pivot[0], node.pos[1] - pivot[1], node.pos[2] - pivot[2]]);
     return {

@@ -50,12 +50,12 @@ import type { WebGLRenderTarget } from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { CREASE_ANGLE } from '../geometry/mesh';
-import { clampParams } from '../geometry/shapes';
 import { skinKey, skinMesh, skinOf, skinRepeats } from '../geometry/skin';
 import type { Skin } from '../geometry/skin';
 import { cornerColors, tintKey, underPicture } from '../geometry/tint';
-import { boundsCenter, builtSize, flipSigns, frameMatrix, isEmptyBounds, rotation, tidy, tidyVec, unionBounds } from '../model/math';
+import { boundsCenter, boxBounds, builtSize, flipSigns, frameMatrix, isEmptyBounds, rotation, tidy, tidyVec, unionBounds } from '../model/math';
 import type { Bounds, Mat } from '../model/math';
+import { clampParams } from '../geometry/shapes';
 import { ALIGN_MODES, HOLE_COLOR, alignDot, rotateNodes, scaleNodes } from '../model/ops';
 import type { Asset, GroupNode, SceneNode, Vec3 } from '../model/types';
 import type { BuildResult } from '../worker/protocol';
@@ -106,6 +106,8 @@ export interface ViewerOptions {
    * they measure, drawn as a line between the nearest points with the figure on it.
    */
   measure: { kinds: FeatureKind[]; picks: Feature[]; result: Measurement | null } | null;
+  /** The handles of one selected object follow its own axes instead of the design's. */
+  objectAxes: boolean;
 }
 
 /**
@@ -182,7 +184,17 @@ export interface HandlePrompt {
   /** One box per value, each sitting just outside the edge of the object it measures, with its place on screen. */
   fields: {
     tag: string;
+    /** What the value is, in words, for the entry sheet. */
+    name: string;
+    /** The color of the design axis it runs along. */
+    color: string;
     value: number;
+    /**
+     * What it measures, drawn while the box is on show: the two ends of the length, or (`axis`) the line
+     * a turn goes about. `ends` is the same on screen, worked out with the box's place.
+     */
+    span?: { from: Vec3; to: Vec3; axis?: boolean };
+    ends?: [[number, number], [number, number]];
     /** The point measured: the middle of an edge, or a grip. */
     anchor: Vec3;
     /** The point the box keeps away from, on screen: the middle of the face the grips sit on. Away from the object's middle when missing. */
@@ -204,7 +216,7 @@ export interface HandlePrompt {
   }[];
 }
 
-const DEFAULTS: ViewerOptions = { theme: 'dark', edges: true, grid: true, snap: 1, interactive: true, align: null, highlight: null, snaps: null, marker: null, markers: null, ground: null, preview: null, measure: null };
+const DEFAULTS: ViewerOptions = { theme: 'dark', edges: true, grid: true, snap: 1, interactive: true, align: null, highlight: null, snaps: null, marker: null, markers: null, ground: null, preview: null, measure: null, objectAxes: false };
 /** Distance of the anchor dots from the box, in pixels. */
 const ALIGN_GAP = 22;
 
@@ -261,6 +273,8 @@ const THEMES = {
 };
 
 const AXIS_COLORS = ['#e5484d', '#3fae5a', '#4c8dff'];
+/** The fill of a grip whose value is being typed: the accent, on either theme. */
+const TYPING_GRIP = '#17cdd3';
 /** On-screen length of a marker's unit, in pixels: the joint axis reaches this far each way from its origin. */
 const MARKER_PIXELS = 60;
 /** The same for the markers of the joints and sensors not picked. */
@@ -602,16 +616,18 @@ interface Frame {
   /** Axis-aligned bounds of the selection, for the handles that work along fixed axes. */
   bounds: Bounds;
   single: SceneNode | null;
+  /** The frame is the one object's own (Object axes): the handles work along its axes. */
+  local: boolean;
 }
 
-/** The box a grip stretches, as it was when the grip was pressed: one object's own, or the whole selection's (square to the axes). */
+/** The box a grip stretches, as it was when the grip was pressed: square to the axes round one object or several, or (`own`) one object's own box. */
 interface GripBox {
   matrix: Mat;
   size: Vec3;
-  single: SceneNode | null;
+  own: SceneNode | null;
 }
 
-const gripBox = (f: Frame): GripBox => ({ matrix: f.matrix, size: [f.half[0] * 2, f.half[1] * 2, f.half[2] * 2], single: f.single });
+const gripBox = (f: Frame): GripBox => ({ matrix: f.matrix, size: [f.half[0] * 2, f.half[1] * 2, f.half[2] * 2], own: f.local ? f.single : null });
 
 type Drag =
   /** `select` is the node a finger landed on, selected only once the press turns out to be a tap or a drag (a long press adds it instead). */
@@ -626,8 +642,10 @@ type Drag =
   /** A grip pressed from an angle it cannot be dragged from: a click still brings up its typing boxes. */
   | { mode: 'held' }
   | { mode: 'height'; box: GripBox; nodes: SceneNode[]; side: 1 | -1; grab: number }
-  | { mode: 'slide'; nodes: SceneNode[]; origin: Vector3; axis: 0 | 1 | 2; grab: number }
-  | { mode: 'rotate'; nodes: SceneNode[]; axis: 0 | 1 | 2; pivot: Vec3; start: number | null; x: number }
+  /** `dir` is the axis in the scene: a design axis, or the object's own with Object axes on. */
+  | { mode: 'slide'; nodes: SceneNode[]; origin: Vector3; axis: 0 | 1 | 2; dir: Vector3; grab: number }
+  /** `frame`: the turn of the object whose own axis it goes about (Object axes); none for a design axis. */
+  | { mode: 'rotate'; nodes: SceneNode[]; axis: 0 | 1 | 2; pivot: Vec3; start: number | null; x: number; frame?: Mat }
   /** The picked joint or sensor dragged along one of the design's axes by its arrow, or along its own axis by the rod. */
   | { mode: 'marker'; how: MarkerHandle; origin: Vector3; axis: Vector3; grabT: number }
   | { mode: 'place' };
@@ -887,6 +905,8 @@ export class Viewer {
   private grips!: {
     corner: SpriteMaterial;
     edge: SpriteMaterial;
+    /** The grip whose value is being typed. */
+    typing: SpriteMaterial;
     dot: SpriteMaterial;
     dotHot: SpriteMaterial;
     lock: SpriteMaterial;
@@ -978,6 +998,8 @@ export class Viewer {
   }
 
   setOptions(options: Partial<ViewerOptions>): void {
+    // Boxes typed against one frame mean nothing in the other.
+    if (options.objectAxes !== undefined && options.objectAxes !== this.options.objectAxes) this.dismissPrompt();
     this.options = { ...this.options, ...options };
     if (!this.ok || this.disposed) return;
     this.applyOptions();
@@ -1292,6 +1314,7 @@ export class Viewer {
     this.grips = {
       corner: grip(gripTexture('#ffffff', '#14171c')),
       edge: grip(gripTexture('#14171c', '#ffffff')),
+      typing: grip(gripTexture(TYPING_GRIP, '#ffffff')),
       dot: grip(dotTexture('#14171c')),
       dotHot: grip(dotTexture(LOCK_COLOR)),
       lock: grip(lockTexture()),
@@ -1799,15 +1822,21 @@ export class Viewer {
     }
     const bounds = align ? align.bounds : unionBounds(picked.map((i) => this.events.boundsOf(i.node)));
     const single = !align && picked.length === 1 ? picked[0].node : null;
-    if (single) {
-      this.frame = { matrix: frameMatrix(single), half: [single.size[0] / 2, single.size[1] / 2, single.size[2] / 2], bounds, single };
+    // The handles sit on a box square to the design's axes whichever way the selection is turned, so that
+    // they keep still while it turns: one object's own box as it stands (its size exactly, for a square
+    // turn), several the box round them all.
+    // With Object axes on, one object's handles follow its own box instead.
+    if (single && this.options.objectAxes) {
+      this.frame = { matrix: frameMatrix(single), half: [single.size[0] / 2, single.size[1] / 2, single.size[2] / 2], bounds, single, local: true };
     } else {
-      const c = boundsCenter(bounds);
+      const box = single ? boxBounds(single) : bounds;
+      const c = boundsCenter(box);
       this.frame = {
         matrix: [1, 0, 0, 0, 1, 0, 0, 0, 1, c[0], c[1], c[2]],
-        half: [(bounds.max[0] - bounds.min[0]) / 2, (bounds.max[1] - bounds.min[1]) / 2, (bounds.max[2] - bounds.min[2]) / 2],
+        half: [(box.max[0] - box.min[0]) / 2, (box.max[1] - box.min[1]) / 2, (box.max[2] - box.min[2]) / 2],
         bounds,
-        single: null,
+        single,
+        local: false,
       };
     }
     const mode = align ? 'align' : picked.every((i) => i.node.locked) ? 'locked' : single ? 'single' : 'several';
@@ -1866,10 +1895,22 @@ export class Viewer {
     }
   }
 
-  /** Whether the line along a design axis through a point is seen nearly end-on. */
-  private endOn(at: Vector3, axis: 0 | 1 | 2): boolean {
+  /** Whether the line along a direction through a point is seen nearly end-on. */
+  private endOn(at: Vector3, dir: Vector3): boolean {
     const view = at.clone().sub(this.camera.position).normalize();
-    return Math.abs(view.getComponent(axis)) > ARROW_END_ON;
+    return Math.abs(view.dot(dir)) > ARROW_END_ON;
+  }
+
+  /** One of the frame's axes in the scene: a design axis, or the object's own with Object axes on. */
+  private frameAxis(axis: 0 | 1 | 2): Vector3 {
+    const m = this.frame!.matrix;
+    return new Vector3(m[axis * 3], m[axis * 3 + 1], m[axis * 3 + 2]).normalize();
+  }
+
+  /** The frame's turn alone, for turning about its axes; none when they are the design's. */
+  private frameTurn(): Mat | undefined {
+    const f = this.frame!;
+    return f.local ? ([...f.matrix.slice(0, 9), 0, 0, 0] as Mat) : undefined;
   }
 
   /** World length of one pixel at a point, for handles that keep their size on screen. */
@@ -1893,6 +1934,14 @@ export class Viewer {
 
   /** Where the turn handle of an axis sits, and the two directions its quarter ring spans. */
   private ringPlacement(axis: 0 | 1 | 2): { at: Vector3; from: Vector3; to: Vector3 } {
+    if (this.frame!.local) {
+      // The same corners and edges of the object's own box.
+      const [hx, hy, hz] = this.frame!.half;
+      const [x, y, z] = [this.frameAxis(0), this.frameAxis(1), this.frameAxis(2)];
+      if (axis === 2) return { at: this.framePoint([hx, -hy, -hz]), from: y.negate(), to: x };
+      if (axis === 0) return { at: this.framePoint([0, -hy, hz]), from: y.negate(), to: z };
+      return { at: this.framePoint([-hx, 0, hz]), from: x.negate(), to: z };
+    }
     const { min, max } = this.frame!.bounds;
     const cx = (min[0] + max[0]) / 2;
     const cy = (min[1] + max[1]) / 2;
@@ -1911,24 +1960,35 @@ export class Viewer {
       this.layoutAlignDots();
       return;
     }
+    // The handle whose value is being typed stays lit until the boxes go.
+    const typing = this.prompt?.handle;
     for (const h of this.handles) {
       const k = h.kind;
       if (k.type === 'resize' || k.type === 'height') {
         const at = k.type === 'resize' ? this.framePoint([k.sx * hx, k.sy * hy, -hz]) : this.framePoint([0, 0, k.side * hz]);
         h.object.position.copy(at);
-        h.object.scale.setScalar(h.pixels * this.pixelSize(at) * (h === this.hovered ? 1.35 : 1) * this.gripScale);
+        h.object.scale.setScalar(h.pixels * this.pixelSize(at) * (h === typing ? 1.6 : h === this.hovered ? 1.35 : 1) * this.gripScale);
+        const corner = k.type === 'height' || (k.sx !== 0 && k.sy !== 0);
+        (h.object as Sprite).material = h === typing ? this.grips.typing : corner ? this.grips.corner : this.grips.edge;
       } else if (k.type === 'move') {
-        // Out of the selection along the design's axes, whichever way the box is turned: from the middle of
-        // its +X and +Y sides, and straight up from the top grip, past the highest point.
-        const at = k.axis === 2 ? this.framePoint([0, 0, hz]) : this.framePoint([0, 0, 0]);
-        at.setComponent(k.axis, Math.max(at.getComponent(k.axis), f.bounds.max[k.axis]));
+        // Out of the selection along the design's axes: from the middle of its +X and +Y sides, and
+        // straight up from the top grip, past the highest point.
+        // With Object axes, out of the middle of the object's own +X, +Y and top sides, along its axes.
+        const dir = this.frameAxis(k.axis);
+        let at: Vector3;
+        if (f.local) at = this.framePoint([k.axis === 0 ? hx : 0, k.axis === 1 ? hy : 0, k.axis === 2 ? hz : 0]);
+        else {
+          at = k.axis === 2 ? this.framePoint([0, 0, hz]) : this.framePoint([0, 0, 0]);
+          at.setComponent(k.axis, Math.max(at.getComponent(k.axis), f.bounds.max[k.axis]));
+        }
         h.object.position.copy(at);
-        h.object.scale.setScalar(h.pixels * this.pixelSize(at) * (h === this.hovered ? 1.15 : 1) * this.gripScale);
-        h.object.visible = !this.endOn(at, k.axis);
+        h.object.quaternion.setFromUnitVectors(UP, dir);
+        h.object.scale.setScalar(h.pixels * this.pixelSize(at) * (h === typing ? 1.3 : h === this.hovered ? 1.15 : 1) * this.gripScale);
+        h.object.visible = !this.endOn(at, dir);
       } else {
         const { at, from, to } = this.ringPlacement(k.axis);
         // The ring's hit tube is already several times fatter than the drawn arc, so it is not scaled.
-        const s = h.pixels * this.pixelSize(at) * (h === this.hovered ? 1.15 : 1);
+        const s = h.pixels * this.pixelSize(at) * (h === typing ? 1.3 : h === this.hovered ? 1.15 : 1);
         const normal = from.clone().cross(to);
         h.object.matrix.makeBasis(from.multiplyScalar(s), to.multiplyScalar(s), normal.multiplyScalar(s)).setPosition(at);
         h.object.matrixWorldNeedsUpdate = true;
@@ -2183,11 +2243,13 @@ export class Viewer {
       this.drag = t === null ? { mode: 'held' } : { mode: 'height', box, nodes, side: k.side, grab: t - k.side * box.size[2] };
     } else if (k.type === 'move') {
       const origin = handle.object.position.clone();
-      const t = this.alongAxis(origin, axisVector(k.axis));
-      this.drag = t === null ? { mode: 'held' } : { mode: 'slide', nodes, origin, axis: k.axis, grab: t };
+      const dir = this.frameAxis(k.axis);
+      const t = this.alongAxis(origin, dir);
+      this.drag = t === null ? { mode: 'held' } : { mode: 'slide', nodes, origin, axis: k.axis, dir, grab: t };
     } else if (k.type === 'rotate') {
       const pivot: Vec3 = f.single ? [...f.single.pos] : boundsCenter(f.bounds);
-      this.drag = { mode: 'rotate', nodes, axis: k.axis, pivot, start: this.angleAbout(k.axis, pivot), x: event.clientX };
+      const frame = this.frameTurn();
+      this.drag = { mode: 'rotate', nodes, axis: k.axis, pivot, start: this.angleAbout(k.axis, pivot, frame), x: event.clientX, frame };
     } else {
       return;
     }
@@ -2208,7 +2270,7 @@ export class Viewer {
     return true;
   }
   /** The typing boxes on show, with the camera's heading when they appeared: a turn takes them away, a zoom or pan moves them. */
-  private prompt: { prompt: HandlePrompt; heading: Quaternion } | null = null;
+  private prompt: { prompt: HandlePrompt; heading: Quaternion; handle: Handle } | null = null;
 
   /** Where a point of the scene is on screen. */
   private toClient(p: Vector3): { clientX: number; clientY: number } {
@@ -2252,9 +2314,12 @@ export class Viewer {
      * box on a back edge then goes up the picture, over the object but on the side the edge is read
      * from, rather than down into the drawing of the underside.
      */
-    const edge = (tag: string, value: number, at: Vec3, along: Vec3, ref: Vec3): Field => ({
+    const edge = (tag: string, name: string, axis: 0 | 1, value: number, at: Vec3, along: Vec3, ref: Vec3): Field => ({
       tag,
+      name,
+      color: AXIS_COLORS[axis],
       value,
+      span: { from: this.framePoint([at[0] - along[0] * hx, at[1] - along[1] * hy, at[2]]).toArray() as Vec3, to: this.framePoint([at[0] + along[0] * hx, at[1] + along[1] * hy, at[2]]).toArray() as Vec3 },
       anchor: this.framePoint(at).toArray() as Vec3,
       ref: this.framePoint(ref).toArray() as Vec3,
       along: this.frameDir(along),
@@ -2266,36 +2331,95 @@ export class Viewer {
       case 'height':
         // Right beside the height grip, so that it stays to hand on a big object seen close up; level with
         // the grip, it covers neither the grip nor the move arrows in the middle.
-        made = { kind: k, unit: 'mm', center, fields: [{ tag: 'H', value: hz * 2, anchor: handle.object.getWorldPosition(new Vector3()).toArray() as Vec3, beside: true, clientX: 0, clientY: 0 }] };
+        made = {
+          kind: k,
+          unit: 'mm',
+          center,
+          fields: [
+            {
+              tag: 'H',
+              name: 'Height',
+              color: AXIS_COLORS[2],
+              value: hz * 2,
+              span: { from: this.framePoint([0, 0, -hz]).toArray() as Vec3, to: this.framePoint([0, 0, hz]).toArray() as Vec3 },
+              anchor: handle.object.getWorldPosition(new Vector3()).toArray() as Vec3,
+              beside: true,
+              clientX: 0,
+              clientY: 0,
+            },
+          ],
+        };
         break;
       case 'resize': {
         const fields: Field[] = [];
         if (k.sx !== 0) {
           // Width goes on a bottom edge running along X: at the grip's side, else the side facing the camera.
           const side = k.sy !== 0 ? k.sy : this.nearest([{ at: [0, -hy, -hz] as Vec3, s: -1 }, { at: [0, hy, -hz] as Vec3, s: 1 }]).s;
-          fields.push(edge('W', hx * 2, [0, side * hy, -hz], [1, 0, 0], [0, 0, -hz]));
+          fields.push(edge('W', 'Width', 0, hx * 2, [0, side * hy, -hz], [1, 0, 0], [0, 0, -hz]));
         }
         if (k.sy !== 0) {
           const side = k.sx !== 0 ? k.sx : this.nearest([{ at: [-hx, 0, -hz] as Vec3, s: -1 }, { at: [hx, 0, -hz] as Vec3, s: 1 }]).s;
-          fields.push(edge('D', hy * 2, [side * hx, 0, -hz], [0, 1, 0], [0, 0, -hz]));
+          fields.push(edge('D', 'Depth', 1, hy * 2, [side * hx, 0, -hz], [0, 1, 0], [0, 0, -hz]));
         }
         made = { kind: k, unit: 'mm', center, fields };
         break;
       }
       case 'move':
         // Only the Z arrow has a value worth typing: how high the selection stands. The box sits past the arrow's head.
-        if (k.axis === 2) made = { kind: k, unit: 'mm', center, fields: [{ tag: 'Z', value: f.bounds.min[2], anchor: handle.object.position.toArray() as Vec3, out: [0, 0, 1], pad: MOVE_ARROW_PIXELS * (SLIDE_ARROW.to + ARROW_HEAD) + PROMPT_PAD, clientX: 0, clientY: 0 }] };
+        // Along the object's own Z (Object axes) there is no height worth typing.
+        if (k.axis === 2 && !f.local) {
+          // The rise from the plate to the bottom, drawn up the middle; nothing to draw while it sits on the plate.
+          const [cx, cy] = boundsCenter(f.bounds);
+          const z = f.bounds.min[2];
+          made = {
+            kind: k,
+            unit: 'mm',
+            center,
+            fields: [
+              {
+                tag: 'Z',
+                name: 'Base height',
+                color: AXIS_COLORS[2],
+                value: z,
+                ...(Math.abs(z) > 1e-6 ? { span: { from: [cx, cy, 0] as Vec3, to: [cx, cy, z] as Vec3 } } : {}),
+                anchor: handle.object.position.toArray() as Vec3,
+                out: [0, 0, 1],
+                pad: MOVE_ARROW_PIXELS * (SLIDE_ARROW.to + ARROW_HEAD) + PROMPT_PAD,
+                clientX: 0,
+                clientY: 0,
+              },
+            ],
+          };
+        }
         break;
       case 'rotate': {
         // The arc with its two arrowheads, sampled, so that the box can keep off the whole of it.
         const ring = handle.object;
         const keepOut = [0, 0.25, 0.5, 0.75, 1].map((t) => new Vector3(Math.cos((t * Math.PI) / 2), Math.sin((t * Math.PI) / 2), 0));
         keepOut.push(new Vector3(1.2, -0.35, 0), new Vector3(-0.35, 1.2, 0), new Vector3(0, 0, 0));
+        // The line the turn goes about, through the pivot and a little past the box either way.
+        const pivot: Vec3 = f.single ? [...f.single.pos] : boundsCenter(f.bounds);
+        const reach = f.half[k.axis] + 24 * this.pixelSize(new Vector3(...pivot));
+        const dir = this.frameAxis(k.axis).multiplyScalar(reach);
+        const from = new Vector3(...pivot).sub(dir).toArray() as Vec3;
+        const to = new Vector3(...pivot).add(dir).toArray() as Vec3;
         made = {
           kind: k,
           unit: '°',
           center,
-          fields: [{ tag: 'XYZ'[k.axis], value: 0, anchor: ring.getWorldPosition(new Vector3()).toArray() as Vec3, keepOut: keepOut.map((p) => ring.localToWorld(p).toArray() as Vec3), clientX: 0, clientY: 0 }],
+          fields: [
+            {
+              tag: 'XYZ'[k.axis],
+              name: `Turn about ${'XYZ'[k.axis]}`,
+              color: AXIS_COLORS[k.axis],
+              value: 0,
+              span: { from, to, axis: true },
+              anchor: ring.getWorldPosition(new Vector3()).toArray() as Vec3,
+              keepOut: keepOut.map((p) => ring.localToWorld(p).toArray() as Vec3),
+              clientX: 0,
+              clientY: 0,
+            },
+          ],
         };
         break;
       }
@@ -2392,6 +2516,16 @@ export class Viewer {
           fields[b].clientX += (sign * (needX + 2)) / 2;
         }
       }
+    // What each box measures, on screen.
+    for (const f of fields) {
+      if (!f.span) continue;
+      const a = this.toClient(new Vector3(...f.span.from));
+      const b = this.toClient(new Vector3(...f.span.to));
+      f.ends = [
+        [a.clientX, a.clientY],
+        [b.clientX, b.clientY],
+      ];
+    }
     // Nothing goes off the view: a box that would is brought back to the margin.
     for (const f of fields) {
       f.clientX = Math.min(Math.max(f.clientX, view.left + PROMPT_MARGIN + bw / 2), view.right - PROMPT_MARGIN - bw / 2);
@@ -2405,6 +2539,7 @@ export class Viewer {
     if (!this.prompt) return;
     this.prompt = null;
     this.events.onHandleClick(null);
+    this.requestRender();
   }
 
   /** After the camera moved: boxes follow a zoom or a pan, and go away when the view turns. */
@@ -2415,7 +2550,7 @@ export class Viewer {
       return;
     }
     const prompt = this.placePrompt(this.prompt.prompt);
-    this.prompt = { prompt, heading: this.prompt.heading };
+    this.prompt = { ...this.prompt, prompt };
     this.events.onHandleClick(prompt);
   }
 
@@ -2437,12 +2572,12 @@ export class Viewer {
       if (kind.sx !== 0 && w >= MIN_SIZE) size[0] = w;
       if (kind.sy !== 0 && d >= MIN_SIZE) size[1] = d;
       changed = this.stretched(box, nodes, size, [-kind.sx as -1 | 0 | 1, -kind.sy as -1 | 0 | 1, 0]);
-    } else if (kind.type === 'move' && kind.axis === 2) {
+    } else if (kind.type === 'move' && kind.axis === 2 && !f.local) {
       const dz = v - f.bounds.min[2];
       changed = nodes.map((n) => ({ ...n, pos: [n.pos[0], n.pos[1], n.pos[2] + dz] as Vec3 }));
     } else if (kind.type === 'rotate') {
       const pivot: Vec3 = f.single ? [...f.single.pos] : boundsCenter(f.bounds);
-      changed = rotateNodes(nodes, kind.axis, v, pivot);
+      changed = rotateNodes(nodes, kind.axis, v, pivot, this.frameTurn());
     }
     if (!changed) return;
     this.events.onGestureStart();
@@ -2505,15 +2640,17 @@ export class Viewer {
   }
 
   /** Angle of the pointer around a fixed axis through `pivot`, or null when that axis is seen side-on. */
-  private angleAbout(axis: 0 | 1 | 2, pivot: Vec3): number | null {
-    const normal = new Vector3(axis === 0 ? 1 : 0, axis === 1 ? 1 : 0, axis === 2 ? 1 : 0);
+  private angleAbout(axis: 0 | 1 | 2, pivot: Vec3, frame?: Mat): number | null {
+    // The frame's axes (the design's without one): the turn's axis and the two square to it.
+    const column = (c: number) => (frame ? new Vector3(frame[c * 3], frame[c * 3 + 1], frame[c * 3 + 2]) : axisVector(c as 0 | 1 | 2));
+    const normal = column(axis);
     if (Math.abs(this.raycaster.ray.direction.dot(normal)) < 0.2) return null;
     const plane = new Plane().setFromNormalAndCoplanarPoint(normal, new Vector3(...pivot));
     const p = this.raycaster.ray.intersectPlane(plane, new Vector3());
     if (!p) return null;
     p.sub(new Vector3(...pivot));
-    const u = [p.y, p.z, p.x][axis];
-    const v = [p.z, p.x, p.y][axis];
+    const u = p.dot(column((axis + 1) % 3));
+    const v = p.dot(column((axis + 2) % 3));
     return (Math.atan2(v, u) * 180) / Math.PI;
   }
 
@@ -2653,7 +2790,8 @@ export class Viewer {
           this.events.onGestureEnd(true);
           const prompt = this.promptFor(press.handle);
           if (prompt) {
-            this.prompt = { prompt, heading: this.camera.quaternion.clone() };
+            this.prompt = { prompt, heading: this.camera.quaternion.clone(), handle: press.handle };
+            this.requestRender();
             this.events.onHandleClick(prompt);
           }
           return;
@@ -3104,16 +3242,16 @@ export class Viewer {
 
   /** The selection follows the pointer along one of the design's axes; steps snap to the grid. */
   private slideTo(drag: Extract<Drag, { mode: 'slide' }>, event: PointerEvent): void {
-    const t = this.alongAxis(drag.origin, axisVector(drag.axis));
+    const t = this.alongAxis(drag.origin, drag.dir);
     if (t === null) return;
     const d = this.snap(t - drag.grab);
-    this.events.onGestureChange(drag.nodes.map((n) => ({ ...n, pos: tidyVec(n.pos.map((v, i) => (i === drag.axis ? v + d : v)) as Vec3) })));
+    const { x, y, z } = drag.dir;
+    this.events.onGestureChange(drag.nodes.map((n) => ({ ...n, pos: tidyVec([n.pos[0] + x * d, n.pos[1] + y * d, n.pos[2] + z * d]) })));
     this.say(`${'XYZ'[drag.axis]} ${d >= 0 ? '+' : ''}${fmt(d)}`, event);
   }
 
-  /** New size for a grip drag, with the opposite side (and the base) staying put. */
+  /** New size for one object on its own box, with the `anchor` side (-1/0/+1 per axis) staying put. */
   private resized(node: SceneNode, size: Vec3, anchor: Vec3): SceneNode {
-    // `anchor` is -1/0/+1 per axis: which side of the box does not move.
     const m = rotation(node.rot);
     const pos: Vec3 = [...node.pos];
     for (let c = 0; c < 3; c++) {
@@ -3122,18 +3260,17 @@ export class Viewer {
       pos[1] += m[c * 3 + 1] * shift;
       pos[2] += m[c * 3 + 2] * shift;
     }
-    let next = { ...node, size: tidyVec(size), pos: tidyVec(pos) } as SceneNode;
-    if (next.type === 'shape') next = { ...next, params: clampParams({ shape: next.shape, params: next.params, size: next.size }) };
-    return next;
+    const next = { ...node, size: tidyVec(size), pos: tidyVec(pos) } as SceneNode;
+    return next.type === 'shape' ? { ...next, params: clampParams({ shape: next.shape, params: next.params, size: next.size }) } : next;
   }
 
   /**
    * The nodes as they are once the grip box has `size`, with the `anchor` side (-1/0/+1 per axis) staying
-   * put: one object is resized on its own frame; several are stretched together about the fixed side of
-   * the box round them, which is square to the axes.
+   * put: one object on its own box resized (Object axes), else stretched along the design's axes about
+   * the fixed side of the box, which is square to them.
    */
   private stretched(box: GripBox, nodes: SceneNode[], size: Vec3, anchor: Vec3): SceneNode[] {
-    if (box.single) return [this.resized(box.single, size, anchor)];
+    if (box.own) return [this.resized(box.own, size, anchor)];
     const factor: Vec3 = [0, 1, 2].map((c) => size[c] / Math.max(box.size[c], 1e-6)) as Vec3;
     const pivot = this.pointOf(box.matrix, [(anchor[0] * box.size[0]) / 2, (anchor[1] * box.size[1]) / 2, (anchor[2] * box.size[2]) / 2]);
     return scaleNodes(nodes, factor, pivot.toArray() as Vec3, MIN_SIZE);
@@ -3175,13 +3312,13 @@ export class Viewer {
   }
 
   private rotateTo(drag: Extract<Drag, { mode: 'rotate' }>, event: PointerEvent): void {
-    const angle = this.angleAbout(drag.axis, drag.pivot);
+    const angle = this.angleAbout(drag.axis, drag.pivot, drag.frame);
     // Seen side-on, the ring cannot be followed; fall back to sideways pointer travel.
     let delta = angle !== null && drag.start !== null ? angle - drag.start : (event.clientX - drag.x) * 0.6;
     delta = ((((delta + 180) % 360) + 360) % 360) - 180;
     const step = event.shiftKey ? ROTATE_COARSE : event.altKey || event.ctrlKey ? 1 : ROTATE_STEP;
     delta = Math.round(delta / step) * step;
-    this.events.onGestureChange(delta === 0 ? drag.nodes : rotateNodes(drag.nodes, drag.axis, delta, drag.pivot));
+    this.events.onGestureChange(delta === 0 ? drag.nodes : rotateNodes(drag.nodes, drag.axis, delta, drag.pivot, drag.frame));
     this.say(`${fmt(delta)}°`, event);
   }
 

@@ -64,13 +64,14 @@ describe('parseUrdf', () => {
     expect(Object.values(robot.drive!.roles).sort()).toEqual(['left', 'left', 'right', 'right']);
     expect(robot.sensors).toHaveLength(3);
     // The camera on the body's top comes back turned to look along +Y and tilted 20° down, with its picture size and reach.
+    const sensor = (kind: string) => doc.robot!.sensors.find((s) => s.kind === kind)!;
     const camera = robot.sensors.find((s) => s.kind === 'camera')!;
     expect(camera.name).toBe('Camera');
     expect(camera.link).toBe(robot.root);
-    close(camera.origin, [0, 62, 15], 0.01);
+    close(camera.origin, sensor('camera').origin, 0.01);
     close(camera.rot, [0, 20, 90], 0.01);
     expect(camera.rate).toBe(30);
-    expect(camera.camera).toEqual({ hfov: 80, width: 320, height: 240, near: 20, far: 10000 });
+    expect(camera.camera).toEqual(sensor('camera').camera);
     const imu = robot.sensors.find((s) => s.kind === 'imu')!;
     expect(imu.name).toBe('IMU');
     expect(imu.link).toBe(robot.root);
@@ -80,7 +81,7 @@ describe('parseUrdf', () => {
     expect(lidar.kind).toBe('lidar');
     expect(lidar.name).toBe('Lidar');
     expect(lidar.link).toBe(robot.root);
-    close(lidar.origin, [0, 0, 20], 0.01);
+    close(lidar.origin, sensor('lidar').origin, 0.01);
     expect(lidar.lidar).toEqual({ samples: 36, hfov: 360, min: 100, max: 4000 });
     expect(lidar.rate).toBe(10);
     // Every joint is a wheel, so the package had no ros2_control to bring back.

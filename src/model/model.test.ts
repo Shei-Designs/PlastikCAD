@@ -46,6 +46,15 @@ describe('rotations', () => {
     close(node.pos, [0, 10, 5]);
     close(node.rot, [0, 0, 90]);
   });
+
+  it('turns a node about its own axis (Object axes)', () => {
+    const start = shape('box', { pos: [5, 0, 0], rot: [0, 0, 45] });
+    const frame: Mat = [...rotation(start.rot).slice(0, 9), 0, 0, 0] as Mat;
+    // A quarter turn about the box's own X, through its middle: its X stays put, its Z lies down along -Y of its own.
+    const [node] = rotateNodes([start], 0, 90, start.pos, frame);
+    close(node.pos, [5, 0, 0]);
+    close(rotation(node.rot), multiply(rotation(start.rot), axisRotation(0, 90)));
+  });
 });
 
 describe('stretching several nodes as one box', () => {

@@ -131,6 +131,8 @@ export interface EditorState {
   aligning: { anchor: string | null; bounds: Bounds; done: boolean[]; marker?: boolean } | null;
   /** Measure mode: the kinds of feature the pointer takes hold of, and the one or two picked so far. */
   measuring: { kinds: FeatureKind[]; picks: Feature[] } | null;
+  /** The handles of one selected object follow its own axes instead of the design's; not saved. */
+  objectAxes: boolean;
   /**
    * Editing inside a group: the layers taken apart to reach a part of it,
    * which are put back together on Done. `before` is the scene for Cancel.
@@ -177,6 +179,7 @@ let state: EditorState = {
   mating: null,
   aligning: null,
   measuring: null,
+  objectAxes: false,
   editing: null,
   highlight: null,
   prefs: loadPrefs(),
@@ -1092,6 +1095,8 @@ export function stopMeasuring(): void {
 }
 
 export const toggleMeasuring = (): void => (state.measuring ? stopMeasuring() : startMeasuring());
+
+export const toggleObjectAxes = (): void => set({ objectAxes: !state.objectAxes });
 
 export function setMeasureKinds(kinds: FeatureKind[]): void {
   measureKinds = kinds;

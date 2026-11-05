@@ -111,8 +111,8 @@ describe('the rover', () => {
     let { sim, base } = simulate(ramp);
     sim.step(0.5);
     sim.drive(1, 0);
-    sim.step(2.5);
-    // The slab starts 0.3 m ahead and climbs 104 mm over 0.6 m; by now the rover has rolled over a meter.
+    sim.step(1.5);
+    // The slab starts 0.3 m ahead and climbs 104 mm over 0.6 m; by now the rover has rolled over a meter, onto the 0.6 m top and not yet off its end.
     expect(position(sim, base)[1]).toBeGreaterThan(0.9);
     expect(position(sim, base)[2]).toBeGreaterThan(0.08);
     sim.dispose();
@@ -121,8 +121,8 @@ describe('the rover', () => {
     ({ sim, base } = simulate(steps));
     sim.step(0.5);
     sim.drive(1, 0);
-    sim.step(2);
-    // Three 10 mm steps: 40 mm wheels take them, and the rover stands 30 mm up on the landing.
+    sim.step(1.5);
+    // Three 10 mm steps: 100 mm wheels take them, and the rover stands 30 mm up on the landing.
     expect(position(sim, base)[2]).toBeGreaterThan(0.025);
     sim.dispose();
   });

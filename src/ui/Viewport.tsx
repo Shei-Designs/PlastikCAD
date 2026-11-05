@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import type { JSX } from 'react';
+import type { CSSProperties, JSX } from 'react';
 import { geometry } from '../state/geometry';
 import { SNAP_STEPS } from '../state/persist';
 import {
@@ -33,6 +33,7 @@ import {
   setPrefs,
   toggleAligning,
   toggleMeasuring,
+  toggleObjectAxes,
   setMeasureKinds,
   pickMeasure,
   toggleSelected,
@@ -57,6 +58,7 @@ import type { HandlePrompt, Marker, ViewItem, ViewPreset } from '../viewer/Viewe
 import {
   AlignIcon,
   RulerIcon,
+  ObjectAxesIcon,
   SnapCenterIcon,
   SnapCircleIcon,
   SnapEdgeIcon,
@@ -104,6 +106,7 @@ function Actions() {
   const picked = useMemo(() => scene.filter((n) => selection.includes(n.id)), [scene, selection]);
   const aligning = useEditor((s) => s.aligning);
   const measuring = useEditor((s) => Boolean(s.measuring));
+  const objectAxes = useEditor((s) => s.objectAxes);
   /** A picked joint or sensor lines up with an object's box, on its own. */
   const marker = useEditor((s) => Boolean(s.joint || s.sensor));
   const ghosts = useEditor(hasGhosts);
@@ -134,6 +137,9 @@ function Actions() {
         </button>
         <button type="button" className={measuring ? 'chip icon on' : 'chip icon'} title="Measure (M)" aria-label="Measure" aria-pressed={measuring} onClick={toggleMeasuring}>
           <RulerIcon />
+        </button>
+        <button type="button" className={objectAxes ? 'chip icon on' : 'chip icon'} title="Object axes (O)" aria-label="Object axes" aria-pressed={objectAxes} onClick={toggleObjectAxes}>
+          <ObjectAxesIcon />
         </button>
         <Popover className="chip icon" title="Mirror (X / Y / Z)" button={<MirrorIcon />} disabled={none} align="right">
           {() => (
@@ -272,6 +278,8 @@ function ViewWidget({ viewer }: { viewer: React.RefObject<Viewer | null> }) {
  */
 function HandleInput({ prompt, onClose }: { prompt: HandlePrompt; onClose: () => void }) {
   const [texts, setTexts] = useState(prompt.fields.map((f) => String(Number(f.value.toFixed(3)))));
+  /** The box being typed in, in place or in the entry sheet: it and the length it sets are lit. */
+  const [focused, setFocused] = useState(0);
   const host = useRef<HTMLFormElement>(null);
   const submit = () => {
     submitWith(texts);
@@ -289,7 +297,7 @@ function HandleInput({ prompt, onClose }: { prompt: HandlePrompt; onClose: () =>
   const entryOf = (i: number): Parameters<typeof openTouchEntry>[0] => {
     const f = prompt.fields[i];
     return {
-      label: `${f.tag}${prompt.fields.length > 1 ? ` (${i + 1} of ${prompt.fields.length})` : ''}`,
+      label: `${f.name}${prompt.fields.length > 1 ? ` (${i + 1} of ${prompt.fields.length})` : ''}`,
       value: texts[i],
       unit: prompt.unit,
       inputMode: 'decimal',
@@ -297,11 +305,15 @@ function HandleInput({ prompt, onClose }: { prompt: HandlePrompt; onClose: () =>
         const next = texts.map((t, j) => (j === i ? raw : t));
         setTexts(next);
         // With two boxes, the second is asked for next; the last one applies.
-        if (i + 1 < prompt.fields.length) setTimeout(() => openTouchEntry(entryOf(i + 1)), 0);
+        if (i + 1 < prompt.fields.length) setTimeout(() => openEntry(i + 1), 0);
         else submitWith(next);
       },
       onCancel: onClose,
     };
+  };
+  const openEntry = (i: number) => {
+    setFocused(i);
+    openTouchEntry(entryOf(i));
   };
   // The fields carry screen coordinates; the boxes are placed within the viewport, so its
   // corner comes off. That is only known once the form is in the page, hence the effect.
@@ -315,7 +327,7 @@ function HandleInput({ prompt, onClose }: { prompt: HandlePrompt; onClose: () =>
     if (!origin) return;
     const first = host.current?.querySelector('input');
     if (!recentTouch()) first?.focus();
-    else if (!keyboardAttached()) openTouchEntry(entryOf(0));
+    else if (!keyboardAttached()) openEntry(0);
     // After a tap, the browser's compatibility mouse events would blur the box (and close the prompt) if it were focused now.
     else setTimeout(() => first?.focus(), 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -334,16 +346,27 @@ function HandleInput({ prompt, onClose }: { prompt: HandlePrompt; onClose: () =>
         if (!host.current?.contains(to) && !to?.closest('.touch-entry')) onClose();
       }}
     >
+      {origin && <PromptSpans fields={prompt.fields} focused={focused} origin={origin} />}
       {prompt.fields.map((f, i) => (
-        <label key={f.tag} className="readout prompt" style={{ left: `${f.clientX - (origin?.left ?? 0)}px`, top: `${f.clientY - (origin?.top ?? 0)}px`, visibility: origin ? undefined : 'hidden' }}>
+        <label
+          key={f.tag}
+          className={`readout prompt${i === focused ? ' focused' : ''}`}
+          style={{ left: `${f.clientX - (origin?.left ?? 0)}px`, top: `${f.clientY - (origin?.top ?? 0)}px`, visibility: origin ? undefined : 'hidden', '--dim': f.color } as CSSProperties}
+        >
           <span className="tag">{f.tag}</span>
           <input
-            aria-label={f.tag}
+            aria-label={f.name}
             value={texts[i]}
             spellCheck={false}
             inputMode="decimal"
-            onPointerDown={(e) => enterByTouch(e, entryOf(i))}
-            onFocus={selectOnFocus}
+            onPointerDown={(e) => {
+              setFocused(i);
+              enterByTouch(e, entryOf(i));
+            }}
+            onFocus={(e) => {
+              setFocused(i);
+              selectOnFocus(e);
+            }}
             onChange={(e) => setTexts(texts.map((t, j) => (j === i ? e.target.value : t)))}
             onKeyDown={(e) => {
               // With two boxes and no button, Enter would not submit the form on its own.
@@ -358,6 +381,40 @@ function HandleInput({ prompt, onClose }: { prompt: HandlePrompt; onClose: () =>
         </label>
       ))}
     </form>
+  );
+}
+
+/** On-screen length of the ticks across the ends of a lit length, in pixels. */
+const SPAN_TICK = 7;
+
+/**
+ * What the typing boxes set, drawn over the view: each length as a dimension line with ticks across its
+ * ends, a turn as the line it goes about, in its axis's color; the one being typed bold, the others faint.
+ */
+function PromptSpans({ fields, focused, origin }: { fields: HandlePrompt['fields']; focused: number; origin: { left: number; top: number } }) {
+  return (
+    <svg className="prompt-spans" aria-hidden="true">
+      {fields.map((f, i) => {
+        if (!f.ends || !f.span) return null;
+        const [[x0, y0], [x1, y1]] = f.ends.map(([x, y]) => [x - origin.left, y - origin.top]);
+        const length = Math.hypot(x1 - x0, y1 - y0);
+        if (length < 1) return null;
+        const nx = (-(y1 - y0) / length) * SPAN_TICK;
+        const ny = ((x1 - x0) / length) * SPAN_TICK;
+        const on = i === focused;
+        return (
+          <g key={f.tag} className={on ? 'on' : undefined} style={{ color: f.color }}>
+            <line className="halo" x1={x0} y1={y0} x2={x1} y2={y1} />
+            <line className={f.span.axis ? 'axis' : undefined} x1={x0} y1={y0} x2={x1} y2={y1} />
+            {!f.span.axis &&
+              [
+                [x0, y0],
+                [x1, y1],
+              ].map(([x, y], end) => <line key={end} x1={x - nx} y1={y - ny} x2={x + nx} y2={y + ny} />)}
+          </g>
+        );
+      })}
+    </svg>
   );
 }
 
@@ -476,6 +533,7 @@ export function Viewport() {
     return b ? measureBetween(a, b) : a ? describeFeature(a) : null;
   }, [measuring]);
   const measure = useMemo(() => (measuring ? { kinds: measuring.kinds, picks: measuring.picks, result: measureResult } : null), [measuring, measureResult]);
+  const objectAxes = useEditor((s) => s.objectAxes);
   // Another selection, or an edit from elsewhere, and the typing boxes no longer belong to anything.
   useEffect(() => {
     viewer.current?.dismissPrompt();
@@ -539,8 +597,8 @@ export function Viewport() {
   }, []);
 
   useEffect(() => {
-    viewer.current?.setOptions({ theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap, interactive: true, align: aligning, highlight, snaps, marker, markers, ground, preview, measure });
-  }, [prefs.theme, prefs.edges, prefs.grid, prefs.snap, aligning, highlight, snaps, marker, markers, ground, preview, measure]);
+    viewer.current?.setOptions({ theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap, interactive: true, align: aligning, highlight, snaps, marker, markers, ground, preview, measure, objectAxes });
+  }, [prefs.theme, prefs.edges, prefs.grid, prefs.snap, aligning, highlight, snaps, marker, markers, ground, preview, measure, objectAxes]);
 
   useEffect(() => {
     viewer.current?.setPlacing(Boolean(placing));
