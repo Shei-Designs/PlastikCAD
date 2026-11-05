@@ -105,7 +105,7 @@ beforeEach(async () => {
   gate = Promise.resolve();
   saved.length = 0;
   // Leaving the previous test's project writes it to that test's store, not this one's.
-  await store.newProject();
+  await store.startProject();
   kept = new projects.MemoryProjects();
   projects.useProjectStore(kept);
 });
@@ -550,6 +550,15 @@ describe('projects', () => {
     expect(store.getState().prefs.lastProject).toBe('mem:1');
   });
 
+  it('writes a new project under the name it was given, empty as it is', async () => {
+    await store.startProject('Robot arm');
+    expect(store.getState().doc.name).toBe('Robot arm');
+    expect(store.getState().projectKey).toBe('mem:1');
+    expect(store.isDirty()).toBe(false);
+    const [info] = await kept.list();
+    expect(info).toMatchObject({ key: 'mem:1', name: 'Robot arm' });
+  });
+
   it('autosaves a second after the last change, once', async () => {
     vi.useFakeTimers();
     const writes = vi.spyOn(kept, 'write');
@@ -602,7 +611,7 @@ describe('projects', () => {
     store.renameProject('First');
     await store.saveProject();
     const first = store.getState().projectKey!;
-    await store.newProject();
+    await store.startProject();
     expect(store.getState().projectKey).toBeNull();
     store.addShape('sphere');
     store.renameProject('Second');

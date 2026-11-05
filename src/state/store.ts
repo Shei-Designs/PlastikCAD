@@ -1609,10 +1609,23 @@ async function leaveProject(): Promise<boolean> {
 export const openProjects = (): void => set({ browsing: true });
 export const closeProjects = (): void => set({ browsing: false });
 
+/** "New project": asks for its name first; backing out leaves the open project as it is. */
 export async function newProject(): Promise<void> {
+  const name = await askName({ title: 'New project', label: 'Name', value: '', okLabel: 'Create' });
+  if (name) await startProject(name);
+}
+
+/** Leaves the open project for an empty one. A named one is written straight away, so that it shows among the projects. */
+export async function startProject(name?: string): Promise<void> {
   if (!(await leaveProject())) return;
-  adopt(emptyDoc(), null);
+  const doc = emptyDoc();
+  if (name) doc.name = name;
+  adopt(doc, null);
   set({ browsing: false });
+  if (name) {
+    set({ saved: null });
+    await saveProject(true);
+  }
 }
 
 export async function openProject(key: string): Promise<void> {
