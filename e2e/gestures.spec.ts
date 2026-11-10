@@ -152,6 +152,8 @@ test.describe('fingers on the plate', { tag: '@touch' }, () => {
       await finger.move([[cx - i * 8, cy, 0]]);
       await pause(page, 25);
     }
+    // On a slow machine the slide may not have reached the app yet: the second finger waits for the move to begin.
+    await expect.poll(async () => (await viewState(page)).drag, 'the slide became a move').toBe('move');
     await finger.start([[cx - 48, cy, 0], [cx + 120, cy + 100, 1]]);
     await pause(page, 60);
     expect(await viewState(page), 'the move goes on and the camera gets no finger').toMatchObject({ drag: 'move', cameraTouches: 0 });

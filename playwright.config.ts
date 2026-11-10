@@ -18,7 +18,10 @@ export default defineConfig({
   // press): a few workers, not one per core, and on the CI runners no more workers than their two cores.
   workers: CI ? 2 : 4,
   forbidOnly: CI,
-  retries: CI ? 1 : 0,
+  // The gesture tests run against the app's own clocks (a finger held still for a moment is a long press), and a
+  // runner that stalls between two steps of a gesture changes what the gesture is: such a test is tried again there,
+  // and the report lists it as flaky.
+  retries: CI ? 2 : 0,
   timeout: 60_000,
   // The CI runners draw in software on few cores: what takes a moment here can take several there.
   expect: { timeout: CI ? 20_000 : 5_000 },

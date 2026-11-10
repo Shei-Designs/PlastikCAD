@@ -194,11 +194,44 @@ export interface Fingers {
   end(down?: Finger[]): Promise<void>;
 }
 
-/** Real touch events, through the browser's debugging protocol: several fingers at once, which `page.touchscreen` cannot do. */
+/**
+ * What `fingers` runs in the page after it has sent a touch: the number of pointer events of fingers
+ * the page has heard, once that has passed `seen`. A touch that moves nothing is not heard at all,
+ * so the wait is a short one. The first call on a page starts the count.
+ */
+const TOUCHES_HEARD = (seen: number): Promise<number> =>
+  new Promise((done) => {
+    const w = window as Internals;
+    if (w.__touchesHeard === undefined) {
+      w.__touchesHeard = 0;
+      // On the window, on the way down: before anything in the app hears the same event.
+      for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) {
+        window.addEventListener(type, (e) => void ((e as PointerEvent).pointerType === 'touch' && w.__touchesHeard++), true);
+      }
+      done(0);
+      return;
+    }
+    const until = performance.now() + 400;
+    const look = (): void => {
+      if (w.__touchesHeard > seen || performance.now() > until) done(w.__touchesHeard);
+      else setTimeout(look, 4);
+    };
+    look();
+  });
+
+/**
+ * Real touch events, through the browser's debugging protocol: several fingers at once, which
+ * `page.touchscreen` cannot do. The protocol answers when the browser has taken a touch, which on a
+ * busy machine is well before the page has heard it: each step here ends once the page has, so what
+ * a test does or looks at next comes after the touch and not beside it.
+ */
 export async function fingers(page: Page): Promise<Fingers> {
   const cdp = await page.context().newCDPSession(page);
-  const send = (type: 'touchStart' | 'touchMove' | 'touchEnd', down: Finger[]): Promise<void> =>
-    cdp.send('Input.dispatchTouchEvent', { type, touchPoints: down.map(([x, y, id]) => ({ x, y, id, radiusX: 4, radiusY: 4, force: 1 })) }).then(() => undefined);
+  let seen = await page.evaluate(TOUCHES_HEARD, -1);
+  const send = async (type: 'touchStart' | 'touchMove' | 'touchEnd', down: Finger[]): Promise<void> => {
+    await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: down.map(([x, y, id]) => ({ x, y, id, radiusX: 4, radiusY: 4, force: 1 })) });
+    seen = await page.evaluate(TOUCHES_HEARD, seen);
+  };
   return {
     start: (down) => send('touchStart', down),
     move: (down) => send('touchMove', down),
