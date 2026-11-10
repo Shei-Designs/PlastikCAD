@@ -2965,6 +2965,14 @@ kbd {
   font-weight: 600;
 }
 
+/* The look for a newer version, under the version in the About box: the button, and what came of it beside it. */
+.about-update {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
 /* The About box's buttons, and the report shown where it could not be copied. */
 .about-actions {
   display: flex;

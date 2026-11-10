@@ -28,6 +28,7 @@ import {
   toggleHidden,
   toggleLocked,
   toggleRobotMode,
+  updateApp,
   toggleSelected,
   useEditor,
 } from '../state/store';
@@ -64,6 +65,8 @@ function FileBar() {
   const saving = useEditor((s) => s.saving);
   const [about, setAbout] = useState(false);
   const [languages, setLanguages] = useState(false);
+  // A newer version of the app, found among the releases.
+  const update = useEditor((s) => s.update);
   const robot = useEditor((s) => s.robot);
   const status = saving ? tr('Saving…') : dirty ? tr('Changes not saved yet') : tr('All changes saved');
   // Sync's word shows on the way into the projects browser, where it is spelled out: a conflict or a deletion kept
@@ -92,6 +95,7 @@ function FileBar() {
             <MenuItem label={tr('Open project file…')} keys={shortcut('openFile')} run={() => void openProjectFile()} close={close} />
             <MenuItem label={tr('Save a copy…')} keys={shortcut('saveCopy')} run={() => void saveCopy()} close={close} />
             <hr />
+            {update && <MenuItem label={tr('Update to version {version}…', { version: update })} run={() => void updateApp()} close={close} />}
             <MenuItem label={tr('Language…')} run={() => setLanguages(true)} close={close} />
             <MenuItem label={tr('About {app}…', { app: APP_NAME })} run={() => setAbout(true)} close={close} />
           </div>

@@ -90,6 +90,8 @@ export interface EditorState {
   syncNotes: string[];
   /** Something slow is going on ("Grouping…"). */
   busy: string | null;
+  /** The newer version of the app that was found among the releases (see store/updating.ts); null when there is none, or none was looked for. */
+  update: string | null;
   canUndo: boolean;
   canRedo: boolean;
   /** Counts up whenever a different design is loaded, so views can reframe. */
@@ -131,6 +133,7 @@ let state: EditorState = {
   notice: null,
   syncNotes: [],
   busy: null,
+  update: null,
   canUndo: false,
   canRedo: false,
   epoch: 0,

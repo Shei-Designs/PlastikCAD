@@ -4,6 +4,21 @@
 import type { Catalog } from '../index';
 
 export const state: Catalog = {
+  // Updates of the desktop app (state/store/updating.ts)
+  'Version {version} of {app} is available.': 'La version {version} de {app} est disponible.',
+  'Update…': 'Mettre à jour…',
+  'Update {app}': 'Mettre à jour {app}',
+  'Version {version} is available; this is version {current}.': 'La version {version} est disponible\u00a0; celle-ci est la version {current}.',
+  'Open the releases page': 'Ouvrir la page des versions',
+  'This copy of {app} was installed as a system package, which the app cannot update itself: the new version is on the releases page.':
+    'Cet exemplaire de {app} a été installé comme paquet système, que l’application ne peut pas mettre à jour elle-même\u00a0: la nouvelle version se trouve sur la page des versions.',
+  Later: 'Plus tard',
+  Update: 'Mettre à jour',
+  'The design is saved, the update installed, and {app} started again.': 'La conception est enregistrée, la mise à jour installée, puis {app} redémarre.',
+  'Downloading the update…': 'Téléchargement de la mise à jour…',
+  'Downloading the update… {percent}%': 'Téléchargement de la mise à jour… {percent}\u00a0%',
+  'The update could not be installed: {reason}': 'La mise à jour n’a pas pu être installée\u00a0: {reason}',
+
   // A project a newer version of the app saved, and the copy this one can open of it (state/store/project.ts)
   'Made with a newer version': 'Créé avec une version plus récente',
   '"{name}" was saved by a newer version of {app}. Update the app to open it as it is.': '«\u00a0{name}\u00a0» a été enregistré par une version plus récente de {app}. Mettez l’application à jour pour l’ouvrir tel quel.',

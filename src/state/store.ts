@@ -177,6 +177,7 @@ export {
   unlinkGoogleDrive,
   restoreSession,
 } from './store/sync';
+export { lookForUpdate, updateApp } from './store/updating';
 export {
   startPlacingPicture,
   addPicture,

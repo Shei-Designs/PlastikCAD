@@ -1,6 +1,7 @@
 // The editor driven without a browser: the geometry kernel is stood in for by
 // box bounds, and the platform by stubs that hand back what each test wants.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { APP_VERSION } from '../appInfo';
 import { parseDoc, serializeDoc } from '../model/file';
 import { boxBounds, unionBounds } from '../model/math';
 import { jointInDesign } from '../robot/model';
@@ -74,7 +75,23 @@ vi.mock('../platform', () => ({
   shareBytes: async () => {},
   realPath: async (path: string) => path,
   isAndroid: () => false,
+  updatesItself: () => true,
+  findAppUpdate: async () => {
+    if (release === 'unreachable') throw new Error('no network');
+    return release && { version: release, install: async (progress: (fraction: number | null) => void) => void (progress(0.5), updating.push(installs ? 'installed' : 'failed'), installs || fail('signature mismatch')) };
+  },
+  canSelfUpdate: async () => selfUpdating,
+  relaunch: async () => void updating.push('relaunched'),
+  openReleases: async () => void updating.push('releases page'),
 }));
+/** The newer version the pretend releases hold, whether this copy of the app can install it, whether the install works, and what was done about it. */
+let release: string | null = null;
+let selfUpdating = true;
+let installs = true;
+const updating: string[] = [];
+const fail = (message: string): never => {
+  throw new Error(message);
+};
 
 
 const store = await import('./store');
@@ -887,6 +904,65 @@ describe('projects', () => {
     store.nudgeSelected([1, 0, 0]);
     expect(await store.saveProject()).toBe(false);
     expect(store.getState().notice).toBeNull();
+  });
+});
+
+describe('updating the app', () => {
+  beforeEach(() => {
+    release = null;
+    selfUpdating = true;
+    installs = true;
+    updating.length = 0;
+    told.length = 0;
+  });
+  const available = `Version 9.9.0 is available; this is version ${APP_VERSION}.`;
+
+  it('finds nothing to offer when this is the latest version, or the releases cannot be reached', async () => {
+    expect(await store.lookForUpdate()).toBeNull();
+    expect(store.getState().update).toBeNull();
+    release = 'unreachable';
+    await expect(store.lookForUpdate()).rejects.toThrow('no network');
+    // Nothing found, nothing to install.
+    await store.updateApp();
+    expect(told).toEqual([]);
+    expect(updating).toEqual([]);
+  });
+
+  it('installs a newer version once the user agrees: the design saved first, the app started again after', async () => {
+    release = '9.9.0';
+    expect(await store.lookForUpdate()).toBe('9.9.0');
+    expect(store.getState().update).toBe('9.9.0');
+    store.addShape('box');
+    // Put off: nothing happens.
+    choose = (actions) => actions[1];
+    await store.updateApp();
+    expect(told.pop()).toMatchObject({ title: 'Update PlastikCAD', text: `${available} The design is saved, the update installed, and PlastikCAD started again.`, actions: ['Update', 'Later'] });
+    expect(updating).toEqual([]);
+    expect(kept.records.size).toBe(0);
+    choose = (actions) => actions[0];
+    await store.updateApp();
+    expect(kept.records.size).toBe(1);
+    expect(updating).toEqual(['installed', 'relaunched']);
+    expect(store.getState().busy).toBeNull();
+  });
+
+  it('says what went wrong when the update cannot be installed, and does not start the app again', async () => {
+    release = '9.9.0';
+    installs = false;
+    await store.lookForUpdate();
+    await store.updateApp();
+    expect(updating).toEqual(['failed']);
+    expect(store.getState().notice).toMatchObject({ kind: 'error', text: 'The update could not be installed: signature mismatch' });
+    expect(store.getState().busy).toBeNull();
+  });
+
+  it('shows a copy the system installed as a package the way to the releases instead', async () => {
+    release = '9.9.0';
+    selfUpdating = false;
+    await store.lookForUpdate();
+    await store.updateApp();
+    expect(told.pop()).toMatchObject({ text: `${available} This copy of PlastikCAD was installed as a system package, which the app cannot update itself: the new version is on the releases page.`, actions: ['Open the releases page', 'Later'] });
+    expect(updating).toEqual(['releases page']);
   });
 });
 

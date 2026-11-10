@@ -12,6 +12,7 @@ import { mergeDocs } from '../../sync/merge';
 import { fail, getState, isDirty, noteSync, notify, resetHistory, set, setPrefs } from './core';
 import { adopt, saveProject, scheduleAutosave } from './project';
 import { receiveFiles } from './importing';
+import { lookForUpdateQuietly } from './updating';
 
 // --- cloud sync -----------------------------------------------------------------
 
@@ -153,6 +154,8 @@ export async function restoreSession(): Promise<void> {
     // Edits made before the store was ready are written now.
     if (isDirty()) scheduleAutosave();
     initSync({ device: getState().prefs.device, flush: () => saveProject(true), changed: applySyncReport, partsChanged: applyPartsSyncReport, notice: (text) => notify(text, 'error'), confirmDeletes: confirmSyncDeletes });
+    // The desktop app as it is installed looks for a newer version of itself; one run from the source tree has none to find.
+    if (platform.updatesItself() && !import.meta.env.DEV) lookForUpdateQuietly();
     const opened = await platform.startupFiles();
     if (opened.length > 0) return void (await receiveFiles(await Promise.all(opened.map((p) => platform.readPath(p)))));
     const last = getState().prefs.lastProject;

@@ -20,6 +20,14 @@ export const app: Catalog = {
   'Language…': 'Langue…',
   'About {app}…': 'À propos de {app}…',
 
+  // A newer version of the app (Sidebar.tsx, About.tsx)
+  'Update to version {version}…': 'Mettre à jour vers la version {version}…',
+  'Looks among the releases for a newer version.': 'Cherche une version plus récente parmi les versions publiées.',
+  'Checking…': 'Vérification…',
+  'Check for updates': 'Rechercher les mises à jour',
+  'This is the latest version.': 'Cette version est la plus récente.',
+  'The releases could not be reached.': 'Impossible de joindre la page des versions.',
+
   // The Language box (Language.tsx)
   Language: 'Langue',
   'Same as this device': 'Celle de l’appareil',

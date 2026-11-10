@@ -640,6 +640,33 @@ fn opened_files(app: AppHandle) -> Vec<String> {
     std::mem::take(&mut *app.state::<Opened>().0.lock().unwrap())
 }
 
+/// Where the releases are: the one page `open_releases` opens.
+const RELEASES_PAGE: &str = "https://github.com/Shei-Designs/PlastikCAD/releases/latest";
+
+/// Whether this copy of the app can put a newer version in its own place. On Windows and macOS it
+/// can. On Linux only an AppImage can: one installed as a package (.deb, .rpm) is the system's to
+/// update, and the app points to the releases page instead. Never on Android, where the store does it.
+#[tauri::command]
+fn can_self_update() -> bool {
+    if cfg!(target_os = "linux") {
+        std::env::var_os("APPIMAGE").is_some()
+    } else {
+        cfg!(desktop)
+    }
+}
+
+/// Starts the app again, once an update is in place.
+#[tauri::command]
+fn relaunch(app: AppHandle) {
+    app.restart();
+}
+
+/// Opens the releases page in the browser, for a copy of the app that cannot update itself.
+#[tauri::command]
+fn open_releases(app: AppHandle) -> Result<(), String> {
+    app.opener().open_url(RELEASES_PAGE, None::<&str>).map_err(|err| format!("Could not open the browser: {err}"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(target_os = "linux")]
@@ -651,6 +678,9 @@ pub fn run() {
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
         hand_over(app, designs_among(args.into_iter().skip(1).map(OsString::from), Path::new(&cwd)));
     }));
+    // Looks for a newer version among the releases and installs it (see src/update.ts); the key it checks one against is in tauri.conf.json.
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -675,7 +705,10 @@ pub fn run() {
             oauth_wait,
             oauth_cancel,
             startup_file,
-            opened_files
+            opened_files,
+            can_self_update,
+            relaunch,
+            open_releases
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

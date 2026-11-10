@@ -9,7 +9,8 @@ PlastikCAD is a desktop app for fast solid modelling for 3D printing: drop shape
 - **Pictures and textures** – wrap a picture round an object or tile it over every side; imported meshes keep their own UV layout. Pictures and textures travel in GLB exports.
 - **Robot mode** – make the design a robot: links, joints with real motor figures, sensors (camera, lidar, IMU, touch), drive setup, and a MuJoCo test drive right on the plate. Exports a ROS 2 package (RViz and Gazebo), an SDF model, a MuJoCo model with Python starters, or an Isaac Sim stage.
 - **Import and export** – STL, OBJ, 3MF, GLB and Collada meshes, SVG and DXF drawings, PNG/JPEG pictures and URDF robots in; STL, 3MF, OBJ, GLB, SVG and DXF out.
-- **Projects** – autosaved locally, with optional Google Drive sync. Devices that sync should run the same version.
+- **Projects** – autosaved locally, with optional Google Drive sync. A design from an older version opens in a newer one as it is; one from a newer version is offered as a copy without what the older one does not know.
+- **Updates** – the desktop app looks for a newer version when it starts and installs it when you say so. The AppImage updates itself; the `.deb` and `.rpm` are updated by installing the new package.
 
 ## Download
 

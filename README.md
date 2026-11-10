@@ -24,9 +24,12 @@ Installers for Windows, macOS (Apple Silicon and Intel) and Linux (AppImage,
 `.deb`, `.rpm`) are on the
 [releases page](https://github.com/Shei-Designs/PlastikCAD/releases/latest),
 which also says which file to pick and how to get past the first-launch
-warning: the builds are not code-signed yet. There is no update check; a new
-version is installed over the old one, and devices that sync through Google
-Drive should be updated together (see [Google Drive](#google-drive)). The
+warning: the builds are not code-signed yet. The desktop app looks for a
+newer version when it starts and from **File → About**, and installs it when
+you say so: it saves the design, fetches the update, checks it against the
+app's own key, and starts again. A copy installed as a Linux package (`.deb`,
+`.rpm`) is shown the way to the releases instead, since only the system can
+replace it; the AppImage updates itself. The
 Android app is built from source for now (see [Development](#development)).
 
 ## Languages
@@ -682,6 +685,30 @@ Windows, the reference robots in MuJoCo, and the browser tests in `e2e/`
 installers for all three platforms and attaches them to a draft GitHub
 release. The version number is set in `package.json`, `src-tauri/tauri.conf.json`
 and `src-tauri/Cargo.toml`; a test fails when they differ.
+
+### Updates
+
+The desktop app updates itself with Tauri's updater. A release build signs
+each installer with a key of the project's own (not the operating systems'
+code signing, which is still to come) and publishes an index of them,
+`latest.json`, with the release; an installed app reads that index from the
+latest published release and takes nothing that is not signed with the key
+whose public half is in `src-tauri/tauri.conf.json`.
+
+- The private half and its password are the repository secrets
+  `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, which
+  the release workflow hands to the build. **Keep a copy of both somewhere
+  safe.** A release signed with any other key is refused by every copy of
+  the app already installed, and there is no way to give those a new key
+  but a fresh install by hand.
+- The update files are made only when a build is told to
+  (`--config src-tauri/tauri.updater.conf.json`, as the release workflow
+  does), so an ordinary `pnpm tauri build` needs no key.
+- A release is a draft until it is published on GitHub, and an installed app
+  sees it only then.
+- In your own fork, make a key of your own with
+  `pnpm tauri signer generate`, put its public half and your releases'
+  address in `tauri.conf.json`, and its private half in the secrets.
 
 ### Google Drive sync in your own build
 
