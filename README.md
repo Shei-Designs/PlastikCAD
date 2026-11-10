@@ -437,6 +437,10 @@ often than a wish. What two places agreed on is remembered for that pair of
 places only, so linking another Google account, or choosing another projects
 folder, starts over by copying what each side has to the other and deletes
 nothing. A project saved while a sync is running is left for the next one.
+A request that Google puts off (too many at once, or a failure on its side)
+is tried again after a wait, a few times. A design over 4 MB goes up through
+Drive's upload for large files, which goes on from where it stopped when the
+connection breaks.
 
 Devices that sync need not run the same version of the app. What a newer
 version put in a design that an older one does not know (a new kind of part,
