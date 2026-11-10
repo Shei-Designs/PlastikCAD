@@ -3,6 +3,7 @@
 // here, so the UI can use this file without pulling the WASM kernel in; the
 // worker passes the loaded kernel to `buildShape`.
 import type { Manifold, ManifoldToplevel, Mesh } from 'manifold-3d';
+import { mark, tr, trx } from '../i18n';
 import { builtSize } from '../model/math';
 import type { Polygon, ShapeKind, ShapeNode, Vec2, Vec3 } from '../model/types';
 
@@ -42,20 +43,21 @@ const YELLOW = '#e5c04b';
  * The colors offered for nodes, muted enough that edges and shading still
  * read. Any other color can be picked by hand, from a twelfth swatch after
  * these: the inspector lays all twelve out in one row, so the count here goes
- * with the width of that panel (see .swatch-row in styles.css).
+ * with the width of that panel (see .swatch-row in styles.css). The names are
+ * written into exported files as they are; `marked()` translates them where they are shown.
  */
 export const PALETTE: { name: string; value: string }[] = [
-  { name: 'Steel', value: STEEL },
-  { name: 'Orange', value: ORANGE },
-  { name: 'Graphite', value: GRAPHITE },
-  { name: 'Ivory', value: IVORY },
-  { name: 'Green', value: GREEN },
-  { name: 'Red', value: RED },
-  { name: 'Blue', value: BLUE },
-  { name: 'Yellow', value: YELLOW },
-  { name: 'White', value: '#f2f2f0' },
-  { name: 'Black', value: '#2a2d33' },
-  { name: 'Teal', value: '#3fa9a3' },
+  { name: mark('Steel'), value: STEEL },
+  { name: mark('Orange'), value: ORANGE },
+  { name: mark('Graphite'), value: GRAPHITE },
+  { name: mark('Ivory'), value: IVORY },
+  { name: mark('Green'), value: GREEN },
+  { name: mark('Red'), value: RED },
+  { name: mark('Blue'), value: BLUE },
+  { name: mark('Yellow'), value: YELLOW },
+  { name: mark('White'), value: '#f2f2f0' },
+  { name: mark('Black'), value: '#2a2d33' },
+  { name: mark('Teal'), value: '#3fa9a3' },
 ];
 
 const TAU = Math.PI * 2;
@@ -99,7 +101,7 @@ function regularFootprint(sides: number, across: number): Vec2 {
   return [Math.round(w * k * 1e4) / 1e4, Math.round(d * k * 1e4) / 1e4];
 }
 
-const sidesParam = (min: number, max: number, def: number, label = 'Sides', help?: string): ShapeParamDef => ({
+const sidesParam = (min: number, max: number, def: number, label = tr('Sides'), help?: string): ShapeParamDef => ({
   key: 'sides',
   label,
   min,
@@ -110,150 +112,150 @@ const sidesParam = (min: number, max: number, def: number, label = 'Sides', help
   help,
 });
 
-const ROUND_HELP = 'Number of flat faces around the shape. More is smoother, fewer is faster.';
+const ROUND_HELP = tr('Number of flat faces around the shape. More is smoother, fewer is faster.');
 const PRISM_SIDES = 6;
 
 export const SHAPES: ShapeDef[] = [
   {
     kind: 'box',
-    name: 'Box',
-    summary: 'Block with optional rounded edges.',
+    name: tr('Box'),
+    summary: tr('Block with optional rounded edges.'),
     defaultSize: [20, 20, 20],
     params: [
       {
         key: 'radius',
-        label: 'Edge radius',
+        label: tr('Edge radius'),
         min: 0,
         max: 500,
         step: 0.5,
         unit: 'mm',
         default: 0,
-        help: 'Rounds every edge and corner. Limited to half the smallest side.',
+        help: tr('Rounds every edge and corner. Limited to half the smallest side.'),
       },
     ],
     defaultColor: STEEL,
   },
   {
     kind: 'cylinder',
-    name: 'Cylinder',
-    summary: 'Round bar or disc with optional rounded rims.',
+    name: tr('Cylinder'),
+    summary: tr('Round bar or disc with optional rounded rims.'),
     defaultSize: [20, 20, 20],
     params: [
-      sidesParam(3, 128, 64, 'Sides', ROUND_HELP),
+      sidesParam(3, 128, 64, tr('Sides'), ROUND_HELP),
       {
         key: 'radius',
-        label: 'Edge radius',
+        label: tr('Edge radius'),
         min: 0,
         max: 500,
         step: 0.5,
         unit: 'mm',
         default: 0,
-        help: 'Rounds the top and bottom rims. Limited to half the smallest side.',
+        help: tr('Rounds the top and bottom rims. Limited to half the smallest side.'),
       },
     ],
     defaultColor: ORANGE,
   },
   {
     kind: 'sphere',
-    name: 'Sphere',
-    summary: 'Ball or stretched ellipsoid.',
+    name: tr('Sphere'),
+    summary: tr('Ball or stretched ellipsoid.'),
     defaultSize: [20, 20, 20],
-    params: [sidesParam(8, 128, 48, 'Segments', 'Number of segments around the equator, in steps of four.')],
+    params: [sidesParam(8, 128, 48, tr('Segments'), tr('Number of segments around the equator, in steps of four.'))],
     defaultColor: BLUE,
   },
   {
     kind: 'cone',
-    name: 'Cone',
-    summary: 'Cone or tapered plug with a flat top.',
+    name: tr('Cone'),
+    summary: tr('Cone or tapered plug with a flat top.'),
     defaultSize: [20, 20, 20],
     params: [
-      sidesParam(3, 128, 64, 'Sides', ROUND_HELP),
+      sidesParam(3, 128, 64, tr('Sides'), ROUND_HELP),
       {
         key: 'top',
-        label: 'Top size',
+        label: tr('Top size'),
         min: 0,
         max: 0.95,
         step: 0.05,
         default: 0,
-        help: 'Width of the top as a fraction of the base. 0 gives a point.',
+        help: tr('Width of the top as a fraction of the base. 0 gives a point.'),
       },
     ],
     defaultColor: GREEN,
   },
   {
     kind: 'pyramid',
-    name: 'Pyramid',
-    summary: 'Pyramid with any number of sides.',
+    name: tr('Pyramid'),
+    summary: tr('Pyramid with any number of sides.'),
     defaultSize: [20, 20, 20],
     params: [sidesParam(3, 12, 4)],
     defaultColor: YELLOW,
   },
   {
     kind: 'wedge',
-    name: 'Wedge',
-    summary: 'Ramp sloping from full height to zero.',
+    name: tr('Wedge'),
+    summary: tr('Ramp sloping from full height to zero.'),
     defaultSize: [20, 20, 20],
     params: [],
     defaultColor: RED,
   },
   {
     kind: 'roof',
-    name: 'Roof',
-    summary: 'Triangular prism lying on its side.',
+    name: tr('Roof'),
+    summary: tr('Triangular prism lying on its side.'),
     defaultSize: [20, 20, 20],
     params: [],
     defaultColor: IVORY,
   },
   {
     kind: 'roundroof',
-    name: 'Round roof',
-    summary: 'Half cylinder lying on its flat side.',
+    name: tr('Round roof'),
+    summary: tr('Half cylinder lying on its flat side.'),
     defaultSize: [20, 20, 10],
-    params: [sidesParam(2, 64, 32, 'Steps', 'Number of flat faces over the curve.')],
+    params: [sidesParam(2, 64, 32, trx('facets', 'Steps'), tr('Number of flat faces over the curve.'))],
     defaultColor: ORANGE,
   },
   {
     kind: 'prism',
-    name: 'Prism',
-    summary: 'Bar with a polygon cross-section.',
+    name: tr('Prism'),
+    summary: tr('Bar with a polygon cross-section.'),
     defaultSize: [...regularFootprint(PRISM_SIDES, 20), 20],
     params: [sidesParam(3, 12, PRISM_SIDES)],
     defaultColor: GREEN,
   },
   {
     kind: 'torus',
-    name: 'Torus',
-    summary: 'Ring with a round or flattened section.',
+    name: tr('Torus'),
+    summary: tr('Ring with a round or flattened section.'),
     defaultSize: [30, 30, 8],
     params: [
-      sidesParam(8, 128, 48, 'Segments', 'Number of segments around the ring.'),
+      sidesParam(8, 128, 48, tr('Segments'), tr('Number of segments around the ring.')),
       {
         key: 'ring',
-        label: 'Ring width',
+        label: tr('Ring width'),
         min: 0,
         max: 500,
         step: 0.5,
         unit: 'mm',
         default: 0,
-        help: 'Sets the ring width from the hole to the outer rim. 0 gives a round cross-section.',
+        help: tr('Sets the ring width from the hole to the outer rim. 0 gives a round cross-section.'),
       },
     ],
     defaultColor: ORANGE,
   },
   {
     kind: 'dome',
-    name: 'Dome',
-    summary: 'Half sphere, flat side down.',
+    name: tr('Dome'),
+    summary: tr('Half sphere, flat side down.'),
     defaultSize: [20, 20, 10],
-    params: [sidesParam(8, 128, 48, 'Segments', 'Number of segments around the base, in steps of four.')],
+    params: [sidesParam(8, 128, 48, tr('Segments'), tr('Number of segments around the base, in steps of four.'))],
     defaultColor: BLUE,
   },
   {
     kind: 'fillet',
-    name: 'Fillet',
-    summary: 'Edge cutter for rounding or chamfering as a hole.',
+    name: tr('Fillet'),
+    summary: tr('Edge cutter for rounding or chamfering as a hole.'),
     defaultSize: [5, 20, 5],
-    params: [sidesParam(1, 64, 16, 'Steps', 'Number of flat faces along the curve. One step cuts a straight chamfer.')],
+    params: [sidesParam(1, 64, 16, trx('facets', 'Steps'), tr('Number of flat faces along the curve. One step cuts a straight chamfer.'))],
     defaultColor: GRAPHITE,
     hole: true,
   },
@@ -340,7 +342,7 @@ function solid({ k, keep }: BuildContext, positions: Float32Array, triangles: nu
   const Raw = Object.getPrototypeOf(k.Manifold.prototype).constructor as new (mesh: Mesh) => Manifold;
   const made = keep(new Raw(mesh));
   const status = made.status();
-  if (status !== 'NoError') throw new Error(`Geometry kernel error: ${status}`);
+  if (status !== 'NoError') throw new Error(tr('Geometry kernel error: {status}', { status }));
   return made;
 }
 
@@ -573,7 +575,7 @@ function ovalTorus(c: BuildContext): Manifold {
 
 /** Stretches and moves a solid so that its bounding box is exactly `size`, centered on the origin. */
 function fit(m: Manifold, size: Vec3, keep: Keep): Manifold {
-  if (m.isEmpty()) throw new Error('This shape is empty.');
+  if (m.isEmpty()) throw new Error(tr('This shape is empty.'));
   const { min, max } = m.boundingBox();
   const s = size.map((v, i) => (max[i] - min[i] > 0 ? v / (max[i] - min[i]) : 1));
   const t = size.map((_, i) => (-(min[i] + max[i]) / 2) * s[i]);

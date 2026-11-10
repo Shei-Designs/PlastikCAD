@@ -9,6 +9,7 @@ import type { FormatId } from '../../io/export';
 import { exportGlb } from '../glbExport';
 import * as platform from '../../platform';
 import { askName, tell } from '../../ui/ask';
+import { plural, tr } from '../../i18n';
 import { geometry } from '../geometry';
 import { fail, getState, notify } from './core';
 import { selectedNodes } from './editing';
@@ -23,10 +24,12 @@ import { selectedNodes } from './editing';
  * it. Files that belong together (`bundle`) are shared as one zip of that name.
  */
 export async function reportSaved(names: string[], where: string, uris: string[], mime: string, bundle?: { name: string; files: { name: string; bytes: Uint8Array }[] }): Promise<void> {
-  const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
-  if (!platform.canShare() || uris.length === 0) return notify(`Saved ${list} to ${where}`, 'ok');
-  const chosen = await tell({ title: 'Exported', text: `${list} ${names.length === 1 ? 'is' : 'are'} in ${where}.`, actions: ['Share…', 'Done'] });
-  if (chosen !== 'Share…') return;
+  const list = names.length === 1 ? names[0] : tr('{names} and {last}', { names: names.slice(0, -1).join(', '), last: names[names.length - 1] });
+  // One text in English, whatever the count: other languages make the verb agree with it.
+  if (!platform.canShare() || uris.length === 0) return notify(plural(names.length, 'Saved {list} to {where}', 'Saved {list} to {where}', { list, where }), 'ok');
+  const share = tr('Share…');
+  const chosen = await tell({ title: tr('Exported'), text: plural(names.length, '{list} is in {where}.', '{list} are in {where}.', { list, where }), actions: [share, tr('Done')] });
+  if (chosen !== share) return;
   if (bundle && bundle.files.length > 1) {
     const zipped = zipSync(Object.fromEntries(bundle.files.map((f) => [f.name, f.bytes])), { mtime: zipTime() });
     await platform.shareBytes(`${bundle.name}.zip`, zipped, 'application/zip').catch(fail);
@@ -38,7 +41,7 @@ export async function reportSaved(names: string[], where: string, uris: string[]
 /** On Android the name is asked for in the app (the file goes to its own folder); elsewhere the save dialog names the file. Null if backed out. */
 export async function exportName(suggested: string, extension: string): Promise<string | null> {
   if (!platform.keepsExports()) return suggested;
-  return askName({ title: 'Export', label: 'File name', value: suggested, suffix: `.${extension}`, okLabel: 'Export' });
+  return askName({ title: tr('Export'), label: tr('File name'), value: suggested, suffix: `.${extension}`, okLabel: tr('Export') });
 }
 
 /** Writes the design (or just the selection) in an exchange format and says where it went. Returns false if canceled. */
@@ -89,6 +92,6 @@ export async function exportDesign(formatId: FormatId, selectionOnly: boolean): 
   const where = await platform.saveAs(`${name}.${format.extension}`, filters, bytes, format.mime);
   if (!where) return false;
   for (const w of warnings) notify(w, 'error');
-  await reportSaved([where.name], where.path ? where.path.slice(0, where.path.length - where.name.length).replace(/[\\/]$/, '') || where.path : 'your downloads', where.uri ? [where.uri] : [], format.mime);
+  await reportSaved([where.name], where.path ? where.path.slice(0, where.path.length - where.name.length).replace(/[\\/]$/, '') || where.path : tr('your downloads'), where.uri ? [where.uri] : [], format.mime);
   return true;
 }

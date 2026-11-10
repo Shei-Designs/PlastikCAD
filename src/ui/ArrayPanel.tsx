@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { plural, tr, trx } from '../i18n';
 import { boundsCenter, boundsSize, tidy, unionBounds } from '../model/math';
 import type { Vec3 } from '../model/types';
 import { geometry } from '../state/geometry';
@@ -87,11 +88,11 @@ export function ArrayPanel({ close }: { close: () => void }) {
 
   return (
     <div className="align-panel array-panel">
-      <div className="array-title">Array</div>
-      <div className="segmented" role="radiogroup" aria-label="Pattern">
+      <div className="array-title">{tr('Array')}</div>
+      <div className="segmented" role="radiogroup" aria-label={tr('Pattern')}>
         {(['grid', 'ring'] as const).map((m) => (
           <button key={m} type="button" role="radio" aria-checked={mode === m} className={mode === m ? 'on' : ''} onClick={() => setMode(m)}>
-            {m === 'grid' ? 'Grid' : 'Ring'}
+            {m === 'grid' ? trx('pattern', 'Grid') : trx('pattern', 'Ring')}
           </button>
         ))}
       </div>
@@ -99,8 +100,8 @@ export function ArrayPanel({ close }: { close: () => void }) {
         <>
           <div className="array-head" aria-hidden>
             <span />
-            <span>Count</span>
-            <span>Spacing</span>
+            <span>{tr('Count')}</span>
+            <span>{tr('Spacing')}</span>
           </div>
           {AXES.map((tag, axis) => {
             const a = axis as 0 | 1 | 2;
@@ -109,7 +110,7 @@ export function ArrayPanel({ close }: { close: () => void }) {
               <div className="array-row" key={tag}>
                 <span>{tag}</span>
                 <NumberBox
-                  label={`Count along ${tag}`}
+                  label={tr('Count along {axis}', { axis: tag })}
                   value={count[a]}
                   min={1}
                   max={100}
@@ -117,7 +118,7 @@ export function ArrayPanel({ close }: { close: () => void }) {
                   onChange={(v) => setCount(count.map((c, i) => (i === a ? v : c)) as [number, number, number])}
                 />
                 <NumberBox
-                  label={locked ? `Spacing along ${tag}, from the fit` : `Spacing along ${tag}`}
+                  label={locked ? tr('Spacing along {axis}, from the fit', { axis: tag }) : tr('Spacing along {axis}', { axis: tag })}
                   value={locked ? fittedPitch(a) : pitch[a]}
                   unit="mm"
                   min={-BIG}
@@ -131,15 +132,15 @@ export function ArrayPanel({ close }: { close: () => void }) {
           {frame && (
             <>
               <div className="field inline">
-                <label htmlFor={fitId} title={`Spreads the copies over ${frame.name}.`}>
-                  Fit inside {frame.name}
+                <label htmlFor={fitId} title={tr('Spreads the copies over {name}.', { name: frame.name })}>
+                  {tr('Fit inside {name}', { name: frame.name })}
                 </label>
                 <input id={fitId} className="switch" type="checkbox" role="switch" checked={fit} onChange={(e) => setFit(e.target.checked)} />
               </div>
               {fit && (
                 <div className="field inline">
-                  <label>Edge inset</label>
-                  <NumberBox label="Edge inset" value={inset} unit="mm" min={-BIG} max={BIG} onChange={setInset} />
+                  <label>{tr('Edge inset')}</label>
+                  <NumberBox label={tr('Edge inset')} value={inset} unit="mm" min={-BIG} max={BIG} onChange={setInset} />
                 </div>
               )}
             </>
@@ -148,58 +149,58 @@ export function ArrayPanel({ close }: { close: () => void }) {
       ) : (
         <>
           <div className="array-head" aria-hidden>
-            <span className="wide">Around</span>
+            <span className="wide">{tr('Around')}</span>
           </div>
-          <div className="segmented" role="radiogroup" aria-label="What the ring goes around">
+          <div className="segmented" role="radiogroup" aria-label={tr('What the ring goes around')}>
             {(frame ? (['selection', 'frame', 'point'] as const) : (['selection', 'point'] as const)).map((a) => (
               <button key={a} type="button" role="radio" aria-checked={around === a} className={around === a ? 'on' : ''} onClick={() => setAround(a)}>
-                {a === 'selection' ? 'Selection' : a === 'frame' ? frame!.name : 'Fixed point'}
+                {a === 'selection' ? tr('Selection') : a === 'frame' ? frame!.name : tr('Fixed point')}
               </button>
             ))}
           </div>
           <div className="array-pair head" aria-hidden>
-            <span>Copies</span>
-            <span>Angle</span>
+            <span>{tr('Copies')}</span>
+            <span>{tr('Angle')}</span>
           </div>
           <div className="array-pair">
-            <NumberBox label="Number of copies around the ring" value={ring} min={2} max={ARRAY_LIMIT} integer onChange={setRing} />
-            <NumberBox label="Degrees the pattern spreads over" value={sweep} unit="°" min={1} max={360} onChange={setSweep} />
+            <NumberBox label={tr('Number of copies around the ring')} value={ring} min={2} max={ARRAY_LIMIT} integer onChange={setRing} />
+            <NumberBox label={tr('Degrees the pattern spreads over')} value={sweep} unit="°" min={1} max={360} onChange={setSweep} />
           </div>
           {around === 'selection' ? (
             <>
               <div className="array-pair head" aria-hidden>
-                <span>Radius</span>
-                <span>Diameter</span>
+                <span>{tr('Radius')}</span>
+                <span>{tr('Diameter')}</span>
               </div>
               <div className="array-pair">
-                <NumberBox label="Radius of the ring" value={radius} unit="mm" min={0} max={BIG} onChange={setRadius} />
-                <NumberBox label="Diameter of the ring" value={tidy(2 * radius)} unit="mm" min={0} max={BIG} onChange={(v) => setRadius(tidy(v / 2))} />
+                <NumberBox label={tr('Radius of the ring')} value={radius} unit="mm" min={0} max={BIG} onChange={setRadius} />
+                <NumberBox label={tr('Diameter of the ring')} value={tidy(2 * radius)} unit="mm" min={0} max={BIG} onChange={(v) => setRadius(tidy(v / 2))} />
               </div>
             </>
           ) : around === 'frame' && frame ? null : (
             <>
               <div className="array-pair head" aria-hidden>
-                <span>Center X</span>
-                <span>Center Y</span>
+                <span>{tr('Center X')}</span>
+                <span>{tr('Center Y')}</span>
               </div>
               <div className="array-pair">
-                <NumberBox label="X of the center of the ring" value={point[0]} unit="mm" min={-BIG} max={BIG} onChange={(v) => setPoint([v, point[1]])} />
-                <NumberBox label="Y of the center of the ring" value={point[1]} unit="mm" min={-BIG} max={BIG} onChange={(v) => setPoint([point[0], v])} />
+                <NumberBox label={tr('X of the center of the ring')} value={point[0]} unit="mm" min={-BIG} max={BIG} onChange={(v) => setPoint([v, point[1]])} />
+                <NumberBox label={tr('Y of the center of the ring')} value={point[1]} unit="mm" min={-BIG} max={BIG} onChange={(v) => setPoint([point[0], v])} />
               </div>
             </>
           )}
           <div className="field inline">
-            <label htmlFor={turnId} title="Rotates each copy to follow the ring.">
-              Rotate copies around the ring
+            <label htmlFor={turnId} title={tr('Rotates each copy to follow the ring.')}>
+              {tr('Rotate copies around the ring')}
             </label>
             <input id={turnId} className="switch" type="checkbox" role="switch" checked={turn} onChange={(e) => setTurn(e.target.checked)} />
           </div>
         </>
       )}
       <div className="array-foot">
-        <span className={tooMany ? 'field-note warn' : 'field-note'}>{tooMany ? `At most ${ARRAY_LIMIT} places` : `${places} place${places === 1 ? '' : 's'}`}</span>
+        <span className={tooMany ? 'field-note warn' : 'field-note'}>{tooMany ? tr('At most {limit} places', { limit: ARRAY_LIMIT }) : plural(places, '{n} place', '{n} places')}</span>
         <button type="button" className="primary" disabled={tooMany || places < 2 || seeds.length === 0} onClick={apply}>
-          Apply
+          {tr('Apply')}
         </button>
       </div>
     </div>

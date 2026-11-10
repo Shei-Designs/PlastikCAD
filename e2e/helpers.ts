@@ -89,6 +89,11 @@ export async function openApp(page: Page): Promise<void> {
   // The page loads more files from Vite than the browser remembers by default (see `withModules`).
   await page.addInitScript(() => performance.setResourceTimingBufferSize(5000));
   await page.goto('/');
+  await started(page);
+}
+
+/** Waits until the app has started, on a page that is loading it: after `openApp`'s own load, or one the app made itself. */
+export async function started(page: Page): Promise<void> {
   // The app answers once it has started; on the dev server the first load may also reload itself
   // once while Vite prepares the dependencies, which throws the question away. It is asked until
   // the app answers.

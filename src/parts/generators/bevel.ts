@@ -1,3 +1,4 @@
+import { tr } from '../../i18n';
 import { addHubAndBore, boreGroup, boreRadius, hubGroup } from '../features';
 import { clampBacklash, gearOutline, standardTooth, toothProfile, toothRadii } from '../involute';
 import { arcSegments, toDeg, TAU } from '../math2d';
@@ -41,30 +42,30 @@ export function bevelApexHeight(p: Params): number {
 
 export const bevelGear: GeneratorDef = {
   id: 'bevel',
-  name: 'Bevel gear',
+  name: tr('Bevel gear'),
   category: 'gears',
-  summary: 'Conical gear for shafts meeting at 90°.',
+  summary: tr('Conical gear for shafts meeting at 90°.'),
   groups: [
     {
-      title: 'Gear',
+      title: tr('Gear'),
       params: [
         {
           type: 'number',
           key: 'module',
-          label: 'Module',
-          help: 'Tooth size at the large end. Both gears of a pair share it.',
+          label: tr('Module'),
+          help: tr('Tooth size at the large end. Both gears of a pair share it.'),
           default: 2,
           min: 0.3,
           max: 20,
           step: 0.1,
           unit: 'mm',
         },
-        { type: 'number', key: 'teeth', label: 'Teeth', default: 20, min: 8, max: 200, step: 1, integer: true },
+        { type: 'number', key: 'teeth', label: tr('Teeth'), default: 20, min: 8, max: 200, step: 1, integer: true },
         {
           type: 'number',
           key: 'mateTeeth',
-          label: 'Mating gear teeth',
-          help: 'Sets the mating gear\'s tooth count, which determines the cone angle.',
+          label: tr('Mating gear teeth'),
+          help: tr('Sets the mating gear\'s tooth count, which determines the cone angle.'),
           default: 20,
           min: 8,
           max: 200,
@@ -74,8 +75,8 @@ export const bevelGear: GeneratorDef = {
         {
           type: 'number',
           key: 'faceWidth',
-          label: 'Face width',
-          help: 'Tooth length along the cone. Usually no more than a third of the cone distance.',
+          label: tr('Face width'),
+          help: tr('Tooth length along the cone. Usually no more than a third of the cone distance.'),
           default: 8,
           min: 1,
           max: 100,
@@ -85,8 +86,8 @@ export const bevelGear: GeneratorDef = {
         {
           type: 'number',
           key: 'baseThickness',
-          label: 'Base thickness',
-          help: 'Material behind the tooth roots at the large end.',
+          label: tr('Base thickness'),
+          help: tr('Material behind the tooth roots at the large end.'),
           default: 3,
           min: 0.5,
           max: 50,
@@ -96,21 +97,21 @@ export const bevelGear: GeneratorDef = {
       ],
     },
     {
-      title: 'Teeth',
+      title: tr('Teeth'),
       params: [
-        { type: 'number', key: 'pressureAngle', label: 'Pressure angle', default: 20, min: 14.5, max: 30, step: 0.5, unit: '°' },
+        { type: 'number', key: 'pressureAngle', label: tr('Pressure angle'), default: 20, min: 14.5, max: 30, step: 0.5, unit: '°' },
         {
           type: 'number',
           key: 'backlash',
-          label: 'Backlash',
-          help: 'Thins each tooth by this amount so printed gears run freely.',
+          label: tr('Backlash'),
+          help: tr('Thins each tooth by this amount so printed gears run freely.'),
           default: 0.1,
           min: 0,
           max: 1,
           step: 0.01,
           unit: 'mm',
         },
-        { type: 'number', key: 'clearance', label: 'Root clearance', default: 0.25, min: 0.1, max: 0.5, step: 0.05 },
+        { type: 'number', key: 'clearance', label: tr('Root clearance'), default: 0.25, min: 0.1, max: 0.5, step: 0.05 },
       ],
     },
     hubGroup({ diameter: 16 }),
@@ -122,9 +123,9 @@ export const bevelGear: GeneratorDef = {
     let face = num(p, 'faceWidth');
     if (face > coneDistance / 2) {
       face = coneDistance / 2;
-      warnings.push(`Face width was limited to ${face.toFixed(1)} mm (half the cone distance).`);
+      warnings.push(tr('Face width was limited to {width} mm (half the cone distance).', { width: face.toFixed(1) }));
     } else if (face > coneDistance / 3 + 1e-6) {
-      warnings.push('Face width is more than a third of the cone distance; the small ends of the teeth get very thin.');
+      warnings.push(tr('Face width is more than a third of the cone distance; the small ends of the teeth get very thin.'));
     }
 
     // Spur gear equivalent on the back cone.
@@ -136,7 +137,7 @@ export const bevelGear: GeneratorDef = {
       clearance: num(p, 'clearance'),
     });
     const profile = toothProfile(spec, q);
-    if (profile.undercut) warnings.push('The teeth are undercut; use more teeth or a larger pressure angle for stronger teeth.');
+    if (profile.undercut) warnings.push(tr('The teeth are undercut; use more teeth or a larger pressure angle for stronger teeth.'));
     // Angles around the gear axis are 1/cos(delta) times those on the developed back cone.
     const wrapped = { ...profile, flank: profile.flank.map((s) => ({ r: s.r, half: s.half / cosD })) };
     const developed = gearOutline(wrapped, z, q);
@@ -189,8 +190,8 @@ export const bevelGear: GeneratorDef = {
     const peak = backCone(addendum, k)[1] - back[1];
     const gear = translate(intersection(teeth, revolve(blank, segments)), [0, 0, -back[1]]);
 
-    if (boreRadius(p) > front[0] - 0.5 * m) warnings.push('The bore breaks into the teeth at the small end.');
-    if (num(p, 'hubHeight') > 0 && num(p, 'hubDiameter') / 2 > back[0]) warnings.push('The hub is wider than the back face of the gear.');
+    if (boreRadius(p) > front[0] - 0.5 * m) warnings.push(tr('The bore breaks into the teeth at the small end.'));
+    if (num(p, 'hubHeight') > 0 && num(p, 'hubDiameter') / 2 > back[0]) warnings.push(tr('The hub is wider than the back face of the gear.'));
 
     // The hub goes on the back (large) face so it cannot foul the mating gear: turn the gear over
     // (a mirror, so the D-flat and set screws keep their sides), add hub and bore, turn it back so
@@ -200,13 +201,13 @@ export const bevelGear: GeneratorDef = {
     const solid = translate(mirror(withHub.solid, [0, 0, 1]), [0, 0, withHub.height]);
 
     const info: InfoItem[] = [
-      { label: 'Pitch diameter', value: mm(2 * r) },
-      { label: 'Outside diameter', value: mm(2 * (r + addendum * cosD)) },
-      { label: 'Pitch cone angle', value: degrees(toDeg(delta)) },
-      { label: 'Cone distance', value: mm(coneDistance) },
-      { label: 'Apex to mounting face', value: mm(-back[1] + (withHub.height - peak)) },
-      { label: 'Ratio', value: `1 : ${(zMate / z).toFixed(3).replace(/\.?0+$/, '')}` },
-      { label: 'Total height', value: mm(withHub.height) },
+      { label: tr('Pitch diameter'), value: mm(2 * r) },
+      { label: tr('Outside diameter'), value: mm(2 * (r + addendum * cosD)) },
+      { label: tr('Pitch cone angle'), value: degrees(toDeg(delta)) },
+      { label: tr('Cone distance'), value: mm(coneDistance) },
+      { label: tr('Apex to mounting face'), value: mm(-back[1] + (withHub.height - peak)) },
+      { label: tr('Ratio'), value: `1 : ${(zMate / z).toFixed(3).replace(/\.?0+$/, '')}` },
+      { label: tr('Total height'), value: mm(withHub.height) },
     ];
     return { solid, info, warnings };
   },

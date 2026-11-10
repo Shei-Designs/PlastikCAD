@@ -9,6 +9,7 @@ import { sanitizeParams } from '../../parts/generators/types';
 import { mateOf } from '../../parts/mates';
 import type { MateRequest } from '../../parts/mates';
 import { geometry } from '../geometry';
+import { tr } from '../../i18n';
 import { abortAlignPreview, commit, fail, getState, notify, pushStep, replaceState, rewriteHistory, set } from './core';
 import type { Step } from './core';
 import { updateNode } from './editing';
@@ -38,7 +39,7 @@ function makePart(generatorId: string, params?: Record<string, PartParamValue>):
 async function partBox(node: PartNode): Promise<Bounds> {
   const worker = await geometry.prepare([], getState().doc.assets);
   const bounds = await worker.partBox(node);
-  if (!bounds) throw new Error(`"${node.name}" came out empty with these settings.`);
+  if (!bounds) throw new Error(tr('"{name}" came out empty with these settings.', { name: node.name }));
   return bounds;
 }
 
@@ -65,7 +66,7 @@ async function sizePart(node: PartNode, was: PartNode = node): Promise<PartNode>
 export async function startPlacingPart(category: string): Promise<void> {
   const def = GENERATORS.find((g) => g.category === category);
   if (!def) return;
-  set({ busy: 'Making the part…' });
+  set({ busy: tr('Making the part…') });
   try {
     const node = await sizePart(makePart(def.id));
     abortAlignPreview();
@@ -81,7 +82,7 @@ export async function startPlacingPart(category: string): Promise<void> {
 export async function addPart(category: string): Promise<void> {
   const def = GENERATORS.find((g) => g.category === category);
   if (!def) return;
-  set({ busy: 'Making the part…' });
+  set({ busy: tr('Making the part…') });
   try {
     const node = await sizePart(makePart(def.id));
     node.pos = [0, 0, node.size[2] / 2];

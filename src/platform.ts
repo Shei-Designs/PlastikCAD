@@ -5,6 +5,7 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { APP_NAME } from './appInfo';
 import { asError } from './errors';
+import { tr } from './i18n';
 
 export interface FileFilter {
   name: string;
@@ -251,7 +252,7 @@ export async function saveBundle(suggestedName: string, filters: FileFilter[], m
   if (!isTauri()) {
     const files = make(base(suggestedName));
     for (const file of files) await writeTarget({ path: null, name: file.name }, file.bytes, file.mime);
-    return { where: files.map((f) => f.name).join(' and '), uris: [] };
+    return { where: files.map((f) => f.name).reduce((list, name) => tr('{list} and {name}', { list, name })), uris: [] };
   }
   if (isAndroid()) {
     // A folder of the bundle's name keeps its files together among the other exports.
@@ -494,10 +495,10 @@ export function guardClose(isDirty: () => boolean, flush: () => Promise<boolean>
           const saved = await flush();
           const close =
             saved ||
-            (await confirm('The latest changes could not be saved. Close anyway and lose them?', {
-              title: 'Unsaved changes',
-              okLabel: 'Close anyway',
-              cancelLabel: 'Keep editing',
+            (await confirm(tr('The latest changes could not be saved. Close anyway and lose them?'), {
+              title: tr('Unsaved changes'),
+              okLabel: tr('Close anyway'),
+              cancelLabel: tr('Keep editing'),
             }));
           if (close) await window.destroy();
         } finally {

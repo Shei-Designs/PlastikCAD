@@ -5,6 +5,7 @@
 import { useSyncExternalStore } from 'react';
 import { noteDiagnostic } from '../diagnostics';
 import { asError } from '../errors';
+import { tr } from '../i18n';
 import { hasPartStore, hasProjectStore, partStore, projectStore } from '../state/projects';
 import { DriveRemote } from './drive';
 import { bindRecords, synchronize } from './engine';
@@ -107,7 +108,7 @@ export function initSync(options: {
 
 /** Signs in and runs a first pass. Rejects with a message fit to show. */
 export async function linkAccount(): Promise<void> {
-  if (!status.configured) throw new Error('Google Drive sync is not set up in this build.');
+  if (!status.configured) throw new Error(tr('Google Drive sync is not set up in this build.'));
   publish({ busy: true, error: null });
   try {
     const fresh = await signIn();
@@ -222,7 +223,7 @@ async function pass(): Promise<SyncReport | null> {
       setTokens(null);
       noteDiagnostic('sync', `Sign-in needed: ${e.message}`);
       publish({ busy: false, error: e.message });
-      onNotice?.(`Google Drive sync stopped: ${e.message}`);
+      onNotice?.(tr('Google Drive sync stopped: {reason}', { reason: e.message }));
       return null;
     }
     const message = asError(e).message;

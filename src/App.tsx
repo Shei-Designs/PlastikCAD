@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { APP_NAME } from './appInfo';
+import { tr } from './i18n';
 import * as platform from './platform';
 import {
   alignSelected,
@@ -206,7 +207,7 @@ function Toast() {
             {notice.action.label}
           </button>
         )}
-        <button type="button" className="notice-close" aria-label="Dismiss" onClick={dismissNotice}>
+        <button type="button" className="notice-close" aria-label={tr('Dismiss')} onClick={dismissNotice}>
           <CloseIcon />
         </button>
       </div>
@@ -219,7 +220,7 @@ function Toast() {
  * panels lie over the plate, so showing one puts the other away.
  */
 function PanelTab({ side, shown }: { side: 'left' | 'right'; shown: boolean }) {
-  const name = `${shown ? 'Hide' : 'Show'} ${side} panel`;
+  const name = side === 'left' ? (shown ? tr('Hide left panel') : tr('Show left panel')) : shown ? tr('Hide right panel') : tr('Show right panel');
   const toggle = () => {
     const key = side === 'left' ? 'leftPanel' : 'rightPanel';
     const other = side === 'left' ? 'rightPanel' : 'leftPanel';

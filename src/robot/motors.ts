@@ -7,6 +7,7 @@
 // gearmotors are Pololu's 12 V (25D, 37D) and 6 V HPCB (N20) variants at
 // stall; no maker publishes rotor inertia for servos or gearmotors, so those
 // armatures are estimates; a stepper's speed depends on its driver.
+import { tr } from '../i18n';
 import type { SceneNode } from '../model/types';
 import type { RobotJoint } from './types';
 
@@ -27,22 +28,22 @@ export interface Motor {
 }
 
 export const MOTORS: Motor[] = [
-  { id: 'sg90', name: 'SG90 micro servo', kind: 'servo', torque: 0.18, speed: 600, armature: 4e-4, range: 90, part: 'sg90' },
-  { id: 'mg996r', name: 'MG996R standard servo', kind: 'servo', torque: 0.92, speed: 350, armature: 2e-3, range: 80, part: 'mg996r' },
-  { id: 'fs90r', name: 'FS90R continuous servo', kind: 'servo', torque: 0.13, speed: 660, armature: 4e-4 },
+  { id: 'sg90', name: tr('SG90 micro servo'), kind: 'servo', torque: 0.18, speed: 600, armature: 4e-4, range: 90, part: 'sg90' },
+  { id: 'mg996r', name: tr('MG996R standard servo'), kind: 'servo', torque: 0.92, speed: 350, armature: 2e-3, range: 80, part: 'mg996r' },
+  { id: 'fs90r', name: tr('FS90R continuous servo'), kind: 'servo', torque: 0.13, speed: 660, armature: 4e-4 },
   { id: 'ax12a', name: 'Dynamixel AX-12A', kind: 'smart servo', torque: 1.5, speed: 354, armature: 1e-3, range: 150 },
   { id: 'xl430', name: 'Dynamixel XL430-W250', kind: 'smart servo', torque: 1.4, speed: 342, armature: 1e-3, range: 180 },
   { id: 'sts3215', name: 'Feetech STS3215', kind: 'smart servo', torque: 1.9, speed: 270, armature: 1e-3, range: 180 },
-  { id: 'n20-100', name: 'N20 gearmotor, 100:1', kind: 'gearmotor', torque: 0.15, speed: 1980, armature: 2e-5, part: 'n20' },
-  { id: 'tt-48', name: 'TT gearmotor, 48:1', kind: 'gearmotor', torque: 0.08, speed: 1200, armature: 2.3e-5, part: 'tt' },
-  { id: '25d-75', name: '25 mm gearmotor, 75:1', kind: 'gearmotor', torque: 0.83, speed: 600, armature: 2.8e-4, part: '25d' },
-  { id: '37d-70', name: '37 mm gearmotor, 70:1', kind: 'gearmotor', torque: 2.6, speed: 900, armature: 5e-4, part: '37d' },
-  { id: '28byj48', name: '28BYJ-48 geared stepper', kind: 'stepper', torque: 0.03, speed: 90, armature: 4e-5, part: '28byj48' },
-  { id: 'nema8', name: 'NEMA 8 stepper', kind: 'stepper', torque: 0.014, speed: 600, armature: 2e-7, part: 'nema8' },
-  { id: 'nema11', name: 'NEMA 11 stepper', kind: 'stepper', torque: 0.06, speed: 600, armature: 9e-7, part: 'nema11' },
-  { id: 'nema14', name: 'NEMA 14 stepper', kind: 'stepper', torque: 0.18, speed: 600, armature: 1.4e-6, part: 'nema14' },
-  { id: 'nema17', name: 'NEMA 17 stepper', kind: 'stepper', torque: 0.4, speed: 600, armature: 5.4e-6, part: 'nema17' },
-  { id: 'nema23', name: 'NEMA 23 stepper', kind: 'stepper', torque: 1.2, speed: 600, armature: 3e-5, part: 'nema23' },
+  { id: 'n20-100', name: tr('N20 gearmotor, 100:1'), kind: 'gearmotor', torque: 0.15, speed: 1980, armature: 2e-5, part: 'n20' },
+  { id: 'tt-48', name: tr('TT gearmotor, 48:1'), kind: 'gearmotor', torque: 0.08, speed: 1200, armature: 2.3e-5, part: 'tt' },
+  { id: '25d-75', name: tr('25 mm gearmotor, 75:1'), kind: 'gearmotor', torque: 0.83, speed: 600, armature: 2.8e-4, part: '25d' },
+  { id: '37d-70', name: tr('37 mm gearmotor, 70:1'), kind: 'gearmotor', torque: 2.6, speed: 900, armature: 5e-4, part: '37d' },
+  { id: '28byj48', name: tr('28BYJ-48 geared stepper'), kind: 'stepper', torque: 0.03, speed: 90, armature: 4e-5, part: '28byj48' },
+  { id: 'nema8', name: tr('NEMA 8 stepper'), kind: 'stepper', torque: 0.014, speed: 600, armature: 2e-7, part: 'nema8' },
+  { id: 'nema11', name: tr('NEMA 11 stepper'), kind: 'stepper', torque: 0.06, speed: 600, armature: 9e-7, part: 'nema11' },
+  { id: 'nema14', name: tr('NEMA 14 stepper'), kind: 'stepper', torque: 0.18, speed: 600, armature: 1.4e-6, part: 'nema14' },
+  { id: 'nema17', name: tr('NEMA 17 stepper'), kind: 'stepper', torque: 0.4, speed: 600, armature: 5.4e-6, part: 'nema17' },
+  { id: 'nema23', name: tr('NEMA 23 stepper'), kind: 'stepper', torque: 1.2, speed: 600, armature: 3e-5, part: 'nema23' },
 ];
 
 export const motorOf = (id: string | undefined): Motor | undefined => (id ? MOTORS.find((m) => m.id === id) : undefined);

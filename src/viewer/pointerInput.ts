@@ -4,6 +4,7 @@
 // holds the pen, is settled in gesture.ts; the sums of each drag are in
 // dragMath.ts; a tap of two or three fingers is told in multiTap.ts.
 import { Plane, Vector3 } from 'three';
+import { plural, tr } from '../i18n';
 import type { Feature } from '../geometry/features';
 import { boundsCenter, tidy, tidyVec } from '../model/math';
 import type { Mat } from '../model/math';
@@ -142,7 +143,7 @@ export class PointerInput {
   /** The live measurement beside the pointer, with a word on what the drag leaves behind. */
   private say(text: string, event: PointerEvent): void {
     const n = this.heldBack;
-    this.stage.events.onReadout(n ? `${text} · ${n} locked ${n === 1 ? 'stays' : 'stay'} put` : text, event.clientX, event.clientY);
+    this.stage.events.onReadout(n ? plural(n, '{text} · {n} locked stays put', '{text} · {n} locked stay put', { text }) : text, event.clientX, event.clientY);
   }
 
   /** Abandon the drag in progress, if any. Returns whether there was one. */
@@ -205,7 +206,7 @@ export class PointerInput {
   /** Two fingers tapped take the last step back, three bring it again; the middle of the view says which. */
   private history(step: HistoryStep): void {
     const taken = this.stage.events.onHistory(step);
-    this.feedback.say(taken ? (step === 'undo' ? 'Undo' : 'Redo') : `Nothing to ${step}`);
+    this.feedback.say(step === 'undo' ? (taken ? tr('Undo') : tr('Nothing to undo')) : taken ? tr('Redo') : tr('Nothing to redo'));
   }
 
   /** How far the viewer's own press has got, for `pressOwner`. */

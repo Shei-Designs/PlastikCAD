@@ -6,6 +6,7 @@
 // the rounded tip produces the trochoidal root fillet, and for low tooth counts
 // the fillet eats into the involute (undercut) exactly as it would on a hobbed
 // gear, so small pinions still mesh without interference.
+import { tr } from '../i18n';
 import { dedupe, TAU } from './math2d';
 import type { Polygon, Quality, Vec2 } from './types';
 
@@ -56,7 +57,7 @@ export const maxBacklash = (module: number) => 0.4 * Math.PI * module;
 export function clampBacklash(backlash: number, module: number, warnings: string[]): number {
   const limit = maxBacklash(module);
   if (backlash <= limit) return backlash;
-  warnings.push(`Backlash was limited to ${limit.toFixed(2)} mm so the teeth keep two flanks.`);
+  warnings.push(tr('Backlash was limited to {limit} mm so the teeth keep two flanks.', { limit: limit.toFixed(2) }));
   return limit;
 }
 

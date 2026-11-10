@@ -1,4 +1,5 @@
 import { unzipSync } from 'fflate';
+import { tr } from '../i18n';
 import { apply, determinant, IDENTITY, multiply, scaling } from '../model/math';
 import type { Mat } from '../model/math';
 import type { ImportedModel, ImportedPart } from './import';
@@ -24,7 +25,7 @@ const MAX_COMPONENTS = 100_000;
 const MAX_TRIANGLES = 20_000_000;
 /** Unpacked size of the model parts, in bytes, past which the archive is not read. */
 const MAX_UNPACKED = 512 * 1024 * 1024;
-const TOO_BIG = 'This 3MF file is too large to open.';
+const TOO_BIG = tr('This 3MF file is too large to open.');
 
 // Attribute names of <vertex> and <triangle>, as XmlScanner.numbers() wants them.
 const key = (s: string) => s.charCodeAt(0) | ((s.charCodeAt(1) || 0) << 8) | ((s.charCodeAt(2) || 0) << 16);
@@ -65,7 +66,7 @@ interface Model {
  * groups; textures, slicer settings and everything else are ignored.
  */
 export function parse3mf(bytes: Uint8Array, name = 'Model'): ImportedModel {
-  if (bytes.length === 0) throw new Error('This 3MF file is empty.');
+  if (bytes.length === 0) throw new Error(tr('This 3MF file is empty.'));
   // Lower-case part names: OPC part names are case-insensitive.
   const files = new Map<string, Uint8Array>();
   let unpacked = 0;
@@ -81,7 +82,7 @@ export function parse3mf(bytes: Uint8Array, name = 'Model'): ImportedModel {
     for (const file in unzipped) files.set(partName(file), unzipped[file]);
   } catch (e) {
     if (e instanceof Error && e.message === TOO_BIG) throw e;
-    throw new Error('This 3MF file is damaged, or is not a 3MF file.');
+    throw new Error(tr('This 3MF file is damaged, or is not a 3MF file.'));
   }
 
   const models = new Map<string, Model | null>();
@@ -99,7 +100,7 @@ export function parse3mf(bytes: Uint8Array, name = 'Model'): ImportedModel {
 
   const rootPath = rootModelPath(files);
   const root = rootPath === undefined ? null : load(rootPath);
-  if (rootPath === undefined || !root) throw new Error('This 3MF file has no 3D model in it.');
+  if (rootPath === undefined || !root) throw new Error(tr('This 3MF file has no 3D model in it.'));
 
   const items = root.items;
   if (items.length === 0) {
@@ -127,14 +128,14 @@ export function parse3mf(bytes: Uint8Array, name = 'Model'): ImportedModel {
     const model = load(path);
     const object = model?.objects.get(id);
     if (!model || !object || depth > MAX_DEPTH) return;
-    if (++visits > MAX_COMPONENTS) throw new Error('This 3MF file has too many components to open.');
+    if (++visits > MAX_COMPONENTS) throw new Error(tr('This 3MF file has too many components to open.'));
     const rescale = model.unit / unit;
     const transform = rescale === 1 ? placement : multiply(placement, scaling([rescale, rescale, rescale]));
     const { vertices, triangles, colors } = object;
     const own = object.color ?? inherited;
     if (triangles.length) {
       emitted += triangles.length / 3;
-      if (emitted > MAX_TRIANGLES) throw new Error('This 3MF file has too many triangles to open.');
+      if (emitted > MAX_TRIANGLES) throw new Error(tr('This 3MF file has too many triangles to open.'));
       const m = transform;
       // Welded per color, so the index of a vertex is looked up afresh for each builder it goes into.
       const placed = new Float64Array(vertices.length);
@@ -191,7 +192,7 @@ export function parse3mf(bytes: Uint8Array, name = 'Model'): ImportedModel {
     }
   }
 
-  if (parts.length === 0) throw new Error('This 3MF file has no meshes.');
+  if (parts.length === 0) throw new Error(tr('This 3MF file has no meshes.'));
   return { kind: 'model', parts, used: [] };
 }
 

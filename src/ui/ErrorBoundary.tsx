@@ -3,6 +3,7 @@
 // app keeps working around it.
 import { noteDiagnostic } from '../diagnostics';
 import { asError } from '../errors';
+import { tr } from '../i18n';
 import { Component } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 
@@ -24,23 +25,29 @@ interface State {
   error: Error | null;
 }
 
-const NAMES: Record<CrashFrame, string> = { sidebar: 'This panel', viewport: 'The 3D view', inspector: 'This panel', window: 'The app' };
+/** What is said of each part that failed, as a whole sentence. */
+const NAMES: Record<CrashFrame, string> = {
+  sidebar: tr('This panel stopped working.'),
+  viewport: tr('The 3D view stopped working.'),
+  inspector: tr('This panel stopped working.'),
+  window: tr('The app stopped working.'),
+};
 
 /** What is shown in place of the part that failed. */
 export function Crashed({ frame, error, onReload, onSaveCopy }: Actions & { frame: CrashFrame; error: Error }) {
   const body = (
     <div className="crash" role="alert">
-      <strong>{NAMES[frame]} stopped working.</strong>
-      <p>Reload to carry on.</p>
+      <strong>{NAMES[frame]}</strong>
+      <p>{tr('Reload to carry on.')}</p>
       <p className="crash-detail clip" title={error.message}>
         {error.message}
       </p>
       <div className="crash-actions">
         <button type="button" className="chip" onClick={onSaveCopy}>
-          Save a copy…
+          {tr('Save a copy…')}
         </button>
         <button type="button" className="primary" onClick={onReload}>
-          Reload
+          {tr('Reload')}
         </button>
       </div>
     </div>

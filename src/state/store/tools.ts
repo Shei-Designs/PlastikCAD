@@ -6,6 +6,7 @@ import { ALIGN_MODES, alignAt, alignDot } from '../../model/ops';
 import type { AlignMode, ArraySpec, GridArray, RingArray } from '../../model/ops';
 import type { SceneNode, Vec2, Vec3 } from '../../model/types';
 import { geometry } from '../geometry';
+import { tr } from '../../i18n';
 import { FEATURE_KINDS } from '../../geometry/features';
 import type { Feature, FeatureKind } from '../../geometry/features';
 import { abortAlignPreview, beginGesture, commit, endGesture, gestureBase, getState, holdAlignPreview, notify, set, step } from './core';
@@ -56,7 +57,7 @@ export function startAligning(): void {
     if (aligning) set({ aligning, placing: null, measuring: null });
     return;
   }
-  if (getState().selection.length < 2) return notify('Select two or more objects to line them up.');
+  if (getState().selection.length < 2) return notify(tr('Select two or more objects to line them up.'));
   const aligning = alignState(null);
   if (aligning) set({ aligning, placing: null, measuring: null });
 }
@@ -211,7 +212,7 @@ export function previewArray(request: ArrayRequest): void {
   const frame = framed ? arrayFrame(picked) : null;
   const seeds = picked.filter((n) => !n.locked && n !== frame);
   if (seeds.length === 0) return;
-  if (arrayPlaces(request) > ARRAY_LIMIT) return notify(`A pattern can have up to ${ARRAY_LIMIT} places.`);
+  if (arrayPlaces(request) > ARRAY_LIMIT) return notify(tr('A pattern can have up to {limit} places.', { limit: ARRAY_LIMIT }));
   let spec: ArraySpec;
   if (request.kind === 'grid') spec = request.fit && frame ? { ...request, fit: { inset: request.fit.inset, bounds: geometry.bounds(frame) } } : { ...request, fit: undefined };
   else if (request.center === 'frame') {

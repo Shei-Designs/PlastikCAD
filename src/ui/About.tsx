@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 import type React from 'react';
 import { APP_NAME, APP_URL, APP_VERSION, AUTHOR, AUTHOR_URL, PUBLISHER, PUBLISHER_URL } from '../appInfo';
 import { diagnosticsReport } from '../diagnostics';
+import { tr } from '../i18n';
+import { rich } from '../i18n/rich';
 import { isAndroid, isDesktop } from '../platform';
 import { getState } from '../state/store';
 import { getSyncStatus } from '../sync/sync';
@@ -43,29 +45,29 @@ export function About({ open, onClose }: { open: boolean; onClose: () => void })
     }
   };
   return (
-    <Modal open={open} onClose={onClose} className="about" label={`About ${APP_NAME}`}>
+    <Modal open={open} onClose={onClose} className="about" label={tr('About {app}', { app: APP_NAME })}>
       <div className="about-body">
         <div className="brand">
           <Logo />
           <span className="wordmark">{APP_NAME}</span>
         </div>
-        <p>Version {APP_VERSION}</p>
+        <p>{tr('Version {version}', { version: APP_VERSION })}</p>
         <p className="about-by">
-          A <Link href={PUBLISHER_URL}>{PUBLISHER}</Link> project, designed and built by <Link href={AUTHOR_URL}>{AUTHOR}</Link>.
+          {rich('A {publisher} project, designed and built by {author}.', { publisher: <Link href={PUBLISHER_URL}>{PUBLISHER}</Link>, author: <Link href={AUTHOR_URL}>{AUTHOR}</Link> })}
         </p>
-        <p>Free software under the GNU General Public License, version 3 or later.</p>
+        <p>{tr('Free software under the GNU General Public License, version 3 or later.')}</p>
         <p className="about-link">
           <Link href={APP_URL}>{APP_URL}</Link>
         </p>
         <div className="about-actions">
-          <button type="button" className="chip" title="Copies a report of the app, the device and recent errors, to send with a problem." onClick={() => void copy()}>
-            {copied === 'yes' ? 'Copied' : 'Copy diagnostics'}
+          <button type="button" className="chip" title={tr('Copies a report of the app, the device and recent errors, to send with a problem.')} onClick={() => void copy()}>
+            {copied === 'yes' ? tr('Copied') : tr('Copy diagnostics')}
           </button>
           <button type="button" className="primary" onClick={onClose}>
-            Close
+            {tr('Close')}
           </button>
         </div>
-        {copied === 'no' && <textarea className="about-report" readOnly aria-label="Diagnostics" value={report()} onFocus={(e) => e.currentTarget.select()} />}
+        {copied === 'no' && <textarea className="about-report" readOnly aria-label={tr('Diagnostics')} value={report()} onFocus={(e) => e.currentTarget.select()} />}
       </div>
     </Modal>
   );

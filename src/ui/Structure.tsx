@@ -4,6 +4,7 @@
 // part on the plate; pick one to edit the object at that layer, and to name it
 // and read or write its notes in the box fixed at the bottom.
 import { useEffect, useState } from 'react';
+import { plural, tr } from '../i18n';
 import { MAX_NOTE } from '../model/file';
 import { HOLE_COLOR } from '../model/ops';
 import type { SceneNode } from '../model/types';
@@ -19,8 +20,8 @@ const depthOf = (node: SceneNode): number => (node.type === 'group' ? 1 + Math.m
 function Name({ path, node }: { path: string[]; node: SceneNode }) {
   return (
     <label className="details-field">
-      <span className="notes-head">Name</span>
-      <CommitInput className="text-input" label="Name" sheet="Name" value={node.name} onCommit={(name) => setNameAt(path, name)} />
+      <span className="notes-head">{tr('Name')}</span>
+      <CommitInput className="text-input" label={tr('Name')} sheet={tr('Name')} value={node.name} onCommit={(name) => setNameAt(path, name)} />
     </label>
   );
 }
@@ -40,18 +41,18 @@ function Notes({ path, node }: { path: string[]; node: SceneNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [note]);
   return (
-    <label className="details-field" title="Keeps notes with this part of the object.">
-      <span className="notes-head">Notes</span>
+    <label className="details-field" title={tr('Keeps notes with this part of the object.')}>
+      <span className="notes-head">{tr('Notes')}</span>
       <textarea
         className="text-input area"
-        aria-label={`Notes for ${node.name}`}
-        placeholder="Anything to remember about this part."
+        aria-label={tr('Notes for {name}', { name: node.name })}
+        placeholder={tr('Anything to remember about this part.')}
         maxLength={MAX_NOTE}
         value={text}
         // A finger writes the notes in the entry sheet at the top of the window, clear of the keypad.
         onPointerDown={(e) =>
           enterByTouch(e, {
-            label: `Notes for ${node.name}`,
+            label: tr('Notes for {name}', { name: node.name }),
             value: text,
             inputMode: 'text',
             multiline: true,
@@ -98,7 +99,7 @@ export function Structure({ root }: { root: SceneNode }) {
           aria-selected={on}
           aria-level={at.length}
           aria-expanded={node.type === 'group' ? true : undefined}
-          aria-label={`${node.name}, ${kindOf(node)}${node.note ? ', with notes' : ''}`}
+          aria-label={node.note ? tr('{name}, {kind}, with notes', { name: node.name, kind: kindOf(node) }) : `${node.name}, ${kindOf(node)}`}
           onMouseEnter={() => setHighlight(at)}
           onMouseLeave={() => setHighlight(null)}
           onFocus={() => setHighlight(at)}
@@ -113,7 +114,7 @@ export function Structure({ root }: { root: SceneNode }) {
         >
           <span className={node.hole ? 'dot hole' : 'dot'} style={{ background: node.hole ? undefined : node.color, borderColor: node.hole ? HOLE_COLOR : undefined }} />
           <span className="clip">{node.name}</span>
-          {node.note && <span className="note-mark" title="Has notes" />}
+          {node.note && <span className="note-mark" title={tr('Has notes')} />}
           <span className="outline-kind">{kindOf(node)}</span>
         </div>
         {node.type === 'group' && (
@@ -128,11 +129,11 @@ export function Structure({ root }: { root: SceneNode }) {
   return (
     <div className="structure-tab">
       <div className="structure-scroll">
-        <h2 title="Shows how the object was put together.">
-          Structure
-          <span className="count">{root.type === 'group' ? `${leaves} part${leaves === 1 ? '' : 's'}, ${levels} level${levels === 1 ? '' : 's'}` : ''}</span>
+        <h2 title={tr('Shows how the object was put together.')}>
+          {tr('Structure')}
+          <span className="count">{root.type === 'group' ? tr('{parts}, {levels}', { parts: plural(leaves, '{n} part', '{n} parts'), levels: plural(levels, '{n} level', '{n} levels') }) : ''}</span>
         </h2>
-        <ul className="outline" role="tree" aria-label="Structure tree">
+        <ul className="outline" role="tree" aria-label={tr('Structure tree')}>
           {row(root, [root.id])}
         </ul>
         {path.length > 1 && (
@@ -140,8 +141,8 @@ export function Structure({ root }: { root: SceneNode }) {
             <span className="clip">
               <strong>{chosen.name}</strong>
             </span>
-            <button type="button" className="chip" title="Edits this part inside the object." onClick={() => editInside(path)}>
-              Edit here
+            <button type="button" className="chip" title={tr('Edits this part inside the object.')} onClick={() => editInside(path)}>
+              {tr('Edit here')}
             </button>
           </div>
         )}

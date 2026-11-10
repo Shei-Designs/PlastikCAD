@@ -2,6 +2,7 @@
 // belt standards (not the manufacturers' exact multi-arc forms): accurate in
 // pitch, outside diameter and groove size, which is what matters at 3D printing
 // tolerances. The fit can be tuned with the tooth clearance parameter.
+import { tr } from '../../i18n';
 import { addHubAndBore, boreGroup, boreRadius, boreShape, hubGroup } from '../features';
 import type { BoreDefaults, HubDefaults } from '../features';
 import { arc, arcN, arcSegments, dedupe, deg, polar, rotatePoint, TAU } from '../math2d';
@@ -181,8 +182,8 @@ function buildPulley(profiles: Record<string, BeltProfile>, p: Params, q: Qualit
     clearance = Math.max(0, Math.round((clearance - 0.01) * 100) / 100);
     toothed = pulleyOutline(b, teeth, clearance, q);
   }
-  if (!toothed) throw new Error('The belt grooves overlap: use more teeth.');
-  if (clearance < num(p, 'toothClearance')) warnings.push(`The tooth clearance was reduced to ${clearance.toFixed(2)} mm so the grooves do not overlap.`);
+  if (!toothed) throw new Error(tr('The belt grooves overlap: use more teeth.'));
+  if (clearance < num(p, 'toothClearance')) warnings.push(tr('The tooth clearance was reduced to {clearance} mm so the grooves do not overlap.', { clearance: clearance.toFixed(2) }));
 
   const pitchD = (teeth * b.pitch) / Math.PI;
   const od = pitchD - 2 * b.plo;
@@ -211,16 +212,16 @@ function buildPulley(profiles: Record<string, BeltProfile>, p: Params, q: Qualit
     parts.push(revolve(dedupe([[0, z0], [rf - run, z0], [rf, z0 + run], [rf, zTop], [0, zTop]]), segs));
   }
 
-  if (boreRadius(p) > rootR - 1) warnings.push('The bore leaves less than 1 mm of material below the belt grooves.');
+  if (boreRadius(p) > rootR - 1) warnings.push(tr('The bore leaves less than 1 mm of material below the belt grooves.'));
   const { solid, height } = addHubAndBore(union(...parts), 0, zTop, p, q, warnings, hasBottom || hasTop ? rf : ro);
 
   const info: InfoItem[] = [
-    { label: 'Pitch diameter', value: mm(pitchD) },
-    { label: 'Outside diameter', value: mm(od) },
-    { label: 'Root diameter', value: mm(2 * rootR) },
+    { label: tr('Pitch diameter'), value: mm(pitchD) },
+    { label: tr('Outside diameter'), value: mm(od) },
+    { label: tr('Root diameter'), value: mm(2 * rootR) },
   ];
-  if (hasBottom || hasTop) info.push({ label: 'Flange diameter', value: mm(2 * rf) });
-  info.push({ label: 'Belt pitch', value: mm(b.pitch, 3) }, { label: 'Total height', value: mm(height) });
+  if (hasBottom || hasTop) info.push({ label: tr('Flange diameter'), value: mm(2 * rf) });
+  info.push({ label: tr('Belt pitch'), value: mm(b.pitch, 3) }, { label: tr('Total height'), value: mm(height) });
 
   return { solid, outline: [toothed, ...(boreShape(p, q) ?? [])], info, warnings };
 }
@@ -246,21 +247,21 @@ function makePulley(f: PulleyFamily): GeneratorDef {
     summary: f.summary,
     groups: [
       {
-        title: 'Belt',
+        title: tr('Belt'),
         params: [
           {
             type: 'select',
             key: 'profile',
-            label: 'Profile',
+            label: tr('Profile'),
             default: f.defaultProfile,
             options: Object.entries(f.profiles).map(([value, b]) => ({ value, label: b.label })),
           },
-          { type: 'number', key: 'teeth', label: 'Teeth', default: 20, min: 10, max: 200, step: 1, integer: true },
+          { type: 'number', key: 'teeth', label: tr('Teeth'), default: 20, min: 10, max: 200, step: 1, integer: true },
           {
             type: 'number',
             key: 'beltWidth',
-            label: 'Belt width',
-            help: 'Sets the belt width the toothed section is cut for.',
+            label: tr('Belt width'),
+            help: tr('Sets the belt width the toothed section is cut for.'),
             default: f.beltWidth,
             min: 2,
             max: 100,
@@ -270,8 +271,8 @@ function makePulley(f: PulleyFamily): GeneratorDef {
           {
             type: 'number',
             key: 'toothClearance',
-            label: 'Tooth clearance',
-            help: 'Enlarges every belt groove by this much on all sides. Increase it if the belt does not seat fully on a printed pulley.',
+            label: tr('Tooth clearance'),
+            help: tr('Enlarges every belt groove by this much on all sides. Increase it if the belt does not seat fully on a printed pulley.'),
             default: f.clearance,
             min: 0,
             max: 0.5,
@@ -281,26 +282,26 @@ function makePulley(f: PulleyFamily): GeneratorDef {
         ],
       },
       {
-        title: 'Flanges',
+        title: tr('Flanges'),
         params: [
           {
             type: 'select',
             key: 'flanges',
-            label: 'Flanges',
+            label: tr('Flanges'),
             default: 'both',
             options: [
-              { value: 'both', label: 'Both sides' },
-              { value: 'bottom', label: 'Bottom only' },
-              { value: 'top', label: 'Top only (hub side)' },
-              { value: 'none', label: 'None' },
+              { value: 'both', label: tr('Both sides') },
+              { value: 'bottom', label: tr('Bottom only') },
+              { value: 'top', label: tr('Top only (hub side)') },
+              { value: 'none', label: tr('None') },
             ],
           },
-          { type: 'number', key: 'flangeHeight', label: 'Thickness', default: 1, min: 0.4, max: 10, step: 0.1, unit: 'mm', visible: hasFlange },
+          { type: 'number', key: 'flangeHeight', label: tr('Thickness'), default: 1, min: 0.4, max: 10, step: 0.1, unit: 'mm', visible: hasFlange },
           {
             type: 'number',
             key: 'flangeExtra',
-            label: 'Overhang',
-            help: 'How far the flange extends beyond the outside diameter of the teeth.',
+            label: tr('Overhang'),
+            help: tr('How far the flange extends beyond the outside diameter of the teeth.'),
             default: 1,
             min: 0.2,
             max: 10,
@@ -319,8 +320,8 @@ function makePulley(f: PulleyFamily): GeneratorDef {
 
 export const gt2Pulley = makePulley({
   id: 'gt2-pulley',
-  name: 'GT2 timing pulley',
-  summary: 'Pulley for GT2 / 2GT belts, the standard on 3D printers and small CNC machines.',
+  name: tr('GT2 timing pulley'),
+  summary: tr('Pulley for GT2 / 2GT belts, the standard on 3D printers and small CNC machines.'),
   profiles: GT2,
   defaultProfile: '2',
   beltWidth: 6,
@@ -331,8 +332,8 @@ export const gt2Pulley = makePulley({
 
 export const htdPulley = makePulley({
   id: 'htd-pulley',
-  name: 'HTD timing pulley',
-  summary: 'Pulley for HTD 3M / 5M / 8M round-tooth belts, used for higher torque drives.',
+  name: tr('HTD timing pulley'),
+  summary: tr('Pulley for HTD 3M / 5M / 8M round-tooth belts, used for higher torque drives.'),
   profiles: HTD,
   defaultProfile: '5M',
   beltWidth: 15,
@@ -343,8 +344,8 @@ export const htdPulley = makePulley({
 
 export const tPulley = makePulley({
   id: 't-pulley',
-  name: 'T-series timing pulley',
-  summary: 'Pulley for metric trapezoidal T2.5 / T5 / T10 belts.',
+  name: tr('T-series timing pulley'),
+  summary: tr('Pulley for metric trapezoidal T2.5 / T5 / T10 belts.'),
   profiles: T_SERIES,
   defaultProfile: 'T5',
   beltWidth: 10,
@@ -355,8 +356,8 @@ export const tPulley = makePulley({
 
 export const mxlPulley = makePulley({
   id: 'mxl-pulley',
-  name: 'MXL / XL timing pulley',
-  summary: 'Pulley for imperial trapezoidal MXL (0.080") and XL (0.200") belts.',
+  name: tr('MXL / XL timing pulley'),
+  summary: tr('Pulley for imperial trapezoidal MXL (0.080") and XL (0.200") belts.'),
   profiles: IMPERIAL,
   defaultProfile: 'MXL',
   beltWidth: 6.5,

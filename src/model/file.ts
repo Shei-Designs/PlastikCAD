@@ -5,6 +5,7 @@
 import { clampAngle } from '../text/curve';
 import type { TextCurve } from '../text/curve';
 import { FILE_FORMAT, FILE_VERSION, LEGACY_FORMAT } from '../appInfo';
+import { inEveryLanguage, tr } from '../i18n';
 import { SHAPES, clampParams, defaultParams } from '../geometry/shapes';
 import { GENERATORS, RENAMED_PARTS, getGenerator } from '../parts/generators';
 import { sanitizeParams } from '../parts/generators/types';
@@ -15,8 +16,11 @@ import { COLLISION_KINDS, DRIVE_KINDS, JOINT_TYPES, SENSOR_KINDS, WORLDS, defaul
 import type { CollisionKind, Drive, DriveRole, JointType, MassSpec, Robot, RobotJoint, RobotLink, RobotSensor, SensorKind } from '../robot/types';
 
 export function emptyDoc(): Doc {
-  return { id: newId(), name: 'Untitled', scene: [], assets: {} };
+  return { id: newId(), name: tr('Untitled'), scene: [], assets: {} };
 }
+
+/** Whether a design still has the name a new one is given, in whichever language it was given. */
+export const isUntitled = (name: string): boolean => inEveryLanguage('Untitled').includes(name);
 
 /** Longest note kept on an object. */
 export const MAX_NOTE = 2000;
@@ -170,7 +174,7 @@ const KINDS = new Set<string>(SHAPES.map((s) => s.kind));
 /** Groups within groups, past which a design is refused rather than read recursively. */
 const MAX_NESTING = 64;
 
-const NEWER = 'This design was saved by a newer version of the app. Update to open it.';
+const NEWER = tr('This design was saved by a newer version of the app. Update to open it.');
 /**
  * From this version of the format on, a file is read strictly: a kind of
  * object, part, option or sensor this build does not know can only have come
@@ -210,10 +214,10 @@ function vec3(v: unknown, fallback: Vec3, positive = false): Vec3 {
 
 function readNode(raw: unknown, assets: Record<string, Asset>, depth: number): SceneNode | null {
   if (!isRecord(raw) || typeof raw.id !== 'string') return null;
-  if (depth > MAX_NESTING) throw new Error('This design is nested too deeply.');
+  if (depth > MAX_NESTING) throw new Error(tr('This design is nested too deeply.'));
   const base = {
     id: raw.id,
-    name: typeof raw.name === 'string' ? raw.name : 'Object',
+    name: typeof raw.name === 'string' ? raw.name : tr('Object'),
     pos: vec3(raw.pos, [0, 0, 0]),
     rot: vec3(raw.rot, [0, 0, 0]),
     size: vec3(raw.size, [20, 20, 20], true),
@@ -237,8 +241,8 @@ function readNode(raw: unknown, assets: Record<string, Asset>, depth: number): S
     const { flip: _flip, hidden: _hidden, locked: _locked, ghost: _ghost, texture: _texture, ...plain } = base;
     const cylinder = (size: Vec3) => clampParams({ shape: 'cylinder', params: { sides, radius: 0 }, size });
     const bore: Vec3 = [Math.max(w - 2 * wall, 0.1), Math.max(d - 2 * wall, 0.1), h * 2];
-    const outer: SceneNode = { ...plain, id: `${base.id}o`, name: 'Outer', pos: [0, 0, 0], rot: [0, 0, 0], hole: false, type: 'shape', shape: 'cylinder', params: cylinder(base.size) };
-    const inner: SceneNode = { ...outer, id: `${base.id}i`, name: 'Bore', hole: true, size: bore, params: cylinder(bore) };
+    const outer: SceneNode = { ...plain, id: `${base.id}o`, name: tr('Outer'), pos: [0, 0, 0], rot: [0, 0, 0], hole: false, type: 'shape', shape: 'cylinder', params: cylinder(base.size) };
+    const inner: SceneNode = { ...outer, id: `${base.id}i`, name: tr('Bore'), hole: true, size: bore, params: cylinder(bore) };
     return { ...base, type: 'group', natural: base.size, children: [outer, inner] };
   }
   if (raw.type === 'shape') {
@@ -351,7 +355,7 @@ function readAssets(raw: unknown): Record<string, Asset> {
       if (shapes.length) out[key] = { kind: 'outline', shapes };
     } else if (value.kind === 'image' && typeof value.data === 'string' && (value.mime === 'image/png' || value.mime === 'image/jpeg')) {
       const px = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 1 ? Math.round(v) : 0);
-      if (px(value.width) && px(value.height)) out[key] = { kind: 'image', name: typeof value.name === 'string' ? value.name : 'Picture', mime: value.mime, data: value.data, width: px(value.width), height: px(value.height) };
+      if (px(value.width) && px(value.height)) out[key] = { kind: 'image', name: typeof value.name === 'string' ? value.name : tr('Picture'), mime: value.mime, data: value.data, width: px(value.width), height: px(value.height) };
     } else {
       oneOf(value.kind, (k) => k === 'mesh' || k === 'outline' || k === 'image');
     }
@@ -491,10 +495,10 @@ function parseFile(text: string): Record<string, unknown> {
   try {
     raw = JSON.parse(text);
   } catch {
-    throw new Error('This file is not a design: it could not be read as JSON.');
+    throw new Error(tr('This file is not a design: it could not be read as JSON.'));
   }
-  if (!isRecord(raw) || (raw.format !== FILE_FORMAT && raw.format !== LEGACY_FORMAT)) throw new Error('This file is not a design made with this app.');
-  if (typeof raw.version !== 'number') throw new Error('This file is not a design made with this app: it does not say which version of the format it is in.');
+  if (!isRecord(raw) || (raw.format !== FILE_FORMAT && raw.format !== LEGACY_FORMAT)) throw new Error(tr('This file is not a design made with this app.'));
+  if (typeof raw.version !== 'number') throw new Error(tr('This file is not a design made with this app: it does not say which version of the format it is in.'));
   if (raw.version > FILE_VERSION) throw new Error(NEWER);
   strict = raw.version >= STRICT_FROM;
   return raw;
@@ -511,7 +515,7 @@ export function parseDoc(text: string): Doc {
   const raw = parseFile(text);
   const assets = readAssets(raw.assets);
   const thumb = readThumb(raw.thumb);
-  const doc: Doc = { id: readId(raw.id), name: readName(raw.name, 'Untitled'), scene: readScene(raw.scene, assets), assets };
+  const doc: Doc = { id: readId(raw.id), name: readName(raw.name, tr('Untitled')), scene: readScene(raw.scene, assets), assets };
   if (thumb) doc.thumb = thumb;
   const robot = readRobot(raw.robot, doc.scene);
   if (robot) doc.robot = robot;
@@ -587,7 +591,7 @@ export function readHeader(head: string): DocHeader | null {
   const id = field('id');
   const name = field('name');
   if (name === null && sceneAt < 0) return null;
-  return { id: readRevision(id), name: readName(name, 'Untitled'), revision: readRevision(field('revision')), saved: savedTime(field('saved')), thumb: readThumb(field('thumb') ?? undefined) ?? null };
+  return { id: readRevision(id), name: readName(name, tr('Untitled')), revision: readRevision(field('revision')), saved: savedTime(field('saved')), thumb: readThumb(field('thumb') ?? undefined) ?? null };
 }
 
 /**
@@ -599,13 +603,13 @@ export function legacyVersions(text: string): Doc[] {
   const raw = parseFile(text);
   if (raw.version !== 1 || !Array.isArray(raw.versions)) return [];
   const assets = readAssets(raw.assets);
-  const name = readName(raw.name, 'Untitled');
+  const name = readName(raw.name, tr('Untitled'));
   const out: Doc[] = [];
   for (const v of raw.versions) {
     if (!isRecord(v)) continue;
     const scene = readScene(v.scene, assets);
     if (scene.length === 0) continue;
-    const label = readName(v.label, `Version ${out.length + 1}`);
+    const label = readName(v.label, tr('Version {n}', { n: out.length + 1 }));
     out.push({ id: newId(), name: `${name} - ${label}`, scene, assets });
   }
   return out;

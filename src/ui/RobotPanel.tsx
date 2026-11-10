@@ -4,6 +4,7 @@
 // the button that makes one.
 import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
+import { marked, plural, tr, trx } from '../i18n';
 import { HOLE_COLOR } from '../model/ops';
 import type { SceneNode } from '../model/types';
 import { checkRobot } from '../robot/check';
@@ -57,7 +58,7 @@ export function RobotPanel() {
         >
           <span className="dot" style={{ background: node.color, borderColor: node.hole ? HOLE_COLOR : undefined }} />
           <span className="clip">{node.name}</span>
-          <span className="outline-kind">{node.id === robot.root ? 'Base' : after}</span>
+          <span className="outline-kind">{node.id === robot.root ? tr('Base') : after}</span>
         </div>
       </li>
     );
@@ -83,7 +84,7 @@ export function RobotPanel() {
         >
           <JointIcon />
           <span className="clip">{j.name}</span>
-          <span className="outline-kind">{loop ? 'Loop' : j.type}</span>
+          <span className="outline-kind">{loop ? tr('Loop') : marked(j.type)}</span>
         </div>
       </li>
     );
@@ -109,7 +110,7 @@ export function RobotPanel() {
         >
           <SensorIcon />
           <span className="clip">{x.name}</span>
-          <span className="outline-kind">{x.kind === 'imu' ? 'IMU' : x.kind}</span>
+          <span className="outline-kind">{x.kind === 'imu' ? 'IMU' : marked(x.kind)}</span>
         </div>
       </li>
     );
@@ -122,7 +123,7 @@ export function RobotPanel() {
     for (const j of robot.joints) {
       if (j.parent !== id || !byId.has(j.child)) continue;
       if (tree.parentJoint.get(j.child) === j) rows.push(jointRow(j, depth + 1, false), ...branch(j.child, depth + 2));
-      else rows.push(jointRow(j, depth + 1, true), linkRow(byId.get(j.child)!, depth + 2, 'Above', j.id));
+      else rows.push(jointRow(j, depth + 1, true), linkRow(byId.get(j.child)!, depth + 2, trx('in the tree', 'Above'), j.id));
     }
     return rows;
   };
@@ -134,40 +135,40 @@ export function RobotPanel() {
   return (
     <div className="structure-tab robot-panel">
       <div className="structure-scroll">
-        <h2 title="The links hang from the base by their joints. Pick one to set it up on the right.">
-          Robot
-          <span className="count">{nodes.length ? `${linked} link${linked === 1 ? '' : 's'}, ${robot.joints.length} joint${robot.joints.length === 1 ? '' : 's'}` : ''}</span>
+        <h2 title={tr('The links hang from the base by their joints. Pick one to set it up on the right.')}>
+          {tr('Robot')}
+          <span className="count">{nodes.length ? tr('{links}, {joints}', { links: plural(linked, '{n} link', '{n} links'), joints: plural(robot.joints.length, '{n} joint', '{n} joints') }) : ''}</span>
         </h2>
         {nodes.length === 0 ? (
-          <p className="empty">Every object in the design is a link. Leave Robot mode to add some, or import a URDF.</p>
+          <p className="empty">{tr('Every object in the design is a link. Leave Robot mode to add some, or import a URDF.')}</p>
         ) : !rooted ? (
-          <p className="empty">Select the object the rest of the robot hangs from and make it the base link.</p>
+          <p className="empty">{tr('Select the object the rest of the robot hangs from and make it the base link.')}</p>
         ) : (
-          <ul className="outline" role="tree" aria-label="Robot tree">
+          <ul className="outline" role="tree" aria-label={tr('Robot tree')}>
             {branch(robot.root!, 0)}
           </ul>
         )}
         {loose.length > 0 && rooted && (
           <>
-            <h2 title="Objects no chain of joints reaches from the base. They are left out of the robot: select one and attach it to a link.">Not attached</h2>
-            <ul className="outline" role="tree" aria-label="Unattached links">
+            <h2 title={tr('Objects no chain of joints reaches from the base. They are left out of the robot: select one and attach it to a link.')}>{tr('Not attached')}</h2>
+            <ul className="outline" role="tree" aria-label={tr('Unattached links')}>
               {loose.map((n) => linkRow(n, 0))}
             </ul>
             <div className="structure-actions">
-              <button type="button" className="chip" title="Hangs every unattached link from the base by a fixed joint, where the two meet" onClick={fixLooseLinks}>
-                Fix all to the base
+              <button type="button" className="chip" title={tr('Hangs every unattached link from the base by a fixed joint, where the two meet')} onClick={fixLooseLinks}>
+                {tr('Fix all to the base')}
               </button>
             </div>
           </>
         )}
         {!rooted && nodes.length > 0 && (
-          <ul className="outline" role="tree" aria-label="Links">
+          <ul className="outline" role="tree" aria-label={tr('Links')}>
             {nodes.map((n) => linkRow(n, 0))}
           </ul>
         )}
         <div className="structure-actions">
-          <button type="button" className="chip" title="Brings a robot in from a URDF file, with its meshes, as links and joints" onClick={() => void importRobotFile()}>
-            Import URDF…
+          <button type="button" className="chip" title={tr('Brings a robot in from a URDF file, with its meshes, as links and joints')} onClick={() => void importRobotFile()}>
+            {tr('Import URDF…')}
           </button>
         </div>
       </div>
@@ -183,15 +184,17 @@ export function RobotExport() {
   const active = EXPORT_FORMATS.find((f) => f.id === format) ?? EXPORT_FORMATS[0];
   const errors = problems.filter((p) => p.level === 'error').length;
   const warnings = problems.length - errors;
-  const status = errors ? `${errors} problem${errors === 1 ? '' : 's'} to fix${warnings ? `, ${warnings} warning${warnings === 1 ? '' : 's'}` : ''}` : warnings ? `${warnings} warning${warnings === 1 ? '' : 's'}` : nodes.length ? 'Ready to export' : 'Nothing to export yet';
+  const toFix = plural(errors, '{n} problem to fix', '{n} problems to fix');
+  const warned = plural(warnings, '{n} warning', '{n} warnings');
+  const status = errors ? (warnings ? tr('{problems}, {warnings}', { problems: toFix, warnings: warned }) : toFix) : warnings ? warned : nodes.length ? tr('Ready to export') : tr('Nothing to export yet');
   return (
     <div className="summary">
-      <section className="export" aria-label="Export robot">
+      <section className="export" aria-label={tr('Export robot')}>
         <div className="export-row">
-          <span className="export-label">Format</span>
+          <span className="export-label">{tr('Format')}</span>
           <Popover
             className="select-button"
-            title="What the robot is written as"
+            title={tr('What the robot is written as')}
             align="left"
             side="up"
             fill
@@ -203,7 +206,7 @@ export function RobotExport() {
             }
           >
             {(close) => (
-              <div className="menu" role="listbox" aria-label="Robot format">
+              <div className="menu" role="listbox" aria-label={tr('Robot format')}>
                 {EXPORT_FORMATS.map((f) => (
                   <button
                     key={f.id}
@@ -234,7 +237,7 @@ export function RobotExport() {
         )}
         <button type="button" className="primary" disabled={Boolean(busy) || errors > 0 || nodes.length === 0} onClick={() => void exportRobot()}>
           <DownloadIcon />
-          {busy ? 'Exporting…' : format === 'urdf' ? 'Export package' : format === 'usd' ? 'Export stage' : 'Export model'}
+          {busy ? tr('Exporting…') : format === 'urdf' ? tr('Export package') : format === 'usd' ? tr('Export stage') : tr('Export model')}
         </button>
       </section>
     </div>
@@ -248,12 +251,12 @@ export function RobotModeBar() {
   return (
     <div className="tabs robot-bar">
       <div className="page-tabs">
-        <span className="robot-mode-title">{picking ? 'Click a point on the plate' : 'Robot mode'}</span>
+        <span className="robot-mode-title">{picking ? tr('Click a point on the plate') : tr('Robot mode')}</span>
         <div className="robot-bar-actions">
-          <button type="button" className={all ? 'icon-button on' : 'icon-button'} aria-pressed={all} title="Shows every joint and sensor on the plate" onClick={() => setPrefs({ robotMarkers: !all })}>
+          <button type="button" className={all ? 'icon-button on' : 'icon-button'} aria-pressed={all} title={tr('Shows every joint and sensor on the plate')} onClick={() => setPrefs({ robotMarkers: !all })}>
             <JointIcon />
           </button>
-          <button type="button" className="icon-button" title="Leave Robot mode" aria-label="Leave Robot mode" onClick={leaveRobotMode}>
+          <button type="button" className="icon-button" title={tr('Leave Robot mode')} aria-label={tr('Leave Robot mode')} onClick={leaveRobotMode}>
             <CloseIcon />
           </button>
         </div>

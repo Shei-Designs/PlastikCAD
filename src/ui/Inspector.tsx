@@ -3,6 +3,7 @@ import type { TextCurve } from '../text/curve';
 import { outlineOf } from '../text/fonts';
 import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { PALETTE, paramMax, polygonExtent, shapeDef } from '../geometry/shapes';
+import { marked, plural, tr, trx } from '../i18n';
 import { boundsSize, tidyVec, unionBounds } from '../model/math';
 import { picturesOf } from '../model/ops';
 import { TEXT_FONTS } from '../model/types';
@@ -28,7 +29,7 @@ const TOUCH = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)'
 const SWATCHES = TOUCH ? PALETTE.slice(0, 7) : PALETTE;
 
 export function NameField({ node }: { node: SceneNode }) {
-  return <CommitInput className="name-input" label="Name" value={node.name} onCommit={(name) => updateNode(node.id, { name })} />;
+  return <CommitInput className="name-input" label={tr('Name')} value={node.name} onCommit={(name) => updateNode(node.id, { name })} />;
 }
 
 function Appearance({ nodes }: { nodes: SceneNode[] }) {
@@ -41,26 +42,26 @@ function Appearance({ nodes }: { nodes: SceneNode[] }) {
   const locked = nodes.every((n) => n.locked);
   return (
     <fieldset className="group">
-      <legend>Material</legend>
+      <legend>{trx('appearance', 'Material')}</legend>
       <div className="field">
-        <div className="segmented" role="radiogroup" aria-label="Solid or hole">
-          <button type="button" role="radio" aria-checked={solid} className={solid ? 'on' : ''} title={tip('solid', 'Adds material')} disabled={locked} onClick={() => setHole(false)}>
-            Solid
+        <div className="segmented" role="radiogroup" aria-label={tr('Solid or hole')}>
+          <button type="button" role="radio" aria-checked={solid} className={solid ? 'on' : ''} title={tip('solid', tr('Adds material'))} disabled={locked} onClick={() => setHole(false)}>
+            {tr('Solid')}
           </button>
-          <button type="button" role="radio" aria-checked={hole} className={hole ? 'on' : ''} title={tip('hole', 'Cuts material away from what it is grouped with')} disabled={locked} onClick={() => setHole(true)}>
-            Hole
+          <button type="button" role="radio" aria-checked={hole} className={hole ? 'on' : ''} title={tip('hole', tr('Cuts material away from what it is grouped with'))} disabled={locked} onClick={() => setHole(true)}>
+            {tr('Hole')}
           </button>
         </div>
       </div>
-      <div className="swatch-row" role="group" aria-label="Color">
+      <div className="swatch-row" role="group" aria-label={tr('Color')}>
         {SWATCHES.map((c) => (
           <button
             key={c.value}
             type="button"
             className={c.value === color ? 'swatch on' : 'swatch'}
             style={{ background: c.value }}
-            title={c.name}
-            aria-label={c.name}
+            title={marked(c.name)}
+            aria-label={marked(c.name)}
             aria-pressed={c.value === color}
             disabled={locked}
             onClick={() => setColor(c.value)}
@@ -82,8 +83,8 @@ function CustomColor({ color, custom, disabled }: { color: string | null; custom
         type="button"
         className={custom ? 'swatch custom on' : 'swatch custom'}
         style={custom && color ? { background: color } : undefined}
-        title="Any color…"
-        aria-label="Any color"
+        title={tr('Any color…')}
+        aria-label={tr('Any color')}
         aria-pressed={custom}
         disabled={disabled}
         onClick={() => input.current?.click()}
@@ -129,9 +130,9 @@ function ShapeParams({ node }: { node: ShapeNode }) {
 }
 
 const ALIGNMENTS: { id: TextAlign; label: string }[] = [
-  { id: 'left', label: 'Left' },
-  { id: 'center', label: 'Center' },
-  { id: 'right', label: 'Right' },
+  { id: 'left', label: trx('alignment', 'Left') },
+  { id: 'center', label: trx('alignment', 'Center') },
+  { id: 'right', label: trx('alignment', 'Right') },
 ];
 
 function TextFields({ node }: { node: TextNode }) {
@@ -146,7 +147,7 @@ function TextFields({ node }: { node: TextNode }) {
         <textarea
           className="text-input area"
           rows={2}
-          aria-label="Text"
+          aria-label={tr('Text')}
           spellCheck={false}
           disabled={locked}
           value={draft}
@@ -158,7 +159,7 @@ function TextFields({ node }: { node: TextNode }) {
         />
       </div>
       <div className="field">
-        <label htmlFor={id}>Font</label>
+        <label htmlFor={id}>{tr('Font')}</label>
         <select id={id} value={node.font} disabled={locked} onChange={(e) => void editText(node.id, { font: e.target.value })}>
           {TEXT_FONTS.map((f) => (
             <option key={f.id} value={f.id}>
@@ -168,7 +169,7 @@ function TextFields({ node }: { node: TextNode }) {
         </select>
       </div>
       <div className="field">
-        <div className="segmented" role="radiogroup" aria-label="How the letters run">
+        <div className="segmented" role="radiogroup" aria-label={tr('How the letters run')}>
           {CURVE_KINDS.map((c) => (
             <button key={c.id} type="button" role="radio" aria-checked={(node.curve?.kind ?? 'none') === c.id} className={(node.curve?.kind ?? 'none') === c.id ? 'on' : ''} title={c.title} disabled={locked} onClick={() => void editText(node.id, { curve: c.id === 'none' ? null : { kind: c.id, angle: node.curve?.angle ?? 90, flip: node.curve?.flip ?? false, thickness: node.curve?.thickness ?? node.size[2] } })}>
               {c.label}
@@ -179,7 +180,7 @@ function TextFields({ node }: { node: TextNode }) {
       {node.curve && <CurveFields node={node} curve={node.curve} />}
       {node.text.includes('\n') && (
         <div className="field">
-          <div className="segmented" role="radiogroup" aria-label="Alignment of the lines">
+          <div className="segmented" role="radiogroup" aria-label={tr('Alignment of the lines')}>
             {ALIGNMENTS.map((a) => (
               <button key={a.id} type="button" role="radio" aria-checked={a.id === node.align} className={a.id === node.align ? 'on' : ''} disabled={locked} onClick={() => void editText(node.id, { align: a.id })}>
                 {a.label}
@@ -204,29 +205,29 @@ function CurveFields({ node, curve }: { node: TextNode; curve: TextCurve }) {
   const set = (change: Partial<TextCurve>) => void editText(node.id, { curve: { ...curve, ...change } });
   const sides = bend
     ? [
-        { flip: false, label: 'Outside', title: 'The letters stand on the outside of the cylinder.' },
-        { flip: true, label: 'Inside', title: 'The letters stand on the inside, read from the middle.' },
+        { flip: false, label: tr('Outside'), title: tr('The letters stand on the outside of the cylinder.') },
+        { flip: true, label: tr('Inside'), title: tr('The letters stand on the inside, read from the middle.') },
       ]
     : [
-        { flip: false, label: 'Arch', title: 'The arc rises in the middle.' },
-        { flip: true, label: 'Hang', title: 'The arc dips in the middle.' },
+        { flip: false, label: tr('Arch'), title: tr('The arc rises in the middle.') },
+        { flip: true, label: tr('Hang'), title: tr('The arc dips in the middle.') },
       ];
   return (
     <>
-      <SliderField label={bend ? 'Reach around' : 'Sweep'} help={bend ? 'Sets how far round the cylinder the letters reach.' : 'Sets how much of a circle the letters follow.'} value={curve.angle} min={MIN_CURVE_ANGLE} max={MAX_CURVE_ANGLE} step={1} integer unit="°" disabled={locked} onChange={(v) => set({ angle: v })} />
+      <SliderField label={bend ? tr('Reach around') : trx('lettering', 'Sweep')} help={bend ? tr('Sets how far round the cylinder the letters reach.') : tr('Sets how much of a circle the letters follow.')} value={curve.angle} min={MIN_CURVE_ANGLE} max={MAX_CURVE_ANGLE} step={1} integer unit="°" disabled={locked} onChange={(v) => set({ angle: v })} />
       <div className="field">
         <label htmlFor={`${id}-d`}>
-          {bend ? 'Fits' : 'Circle'}
-          <Hint text={bend ? 'Sets the diameter of the cylinder the letters sit on, by changing the reach.' : 'Sets the diameter of the circle the baseline follows, by changing the sweep.'} />
+          {bend ? tr('Fits') : tr('Circle')}
+          <Hint text={bend ? tr('Sets the diameter of the cylinder the letters sit on, by changing the reach.') : tr('Sets the diameter of the circle the baseline follows, by changing the sweep.')} />
         </label>
-        <NumberBox id={`${id}-d`} label="Diameter" value={diameter} unit="mm" min={0.1} step={1} places={1} disabled={locked || flat <= 0} onChange={(d) => set({ angle: clampAngle((360 * flat) / (Math.PI * Math.max(d, 0.1))) })} />
+        <NumberBox id={`${id}-d`} label={tr('Diameter')} value={diameter} unit="mm" min={0.1} step={1} places={1} disabled={locked || flat <= 0} onChange={(d) => set({ angle: clampAngle((360 * flat) / (Math.PI * Math.max(d, 0.1))) })} />
       </div>
       <div className="field">
-        <label htmlFor={`${id}-t`}>Thickness</label>
-        <NumberBox id={`${id}-t`} label="Thickness" value={curve.thickness} unit="mm" min={0.1} step={0.5} places={2} disabled={locked} onChange={(t) => set({ thickness: Math.max(0.1, t) })} />
+        <label htmlFor={`${id}-t`}>{tr('Thickness')}</label>
+        <NumberBox id={`${id}-t`} label={tr('Thickness')} value={curve.thickness} unit="mm" min={0.1} step={0.5} places={2} disabled={locked} onChange={(t) => set({ thickness: Math.max(0.1, t) })} />
       </div>
       <div className="field">
-        <div className="segmented" role="radiogroup" aria-label={bend ? 'Which side of the cylinder' : 'Which way the arc goes'}>
+        <div className="segmented" role="radiogroup" aria-label={bend ? tr('Which side of the cylinder') : tr('Which way the arc goes')}>
           {sides.map((s) => (
             <button key={s.label} type="button" role="radio" aria-checked={curve.flip === s.flip} className={curve.flip === s.flip ? 'on' : ''} title={s.title} disabled={locked} onClick={() => set({ flip: s.flip })}>
               {s.label}
@@ -239,8 +240,8 @@ function CurveFields({ node, curve }: { node: TextNode; curve: TextCurve }) {
 }
 
 const MAPPINGS: { id: PictureMapping; label: string; title: string }[] = [
-  { id: 'flat', label: 'Flat', title: 'Projects the picture from a flat sheet.' },
-  { id: 'wrap', label: 'Wrap', title: 'Projects the picture from a curved band.' },
+  { id: 'flat', label: trx('picture', 'Flat'), title: tr('Projects the picture from a flat sheet.') },
+  { id: 'wrap', label: trx('picture', 'Wrap'), title: tr('Projects the picture from a curved band.') },
 ];
 
 function PictureFields({ node }: { node: PictureNode }) {
@@ -248,12 +249,12 @@ function PictureFields({ node }: { node: PictureNode }) {
   const image = asset?.kind === 'image' ? asset : null;
   const locked = Boolean(node.locked);
   const [w, d, h] = node.size;
-  const shows = node.mapping === 'flat' ? `${formatNumber(w, 1)} × ${formatNumber(d, 1)} mm` : `${formatNumber((Math.PI * w * node.angle) / 360, 1)} × ${formatNumber(h, 1)} mm, ${formatNumber(w, 1)} mm across`;
+  const shows = node.mapping === 'flat' ? `${formatNumber(w, 1)} × ${formatNumber(d, 1)} mm` : tr('{width} × {height} mm, {across} mm across', { width: formatNumber((Math.PI * w * node.angle) / 360, 1), height: formatNumber(h, 1), across: formatNumber(w, 1) });
   return (
     <fieldset className="group">
-      <legend>Picture</legend>
+      <legend>{tr('Picture')}</legend>
       <div className="field">
-        <div className="segmented" role="radiogroup" aria-label="How the picture is laid on">
+        <div className="segmented" role="radiogroup" aria-label={tr('How the picture is laid on')}>
           {MAPPINGS.map((m) => (
             <button key={m.id} type="button" role="radio" aria-checked={m.id === node.mapping} className={m.id === node.mapping ? 'on' : ''} title={m.title} disabled={locked} onClick={() => editPicture(node.id, { mapping: m.id })}>
               {m.label}
@@ -262,23 +263,23 @@ function PictureFields({ node }: { node: PictureNode }) {
         </div>
       </div>
       {node.mapping === 'wrap' && (
-        <SliderField label="Reach around" help="Sets how far around the band the picture wraps." value={node.angle} min={5} max={360} step={1} integer unit="°" disabled={locked} onChange={(v) => editPicture(node.id, { angle: v })} />
+        <SliderField label={tr('Reach around')} help={tr('Sets how far around the band the picture wraps.')} value={node.angle} min={5} max={360} step={1} integer unit="°" disabled={locked} onChange={(v) => editPicture(node.id, { angle: v })} />
       )}
       <dl className="facts">
         {image && (
           <div>
-            <dt>Image</dt>
+            <dt>{tr('Image')}</dt>
             <dd>
               {image.width} × {image.height} px
             </dd>
           </div>
         )}
         <div>
-          <dt>Shows</dt>
+          <dt>{tr('Shows')}</dt>
           <dd>{shows}</dd>
         </div>
       </dl>
-      <p className="field-note">{node.mapping === 'flat' ? 'Prints onto the first surface behind it when grouped with an object.' : 'Prints inwards onto the first surface inside the band when grouped with an object.'}</p>
+      <p className="field-note">{node.mapping === 'flat' ? tr('Prints onto the first surface behind it when grouped with an object.') : tr('Prints inwards onto the first surface inside the band when grouped with an object.')}</p>
     </fieldset>
   );
 }
@@ -302,9 +303,9 @@ function TextureFields({ node }: { node: SceneNode }) {
     // Pictures grouped onto the object cover its surface; a texture would never show under them.
     if (pictures > 0) {
       await tell({
-        title: 'Texture',
-        text: 'The selected object already has an image projected onto its surface. To add a texture remove the projected image first.',
-        actions: ['OK'],
+        title: tr('Texture'),
+        text: tr('The selected object already has an image projected onto its surface. To add a texture remove the projected image first.'),
+        actions: [tr('OK')],
       });
       return;
     }
@@ -319,33 +320,33 @@ function TextureFields({ node }: { node: SceneNode }) {
     return (
       <button type="button" className="import-button texture-button" disabled={locked} onClick={() => void add()}>
         <PictureIcon />
-        Texture from a picture…
+        {tr('Texture from a picture…')}
       </button>
     );
   }
   return (
     <div className="texture">
       <div className="field inline texture-head">
-        <label>Texture</label>
-        <button type="button" className="legend-button" title="Remove the texture" aria-label="Remove the texture" disabled={locked} onClick={() => setTexture(null)}>
+        <label>{tr('Texture')}</label>
+        <button type="button" className="legend-button" title={tr('Remove the texture')} aria-label={tr('Remove the texture')} disabled={locked} onClick={() => setTexture(null)}>
           <CloseIcon />
         </button>
       </div>
       <div className="field texture-row">
-        <select aria-label="Picture" value={texture.asset} disabled={locked} onChange={(e) => void choose(e.target.value)}>
+        <select aria-label={tr('Picture')} value={texture.asset} disabled={locked} onChange={(e) => void choose(e.target.value)}>
           {images.map((i) => (
             <option key={i.key} value={i.key}>
               {imageLabel(i.asset)}
             </option>
           ))}
-          <option value="new">Another picture…</option>
+          <option value="new">{tr('Another picture…')}</option>
         </select>
-        <button type="button" className={tiled ? 'chip on' : 'chip'} aria-pressed={tiled} title="Repeats the picture over every side." disabled={locked} onClick={() => setTexture({ ...texture, mode: tiled ? plain : 'tile' })}>
-          Tile
+        <button type="button" className={tiled ? 'chip on' : 'chip'} aria-pressed={tiled} title={tr('Repeats the picture over every side.')} disabled={locked} onClick={() => setTexture({ ...texture, mode: tiled ? plain : 'tile' })}>
+          {tr('Tile')}
         </button>
       </div>
-      {texture.mode === 'wrap' && <SliderField label="Turn" help="Turns the picture round the object. 0° puts its middle at the front." value={texture.turn} min={-180} max={180} step={1} integer unit="°" disabled={locked} onChange={(v) => setTexture({ ...texture, turn: v })} />}
-      {texture.mode === 'tile' && <SliderField label="Tile size" help="Sets the size of one repeat of the picture." value={texture.scale} min={2} max={500} step={1} unit="mm" disabled={locked} onChange={(v) => setTexture({ ...texture, scale: v })} />}
+      {texture.mode === 'wrap' && <SliderField label={trx('texture', 'Turn')} help={tr('Turns the picture round the object. 0° puts its middle at the front.')} value={texture.turn} min={-180} max={180} step={1} integer unit="°" disabled={locked} onChange={(v) => setTexture({ ...texture, turn: v })} />}
+      {texture.mode === 'tile' && <SliderField label={tr('Tile size')} help={tr('Sets the size of one repeat of the picture.')} value={texture.scale} min={2} max={500} step={1} unit="mm" disabled={locked} onChange={(v) => setTexture({ ...texture, scale: v })} />}
     </div>
   );
 }
@@ -361,20 +362,20 @@ function Overview() {
     <>
       <header className="params-head">
         <div>
-          <h1>Nothing selected</h1>
-          <p>{scene.length === 0 ? 'Pick a shape on the left and click on the plate.' : 'Click on an object to select it.'}</p>
+          <h1>{tr('Nothing selected')}</h1>
+          <p>{scene.length === 0 ? tr('Pick a shape on the left and click on the plate.') : tr('Click on an object to select it.')}</p>
         </div>
       </header>
       {size && (
         <fieldset className="group">
-          <legend>Design</legend>
+          <legend>{tr('Design')}</legend>
           <dl className="facts">
             <div>
-              <dt>Objects</dt>
+              <dt>{tr('Objects')}</dt>
               <dd>{scene.length}</dd>
             </div>
             <div>
-              <dt>Overall size</dt>
+              <dt>{tr('Overall size')}</dt>
               <dd>{tidyVec(size).map((v) => formatNumber(v, 1)).join(' × ')} mm</dd>
             </div>
           </dl>
@@ -391,11 +392,11 @@ function Shortcuts() {
   const coarse = useCoarsePointer();
   return (
     <fieldset className="group">
-      <legend>Shortcuts</legend>
+      <legend>{tr('Shortcuts')}</legend>
       <dl className="facts keys">
         {shortcutRows(keyboard, coarse).map(([what, how]) => (
           <div key={what}>
-            <dt>{what}</dt>
+            <dt>{marked(what)}</dt>
             <dd>{how}</dd>
           </div>
         ))}
@@ -419,19 +420,19 @@ function Design() {
       <>
         <header className="params-head">
           <div className="grow">
-            <h1>{nodes.length} objects</h1>
+            <h1>{plural(nodes.length, '{n} object', '{n} objects')}</h1>
           </div>
           <LockToggle
             locked={allLocked}
-            title={allLocked ? 'Locked: press to unlock all' : lockedCount ? `${lockedCount} of ${nodes.length} locked: press to lock all` : 'Lock all'}
+            title={allLocked ? tr('Locked: press to unlock all') : lockedCount ? tr('{locked} of {total} locked: press to lock all', { locked: lockedCount, total: nodes.length }) : tr('Lock all')}
             onClick={() => setSelectedLocked(!allLocked)}
           />
           <button
             type="button"
             className="icon-button"
-            title="Save as a custom part (group the objects first)"
-            aria-label="Save as a part"
-            onClick={() => notify('Group the objects first, then save the group as a part.')}
+            title={tr('Save as a custom part (group the objects first)')}
+            aria-label={tr('Save as a part')}
+            onClick={() => notify(tr('Group the objects first, then save the group as a part.'))}
           >
             <SaveAsPartIcon />
           </button>
@@ -445,7 +446,7 @@ function Design() {
     node.type === 'shape' && shapeDef(node.shape).params.length > 0
       ? [{ title: shapeDef(node.shape).name, content: <ShapeParams node={node} /> }]
       : node.type === 'text'
-        ? [{ title: 'Text', content: <TextFields node={node} /> }]
+        ? [{ title: tr('Text'), content: <TextFields node={node} /> }]
         : [];
   return (
     <>
@@ -453,13 +454,13 @@ function Design() {
         <div className="grow">
           <NameField node={node} />
         </div>
-        <LockToggle locked={Boolean(node.locked)} title={node.locked ? 'Unlock' : 'Lock'} onClick={() => toggleLocked(node.id)} />
-        <button type="button" className="icon-button" title="Save as a custom part, to place in any design" aria-label="Save as a part" onClick={() => void saveAsPart(node.id)}>
+        <LockToggle locked={Boolean(node.locked)} title={node.locked ? tr('Unlock') : tr('Lock')} onClick={() => toggleLocked(node.id)} />
+        <button type="button" className="icon-button" title={tr('Save as a custom part, to place in any design')} aria-label={tr('Save as a part')} onClick={() => void saveAsPart(node.id)}>
           <SaveAsPartIcon />
         </button>
       </header>
       {node.type === 'picture' ? <PictureFields node={node} /> : <Appearance nodes={nodes} />}
-      {node.type === 'part' ? <PartFields node={node} /> : <Sections legend="Settings" reset={node.id} sections={own} />}
+      {node.type === 'part' ? <PartFields node={node} /> : <Sections legend={tr('Settings')} reset={node.id} sections={own} />}
     </>
   );
 }
@@ -467,7 +468,7 @@ function Design() {
 /** The lock in the panel header: the same switch as the one on the object's row in the Objects list. */
 function LockToggle({ locked, title, onClick }: { locked: boolean; title: string; onClick: () => void }) {
   return (
-    <button type="button" className={locked ? 'icon-button lock on' : 'icon-button'} title={title} aria-label={locked ? 'Unlock' : 'Lock'} aria-pressed={locked} onClick={onClick}>
+    <button type="button" className={locked ? 'icon-button lock on' : 'icon-button'} title={title} aria-label={locked ? tr('Unlock') : tr('Lock')} aria-pressed={locked} onClick={onClick}>
       {locked ? <LockIcon /> : <UnlockIcon />}
     </button>
   );
@@ -496,7 +497,7 @@ function Warnings() {
         <div key={w} className="inspector-note">
           <WarningIcon />
           <span>{w}</span>
-          <button type="button" className="legend-button" title="Dismiss" aria-label="Dismiss" onClick={() => setDismissed((d) => [...d, `${node!.id}:${w}`])}>
+          <button type="button" className="legend-button" title={tr('Dismiss')} aria-label={tr('Dismiss')} onClick={() => setDismissed((d) => [...d, `${node!.id}:${w}`])}>
             <CloseIcon />
           </button>
         </div>

@@ -7,6 +7,7 @@
 // file is in meters and radians; the design gets millimeters and degrees.
 import { defaultParams } from '../geometry/shapes';
 import type { MeshData } from '../geometry/mesh';
+import { tr } from '../i18n';
 import { apply, boxBounds, determinant, eulerOf, IDENTITY, invert, multiply, rotation, tidyVec } from '../model/math';
 import type { Mat } from '../model/math';
 import { newId } from '../model/ops';
@@ -285,14 +286,14 @@ function shapeOf(link: Link, companions: Companion[], warnings: string[], missin
       }
       const inside = meshPath(g.mesh);
       if (!inside) {
-        warnings.push(`"${link.name}" is drawn with "${g.mesh}", which is not a file in the robot's package; it was left out.`);
+        warnings.push(tr('"{link}" is drawn with "{file}", which is not a file in the robot\'s package; it was left out.', { link: link.name, file: g.mesh }));
         continue;
       }
       const file = findMesh(companions, g.mesh);
       const name = inside.split('/').pop() ?? g.mesh;
       if (!file) {
         if (MESH_EXTENSIONS.includes(extensionOf(name))) missing.add(g.mesh);
-        else warnings.push(`"${link.name}" is drawn with "${name}", a kind of mesh file that cannot be read.`);
+        else warnings.push(tr('"{link}" is drawn with "{file}", a kind of mesh file that cannot be read.', { link: link.name, file: name }));
         continue;
       }
       let parts: { mesh: MeshData; color?: string }[];
@@ -300,7 +301,7 @@ function shapeOf(link: Link, companions: Companion[], warnings: string[], missin
         const data = importFile(file.name, file.bytes, companions);
         parts = data.kind === 'model' ? data.parts : [];
       } catch (e) {
-        warnings.push(`"${link.name}" is drawn with "${name}", which could not be read: ${e instanceof Error ? e.message : String(e)}`);
+        warnings.push(tr('"{link}" is drawn with "{file}", which could not be read: {reason}', { link: link.name, file: name, reason: e instanceof Error ? e.message : String(e) }));
         continue;
       }
       // An STL or OBJ is in meters, scaled as the URDF says; the design holds mm. Collada and glTF say their own
@@ -325,7 +326,7 @@ function shapeOf(link: Link, companions: Companion[], warnings: string[], missin
   if (visual) return visual;
   if (link.collisions.length === 0) return null;
   const collision = build(link.collisions);
-  if (collision && link.visuals.length) warnings.push(`"${link.name}" is shown by its collision shape, as its visual could not be read.`);
+  if (collision && link.visuals.length) warnings.push(tr('"{link}" is shown by its collision shape, as its visual could not be read.', { link: link.name }));
   return collision;
 }
 
@@ -359,7 +360,7 @@ function readJoint(element: XmlElement): Joint | null {
   const dynamics = childOf(element, 'dynamics');
   const mimic = childOf(element, 'mimic');
   return {
-    name: element.attrs.name ?? 'joint',
+    name: element.attrs.name ?? tr('joint'),
     type: element.attrs.type ?? 'fixed',
     parent,
     child,
@@ -455,9 +456,9 @@ export function parseUrdf(bytes: Uint8Array, companions: Companion[] = []): Impo
 
 function readUrdf(bytes: Uint8Array, companions: Companion[]): ImportedRobot {
   const root = xmlTree(bytes);
-  if (!root || localName(root.name) !== 'robot') throw new Error('This is not a URDF file: it does not hold a <robot>.');
+  if (!root || localName(root.name) !== 'robot') throw new Error(tr('This is not a URDF file: it does not hold a <robot>.'));
   if (Object.keys(root.attrs).some((a) => a.startsWith('xmlns:xacro')) || root.children.some((c) => c.name.startsWith('xacro:'))) {
-    throw new Error('This is a xacro file. Run it through xacro first (xacro robot.urdf.xacro > robot.urdf) and import the URDF it writes.');
+    throw new Error(tr('This is a xacro file. Run it through xacro first (xacro robot.urdf.xacro > robot.urdf) and import the URDF it writes.'));
   }
   const warnings: string[] = [];
   const missing = new Set<string>();
@@ -487,15 +488,15 @@ function readUrdf(bytes: Uint8Array, companions: Companion[]): ImportedRobot {
       grams: kg !== undefined && kg > 0 ? Number((kg * MM).toFixed(2)) : null,
     });
   }
-  if (links.size === 0) throw new Error('This URDF has no links.');
+  if (links.size === 0) throw new Error(tr('This URDF has no links.'));
   const joints = childrenOf(root, 'joint')
     .map(readJoint)
     .filter((j): j is Joint => j !== null && links.has(j.child) && j.parent !== j.child);
-  for (const j of joints) if (!links.has(j.parent)) warnings.push(`Joint "${j.name}" hangs "${j.child}" from "${j.parent}", which the file does not have; "${j.child}" stands on its own.`);
+  for (const j of joints) if (!links.has(j.parent)) warnings.push(tr('Joint "{joint}" hangs "{child}" from "{parent}", which the file does not have; "{child}" stands on its own.', { joint: j.name, child: j.child, parent: j.parent }));
   const parentJoint = new Map<string, Joint>();
   for (const j of joints) {
     if (parentJoint.has(j.child)) {
-      warnings.push(`"${j.child}" hangs from two joints; "${j.name}" was left out, as URDF allows one.`);
+      warnings.push(tr('"{child}" hangs from two joints; "{joint}" was left out, as URDF allows one.', { child: j.child, joint: j.name }));
       continue;
     }
     if (links.has(j.parent)) parentJoint.set(j.child, j);
@@ -512,7 +513,7 @@ function readUrdf(bytes: Uint8Array, companions: Companion[]): ImportedRobot {
     for (const j of joints) if (j.parent === name && parentJoint.get(j.child) === j) visit(j.child, multiply(pose, j.pose));
   };
   for (const name of roots) visit(name, IDENTITY);
-  for (const name of links.keys()) if (!poses.has(name)) warnings.push(`"${name}" hangs in a loop of joints and was left out.`);
+  for (const name of links.keys()) if (!poses.has(name)) warnings.push(tr('"{name}" hangs in a loop of joints and was left out.', { name }));
 
   // Every link with a shape is an object; one that moves without a shape gets a small box to stand for it.
   const shapes = new Map<string, LinkShape>();
@@ -523,8 +524,8 @@ function readUrdf(bytes: Uint8Array, companions: Companion[]): ImportedRobot {
     if (shape) shapes.set(name, shape);
     else if (joint && isMoving(joint.type)) {
       shapes.set(name, { kind: 'shape', shape: 'box', size: [PLACEHOLDER, PLACEHOLDER, PLACEHOLDER], pose: IDENTITY });
-      warnings.push(`"${name}" moves but has no shape; a small box stands for it.`);
-    } else if (link.grams && link.grams > 0 && !joint) warnings.push(`"${name}" has mass but no shape; its mass was dropped.`);
+      warnings.push(tr('"{name}" moves but has no shape; a small box stands for it.', { name }));
+    } else if (link.grams && link.grams > 0 && !joint) warnings.push(tr('"{name}" has mass but no shape; its mass was dropped.', { name }));
   }
   const kept = (name: string): boolean => shapes.has(name);
   /** The nearest link up the chain that is an object. */
@@ -533,7 +534,7 @@ function readUrdf(bytes: Uint8Array, companions: Companion[]): ImportedRobot {
     return null;
   };
   const keptOrder = order.filter(kept);
-  if (keptOrder.length === 0) throw new Error('No link in this URDF has a shape that can be shown.');
+  if (keptOrder.length === 0) throw new Error(tr('No link in this URDF has a shape that can be shown.'));
   const base = keptOrder[0];
   // The design's frame is the base link's; a frame-only root above it (world, base_footprint) is folded away.
   const toDesign = invert(poses.get(base)!);
@@ -555,12 +556,12 @@ function readUrdf(bytes: Uint8Array, companions: Companion[]): ImportedRobot {
       try {
         checkedMesh(shape.mesh);
       } catch {
-        warnings.push(`"${name}" has a mesh that could not be read and was left out.`);
+        warnings.push(tr('"{name}" has a mesh that could not be read and was left out.', { name }));
         continue;
       }
       const { size, center } = centerMesh(shape.mesh);
       if (!size.every((v) => v > 0)) {
-        warnings.push(`"${name}" is flat or empty and was left out.`);
+        warnings.push(tr('"{name}" is flat or empty and was left out.', { name }));
         continue;
       }
       const asset: Asset = { kind: 'mesh', positions: encodeFloat32(shape.mesh.positions), triangles: encodeUint32(shape.mesh.triangles) };
@@ -616,15 +617,21 @@ function readUrdf(bytes: Uint8Array, companions: Companion[]): ImportedRobot {
     const id = newId();
     if (!joint || !parent) {
       // Nothing above it to hang from: fixed to the base where it stands.
-      if (joint && isMoving(joint.type)) warnings.push(`Joint "${joint.name}" was dropped: nothing above "${name}" has a shape to hang it from. "${name}" is fixed to the base.`);
-      else if (!joint && name !== base) warnings.push(`"${name}" was not attached to anything; it is fixed to the base where it stands.`);
-      robotJoints.push({ ...defaultJoint(id, `${readable(name)} joint`, nodeOf.get(base)!.id, child.id, tidyVec(inChild.origin)), type: 'fixed' });
+      if (joint && isMoving(joint.type)) warnings.push(tr('Joint "{joint}" was dropped: nothing above "{link}" has a shape to hang it from. "{link}" is fixed to the base.', { joint: joint.name, link: name }));
+      else if (!joint && name !== base) warnings.push(tr('"{name}" was not attached to anything; it is fixed to the base where it stands.', { name }));
+      robotJoints.push({ ...defaultJoint(id, tr('{name} joint', { name: readable(name) }), nodeOf.get(base)!.id, child.id, tidyVec(inChild.origin)), type: 'fixed' });
       continue;
     }
     let type: JointType;
     if (joint.type === 'revolute' || joint.type === 'continuous' || joint.type === 'prismatic' || joint.type === 'fixed') type = joint.type;
     else {
-      warnings.push(`Joint "${joint.name}" is ${joint.type === 'floating' ? 'floating' : joint.type === 'planar' ? 'planar' : `of type "${joint.type}"`}, which the design cannot hold; it was made fixed.`);
+      warnings.push(
+        joint.type === 'floating'
+          ? tr('Joint "{joint}" is floating, which the design cannot hold; it was made fixed.', { joint: joint.name })
+          : joint.type === 'planar'
+            ? tr('Joint "{joint}" is planar, which the design cannot hold; it was made fixed.', { joint: joint.name })
+            : tr('Joint "{joint}" is of type "{type}", which the design cannot hold; it was made fixed.', { joint: joint.name, type: joint.type }),
+      );
       type = 'fixed';
     }
     const scale = type === 'prismatic' ? MM : DEG;
@@ -657,7 +664,7 @@ function readUrdf(bytes: Uint8Array, companions: Companion[]): ImportedRobot {
     const leader = jointIds.get(joint.mimic.joint);
     const made = robotJoints.find((j) => j.id === id)!;
     if (!leader || made.type === 'fixed') {
-      warnings.push(`Joint "${joint.name}" follows "${joint.mimic.joint}", which was not kept; it moves on its own.`);
+      warnings.push(tr('Joint "{joint}" follows "{leader}", which was not kept; it moves on its own.', { joint: joint.name, leader: joint.mimic.joint }));
       continue;
     }
     made.mimic = { joint: leader, multiplier: joint.mimic.multiplier, offset: round(joint.mimic.offset * (made.type === 'prismatic' ? MM : DEG)) };
@@ -680,12 +687,17 @@ function readUrdf(bytes: Uint8Array, companions: Companion[]): ImportedRobot {
       const host = hostName ? nodeOf.get(hostName) : undefined;
       for (const s of childrenOf(g, 'sensor')) {
         if (!host) {
-          warnings.push(`Sensor "${s.attrs.name ?? s.attrs.type}" sits on "${reference}", which has no shape to carry it; it was left out.`);
+          warnings.push(tr('Sensor "{sensor}" sits on "{link}", which has no shape to carry it; it was left out.', { sensor: s.attrs.name ?? s.attrs.type, link: reference }));
           continue;
         }
         const sensor = readSensor(s, host, inDesign(reference));
         if (sensor) robot.sensors.push(sensor);
-        else warnings.push(`Sensor "${s.attrs.name ?? ''}" is a ${s.attrs.type ?? 'kind'} the design has no sensor for; it was left out.`);
+        else
+          warnings.push(
+            s.attrs.type === undefined
+              ? tr('Sensor "{name}" is a kind the design has no sensor for; it was left out.', { name: s.attrs.name ?? '' })
+              : tr('Sensor "{name}" is a {type} the design has no sensor for; it was left out.', { name: s.attrs.name ?? '', type: s.attrs.type }),
+          );
       }
       continue;
     }
@@ -696,14 +708,14 @@ function readUrdf(bytes: Uint8Array, companions: Companion[]): ImportedRobot {
       for (const [role, jointName] of drive.roles) {
         const id = jointIds.get(jointName);
         if (id) roles[id] = role;
-        else warnings.push(`The drive names joint "${jointName}", which was not kept.`);
+        else warnings.push(tr('The drive names joint "{joint}", which was not kept.', { joint: jointName }));
       }
       robot.drive = { kind: drive.kind, roles };
     }
   }
   robot.control = hasElement(root, 'ros2_control');
 
-  return { name: readable(root.attrs.name ?? 'Robot'), scene, assets, robot, warnings, missing: [...missing] };
+  return { name: readable(root.attrs.name ?? tr('Robot')), scene, assets, robot, warnings, missing: [...missing] };
 }
 
 const isMoving = (type: string): boolean => type === 'revolute' || type === 'continuous' || type === 'prismatic';

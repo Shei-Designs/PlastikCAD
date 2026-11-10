@@ -4,6 +4,7 @@
 // it needs, and nothing else in the Drive. The custom parts are a second
 // remote, in a "Parts" folder inside the app's folder.
 import { APP_NAME, FILE_EXTENSION, FILE_FORMAT, isDesignName } from '../appInfo';
+import { tr } from '../i18n';
 import type { Remote, RemoteFile } from './engine';
 
 const API = 'https://www.googleapis.com/drive/v3';
@@ -20,7 +21,8 @@ interface DriveFile {
   appProperties?: Record<string, string>;
 }
 
-async function body<T>(response: Response, what: string): Promise<T> {
+/** The answer's JSON, or an error worded by `failed` from what Google said went wrong. */
+async function body<T>(response: Response, failed: (message: string) => string): Promise<T> {
   if (!response.ok) {
     let message = `${response.status}`;
     try {
@@ -29,7 +31,7 @@ async function body<T>(response: Response, what: string): Promise<T> {
     } catch {
       // No JSON in the answer.
     }
-    throw new Error(`Google Drive could not ${what}: ${message}`);
+    throw new Error(failed(message));
   }
   return (await response.json()) as T;
 }
@@ -60,7 +62,7 @@ export class DriveRemote implements Remote {
     const under = this.parent ? await this.parent.folder() : 'root';
     const q = `name = ${quote(this.folderName)} and mimeType = '${FOLDER_TYPE}' and ${quote(under)} in parents and trashed = false`;
     // The oldest first, so that every device and every pass settles on the same one should there ever be two.
-    const found = await body<{ files: DriveFile[] }>(await this.fetch(`${API}/files?q=${encodeURIComponent(q)}&fields=files(id,name)&orderBy=createdTime&pageSize=10`), 'find its folder');
+    const found = await body<{ files: DriveFile[] }>(await this.fetch(`${API}/files?q=${encodeURIComponent(q)}&fields=files(id,name)&orderBy=createdTime&pageSize=10`), (message) => tr('Google Drive could not find its folder: {message}', { message }));
     if (found.files.length) return (this.folderId = found.files[0].id);
     const made = await body<DriveFile>(
       await this.fetch(`${API}/files?fields=id`, {
@@ -68,7 +70,7 @@ export class DriveRemote implements Remote {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ name: this.folderName, mimeType: FOLDER_TYPE, parents: [under] }),
       }),
-      'make its folder',
+      (message) => tr('Google Drive could not make its folder: {message}', { message }),
     );
     return (this.folderId = made.id);
   }
@@ -81,7 +83,7 @@ export class DriveRemote implements Remote {
     do {
       const params = new URLSearchParams({ q, fields: `nextPageToken,files(${FILE_FIELDS})`, pageSize: '1000' });
       if (pageToken) params.set('pageToken', pageToken);
-      const page = await body<{ files: DriveFile[]; nextPageToken?: string }>(await this.fetch(`${API}/files?${params}`), 'list the projects');
+      const page = await body<{ files: DriveFile[]; nextPageToken?: string }>(await this.fetch(`${API}/files?${params}`), (message) => tr('Google Drive could not list the projects: {message}', { message }));
       for (const file of page.files) if (isDesignName(file.name)) out.push(toRemote(file));
       pageToken = page.nextPageToken;
     } while (pageToken);
@@ -90,7 +92,7 @@ export class DriveRemote implements Remote {
 
   async download(file: RemoteFile): Promise<string> {
     const response = await this.fetch(`${API}/files/${encodeURIComponent(file.id)}?alt=media`);
-    if (!response.ok) await body(response, `download ${file.name}`);
+    if (!response.ok) await body(response, (message) => tr('Google Drive could not download {name}: {message}', { name: file.name, message }));
     return response.text();
   }
 
@@ -111,7 +113,7 @@ export class DriveRemote implements Remote {
     const url = existing ? `${UPLOAD}/files/${encodeURIComponent(existing.id)}?uploadType=multipart&fields=${FILE_FIELDS}` : `${UPLOAD}/files?uploadType=multipart&fields=${FILE_FIELDS}`;
     const file = await body<DriveFile>(
       await this.fetch(url, { method: existing ? 'PATCH' : 'POST', headers: { 'content-type': `multipart/related; boundary=${boundary}` }, body: parts }),
-      `upload ${name}`,
+      (message) => tr('Google Drive could not upload {name}: {message}', { name, message }),
     );
     const remote = toRemote(file);
     // Drive echoes an empty revision as missing.
@@ -122,7 +124,7 @@ export class DriveRemote implements Remote {
   async stat(file: RemoteFile): Promise<RemoteFile | null> {
     const response = await this.fetch(`${API}/files/${encodeURIComponent(file.id)}?fields=${FILE_FIELDS},trashed`);
     if (response.status === 404) return null;
-    const found = await body<DriveFile & { trashed?: boolean }>(response, `look at ${file.name}`);
+    const found = await body<DriveFile & { trashed?: boolean }>(response, (message) => tr('Google Drive could not look at {name}: {message}', { name: file.name, message }));
     if (found.trashed) return null;
     const remote = toRemote(found);
     if (remote.revision === '') remote.revision = null;
@@ -132,13 +134,13 @@ export class DriveRemote implements Remote {
   async remove(file: RemoteFile): Promise<void> {
     await body(
       await this.fetch(`${API}/files/${encodeURIComponent(file.id)}?fields=id`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ trashed: true }) }),
-      `delete ${file.name}`,
+      (message) => tr('Google Drive could not delete {name}: {message}', { name: file.name, message }),
     );
   }
 
   /** Who is signed in. */
   async account(): Promise<{ email: string; name: string }> {
-    const about = await body<{ user?: { emailAddress?: string; displayName?: string } }>(await this.fetch(`${API}/about?fields=user`), 'read the account');
+    const about = await body<{ user?: { emailAddress?: string; displayName?: string } }>(await this.fetch(`${API}/about?fields=user`), (message) => tr('Google Drive could not read the account: {message}', { message }));
     return { email: about.user?.emailAddress ?? '', name: about.user?.displayName ?? '' };
   }
 }

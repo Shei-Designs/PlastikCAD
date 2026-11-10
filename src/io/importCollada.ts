@@ -4,6 +4,7 @@
 // axis is up; parts come out Z up in millimeters. Collada is what most ROS
 // robot descriptions draw their links with.
 import type { MeshWithUV } from '../geometry/mesh';
+import { tr } from '../i18n';
 import { apply, determinant, IDENTITY, multiply } from '../model/math';
 import type { Mat } from '../model/math';
 import type { Companion, ImportedImage, ImportedModel, ImportedPart } from './import';
@@ -33,9 +34,9 @@ interface Inputs {
 }
 
 export function parseCollada(bytes: Uint8Array, name = 'Model', companions: Companion[] = []): ImportedModel {
-  if (bytes.length === 0) throw new Error('This Collada file is empty.');
+  if (bytes.length === 0) throw new Error(tr('This Collada file is empty.'));
   const root = xmlTree(bytes);
-  if (!root || localName(root.name) !== 'COLLADA') throw new Error('This is not a Collada file.');
+  if (!root || localName(root.name) !== 'COLLADA') throw new Error(tr('This is not a Collada file.'));
 
   // Everything with an id, for the `#id` references the file is built from.
   const byId = new Map<string, XmlElement>();
@@ -200,7 +201,7 @@ export function parseCollada(bytes: Uint8Array, name = 'Model', companions: Comp
       }
       const corners = polygons.reduce((n, poly) => n + poly.length / inputs.stride, 0);
       triangles += Math.max(0, corners - 2 * polygons.length);
-      if (triangles > MAX_TRIANGLES) throw new Error('This Collada file has too many triangles to open.');
+      if (triangles > MAX_TRIANGLES) throw new Error(tr('This Collada file has too many triangles to open.'));
       const builder = new MeshBuilder(Math.max(16, inputs.position.source.count), Math.max(16, corners));
       const position = inputs.position.source;
       const placedVertex = new Map<number, number>();
@@ -280,7 +281,7 @@ export function parseCollada(bytes: Uint8Array, name = 'Model', companions: Comp
   };
   const visit = (node: XmlElement, parent: Mat, depth: number) => {
     if (depth > MAX_DEPTH) return;
-    if (++visited > MAX_NODES) throw new Error('This Collada file has too many nodes to open.');
+    if (++visited > MAX_NODES) throw new Error(tr('This Collada file has too many nodes to open.'));
     const world = multiply(parent, localMatrix(node));
     const label = node.attrs.name || node.attrs.id || undefined;
     for (const instance of [...childrenOf(node, 'instance_geometry'), ...childrenOf(node, 'instance_controller')]) {
@@ -303,7 +304,7 @@ export function parseCollada(bytes: Uint8Array, name = 'Model', companions: Comp
     const geometries = childOf(root, 'library_geometries');
     for (const geometry of geometries ? childrenOf(geometries, 'geometry') : []) emitGeometry(geometry, new Map(), undefined, IDENTITY);
   }
-  if (parts.length === 0) throw new Error('This Collada file has no meshes.');
+  if (parts.length === 0) throw new Error(tr('This Collada file has no meshes.'));
   return { kind: 'model', parts, used: parts.flatMap((p) => (p.image ? [p.image.name] : [])) };
 }
 

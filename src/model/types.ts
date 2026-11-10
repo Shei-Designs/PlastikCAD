@@ -149,16 +149,17 @@ export interface PictureNode extends NodeBase {
 
 export type SceneNode = ShapeNode | GroupNode | ImportNode | TextNode | PartNode | PictureNode;
 
+import { tr } from '../i18n';
 import type { TextCurve } from '../text/curve';
 import type { Robot } from '../robot/types';
 export type { Robot };
 
 /** The fonts lettering can be set in. All are bold or heavy cuts: thin strokes do not print. */
 export const TEXT_FONTS: { id: string; name: string }[] = [
-  { id: 'sans', name: 'Sans' },
-  { id: 'serif', name: 'Slab serif' },
-  { id: 'mono', name: 'Monospace' },
-  { id: 'stencil', name: 'Stencil' },
+  { id: 'sans', name: tr('Sans') },
+  { id: 'serif', name: tr('Slab serif') },
+  { id: 'mono', name: tr('Monospace') },
+  { id: 'stencil', name: tr('Stencil') },
 ];
 export type Scene = SceneNode[];
 

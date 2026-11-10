@@ -29,6 +29,17 @@ version is installed over the old one, and devices that sync through Google
 Drive should be updated together (see [Google Drive](#google-drive)). The
 Android app is built from source for now (see [Development](#development)).
 
+## Languages
+
+The app is in English and French. It starts in the language of the device, and
+**File → Language…** sets another; the app then starts again in it, with the
+design saved first. Names the app gives to new objects are in the language in
+use and stay as they are in the design. What is translated is the words:
+labels, descriptions, messages. Numbers are written the same way in every
+language, with a decimal point and no thousands separator, and a comma typed
+in a number box is read as the decimal point. What is written into exported
+files (a URDF, a ROS package, a script) is in English whatever the language.
+
 ## How it works
 
 It is the Tinkercad way of modeling, without the cloud and without the clutter:
@@ -749,6 +760,57 @@ The palette, inspector, file format and export pick it up from there.
 
 Generators are plain functions from parameters to a shape description; they
 never touch the mesh kernel, which keeps them easy to test.
+
+### Words and languages
+
+Every text a user reads is written in English where it is used, inside a call
+that looks it up (`src/i18n/index.ts`):
+
+```ts
+tr('Save a copy…')                               // the English text is the key
+tr('Deleted {name}.', { name })                  // with something put in
+trx('verb', 'Open')                              // one English text, two meanings
+plural(n, '{n} object', '{n} objects')           // a count
+mark('Move') … marked(group)                     // written in one place, shown in another
+rich('Made by {author}.', { author: <a>…</a> })  // with elements put in
+```
+
+The text must be written out at the call, whole sentences at a time: a test
+(`src/i18n/catalog.test.ts`) reads the source for these calls and holds every
+catalog to them. It fails when a catalog lacks a text, holds one the source no
+longer uses, or puts other things in than the English does.
+
+To add a language:
+
+1. Copy `src/i18n/fr.ts` and the folder `src/i18n/fr/` under the new
+   language's code, and translate the right-hand side of every entry. A text
+   about a count takes one form per plural category of the language
+   (`{ one: '…', other: '…' }`). `glossary.md` there lists the word chosen for
+   each of the app's terms: start a new one, so that a term is translated the
+   same way everywhere.
+2. Add the language to `Language`, `LANGUAGES` and `CATALOGS` in
+   `src/i18n/index.ts`, and to `CATALOGS` in the catalog test.
+3. `pnpm test` then lists what is missing, and `pnpm e2e` runs the layout
+   checks: text runs longer in some languages than in English.
+
+The language is settled once, when the app starts, so a text can be looked up
+anywhere, in a table at the top of a module as well as in a component, and the
+geometry worker speaks the language of the page that started it.
+
+Left as they are on purpose, to keep this to words. None is ruled out; each
+waits until someone needs it:
+
+- Numbers in the language's own form (a decimal comma, a space between
+  thousands). A typed comma is already read as the decimal point.
+- The W, D and H tags of the size boxes, which stay as in English.
+- The text inside exported files.
+- Errors from the native side when the system refuses to read, write, move or
+  delete a file. They are shown as they come, in English, with the path and
+  the system's own reason.
+- The keys of the test drive, which go by letter (W, A, S, D) and so sit
+  elsewhere on a keyboard that is not QWERTY. The arrow keys work on all.
+- A part that still has the name the app gave it is recognised as such only
+  in the language it was named in.
 
 ## Roadmap
 

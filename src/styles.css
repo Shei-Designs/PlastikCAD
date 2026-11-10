@@ -1600,6 +1600,8 @@ select:hover {
 
 .export-row .menu {
   width: auto;
+  min-width: 0;
+  max-width: none;
 }
 
 .menu-item.format {
@@ -1775,17 +1777,21 @@ select:hover {
 .menu {
   display: flex;
   flex-direction: column;
-  /* Narrow enough to open within the sidebar, whose left edge is the window's. */
-  width: 216px;
+  /* As wide as its longest row, which differs from one language to the next, within bounds: narrow enough to open
+     within the sidebar, whose left edge is the window's. A row longer than that goes onto two lines. */
+  width: max-content;
+  min-width: 216px;
+  max-width: 252px;
 }
 
 .menu-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  height: 28px;
-  padding: 0 8px;
+  gap: 12px;
+  min-height: 28px;
+  padding: 4px 8px;
+  line-height: 1.25;
   border: 0;
   border-radius: 6px;
   background: none;
@@ -2942,6 +2948,23 @@ kbd {
   font-size: 12.5px;
 }
 
+/* The Language box: the About box's frame round a short list, the language in use marked. */
+.about.language h2 {
+  margin: 8px 0 0;
+  font-size: 14px;
+}
+
+.language-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.language-list .menu-item.on {
+  background: var(--control);
+  font-weight: 600;
+}
+
 /* The About box's buttons, and the report shown where it could not be copied. */
 .about-actions {
   display: flex;
@@ -3306,8 +3329,9 @@ kbd {
   color: var(--accent);
 }
 
-.outline-row .outline-kind {
-  text-transform: capitalize;
+/* A capital on the first word only: every word capitalised reads wrong in most languages ("Groupe De 2"). */
+.outline-row .outline-kind::first-letter {
+  text-transform: uppercase;
 }
 
 /* The joints of a link, listed in its panel as rows like the tree's. */
@@ -3654,7 +3678,7 @@ kbd {
   }
 
   .menu-item {
-    height: 44px;
+    min-height: 44px;
   }
 
   .menu-item.format {

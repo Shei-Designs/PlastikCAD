@@ -14,6 +14,7 @@
 // delete most of the projects on one side asks first; what it removes here
 // goes to the store's trash where there is one; and one project's failure
 // never keeps the caller from hearing what the pass did to the others.
+import { tr } from '../i18n';
 import { parseDoc, serializeDoc } from '../model/file';
 import { newId } from '../model/ops';
 import type { Doc } from '../model/types';
@@ -127,7 +128,7 @@ function read(text: string, name: string): Doc {
   try {
     return parseDoc(text);
   } catch (e) {
-    throw new Error(`"${name}": ${e instanceof Error ? e.message : String(e)}`);
+    throw new Error(tr('"{name}": {message}', { name, message: e instanceof Error ? e.message : String(e) }));
   }
 }
 
@@ -167,7 +168,7 @@ export async function bindRecords(state: SyncState, was: string | null, now: str
  */
 export async function synchronize(local: ProjectStore, remote: Remote, state: SyncState, options: SyncOptions): Promise<SyncReport> {
   const report: SyncReport = { uploaded: [], downloaded: [], merged: [], kept: [], deletedLocally: [], deletedRemotely: [], changedKeys: [], removedKeys: [], movedKeys: [], busy: [], held: [], errors: [] };
-  const copyName = options.copyName ?? ((name: string) => `${name} (other device)`);
+  const copyName = options.copyName ?? ((name: string) => tr('{name} (other device)', { name }));
 
   const locals = new Map<string, ProjectInfo>();
   for (const info of await local.list()) {

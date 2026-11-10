@@ -1,3 +1,4 @@
+import { tr } from '../i18n';
 import type { OutlineShape, Polygon } from '../model/types';
 import { applyTo, maxStretch, mul, signedArea, TOLERANCE, turnSegments } from './outline';
 import type { Matrix } from './outline';
@@ -98,8 +99,8 @@ export function parseSvg(bytes: Uint8Array): { shapes: OutlineShape[]; color?: s
     openCount.set(name, (openCount.get(name) ?? 0) + 1);
   }
 
-  if (!sawRoot) throw new Error('This is not an SVG file.');
-  if (count === 0) throw new Error('This SVG has no shapes that can be extruded.');
+  if (!sawRoot) throw new Error(tr('This is not an SVG file.'));
+  if (count === 0) throw new Error(tr('This SVG has no shapes that can be extruded.'));
   return [...parts].map(([color, shapes]) => (color ? { shapes, color } : { shapes }));
 }
 

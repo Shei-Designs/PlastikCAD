@@ -4,6 +4,7 @@
 // `onReady` once the rest has arrived.
 import { cellRect, layoutAtlas, skinAssets } from '../geometry/skin';
 import type { Skin } from '../geometry/skin';
+import { tr } from '../i18n';
 import { base64ToBytes } from '../io/base64';
 import type { Asset, ImageAsset } from '../model/types';
 
@@ -84,7 +85,7 @@ export class SkinPainter {
     const keys = skinAssets(skin);
     const images = keys.map((k) => this.image(k, assets));
     const failed = keys.find((k) => this.images.get(k)?.state === 'failed');
-    if (failed !== undefined) throw new Error(`The picture "${assets[failed]?.kind === 'image' ? assets[failed].name : failed}" could not be read.`);
+    if (failed !== undefined) throw new Error(tr('The picture "{name}" could not be read.', { name: assets[failed]?.kind === 'image' ? assets[failed].name : failed }));
     if (images.some((i) => i === null)) return null;
     const ready = images as ImageBitmap[];
     const canvas = document.createElement('canvas');
@@ -129,7 +130,7 @@ export class SkinPainter {
   /** PNG bytes of a painting, for export. */
   static async png(painted: Painted): Promise<Uint8Array> {
     const blob = await new Promise<Blob | null>((resolve) => painted.canvas.toBlob(resolve, 'image/png'));
-    if (!blob) throw new Error('The picture could not be encoded.');
+    if (!blob) throw new Error(tr('The picture could not be encoded.'));
     return new Uint8Array(await blob.arrayBuffer());
   }
 

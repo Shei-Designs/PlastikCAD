@@ -1,3 +1,4 @@
+import { tr } from '../i18n';
 import { ByteReader, isSpace } from './scan';
 
 const LT = 60;
@@ -258,7 +259,7 @@ export function xmlTree(bytes: Uint8Array): XmlElement | null {
     if (top) top.children.push(element);
     else root ??= element;
     if (scanner.selfClosing) continue;
-    if (stack.length >= MAX_DEPTH) throw new Error('This file is nested too deeply to read.');
+    if (stack.length >= MAX_DEPTH) throw new Error(tr('This file is nested too deeply to read.'));
     stack.push(element);
   }
   for (const open of stack) open.text = open.text.trim();

@@ -74,15 +74,26 @@ async function expectFingerSized(page: Page, root: string, name: string): Promis
   expect.soft(all.filter((c) => c.offWindow).map((c) => c.what), `${name}: controls cut off by the window`).toEqual([]);
 }
 
+/**
+ * The languages the controls are measured in: text runs longer in some than in English, and must
+ * still fit. Each brings the few words these tests find a control by.
+ */
+const LANGUAGES = [
+  { locale: 'en-US', name: '', array: 'Array', ring: 'Ring', mirror: 'Mirror', file: 'File' },
+  { locale: 'fr-FR', name: ' in French', array: 'Réseau', ring: 'En cercle', mirror: 'Miroir', file: 'Fichier' },
+];
+
 // The tablet held sideways, as the project has it, and upright.
-for (const viewport of [
+const VIEWPORTS = [
   { width: 1280, height: 800 },
   { width: 800, height: 1280 },
-]) {
+];
+
+for (const { viewport, words } of LANGUAGES.flatMap((words) => VIEWPORTS.map((viewport) => ({ viewport, words })))) {
   const upright = viewport.height > viewport.width;
 
-  test.describe(`finger-sized controls at ${viewport.width} x ${viewport.height}`, { tag: '@touch' }, () => {
-    test.use({ viewport });
+  test.describe(`finger-sized controls at ${viewport.width} x ${viewport.height}${words.name}`, { tag: '@touch' }, () => {
+    test.use({ viewport, locale: words.locale });
 
     test.beforeEach(async ({ page }) => {
       await openApp(page);
@@ -125,14 +136,14 @@ for (const viewport of [
     test('the Array panel, as a grid and as a ring, and the Mirror panel', async ({ page }) => {
       await store(page, (m) => m.addShape('box'));
       await settled(page);
-      await tap(page.locator('button[aria-label="Array"]'));
+      await tap(page.locator(`button[aria-label="${words.array}"]`));
       await expect(page.locator('.array-panel')).toBeVisible();
       await expectFingerSized(page, '.popover-panel', 'the Array panel');
-      await tap(page.locator('.array-panel .segmented button', { hasText: 'Ring' }));
+      await tap(page.locator('.array-panel .segmented button', { hasText: words.ring }));
       await expectFingerSized(page, '.popover-panel', 'the Array panel for a ring');
       await page.keyboard.press('Escape');
       await expect(page.locator('.popover-panel')).toHaveCount(0);
-      await tap(page.locator('button[aria-label^="Mirror"]'));
+      await tap(page.locator(`button[aria-label^="${words.mirror}"]`));
       await expect(page.locator('.popover-panel')).toBeVisible();
       await expectFingerSized(page, '.popover-panel', 'the Mirror panel');
     });
@@ -144,7 +155,7 @@ for (const viewport of [
         m.select([]);
       });
       await settled(page);
-      await tap(page.locator('button[aria-label="File"]'));
+      await tap(page.locator(`button[aria-label="${words.file}"]`));
       await expect(page.locator('.popover-panel')).toBeVisible();
       await expectFingerSized(page, '.popover-panel', 'the File menu');
       await page.keyboard.press('Escape');

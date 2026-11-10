@@ -1,5 +1,6 @@
 // Where this device remembers what it last agreed on with the remote, per
 // project: IndexedDB, which the desktop webview and browsers alike have.
+import { tr } from '../i18n';
 import type { SyncRecord, SyncState } from './engine';
 
 const DB_NAME = 'plastikcad-sync';
@@ -32,7 +33,7 @@ function transact<T>(store: RecordStore, mode: IDBTransactionMode, run: (store: 
         };
         tx.onerror = tx.onabort = () => {
           db.close();
-          reject(tx.error ?? new Error('The sync state could not be stored.'));
+          reject(tx.error ?? new Error(tr('The sync state could not be stored.')));
         };
       }),
   );

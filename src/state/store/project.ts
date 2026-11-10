@@ -2,7 +2,8 @@
 // opening, renaming, duplicating and deleting, design files from outside, and
 // the folder projects are kept in. The stores themselves are in ../projects.
 import { APP_NAME, FILE_EXTENSION } from '../../appInfo';
-import { emptyDoc, HEAD_BYTES, legacyVersions, parseDoc, readHeader, serializeDoc } from '../../model/file';
+import { locale, plural, tr } from '../../i18n';
+import { emptyDoc, HEAD_BYTES, isUntitled, legacyVersions, parseDoc, readHeader, serializeDoc } from '../../model/file';
 import { newId, regroup } from '../../model/ops';
 import type { Doc } from '../../model/types';
 import * as platform from '../../platform';
@@ -23,7 +24,7 @@ import { exportName, reportSaved } from './exporting';
 // no Save; "Save a copy" writes the design somewhere else, "Open project file"
 // brings an outside file in as a project.
 
-const DESIGN_FILTER = [{ name: `${APP_NAME} design`, extensions: [FILE_EXTENSION] }];
+const DESIGN_FILTER = [{ name: tr('{app} design', { app: APP_NAME }), extensions: [FILE_EXTENSION] }];
 
 /** How long after the last change the project is written. */
 const AUTOSAVE_MS = 1000;
@@ -93,7 +94,7 @@ function refreshThumbnail(): void {
 }
 
 /** Whether the project is worth a file yet: it has one already, something was put in it, or it was named. */
-const worthSaving = (): boolean => getState().projectKey !== null || getState().doc.scene.length > 0 || getState().doc.name !== 'Untitled';
+const worthSaving = (): boolean => getState().projectKey !== null || getState().doc.scene.length > 0 || !isUntitled(getState().doc.name);
 
 /**
  * Writes the project to the store now, if anything changed. Resolves true once
@@ -134,7 +135,7 @@ async function write(fresh: boolean): Promise<boolean> {
     set({ saving: false });
     const message = e instanceof Error ? e.message : String(e);
     // The same failure on every keystroke is reported once.
-    if (message !== lastSaveError) notify(`Could not save: ${message}`, 'error');
+    if (message !== lastSaveError) notify(tr('Could not save: {message}', { message }), 'error');
     lastSaveError = message;
     return false;
   }
@@ -142,7 +143,7 @@ async function write(fresh: boolean): Promise<boolean> {
 
 /** Ctrl+S: there is nothing to do but write what autosave would have a moment later, and say so. */
 export async function saveNow(): Promise<void> {
-  if (await saveProject(true)) notify(getState().doc.scene.length || getState().projectKey ? 'Saved' : 'Nothing to save yet', 'ok');
+  if (await saveProject(true)) notify(getState().doc.scene.length || getState().projectKey ? tr('Saved') : tr('Nothing to save yet'), 'ok');
 }
 
 export function adopt(doc: Doc, key: string | null): void {
@@ -177,10 +178,10 @@ export function adopt(doc: Doc, key: string | null): void {
 /** Writes what is pending before another project takes the screen; asks whether to go on if that fails. */
 async function leaveProject(): Promise<boolean> {
   if (await saveProject(true)) return true;
-  return platform.confirm(`The latest changes to "${getState().doc.name}" could not be saved. Leave anyway and lose them?`, {
+  return platform.confirm(tr('The latest changes to "{name}" could not be saved. Leave anyway and lose them?', { name: getState().doc.name }), {
     title: APP_NAME,
-    okLabel: 'Leave anyway',
-    cancelLabel: 'Keep editing',
+    okLabel: tr('Leave anyway'),
+    cancelLabel: tr('Keep editing'),
   });
 }
 
@@ -189,7 +190,7 @@ export const closeProjects = (): void => set({ browsing: false });
 
 /** "New project": asks for its name first; backing out leaves the open project as it is. */
 export async function newProject(): Promise<void> {
-  const name = await askName({ title: 'New project', label: 'Name', value: '', okLabel: 'Create' });
+  const name = await askName({ title: tr('New project'), label: tr('Name'), value: '', okLabel: tr('Create') });
   if (name) await startProject(name);
 }
 
@@ -235,7 +236,7 @@ export const folderOf = (path: string): string => path.slice(0, Math.max(path.la
 export async function importProjectFile(file: PickedFile): Promise<void> {
   const text = new TextDecoder().decode(file.bytes);
   const doc = parseDoc(text);
-  if (doc.name === 'Untitled') doc.name = baseName(file.name);
+  if (isUntitled(doc.name)) doc.name = baseName(file.name);
   const store = projectStore();
   if (file.path && store.location && folderOf(file.path) === store.location.replace(/[\\/]+$/, '')) return openProject(file.path);
   if (!(await leaveProject())) return;
@@ -253,18 +254,19 @@ export async function importProjectFile(file: PickedFile): Promise<void> {
  * file, which would otherwise go stale beside the living copy.
  */
 async function explainCopy(name: string, file: PickedFile): Promise<void> {
-  const text = `"${name}" is now a project of its own in ${APP_NAME}. Changes you make are saved with the app's projects, not in the file you opened.`;
+  const text = tr('"{name}" is now a project of its own in {app}. Changes you make are saved with the app\'s projects, not in the file you opened.', { name, app: APP_NAME });
   if (!platform.canDelete(file.path)) {
-    await tell({ title: 'Project added', text, actions: ['OK'] });
+    await tell({ title: tr('Project added'), text, actions: [tr('OK')] });
     return;
   }
-  const chosen = await tell({ title: 'Project added', text: `${text} The file can stay where it is, or go.`, actions: ['Keep the file', 'Delete the file'] });
-  if (chosen !== 'Delete the file') return;
+  const remove = tr('Delete the file');
+  const chosen = await tell({ title: tr('Project added'), text: `${text} ${tr('The file can stay where it is, or go.')}`, actions: [tr('Keep the file'), remove] });
+  if (chosen !== remove) return;
   try {
     await platform.deleteFile(file.path!);
-    notify(`Deleted ${file.name}.`, 'ok');
+    notify(tr('Deleted {name}.', { name: file.name }), 'ok');
   } catch (e) {
-    notify(`${APP_NAME} could not delete ${file.name} from here (${e instanceof Error ? e.message : String(e)}). Remove it in your file manager.`, 'error');
+    notify(tr('{app} could not delete {name} from here ({reason}). Remove it in your file manager.', { app: APP_NAME, name: file.name, reason: e instanceof Error ? e.message : String(e) }), 'error');
   }
 }
 
@@ -275,15 +277,22 @@ async function explainCopy(name: string, file: PickedFile): Promise<void> {
 async function offerLegacyVersions(text: string, name: string): Promise<void> {
   const versions = legacyVersions(text);
   if (versions.length === 0) return;
-  const count = `${versions.length} saved version${versions.length === 1 ? '' : 's'}`;
-  const keep = await platform.confirm(`"${name}" carries ${count} from an older version of the app, which no longer keeps them. Add each as a project of its own?`, {
-    title: APP_NAME,
-    okLabel: 'Add them',
-    cancelLabel: 'Drop them',
-  });
+  const keep = await platform.confirm(
+    plural(
+      versions.length,
+      '"{name}" carries {n} saved version from an older version of the app, which no longer keeps them. Add each as a project of its own?',
+      '"{name}" carries {n} saved versions from an older version of the app, which no longer keeps them. Add each as a project of its own?',
+      { name },
+    ),
+    {
+      title: APP_NAME,
+      okLabel: tr('Add them'),
+      cancelLabel: tr('Drop them'),
+    },
+  );
   if (!keep) return;
   for (const version of versions) await projectStore().write(null, version.name, serializeDoc(version));
-  notify(`Added ${count} as projects.`, 'ok');
+  notify(plural(versions.length, 'Added {n} saved version as projects.', 'Added {n} saved versions as projects.'), 'ok');
 }
 
 /** "Open project file…": brings a design file from anywhere in as a project. */
@@ -305,7 +314,7 @@ export async function saveCopy(): Promise<boolean> {
     if (!name) return false;
     const where = await platform.saveAs(`${name}.${FILE_EXTENSION}`, DESIGN_FILTER, bytes, 'application/json');
     if (!where) return false;
-    await reportSaved([where.name], where.path ? where.path.slice(0, where.path.length - where.name.length).replace(/[\\/]$/, '') || where.path : 'your downloads', where.uri ? [where.uri] : [], 'application/json');
+    await reportSaved([where.name], where.path ? where.path.slice(0, where.path.length - where.name.length).replace(/[\\/]$/, '') || where.path : tr('your downloads'), where.uri ? [where.uri] : [], 'application/json');
     return true;
   } catch (e) {
     fail(e);
@@ -334,8 +343,8 @@ export async function deleteProject(key: string, name: string): Promise<boolean>
   try {
     const store = projectStore();
     const sure = store.discard
-      ? await platform.confirm(`Move "${name}" to the Trash?`, { title: APP_NAME, okLabel: 'Move to Trash', cancelLabel: 'Keep' })
-      : await platform.confirm(`Delete "${name}"? This cannot be undone.`, { title: APP_NAME, okLabel: 'Delete', cancelLabel: 'Keep' });
+      ? await platform.confirm(tr('Move "{name}" to the Trash?', { name }), { title: APP_NAME, okLabel: tr('Move to Trash'), cancelLabel: tr('Keep') })
+      : await platform.confirm(tr('Delete "{name}"? This cannot be undone.', { name }), { title: APP_NAME, okLabel: tr('Delete'), cancelLabel: tr('Keep') });
     if (!sure) return false;
     if (key === getState().projectKey) {
       // Nothing pending may write it back after it is gone.
@@ -380,8 +389,8 @@ export async function restoreProject(key: string): Promise<void> {
 /** Destroys one project in the trash, or with no key all of them, after asking. Resolves true when they are gone. */
 export async function emptyTrash(key?: string, name?: string): Promise<boolean> {
   try {
-    const text = key ? `Delete "${name}" for good? Its earlier saves go with it. This cannot be undone.` : 'Delete everything in the Trash for good? This cannot be undone.';
-    if (!(await platform.confirm(text, { title: APP_NAME, okLabel: 'Delete', cancelLabel: 'Keep' }))) return false;
+    const text = key ? tr('Delete "{name}" for good? Its earlier saves go with it. This cannot be undone.', { name: String(name) }) : tr('Delete everything in the Trash for good? This cannot be undone.');
+    if (!(await platform.confirm(text, { title: APP_NAME, okLabel: tr('Delete'), cancelLabel: tr('Keep') }))) return false;
     await projectStore().purge?.(key);
     return true;
   } catch (e) {
@@ -406,7 +415,7 @@ export async function openVersion(version: VersionInfo, name: string): Promise<v
     if (!(await leaveProject())) return;
     const store = projectStore();
     const { revision: _revision, parent: _parent, ...doc } = parseDoc(await store.read(version.key));
-    const at = new Date(version.saved).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    const at = new Date(version.saved).toLocaleString(locale, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
     const copy = { ...doc, id: newId(), name: `${name} (${at})` };
     const key = await store.write(null, copy.name, serializeDoc(copy));
     adopt(parseDoc(await store.read(key)), key);
@@ -424,7 +433,7 @@ export async function duplicateProject(key: string): Promise<string | null> {
     const store = projectStore();
     const doc = parseDoc(await store.read(key));
     doc.id = newId();
-    doc.name = `${doc.name} copy`;
+    doc.name = tr('{name} copy', { name: doc.name });
     return await store.write(null, doc.name, serializeDoc(doc));
   } catch (e) {
     fail(e);
@@ -478,12 +487,18 @@ async function moveProjectsFolder(storage: NonNullable<EditorState['storage']>, 
   const fresh = new DiskProjects(picked);
   let move = false;
   if (items.length) {
-    const count = `${items.length} project${items.length === 1 ? '' : 's'}`;
-    move = await platform.confirm(`Move your ${count} to the new folder? Otherwise they stay where they are and only new projects go there.`, {
-      title: APP_NAME,
-      okLabel: 'Move them',
-      cancelLabel: 'Leave them',
-    });
+    move = await platform.confirm(
+      plural(
+        items.length,
+        'Move your {n} project to the new folder? Otherwise they stay where they are and only new projects go there.',
+        'Move your {n} projects to the new folder? Otherwise they stay where they are and only new projects go there.',
+      ),
+      {
+        title: APP_NAME,
+        okLabel: tr('Move them'),
+        cancelLabel: tr('Leave them'),
+      },
+    );
   }
   let openKey = getState().projectKey;
   const oldParts = partStore();
@@ -511,7 +526,7 @@ async function moveProjectsFolder(storage: NonNullable<EditorState['storage']>, 
     const name = getState().doc.name;
     adopt(emptyDoc(), null);
     openKey = null;
-    notify(`"${name}" stays in the old folder with the others.`);
+    notify(tr('"{name}" stays in the old folder with the others.', { name }));
   }
   setPrefs({ projectsDir: picked === storage.defaultDir ? null : picked });
   set({ storage: { ...storage, location: picked }, projectKey: openKey });

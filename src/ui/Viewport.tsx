@@ -1,5 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { CSSProperties, JSX } from 'react';
+import { tr, trx } from '../i18n';
+import { rich } from '../i18n/rich';
 import { geometry } from '../state/geometry';
 import { SNAP_STEPS } from '../state/persist';
 import {
@@ -95,9 +97,9 @@ import { commitTyping } from './typing';
 
 const VIEWS: { id: ViewPreset; label: string }[] = [
   { id: 'iso', label: '3D' },
-  { id: 'top', label: 'Top' },
-  { id: 'front', label: 'Front' },
-  { id: 'side', label: 'Side' },
+  { id: 'top', label: trx('view', 'Top') },
+  { id: 'front', label: trx('view', 'Front') },
+  { id: 'side', label: trx('view', 'Side') },
 ];
 
 
@@ -123,10 +125,10 @@ function Actions() {
   return (
     <>
       <div className="tool-group">
-        <button type="button" className="chip icon" title={tip('group')} aria-label="Group" disabled={count < 2} onClick={() => void groupSelected()}>
+        <button type="button" className="chip icon" title={tip('group')} aria-label={trx('verb', 'Group')} disabled={count < 2} onClick={() => void groupSelected()}>
           <GroupIcon />
         </button>
-        <button type="button" className="chip icon" title={tip('ungroup')} aria-label="Ungroup" disabled={!hasGroup} onClick={ungroupSelected}>
+        <button type="button" className="chip icon" title={tip('ungroup')} aria-label={tr('Ungroup')} disabled={!hasGroup} onClick={ungroupSelected}>
           <UngroupIcon />
         </button>
       </div>
@@ -135,53 +137,53 @@ function Actions() {
           type="button"
           className={aligning ? 'chip icon on' : 'chip icon'}
           title={tip('align')}
-          aria-label="Align"
+          aria-label={tr('Align')}
           aria-pressed={aligning}
           disabled={count < 2 && !aligning && !marker}
           onClick={toggleAligning}
         >
           <AlignIcon />
         </button>
-        <button type="button" className={measuring ? 'chip icon on' : 'chip icon'} title={tip('measure')} aria-label="Measure" aria-pressed={measuring} onClick={toggleMeasuring}>
+        <button type="button" className={measuring ? 'chip icon on' : 'chip icon'} title={tip('measure')} aria-label={tr('Measure')} aria-pressed={measuring} onClick={toggleMeasuring}>
           <RulerIcon />
         </button>
-        <button type="button" className={objectAxes ? 'chip icon on' : 'chip icon'} title={tip('objectAxes')} aria-label="Object axes" aria-pressed={objectAxes} onClick={toggleObjectAxes}>
+        <button type="button" className={objectAxes ? 'chip icon on' : 'chip icon'} title={tip('objectAxes')} aria-label={tr('Object axes')} aria-pressed={objectAxes} onClick={toggleObjectAxes}>
           <ObjectAxesIcon />
         </button>
-        <Popover className="chip icon" title={`Mirror (${groupKeys('Mirror')})`} button={<MirrorIcon />} disabled={none} align="right">
+        <Popover className="chip icon" title={tr('Mirror ({keys})', { keys: groupKeys('Mirror') })} button={<MirrorIcon />} disabled={none} align="right">
           {() => (
             <div className="align-panel">
-              <p>Mirrors the selection across the chosen axis.</p>
+              <p>{tr('Mirrors the selection across the chosen axis.')}</p>
               <div className="segmented">
                 {(['X', 'Y', 'Z'] as const).map((label, axis) => (
                   <button key={label} type="button" title={tip(MIRRORS[axis])} onClick={() => mirrorSelected(axis as 0 | 1 | 2)}>
-                    Flip {label}
+                    {tr('Flip {axis}', { axis: label })}
                   </button>
                 ))}
               </div>
             </div>
           )}
         </Popover>
-        <button type="button" className="chip icon" title={tip('drop')} aria-label="Drop onto the plate" disabled={none} onClick={dropSelected}>
+        <button type="button" className="chip icon" title={tip('drop')} aria-label={tr('Drop onto the plate')} disabled={none} onClick={dropSelected}>
           <DropIcon />
         </button>
       </div>
       <div className="tool-group">
-        <button type="button" className="chip icon" title={tip('ghost')} aria-label="Ghost" disabled={none} onClick={ghostSelected}>
+        <button type="button" className="chip icon" title={tip('ghost')} aria-label={trx('verb', 'Ghost')} disabled={none} onClick={ghostSelected}>
           <GhostIcon />
         </button>
-        <button type="button" className="chip icon" title={tip('unghostAll')} aria-label="Un-ghost all" disabled={!ghosts} onClick={unghostAll}>
+        <button type="button" className="chip icon" title={tip('unghostAll')} aria-label={tr('Un-ghost all')} disabled={!ghosts} onClick={unghostAll}>
           <UnghostIcon />
         </button>
       </div>
       <div className="tool-group">
-        <button type="button" className="chip icon" title={tip('duplicate', 'Duplicate in place')} aria-label="Duplicate" disabled={none} onClick={duplicateSelected}>
+        <button type="button" className="chip icon" title={tip('duplicate', tr('Duplicate in place'))} aria-label={tr('Duplicate')} disabled={none} onClick={duplicateSelected}>
           <DuplicateIcon />
         </button>
-        <Popover className="chip icon" title="Array" button={<ArrayIcon />} disabled={none} align="right">
+        <Popover className="chip icon" title={tr('Array')} button={<ArrayIcon />} disabled={none} align="right">
           {(close) => <ArrayPanel close={close} />}
         </Popover>
-        <button type="button" className="chip icon" title={tip('delete')} aria-label="Delete" disabled={none} onClick={deleteSelected}>
+        <button type="button" className="chip icon" title={tip('delete')} aria-label={tr('Delete')} disabled={none} onClick={deleteSelected}>
           <TrashIcon />
         </button>
       </div>
@@ -194,17 +196,17 @@ function MeasureBar({ kinds, picks, result }: { kinds: FeatureKind[]; picks: num
   const toggle = (id: FeatureKind) => setMeasureKinds(kinds.includes(id) ? kinds.filter((k) => k !== id) : [...kinds, id]);
   return (
     <div className="hint-bar measure" role="status">
-      <div className="measure-kinds" role="group" aria-label="Snaps">
+      <div className="measure-kinds" role="group" aria-label={tr('Snaps')}>
         {FEATURE_KINDS.map((k) => {
           const Snap = SNAP_ICONS[k.id];
           return (
-            <button key={k.id} type="button" className={kinds.includes(k.id) ? 'chip icon on' : 'chip icon'} aria-pressed={kinds.includes(k.id)} aria-label={k.label} title={`${k.label}: ${k.help}`} onClick={() => toggle(k.id)}>
+            <button key={k.id} type="button" className={kinds.includes(k.id) ? 'chip icon on' : 'chip icon'} aria-pressed={kinds.includes(k.id)} aria-label={k.label} title={tr('{label}: {help}', { label: k.label, help: k.help })} onClick={() => toggle(k.id)}>
               <Snap />
             </button>
           );
         })}
       </div>
-      <span className="measure-result">{result ? result.join(' · ') : picks === 0 ? 'Click a point, edge, face or circle, then another · Esc to finish' : 'Click another feature to measure to it'}</span>
+      <span className="measure-result">{result ? result.join(' · ') : picks === 0 ? tr('Click a point, edge, face or circle, then another · Esc to finish') : tr('Click another feature to measure to it')}</span>
     </div>
   );
 }
@@ -227,10 +229,10 @@ function History() {
   const canRedo = useEditor((s) => s.canRedo);
   return (
     <div className="tool-group">
-      <button type="button" className="chip icon" title={tip('undo')} aria-label="Undo" disabled={!canUndo} onClick={undo}>
+      <button type="button" className="chip icon" title={tip('undo')} aria-label={tr('Undo')} disabled={!canUndo} onClick={undo}>
         <UndoIcon />
       </button>
-      <button type="button" className="chip icon" title={tip('redo')} aria-label="Redo" disabled={!canRedo} onClick={redo}>
+      <button type="button" className="chip icon" title={tip('redo')} aria-label={tr('Redo')} disabled={!canRedo} onClick={redo}>
         <RedoIcon />
       </button>
     </div>
@@ -264,14 +266,14 @@ const ViewWidget = memo(function ViewWidget({ viewer }: { viewer: React.RefObjec
     <div className="view-widget">
       <div className="triad-space" ref={space} style={{ width: GIZMO_SIZE, height: GIZMO_SIZE }} />
       <div className="view-row">
-        <div className="segmented small" role="group" aria-label="Camera view">
+        <div className="segmented small" role="group" aria-label={tr('Camera view')}>
           {VIEWS.map((v) => (
             <button key={v.id} type="button" onClick={() => viewer.current?.setView(v.id)}>
               {v.label}
             </button>
           ))}
         </div>
-        <button type="button" className="chip icon" title={tip('fit')} aria-label="Fit to view" onClick={() => viewer.current?.fit()}>
+        <button type="button" className="chip icon" title={tip('fit')} aria-label={tr('Fit to view')} onClick={() => viewer.current?.fit()}>
           <FitIcon />
         </button>
       </div>
@@ -304,7 +306,7 @@ function HandleInput({ prompt, onClose }: { prompt: HandlePrompt; onClose: () =>
   const entryOf = (i: number): Parameters<typeof openTouchEntry>[0] => {
     const f = prompt.fields[i];
     return {
-      label: `${f.name}${prompt.fields.length > 1 ? ` (${i + 1} of ${prompt.fields.length})` : ''}`,
+      label: prompt.fields.length > 1 ? tr('{name} ({index} of {count})', { name: f.name, index: i + 1, count: prompt.fields.length }) : f.name,
       value: texts[i],
       unit: prompt.unit,
       inputMode: 'decimal',
@@ -523,21 +525,21 @@ const Toolbar = memo(function Toolbar() {
   }, []);
   return (
     <div className="view-toolbar">
-      <div className="toolbar" role="toolbar" aria-label="Tools" ref={bar}>
+      <div className="toolbar" role="toolbar" aria-label={tr('Tools')} ref={bar}>
         <History />
         <div className="tool-group">
           <button type="button" className={edges ? 'chip on' : 'chip'} aria-pressed={edges} onClick={() => setPrefs({ edges: !edges })}>
-            Edges
+            {tr('Edges')}
           </button>
           <button type="button" className={grid ? 'chip on' : 'chip'} aria-pressed={grid} onClick={() => setPrefs({ grid: !grid })}>
-            Grid
+            {tr('Grid')}
           </button>
-          <label className="chip select" title="Sets the step that moves and sizes snap to.">
-            Snap
+          <label className="chip select" title={tr('Sets the step that moves and sizes snap to.')}>
+            {tr('Snap')}
             <select value={snap} onChange={(e) => setPrefs({ snap: Number(e.target.value) })}>
               {SNAP_STEPS.map((s) => (
                 <option key={s} value={s}>
-                  {s === 0 ? 'Off' : `${s} mm`}
+                  {s === 0 ? trx('snap', 'Off') : `${s} mm`}
                 </option>
               ))}
             </select>
@@ -725,7 +727,7 @@ export function Viewport() {
     const out: string[] = [];
     for (const node of scene) {
       const entry = geometry.get(node);
-      if (entry?.state === 'error') out.push(`${node.name}: ${entry.message}`);
+      if (entry?.state === 'error') out.push(tr('{name}: {message}', { name: node.name, message: entry.message }));
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `revision` changes when a build ends, well or badly
@@ -748,21 +750,19 @@ export function Viewport() {
 
       {editing && (
         <div className="mode-banner" role="status">
-          <span>
-            Editing inside <strong>{editing.layers[0]?.name}</strong>
-          </span>
+          <span>{rich('Editing inside {name}', { name: <strong>{editing.layers[0]?.name}</strong> })}</span>
           <button type="button" className="chip on" disabled={Boolean(busy)} onClick={() => void finishEditing()}>
-            Done
+            {tr('Done')}
           </button>
           <button type="button" className="chip" disabled={Boolean(busy)} onClick={cancelEditing}>
-            Cancel
+            {tr('Cancel')}
           </button>
         </div>
       )}
-      {placing && <div className="hint-bar">Click on the plate to place the {placing.name.toLowerCase()} · Esc to cancel</div>}
+      {placing && <div className="hint-bar">{tr('Click on the plate to place the {name} · Esc to cancel', { name: placing.name.toLowerCase() })}</div>}
       {aligning && !placing && (
         <div className="hint-bar">
-          {aligning.anchor ? 'Aligning to the anchor' : 'Click a dot to align'} · click an object to set the anchor · Esc to finish
+          {aligning.anchor ? tr('Aligning to the anchor · click an object to set the anchor · Esc to finish') : tr('Click a dot to align · click an object to set the anchor · Esc to finish')}
         </div>
       )}
       {measuring && !placing && <MeasureBar kinds={measuring.kinds} picks={measuring.picks.length} result={measureResult?.lines ?? null} />}

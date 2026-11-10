@@ -1,4 +1,5 @@
 // Printable fasteners: ISO metric bolts and nuts, trapezoidal lead screws and their nuts.
+import { tr } from '../../i18n';
 import { handParam, isLeftHanded } from '../features';
 import { regularPolygon } from '../math2d';
 import {
@@ -51,7 +52,7 @@ const SOCKET_FIT = 0.2;
 const sizeParam: ParamDef = {
   type: 'select',
   key: 'size',
-  label: 'Size',
+  label: tr('Size'),
   default: 'M8',
   options: Object.entries(METRIC).map(([value, s]) => ({ value, label: `${value} × ${s.pitch}` })),
 };
@@ -59,8 +60,8 @@ const sizeParam: ParamDef = {
 const pitchParam: ParamDef = {
   type: 'number',
   key: 'pitch',
-  label: 'Custom pitch',
-  help: 'Leave at 0 for the standard coarse pitch. A coarser pitch prints more reliably on small sizes.',
+  label: tr('Custom pitch'),
+  help: tr('Leave at 0 for the standard coarse pitch. A coarser pitch prints more reliably on small sizes.'),
   default: 0,
   min: 0,
   max: 6,
@@ -72,7 +73,7 @@ const pitchParam: ParamDef = {
 const clearanceParam = (def: number, help: string): ParamDef => ({
   type: 'number',
   key: 'clearance',
-  label: 'Thread clearance',
+  label: tr('Thread clearance'),
   help,
   default: def,
   min: 0,
@@ -85,7 +86,7 @@ function metricPitch(p: Params, size: MetricSize, warnings: string[]): number {
   const custom = num(p, 'pitch');
   if (custom <= 0) return size.pitch;
   const max = size.d / 2;
-  if (custom > max) warnings.push(`The pitch was limited to ${max} mm for this diameter.`);
+  if (custom > max) warnings.push(tr('The pitch was limited to {max} mm for this diameter.', { max }));
   return Math.min(max, Math.max(0.2, custom));
 }
 
@@ -103,8 +104,7 @@ function checkEngagement(size: MetricSize, pitch: number, clearance: number, war
   const share = engagement(size, pitch, clearance, clearance);
   if (share < 0.4) {
     warnings.push(
-      `Only ${Math.max(0, Math.round(share * 100))}% of the thread depth engages with this clearance. ` +
-        'Reduce the clearance or use a coarser pitch.',
+      tr('Only {percent}% of the thread depth engages with this clearance. Reduce the clearance or use a coarser pitch.', { percent: Math.max(0, Math.round(share * 100)) }),
     );
   }
 }
@@ -142,43 +142,43 @@ function hexBody(af: number, height: number, chamfer: boolean, q: Quality): Soli
 
 export const metricBolt: GeneratorDef = {
   id: 'metric-bolt',
-  name: 'Metric bolt / threaded rod',
+  name: tr('Metric bolt / threaded rod'),
   category: 'screws',
-  summary: 'ISO metric screw with a hex or socket head, or a plain threaded rod.',
+  summary: tr('ISO metric screw with a hex or socket head, or a plain threaded rod.'),
   groups: [
     {
-      title: 'Thread',
+      title: tr('Thread'),
       params: [
         sizeParam,
         pitchParam,
         {
           type: 'number',
           key: 'length',
-          label: 'Length',
-          help: 'Threaded length, measured from under the head.',
+          label: tr('Length'),
+          help: tr('Threaded length, measured from under the head.'),
           default: 30,
           min: 2,
           max: 300,
           step: 1,
           unit: 'mm',
         },
-        clearanceParam(0.15, 'The thread is shrunk by this amount so that it turns freely in a nut. 0.1–0.2 mm suits FDM.'),
-        { type: 'boolean', key: 'chamfer', label: 'Chamfered end', default: true },
+        clearanceParam(0.15, tr('The thread is shrunk by this amount so that it turns freely in a nut. 0.1–0.2 mm suits FDM.')),
+        { type: 'boolean', key: 'chamfer', label: tr('Chamfered end'), default: true },
         handParam,
       ],
     },
     {
-      title: 'Head',
+      title: tr('Head'),
       params: [
         {
           type: 'select',
           key: 'head',
-          label: 'Type',
+          label: tr('Type'),
           default: 'hex',
           options: [
-            { value: 'hex', label: 'Hex head' },
-            { value: 'socket', label: 'Socket cap' },
-            { value: 'none', label: 'None (threaded rod)' },
+            { value: 'hex', label: tr('Hex head') },
+            { value: 'socket', label: tr('Socket cap') },
+            { value: 'none', label: tr('None (threaded rod)') },
           ],
         },
       ],
@@ -220,49 +220,49 @@ export const metricBolt: GeneratorDef = {
     }
 
     const info = [
-      { label: 'Major diameter', value: mm(rMax * 2) },
-      { label: 'Minor diameter', value: mm(rMin * 2) },
-      { label: 'Pitch', value: mm(pitch) },
+      { label: tr('Major diameter'), value: mm(rMax * 2) },
+      { label: tr('Minor diameter'), value: mm(rMin * 2) },
+      { label: tr('Pitch'), value: mm(pitch) },
     ];
-    if (head === 'hex') info.push({ label: 'Across flats', value: mm(size.af, 1) });
+    if (head === 'hex') info.push({ label: tr('Across flats'), value: mm(size.af, 1) });
     if (head === 'socket') {
-      info.push({ label: 'Head diameter', value: mm(size.capDiameter, 1) });
-      info.push({ label: 'Hex key', value: mm(size.socket, 1) });
+      info.push({ label: tr('Head diameter'), value: mm(size.capDiameter, 1) });
+      info.push({ label: tr('Hex key'), value: mm(size.socket, 1) });
     }
-    if (headHeight > 0) info.push({ label: 'Head height', value: mm(headHeight, 1) });
-    info.push({ label: 'Total length', value: mm(headHeight + length, 1) });
+    if (headHeight > 0) info.push({ label: tr('Head height'), value: mm(headHeight, 1) });
+    info.push({ label: tr('Total length'), value: mm(headHeight + length, 1) });
     return { solid, info, warnings };
   },
 };
 
 export const metricNut: GeneratorDef = {
   id: 'metric-nut',
-  name: 'Metric nut',
+  name: tr('Metric nut'),
   category: 'screws',
-  summary: 'ISO metric hex nut with a printable internal thread.',
+  summary: tr('ISO metric hex nut with a printable internal thread.'),
   groups: [
     {
-      title: 'Nut',
+      title: tr('Nut'),
       params: [
         sizeParam,
         pitchParam,
         {
           type: 'number',
           key: 'height',
-          label: 'Custom height',
-          help: 'Leave at 0 for the standard (ISO 4032) nut height.',
+          label: tr('Custom height'),
+          help: tr('Leave at 0 for the standard (ISO 4032) nut height.'),
           default: 0,
           min: 0,
           max: 100,
           step: 0.5,
           unit: 'mm',
         },
-        clearanceParam(0.2, 'The thread is cut oversize by this amount so that a screw turns freely in it.'),
+        clearanceParam(0.2, tr('The thread is cut oversize by this amount so that a screw turns freely in it.')),
         {
           type: 'boolean',
           key: 'chamfer',
-          label: 'Chamfered',
-          help: 'Chamfers the hex corners and adds a lead-in to the thread.',
+          label: tr('Chamfered'),
+          help: tr('Chamfers the hex corners and adds a lead-in to the thread.'),
           default: true,
         },
         handParam,
@@ -295,11 +295,11 @@ export const metricNut: GeneratorDef = {
     return {
       solid,
       info: [
-        { label: 'Thread major diameter', value: mm(rMax * 2) },
-        { label: 'Thread minor diameter', value: mm(rMin * 2) },
-        { label: 'Pitch', value: mm(pitch) },
-        { label: 'Across flats', value: mm(size.af, 1) },
-        { label: 'Height', value: mm(height, 1) },
+        { label: tr('Thread major diameter'), value: mm(rMax * 2) },
+        { label: tr('Thread minor diameter'), value: mm(rMin * 2) },
+        { label: tr('Pitch'), value: mm(pitch) },
+        { label: tr('Across flats'), value: mm(size.af, 1) },
+        { label: tr('Height'), value: mm(height, 1) },
       ],
       warnings,
     };
@@ -310,8 +310,8 @@ const trapezoidalParams: ParamDef[] = [
   {
     type: 'number',
     key: 'diameter',
-    label: 'Diameter',
-    help: 'Nominal (outside) diameter of the screw, e.g. 8 for Tr8.',
+    label: tr('Diameter'),
+    help: tr('Nominal (outside) diameter of the screw, e.g. 8 for Tr8.'),
     default: 8,
     min: 4,
     max: 60,
@@ -321,8 +321,8 @@ const trapezoidalParams: ParamDef[] = [
   {
     type: 'number',
     key: 'pitch',
-    label: 'Pitch',
-    help: 'Distance between neighboring thread crests.',
+    label: tr('Pitch'),
+    help: tr('Distance between neighboring thread crests.'),
     default: 2,
     min: 1,
     max: 12,
@@ -332,8 +332,8 @@ const trapezoidalParams: ParamDef[] = [
   {
     type: 'number',
     key: 'starts',
-    label: 'Starts',
-    help: 'Number of parallel threads. Lead = pitch × starts, so Tr8×8 is 2 mm pitch with 4 starts.',
+    label: tr('Starts'),
+    help: tr('Number of parallel threads. Lead = pitch × starts, so Tr8×8 is 2 mm pitch with 4 starts.'),
     default: 4,
     min: 1,
     max: 8,
@@ -347,7 +347,7 @@ function trapezoidal(p: Params, warnings: string[]) {
   let pitch = num(p, 'pitch');
   const max = diameter / 3;
   if (pitch > max) {
-    warnings.push(`The pitch was limited to ${max.toFixed(2)} mm for this diameter.`);
+    warnings.push(tr('The pitch was limited to {max} mm for this diameter.', { max: max.toFixed(2) }));
     pitch = max;
   }
   const starts = Math.max(1, Math.round(num(p, 'starts')));
@@ -359,17 +359,17 @@ const trapezoidalName = (d: number, pitch: number, starts: number) =>
 
 export const leadScrew: GeneratorDef = {
   id: 'lead-screw',
-  name: 'Trapezoidal lead screw',
+  name: tr('Trapezoidal lead screw'),
   category: 'screws',
-  summary: 'ISO trapezoidal (Tr) screw for linear motion, single or multi-start.',
+  summary: tr('ISO trapezoidal (Tr) screw for linear motion, single or multi-start.'),
   groups: [
     {
-      title: 'Thread',
+      title: tr('Thread'),
       params: [
         ...trapezoidalParams,
-        { type: 'number', key: 'length', label: 'Length', default: 60, min: 5, max: 400, step: 1, unit: 'mm' },
-        clearanceParam(0.1, 'The thread is shrunk by this amount so that it runs freely in its nut.'),
-        { type: 'boolean', key: 'chamfer', label: 'Chamfered ends', default: true },
+        { type: 'number', key: 'length', label: tr('Length'), default: 60, min: 5, max: 400, step: 1, unit: 'mm' },
+        clearanceParam(0.1, tr('The thread is shrunk by this amount so that it runs freely in its nut.')),
+        { type: 'boolean', key: 'chamfer', label: tr('Chamfered ends'), default: true },
         handParam,
       ],
     },
@@ -394,12 +394,12 @@ export const leadScrew: GeneratorDef = {
     return {
       solid,
       info: [
-        { label: 'Designation', value: trapezoidalName(diameter, pitch, starts) },
-        { label: 'Major diameter', value: mm(rMax * 2) },
-        { label: 'Minor diameter', value: mm(rMin * 2) },
-        { label: 'Pitch', value: mm(pitch) },
-        { label: 'Lead', value: `${mm(lead)} per turn` },
-        { label: 'Total length', value: mm(length, 1) },
+        { label: tr('Designation'), value: trapezoidalName(diameter, pitch, starts) },
+        { label: tr('Major diameter'), value: mm(rMax * 2) },
+        { label: tr('Minor diameter'), value: mm(rMin * 2) },
+        { label: tr('Pitch'), value: mm(pitch) },
+        { label: tr('Lead'), value: tr('{length} per turn', { length: mm(lead) }) },
+        { label: tr('Total length'), value: mm(length, 1) },
       ],
       warnings,
     };
@@ -408,33 +408,33 @@ export const leadScrew: GeneratorDef = {
 
 export const leadScrewNut: GeneratorDef = {
   id: 'lead-screw-nut',
-  name: 'Lead screw nut',
+  name: tr('Lead screw nut'),
   category: 'screws',
-  summary: 'Flanged nut for a trapezoidal lead screw.',
+  summary: tr('Flanged nut for a trapezoidal lead screw.'),
   groups: [
     {
-      title: 'Thread',
+      title: tr('Thread'),
       params: [
         ...trapezoidalParams,
-        clearanceParam(0.2, 'The thread is cut oversize by this amount so that the screw runs freely in it.'),
+        clearanceParam(0.2, tr('The thread is cut oversize by this amount so that the screw runs freely in it.')),
         handParam,
       ],
     },
     {
-      title: 'Body',
+      title: tr('Body'),
       params: [
-        { type: 'number', key: 'bodyDiameter', label: 'Diameter', default: 10.2, min: 5, max: 100, step: 0.1, unit: 'mm' },
-        { type: 'number', key: 'length', label: 'Length', default: 15, min: 2, max: 100, step: 0.5, unit: 'mm' },
+        { type: 'number', key: 'bodyDiameter', label: tr('Diameter'), default: 10.2, min: 5, max: 100, step: 0.1, unit: 'mm' },
+        { type: 'number', key: 'length', label: tr('Length'), default: 15, min: 2, max: 100, step: 0.5, unit: 'mm' },
       ],
     },
     {
-      title: 'Flange',
+      title: tr('Flange'),
       params: [
-        { type: 'boolean', key: 'flange', label: 'Mounting flange', default: true },
+        { type: 'boolean', key: 'flange', label: tr('Mounting flange'), default: true },
         {
           type: 'number',
           key: 'flangeDiameter',
-          label: 'Diameter',
+          label: tr('Diameter'),
           default: 22,
           min: 8,
           max: 150,
@@ -445,7 +445,7 @@ export const leadScrewNut: GeneratorDef = {
         {
           type: 'number',
           key: 'flangeThickness',
-          label: 'Thickness',
+          label: tr('Thickness'),
           default: 3.5,
           min: 1,
           max: 30,
@@ -456,7 +456,7 @@ export const leadScrewNut: GeneratorDef = {
         {
           type: 'number',
           key: 'mountHoles',
-          label: 'Mounting holes',
+          label: tr('Mounting holes'),
           default: 4,
           min: 0,
           max: 8,
@@ -467,7 +467,7 @@ export const leadScrewNut: GeneratorDef = {
         {
           type: 'number',
           key: 'mountHoleDiameter',
-          label: 'Hole diameter',
+          label: tr('Hole diameter'),
           default: 3.5,
           min: 1,
           max: 12,
@@ -478,8 +478,8 @@ export const leadScrewNut: GeneratorDef = {
         {
           type: 'number',
           key: 'boltCircle',
-          label: 'Bolt circle',
-          help: 'Diameter of the circle the mounting holes sit on.',
+          label: tr('Bolt circle'),
+          help: tr('Diameter of the circle the mounting holes sit on.'),
           default: 16,
           min: 4,
           max: 140,
@@ -499,8 +499,8 @@ export const leadScrewNut: GeneratorDef = {
     const { rMin, rMax } = profileExtent(profile);
     if (bodyR <= rMax) {
       bodyR = rMax + 1;
-      warnings.push(`The body was widened to ${(2 * bodyR).toFixed(1)} mm to clear the thread.`);
-    } else if (bodyR < rMax + 0.5) warnings.push('The body wall around the thread is very thin.');
+      warnings.push(tr('The body was widened to {diameter} mm to clear the thread.', { diameter: (2 * bodyR).toFixed(1) }));
+    } else if (bodyR < rMax + 0.5) warnings.push(tr('The body wall around the thread is very thin.'));
 
     let body = cylinder(bodyR, length, q.circle);
     const cuts: Solid[] = [];
@@ -508,14 +508,14 @@ export const leadScrewNut: GeneratorDef = {
       const flangeR = num(p, 'flangeDiameter') / 2;
       const thickness = Math.min(num(p, 'flangeThickness'), length);
       if (flangeR <= bodyR) {
-        warnings.push('The flange is not larger than the body; it was skipped.');
+        warnings.push(tr('The flange is not larger than the body; it was skipped.'));
       } else {
         body = union(cylinder(flangeR, thickness, q.circle), body);
         const count = Math.round(num(p, 'mountHoles'));
         const holeR = num(p, 'mountHoleDiameter') / 2;
         const circleR = num(p, 'boltCircle') / 2;
         if (count > 0 && (circleR - holeR < bodyR || circleR + holeR > flangeR)) {
-          warnings.push('The mounting holes do not fit between the body and the flange edge.');
+          warnings.push(tr('The mounting holes do not fit between the body and the flange edge.'));
         }
         for (let i = 0; i < count; i++) {
           const hole = translate(cylinder(holeR, thickness + 2, 24), [circleR, 0, -1]);
@@ -537,13 +537,13 @@ export const leadScrewNut: GeneratorDef = {
     return {
       solid: difference(body, ...cuts),
       info: [
-        { label: 'Designation', value: trapezoidalName(diameter, pitch, starts) },
-        { label: 'Thread major diameter', value: mm(rMax * 2) },
-        { label: 'Thread minor diameter', value: mm(rMin * 2) },
-        { label: 'Crest clearance', value: mm(trapezoidalClearance(pitch)) },
-        { label: 'Pitch', value: mm(pitch) },
-        { label: 'Lead', value: `${mm(lead)} per turn` },
-        { label: 'Total length', value: mm(length, 1) },
+        { label: tr('Designation'), value: trapezoidalName(diameter, pitch, starts) },
+        { label: tr('Thread major diameter'), value: mm(rMax * 2) },
+        { label: tr('Thread minor diameter'), value: mm(rMin * 2) },
+        { label: tr('Crest clearance'), value: mm(trapezoidalClearance(pitch)) },
+        { label: tr('Pitch'), value: mm(pitch) },
+        { label: tr('Lead'), value: tr('{length} per turn', { length: mm(lead) }) },
+        { label: tr('Total length'), value: mm(length, 1) },
       ],
       warnings,
     };

@@ -8,6 +8,7 @@
 // Positions here are between origins: from the gear's generator origin (its
 // axis, at its bottom face) to the mate's, in the plate's frame. Where each
 // part's box center falls relative to that origin is the caller's business.
+import { tr } from '../i18n';
 import { eulerOf, multiply, rotation } from '../model/math';
 import type { Mat } from '../model/math';
 import type { PartNode, Vec3 } from '../model/types';
@@ -57,7 +58,7 @@ export function mateKinds(part: string): MateKind[] {
   return [];
 }
 
-export const MATE_KIND_LABELS: Record<MateKind, string> = { gear: 'Gear', ring: 'Ring', rack: 'Rack', wheel: 'Worm wheel', bevel: 'Bevel gear' };
+export const MATE_KIND_LABELS: Record<MateKind, string> = { gear: tr('Gear'), ring: tr('Ring'), rack: tr('Rack'), wheel: tr('Worm wheel'), bevel: tr('Bevel gear') };
 
 /** A bevel gear's cone angle already names its mate's tooth count; the wizard cannot change it. */
 export function fixedMateTeeth(source: PartNode): number | null {
@@ -94,10 +95,10 @@ function invInverse(value: number): number {
 export function mateOf(source: PartNode, req: MateRequest): Mate {
   const p = source.params;
   const warnings: string[] = [];
-  if (Math.abs(source.rot[0]) > 1e-9 || Math.abs(source.rot[1]) > 1e-9) warnings.push('The gear is tilted; the mate is placed as if it stood upright.');
-  if (source.flip?.some(Boolean)) warnings.push('The gear is mirrored; the mate is placed as if it were not.');
+  if (Math.abs(source.rot[0]) > 1e-9 || Math.abs(source.rot[1]) > 1e-9) warnings.push(tr('The gear is tilted; the mate is placed as if it stood upright.'));
+  if (source.flip?.some(Boolean)) warnings.push(tr('The gear is mirrored; the mate is placed as if it were not.'));
   if (source.size.some((s, i) => Math.abs(s - source.natural[i]) > 1e-6 * Math.max(1, source.natural[i]))) {
-    warnings.push('The gear has been resized, so its teeth no longer match its module; the mate fits the unresized gear.');
+    warnings.push(tr('The gear has been resized, so its teeth no longer match its module; the mate fits the unresized gear.'));
   }
   if (req.kind === 'wheel') return wormWheel(source, req, warnings);
   if (req.kind === 'bevel') return bevelMate(source, req, warnings);
@@ -124,7 +125,7 @@ export function mateOf(source: PartNode, req: MateRequest): Mate {
     // so the two cosines cancel and the normal pressure angle is what the shift goes with.
     const nominal = (mt * (z1 + z2)) / 2;
     const invW = inv(at) + (2 * x1 * Math.tan(an)) / (z1 + z2);
-    if (invW <= 0) warnings.push('The profile shift is too negative for the pair to mesh; the mate is placed at the nominal center distance.');
+    if (invW <= 0) warnings.push(tr('The profile shift is too negative for the pair to mesh; the mate is placed at the nominal center distance.'));
     const working = Math.abs(x1) < 1e-9 || invW <= 0 ? nominal : (nominal * Math.cos(at)) / Math.cos(invInverse(invW));
     const center = working + req.extra;
     const p2 = 360 / z2;
@@ -136,8 +137,8 @@ export function mateOf(source: PartNode, req: MateRequest): Mate {
   }
 
   if (req.kind === 'ring') {
-    if (z2 <= z1 + 4) warnings.push('A ring needs a good few more teeth than the pinion inside it.');
-    if (Math.abs(x1) > 1e-9) warnings.push('The ring is laid out for an unshifted pinion; the profile shift is ignored.');
+    if (z2 <= z1 + 4) warnings.push(tr('A ring needs a good few more teeth than the pinion inside it.'));
+    if (Math.abs(x1) > 1e-9) warnings.push(tr('The ring is laid out for an unshifted pinion; the profile shift is ignored.'));
     const center = (mt * (z2 - z1)) / 2 - req.extra;
     // The pinion meshes on its far side from the ring's center, where a pinion with an odd tooth count has
     // a space opposite the tooth that faces the center: its turn is counted from a tooth on that side.
@@ -227,7 +228,7 @@ function wormWheel(source: PartNode, req: MateRequest, warnings: string[]): Mate
     backlash: req.backlash,
     profileShift: 0,
   };
-  if (lambda < (1 * Math.PI) / 180) warnings.push('The lead angle is under 1°, which the helical gear cannot follow exactly.');
+  if (lambda < (1 * Math.PI) / 180) warnings.push(tr('The lead angle is under 1°, which the helical gear cannot follow exactly.'));
 
   const theta = (req.angle * Math.PI) / 180;
   const dir: Vec3 = [Math.cos(theta), Math.sin(theta), 0];
@@ -249,14 +250,14 @@ function wormWheel(source: PartNode, req: MateRequest, warnings: string[]): Mate
   const origin: Vec3 = [dir[0] * center - (across[0] * faceWidth) / 2, dir[1] * center - (across[1] * faceWidth) / 2, zMid];
   return {
     part: 'helical',
-    name: 'Worm wheel',
+    name: tr('Worm wheel'),
     params,
     offset: origin,
     rotation: eulerOf(pose),
     center,
     ratio: z2 / starts,
     warnings,
-    note: 'A plain helical gear cut at the lead angle, not a throated wheel: it meshes along a line, which prints fine but carries less load.',
+    note: tr('A plain helical gear cut at the lead angle, not a throated wheel: it meshes along a line, which prints fine but carries less load.'),
   };
 }
 
@@ -310,6 +311,6 @@ function bevelMate(source: PartNode, req: MateRequest, warnings: string[]): Mate
     center: coneDistance,
     ratio: z2 / z1,
     warnings,
-    note: 'The tooth count is set by this gear’s cone angle. The mate’s axis passes through the cone apex, at right angles.',
+    note: tr('The tooth count is set by this gear’s cone angle. The mate’s axis passes through the cone apex, at right angles.'),
   };
 }

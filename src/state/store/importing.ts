@@ -1,11 +1,12 @@
 // Files brought into the design: models, drawings and pictures as objects on
 // the plate, and a URDF as a robot.
 import { isDesignName } from '../../appInfo';
+import { plural, tr } from '../../i18n';
 import { encodeFloat32, encodeUint32 } from '../../io/base64';
 import { centerMesh, centerOutline, fileKind, IMAGE_EXTENSIONS, IMPORT_EXTENSIONS, importFile } from '../../io/import';
 import { meshPath, parseUrdf, urdfMeshFiles } from '../../io/importUrdf';
 import { bytesToBase64 } from '../../io/base64';
-import { emptyDoc } from '../../model/file';
+import { isUntitled } from '../../model/file';
 import { hashString } from '../../model/geomKey';
 import { tidyVec } from '../../model/math';
 import { newId, uniqueName } from '../../model/ops';
@@ -67,14 +68,22 @@ async function withCompanions(file: PickedFile, companions: PickedFile[]): Promi
       }
     }
     if (more.length === 0 && (!file.path || file.path.includes('://'))) {
-      const list = missing.map((n) => `"${n}"`).join(', ');
-      const ok = await platform.confirm(`"${file.name}" names ${list} for its colors${missing.some((n) => extension(n) !== 'mtl') ? ' and pictures' : ''}. Pick ${missing.length === 1 ? 'it' : 'them'} now, or import the shapes without?`, {
-        title: 'Import',
-        okLabel: 'Pick',
-        cancelLabel: 'Without',
+      const named = { file: file.name, list: missing.map((n) => tr('"{name}"', { name: n })).join(', ') };
+      const question = missing.some((n) => extension(n) !== 'mtl')
+        ? plural(
+            missing.length,
+            '"{file}" names {list} for its colors and pictures. Pick it now, or import the shapes without?',
+            '"{file}" names {list} for its colors and pictures. Pick them now, or import the shapes without?',
+            named,
+          )
+        : plural(missing.length, '"{file}" names {list} for its colors. Pick it now, or import the shapes without?', '"{file}" names {list} for its colors. Pick them now, or import the shapes without?', named);
+      const ok = await platform.confirm(question, {
+        title: tr('Import'),
+        okLabel: tr('Pick'),
+        cancelLabel: tr('Without'),
       });
       if (!ok) return found;
-      const picked = await platform.pickFiles({ filters: [{ name: 'Material libraries and pictures', extensions: ['mtl', ...IMAGE_EXTENSIONS] }], multiple: true });
+      const picked = await platform.pickFiles({ filters: [{ name: tr('Material libraries and pictures'), extensions: ['mtl', ...IMAGE_EXTENSIONS] }], multiple: true });
       more.push(...picked);
     }
     if (more.length === 0) return found;
@@ -102,7 +111,7 @@ async function importModels(files: PickedFile[], companions: PickedFile[]): Prom
       await bring(file);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
-      failed.push(message.includes(file.name) ? message : `${file.name}: ${message}`);
+      failed.push(message.includes(file.name) ? message : tr('{name}: {message}', { name: file.name, message }));
     }
   }
   if (placed.length === 0 && failed.length) throw new Error(failed.join(' '));
@@ -147,7 +156,7 @@ async function importModels(files: PickedFile[], companions: PickedFile[]): Prom
         members.push(node);
       }
     }
-    if (members.length === 0) throw new Error(`"${file.name}" is flat or empty, so it cannot be made into a solid.`);
+    if (members.length === 0) throw new Error(tr('"{name}" is flat or empty, so it cannot be made into a solid.', { name: file.name }));
     if (members.length === 1) {
       members[0].name = name;
       put(members[0]);
@@ -281,7 +290,7 @@ async function importPictures(files: PickedFile[]): Promise<void> {
 /** Pick a picture file for a texture and keep it in the design. Returns its key, or null if canceled. */
 export async function pickImage(): Promise<string | null> {
   try {
-    const files = await platform.pickFiles({ filters: [{ name: 'Pictures', extensions: IMAGE_EXTENSIONS }] });
+    const files = await platform.pickFiles({ filters: [{ name: tr('Pictures'), extensions: IMAGE_EXTENSIONS }] });
     if (!files.length) return null;
     const key = await addImage(files[0]);
     set({});
@@ -304,11 +313,11 @@ export async function receiveFiles(files: PickedFile[]): Promise<void> {
     const models = files.filter((f) => IMPORT_EXTENSIONS.includes(fileKind(f.name, f.bytes)));
     const pictures = files.filter((f) => IMAGE_EXTENSIONS.includes(fileKind(f.name, f.bytes)));
     if (models.length === 0 && pictures.length === 0) {
-      if (files.some((f) => extension(f.name) === 'mtl')) notify('A .mtl file holds the colors of an OBJ and is read with it: pick the .obj, together with the .mtl for its colors.', 'error');
-      else if (files.length) notify(`Cannot import that. Supported: ${IMPORTABLE.map((e) => e.toUpperCase()).join(', ')}.`, 'error');
+      if (files.some((f) => extension(f.name) === 'mtl')) notify(tr('A .mtl file holds the colors of an OBJ and is read with it: pick the .obj, together with the .mtl for its colors.'), 'error');
+      else if (files.length) notify(tr('Cannot import that. Supported: {formats}.', { formats: IMPORTABLE.map((e) => e.toUpperCase()).join(', ') }), 'error');
       return;
     }
-    set({ busy: 'Importing…' });
+    set({ busy: tr('Importing…') });
     // Let the "Importing…" badge paint before the parser blocks the thread.
     await new Promise((r) => setTimeout(r, 30));
     // A picture a model used for its texture is not also a picture sheet.
@@ -322,7 +331,7 @@ export async function receiveFiles(files: PickedFile[]): Promise<void> {
   }
 }
 
-const URDF_FILTER = [{ name: 'URDF robot', extensions: ['urdf'] }];
+const URDF_FILTER = [{ name: tr('URDF robot'), extensions: ['urdf'] }];
 
 /** "Import URDF…" in Robot mode: brings a robot's links, joints, sensors and meshes into the design. */
 export async function importRobotFile(): Promise<void> {
@@ -373,17 +382,25 @@ async function urdfCompanions(file: PickedFile, companions: PickedFile[]): Promi
  * takes the robot's name when it was empty and unnamed.
  */
 async function importRobot(file: PickedFile, companions: PickedFile[]): Promise<void> {
-  set({ busy: 'Importing…' });
+  set({ busy: tr('Importing…') });
   await new Promise((r) => setTimeout(r, 30));
   try {
     let found = await urdfCompanions(file, companions);
     let imported = parseUrdf(file.bytes, found);
     if (imported.missing.length) {
-      const names = imported.missing.map((m) => `"${meshPath(m).split('/').pop()}"`);
-      const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
-      const ok = await platform.confirm(`"${file.name}" draws its links with ${list}, which did not come along. Pick ${names.length === 1 ? 'it' : 'them'} now, or import without?`, { title: 'Import', okLabel: 'Pick', cancelLabel: 'Without' });
+      const names = imported.missing.map((m) => tr('"{name}"', { name: String(meshPath(m).split('/').pop()) }));
+      const list = names.length === 1 ? names[0] : tr('{names} and {last}', { names: names.slice(0, -1).join(', '), last: names[names.length - 1] });
+      const ok = await platform.confirm(
+        plural(
+          names.length,
+          '"{file}" draws its links with {list}, which did not come along. Pick it now, or import without?',
+          '"{file}" draws its links with {list}, which did not come along. Pick them now, or import without?',
+          { file: file.name, list },
+        ),
+        { title: tr('Import'), okLabel: tr('Pick'), cancelLabel: tr('Without') },
+      );
       if (ok) {
-        const picked = await platform.pickFiles({ filters: [{ name: 'Meshes', extensions: [...IMPORT_EXTENSIONS, 'mtl'] }], multiple: true });
+        const picked = await platform.pickFiles({ filters: [{ name: tr('Meshes'), extensions: [...IMPORT_EXTENSIONS, 'mtl'] }], multiple: true });
         if (picked.length) {
           found = [...found, ...picked];
           imported = parseUrdf(file.bytes, found);
@@ -403,12 +420,17 @@ async function importRobot(file: PickedFile, companions: PickedFile[]): Promise<
     };
     const drive = robot.drive ?? imported.robot.drive;
     if (drive) merged.drive = drive;
-    const name = getState().doc.scene.length === 0 && getState().doc.name === emptyDoc().name ? imported.name : getState().doc.name;
+    const name = getState().doc.scene.length === 0 && isUntitled(getState().doc.name) ? imported.name : getState().doc.name;
     record();
     set({ doc: { ...getState().doc, name, scene: [...getState().doc.scene, ...imported.scene], assets: { ...getState().doc.assets, ...imported.assets }, robot: merged }, selection: [], joint: null, sensor: null, jointPick: null, pose: null, placing: null });
     if (!getState().robot) enterRobotMode();
     const links = imported.scene.length;
-    const summary = `Imported ${links} link${links === 1 ? '' : 's'} and ${imported.robot.joints.length} joint${imported.robot.joints.length === 1 ? '' : 's'} from ${file.name}.`;
+    // Two counts in one sentence: each is worded with its noun, and the sentence takes the two.
+    const summary = tr('Imported {links} and {joints} from {file}.', {
+      links: plural(links, '{n} link', '{n} links'),
+      joints: plural(imported.robot.joints.length, '{n} joint', '{n} joints'),
+      file: file.name,
+    });
     if (imported.warnings.length) notify(`${summary} ${imported.warnings.join(' ')}`, 'error');
     else notify(summary, 'ok');
   } finally {
@@ -419,7 +441,7 @@ async function importRobot(file: PickedFile, companions: PickedFile[]): Promise<
 export async function importModel(): Promise<void> {
   try {
     const files = await platform.pickFiles({
-      filters: [{ name: 'Models, drawings and pictures', extensions: IMPORTABLE }],
+      filters: [{ name: tr('Models, drawings and pictures'), extensions: IMPORTABLE }],
       multiple: true,
     });
     if (files.length) await receiveFiles(files);

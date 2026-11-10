@@ -39,6 +39,7 @@ import {
   WebGLRenderer,
 } from 'three';
 import type { CanvasTexture, Object3D, WebGLRenderTarget } from 'three';
+import { tr } from '../i18n';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import type { Mat } from '../model/math';
@@ -346,7 +347,7 @@ export class Viewer {
     Object.assign(canvas.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', display: 'block', touchAction: 'none' });
     // A picture, as far as a screen reader can tell; without a name it is announced as nothing at all.
     canvas.setAttribute('role', 'img');
-    canvas.setAttribute('aria-label', '3D view of the design');
+    canvas.setAttribute('aria-label', tr('3D view of the design'));
     if (getComputedStyle(this.container).position === 'static') this.container.style.position = 'relative';
     this.container.appendChild(canvas);
     canvas.addEventListener('webglcontextlost', this.onContextLost);
@@ -566,7 +567,7 @@ export class Viewer {
 
   private showFallback(): void {
     const el = document.createElement('div');
-    el.textContent = '3D view unavailable: WebGL could not be initialized.';
+    el.textContent = tr('3D view unavailable: WebGL could not be initialized.');
     Object.assign(el.style, {
       position: 'absolute',
       inset: '0',

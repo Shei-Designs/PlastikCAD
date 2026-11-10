@@ -2,6 +2,7 @@
 // Gazebo blocks, meshes, launch files, bridge and controller settings) or as
 // a Gazebo model (SDF, which keeps loops). Pure: the kernel's answers come
 // in, files go out.
+import { plural, tr } from '../i18n';
 import type { MeshData } from '../geometry/mesh';
 import { boundsCenter, boundsSize, eulerOf, multiply, rotation, unionBounds } from '../model/math';
 import type { Doc, SceneNode, Vec3 } from '../model/types';
@@ -41,6 +42,8 @@ export interface RobotPackage {
   name: string;
   files: PackageFile[];
   warnings: string[];
+  /** Those of the warnings that say something was left out of the export: the app tells the user of these. */
+  leftOut: string[];
 }
 
 const M = 0.001;
@@ -114,6 +117,7 @@ interface Prepared {
   robotName: string;
   files: PackageFile[];
   warnings: string[];
+  leftOut: string[];
   order: string[];
   /** The names taken in the file so far, and how the writer keys them; a frame added later is drawn against them. */
   names: NameSet;
@@ -134,6 +138,12 @@ interface Prepared {
 
 function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, meshUri: (path: string) => string, naming: Naming): Prepared {
   const warnings: string[] = [];
+  const leftOut: string[] = [];
+  /** A warning that something is left out of the export, which the user is told as well. */
+  const leaveOut = (text: string): void => {
+    warnings.push(text);
+    leftOut.push(text);
+  };
   const nodes = linkNodes(doc.scene);
   const tree = spanningTree(robot, nodes.map((n) => n.id));
   if (tree.order.length === 0) throw new Error('The robot has no base link.');
@@ -290,13 +300,17 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
     } else {
       // A drive short of a part is not written; the usual cause is a wheel no joint reaches from the base.
       const lost = driveJoints(robot.drive).map((id) => robot.joints.find((j) => j.id === id)).filter((j): j is RobotJoint => Boolean(j) && !allJoints.includes(j!));
-      warnings.push(lost.length ? `Drive: ${lost.map((j) => j.name).join(', ')} ${lost.length === 1 ? 'is' : 'are'} not joined to the base, so the drive is left out. Join every wheel to the base.` : 'Drive: a wheel or steering joint is missing, so the drive is left out. Give every part of the drive its joint.');
+      leaveOut(
+        lost.length
+          ? plural(lost.length, 'Drive: {names} is not joined to the base, so the drive is left out. Join every wheel to the base.', 'Drive: {names} are not joined to the base, so the drive is left out. Join every wheel to the base.', { names: lost.map((j) => j.name).join(', ') })
+          : tr('Drive: a wheel or steering joint is missing, so the drive is left out. Give every part of the drive its joint.'),
+      );
     }
   }
   const driven = new Set(driveJoints(robot.drive));
   const controlled = robot.control ? tree.order.slice(1).map((id) => tree.parentJoint.get(id)!).filter((j) => j.type !== 'fixed' && !j.mimic && !driven.has(j.id)).map((j) => jointNames.get(j)!) : [];
 
-  return { pkg, robotName: urdfName(doc.name, 'robot'), files, warnings, order: tree.order, names, naming, linkNames, jointNames, frames, links, treeJoints, loopJoints, sensors, drive, controlled };
+  return { pkg, robotName: urdfName(doc.name, 'robot'), files, warnings, leftOut, order: tree.order, names, naming, linkNames, jointNames, frames, links, treeJoints, loopJoints, sensors, drive, controlled };
 }
 
 /**
@@ -362,11 +376,15 @@ const OPTICAL: Vec3 = [-Math.PI / 2, 0, -Math.PI / 2];
  */
 export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot = robotOf(doc)): RobotPackage {
   const p = prepare(doc, geometry, robot, (path) => `package://${packageName(doc.name)}/${path}`, URDF_NAMES);
-  const { pkg, files, warnings } = p;
+  const { pkg, files, warnings, leftOut } = p;
   const fixedToWorld = robot.base === 'fixed' ? p.linkNames.get(robot.root!) : undefined;
   const base = p.linkNames.get(robot.root!)!;
   const footprint = footprintOf(p, robot);
-  for (const j of p.loopJoints) warnings.push(`"${j.name}" closes a loop and was left out of the URDF (the SDF export keeps it).`);
+  for (const j of p.loopJoints) {
+    const text = tr('"{name}" closes a loop and was left out of the URDF (the SDF export keeps it).', { name: j.name });
+    warnings.push(text);
+    leftOut.push(text);
+  }
   const links: UrdfLink[] = p.links.map(({ frame: _f, node: _n, ...l }) => l);
   const joints: UrdfJoint[] = [...p.treeJoints];
   // Each sensor is a frame of its own on a fixed joint; a camera also gets the optical frame ROS expects (Z forward, X right).
@@ -411,7 +429,7 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
     { name: 'config/bridge.yaml', bytes: encodeText(bridgeYaml(bridgeTopics(p))) },
     ...(control ? [{ name: 'config/controllers.yaml', bytes: encodeText(controllersYaml(p.controlled)) }] : []),
   );
-  return { name: pkg, files, warnings };
+  return { name: pkg, files, warnings, leftOut: p.leftOut };
 }
 
 /**
@@ -458,7 +476,7 @@ export function buildSdfModel(doc: Doc, geometry: Map<string, LinkGeometry>, rob
     { name: `worlds/${pkg}.sdf`, bytes: encodeText(worldXml(pkg, pkg, p.robotName)) },
     { name: 'README.md', bytes: encodeText(sdfReadme(pkg, doc.name, footprint)) },
   );
-  return { name: pkg, files, warnings };
+  return { name: pkg, files, warnings, leftOut: p.leftOut };
 }
 
 function sdfReadme(name: string, robot: string, footprint: { name: string; base: string } | undefined): string {
@@ -488,10 +506,10 @@ a frame on \`${footprint.base}\` facing the robot's forward along +X as ROS expe
 /** The forms a robot is exported in, as the panel offers them. */
 export type ExportFormat = 'urdf' | 'sdf' | 'mjcf' | 'usd';
 export const EXPORT_FORMATS: { id: ExportFormat; label: string; description: string }[] = [
-  { id: 'urdf', label: 'ROS 2 package', description: 'URDF and xacro with meshes, launch files, bridge and controllers' },
-  { id: 'sdf', label: 'Gazebo model', description: 'SDF with every joint, loops included, and a flat world' },
-  { id: 'mjcf', label: 'MuJoCo model', description: 'MJCF with actuators, loops as constraints' },
-  { id: 'usd', label: 'Isaac Sim stage', description: 'USD with the articulation, drives, sensors and a ROS 2 graph; opens and runs as it is' },
+  { id: 'urdf', label: tr('ROS 2 package'), description: tr('URDF and xacro with meshes, launch files, bridge and controllers') },
+  { id: 'sdf', label: tr('Gazebo model'), description: tr('SDF with every joint, loops included, and a flat world') },
+  { id: 'mjcf', label: tr('MuJoCo model'), description: tr('MJCF with actuators, loops as constraints') },
+  { id: 'usd', label: tr('Isaac Sim stage'), description: tr('USD with the articulation, drives, sensors and a ROS 2 graph; opens and runs as it is') },
 ];
 
 /**
@@ -505,7 +523,8 @@ export function exportSummary(doc: Doc, format: ExportFormat, robot: Robot = rob
   const base = nodes.find((n) => n.id === robot.root)?.name ?? 'the base';
   const label = EXPORT_FORMATS.find((f) => f.id === format)!.label;
   const strays = tree.unreached.length;
-  return `Writes "${doc.name}" as a ${label}: the base ${base} and everything joined to it.${strays ? ` ${strays === 1 ? 'One object is' : `${strays} objects are`} not joined to the base and will be ignored.` : ''}`;
+  const holds = tr('Writes "{name}" as a {format}: the base {base} and everything joined to it.', { name: doc.name, format: label, base });
+  return strays ? `${holds} ${plural(strays, 'One object is not joined to the base and will be ignored.', '{n} objects are not joined to the base and will be ignored.')}` : holds;
 }
 
 /**
@@ -576,7 +595,7 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
     controlled: p.controlled,
   };
   const files: PackageFile[] = [{ name: `${pkg}.usda`, bytes: encodeText(writeUsda(model)) }, { name: 'README.md', bytes: encodeText(usdReadme(pkg, doc.name, model)) }];
-  return { name: pkg, files, warnings };
+  return { name: pkg, files, warnings, leftOut: p.leftOut };
 }
 
 function usdReadme(name: string, robot: string, model: UsdModel): string {
@@ -681,6 +700,7 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
     name: pkg,
     files,
     warnings,
+    leftOut: p.leftOut,
     bodies: p.links.map((l) => ({ body: l.name, node: l.node.id, frame: l.frame })),
     joints: [...p.jointNames].map(([j, name]) => ({ name, id: j.id })),
     drive,

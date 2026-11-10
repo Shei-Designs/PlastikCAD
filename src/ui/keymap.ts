@@ -2,33 +2,37 @@
 // matches here, and the tooltips, the File menu and the inspector's Shortcuts list take their
 // wording from here, so that what a key does and what the app says it does cannot drift apart.
 // A test holds the README's table to it as well.
+import { mark, tr, trx } from '../i18n';
 import { MAC, modifier } from './keys';
 
-/** The rows of the Shortcuts list that hold keys, in the order they are shown. */
+/** The rows of the Shortcuts list that hold keys, in the order they are shown. Their English is what the code knows them by; `marked()` translates them where they are shown. */
 export const GROUPS = [
-  'Move',
-  'Raise or lower',
-  'Undo / redo',
-  'Copy / cut / paste',
-  'Select all',
-  'Delete',
-  'Duplicate',
-  'Group / ungroup',
-  'Solid / hole',
-  'Mirror',
-  'Rotate 90°',
-  'Ghost / un-ghost all',
-  'Align',
-  'Measure',
-  'Object axes',
-  'Align to edge',
-  'Center on plate',
-  'Drop onto the plate',
-  'Fit to view',
-  'Import model or picture',
+  mark('Move'),
+  mark('Raise or lower'),
+  mark('Undo / redo'),
+  mark('Copy / cut / paste'),
+  mark('Select all'),
+  mark('Delete'),
+  mark('Duplicate'),
+  mark('Group / ungroup'),
+  mark('Solid / hole'),
+  mark('Mirror'),
+  mark('Rotate 90°'),
+  mark('Ghost / un-ghost all'),
+  mark('Align'),
+  mark('Measure'),
+  mark('Object axes'),
+  mark('Align to edge'),
+  mark('Center on plate'),
+  mark('Drop onto the plate'),
+  mark('Fit to view'),
+  mark('Import model or picture'),
 ] as const;
 
 export type Group = (typeof GROUPS)[number];
+
+/** What holding Shift or Alt changes; the Shortcuts list says it with the key's name (see HELD). */
+type Held = '×10' | 'reverses' | 'centers';
 
 interface Spec {
   id: string;
@@ -43,7 +47,7 @@ interface Spec {
   /** The row of the Shortcuts list it is shown in; a command without one is left out of the list. */
   group?: Group;
   /** What holding Shift or Alt with it changes, as the Shortcuts list words it. */
-  held?: { shift?: string; alt?: string };
+  held?: { shift?: Held; alt?: Held };
   /** Runs while the focus is in a text box too. */
   typing?: true;
   /** Leaves the key to the browser as well: Escape must still close a dialog or a menu. */
@@ -54,59 +58,59 @@ interface Spec {
 // looking (Shift+H makes a hole, Ctrl+Alt+Z undoes), kept so that no key changes what it does.
 const SPECS = [
   // The file commands are the only ones that work from inside a text box.
-  { id: 'save', name: 'Save now', keys: ['Mod+S'], typing: true },
-  { id: 'saveCopy', name: 'Save a copy', keys: ['Mod+Shift+S'], typing: true },
-  { id: 'projects', name: 'Projects', keys: ['Mod+O'], typing: true },
-  { id: 'openFile', name: 'Open project file', keys: ['Mod+Shift+O'], typing: true },
-  { id: 'newProject', name: 'New project', keys: ['Mod+Shift?+N'], typing: true },
-  { id: 'import', name: 'Import', keys: ['Mod+Shift?+I'], group: 'Import model or picture', typing: true },
+  { id: 'save', name: tr('Save now'), keys: ['Mod+S'], typing: true },
+  { id: 'saveCopy', name: tr('Save a copy'), keys: ['Mod+Shift+S'], typing: true },
+  { id: 'projects', name: tr('Projects'), keys: ['Mod+O'], typing: true },
+  { id: 'openFile', name: tr('Open project file'), keys: ['Mod+Shift+O'], typing: true },
+  { id: 'newProject', name: tr('New project'), keys: ['Mod+Shift?+N'], typing: true },
+  { id: 'import', name: tr('Import'), keys: ['Mod+Shift?+I'], group: 'Import model or picture', typing: true },
 
-  { id: 'cancel', name: 'Cancel', keys: ['Mod?+Alt?+Shift?+Escape'], keepsDefault: true },
+  { id: 'cancel', name: tr('Cancel'), keys: ['Mod?+Alt?+Shift?+Escape'], keepsDefault: true },
 
-  { id: 'undo', name: 'Undo', keys: ['Mod+Alt?+Z'], group: 'Undo / redo' },
-  { id: 'redo', name: 'Redo', keys: ['Mod+Alt?+Shift?+Y', 'Mod+Alt?+Shift+Z'], group: 'Undo / redo' },
-  { id: 'copy', name: 'Copy', keys: ['Mod+Alt?+Shift?+C'], group: 'Copy / cut / paste' },
-  { id: 'cut', name: 'Cut', keys: ['Mod+Alt?+Shift?+X'], group: 'Copy / cut / paste' },
-  { id: 'paste', name: 'Paste', keys: ['Mod+Alt?+Shift?+V'], group: 'Copy / cut / paste' },
-  { id: 'selectAll', name: 'Select all', keys: ['Mod+Alt?+Shift?+A'], group: 'Select all' },
-  { id: 'delete', name: 'Delete', keys: ['Alt?+Shift?+Delete', 'Alt?+Shift?+Backspace'], group: 'Delete' },
-  { id: 'duplicate', name: 'Duplicate', keys: ['Mod+Alt?+Shift?+D'], group: 'Duplicate' },
-  { id: 'group', name: 'Group', keys: ['Mod+Alt?+G'], group: 'Group / ungroup' },
-  { id: 'ungroup', name: 'Ungroup', keys: ['Mod+Alt?+Shift+G'], group: 'Group / ungroup' },
+  { id: 'undo', name: tr('Undo'), keys: ['Mod+Alt?+Z'], group: 'Undo / redo' },
+  { id: 'redo', name: tr('Redo'), keys: ['Mod+Alt?+Shift?+Y', 'Mod+Alt?+Shift+Z'], group: 'Undo / redo' },
+  { id: 'copy', name: tr('Copy'), keys: ['Mod+Alt?+Shift?+C'], group: 'Copy / cut / paste' },
+  { id: 'cut', name: tr('Cut'), keys: ['Mod+Alt?+Shift?+X'], group: 'Copy / cut / paste' },
+  { id: 'paste', name: tr('Paste'), keys: ['Mod+Alt?+Shift?+V'], group: 'Copy / cut / paste' },
+  { id: 'selectAll', name: tr('Select all'), keys: ['Mod+Alt?+Shift?+A'], group: 'Select all' },
+  { id: 'delete', name: tr('Delete'), keys: ['Alt?+Shift?+Delete', 'Alt?+Shift?+Backspace'], group: 'Delete' },
+  { id: 'duplicate', name: tr('Duplicate'), keys: ['Mod+Alt?+Shift?+D'], group: 'Duplicate' },
+  { id: 'group', name: trx('verb', 'Group'), keys: ['Mod+Alt?+G'], group: 'Group / ungroup' },
+  { id: 'ungroup', name: tr('Ungroup'), keys: ['Mod+Alt?+Shift+G'], group: 'Group / ungroup' },
 
   // Alt with an arrow aligns, so a nudge is the one plain key that Alt does not let through.
-  { id: 'nudgeLeft', name: 'Move left', keys: ['Shift?+ArrowLeft'], group: 'Move', held: { shift: '×10' } },
-  { id: 'nudgeRight', name: 'Move right', keys: ['Shift?+ArrowRight'], group: 'Move', held: { shift: '×10' } },
-  { id: 'nudgeBack', name: 'Move back', keys: ['Shift?+ArrowUp'], group: 'Move', held: { shift: '×10' } },
-  { id: 'nudgeForward', name: 'Move forward', keys: ['Shift?+ArrowDown'], group: 'Move', held: { shift: '×10' } },
-  { id: 'raise', name: 'Raise', keys: ['Mod+Alt?+Shift?+ArrowUp'], group: 'Raise or lower', held: { shift: '×10' } },
-  { id: 'lower', name: 'Lower', keys: ['Mod+Alt?+Shift?+ArrowDown'], group: 'Raise or lower', held: { shift: '×10' } },
+  { id: 'nudgeLeft', name: tr('Move left'), keys: ['Shift?+ArrowLeft'], group: 'Move', held: { shift: '×10' } },
+  { id: 'nudgeRight', name: tr('Move right'), keys: ['Shift?+ArrowRight'], group: 'Move', held: { shift: '×10' } },
+  { id: 'nudgeBack', name: tr('Move back'), keys: ['Shift?+ArrowUp'], group: 'Move', held: { shift: '×10' } },
+  { id: 'nudgeForward', name: tr('Move forward'), keys: ['Shift?+ArrowDown'], group: 'Move', held: { shift: '×10' } },
+  { id: 'raise', name: tr('Raise'), keys: ['Mod+Alt?+Shift?+ArrowUp'], group: 'Raise or lower', held: { shift: '×10' } },
+  { id: 'lower', name: tr('Lower'), keys: ['Mod+Alt?+Shift?+ArrowDown'], group: 'Raise or lower', held: { shift: '×10' } },
 
-  { id: 'solid', name: 'Solid', keys: ['Alt?+Shift?+S'], group: 'Solid / hole' },
-  { id: 'hole', name: 'Hole', keys: ['Alt?+Shift?+H'], group: 'Solid / hole' },
-  { id: 'mirrorX', name: 'Flip X', keys: ['Alt?+X'], group: 'Mirror' },
-  { id: 'mirrorY', name: 'Flip Y', keys: ['Alt?+Y'], group: 'Mirror' },
-  { id: 'mirrorZ', name: 'Flip Z', keys: ['Alt?+Z'], group: 'Mirror' },
-  { id: 'rotateX', name: 'Rotate 90° about X', keys: ['Alt?+Shift+X'], group: 'Rotate 90°', held: { alt: 'reverses' } },
-  { id: 'rotateY', name: 'Rotate 90° about Y', keys: ['Alt?+Shift+Y'], group: 'Rotate 90°', held: { alt: 'reverses' } },
-  { id: 'rotateZ', name: 'Rotate 90° about Z', keys: ['Alt?+Shift+Z'], group: 'Rotate 90°', held: { alt: 'reverses' } },
-  { id: 'ghost', name: 'Ghost', keys: ['Alt?+G'], group: 'Ghost / un-ghost all' },
-  { id: 'unghostAll', name: 'Un-ghost all', keys: ['Alt?+Shift+G'], group: 'Ghost / un-ghost all' },
+  { id: 'solid', name: tr('Solid'), keys: ['Alt?+Shift?+S'], group: 'Solid / hole' },
+  { id: 'hole', name: tr('Hole'), keys: ['Alt?+Shift?+H'], group: 'Solid / hole' },
+  { id: 'mirrorX', name: tr('Flip X'), keys: ['Alt?+X'], group: 'Mirror' },
+  { id: 'mirrorY', name: tr('Flip Y'), keys: ['Alt?+Y'], group: 'Mirror' },
+  { id: 'mirrorZ', name: tr('Flip Z'), keys: ['Alt?+Z'], group: 'Mirror' },
+  { id: 'rotateX', name: tr('Rotate 90° about X'), keys: ['Alt?+Shift+X'], group: 'Rotate 90°', held: { alt: 'reverses' } },
+  { id: 'rotateY', name: tr('Rotate 90° about Y'), keys: ['Alt?+Shift+Y'], group: 'Rotate 90°', held: { alt: 'reverses' } },
+  { id: 'rotateZ', name: tr('Rotate 90° about Z'), keys: ['Alt?+Shift+Z'], group: 'Rotate 90°', held: { alt: 'reverses' } },
+  { id: 'ghost', name: trx('verb', 'Ghost'), keys: ['Alt?+G'], group: 'Ghost / un-ghost all' },
+  { id: 'unghostAll', name: tr('Un-ghost all'), keys: ['Alt?+Shift+G'], group: 'Ghost / un-ghost all' },
 
-  { id: 'align', name: 'Align', keys: ['Alt?+Shift?+L'], group: 'Align' },
-  { id: 'measure', name: 'Measure', keys: ['Alt?+Shift?+M'], group: 'Measure' },
-  { id: 'objectAxes', name: 'Object axes', keys: ['Alt?+Shift?+O'], group: 'Object axes' },
-  { id: 'alignLeft', name: 'Align left', keys: ['Alt+Shift?+ArrowLeft'], group: 'Align to edge', held: { shift: 'centers' } },
-  { id: 'alignRight', name: 'Align right', keys: ['Alt+Shift?+ArrowRight'], group: 'Align to edge', held: { shift: 'centers' } },
-  { id: 'alignFront', name: 'Align front', keys: ['Alt+Shift?+ArrowDown'], group: 'Align to edge', held: { shift: 'centers' } },
-  { id: 'alignBack', name: 'Align back', keys: ['Alt+Shift?+ArrowUp'], group: 'Align to edge', held: { shift: 'centers' } },
-  { id: 'alignTop', name: 'Align top', keys: ['Alt+Shift?+PageUp'], group: 'Align to edge', held: { shift: 'centers' } },
-  { id: 'alignBottom', name: 'Align bottom', keys: ['Alt+Shift?+PageDown'], group: 'Align to edge', held: { shift: 'centers' } },
-  { id: 'centerOnPlate', name: 'Center on plate', keys: ['Alt+C'], group: 'Center on plate' },
-  { id: 'centerAll', name: 'Center on every axis', keys: ['Alt+Shift+C'] },
+  { id: 'align', name: tr('Align'), keys: ['Alt?+Shift?+L'], group: 'Align' },
+  { id: 'measure', name: tr('Measure'), keys: ['Alt?+Shift?+M'], group: 'Measure' },
+  { id: 'objectAxes', name: tr('Object axes'), keys: ['Alt?+Shift?+O'], group: 'Object axes' },
+  { id: 'alignLeft', name: tr('Align left'), keys: ['Alt+Shift?+ArrowLeft'], group: 'Align to edge', held: { shift: 'centers' } },
+  { id: 'alignRight', name: tr('Align right'), keys: ['Alt+Shift?+ArrowRight'], group: 'Align to edge', held: { shift: 'centers' } },
+  { id: 'alignFront', name: tr('Align front'), keys: ['Alt+Shift?+ArrowDown'], group: 'Align to edge', held: { shift: 'centers' } },
+  { id: 'alignBack', name: tr('Align back'), keys: ['Alt+Shift?+ArrowUp'], group: 'Align to edge', held: { shift: 'centers' } },
+  { id: 'alignTop', name: tr('Align top'), keys: ['Alt+Shift?+PageUp'], group: 'Align to edge', held: { shift: 'centers' } },
+  { id: 'alignBottom', name: tr('Align bottom'), keys: ['Alt+Shift?+PageDown'], group: 'Align to edge', held: { shift: 'centers' } },
+  { id: 'centerOnPlate', name: tr('Center on plate'), keys: ['Alt+C'], group: 'Center on plate' },
+  { id: 'centerAll', name: tr('Center on every axis'), keys: ['Alt+Shift+C'] },
 
-  { id: 'drop', name: 'Drop onto the plate', keys: ['Alt?+Shift?+D'], group: 'Drop onto the plate' },
-  { id: 'fit', name: 'Fit to view', keys: ['Alt?+Shift?+F'], group: 'Fit to view' },
+  { id: 'drop', name: tr('Drop onto the plate'), keys: ['Alt?+Shift?+D'], group: 'Drop onto the plate' },
+  { id: 'fit', name: tr('Fit to view'), keys: ['Alt?+Shift?+F'], group: 'Fit to view' },
 ] as const satisfies readonly Spec[];
 
 export type CommandId = (typeof SPECS)[number]['id'];
@@ -182,10 +186,31 @@ export const commandFor = (e: KeyPress): Command | null => COMMANDS.find((c) => 
 
 // --- wording ----------------------------------------------------------------------
 
-const KEY_NAMES: Record<string, string> = { ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓', PageUp: 'PgUp', PageDown: 'PgDn', Escape: 'Esc' };
+const ALT = trx('key', 'Alt');
+const SHIFT = trx('key', 'Shift');
+
+/** The keys that are not written as the character they type: an arrow, or the name a keyboard of the app's language prints. */
+const KEY_NAMES: Record<string, string> = {
+  ArrowLeft: '←',
+  ArrowRight: '→',
+  ArrowUp: '↑',
+  ArrowDown: '↓',
+  PageUp: trx('key', 'PgUp'),
+  PageDown: trx('key', 'PgDn'),
+  Escape: trx('key', 'Esc'),
+  Delete: trx('key', 'Delete'),
+  Backspace: trx('key', 'Backspace'),
+};
+
+/** What holding a key changes, said whole with the key's name: a language words the two together. */
+const HELD: Record<Held, (key: string) => string> = {
+  '×10': (key) => tr('{key} ×10', { key }),
+  reverses: (key) => tr('{key} reverses', { key }),
+  centers: (key) => tr('{key} centers', { key }),
+};
 
 /** The modifiers a chord needs, as they are written before its key. */
-const prefix = (k: Chord, mac: boolean): string => `${k.mod === true ? modifier(mac) : ''}${k.alt === true ? 'Alt+' : ''}${k.shift === true ? 'Shift+' : ''}`;
+const prefix = (k: Chord, mac: boolean): string => `${k.mod === true ? modifier(mac) : ''}${k.alt === true ? `${ALT}+` : ''}${k.shift === true ? `${SHIFT}+` : ''}`;
 
 /** A chord as the app writes it: "Ctrl+Shift+G", or "⌘Shift+G" on a Mac. */
 export const written = (k: Chord, mac: boolean = MAC): string => `${prefix(k, mac)}${KEY_NAMES[k.key] ?? (k.key.length === 1 ? k.key.toUpperCase() : k.key)}`;
@@ -208,43 +233,43 @@ export function groupKeys(group: Group, mac: boolean = MAC): string {
   const keys: string[] = [];
   for (const k of shown) {
     if (!together || !ARROWS.includes(k.key)) keys.push(written(k, mac));
-    else if (k === arrows[0]) keys.push(prefix(k, mac) ? `${prefix(k, mac)}arrows` : 'arrow keys');
+    else if (k === arrows[0]) keys.push(prefix(k, mac) ? tr('{modifiers}arrows', { modifiers: prefix(k, mac) }) : tr('arrow keys'));
   }
   const notes = new Set<string>();
   for (const c of members) {
-    if (c.held?.alt) notes.add(`Alt ${c.held.alt}`);
-    if (c.held?.shift) notes.add(`Shift ${c.held.shift}`);
+    if (c.held?.alt) notes.add(HELD[c.held.alt](ALT));
+    if (c.held?.shift) notes.add(HELD[c.held.shift](SHIFT));
   }
   return [keys.join(' / '), ...notes].join(' · ');
 }
 
 // --- the Shortcuts list -----------------------------------------------------------
 
-/** One row of the Shortcuts list: what it does, and how. */
+/** One row of the Shortcuts list: what it does, in the English the rows are matched by (`marked()` translates it where it is shown), and how. */
 export type Row = [what: string, how: string];
 
 // What a mouse or a finger does is no key binding, so these rows are written here by hand.
 const MOUSE: Row[] = [
-  ['Orbit', 'Right drag'],
-  ['Pan', 'Middle drag · Shift+right drag'],
-  ['Zoom', 'Wheel'],
+  [mark('Orbit'), tr('Right drag')],
+  [mark('Pan'), tr('Middle drag · Shift+right drag')],
+  [mark('Zoom'), tr('Wheel')],
 ];
 
 const FINGERS: Row[] = [
-  ['Orbit', 'One finger'],
-  ['Pan / zoom', 'Two fingers'],
-  ['Select more', 'Hold an object'],
-  ['Box select', 'Hold the plate, then drag'],
-  ['Clear selection', 'Tap the plate'],
-  ['Undo / redo', 'Two-finger tap / three-finger tap'],
+  [mark('Orbit'), tr('One finger')],
+  [mark('Pan / zoom'), tr('Two fingers')],
+  [mark('Select more'), tr('Hold an object')],
+  [mark('Box select'), tr('Hold the plate, then drag')],
+  [mark('Clear selection'), tr('Tap the plate')],
+  [mark('Undo / redo'), tr('Two-finger tap / three-finger tap')],
 ];
 
 /** The handles on a selection, for a mouse and a finger alike. A group of the same name adds its keys to the row. */
 const HANDLES: Row[] = [
-  ['Move', 'Drag'],
-  ['Raise or lower', 'Arrow handle'],
-  ['Resize height', 'Drag top or bottom grip'],
-  ['Type a size', 'Click a grip'],
+  [mark('Move'), tr('Drag')],
+  [mark('Raise or lower'), tr('Arrow handle')],
+  [mark('Resize height'), tr('Drag top or bottom grip')],
+  [mark('Type a size'), tr('Click a grip')],
 ];
 
 /**

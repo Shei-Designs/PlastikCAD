@@ -3,6 +3,7 @@
 import { dissolve, frameAlong, holeGroup, layerMembers, makeGroup, nodeAt, ungroup, uniqueName } from '../../model/ops';
 import type { GroupOver } from '../../model/ops';
 import type { GroupNode, Scene, SceneNode } from '../../model/types';
+import { tr } from '../../i18n';
 import { geometry } from '../geometry';
 import { abortAlignPreview, commit, fail, getState, notify, replaceState, set } from './core';
 import { selectedNodes } from './editing';
@@ -18,12 +19,12 @@ export async function groupSelected(): Promise<void> {
   abortAlignPreview();
   const nodes = selectedNodes();
   if (nodes.length < 2) return;
-  if (nodes.some((n) => n.locked)) return notify('Unlock the selected objects before grouping them.', 'error');
-  set({ busy: 'Grouping…' });
+  if (nodes.some((n) => n.locked)) return notify(tr('Unlock the selected objects before grouping them.'), 'error');
+  set({ busy: tr('Grouping…') });
   try {
     const { members, hole } = holeGroup(nodes);
-    const group = await buildGroup(members, hole, uniqueName(getState().doc.scene, 'Group'));
-    if (!group) return notify('Nothing would be left: the holes remove everything.', 'error');
+    const group = await buildGroup(members, hole, uniqueName(getState().doc.scene, tr('Group')));
+    if (!group) return notify(tr('Nothing would be left: the holes remove everything.'), 'error');
     // The scene may have moved on while the worker was measuring.
     const ids = new Set(nodes.map((n) => n.id));
     if (!nodes.every((n) => getState().doc.scene.includes(n))) return;
@@ -74,7 +75,7 @@ export function editInside(path: string[]): void {
   abortAlignPreview();
   const root = getState().doc.scene.find((n) => n.id === path[0]);
   if (root?.type !== 'group') return;
-  if (root.locked) return notify('Unlock the object before editing inside it.', 'error');
+  if (root.locked) return notify(tr('Unlock the object before editing inside it.'), 'error');
   const { scene, layers } = dissolve(getState().doc.scene, path);
   const target = path[path.length - 1];
   replaceState({ ...getState(), editing: { root: root.id, target, layers, before: getState().doc.scene }, highlight: null, aligning: null, measuring: null });
@@ -85,7 +86,7 @@ export function editInside(path: string[]): void {
 export async function finishEditing(): Promise<void> {
   const session = getState().editing;
   if (!session) return;
-  set({ busy: 'Regrouping…' });
+  set({ busy: tr('Regrouping…') });
   try {
     let scene = getState().doc.scene;
     let outermost: string | null = null;
@@ -101,7 +102,7 @@ export async function finishEditing(): Promise<void> {
       const { members, hole } = layerMembers(layer, found);
       const group = await buildGroup(members, hole, layer.name, layer);
       if (!group) {
-        notify(`"${layer.name}" could not be put back together: nothing solid is left in it.`, 'error');
+        notify(tr('"{name}" could not be put back together: nothing solid is left in it.', { name: layer.name }), 'error');
         continue;
       }
       const at = scene.indexOf(found[0]);

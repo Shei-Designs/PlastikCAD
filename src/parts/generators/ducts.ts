@@ -5,6 +5,7 @@
 // by ring, which keeps the geometry exact wherever the ring is: a bend is a
 // true torus section, a taper a true frustum, an offset taper a true
 // eccentric one.
+import { tr, trx } from '../../i18n';
 import { cross, scale, unit } from '../../model/math';
 import { arcSegments, polar, TAU } from '../math2d';
 import { difference, union } from '../types';
@@ -130,23 +131,23 @@ const isRect = (p: Params) => !isRound(p);
 
 function sectionGroup(): ParamGroup {
   return {
-    title: 'Section',
+    title: tr('Section'),
     params: [
       {
         key: 'section',
-        label: 'Shape',
+        label: tr('Shape'),
         type: 'select',
         default: 'round',
         options: [
-          { value: 'round', label: 'Round' },
-          { value: 'rect', label: 'Rectangular' },
+          { value: 'round', label: trx('section', 'Round') },
+          { value: 'rect', label: tr('Rectangular') },
         ],
       },
-      { key: 'diameter', label: 'Diameter', type: 'number', default: 25, min: 2, max: 400, step: 0.5, unit: 'mm', help: 'Outside diameter.', visible: isRound },
-      { key: 'width', label: 'Width', type: 'number', default: 50, min: 2, max: 600, step: 0.5, unit: 'mm', help: 'Outside width, across the plane of a bend.', visible: isRect },
-      { key: 'height', label: 'Height', type: 'number', default: 30, min: 2, max: 600, step: 0.5, unit: 'mm', help: 'Outside height.', visible: isRect },
-      { key: 'corner', label: 'Corner radius', type: 'number', default: 5, min: 0, max: 100, step: 0.5, unit: 'mm', help: 'Rounds the four corners. 0 for a sharp box.', visible: isRect },
-      { key: 'wall', label: 'Wall', type: 'number', default: 2, min: 0, max: 50, step: 0.1, unit: 'mm', help: 'Sets the wall thickness. 0 makes the pipe solid.' },
+      { key: 'diameter', label: tr('Diameter'), type: 'number', default: 25, min: 2, max: 400, step: 0.5, unit: 'mm', help: tr('Outside diameter.'), visible: isRound },
+      { key: 'width', label: tr('Width'), type: 'number', default: 50, min: 2, max: 600, step: 0.5, unit: 'mm', help: tr('Outside width, across the plane of a bend.'), visible: isRect },
+      { key: 'height', label: tr('Height'), type: 'number', default: 30, min: 2, max: 600, step: 0.5, unit: 'mm', help: tr('Outside height.'), visible: isRect },
+      { key: 'corner', label: tr('Corner radius'), type: 'number', default: 5, min: 0, max: 100, step: 0.5, unit: 'mm', help: tr('Rounds the four corners. 0 for a sharp box.'), visible: isRect },
+      { key: 'wall', label: tr('Wall'), type: 'number', default: 2, min: 0, max: 50, step: 0.1, unit: 'mm', help: tr('Sets the wall thickness. 0 makes the pipe solid.') },
     ],
   };
 }
@@ -169,15 +170,15 @@ function wallOf(p: Params, sections: Section[], warnings: string[]): number {
   const least = Math.min(...sections.map((s) => Math.min(s.w, s.h)));
   const most = least / 2 - 0.2;
   if (wall <= most) return wall;
-  warnings.push(`The wall is as thick as the pipe: it was thinned to ${most.toFixed(1)} mm so that a bore is left.`);
+  warnings.push(tr('The wall is as thick as the pipe: it was thinned to {wall} mm so that a bore is left.', { wall: most.toFixed(1) }));
   return most;
 }
 
 const sizeText = (s: Section) => (s.round ? `Ø${s.w.toFixed(1)}` : `${s.w.toFixed(1)} × ${s.h.toFixed(1)}`);
 
 function sizeInfo(s: Section, wall: number): { label: string; value: string }[] {
-  const out = [{ label: 'Outside', value: `${sizeText(s)} mm` }];
-  if (wall > 0) out.push({ label: 'Inside', value: `${sizeText(inner(s, wall))} mm` });
+  const out = [{ label: tr('Outside'), value: `${sizeText(s)} mm` }];
+  if (wall > 0) out.push({ label: tr('Inside'), value: `${sizeText(inner(s, wall))} mm` });
   return out;
 }
 
@@ -195,10 +196,10 @@ const along = (z0: number, z1: number): Station[] => [
 
 export const pipe: GeneratorDef = {
   id: 'pipe',
-  name: 'Straight',
+  name: tr('Straight'),
   category: 'ducts',
-  summary: 'A length of pipe or duct, round or rectangular, hollow or solid.',
-  groups: [{ title: 'Pipe', params: [{ key: 'length', label: 'Length', type: 'number', default: 40, min: 1, max: 1000, step: 1, unit: 'mm' }] }, sectionGroup()],
+  summary: tr('A length of pipe or duct, round or rectangular, hollow or solid.'),
+  groups: [{ title: tr('Pipe'), params: [{ key: 'length', label: tr('Length'), type: 'number', default: 40, min: 1, max: 1000, step: 1, unit: 'mm' }] }, sectionGroup()],
   build(p, q): BuildResult {
     const warnings: string[] = [];
     const s = section(p);
@@ -206,7 +207,7 @@ export const pipe: GeneratorDef = {
     const length = num(p, 'length');
     return {
       solid: sweep(along(0, length), s, wall, q),
-      info: [{ label: 'Length', value: mm(length, 1) }, ...sizeInfo(s, wall)],
+      info: [{ label: tr('Length'), value: mm(length, 1) }, ...sizeInfo(s, wall)],
       warnings,
     };
   },
@@ -216,17 +217,17 @@ export const pipe: GeneratorDef = {
 
 export const elbow: GeneratorDef = {
   id: 'elbow',
-  name: 'Elbow',
+  name: tr('Elbow'),
   category: 'ducts',
-  summary: 'A bend of any angle, with a straight leg either side.',
+  summary: tr('A bend of any angle, with a straight leg either side.'),
   groups: [
     {
-      title: 'Bend',
+      title: tr('Bend'),
       params: [
-        { key: 'angle', label: 'Angle', type: 'number', default: 90, min: 1, max: 180, step: 1, unit: '°', help: 'How far the run turns. 90° is a square corner.' },
-        { key: 'bendRadius', label: 'Bend radius', type: 'number', default: 30, min: 1, max: 500, step: 1, unit: 'mm', help: 'Sets the bend radius along the center line.' },
-        { key: 'legA', label: 'Leg before', type: 'number', default: 10, min: 0, max: 500, step: 1, unit: 'mm', help: 'Straight length before the bend.' },
-        { key: 'legB', label: 'Leg after', type: 'number', default: 10, min: 0, max: 500, step: 1, unit: 'mm', help: 'Straight length after the bend.' },
+        { key: 'angle', label: tr('Angle'), type: 'number', default: 90, min: 1, max: 180, step: 1, unit: '°', help: tr('How far the run turns. 90° is a square corner.') },
+        { key: 'bendRadius', label: tr('Bend radius'), type: 'number', default: 30, min: 1, max: 500, step: 1, unit: 'mm', help: tr('Sets the bend radius along the center line.') },
+        { key: 'legA', label: tr('Leg before'), type: 'number', default: 10, min: 0, max: 500, step: 1, unit: 'mm', help: tr('Straight length before the bend.') },
+        { key: 'legB', label: tr('Leg after'), type: 'number', default: 10, min: 0, max: 500, step: 1, unit: 'mm', help: tr('Straight length after the bend.') },
       ],
     },
     sectionGroup(),
@@ -240,7 +241,7 @@ export const elbow: GeneratorDef = {
     const least = s.w / 2 + 0.2;
     if (radius < least) {
       radius = least;
-      warnings.push(`The bend radius was raised to ${least.toFixed(1)} mm, half the width, so that the inside of the bend does not fold over.`);
+      warnings.push(tr('The bend radius was raised to {radius} mm, half the width, so that the inside of the bend does not fold over.', { radius: least.toFixed(1) }));
     }
     const legA = num(p, 'legA');
     const legB = num(p, 'legB');
@@ -260,9 +261,9 @@ export const elbow: GeneratorDef = {
     return {
       solid: sweep(stations, s, wall, q),
       info: [
-        { label: 'Angle', value: `${num(p, 'angle')}°` },
-        { label: 'Bend radius', value: mm(radius, 1) },
-        { label: 'Inside radius', value: mm(radius - s.w / 2, 1) },
+        { label: tr('Angle'), value: `${num(p, 'angle')}°` },
+        { label: tr('Bend radius'), value: mm(radius, 1) },
+        { label: tr('Inside radius'), value: mm(radius - s.w / 2, 1) },
         ...sizeInfo(s, wall),
       ],
       warnings,
@@ -274,18 +275,18 @@ export const elbow: GeneratorDef = {
 
 export const reducer: GeneratorDef = {
   id: 'reducer',
-  name: 'Reducer',
+  name: tr('Reducer'),
   category: 'ducts',
-  summary: 'A taper from one size to another, in line or offset to one side.',
+  summary: tr('A taper from one size to another, in line or offset to one side.'),
   groups: [
     {
-      title: 'Taper',
+      title: tr('Taper'),
       params: [
-        { key: 'length', label: 'Length', type: 'number', default: 40, min: 1, max: 1000, step: 1, unit: 'mm' },
-        { key: 'diameter2', label: 'Diameter at end', type: 'number', default: 16, min: 2, max: 400, step: 0.5, unit: 'mm', visible: isRound },
-        { key: 'width2', label: 'Width at end', type: 'number', default: 30, min: 2, max: 600, step: 0.5, unit: 'mm', visible: isRect },
-        { key: 'height2', label: 'Height at end', type: 'number', default: 20, min: 2, max: 600, step: 0.5, unit: 'mm', visible: isRect },
-        { key: 'offset', label: 'Offset', type: 'number', default: 0, min: -300, max: 300, step: 0.5, unit: 'mm', help: 'Shifts the far end sideways for an eccentric reducer, so one side of the run stays flat.' },
+        { key: 'length', label: tr('Length'), type: 'number', default: 40, min: 1, max: 1000, step: 1, unit: 'mm' },
+        { key: 'diameter2', label: tr('Diameter at end'), type: 'number', default: 16, min: 2, max: 400, step: 0.5, unit: 'mm', visible: isRound },
+        { key: 'width2', label: tr('Width at end'), type: 'number', default: 30, min: 2, max: 600, step: 0.5, unit: 'mm', visible: isRect },
+        { key: 'height2', label: tr('Height at end'), type: 'number', default: 20, min: 2, max: 600, step: 0.5, unit: 'mm', visible: isRect },
+        { key: 'offset', label: tr('Offset'), type: 'number', default: 0, min: -300, max: 300, step: 0.5, unit: 'mm', help: tr('Shifts the far end sideways for an eccentric reducer, so one side of the run stays flat.') },
       ],
     },
     sectionGroup(),
@@ -309,11 +310,11 @@ export const reducer: GeneratorDef = {
     return {
       solid: sweep(stations, a, wall, q, rings),
       info: [
-        { label: 'Length', value: mm(length, 1) },
-        { label: 'Start', value: `${sizeText(a)} mm` },
-        { label: 'End', value: `${sizeText(b)} mm` },
-        { label: 'Ratio', value: `${ratio.toFixed(2)} : 1` },
-        ...(wall > 0 ? [{ label: 'Inside', value: `${sizeText(inner(a, wall))} to ${sizeText(inner(b, wall))} mm` }] : []),
+        { label: tr('Length'), value: mm(length, 1) },
+        { label: trx('pipe', 'Start'), value: `${sizeText(a)} mm` },
+        { label: trx('pipe', 'End'), value: `${sizeText(b)} mm` },
+        { label: tr('Ratio'), value: `${ratio.toFixed(2)} : 1` },
+        ...(wall > 0 ? [{ label: tr('Inside'), value: tr('{from} to {to} mm', { from: sizeText(inner(a, wall)), to: sizeText(inner(b, wall)) }) }] : []),
       ],
       warnings,
     };
@@ -324,19 +325,19 @@ export const reducer: GeneratorDef = {
 
 export const tee: GeneratorDef = {
   id: 'tee',
-  name: 'Tee',
+  name: tr('Tee'),
   category: 'ducts',
-  summary: 'A branch off a straight run, square or at an angle.',
+  summary: tr('A branch off a straight run, square or at an angle.'),
   groups: [
     {
-      title: 'Branch',
+      title: tr('Branch'),
       params: [
-        { key: 'length', label: 'Run length', type: 'number', default: 60, min: 1, max: 1000, step: 1, unit: 'mm' },
-        { key: 'branchAngle', label: 'Branch angle', type: 'number', default: 90, min: 20, max: 90, step: 1, unit: '°', help: '90° is a tee; less leans the branch along the run for a wye.' },
-        { key: 'branchLength', label: 'Branch length', type: 'number', default: 25, min: 1, max: 500, step: 1, unit: 'mm', help: 'From the side of the run to the end of the branch.' },
-        { key: 'diameter2', label: 'Branch diameter', type: 'number', default: 25, min: 2, max: 400, step: 0.5, unit: 'mm', visible: isRound },
-        { key: 'width2', label: 'Branch width', type: 'number', default: 50, min: 2, max: 600, step: 0.5, unit: 'mm', visible: isRect },
-        { key: 'height2', label: 'Branch height', type: 'number', default: 30, min: 2, max: 600, step: 0.5, unit: 'mm', visible: isRect },
+        { key: 'length', label: tr('Run length'), type: 'number', default: 60, min: 1, max: 1000, step: 1, unit: 'mm' },
+        { key: 'branchAngle', label: tr('Branch angle'), type: 'number', default: 90, min: 20, max: 90, step: 1, unit: '°', help: tr('90° is a tee; less leans the branch along the run for a wye.') },
+        { key: 'branchLength', label: tr('Branch length'), type: 'number', default: 25, min: 1, max: 500, step: 1, unit: 'mm', help: tr('From the side of the run to the end of the branch.') },
+        { key: 'diameter2', label: tr('Branch diameter'), type: 'number', default: 25, min: 2, max: 400, step: 0.5, unit: 'mm', visible: isRound },
+        { key: 'width2', label: tr('Branch width'), type: 'number', default: 50, min: 2, max: 600, step: 0.5, unit: 'mm', visible: isRect },
+        { key: 'height2', label: tr('Branch height'), type: 'number', default: 30, min: 2, max: 600, step: 0.5, unit: 'mm', visible: isRect },
       ],
     },
     sectionGroup(),
@@ -372,9 +373,9 @@ export const tee: GeneratorDef = {
     return {
       solid,
       info: [
-        { label: 'Run', value: `${sizeText(run)} × ${length.toFixed(1)} mm` },
-        { label: 'Branch', value: `${sizeText(branch)} mm at ${num(p, 'branchAngle')}°` },
-        ...(wall > 0 ? [{ label: 'Inside', value: `${sizeText(inner(run, wall))} / ${sizeText(inner(branch, wall))} mm` }] : []),
+        { label: trx('pipe', 'Run'), value: `${sizeText(run)} × ${length.toFixed(1)} mm` },
+        { label: tr('Branch'), value: tr('{size} mm at {angle}°', { size: sizeText(branch), angle: num(p, 'branchAngle') }) },
+        ...(wall > 0 ? [{ label: tr('Inside'), value: `${sizeText(inner(run, wall))} / ${sizeText(inner(branch, wall))} mm` }] : []),
       ],
       warnings,
     };

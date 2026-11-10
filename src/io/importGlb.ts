@@ -3,6 +3,7 @@
 // color and picture of its material and the texture coordinates it carries.
 // glTF is Y up in meters; parts come out Z up in millimeters.
 import type { MeshWithUV } from '../geometry/mesh';
+import { tr } from '../i18n';
 import { apply, determinant, IDENTITY, multiply } from '../model/math';
 import type { Mat } from '../model/math';
 import { base64ToBytes } from './base64';
@@ -38,7 +39,7 @@ interface Gltf {
   buffers?: { byteLength: number; uri?: string }[];
 }
 
-const bad = (what: string) => new Error(`This glTF file is damaged: ${what}.`);
+const bad = (message: string) => new Error(message);
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 /** Absent, or a whole number that could be a place in a list or a count. */
@@ -53,51 +54,51 @@ const isText = (v: unknown): boolean => v === undefined || typeof v === 'string'
  * are counted with. The JSON of a file is whatever its writer put there.
  */
 function checkedShape(json: unknown): Gltf {
-  if (!isObject(json)) throw new Error('This is not a glTF file.');
-  const need = (ok: boolean, what: string) => {
-    if (!ok) throw bad(what);
+  if (!isObject(json)) throw new Error(tr('This is not a glTF file.'));
+  const need = (ok: boolean, message: string) => {
+    if (!ok) throw bad(message);
   };
   const list = (key: string): Record<string, unknown>[] => {
     const v = json[key];
     if (v === undefined) return [];
-    need(Array.isArray(v) && v.every(isObject), `its ${key} are not a list`);
+    need(Array.isArray(v) && v.every(isObject), tr('This glTF file is damaged: its {key} are not a list.', { key }));
     return v as Record<string, unknown>[];
   };
-  need(json.extensionsRequired === undefined || Array.isArray(json.extensionsRequired), 'its list of extensions is not one');
-  need(isIndex(json.scene), 'its scene is not a number');
-  for (const scene of list('scenes')) need(isIndices(scene.nodes), 'a scene does not list its nodes');
+  need(json.extensionsRequired === undefined || Array.isArray(json.extensionsRequired), tr('This glTF file is damaged: its list of extensions is not one.'));
+  need(isIndex(json.scene), tr('This glTF file is damaged: its scene is not a number.'));
+  for (const scene of list('scenes')) need(isIndices(scene.nodes), tr('This glTF file is damaged: a scene does not list its nodes.'));
   for (const node of list('nodes')) {
-    need(isIndex(node.mesh) && isIndices(node.children) && isText(node.name), 'a node is not as it should be');
-    need(isNumbers(node.matrix) && isNumbers(node.translation) && isNumbers(node.rotation) && isNumbers(node.scale), 'a node is placed by something other than numbers');
+    need(isIndex(node.mesh) && isIndices(node.children) && isText(node.name), tr('This glTF file is damaged: a node is not as it should be.'));
+    need(isNumbers(node.matrix) && isNumbers(node.translation) && isNumbers(node.rotation) && isNumbers(node.scale), tr('This glTF file is damaged: a node is placed by something other than numbers.'));
   }
   for (const mesh of list('meshes')) {
-    need(isText(mesh.name) && Array.isArray(mesh.primitives) && mesh.primitives.every(isObject), 'a mesh has no primitives');
+    need(isText(mesh.name) && Array.isArray(mesh.primitives) && mesh.primitives.every(isObject), tr('This glTF file is damaged: a mesh has no primitives.'));
     for (const primitive of mesh.primitives as Record<string, unknown>[]) {
-      need(isObject(primitive.attributes) && Object.values(primitive.attributes).every(isIndex), 'a primitive has no attributes');
-      need(isIndex(primitive.indices) && isIndex(primitive.material) && isIndex(primitive.mode), 'a primitive is not as it should be');
+      need(isObject(primitive.attributes) && Object.values(primitive.attributes).every(isIndex), tr('This glTF file is damaged: a primitive has no attributes.'));
+      need(isIndex(primitive.indices) && isIndex(primitive.material) && isIndex(primitive.mode), tr('This glTF file is damaged: a primitive is not as it should be.'));
     }
   }
   for (const material of list('materials')) {
-    need(isText(material.name) && (material.extensions === undefined || isObject(material.extensions)), 'a material is not as it should be');
+    need(isText(material.name) && (material.extensions === undefined || isObject(material.extensions)), tr('This glTF file is damaged: a material is not as it should be.'));
     const extensions = material.extensions as Record<string, unknown> | undefined;
     for (const group of [material.pbrMetallicRoughness, extensions?.KHR_materials_pbrSpecularGlossiness]) {
       if (group === undefined) continue;
-      need(isObject(group), 'a material is not as it should be');
+      need(isObject(group), tr('This glTF file is damaged: a material is not as it should be.'));
       const { baseColorFactor, diffuseFactor, baseColorTexture, diffuseTexture } = group as Record<string, unknown>;
-      need(isNumbers(baseColorFactor) && isNumbers(diffuseFactor), 'a material has a color that is not numbers');
-      for (const texture of [baseColorTexture, diffuseTexture]) need(texture === undefined || (isObject(texture) && isIndex(texture.index)), 'a material names its texture wrongly');
+      need(isNumbers(baseColorFactor) && isNumbers(diffuseFactor), tr('This glTF file is damaged: a material has a color that is not numbers.'));
+      for (const texture of [baseColorTexture, diffuseTexture]) need(texture === undefined || (isObject(texture) && isIndex(texture.index)), tr('This glTF file is damaged: a material names its texture wrongly.'));
     }
   }
-  for (const texture of list('textures')) need(isIndex(texture.source), 'a texture names its image wrongly');
-  for (const image of list('images')) need(isIndex(image.bufferView) && isText(image.uri) && isText(image.mimeType) && isText(image.name), 'an image is not as it should be');
+  for (const texture of list('textures')) need(isIndex(texture.source), tr('This glTF file is damaged: a texture names its image wrongly.'));
+  for (const image of list('images')) need(isIndex(image.bufferView) && isText(image.uri) && isText(image.mimeType) && isText(image.name), tr('This glTF file is damaged: an image is not as it should be.'));
   for (const accessor of list('accessors')) {
-    need(isIndex(accessor.bufferView) && isIndex(accessor.byteOffset) && accessor.count !== undefined && isIndex(accessor.count), 'an accessor is not as it should be');
-    need(typeof accessor.type === 'string' && Object.prototype.hasOwnProperty.call(COMPONENTS, accessor.type), 'an accessor has an unknown type');
+    need(isIndex(accessor.bufferView) && isIndex(accessor.byteOffset) && accessor.count !== undefined && isIndex(accessor.count), tr('This glTF file is damaged: an accessor is not as it should be.'));
+    need(typeof accessor.type === 'string' && Object.prototype.hasOwnProperty.call(COMPONENTS, accessor.type), tr('This glTF file is damaged: an accessor has an unknown type.'));
   }
   for (const view of list('bufferViews')) {
-    need(view.buffer !== undefined && isIndex(view.buffer) && view.byteLength !== undefined && isIndex(view.byteLength) && isIndex(view.byteOffset) && isIndex(view.byteStride), 'a buffer view is not as it should be');
+    need(view.buffer !== undefined && isIndex(view.buffer) && view.byteLength !== undefined && isIndex(view.byteLength) && isIndex(view.byteOffset) && isIndex(view.byteStride), tr('This glTF file is damaged: a buffer view is not as it should be.'));
   }
-  for (const buffer of list('buffers')) need(isText(buffer.uri), 'a buffer is not as it should be');
+  for (const buffer of list('buffers')) need(isText(buffer.uri), tr('This glTF file is damaged: a buffer is not as it should be.'));
   return json as Gltf;
 }
 
@@ -106,31 +107,31 @@ function dataBytes(uri: string): Uint8Array {
   try {
     return base64ToBytes(uri.slice(uri.indexOf(',') + 1));
   } catch {
-    throw bad('its embedded data cannot be read');
+    throw bad(tr('This glTF file is damaged: its embedded data cannot be read.'));
   }
 }
 
 export function parseGlb(bytes: Uint8Array, name = 'Model'): ImportedModel {
-  if (bytes.length === 0) throw new Error('This glTF file is empty.');
+  if (bytes.length === 0) throw new Error(tr('This glTF file is empty.'));
   const { json, bin } = unpack(bytes);
   const gltf = checkedShape(json);
   const required = gltf.extensionsRequired ?? [];
   if (required.includes('KHR_draco_mesh_compression') || required.includes('EXT_meshopt_compression'))
-    throw new Error('This glTF file is compressed. Export it again without mesh compression and import that.');
+    throw new Error(tr('This glTF file is compressed. Export it again without mesh compression and import that.'));
   const buffers = (gltf.buffers ?? []).map((b, i) => {
     if (b.uri === undefined) {
       if (i === 0 && bin) return bin;
-      throw bad('a buffer is missing');
+      throw bad(tr('This glTF file is damaged: a buffer is missing.'));
     }
-    if (!b.uri.startsWith('data:')) throw new Error('This glTF file keeps its data in separate files. Save it as a single .glb and import that.');
+    if (!b.uri.startsWith('data:')) throw new Error(tr('This glTF file keeps its data in separate files. Save it as a single .glb and import that.'));
     return dataBytes(b.uri);
   });
   const viewOf = (index: number): Uint8Array => {
     const view = gltf.bufferViews?.[index];
     const buffer = view && buffers[view.buffer];
-    if (!view || !buffer) throw bad('a buffer view is missing');
+    if (!view || !buffer) throw bad(tr('This glTF file is damaged: a buffer view is missing.'));
     const start = view.byteOffset ?? 0;
-    if (start + view.byteLength > buffer.length) throw bad('a buffer view runs past its buffer');
+    if (start + view.byteLength > buffer.length) throw bad(tr('This glTF file is damaged: a buffer view runs past its buffer.'));
     return buffer.subarray(start, start + view.byteLength);
   };
   const images = new Map<number, ImportedImage | undefined>();
@@ -173,9 +174,9 @@ export function parseGlb(bytes: Uint8Array, name = 'Model'): ImportedModel {
     const a = index === undefined ? undefined : gltf.accessors?.[index];
     if (!a) return null;
     const size = COMPONENTS[a.type];
-    if (a.sparse !== undefined) throw new Error('This glTF file keeps a mesh as a sparse accessor, which cannot be read. Export it again without sparse accessors.');
+    if (a.sparse !== undefined) throw new Error(tr('This glTF file keeps a mesh as a sparse accessor, which cannot be read. Export it again without sparse accessors.'));
     // Without a buffer view an accessor is all zeros, as many as it says: nothing to draw, and nothing to make room for.
-    if (a.bufferView === undefined) throw bad('an accessor has no data');
+    if (a.bufferView === undefined) throw bad(tr('This glTF file is damaged: an accessor has no data.'));
     const view = gltf.bufferViews?.[a.bufferView];
     const bytes = viewOf(a.bufferView);
     const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -183,7 +184,7 @@ export function parseGlb(bytes: Uint8Array, name = 'Model'): ImportedModel {
     const stride = view?.byteStride || size * width;
     const start = a.byteOffset ?? 0;
     // Checked before any room is made, so that a count the bytes cannot back is never believed.
-    if (stride < size * width || start + (a.count - 1) * stride + size * width > bytes.length) throw bad('an accessor runs past its buffer view');
+    if (stride < size * width || start + (a.count - 1) * stride + size * width > bytes.length) throw bad(tr('This glTF file is damaged: an accessor runs past its buffer view.'));
     const data = new Float64Array(a.count * size);
     for (let i = 0; i < a.count; i++) {
       for (let c = 0; c < size; c++) {
@@ -213,7 +214,7 @@ export function parseGlb(bytes: Uint8Array, name = 'Model'): ImportedModel {
             if (a.normalized) v = Math.max(v / 127, -1);
             break;
           default:
-            throw bad('an accessor has an unknown component type');
+            throw bad(tr('This glTF file is damaged: an accessor has an unknown component type.'));
         }
         data[i * size + c] = v;
       }
@@ -241,7 +242,7 @@ export function parseGlb(bytes: Uint8Array, name = 'Model'): ImportedModel {
       else if (mode === 5) for (let i = 0; i + 2 < indices.length; i++) tris.push(indices[i], indices[i + (i % 2 ? 2 : 1)], indices[i + (i % 2 ? 1 : 2)]);
       else for (let i = 1; i + 1 < indices.length; i++) tris.push(indices[0], indices[i], indices[i + 1]);
       triangles += tris.length / 3;
-      if (triangles > MAX_TRIANGLES) throw new Error('This glTF file has too many triangles to open.');
+      if (triangles > MAX_TRIANGLES) throw new Error(tr('This glTF file has too many triangles to open.'));
       // Placed in the scene, then Y up in meters turned into Z up in millimeters.
       const builder = new MeshBuilder(count, Math.max(16, tris.length / 3));
       const welded = new Int32Array(count);
@@ -278,7 +279,7 @@ export function parseGlb(bytes: Uint8Array, name = 'Model'): ImportedModel {
   const visit = (index: number, parent: Mat, depth: number) => {
     const node = gltf.nodes?.[index];
     if (!node || depth > MAX_DEPTH) return;
-    if (++visited > MAX_NODES) throw new Error('This glTF file has too many nodes to open.');
+    if (++visited > MAX_NODES) throw new Error(tr('This glTF file has too many nodes to open.'));
     const world = multiply(parent, localMatrix(node));
     if (node.mesh !== undefined) emitMesh(node.mesh, node.name, world);
     for (const child of node.children ?? []) visit(child, world, depth + 1);
@@ -293,7 +294,7 @@ export function parseGlb(bytes: Uint8Array, name = 'Model'): ImportedModel {
   for (const root of roots) visit(root, IDENTITY, 0);
   // Meshes no node places still count, at the origin.
   if (parts.length === 0 && !gltf.nodes?.length) for (const [i] of (gltf.meshes ?? []).entries()) emitMesh(i, undefined, IDENTITY);
-  if (parts.length === 0) throw new Error('This glTF file has no meshes.');
+  if (parts.length === 0) throw new Error(tr('This glTF file has no meshes.'));
   return { kind: 'model', parts, used: [] };
 }
 
@@ -304,28 +305,28 @@ function unpack(bytes: Uint8Array): { json: unknown; bin: Uint8Array | null } {
     try {
       return JSON.parse(new TextDecoder().decode(b));
     } catch {
-      throw new Error('This is not a glTF file: it could not be read as JSON.');
+      throw new Error(tr('This is not a glTF file: it could not be read as JSON.'));
     }
   };
   if (bytes.length >= 12 && dv.getUint32(0, true) === MAGIC) {
-    if (dv.getUint32(4, true) !== 2) throw new Error('Only glTF version 2 files can be imported.');
+    if (dv.getUint32(4, true) !== 2) throw new Error(tr('Only glTF version 2 files can be imported.'));
     let json: unknown = null;
     let bin: Uint8Array | null = null;
     let at = 12;
     while (at + 8 <= bytes.length) {
       const length = dv.getUint32(at, true);
       const type = dv.getUint32(at + 4, true);
-      if (at + 8 + length > bytes.length) throw bad('a chunk runs past the end of the file');
+      if (at + 8 + length > bytes.length) throw bad(tr('This glTF file is damaged: a chunk runs past the end of the file.'));
       const chunk = bytes.subarray(at + 8, at + 8 + length);
       if (type === JSON_CHUNK && json === null) json = text(chunk);
       else if (type === BIN_CHUNK && !bin) bin = chunk;
       at += 8 + length + ((4 - (length % 4)) % 4);
     }
-    if (json === null) throw bad('it has no JSON chunk');
+    if (json === null) throw bad(tr('This glTF file is damaged: it has no JSON chunk.'));
     return { json, bin };
   }
   const json = text(bytes);
-  if (!isObject(json) || !json.asset) throw new Error('This is not a glTF file.');
+  if (!isObject(json) || !json.asset) throw new Error(tr('This is not a glTF file.'));
   return { json, bin: null };
 }
 

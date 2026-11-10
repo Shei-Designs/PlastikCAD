@@ -6,6 +6,7 @@
 //
 // Everything is built with the fan's axis along Z, lying flat and centered
 // on the wall it sits in: turn the part to face through a side wall.
+import { plural, tr, trx } from '../../i18n';
 import { TAU, arc, arcSegments, circle, regularPolygon, roundedRect, signedArea } from '../math2d';
 import { cylinder, extrude, intersection, rotate, translate, union } from '../types';
 import type { Polygon, Quality, Shape2D, Solid, Vec2 } from '../types';
@@ -181,50 +182,50 @@ const slab = (shapes: Shape2D, t: number): Solid => translate(extrude(shapes, t)
 
 export const fan: GeneratorDef = {
   id: 'fan',
-  name: 'Fan',
+  name: tr('Fan'),
   category: 'fans',
-  summary: 'Cutout, grill or mounting holes for a standard axial fan.',
+  summary: tr('Cutout, grill or mounting holes for a standard axial fan.'),
   groups: [
     {
-      title: 'Fan',
+      title: tr('Fan'),
       params: [
-        { key: 'size', label: 'Fan', type: 'select', default: '40', options: FANS.map((f) => ({ value: String(f.size), label: `${f.size} mm` })) },
+        { key: 'size', label: tr('Fan'), type: 'select', default: '40', options: FANS.map((f) => ({ value: String(f.size), label: `${f.size} mm` })) },
         {
           key: 'form',
-          label: 'Make',
+          label: tr('Make'),
           type: 'select',
           default: 'cutout',
-          help: 'Selects the build target for the chosen fan.',
+          help: tr('Selects the build target for the chosen fan.'),
           options: [
-            { value: 'cutout', label: 'Panel cutout' },
-            { value: 'holes', label: 'Screw holes' },
-            { value: 'grill', label: 'Frame & grill' },
-            { value: 'body', label: 'Fan' },
+            { value: 'cutout', label: tr('Panel cutout') },
+            { value: 'holes', label: tr('Screw holes') },
+            { value: 'grill', label: tr('Frame & grill') },
+            { value: 'body', label: tr('Fan') },
           ],
         },
-        { key: 'clearance', label: 'Clearance', type: 'number', default: 0.3, min: 0, max: 3, step: 0.05, unit: 'mm', help: 'Added all round the opening and the screw holes, or round the frame of the fan itself. 0.3 mm suits most printers; more for a loose fit.' },
+        { key: 'clearance', label: tr('Clearance'), type: 'number', default: 0.3, min: 0, max: 3, step: 0.05, unit: 'mm', help: tr('Added all round the opening and the screw holes, or round the frame of the fan itself. 0.3 mm suits most printers; more for a loose fit.') },
         {
           key: 'pattern',
-          label: 'Pattern',
+          label: trx('guard', 'Pattern'),
           type: 'select',
           default: 'open',
-          help: 'Selects the guard pattern across the opening.',
+          help: tr('Selects the guard pattern across the opening.'),
           options: [
-            { value: 'open', label: 'Open' },
-            { value: 'rings', label: 'Rings' },
-            { value: 'slots', label: 'Slots' },
-            { value: 'honeycomb', label: 'Honeycomb' },
-            { value: 'grid', label: 'Grid' },
+            { value: 'open', label: trx('guard', 'Open') },
+            { value: 'rings', label: tr('Rings') },
+            { value: 'slots', label: trx('guard', 'Slots') },
+            { value: 'honeycomb', label: tr('Honeycomb') },
+            { value: 'grid', label: trx('guard', 'Grid') },
           ],
           visible: is('cutout', 'grill'),
         },
-        { key: 'bar', label: 'Bar width', type: 'number', default: 2, min: 0.8, max: 10, step: 0.1, unit: 'mm', help: 'The material left between the openings. Two nozzle widths prints cleanly.', visible: patterned },
-        { key: 'gap', label: 'Opening width', type: 'number', default: 6, min: 2, max: 30, step: 0.5, unit: 'mm', help: 'Sets the width of each opening in the pattern.', visible: patterned },
-        { key: 'spokes', label: 'Spokes', type: 'number', default: 4, min: 2, max: 8, step: 1, integer: true, help: 'Bars from the middle out that hold the rings together.', visible: (p) => patterned(p) && str(p, 'pattern') === 'rings' },
-        { key: 'thickness', label: 'Thickness', type: 'number', default: 2, min: 0.8, max: 10, step: 0.2, unit: 'mm', help: 'Sets the grill plate thickness.', visible: is('grill') },
-        { key: 'rim', label: 'Rim', type: 'number', default: 3, min: 1, max: 15, step: 0.5, unit: 'mm', help: 'Solid border between the pattern and the edge of the grill, which the screws pass through.', visible: is('grill') },
-        { key: 'grillHoles', label: 'Screw holes', type: 'boolean', default: true, help: 'The four fan screw holes in the frame. Off for a grill that is glued or built into something else.', visible: is('grill') },
-        { key: 'grillCorners', label: 'Rounded corners', type: 'boolean', default: true, help: 'Corners rounded like the fan frame, or square.', visible: is('grill') },
+        { key: 'bar', label: tr('Bar width'), type: 'number', default: 2, min: 0.8, max: 10, step: 0.1, unit: 'mm', help: tr('The material left between the openings. Two nozzle widths prints cleanly.'), visible: patterned },
+        { key: 'gap', label: tr('Opening width'), type: 'number', default: 6, min: 2, max: 30, step: 0.5, unit: 'mm', help: tr('Sets the width of each opening in the pattern.'), visible: patterned },
+        { key: 'spokes', label: tr('Spokes'), type: 'number', default: 4, min: 2, max: 8, step: 1, integer: true, help: tr('Bars from the middle out that hold the rings together.'), visible: (p) => patterned(p) && str(p, 'pattern') === 'rings' },
+        { key: 'thickness', label: tr('Thickness'), type: 'number', default: 2, min: 0.8, max: 10, step: 0.2, unit: 'mm', help: tr('Sets the grill plate thickness.'), visible: is('grill') },
+        { key: 'rim', label: tr('Rim'), type: 'number', default: 3, min: 1, max: 15, step: 0.5, unit: 'mm', help: tr('Solid border between the pattern and the edge of the grill, which the screws pass through.'), visible: is('grill') },
+        { key: 'grillHoles', label: tr('Screw holes'), type: 'boolean', default: true, help: tr('The four fan screw holes in the frame. Off for a grill that is glued or built into something else.'), visible: is('grill') },
+        { key: 'grillCorners', label: tr('Rounded corners'), type: 'boolean', default: true, help: tr('Corners rounded like the fan frame, or square.'), visible: is('grill') },
       ],
     },
   ],
@@ -235,11 +236,11 @@ export const fan: GeneratorDef = {
     const n = q.circle;
     const warnings: string[] = [];
     const info: InfoItem[] = [
-      { label: 'Fan', value: `${f.size} × ${f.size} mm` },
-      { label: 'Screw holes', value: `4 × Ø${f.hole} mm, ${f.spacing} mm apart` },
+      { label: tr('Fan'), value: `${f.size} × ${f.size} mm` },
+      { label: tr('Screw holes'), value: tr('4 × Ø{hole} mm, {spacing} mm apart', { hole: f.hole, spacing: f.spacing }) },
     ];
     const holes = (d: number): Polygon[] => [-1, 1].flatMap((sx) => [-1, 1].map((sy) => circle(d / 2, n, (sx * f.spacing) / 2, (sy * f.spacing) / 2)));
-    const openArea = (openings: Polygon[], R: number) => `${((100 * openings.reduce((a, o) => a + signedArea(o), 0)) / (Math.PI * R * R)).toFixed(0)} % of the circle open`;
+    const openPercent = (openings: Polygon[], R: number) => ((100 * openings.reduce((a, o) => a + signedArea(o), 0)) / (Math.PI * R * R)).toFixed(0);
     const pattern = str(p, 'pattern') as FanPattern;
     const bar = num(p, 'bar');
     const gap = num(p, 'gap');
@@ -250,11 +251,11 @@ export const fan: GeneratorDef = {
       const R = f.opening / 2 + grow;
       const openings = make === 'cutout' ? fanOpenings(pattern, R, bar, gap, spokes, q) : [];
       if (make === 'cutout') {
-        info.push({ label: 'Opening', value: `Ø${(2 * R).toFixed(1)} mm` });
-        if (pattern !== 'open') info.push({ label: 'Pattern', value: `${openings.length} openings, ${openArea(openings, R)}` });
-        if (pattern !== 'open' && bar < 1.2) warnings.push('Bars under 1.2 mm are a single extrusion wide and break easily; 2 mm is sturdier.');
+        info.push({ label: tr('Opening'), value: `Ø${(2 * R).toFixed(1)} mm` });
+        if (pattern !== 'open') info.push({ label: trx('guard', 'Pattern'), value: plural(openings.length, '{n} opening, {percent} % of the circle open', '{n} openings, {percent} % of the circle open', { percent: openPercent(openings, R) }) });
+        if (pattern !== 'open' && bar < 1.2) warnings.push(tr('Bars under 1.2 mm are a single extrusion wide and break easily; 2 mm is sturdier.'));
       }
-      info.push({ label: 'Length', value: mm(CUTOUT_LENGTH, 0) });
+      info.push({ label: tr('Length'), value: mm(CUTOUT_LENGTH, 0) });
       // The screw holes can reach into a large opening: a union, not one even-odd shape, keeps the overlap cut.
       const shapes: Shape2D = [...openings, ...pins];
       const solid = openings.length ? union(slab(openings, CUTOUT_LENGTH), slab(pins, CUTOUT_LENGTH)) : slab(pins, CUTOUT_LENGTH);
@@ -266,8 +267,8 @@ export const fan: GeneratorDef = {
       const R = f.size / 2 - num(p, 'rim');
       const openings = fanOpenings(pattern, R, bar, gap, spokes, q);
       const shapes: Shape2D = [roundedSquare(f.size, bool(p, 'grillCorners') ? f.corner : 0, q), ...(bool(p, 'grillHoles') ? holes(f.hole + 2 * grow) : []), ...openings];
-      info.push({ label: 'Grill', value: `${f.size} × ${f.size} × ${t} mm` }, { label: 'Opening', value: `Ø${(2 * R).toFixed(1)} mm${pattern !== 'open' ? `, ${openArea(openings, R)}` : ''}` });
-      if (pattern !== 'open' && bar < 1.2) warnings.push('Bars under 1.2 mm are a single extrusion wide and break easily; 2 mm is sturdier.');
+      info.push({ label: tr('Grill'), value: `${f.size} × ${f.size} × ${t} mm` }, { label: tr('Opening'), value: pattern !== 'open' ? tr('Ø{diameter} mm, {percent} % of the circle open', { diameter: (2 * R).toFixed(1), percent: openPercent(openings, R) }) : `Ø${(2 * R).toFixed(1)} mm` });
+      if (pattern !== 'open' && bar < 1.2) warnings.push(tr('Bars under 1.2 mm are a single extrusion wide and break easily; 2 mm is sturdier.'));
       return { solid: slab(shapes, t), outline: shapes, info, warnings };
     }
 
@@ -303,8 +304,8 @@ export const fan: GeneratorDef = {
     const bladeSet: Solid[] = [];
     for (let i = 0; i < blades; i++) bladeSet.push(rotate(translate(extrude([blade], bladeT), [0, 0, -bladeT / 2]), [pitch, 0, (360 * i) / blades]));
     pieces.push(intersection(union(...bladeSet), translate(cylinder(Rb - 0.6, span, n), [0, 0, -span / 2])));
-    info.push({ label: 'Frame depth', value: mm(t, 0) }, { label: 'Hub', value: `Ø${f.hub} mm, 7 blades` });
-    if (grow > 0) info.push({ label: 'Frame', value: `${(f.size + 2 * grow).toFixed(1)} mm with the clearance` });
+    info.push({ label: tr('Frame depth'), value: mm(t, 0) }, { label: tr('Hub'), value: tr('Ø{hub} mm, 7 blades', { hub: f.hub }) });
+    if (grow > 0) info.push({ label: trx('fan', 'Frame'), value: tr('{size} mm with the clearance', { size: (f.size + 2 * grow).toFixed(1) }) });
     return { solid: union(...pieces), outline: frameShape, info, warnings };
   },
 };

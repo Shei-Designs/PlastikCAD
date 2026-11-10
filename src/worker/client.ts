@@ -1,3 +1,4 @@
+import { tr, WORKER_LANGUAGE } from '../i18n';
 import { isTextAsset } from '../model/geomKey';
 import type { Bounds } from '../model/math';
 import type { Asset, PartNode, SceneNode } from '../model/types';
@@ -11,7 +12,7 @@ interface Waiting {
 
 type Outgoing = WorkerRequest extends infer R ? (R extends { id: number } ? Omit<R, 'id'> : never) : never;
 
-const startWorker = (): Worker => new Worker(new URL('./geometry.worker.ts', import.meta.url), { type: 'module' });
+const startWorker = (): Worker => new Worker(new URL('./geometry.worker.ts', import.meta.url), { type: 'module', name: WORKER_LANGUAGE });
 
 const versions = new WeakMap<object, number>();
 let nextVersion = 1;
@@ -75,7 +76,7 @@ export class GeometryClient {
     this.worker = null;
     // The next worker starts with no imported data: `syncAssets` hands all of it over again.
     this.sentAssets.clear();
-    this.fail(new Error(`The geometry worker crashed${reason ? ` (${reason})` : ''} and was restarted.`));
+    this.fail(new Error(reason ? tr('The geometry worker crashed ({reason}) and was restarted.', { reason }) : tr('The geometry worker crashed and was restarted.')));
   }
 
   /** An answer arrived that could not be read (too large for the memory at hand, as a rule): that of the oldest request. */
@@ -84,7 +85,7 @@ export class GeometryClient {
     if (first.done) return;
     const [id, w] = first.value;
     this.waiting.delete(id);
-    w.reject(new Error('The answer of the geometry worker could not be read; it may have been too large.'));
+    w.reject(new Error(tr('The answer of the geometry worker could not be read; it may have been too large.')));
   }
 
   private fail(error: Error): void {

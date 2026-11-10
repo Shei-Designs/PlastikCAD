@@ -2,6 +2,7 @@
 // order they arrived (so imported data is always in before the nodes that use
 // it). Apart from the worker file itself so that it can run under vitest.
 import { build, exportColored, exportNodes, forgetAssets, massProperties, measure, partBox, resetKernel, robotGeometry, setAssets } from '../geometry/kernel';
+import { tr } from '../i18n';
 import type { WorkerRequest, WorkerResponse } from './protocol';
 import { transferOf } from './transfer';
 
@@ -67,7 +68,11 @@ export function serve(post: Post, load: () => Promise<unknown>): (req: WorkerReq
       if (fault) resetKernel();
       // Asset messages have no reply; a problem with their data surfaces when a node uses it.
       if (stores) return;
-      const message = fault ? `The geometry kernel stopped${err instanceof Error ? ` (${err.message})` : ''}, most likely for lack of memory, and was restarted.` : messageOf(err);
+      const message = !fault
+        ? messageOf(err)
+        : err instanceof Error
+          ? tr('The geometry kernel stopped ({reason}), most likely for lack of memory, and was restarted.', { reason: err.message })
+          : tr('The geometry kernel stopped, most likely for lack of memory, and was restarted.');
       post({ type: 'error', id: req.id, message }, []);
     }
   };

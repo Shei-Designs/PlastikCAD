@@ -5,6 +5,7 @@
 // the browser. The id inside the file identifies the project across copies
 // and devices (that is what sync will use); the key says where it is now.
 import { FILE_EXTENSION, FILE_FORMAT } from '../appInfo';
+import { tr } from '../i18n';
 import { HEAD_BYTES, parseDoc, readHeader, savedTime, serializeDoc } from '../model/file';
 import type { DocHeader } from '../model/file';
 import { newId } from '../model/ops';
@@ -129,7 +130,7 @@ export function fileNameFor(name: string): string {
   const short = Array.from(clean).slice(0, 80).join('').trim();
   // Names Windows keeps for devices, whatever their extension.
   const safe = /^(con|prn|aux|nul|com\d|lpt\d)$/i.test(short) ? `${short} project` : short;
-  return `${safe || 'Untitled'}.${FILE_EXTENSION}`;
+  return `${safe || tr('Untitled')}.${FILE_EXTENSION}`;
 }
 
 /** `Name.plastikcad`, or `Name (2).plastikcad` when a different file already has that name (compared ignoring case, as some file systems do). */
@@ -324,7 +325,7 @@ export class MemoryProjects implements ProjectStore {
 
   async read(key: string): Promise<string> {
     const text = this.records.get(key)?.text ?? this.trash.get(key)?.text ?? [...this.history.values()].flat().find((v) => v.key === key)?.text;
-    if (text === undefined) throw new Error('This project is gone.');
+    if (text === undefined) throw new Error(tr('This project is gone.'));
     return text;
   }
 
@@ -342,7 +343,7 @@ export class MemoryProjects implements ProjectStore {
 
   async discard(key: string): Promise<void> {
     const record = this.records.get(key);
-    if (!record) throw new Error('This project is gone.');
+    if (!record) throw new Error(tr('This project is gone.'));
     this.records.delete(key);
     this.trash.set(`trash:${key}`, record);
   }
@@ -353,7 +354,7 @@ export class MemoryProjects implements ProjectStore {
 
   async restore(key: string): Promise<string> {
     const record = this.trash.get(key);
-    if (!record) throw new Error('This project is gone.');
+    if (!record) throw new Error(tr('This project is gone.'));
     this.trash.delete(key);
     const back = `mem:${++this.serial}`;
     this.records.set(back, record);
@@ -433,7 +434,7 @@ function openDb(name: string): Promise<IDBDatabase> {
       }
     };
     open.onerror = () => reject(open.error);
-    open.onblocked = () => reject(new Error('The project storage is in use by another tab.'));
+    open.onblocked = () => reject(new Error(tr('The project storage is in use by another tab.')));
     open.onsuccess = () => resolve(open.result);
   });
 }
@@ -450,7 +451,7 @@ function transact<T>(name: string, mode: IDBTransactionMode, run: (tx: IDBTransa
         };
         tx.onerror = tx.onabort = () => {
           db.close();
-          reject(tx.error ?? new Error('The project could not be stored.'));
+          reject(tx.error ?? new Error(tr('The project could not be stored.')));
         };
       }),
   );
@@ -470,7 +471,7 @@ export class DbProjects implements ProjectStore {
 
   async read(key: string): Promise<string> {
     const text = await transact<string | undefined>(this.name, 'readonly', (tx) => tx.objectStore(TEXTS).get(key));
-    if (typeof text !== 'string') throw new Error('This project is gone.');
+    if (typeof text !== 'string') throw new Error(tr('This project is gone.'));
     return text;
   }
 
@@ -503,7 +504,7 @@ let parts: ProjectStore | null = null;
 
 /** The store projects are kept in; `setProjectStore` first, or there is none. */
 export function projectStore(): ProjectStore {
-  if (!current) throw new Error('The project storage is not ready yet.');
+  if (!current) throw new Error(tr('The project storage is not ready yet.'));
   return current;
 }
 
@@ -514,7 +515,7 @@ export function projectStore(): ProjectStore {
  * of its own in a browser) so that it never shows up as a project.
  */
 export function partStore(): ProjectStore {
-  if (!parts) throw new Error('The parts storage is not ready yet.');
+  if (!parts) throw new Error(tr('The parts storage is not ready yet.'));
   return parts;
 }
 

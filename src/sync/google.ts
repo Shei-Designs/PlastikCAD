@@ -11,6 +11,7 @@
 // client, which Play services finds by the app's package and signing key; the
 // id itself only says that the Android build is set up.
 import { asError } from '../errors';
+import { tr } from '../i18n';
 import * as platform from '../platform';
 
 const env = (name: string): string => (import.meta.env[name] as string | undefined) ?? '';
@@ -61,7 +62,7 @@ const ANDROID_TOKEN_MS = 50 * 60_000;
 
 /** Thrown when the account has to be linked again (the refresh token was revoked, or there never was one). */
 export class NeedsSignIn extends Error {
-  constructor(message = 'Sign in to Google Drive again.') {
+  constructor(message = tr('Sign in to Google Drive again.')) {
     super(message);
   }
 }
@@ -109,7 +110,7 @@ async function tokenRequest(fields: Record<string, string>): Promise<TokenRespon
   const json = (await response.json().catch(() => ({}))) as TokenResponse;
   if (!response.ok || !json.access_token) {
     if (json.error === 'invalid_grant') throw new NeedsSignIn();
-    throw new Error(json.error_description || json.error || `Google answered ${response.status}`);
+    throw new Error(json.error_description || json.error || tr('Google answered {status}', { status: response.status }));
   }
   return json;
 }
@@ -125,7 +126,7 @@ async function androidTokens(silent: boolean): Promise<Tokens> {
   } catch (e) {
     const { message } = asError(e);
     if (message === 'needs-sign-in') throw new NeedsSignIn();
-    if (message === 'cancelled') throw new Error('The sign-in was cancelled.');
+    if (message === 'cancelled') throw new Error(tr('The sign-in was cancelled.'));
     throw new Error(message);
   }
   return { access, refresh: '', expires: Date.now() + ANDROID_TOKEN_MS, email: null };
@@ -133,7 +134,7 @@ async function androidTokens(silent: boolean): Promise<Tokens> {
 
 /** Walks the user through the sign-in (the browser on desktop, Google's sheet on Android) and returns the tokens. */
 export async function signIn(): Promise<Tokens> {
-  if (!isConfigured()) throw new Error('Google Drive sync is not set up in this build.');
+  if (!isConfigured()) throw new Error(tr('Google Drive sync is not set up in this build.'));
   if (platform.isAndroid()) return androidTokens(false);
   const verifier = randomToken(48);
   const state = randomToken(16);
@@ -146,10 +147,10 @@ export async function signIn(): Promise<Tokens> {
     pending = null;
   }
   const redirect = session.redirect;
-  if (query.get('error')) throw new Error(query.get('error') === 'access_denied' ? 'The sign-in was cancelled.' : `Google refused the sign-in: ${query.get('error')}`);
-  if (query.get('state') !== state || !query.get('code')) throw new Error('The sign-in did not come back as expected. Try again.');
+  if (query.get('error')) throw new Error(query.get('error') === 'access_denied' ? tr('The sign-in was cancelled.') : tr('Google refused the sign-in: {error}', { error: String(query.get('error')) }));
+  if (query.get('state') !== state || !query.get('code')) throw new Error(tr('The sign-in did not come back as expected. Try again.'));
   const json = await tokenRequest({ grant_type: 'authorization_code', code: query.get('code')!, code_verifier: verifier, redirect_uri: redirect });
-  if (!json.refresh_token) throw new NeedsSignIn('Google gave no lasting access. Try signing in again.');
+  if (!json.refresh_token) throw new NeedsSignIn(tr('Google gave no lasting access. Try signing in again.'));
   return { access: json.access_token!, refresh: json.refresh_token, expires: Date.now() + (json.expires_in ?? 3600) * 1000, email: null };
 }
 

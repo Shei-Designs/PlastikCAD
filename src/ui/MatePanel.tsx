@@ -3,6 +3,7 @@
 // by the store's `mating` state, so it stays up while the view is orbited;
 // Escape or Cancel drops the preview.
 import { useEffect, useId, useState } from 'react';
+import { tr } from '../i18n';
 import { fixedMateTeeth, MATE_KIND_LABELS, mateKinds, mateOf, sourceTeeth } from '../parts/mates';
 import type { MateKind, MateRequest } from '../parts/mates';
 import type { Params } from '../parts/generators/types';
@@ -72,10 +73,10 @@ export function MatePanel() {
   const setCount = (v: number) => setTyped({ ...typed, [current]: v });
   const finish = (keep: boolean) => (keep ? void commitMate() : cancelMate());
   return (
-    <div className="mate-panel" role="dialog" aria-label="Mating gear">
-      <div className="array-title">Mating gear for {source.name}</div>
+    <div className="mate-panel" role="dialog" aria-label={tr('Mating gear')}>
+      <div className="array-title">{tr('Mating gear for {name}', { name: source.name })}</div>
       {kinds.length > 1 && (
-        <div className="segmented" role="radiogroup" aria-label="Kind of mate">
+        <div className="segmented" role="radiogroup" aria-label={tr('Kind of mate')}>
           {kinds.map((k) => (
             <button key={k} type="button" role="radio" aria-checked={k === current} className={k === current ? 'on' : ''} onClick={() => setKind(k)}>
               {MATE_KIND_LABELS[k]}
@@ -84,11 +85,11 @@ export function MatePanel() {
         </div>
       )}
       <div className="mate-pair">
-        <Figure label="Teeth" help={fixed !== null ? 'Taken from the bevel gear’s mating tooth count.' : undefined} value={teeth} min={current === 'rack' ? 2 : 5} max={400} integer disabled={fixed !== null} onChange={setCount} />
+        <Figure label={tr('Teeth')} help={fixed !== null ? tr('Taken from the bevel gear’s mating tooth count.') : undefined} value={teeth} min={current === 'rack' ? 2 : 5} max={400} integer disabled={fixed !== null} onChange={setCount} />
         {current !== 'rack' && (
           <Figure
-            label="Ratio"
-            help={worm ? 'Sets the ratio of wheel teeth to worm starts.' : "Sets the ratio of mate teeth to this gear's teeth."}
+            label={tr('Ratio')}
+            help={worm ? tr('Sets the ratio of wheel teeth to worm starts.') : tr("Sets the ratio of mate teeth to this gear's teeth.")}
             value={Number(formatNumber(mate.ratio, 3))}
             min={0.05}
             max={100}
@@ -99,15 +100,15 @@ export function MatePanel() {
           />
         )}
       </div>
-      <Figure label="Backlash" help="Sets how much thinner than ideal the mate's teeth are made." value={backlash} unit="mm" min={0} max={2} step={0.05} onChange={setBacklash} />
+      <Figure label={tr('Backlash')} help={tr("Sets how much thinner than ideal the mate's teeth are made.")} value={backlash} unit="mm" min={0} max={2} step={0.05} onChange={setBacklash} />
       <Figure
-        label={current === 'bevel' ? 'Extra mounting distance' : 'Extra center distance'}
+        label={current === 'bevel' ? tr('Extra mounting distance') : tr('Extra center distance')}
         help={
           current === 'ring'
-            ? 'Pulls the pinion this much further from the ring’s teeth.'
+            ? tr('Pulls the pinion this much further from the ring’s teeth.')
             : current === 'bevel'
-              ? 'Moves the mate this much further out along its own axis.'
-              : 'Pushes the mate this much further away than the ideal center distance.'
+              ? tr('Moves the mate this much further out along its own axis.')
+              : tr('Pushes the mate this much further away than the ideal center distance.')
         }
         value={extra}
         unit="mm"
@@ -116,7 +117,7 @@ export function MatePanel() {
         step={0.05}
         onChange={setExtra}
       />
-      <Figure label="Side" help="Sets the angle around this gear where the mate goes. 0° is +X, 90° is +Y." value={angle} unit="°" min={-360} max={360} onChange={setAngle} />
+      <Figure label={tr('Side')} help={tr('Sets the angle around this gear where the mate goes. 0° is +X, 90° is +Y.')} value={angle} unit="°" min={-360} max={360} onChange={setAngle} />
       {mate.note && <p className="field-note">{mate.note}</p>}
       {mate.warnings.map((w) => (
         <p key={w} className="field-note warn">
@@ -124,14 +125,18 @@ export function MatePanel() {
         </p>
       ))}
       <p className="field-note mate-figure">
-        {current === 'rack' ? 'Pitch line' : current === 'bevel' ? 'Cone distance' : 'Center distance'} {formatNumber(mate.center, 3)} mm
+        {current === 'rack'
+          ? tr('Pitch line {distance} mm', { distance: formatNumber(mate.center, 3) })
+          : current === 'bevel'
+            ? tr('Cone distance {distance} mm', { distance: formatNumber(mate.center, 3) })
+            : tr('Center distance {distance} mm', { distance: formatNumber(mate.center, 3) })}
       </p>
       <div className="mate-actions">
         <button type="button" className="chip" onClick={() => finish(false)}>
-          Cancel
+          {tr('Cancel')}
         </button>
         <button type="button" className="primary" disabled={busy} onClick={() => finish(true)}>
-          Accept
+          {tr('Accept')}
         </button>
       </div>
     </div>
