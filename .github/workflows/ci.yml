@@ -78,5 +78,9 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install mujoco gymnasium
+      # The cameras' pictures are drawn without a display: Mesa's software renderer stands in for one.
+      - run: sudo apt-get update && sudo apt-get install -y libosmesa6
       - run: pnpm install --frozen-lockfile
       - run: pnpm smoke:robots
+        env:
+          MUJOCO_GL: osmesa
