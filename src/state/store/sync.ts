@@ -8,7 +8,7 @@ import { openProjectStore, partStore, projectStore, TRASH_FOLDER } from '../proj
 import { initSync, linkAccount, requestSync, unlinkAccount } from '../../sync/sync';
 import type { DeletePlan, SyncReport } from '../../sync/engine';
 import { mergeDocs } from '../../sync/merge';
-import { fail, getState, isDirty, notify, resetHistory, set, setPrefs } from './core';
+import { fail, getState, isDirty, noteSync, notify, resetHistory, set, setPrefs } from './core';
 import { adopt, saveProject, scheduleAutosave } from './project';
 import { receiveFiles } from './importing';
 
@@ -34,6 +34,8 @@ export async function applySyncReport(report: SyncReport): Promise<void> {
   }
   for (const name of report.kept) said.push(`"${name}" was changed on two devices at once; both versions were kept.`);
   if (report.deletedLocally.length) said.push(`Deleted on another device: ${quoted(report.deletedLocally)}.${projectStore().discard ? ` Moved to the ${TRASH_FOLDER} folder.` : ''}`);
+  // Said now, and kept for the projects browser: a toast is gone in seconds, and these are things to know about.
+  noteSync(said);
   if (said.length) notify(said.join(' '));
   else if (report.downloaded.length) notify(`Synced ${report.downloaded.length === 1 ? `"${report.downloaded[0]}"` : `${report.downloaded.length} projects`} from Google Drive.`, 'ok');
 }
@@ -49,6 +51,7 @@ function applyPartsSyncReport(report: SyncReport): void {
   set({ partsEpoch: getState().partsEpoch + 1 });
   const said = report.kept.map((name) => `The part "${name}" was changed on two devices at once; both versions were kept.`);
   if (report.deletedLocally.length) said.push(`Parts deleted on another device: ${quoted(report.deletedLocally)}.${partStore().discard ? ` Moved to the ${TRASH_FOLDER} folder.` : ''}`);
+  noteSync(said);
   if (said.length) notify(said.join(' '));
 }
 

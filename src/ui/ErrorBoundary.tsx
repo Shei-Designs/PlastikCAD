@@ -1,6 +1,8 @@
 // A part of the window that threw while drawing itself is replaced by a short
 // word and a way on, instead of the whole window going blank. The rest of the
 // app keeps working around it.
+import { noteDiagnostic } from '../diagnostics';
+import { asError } from '../errors';
 import { Component } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 
@@ -56,6 +58,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: unknown, info: ErrorInfo): void {
     console.error(`The ${this.props.frame} failed to draw:`, error, info.componentStack);
+    noteDiagnostic('crash', `The ${this.props.frame} failed to draw: ${asError(error).message}${info.componentStack ? ` at${info.componentStack.split('\n').slice(0, 4).join(' <')}` : ''}`);
   }
 
   render(): ReactNode {

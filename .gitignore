@@ -46,6 +46,10 @@ src-tauri/gen/android/app/build
 .playwright-mcp/
 coverage/
 
+# Browser tests (pnpm e2e): traces of failed tests and the HTML report
+/e2e-results/
+/e2e-report/
+
 # Parts exported into the project folder while testing
 /*.stl
 /*.3mf

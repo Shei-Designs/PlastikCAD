@@ -205,7 +205,11 @@ export async function synchronize(local: ProjectStore, remote: Remote, state: Sy
   };
 
   const writeLocal = async (info: ProjectInfo | undefined, name: string, text: string): Promise<string> => {
-    if (info) await untouched(info);
+    if (info) {
+      await untouched(info);
+      // What is here goes into the project's earlier saves first: this is a replacement nobody on this device made.
+      await local.keep?.(info.key, true);
+    }
     const key = await local.write(info?.key ?? null, name, text);
     report.changedKeys.push(key);
     if (info && key !== info.key) report.movedKeys.push({ from: info.key, to: key });

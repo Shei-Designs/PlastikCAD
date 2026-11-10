@@ -111,7 +111,7 @@ beforeEach(async () => {
   // Leaving the previous test's project writes it to that test's store, not this one's.
   await store.startProject();
   kept = new projects.MemoryProjects();
-  projects.useProjectStore(kept);
+  projects.setProjectStore(kept);
 });
 
 afterEach(() => {
@@ -768,12 +768,19 @@ describe('projects', () => {
   });
 
   it('says everything a sync pass did in one notice', async () => {
+    store.dismissSyncNotes();
     store.addShape('box');
     await store.saveProject();
     await store.applySyncReport(synced({ kept: ['Plate', 'Lid'], deletedLocally: ['A', 'B', 'C', 'D'], downloaded: ['Lid'] }));
-    expect(store.getState().notice?.text).toBe('"Plate" was changed on two devices at once; both versions were kept. "Lid" was changed on two devices at once; both versions were kept. Deleted on another device: "A", "B", "C" and 1 more.');
+    expect(store.getState().notice?.text).toBe('"Plate" was changed on two devices at once; both versions were kept. "Lid" was changed on two devices at once; both versions were kept. Deleted on another device: "A", "B", "C" and 1 more. Moved to the Trash folder.');
     await store.applySyncReport(synced({ downloaded: ['Lid'] }));
     expect(store.getState().notice).toMatchObject({ kind: 'ok', text: 'Synced "Lid" from Google Drive.' });
+    // What mattered is kept for the projects browser after the toast has gone, each thing once, until dismissed.
+    expect(store.getState().syncNotes.length).toBe(3);
+    await store.applySyncReport(synced({ kept: ['Plate'] }));
+    expect(store.getState().syncNotes.length).toBe(3);
+    store.dismissSyncNotes();
+    expect(store.getState().syncNotes).toEqual([]);
   });
 
   it('stamps a rename of a project that is not open as a save, so that sync carries it', async () => {
@@ -788,6 +795,48 @@ describe('projects', () => {
     expect(after.name).toBe('Base plate');
     expect(after.revision).not.toBe(before.revision);
     expect(after.parent).toBe(before.revision);
+  });
+
+  it('deletes into the trash, puts a project back from it, and destroys only what is in it', async () => {
+    store.addShape('box');
+    store.renameProject('Plate');
+    await store.saveProject();
+    const key = store.getState().projectKey!;
+    expect(store.keepsTrash()).toBe(true);
+    expect(await store.deleteProject(key, 'Plate')).toBe(true);
+    // The open project went: the editor starts afresh, and the project waits in the trash.
+    expect(store.getState().projectKey).toBeNull();
+    expect(await store.listProjects()).toEqual([]);
+    const [trashed] = await store.listTrash();
+    expect(trashed.name).toBe('Plate');
+    await store.restoreProject(trashed.key);
+    expect((await store.listProjects()).map((p) => p.name)).toEqual(['Plate']);
+    expect(await store.listTrash()).toEqual([]);
+    // Emptying the trash leaves the projects alone.
+    expect(await store.emptyTrash()).toBe(true);
+    expect((await store.listProjects()).length).toBe(1);
+  });
+
+  it('keeps an earlier save when a project is saved again, and opens it as a project of its own', async () => {
+    store.addShape('box');
+    store.renameProject('Plate');
+    await store.saveProject();
+    const key = store.getState().projectKey!;
+    const id = store.getState().doc.id;
+    expect(await store.listVersions(id)).toEqual([]);
+    // The second save replaces the first, which is kept.
+    store.addShape('sphere');
+    await store.saveProject();
+    const [version] = await store.listVersions(id);
+    expect(version).toBeDefined();
+    await store.openVersion(version, 'Plate');
+    // The earlier save, with its one object, as another project; the project itself still has two.
+    expect(scene().length).toBe(1);
+    expect(store.getState().projectKey).not.toBe(key);
+    expect(store.getState().doc.id).not.toBe(id);
+    expect(store.getState().doc.name).toMatch(/^Plate \(.+\)$/);
+    expect(parseDoc(await kept.read(key)).scene.length).toBe(2);
+    expect((await store.listProjects()).length).toBe(2);
   });
 
   it('reports a failed save once and keeps the changes pending', async () => {

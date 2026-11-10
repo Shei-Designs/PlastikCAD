@@ -5,7 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { emptyDoc, parseDoc, serializeDoc } from '../model/file';
 import { makeShape, newId } from '../model/ops';
 import type { Doc } from '../model/types';
-import { MemoryProjects, usePartStore, useProjectStore } from '../state/projects';
+import { MemoryProjects, setPartStore, setProjectStore } from '../state/projects';
 import type { DeletePlan, MemorySyncState, RemoteFile, SyncReport } from './engine';
 
 /** One Drive account's app folder: its id, and the files in it and in its Parts folder. */
@@ -95,8 +95,8 @@ const design = (id: string, name: string, x = 0): Doc => ({ ...emptyDoc(), id, n
 const folderAt = (location: string): MemoryProjects => Object.assign(new MemoryProjects(), { location });
 /** Puts the projects in `store`, with the parts in memory beside them rather than in a folder on disk. */
 const keepIn = (store: MemoryProjects): void => {
-  useProjectStore(store);
-  usePartStore(new MemoryProjects());
+  setProjectStore(store);
+  setPartStore(new MemoryProjects());
 };
 
 let local: MemoryProjects;

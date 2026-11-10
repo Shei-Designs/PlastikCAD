@@ -36,6 +36,7 @@ import { EyeIcon, EyeOffIcon, GhostIcon, ImportIcon, LockIcon, Logo, MenuIcon, M
 import { LONG_PRESS_MS } from '../viewer/gesture';
 import { RobotExport, RobotModeBar, RobotPanel } from './RobotPanel';
 import { CommitInput } from './Fields';
+import { useSyncStatus } from '../sync/sync';
 import { MOD } from './keys';
 import { MenuItem } from './Menu';
 import { kindOf } from './nodeKind';
@@ -62,13 +63,20 @@ function FileBar() {
   const [about, setAbout] = useState(false);
   const robot = useEditor((s) => s.robot);
   const status = saving ? 'Saving…' : dirty ? 'Changes not saved yet' : 'All changes saved';
+  // Sync's word shows on the way into the projects browser, where it is spelled out: a conflict or a deletion kept
+  // to be read, or sync itself in trouble.
+  const notes = useEditor((s) => s.syncNotes.length);
+  const sync = useSyncStatus();
+  const trouble = Boolean(sync.error) && !sync.busy;
+  const news = notes > 0 || trouble;
 
   return (
     <div className="file-bar">
       <span className={dirty || saving ? 'dirty-dot on' : 'dirty-dot'} title={status} role="status" aria-label={status} />
       <CommitInput className="doc-name" label="Project name" title="Project name" value={name} onCommit={renameProject} />
-      <button type="button" className="icon-button" title={`Projects (${MOD}O)`} aria-label="Projects" onClick={openProjects}>
+      <button type="button" className="icon-button" title={`Projects (${MOD}O)`} aria-label={news ? 'Projects: sync has something to say' : 'Projects'} onClick={openProjects}>
         <ProjectsIcon />
+        {news && <span className={trouble ? 'news-dot trouble' : 'news-dot'} />}
       </button>
       <button type="button" className={robot ? 'icon-button on' : 'icon-button'} title="Robot mode" aria-label="Robot mode" aria-pressed={robot} onClick={toggleRobotMode}>
         <RobotIcon />

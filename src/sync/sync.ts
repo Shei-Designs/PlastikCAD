@@ -3,6 +3,7 @@
 // every few minutes. Status is published for the UI; the editor is told what
 // changed under it. Nothing here knows about the editor's state.
 import { useSyncExternalStore } from 'react';
+import { noteDiagnostic } from '../diagnostics';
 import { asError } from '../errors';
 import { hasPartStore, hasProjectStore, partStore, projectStore } from '../state/projects';
 import { DriveRemote } from './drive';
@@ -65,11 +66,11 @@ const subscribe = (l: () => void) => {
 export const getSyncStatus = (): SyncStatus => status;
 export const useSyncStatus = (): SyncStatus => useSyncExternalStore(subscribe, () => status);
 
-function useTokens(next: Tokens | null): void {
+function setTokens(next: Tokens | null): void {
   tokens = next;
   saveTokens(next);
-  remote = next ? new DriveRemote(authorizedFetch(() => tokens, useTokens)) : null;
-  partsRemote = remote ? new DriveRemote(authorizedFetch(() => tokens, useTokens), PARTS_FOLDER, remote) : null;
+  remote = next ? new DriveRemote(authorizedFetch(() => tokens, setTokens)) : null;
+  partsRemote = remote ? new DriveRemote(authorizedFetch(() => tokens, setTokens), PARTS_FOLDER, remote) : null;
   publish({ linked: next !== null, email: next?.email ?? null });
 }
 
@@ -94,7 +95,7 @@ export function initSync(options: {
   onNotice = options.notice;
   beforeSync = options.flush;
   confirmDeletes = options.confirmDeletes ?? null;
-  useTokens(loadTokens());
+  setTokens(loadTokens());
   clearInterval(interval);
   interval = setInterval(() => void syncNow(), EVERY_MS);
   if (typeof window !== 'undefined') {
@@ -110,9 +111,9 @@ export async function linkAccount(): Promise<void> {
   publish({ busy: true, error: null });
   try {
     const fresh = await signIn();
-    useTokens(fresh);
+    setTokens(fresh);
     const who = await remote!.account().catch(() => null);
-    if (who?.email) useTokens({ ...fresh, email: who.email });
+    if (who?.email) setTokens({ ...fresh, email: who.email });
   } finally {
     publish({ busy: false });
   }
@@ -127,7 +128,7 @@ export async function unlinkAccount(): Promise<void> {
   clearTimeout(timer);
   await running;
   const old = tokens;
-  useTokens(null);
+  setTokens(null);
   await state?.clear();
   await partsState?.clear();
   saveBinding(STORES.projects, null);
@@ -218,7 +219,8 @@ async function pass(): Promise<SyncReport | null> {
   } catch (e) {
     if (e instanceof NeedsSignIn) {
       // The grant is gone (revoked from the Google account, say): said once, here and in the projects browser.
-      useTokens(null);
+      setTokens(null);
+      noteDiagnostic('sync', `Sign-in needed: ${e.message}`);
       publish({ busy: false, error: e.message });
       onNotice?.(`Google Drive sync stopped: ${e.message}`);
       return null;
@@ -226,6 +228,7 @@ async function pass(): Promise<SyncReport | null> {
     const message = asError(e).message;
     // Network trouble is not an error worth a red line; it will be tried again.
     const offline = /Failed to fetch|NetworkError|Load failed|network/i.test(message);
+    noteDiagnostic('sync', offline ? `Offline: ${message}` : message);
     publish({ busy: false, error: offline ? null : message, offline });
     return null;
   }

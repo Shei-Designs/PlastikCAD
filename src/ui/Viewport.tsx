@@ -571,12 +571,13 @@ export function Viewport() {
   useSyncExternalStore(sim.subscribe, sim.getRevision);
   const driven = sim.get();
   const simFrames = driven.status === 'ready' && driven.frames.size > 0 ? driven.frames : null;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the objects and the robot are what the drive depends on; a new name or thumbnail must not look it over again
   useEffect(() => sim.check(doc, robot), [doc.scene, doc.robot, robot]);
   const highlight = useEditor((s) => s.highlight);
   // The joint markers sit where the design has the joints; while the simulation moves the links they would mislead, so they rest.
   // The sensors ride their links instead, a lidar's rays reaching to what they read, so a tilt or a range can be judged on the move.
-  const marker = useMemo(() => (simFrames ? null : robotMarker(state)), [state.joint, state.sensor, state.doc, simFrames]);
-  const markers = useMemo(() => (simFrames ? drivenMarkers(state, simFrames, driven.readings) : robotMarkers(state)), [state.robot, state.joint, state.sensor, state.doc, state.prefs.robotMarkers, simFrames, driven.readings]);
+  const marker = useMemo(() => (simFrames ? null : robotMarker(state)), [state, simFrames]);
+  const markers = useMemo(() => (simFrames ? drivenMarkers(state, simFrames, driven.readings) : robotMarkers(state)), [state, simFrames, driven.readings]);
   // The picked camera's picture, from where the design has it or, while the test drive runs, from where the simulation carries it.
   const preview = useMemo(() => {
     if (!state.robot || !state.sensor) return null;
@@ -594,6 +595,7 @@ export function Viewport() {
     followed.current = at;
   }, [driven.base, simFrames]);
   // The store's own state is the one these were read from: the snap points follow the same four things.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- joint, sensor and doc are not read here but say when the store's state, which is, has changed
   const snaps = useMemo(() => (jointPick ? jointSnaps(getState()) : null), [jointPick, joint, sensor, doc]);
   // Measure mode: the picks and what they say, for the plate to draw and the bar to show.
   const measuring = useEditor((s) => s.measuring);
@@ -665,15 +667,17 @@ export function Viewport() {
       viewer.current = viewerRef.current = null;
     };
     // The viewer is created once; later option changes go through setOptions.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- made once, with the options as they stand then
   }, []);
 
   useEffect(() => {
     viewer.current?.setOptions({ theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap, align: aligning, highlight, snaps, marker, markers, ground, preview, measure, objectAxes });
   }, [prefs.theme, prefs.edges, prefs.grid, prefs.snap, aligning, highlight, snaps, marker, markers, ground, preview, measure, objectAxes]);
 
+  const carrying = Boolean(placing);
   useEffect(() => {
-    viewer.current?.setPlacing(Boolean(placing));
-  }, [Boolean(placing)]);
+    viewer.current?.setPlacing(carrying);
+  }, [carrying]);
 
   useEffect(() => {
     geometry.ensure(placing ? [...scene, placing] : scene, assets);
@@ -691,7 +695,7 @@ export function Viewport() {
     const list: ViewItem[] = shown.map((node) => ({ node, result: ready(node), selected: picked.has(node.id), ...(node.ghost ? { ghost: true } : {}) }));
     if (placing) list.push({ node: placing, result: ready(placing), selected: false, ghost: true });
     return list;
-    // `revision` changes when geometry arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `revision` is not read here: it changes when geometry arrives, which `ready` then finds
   }, [scene, selection, placing, revision, pose, simFrames]);
 
   useEffect(() => {
@@ -714,6 +718,7 @@ export function Viewport() {
       if (entry?.state === 'error') out.push(`${node.name}: ${entry.message}`);
     }
     return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `revision` changes when a build ends, well or badly
   }, [scene, revision]);
 
   return (

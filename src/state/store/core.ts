@@ -2,6 +2,7 @@
 // through: `set`, the undo history, gestures and notices. The state and the
 // history are private to this file; the other store modules read and change
 // them through what is exported here.
+import { noteDiagnostic } from '../../diagnostics';
 import { asError } from '../../errors';
 import { useSyncExternalStore } from 'react';
 import { emptyDoc } from '../../model/file';
@@ -85,6 +86,8 @@ export interface EditorState {
   highlight: { matrix: Mat; size: Vec3 } | null;
   prefs: Prefs;
   notice: Notice | null;
+  /** What sync did that should not go by unseen (a conflict kept as two projects, a deletion from another device): kept until dismissed in the projects browser. */
+  syncNotes: string[];
   /** Something slow is going on ("Grouping…"). */
   busy: string | null;
   canUndo: boolean;
@@ -126,6 +129,7 @@ let state: EditorState = {
   highlight: null,
   prefs: loadPrefs(),
   notice: null,
+  syncNotes: [],
   busy: null,
   canUndo: false,
   canRedo: false,
@@ -182,12 +186,21 @@ export const isDirty = (s: EditorState = state): boolean =>
 
 export function notify(text: string, kind: Notice['kind'] = 'info', action?: Notice['action']): void {
   clearTimeout(noticeTimer);
+  if (kind === 'error') noteDiagnostic('error', text);
   set({ notice: { kind, text, action } });
   // Longer with something to read twice or a button to reach.
   noticeTimer = setTimeout(() => set({ notice: null }), kind === 'error' || action ? 8000 : 3500);
 }
 
 export const dismissNotice = (): void => set({ notice: null });
+
+/** Keeps word from sync for the projects browser, the latest last, each said once. */
+export function noteSync(texts: string[]): void {
+  const notes = [...state.syncNotes.filter((t) => !texts.includes(t)), ...texts].slice(-20);
+  if (texts.length) set({ syncNotes: notes });
+}
+
+export const dismissSyncNotes = (): void => set({ syncNotes: [] });
 
 export const fail = (e: unknown): void => notify(asError(e).message, 'error');
 

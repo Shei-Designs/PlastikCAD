@@ -427,6 +427,23 @@ describe('what a pass must not destroy', () => {
     expect(state.records.get('project1')!.revision).toBe(v2.revision);
   });
 
+  it('keeps what a download or a merge replaces here as an earlier save of the project', async () => {
+    const v1 = design('project1', 'Plate', [box('a')]);
+    const key = await local.write(null, v1.name, serializeDoc(v1));
+    await sync();
+    expect(await local.versions('project1')).toEqual([]);
+    // Changed on the other device only: what was here is kept before the download takes its place.
+    remote.replace(edited(v1, [box('a', -5)]));
+    await sync();
+    const [kept] = await local.versions('project1');
+    expect(parseDoc(await local.read(kept.key)).revision).toBe(v1.revision);
+    expect(parseDoc(await local.read(key)).scene[0].pos[0]).toBe(-5);
+    // An upload replaces nothing here, and keeps nothing.
+    await local.write(key, 'Plate', serializeDoc(edited(parseDoc(await local.read(key)), [box('a', 2)])));
+    await sync();
+    expect((await local.versions('project1')).length).toBe(1);
+  });
+
   it('puts what was deleted elsewhere in the store\'s trash where it has one', async () => {
     const discarded: string[] = [];
     const withTrash = Object.assign(local, { discard: async (k: string) => void (discarded.push(k), await local.remove(k)) });

@@ -9,8 +9,8 @@ import * as platform from '../../platform';
 import { askName, tell } from '../../ui/ask';
 import type { PickedFile } from '../../platform';
 import { geometry } from '../geometry';
-import { DiskProjects, fileNameFor, hasProjectStore, partStore, projectStore, useProjectStore } from '../projects';
-import type { ProjectInfo } from '../projects';
+import { DiskProjects, fileNameFor, hasProjectStore, partStore, projectStore, setProjectStore } from '../projects';
+import type { ProjectInfo, VersionInfo } from '../projects';
 import { requestSync, withSyncPaused } from '../../sync/sync';
 import { abortAlignPreview, fail, getState, isDirty, notify, resetHistory, set, setPrefs } from './core';
 import type { EditorState } from './core';
@@ -121,7 +121,10 @@ async function write(fresh: boolean): Promise<boolean> {
   const stamp = { revision: newId(), parent: doc.revision, device: getState().prefs.device, saved: new Date().toISOString() };
   set({ saving: true });
   try {
-    const key = await projectStore().write(getState().projectKey, doc.name, serializeDoc({ ...doc, ...stamp, thumb }));
+    // The save about to be replaced is kept, now and then, as one to go back to; failing to keep it never stops a save.
+    const before = getState().projectKey;
+    if (before) await projectStore().keep?.(before).catch(() => {});
+    const key = await projectStore().write(before, doc.name, serializeDoc({ ...doc, ...stamp, thumb }));
     set({ projectKey: key, saved: base, saving: false, doc: { ...getState().doc, ...stamp, thumb } });
     if (getState().prefs.lastProject !== key) setPrefs({ lastProject: key });
     lastSaveError = null;
@@ -326,21 +329,91 @@ export async function listProjects(): Promise<ProjectInfo[]> {
   }
 }
 
+/** Deletes a project: into the trash where the store has one, to be put back or destroyed from there; for good where it has none. */
 export async function deleteProject(key: string, name: string): Promise<boolean> {
   try {
-    const sure = await platform.confirm(`Delete "${name}"? This cannot be undone.`, { title: APP_NAME, okLabel: 'Delete', cancelLabel: 'Keep' });
+    const store = projectStore();
+    const sure = store.discard
+      ? await platform.confirm(`Move "${name}" to the Trash?`, { title: APP_NAME, okLabel: 'Move to Trash', cancelLabel: 'Keep' })
+      : await platform.confirm(`Delete "${name}"? This cannot be undone.`, { title: APP_NAME, okLabel: 'Delete', cancelLabel: 'Keep' });
     if (!sure) return false;
     if (key === getState().projectKey) {
       // Nothing pending may write it back after it is gone.
       clearTimeout(autosaveTimer);
       await writing;
     }
-    await projectStore().remove(key);
+    await (store.discard ? store.discard(key) : store.remove(key));
     if (key === getState().projectKey) adopt(emptyDoc(), null);
+    requestSync();
     return true;
   } catch (e) {
     fail(e);
     return false;
+  }
+}
+
+/** Whether deleted projects go to a trash here, and earlier saves of each are kept. */
+export const keepsTrash = (): boolean => hasProjectStore() && projectStore().discarded !== undefined;
+export const keepsVersions = (): boolean => hasProjectStore() && projectStore().versions !== undefined;
+
+/** What is in the trash, the last saved first. */
+export async function listTrash(): Promise<ProjectInfo[]> {
+  try {
+    const items = (await projectStore().discarded?.()) ?? [];
+    return items.sort((a, b) => b.modified - a.modified || a.name.localeCompare(b.name));
+  } catch (e) {
+    fail(e);
+    return [];
+  }
+}
+
+/** Puts a project back from the trash among the projects. */
+export async function restoreProject(key: string): Promise<void> {
+  try {
+    await projectStore().restore?.(key);
+    requestSync();
+  } catch (e) {
+    fail(e);
+  }
+}
+
+/** Destroys one project in the trash, or with no key all of them, after asking. Resolves true when they are gone. */
+export async function emptyTrash(key?: string, name?: string): Promise<boolean> {
+  try {
+    const text = key ? `Delete "${name}" for good? Its earlier saves go with it. This cannot be undone.` : 'Delete everything in the Trash for good? This cannot be undone.';
+    if (!(await platform.confirm(text, { title: APP_NAME, okLabel: 'Delete', cancelLabel: 'Keep' }))) return false;
+    await projectStore().purge?.(key);
+    return true;
+  } catch (e) {
+    fail(e);
+    return false;
+  }
+}
+
+/** The earlier saves kept of a project, newest first. */
+export async function listVersions(id: string | null): Promise<VersionInfo[]> {
+  try {
+    return id ? ((await projectStore().versions?.(id)) ?? []) : [];
+  } catch (e) {
+    fail(e);
+    return [];
+  }
+}
+
+/** Opens an earlier save as a project of its own, named after the project and when it was saved; the project itself is left as it is. */
+export async function openVersion(version: VersionInfo, name: string): Promise<void> {
+  try {
+    if (!(await leaveProject())) return;
+    const store = projectStore();
+    const { revision: _revision, parent: _parent, ...doc } = parseDoc(await store.read(version.key));
+    const at = new Date(version.saved).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    const copy = { ...doc, id: newId(), name: `${name} (${at})` };
+    const key = await store.write(null, copy.name, serializeDoc(copy));
+    adopt(parseDoc(await store.read(key)), key);
+    set({ browsing: false });
+    requestSync();
+  } catch (e) {
+    fail(e);
   }
 }
 
@@ -363,7 +436,12 @@ export async function duplicateProject(key: string): Promise<string | null> {
 export async function renameProjectAt(key: string, name: string): Promise<void> {
   const clean = name.trim();
   if (!clean) return;
-  if (key === getState().projectKey) return renameProject(clean);
+  if (key === getState().projectKey) {
+    // Written at once, so that the browser lists it under its new name, in its renamed file.
+    renameProject(clean);
+    await saveProject();
+    return;
+  }
   try {
     const store = projectStore();
     const doc = parseDoc(await store.read(key));
@@ -415,10 +493,12 @@ async function moveProjectsFolder(storage: NonNullable<EditorState['storage']>, 
       const text = await old.read(item.key);
       const key = await fresh.write(null, item.name, text);
       await old.remove(item.key);
+      // Its earlier saves go with it.
+      if (item.id && old instanceof DiskProjects) await fresh.takeVersions(old, item.id);
       if (item.key === getState().projectKey) openKey = key;
     }
   }
-  useProjectStore(fresh);
+  setProjectStore(fresh);
   // The custom parts go with their projects.
   for (const item of parts) {
     await partStore().write(null, item.name, await oldParts.read(item.key));

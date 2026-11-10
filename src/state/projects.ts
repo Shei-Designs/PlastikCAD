@@ -42,13 +42,71 @@ export interface ProjectStore {
    * device, which sync carries over from another.
    */
   discard?(key: string): Promise<void>;
+  /** What was discarded, to be put back or destroyed. */
+  discarded?(): Promise<ProjectInfo[]>;
+  /** Puts a discarded project back among the projects, and returns the key it has there. */
+  restore?(key: string): Promise<string>;
+  /** Destroys a discarded project, or all of them, with the earlier saves kept of each. */
+  purge?(key?: string): Promise<void>;
+  /**
+   * Keeps the project as it is stored now, before it is written over: an
+   * earlier save to go back to. One is kept every few minutes of saving at
+   * most, unless `always`, for a replacement the user did not make (a sync).
+   */
+  keep?(key: string, always?: boolean): Promise<void>;
+  /** The earlier saves kept of a project, newest first. Each is read like a project, by its key. */
+  versions?(id: string): Promise<VersionInfo[]>;
+}
+
+/** An earlier save of a project, kept beside the projects. */
+export interface VersionInfo {
+  key: string;
+  /** When it was saved, in ms since the epoch. */
+  saved: number;
+  size: number;
 }
 
 const decoder = new TextDecoder();
 const encoder = new TextEncoder();
 
-/** Where a projects folder keeps what sync deleted from it, until the user empties it. */
+/** Where a projects folder keeps what was deleted from it, until the user empties it. */
 export const TRASH_FOLDER = 'Trash';
+/** Where it keeps earlier saves of its projects, a folder to each project's id. */
+export const HISTORY_FOLDER = 'History';
+/** How many earlier saves are kept of a project, how many of those are simply the latest, and how far apart those made by ordinary saving are. */
+export const KEEP_VERSIONS = 20;
+export const KEEP_LATEST = 12;
+export const KEEP_EVERY_MS = 10 * 60_000;
+
+/**
+ * Which earlier saves to let go of, given when each was made. The latest are
+ * all kept; further back one is kept a day (UTC), the last of that day, so
+ * that a long sitting does not push out the days before it; and the oldest go
+ * once there are more than are kept in all.
+ */
+export function versionsToDrop(saved: number[]): number[] {
+  const drop: number[] = [];
+  const days = new Set<number>();
+  let kept = 0;
+  for (const [i, time] of [...saved].sort((a, b) => b - a).entries()) {
+    const day = Math.floor(time / 86_400_000);
+    if (kept < KEEP_VERSIONS && (i < KEEP_LATEST || !days.has(day))) {
+      kept++;
+      days.add(day);
+    } else {
+      drop.push(time);
+    }
+  }
+  return drop;
+}
+
+/** A file name for an earlier save, which sorts by when it was saved: 20261110-135300 (UTC). */
+const stampName = (saved: number): string => `${new Date(saved).toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '-')}.${FILE_EXTENSION}`;
+/** When the save of that file name was made, or null if it is not one. */
+function stampTime(name: string): number | null {
+  const m = /^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})\./.exec(name);
+  return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : null;
+}
 
 /** The header of a project from its full text, for stores that keep whole texts. */
 function headerOf(text: string): DocHeader {
@@ -87,6 +145,7 @@ export function uniqueFileName(wanted: string, taken: Iterable<string>, own?: st
 }
 
 const baseName = (path: string): string => path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1);
+const folderOf = (path: string): string => path.slice(0, Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')));
 const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** Whether a file already carries a project name: the same name ignoring case, with or without the number a clash gave it. */
 const sameFile = (existing: string, wanted: string): boolean => {
@@ -101,8 +160,13 @@ export class DiskProjects implements ProjectStore {
 
   constructor(readonly location: string) {}
 
-  async list(): Promise<ProjectInfo[]> {
-    const entries = await platform.listDesigns(this.location);
+  list(): Promise<ProjectInfo[]> {
+    return this.listIn(this.location);
+  }
+
+  /** The designs in a folder, by their headers. */
+  private async listIn(dir: string): Promise<ProjectInfo[]> {
+    const entries = await platform.listDesigns(dir);
     const out: ProjectInfo[] = [];
     for (const entry of entries) {
       let cached = this.heads.get(entry.path);
@@ -117,7 +181,8 @@ export class DiskProjects implements ProjectStore {
       // written here: the moment of a sync or a copy, and after a device restore it has been seen to read 1970.
       out.push({ key: entry.path, id: cached.header.id, name: cached.header.name, revision: cached.header.revision, modified: cached.header.saved ?? entry.modified, size: entry.size, thumb: cached.header.thumb });
     }
-    for (const path of this.heads.keys()) if (!entries.some((e) => e.path === path)) this.heads.delete(path);
+    // What is gone from this folder is forgotten; headers of the other folders are left alone.
+    for (const path of this.heads.keys()) if (folderOf(path) === folderOf(join(dir, 'x')) && !entries.some((e) => e.path === path)) this.heads.delete(path);
     return out;
   }
 
@@ -172,26 +237,95 @@ export class DiskProjects implements ProjectStore {
     await platform.moveFile(key, join(this.trash, uniqueFileName(baseName(key), taken)));
     this.heads.delete(key);
   }
+
+  discarded(): Promise<ProjectInfo[]> {
+    return this.listIn(this.trash);
+  }
+
+  async restore(key: string): Promise<string> {
+    const taken = (await platform.listDesigns(this.location)).map((e) => e.name);
+    const back = join(this.location, uniqueFileName(baseName(key), taken));
+    await platform.moveFile(key, back);
+    this.heads.delete(key);
+    return back;
+  }
+
+  async purge(key?: string): Promise<void> {
+    const trashed = await this.discarded();
+    const gone = trashed.filter((item) => key === undefined || item.key === key);
+    // The earlier saves go with a project only when no project of that id is left, here or in the trash.
+    const left = new Set([...(await this.list()), ...trashed.filter((item) => !gone.includes(item))].map((item) => item.id));
+    for (const item of gone) {
+      await platform.removeFile(item.key);
+      this.heads.delete(item.key);
+      if (!item.id || left.has(item.id)) continue;
+      for (const version of await this.versions(item.id)) await platform.removeFile(version.key).catch(() => {});
+    }
+  }
+
+  /** When an earlier save was last kept of each project, by key, this session. */
+  private kept = new Map<string, number>();
+
+  async keep(key: string, always = false): Promise<void> {
+    const now = Date.now();
+    const last = this.kept.get(key);
+    if (!always && last !== undefined && now - last < KEEP_EVERY_MS) return;
+    // Nothing there yet (a project's first save), or nothing that says whose it is: nothing to keep.
+    const file = await platform.readPath(key).catch(() => null);
+    const header = file && readHeader(decoder.decode(file.bytes.subarray(0, HEAD_BYTES)));
+    if (!file || !header?.id) return;
+    this.kept.set(key, now);
+    const dir = join(join(this.location, HISTORY_FOLDER), header.id);
+    const name = stampName(header.saved ?? now);
+    const names = (await platform.listDesigns(dir)).map((e) => e.name);
+    if (!names.includes(name)) {
+      await platform.writePath(join(dir, name), file.bytes);
+      names.push(name);
+    }
+    const gone = new Set(versionsToDrop(names.map(stampTime).filter((t): t is number => t !== null)));
+    for (const old of names) if (gone.has(stampTime(old) ?? -1)) await platform.removeFile(join(dir, old)).catch(() => {});
+  }
+
+  /** Takes over the earlier saves another folder kept of a project, when its projects move here. */
+  async takeVersions(from: DiskProjects, id: string): Promise<void> {
+    for (const version of await from.versions(id)) await platform.moveFile(version.key, join(join(join(this.location, HISTORY_FOLDER), id), baseName(version.key))).catch(() => {});
+  }
+
+  async versions(id: string): Promise<VersionInfo[]> {
+    const entries = await platform.listDesigns(join(join(this.location, HISTORY_FOLDER), id));
+    return entries
+      .map((e) => ({ key: e.path, saved: stampTime(e.name), size: e.size }))
+      .filter((v): v is VersionInfo => v.saved !== null)
+      .sort((a, b) => b.saved - a.saved);
+  }
 }
 
 /** Projects kept in memory: for tests, and the fallback when no storage is available. */
 export class MemoryProjects implements ProjectStore {
   readonly location = null;
   readonly records = new Map<string, { name: string; text: string; modified: number }>();
+  /** What was discarded, and the earlier saves kept, as the folder on disk keeps them. */
+  readonly trash = new Map<string, { name: string; text: string; modified: number }>();
+  readonly history = new Map<string, { key: string; saved: number; text: string }[]>();
+  private kept = new Map<string, number>();
   private serial = 0;
   private clock = 0;
 
   async list(): Promise<ProjectInfo[]> {
-    return Array.from(this.records, ([key, r]) => {
+    return this.infos(this.records);
+  }
+
+  private infos(records: Map<string, { name: string; text: string; modified: number }>): ProjectInfo[] {
+    return Array.from(records, ([key, r]) => {
       const header = headerOf(r.text);
       return { key, id: header.id, name: r.name, revision: header.revision, modified: r.modified, size: r.text.length, thumb: header.thumb };
     });
   }
 
   async read(key: string): Promise<string> {
-    const record = this.records.get(key);
-    if (!record) throw new Error('This project is gone.');
-    return record.text;
+    const text = this.records.get(key)?.text ?? this.trash.get(key)?.text ?? [...this.history.values()].flat().find((v) => v.key === key)?.text;
+    if (text === undefined) throw new Error('This project is gone.');
+    return text;
   }
 
   async write(key: string | null, name: string, text: string): Promise<string> {
@@ -204,6 +338,50 @@ export class MemoryProjects implements ProjectStore {
 
   async remove(key: string): Promise<void> {
     this.records.delete(key);
+  }
+
+  async discard(key: string): Promise<void> {
+    const record = this.records.get(key);
+    if (!record) throw new Error('This project is gone.');
+    this.records.delete(key);
+    this.trash.set(`trash:${key}`, record);
+  }
+
+  async discarded(): Promise<ProjectInfo[]> {
+    return this.infos(this.trash);
+  }
+
+  async restore(key: string): Promise<string> {
+    const record = this.trash.get(key);
+    if (!record) throw new Error('This project is gone.');
+    this.trash.delete(key);
+    const back = `mem:${++this.serial}`;
+    this.records.set(back, record);
+    return back;
+  }
+
+  async purge(key?: string): Promise<void> {
+    const gone = (await this.discarded()).filter((item) => key === undefined || item.key === key);
+    for (const item of gone) this.trash.delete(item.key);
+    const left = new Set([...(await this.list()), ...(await this.discarded())].map((item) => item.id));
+    for (const item of gone) if (item.id && !left.has(item.id)) this.history.delete(item.id);
+  }
+
+  async keep(key: string, always = false): Promise<void> {
+    const record = this.records.get(key);
+    const header = record && headerOf(record.text);
+    const last = this.kept.get(key);
+    if (!record || !header?.id || (!always && last !== undefined && Date.now() - last < KEEP_EVERY_MS)) return;
+    this.kept.set(key, Date.now());
+    const saved = header.saved ?? record.modified;
+    const versions = this.history.get(header.id) ?? [];
+    if (!versions.some((v) => v.saved === saved)) versions.push({ key: `version:${header.id}:${saved}`, saved, text: record.text });
+    const gone = new Set(versionsToDrop(versions.map((v) => v.saved)));
+    this.history.set(header.id, versions.filter((v) => !gone.has(v.saved)).sort((a, b) => b.saved - a.saved));
+  }
+
+  async versions(id: string): Promise<VersionInfo[]> {
+    return (this.history.get(id) ?? []).map((v) => ({ key: v.key, saved: v.saved, size: v.text.length }));
   }
 }
 
@@ -323,7 +501,7 @@ const PARTS_DB = `${FILE_FORMAT}-parts`;
 let current: ProjectStore | null = null;
 let parts: ProjectStore | null = null;
 
-/** The store projects are kept in; `useProjectStore` first, or there is none. */
+/** The store projects are kept in; `setProjectStore` first, or there is none. */
 export function projectStore(): ProjectStore {
   if (!current) throw new Error('The project storage is not ready yet.');
   return current;
@@ -344,13 +522,13 @@ const PARTS_FOLDER = 'Parts';
 /** The folder custom parts go in, inside a projects folder. */
 export const partsDirOf = (projectsDir: string): string => join(projectsDir, PARTS_FOLDER);
 
-/** Parts follow the projects folder; a store without a folder gets a memory store for them until `usePartStore` says otherwise. */
-export function useProjectStore(store: ProjectStore): void {
+/** Parts follow the projects folder; a store without a folder gets a memory store for them until `setPartStore` says otherwise. */
+export function setProjectStore(store: ProjectStore): void {
   current = store;
   parts = store.location ? new DiskProjects(partsDirOf(store.location)) : new MemoryProjects();
 }
 
-export function usePartStore(store: ProjectStore): void {
+export function setPartStore(store: ProjectStore): void {
   parts = store;
 }
 
@@ -368,15 +546,15 @@ export async function openProjectStore(chosenDir: string | null): Promise<{ fixe
   if (platform.isDesktop()) {
     const home = await platform.defaultProjectsDir();
     const dir = home.fixed ? home.path : (chosenDir ?? home.path);
-    useProjectStore(new DiskProjects(dir));
+    setProjectStore(new DiskProjects(dir));
     return { fixed: home.fixed, defaultDir: home.path };
   }
   if (typeof indexedDB === 'undefined') {
-    useProjectStore(new MemoryProjects());
-    usePartStore(new MemoryProjects());
+    setProjectStore(new MemoryProjects());
+    setPartStore(new MemoryProjects());
     return { fixed: true, defaultDir: null };
   }
-  useProjectStore(new DbProjects());
-  usePartStore(new DbProjects(PARTS_DB));
+  setProjectStore(new DbProjects());
+  setPartStore(new DbProjects(PARTS_DB));
   return { fixed: true, defaultDir: null };
 }

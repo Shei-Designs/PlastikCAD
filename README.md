@@ -356,6 +356,26 @@ Android, projects live in the app's own storage, and a copy saved for sharing
 goes to `Download/PlastikCAD`. In a plain browser they are kept by the browser
 itself, per profile.
 
+On desktop and Android nothing is lost by a slip. A deleted project goes to
+the **Trash** (a `Trash` folder inside the projects folder), shown from the
+projects browser, to be put back or deleted for good; a project sync deletes
+because another device did goes there too. And a project keeps up to 20
+**versions**: the save about to be replaced is set aside every ten minutes
+of work, and always before a sync replaces a project with another device's.
+The latest twelve are all kept, and one a day further back, so a long
+sitting does not push out the days before it.
+*Versions…* on a project's card lists them, and *Open as a copy* brings one
+back as a project of its own, leaving the project as it is. Versions live in
+a `History` folder beside the projects and are not synced. A plain browser
+has neither.
+
+The projects button carries a dot when sync has left word (two versions kept
+after a conflict, a project deleted from another device) or is in trouble;
+the word itself is at the top of the projects browser until dismissed. *About*
+in the File menu has **Copy diagnostics**: the app's version, the device and
+the errors of the session, to paste into a bug report. Nothing is ever sent
+by the app itself.
+
 The app runs once: double-clicking a design while it is open hands the file
 to the window that is already there rather than start a second one on the
 same projects folder.
@@ -392,9 +412,8 @@ same way. A project deleted on one device is deleted on the others, unless it
 was changed there since, in which case it comes back.
 
 Sync is careful about what it removes. A project deleted on another device
-is not destroyed here: on desktop and Android it moves to a `Trash` folder
-inside the projects folder, which is yours to empty (bring one back with
-**Open project file…**); what is deleted from the Drive goes to the Drive's
+is not destroyed here: on desktop and Android it moves to the Trash (see
+[Projects](#projects)); what is deleted from the Drive goes to the Drive's
 own trash. A sync that would delete more than half of the projects at once,
 on either side, asks first and offers to keep them instead: that is what an
 emptied Drive folder or a projects folder gone missing looks like, far more
@@ -416,7 +435,8 @@ plain text like most desktop apps keep them; do not link on a shared account.
 A `.plastikcad` file is plain JSON, written to diff well: keys in a fixed order,
 one property per line, vectors on a single line. If you keep the projects
 folder in git, a change to one object shows up as a change to a few lines,
-plus the thumbnail line at the top (and `Trash/` belongs in `.gitignore`).
+plus the thumbnail line at the top (and `Trash/` and `History/` belong in
+`.gitignore`).
 
 ```json
 {
@@ -607,11 +627,13 @@ pnpm install
 pnpm tauri dev      # run the desktop app with hot reload
 pnpm dev            # or just the UI, in a browser at http://localhost:1430
 pnpm test           # model, geometry, part, file-format, sync and robot export tests (cargo test in src-tauri for the Rust side)
+pnpm e2e            # the app in a headless browser, with a mouse and with fingers (once: pnpm exec playwright install chromium)
 pnpm smoke:robots   # exports the reference robots and runs them in MuJoCo (pip install mujoco)
 pnpm smoke:ros      # the same in ROS 2 Jazzy, RViz (screenshots) and Gazebo, in Docker
 pnpm smoke:isaac    # the same in Isaac Sim through its URDF importer (ISAACSIM_PYTHON=~/isaacsim-env/bin/python)
 pnpm smoke:usd      # the exported Isaac Sim stages opened, played and driven over ROS 2 in Isaac Sim
 pnpm typecheck
+pnpm lint           # React hooks used wrongly, and a few plain mistakes the type checker does not see
 pnpm notices        # after adding or removing a dependency: writes public/THIRD-PARTY-NOTICES.txt again
 pnpm tauri build    # build installers into src-tauri/target/release/bundle
 pnpm tauri android build --apk   # the Android app, with the Tauri Android prerequisites installed
@@ -626,9 +648,10 @@ and `docs/banner.svg`; after a change, rasterize the tile at 1024 px
 included, with `pnpm tauri icon docs/brand/icon.json` — see
 [the Tauri docs](https://tauri.app/develop/icons/).
 
-Every push runs `.github/workflows/ci.yml`: the type check, the tests and the
+Every push runs `.github/workflows/ci.yml`: the type check, lint, the tests and the
 build, the Rust lints and tests, a compile of the native side on macOS and
-Windows, and the reference robots in MuJoCo. Pushing a `v*` tag runs
+Windows, the reference robots in MuJoCo, and the browser tests in `e2e/`
+(the report of a failed run is kept as an artifact). Pushing a `v*` tag runs
 `.github/workflows/release.yml`, which runs the tests again, then builds
 installers for all three platforms and attaches them to a draft GitHub
 release. The version number is set in `package.json`, `src-tauri/tauri.conf.json`
