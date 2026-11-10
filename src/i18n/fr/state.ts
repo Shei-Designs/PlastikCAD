@@ -4,17 +4,16 @@
 import type { Catalog } from '../index';
 
 export const state: Catalog = {
-  // What a newer version of the app put in a design (state/store/project.ts, exporting.ts, importing.ts, customParts.ts)
-  '{n} objects need a newer version of {app}: they are kept in the design, and not shown.': {
-    one: '{n} objet nécessite une version plus récente de {app}\u00a0: il est conservé dans la conception, sans être affiché.',
-    other: '{n} objets nécessitent une version plus récente de {app}\u00a0: ils sont conservés dans la conception, sans être affichés.',
+  // A project a newer version of the app saved, and the copy this one can open of it (state/store/project.ts)
+  'Made with a newer version': 'Créé avec une version plus récente',
+  '"{name}" was saved by a newer version of {app}. Update the app to open it as it is.': '«\u00a0{name}\u00a0» a été enregistré par une version plus récente de {app}. Mettez l’application à jour pour l’ouvrir tel quel.',
+  'This version can open a copy of it without {n} things it does not know. The project itself stays as it is.': {
+    one: 'Cette version peut en ouvrir une copie, sans {n} élément qu’elle ne connaît pas. Le projet lui-même reste inchangé.',
+    other: 'Cette version peut en ouvrir une copie, sans {n} éléments qu’elle ne connaît pas. Le projet lui-même reste inchangé.',
   },
-  'The robot needs a newer version of {app}: it is kept in the design, and cannot be worked on here.': 'Le robot nécessite une version plus récente de {app}\u00a0: il est conservé dans la conception et ne peut pas être modifié ici.',
-  '{n} objects that need a newer version of {app} are not in the export.': {
-    one: '{n} objet nécessitant une version plus récente de {app} n’est pas exporté.',
-    other: '{n} objets nécessitant une version plus récente de {app} ne sont pas exportés.',
-  },
-  'This part needs a newer version of {app}.': 'Cette pièce nécessite une version plus récente de {app}.',
+  'This version can open a copy of it. The project itself stays as it is.': 'Cette version peut en ouvrir une copie. Le projet lui-même reste inchangé.',
+  'Open a copy': 'Ouvrir une copie',
+  'Opened "{name}".': '«\u00a0{name}\u00a0» ouvert.',
 
   // The name of a new design (model/file.ts, state/projects.ts)
   Untitled: 'Sans titre',

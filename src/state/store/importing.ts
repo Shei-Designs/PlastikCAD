@@ -1,6 +1,6 @@
 // Files brought into the design: models, drawings and pictures as objects on
 // the plate, and a URDF as a robot.
-import { APP_NAME, isDesignName } from '../../appInfo';
+import { isDesignName } from '../../appInfo';
 import { plural, tr } from '../../i18n';
 import { encodeFloat32, encodeUint32 } from '../../io/base64';
 import { centerMesh, centerOutline, fileKind, IMAGE_EXTENSIONS, IMPORT_EXTENSIONS, importFile } from '../../io/import';
@@ -382,8 +382,6 @@ async function urdfCompanions(file: PickedFile, companions: PickedFile[]): Promi
  * takes the robot's name when it was empty and unnamed.
  */
 async function importRobot(file: PickedFile, companions: PickedFile[]): Promise<void> {
-  // The design's own robot is carried for a newer version (see `Foreign`): another cannot be laid over it.
-  if (getState().doc.foreign?.robot) return notify(tr('The robot needs a newer version of {app}: it is kept in the design, and cannot be worked on here.', { app: APP_NAME }), 'error');
   set({ busy: tr('Importing…') });
   await new Promise((r) => setTimeout(r, 30));
   try {

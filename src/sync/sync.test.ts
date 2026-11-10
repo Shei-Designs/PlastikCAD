@@ -455,29 +455,17 @@ describe('what a pass must not destroy', () => {
     expect(discarded.length).toBe(1);
   });
 
-  it('takes what a newer build saved, the object it does not know carried in it', async () => {
-    const v1 = design('project1', 'Plate', [box('a'), box('b')]);
+  it('names the project a newer build saved, and leaves this device\'s copy of it alone', async () => {
+    const v1 = design('project1', 'Plate', [box('a')]);
     const key = await local.write(null, v1.name, serializeDoc(v1));
     await sync();
-    const newer = edited(v1, [box('a', 3), box('b')]);
+    const newer = edited(v1, [box('a', 3)]);
     remote.replace(newer);
     const entry = [...remote.files.values()][0];
-    // The newer build made "b" something this one has never heard of.
-    entry.text = entry.text.replace(/("id": "b",\n {6}"type": "shape",\n {6}"name": "[^"]*",\n {6}"shape": )"box"/, '$1"hyperbox"');
-    expect(entry.text).toContain('"shape": "hyperbox"');
+    entry.text = entry.text.replace('"shape": "box"', '"shape": "hyperbox"');
     const report = await sync();
-    expect(report.errors).toEqual([]);
-    const mine = parseDoc(await local.read(key));
-    expect(mine.revision).toBe(newer.revision);
-    expect(mine.scene.map((n) => [n.id, n.pos[0]])).toEqual([['a', 3]]);
-    expect(mine.foreign?.nodes?.map((n) => n.raw.shape)).toEqual(['hyperbox']);
-    // Worked on here and synced back, the object goes with it, as the newer build wrote it.
-    const here = edited(mine, [box('a', 7)]);
-    await local.write(key, here.name, serializeDoc(here));
-    expect((await sync()).errors).toEqual([]);
-    const back = [...remote.files.values()][0].text;
-    expect(back).toContain('"shape": "hyperbox"');
-    expect(parseDoc(back).scene.map((n) => [n.id, n.pos[0]])).toEqual([['a', 7]]);
+    expect(report.errors.map(String)).toEqual(['Error: "Plate": This design was saved by a newer version of the app. Update to open it.']);
+    expect(parseDoc(await local.read(key)).revision).toBe(v1.revision);
   });
 });
 
@@ -529,52 +517,6 @@ describe('three-way merge', () => {
     expect(mergeDocs(b, fixed, fixed).conflicts).toBe(0);
     // Without a base there is no telling who changed it.
     expect(mergeDocs(null, rooted, fixed).conflicts).toBe(1);
-  });
-
-  /** An object a newer build made, as a design carries it (see `Foreign`). */
-  const carried = (id: string, after: string | null, spin = 1) => ({ raw: { id, type: 'hologram', spin }, after });
-
-  it('merges what is carried for a newer build like any other object, each taken from the side that changed it', () => {
-    const b: Doc = { ...base(), foreign: { nodes: [carried('h', 'a')] } };
-    // Here "a" was moved; there the newer build spun "h" and added "k".
-    const local: Doc = { ...b, scene: [box('a', 1), box('b'), box('c')] };
-    const remote: Doc = { ...b, foreign: { nodes: [carried('h', 'a', 2), carried('k', 'c')] } };
-    const { doc, conflicts } = mergeDocs(b, local, remote);
-    expect(conflicts).toBe(0);
-    expect(doc.scene.map((n) => [n.id, n.pos[0]])).toEqual([['a', 1], ['b', 0], ['c', 0]]);
-    expect(doc.foreign?.nodes).toEqual([carried('h', 'a', 2), carried('k', 'c')]);
-    // Deleted there, untouched here: it goes. Changed on both sides: a conflict, and this side's is kept.
-    expect(mergeDocs(b, local, { ...b, foreign: undefined }).doc.foreign).toBeUndefined();
-    expect(mergeDocs(b, { ...b, foreign: { nodes: [carried('h', 'a', 3)] } }, remote)).toMatchObject({ conflicts: 1, doc: { foreign: { nodes: [carried('h', 'a', 3), carried('k', 'c')] } } });
-    // The same on both sides is there once.
-    expect(mergeDocs(b, remote, remote).doc.foreign?.nodes?.length).toBe(2);
-  });
-
-  it('takes an object the other side made into something this build does not know, and carries the robot laid over it', () => {
-    const b: Doc = { ...base(), robot: { ...emptyRobot(), root: 'a' } };
-    // There "a", the robot's base, became a hologram; here "c" was moved.
-    const local: Doc = { ...b, scene: [box('a'), box('b'), box('c', 5)] };
-    const remote: Doc = { ...b, scene: [box('b'), box('c')], foreign: { nodes: [carried('a', null)] } };
-    const { doc, conflicts } = mergeDocs(b, local, remote);
-    expect(conflicts).toBe(0);
-    expect(doc.scene.map((n) => [n.id, n.pos[0]])).toEqual([['b', 0], ['c', 5]]);
-    expect(doc.foreign?.nodes).toEqual([carried('a', null)]);
-    expect(doc.robot).toBeUndefined();
-    expect(doc.foreign?.robot).toMatchObject({ root: 'a' });
-    // And back: an object carried here that the other side has as one this build knows is an object again.
-    const back = mergeDocs({ ...b, scene: remote.scene, foreign: remote.foreign }, { ...remote, robot: undefined }, { ...b, scene: [box('a', 9), box('b'), box('c')] });
-    expect(back.doc.scene.map((n) => n.id).sort()).toEqual(['a', 'b', 'c']);
-    expect(back.doc.foreign?.nodes).toBeUndefined();
-  });
-
-  it('takes a robot carried for a newer build from the side that has it, with the data and fields carried on either side', () => {
-    const b: Doc = { ...base(), robot: { ...emptyRobot(), root: 'a' } };
-    const remote: Doc = { ...b, robot: undefined, foreign: { robot: { root: 'a', base: 'hovering' }, assets: { 'voxels-1': { kind: 'voxels' } }, fields: { materials: { walnut: '#5a3d2b' } } } };
-    const { doc, conflicts } = mergeDocs(b, { ...b, scene: [box('a', 2), box('b'), box('c')] }, remote);
-    expect(conflicts).toBe(0);
-    expect(doc.robot).toBeUndefined();
-    expect(doc.foreign).toEqual(remote.foreign);
-    expect(doc.scene[0].pos[0]).toBe(2);
   });
 });
 

@@ -3,7 +3,7 @@
 // the folder projects are kept in. The stores themselves are in ../projects.
 import { APP_NAME, FILE_EXTENSION } from '../../appInfo';
 import { locale, plural, tr } from '../../i18n';
-import { emptyDoc, HEAD_BYTES, isUntitled, legacyVersions, parseDoc, readHeader, serializeDoc } from '../../model/file';
+import { emptyDoc, HEAD_BYTES, isUntitled, legacyVersions, NewerVersion, parseDoc, parseDocWithout, readHeader, serializeDoc } from '../../model/file';
 import { newId, regroup } from '../../model/ops';
 import type { Doc } from '../../model/types';
 import * as platform from '../../platform';
@@ -173,26 +173,6 @@ export function adopt(doc: Doc, key: string | null): void {
   setPrefs({ lastProject: key });
   // Lettering outlines are sent again as the fonts come back; imported meshes of the closed design are dropped.
   geometry.forgetAssets(Object.keys(doc.assets));
-  // What the design holds that this version cannot show is said once for each design, not at every sync that brings it in again.
-  const note = carriedNote(doc);
-  if (note && told !== `${doc.id}:${note}`) notify(note);
-  told = note ? `${doc.id}:${note}` : null;
-}
-
-/** The design, and what was said of it, that the user was last told holds something for a newer version. */
-let told: string | null = null;
-
-/**
- * What a design holds that a newer version of the app made and this one does not understand (see
- * `Foreign`), in words for the user; null when there is nothing of the kind.
- */
-export function carriedNote(doc: Doc): string | null {
-  const count = doc.foreign?.nodes?.length ?? 0;
-  const objects = count
-    ? plural(count, '{n} object needs a newer version of {app}: it is kept in the design, and not shown.', '{n} objects need a newer version of {app}: they are kept in the design, and not shown.', { app: APP_NAME })
-    : null;
-  const robot = doc.foreign?.robot ? tr('The robot needs a newer version of {app}: it is kept in the design, and cannot be worked on here.', { app: APP_NAME }) : null;
-  return objects && robot ? `${objects} ${robot}` : (objects ?? robot);
 }
 
 /** Writes what is pending before another project takes the screen; asks whether to go on if that fails. */
@@ -232,7 +212,14 @@ export async function openProject(key: string): Promise<void> {
     if (key === getState().projectKey) return set({ browsing: false });
     if (!(await leaveProject())) return;
     const text = await projectStore().read(key);
-    adopt(parseDoc(text), key);
+    let doc: Doc;
+    try {
+      doc = parseDoc(text);
+    } catch (e) {
+      if (e instanceof NewerVersion) return void (await openCopyOf(text));
+      throw e;
+    }
+    adopt(doc, key);
     set({ browsing: false });
     // A file saved before projects had ids was just given one: written back, so the folder knows it too.
     if (!readHeader(text.slice(0, HEAD_BYTES))?.id) {
@@ -242,6 +229,32 @@ export async function openProject(key: string): Promise<void> {
   } catch (e) {
     fail(e);
   }
+}
+
+/**
+ * A design a newer version of the app saved is not opened as it is: this version's next save of it
+ * would lose what it does not know (see `NewerVersion`). What can be had of it here is a copy, a
+ * project of its own, with those things left out. The user is told how many there are before
+ * choosing, and the design it was read from is left as it is. `fileName` names a design that
+ * has no name of its own.
+ */
+async function openCopyOf(text: string, fileName?: string): Promise<void> {
+  const { doc, left } = parseDocWithout(text);
+  const name = fileName && isUntitled(doc.name) ? fileName : doc.name;
+  const open = tr('Open a copy');
+  const newer = tr('"{name}" was saved by a newer version of {app}. Update the app to open it as it is.', { name, app: APP_NAME });
+  const copying = left
+    ? plural(left, 'This version can open a copy of it without {n} thing it does not know. The project itself stays as it is.', 'This version can open a copy of it without {n} things it does not know. The project itself stays as it is.')
+    : tr('This version can open a copy of it. The project itself stays as it is.');
+  if ((await tell({ title: tr('Made with a newer version'), text: `${newer} ${copying}`, actions: [open, tr('Cancel')] })) !== open) return;
+  if (!(await leaveProject())) return;
+  // A project of its own: a fresh id, and no revision to follow, so that sync never takes it for the one it came from.
+  const { revision: _revision, parent: _parent, device: _device, saved: _saved, ...rest } = doc;
+  const copy: Doc = { ...rest, id: newId(), name: tr('{name} copy', { name }) };
+  const key = await projectStore().write(null, copy.name, serializeDoc(copy));
+  adopt(parseDoc(await projectStore().read(key)), key);
+  set({ browsing: false });
+  notify(tr('Opened "{name}".', { name: copy.name }), 'ok');
 }
 
 export const baseName = (fileName: string): string => fileName.replace(/\.[^.]+$/, '');
@@ -255,7 +268,13 @@ export const folderOf = (path: string): string => path.slice(0, Math.max(path.la
  */
 export async function importProjectFile(file: PickedFile): Promise<void> {
   const text = new TextDecoder().decode(file.bytes);
-  const doc = parseDoc(text);
+  let doc: Doc;
+  try {
+    doc = parseDoc(text);
+  } catch (e) {
+    if (e instanceof NewerVersion) return openCopyOf(text, baseName(file.name));
+    throw e;
+  }
   if (isUntitled(doc.name)) doc.name = baseName(file.name);
   const store = projectStore();
   if (file.path && store.location && folderOf(file.path) === store.location.replace(/[\\/]+$/, '')) return openProject(file.path);
