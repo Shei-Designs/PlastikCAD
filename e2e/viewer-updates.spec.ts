@@ -1,6 +1,6 @@
 // The viewer does only what a change needs: pointing out a part restyles nothing, a look that
 // changes restyles each object once, and a drag redraws the view but not the toolbar.
-import { countRenders, countViewerCalls, edgesShown, expect, fitView, handles, openApp, pause, pointingBoxShown, renders, sceneIds, screenPoint, settled, store, test, viewerCalls } from './helpers';
+import { countRenders, countViewerCalls, edgesShown, expect, fitView, handles, openApp, pause, pointingBoxShown, renders, sceneIds, screenPoint, settled, store, test, viewerAtRest, viewerCalls } from './helpers';
 
 test.describe('what a change costs the viewer', { tag: '@mouse' }, () => {
   let box: string;
@@ -28,8 +28,7 @@ test.describe('what a change costs the viewer', { tag: '@mouse' }, () => {
       },
       box,
     );
-    await pause(page, 300);
-    await viewerCalls(page);
+    await viewerAtRest(page);
     for (let i = 0; i < 10; i++) {
       await store(page, (m, [id, i]) => m.setHighlight(i % 2 ? null : [id]), [box, i] as [string, number]);
       await pause(page, 30);
@@ -46,7 +45,7 @@ test.describe('what a change costs the viewer', { tag: '@mouse' }, () => {
 
   test('turning edges off restyles every object once, without a pass over the scene, and the edges go', async ({ page }) => {
     expect(await edgesShown(page), 'the edges start on show').toBe(true);
-    await viewerCalls(page);
+    await viewerAtRest(page);
     await store(page, (m) => m.setPrefs({ edges: false }));
     await pause(page, 200);
     expect(await viewerCalls(page)).toMatchObject({ style: 2, sync: 0 });
@@ -55,8 +54,7 @@ test.describe('what a change costs the viewer', { tag: '@mouse' }, () => {
 
   test('Object axes rebuilds the handle frame once without restyling, on the object\'s own axes', async ({ page }) => {
     await store(page, (m, id) => m.select([id]), box);
-    await pause(page, 200);
-    await viewerCalls(page);
+    await viewerAtRest(page);
     await store(page, (m) => m.toggleObjectAxes());
     await pause(page, 200);
     expect(await viewerCalls(page)).toMatchObject({ frame: 1, style: 0 });

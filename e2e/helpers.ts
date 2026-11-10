@@ -344,6 +344,26 @@ export function countViewerCalls(page: Page): Promise<void> {
   });
 }
 
+/**
+ * Waits until the viewer has come to rest: none of its costly steps counted over a short while.
+ * What an earlier change set going (a build arriving, edges being made) can land late on a slow
+ * machine, and would otherwise be counted against the change a test is about. The counts start
+ * again from zero.
+ */
+export async function viewerAtRest(page: Page): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        await viewerCalls(page);
+        await page.waitForTimeout(250);
+        const calls = await viewerCalls(page);
+        return calls.style + calls.sync + calls.frame + calls.measure;
+      },
+      { message: 'the viewer has come to rest', timeout: 30_000 },
+    )
+    .toBe(0);
+}
+
 /** The counts since the last call, which start again from zero. */
 export function viewerCalls(page: Page): Promise<ViewerCalls> {
   return page.evaluate(() => {
