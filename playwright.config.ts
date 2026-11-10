@@ -16,11 +16,12 @@ export default defineConfig({
   fullyParallel: true,
   // The view is drawn in software, and the gesture tests are timed (a finger held still is a long
   // press): a few workers, not one per core.
-  workers: CI ? 2 : 4,
+  workers: 4,
   forbidOnly: CI,
   retries: CI ? 1 : 0,
   timeout: 60_000,
-  expect: { timeout: 5_000 },
+  // The CI runners draw in software on few cores: what takes a moment here can take several there.
+  expect: { timeout: CI ? 20_000 : 5_000 },
   reporter: CI ? [['github'], ['list'], ['html', { outputFolder: 'e2e-report', open: 'never' }]] : [['list'], ['html', { outputFolder: 'e2e-report', open: 'never' }]],
   use: {
     baseURL: `http://localhost:${PORT}/`,

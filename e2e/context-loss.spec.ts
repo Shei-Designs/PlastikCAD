@@ -40,7 +40,8 @@ test.describe('a lost WebGL context', () => {
     await restoreContext(page);
     await expect.poll(async () => (await environment(page)).texture, 'a new environment is made').not.toBe(before.texture);
     expect((await environment(page)).inUse, 'and the scene uses it').toBe(true);
-    await expect.poll(() => brightness(page, p.cx, p.cy), 'the part is lit as before the loss').toBeGreaterThan(lit - 3);
+    // Rebuilding the environment and drawing with it again is the slowest thing the view does without a graphics card.
+    await expect.poll(() => brightness(page, p.cx, p.cy), { message: 'the part is lit as before the loss', timeout: 45_000 }).toBeGreaterThan(lit - 3);
     expect(await brightness(page, p.cx, p.cy)).toBeLessThan(lit + 3);
   });
 
