@@ -43,17 +43,23 @@ export const test = base.extend<{ errors: string[] }>({
 // --- the page -------------------------------------------------------------------
 
 /**
- * Runs `fn` in the page with some of the app's modules. After a source file changes, Vite serves
- * it under a `?t=` address, and a plain import of the path would make a second copy of the module
- * that the app does not use: the address the page itself loaded is looked up and imported instead.
- * `fn` goes over as its source, so it can use nothing but its arguments.
+ * Runs `fn` in the page with some of the app's modules. The tests run against a build of the app
+ * made for them, which puts the modules they use on the window (src/e2eHook.ts). Against the dev
+ * server the modules are imported instead: after a source file changes, Vite serves it under a
+ * `?t=` address, and a plain import of the path would make a second copy of the module that the
+ * app does not use, so the address the page itself loaded is looked up. `fn` goes over as its
+ * source, so it can use nothing but its arguments.
  */
 function withModules<R>(page: Page, paths: string[], fn: (...args: Internals[]) => unknown, arg?: unknown): Promise<R> {
   return page.evaluate(
     async ({ paths, source, arg }) => {
+      const built = (window as Internals).__plastikcadModules as Record<string, unknown> | undefined;
       const loaded = performance.getEntriesByType('resource').map((e) => e.name);
       const address = (path: string): string => loaded.findLast((name) => new URL(name).pathname === path) ?? path;
-      const modules = await Promise.all(paths.map((path) => import(/* @vite-ignore */ address(path))));
+      const served = document.querySelector('script[src*="/src/main.tsx"]') !== null;
+      // A build whose hook has not loaded yet has nothing to give: the caller asks again.
+      if (!built && !served) throw new Error('The app has not put its modules out for the tests yet.');
+      const modules = built ? paths.map((path) => built[path]) : await Promise.all(paths.map((path) => import(/* @vite-ignore */ address(path))));
       return (0, eval)(`(${source})`)(...modules, arg) as R;
     },
     { paths, source: fn.toString(), arg },
@@ -83,8 +89,9 @@ export async function openApp(page: Page): Promise<void> {
   // The page loads more files from Vite than the browser remembers by default (see `withModules`).
   await page.addInitScript(() => performance.setResourceTimingBufferSize(5000));
   await page.goto('/');
-  // On a fresh server the first load may reload itself once while Vite prepares the dependencies,
-  // which throws the question away: it is asked until the app answers.
+  // The app answers once it has started; on the dev server the first load may also reload itself
+  // once while Vite prepares the dependencies, which throws the question away. It is asked until
+  // the app answers.
   await expect(async () => {
     await expect(page.locator('.canvas-host canvas')).toBeVisible();
     const ready = await withModules<boolean>(page, [STORE, VIEWPORT], (m: Store, view: Internals) => m.getState().storage !== null && view.viewerRef.current !== null);
@@ -347,10 +354,12 @@ export function countViewerCalls(page: Page): Promise<void> {
 /**
  * Waits until the viewer has come to rest: none of its costly steps counted over a short while.
  * What an earlier change set going (a build arriving, edges being made) can land late on a slow
- * machine, and would otherwise be counted against the change a test is about. The counts start
- * again from zero.
+ * machine, and would otherwise be counted against the change a test is about. The save that
+ * follows a change by a second is made now for the same reason: its picture of the design is taken
+ * with nothing selected, which restyles what is. The counts start again from zero.
  */
 export async function viewerAtRest(page: Page): Promise<void> {
+  await store(page, (m) => m.saveProject());
   await expect
     .poll(
       async () => {

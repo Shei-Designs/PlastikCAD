@@ -192,19 +192,21 @@ export function Projects() {
   }, [synced, open, refresh]);
 
   // From the trash or a project's versions, Escape goes back to the projects first. One press reaches here twice on
-  // some engines, as the key and as the dialog's own cancel that follows it at once: the press is marked as dealt
-  // with until the engine is done with it, and the second is let go.
-  const dealtWith = useRef(false);
-  const takeEscape = (): boolean => {
-    if (dealtWith.current) return false;
-    dealtWith.current = true;
-    setTimeout(() => (dealtWith.current = false), 0);
-    return true;
+  // some engines, as the key and as the dialog's own cancel that follows it at once: the cancel of a key that was
+  // dealt with is let go. A key is never let go, so a second press works however soon it comes; and a cancel can come
+  // with no key at all (the back gesture on Android), so the mark does not outlast the press.
+  const keyed = useRef(false);
+  const escapeKeyed = (): void => {
+    keyed.current = true;
+    setTimeout(() => (keyed.current = false), 0);
   };
-  const escape = () => {
-    if (!takeEscape()) return;
+  const goBack = (): void => {
     if (view.kind === 'projects') closeProjects();
     else setView({ kind: 'projects' });
+  };
+  const cancelled = (): void => {
+    if (keyed.current) keyed.current = false;
+    else goBack();
   };
 
   const needle = query.trim().toLowerCase();
@@ -220,14 +222,15 @@ export function Projects() {
     <Modal
       open={open}
       onClose={closeProjects}
-      onEscape={escape}
+      onEscape={cancelled}
       className="projects"
       label="Projects"
       onKeyDown={(e) => {
         // The search box swallows Escape (it clears itself) before the dialog's cancel event can fire.
         if (e.key === 'Escape') {
           e.preventDefault();
-          escape();
+          escapeKeyed();
+          goBack();
         } else if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'n') {
           // The window's own shortcuts are kept out while the browser is open; this one is on its button.
           e.preventDefault();
@@ -297,7 +300,7 @@ export function Projects() {
         ) : (
           <ul className="projects-grid">
             {shown.map((item) => (
-              <Card key={item.key} item={item} current={item.key === currentKey} refresh={refresh} onVersions={keepsVersions() && item.id ? () => setView({ kind: 'versions', item }) : null} onRenameEscape={() => void takeEscape()} />
+              <Card key={item.key} item={item} current={item.key === currentKey} refresh={refresh} onVersions={keepsVersions() && item.id ? () => setView({ kind: 'versions', item }) : null} onRenameEscape={escapeKeyed} />
             ))}
           </ul>
         )}

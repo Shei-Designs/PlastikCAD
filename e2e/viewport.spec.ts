@@ -59,6 +59,9 @@ test.describe('the 3D view', () => {
     const [x, y] = await screenPoint(page, [0, 0, 20]);
     await page.mouse.move(x, y);
     await page.mouse.down();
+    // The capture asked for at the press is the canvas's from the pointer's next event on, and only a capture it
+    // has can be lost: a move too small to start a drag.
+    await page.mouse.move(x + 1, y);
     expect((await viewState(page)).drag).toBe('pending-move');
     const had = await page.evaluate(() => {
       const canvas = document.querySelector('.canvas-host canvas')!;
@@ -69,7 +72,7 @@ test.describe('the 3D view', () => {
     });
     expect(had, 'the canvas had the mouse captured').toBe(true);
     // The browser tells of the loss when the pointer next does something.
-    await page.mouse.move(x + 1, y);
+    await page.mouse.move(x + 2, y);
     await expect.poll(async () => (await viewState(page)).drag).toBeNull();
     await page.mouse.up();
     await store(page, (m) => m.select([]));

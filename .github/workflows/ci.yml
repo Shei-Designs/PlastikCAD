@@ -89,6 +89,8 @@ jobs:
   # The app in a browser: fingers and the mouse on the plate, the panels and menus, and the core flows.
   e2e:
     runs-on: ubuntu-22.04
+    # A run takes a few minutes. One that has not ended by now is stuck, and is stopped rather than left to the six-hour limit.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6

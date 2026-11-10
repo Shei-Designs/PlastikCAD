@@ -4,8 +4,12 @@ import process from "node:process";
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
-export default defineConfig(() => ({
+export default defineConfig(({ mode }) => ({
   plugins: [react()],
+  // A build made for the browser tests (`--mode e2e`) carries the hook they reach the app through; no other does.
+  define: { "import.meta.env.VITE_E2E": JSON.stringify(mode === "e2e") },
+  // That build also keeps the names of functions through minification: one test counts React's redraws by component name.
+  build: mode === "e2e" ? { rolldownOptions: { output: { keepNames: true } } } : undefined,
   worker: { format: "es" as const },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

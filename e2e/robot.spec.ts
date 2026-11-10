@@ -1,5 +1,6 @@
 // Robot mode with fingers. Robot mode is experimental and its panels are not being polished yet;
 // what is known to be wrong is written down here so that it is not forgotten.
+import { readFileSync } from 'node:fs';
 import { expect, openApp, settled, store, test } from './helpers';
 
 test.describe('robot mode on a tablet', { tag: '@touch' }, () => {
@@ -8,12 +9,16 @@ test.describe('robot mode on a tablet', { tag: '@touch' }, () => {
   // buttons are made larger. Left as it is until robot mode's panels are worked on.
   test.fixme('no control of the robot inspector or the sidebar sticks out of its panel', async ({ page }) => {
     await openApp(page);
-    // Vite serves the repository, fixtures included.
-    await store(page, async (m) => {
-      const bytes = new Uint8Array(await (await fetch('/fixtures/robots/rover.plastikcad')).arrayBuffer());
-      // Not waited for: the import ends in a "Project added" box that holds it until OK is pressed.
-      void m.receiveFiles([{ name: 'rover.plastikcad', path: null, bytes }]);
-    });
+    // The reference rover, read here and handed to the page: the built app does not serve the repository.
+    const rover = [...readFileSync(new URL('../fixtures/robots/rover.plastikcad', import.meta.url))];
+    await store(
+      page,
+      (m, bytes) => {
+        // Not waited for: the import ends in a "Project added" box that holds it until OK is pressed.
+        void m.receiveFiles([{ name: 'rover.plastikcad', path: null, bytes: new Uint8Array(bytes) }]);
+      },
+      rover,
+    );
     await page.getByRole('button', { name: 'OK' }).click();
     await expect.poll(() => store(page, (m) => m.getState().doc.robot?.joints.length ?? 0)).toBeGreaterThan(0);
     await settled(page);

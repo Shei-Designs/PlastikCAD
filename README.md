@@ -627,7 +627,7 @@ pnpm install
 pnpm tauri dev      # run the desktop app with hot reload
 pnpm dev            # or just the UI, in a browser at http://localhost:1430
 pnpm test           # model, geometry, part, file-format, sync and robot export tests (cargo test in src-tauri for the Rust side)
-pnpm e2e            # the app in a headless browser, with a mouse and with fingers (once: pnpm exec playwright install chromium)
+pnpm e2e            # builds the app and drives it in a headless browser, with a mouse and with fingers (once: pnpm exec playwright install chromium)
 pnpm smoke:robots   # exports the reference robots and runs them in MuJoCo (pip install mujoco)
 pnpm smoke:ros      # the same in ROS 2 Jazzy, RViz (screenshots) and Gazebo, in Docker
 pnpm smoke:isaac    # the same in Isaac Sim through its URDF importer (ISAACSIM_PYTHON=~/isaacsim-env/bin/python)

@@ -14,6 +14,9 @@ import './styles.css';
 // What goes wrong outside the app's own handling is noted for the report in the About box.
 watchWindow();
 
+// The browser tests' way in, in the build made for them and in no other (see e2eHook.ts).
+if (import.meta.env.VITE_E2E) void import('./e2eHook');
+
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     {/* The panels and the view each catch their own failures (see App); this one is for whatever is left. */}
