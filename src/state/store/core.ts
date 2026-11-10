@@ -164,7 +164,8 @@ export function set(patch: Partial<EditorState>): void {
 
 const sameIds = (a: string[], b: string[]): boolean => a.length === b.length && a.every((id, i) => id === b[i]);
 
-const subscribe = (listener: () => void) => {
+/** Calls `listener` after every change of the state; the function returned stops it. */
+export const subscribe = (listener: () => void) => {
   listeners.add(listener);
   return () => listeners.delete(listener);
 };

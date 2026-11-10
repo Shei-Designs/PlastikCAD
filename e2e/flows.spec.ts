@@ -2,7 +2,7 @@
 // a hole, a group, a gear and its mate, saving and reopening, every export format, and files
 // brought back in. None of it may put an error on the console.
 import type { Page } from '@playwright/test';
-import { cubeFile, drawnCount, dropFiles, expect, fileVersion, openApp, sceneCount, settled, store, storeAndProjects, test } from './helpers';
+import { cubeFile, drawnCount, dropFiles, expect, fileVersion, notices, openApp, sceneCount, settled, store, storeAndProjects, test } from './helpers';
 
 test.describe('core flows', { tag: '@mouse' }, () => {
   test.beforeEach(async ({ page }) => {
@@ -14,7 +14,7 @@ test.describe('core flows', { tag: '@mouse' }, () => {
     expect(errors, 'no page errors or console errors along the way').toEqual([]);
   });
 
-  const noErrorNotice = async (page: Page): Promise<void> => expect((await store(page, (m) => m.getState().notice))?.kind).not.toBe('error');
+  const noErrorNotice = async (page: Page): Promise<void> => expect((await notices(page)).filter((n) => n.kind === 'error'), 'nothing was said to have gone wrong').toEqual([]);
 
   /** A box with a cylinder cut out of it, grouped into one object. */
   async function boxWithHole(page: Page): Promise<void> {
@@ -98,7 +98,7 @@ test.describe('core flows', { tag: '@mouse' }, () => {
       const done = await store(page, (m, format) => m.exportDesign(format, false), format);
       expect(done, 'the export was not backed out of').toBe(true);
       expect((await download).suggestedFilename()).toBe(`Flows.${format}`);
-      expect(await store(page, (m) => m.getState().notice)).toMatchObject({ kind: 'ok', text: expect.stringContaining(`Flows.${format}`) });
+      await expect.poll(() => notices(page)).toContainEqual({ kind: 'ok', text: expect.stringContaining(`Flows.${format}`) });
     });
   }
 
@@ -109,7 +109,7 @@ test.describe('core flows', { tag: '@mouse' }, () => {
       { name: 'cube.3mf', bytes: await cubeFile(page, '3mf') },
     ]);
     await expect.poll(() => sceneCount(page)).toBe(2);
-    await expect.poll(() => store(page, (m) => m.getState().notice?.text ?? '')).toContain('bad.stl');
+    await expect.poll(() => notices(page)).toContainEqual({ kind: 'error', text: expect.stringContaining('bad.stl') });
     await settled(page);
     expect(await drawnCount(page)).toBe(2);
   });

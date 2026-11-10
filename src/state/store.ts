@@ -7,6 +7,7 @@
 export type { Notice, EditorState } from './store/core';
 export {
   getState,
+  subscribe,
   useEditor,
   isDirty,
   notify,

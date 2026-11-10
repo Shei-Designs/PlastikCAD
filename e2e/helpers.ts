@@ -102,7 +102,32 @@ export async function started(page: Page): Promise<void> {
     const ready = await withModules<boolean>(page, [STORE, VIEWPORT], (m: Store, view: Internals) => m.getState().storage !== null && view.viewerRef.current !== null);
     expect(ready).toBe(true);
   }).toPass({ timeout: 45_000 });
+  // Every notice the app puts up from here on is written down (see `notices`).
+  await withModules(page, [STORE], (m: Store) => {
+    const w = window as Internals;
+    if (w.__notices) return;
+    const seen: Notice[] = (w.__notices = []);
+    let last = m.getState().notice;
+    m.subscribe(() => {
+      const notice = m.getState().notice;
+      if (notice && notice !== last) seen.push({ kind: notice.kind, text: notice.text });
+      last = notice;
+    });
+  });
 }
+
+/** A notice the app put up: a word at the foot of the window that goes by itself after a few seconds. */
+export interface Notice {
+  kind: 'error' | 'info' | 'ok';
+  text: string;
+}
+
+/**
+ * Every notice the app has put up since it started, in order. A test looks here and not at the
+ * notice on show: that one goes after a few seconds of the app's own clock, which on a slow
+ * machine is before the test gets to it.
+ */
+export const notices = (page: Page): Promise<Notice[]> => page.evaluate(() => [...(((window as Internals).__notices as Notice[] | undefined) ?? [])]);
 
 /**
  * The pages whose clock stands still (see `stopClock`): time passes on them only as `pause` says.
