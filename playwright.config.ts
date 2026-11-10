@@ -18,17 +18,17 @@ export default defineConfig({
   // press): a few workers, not one per core, and on the CI runners no more workers than their two cores.
   workers: CI ? 2 : 4,
   forbidOnly: CI,
-  // The gesture tests run against the app's own clocks (a finger held still for a moment is a long press), and a
-  // runner that stalls between two steps of a gesture changes what the gesture is: such a test is tried again there,
-  // and the report lists it as flaky.
-  retries: CI ? 2 : 0,
+  // No test is tried twice, here or on CI: one that fails now and then says nothing when it fails, so a test must
+  // pass on a slow machine for the same reason it passes on a fast one (see `stopClock` in e2e/helpers.ts for how
+  // the timed gestures do).
+  retries: 0,
   timeout: 60_000,
   // The CI runners draw in software on few cores: what takes a moment here can take several there.
   expect: { timeout: CI ? 20_000 : 5_000 },
   reporter: CI ? [['github'], ['list'], ['html', { outputFolder: 'e2e-report', open: 'never' }]] : [['list'], ['html', { outputFolder: 'e2e-report', open: 'never' }]],
   use: {
     baseURL: `http://localhost:${PORT}/`,
-    trace: 'on-first-retry',
+    trace: 'retain-on-failure',
     actionTimeout: 10_000,
     launchOptions: {
       // WebGL without a GPU: ANGLE on SwiftShader, which headless Chromium otherwise refuses.

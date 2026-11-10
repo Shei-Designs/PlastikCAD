@@ -2,7 +2,7 @@
 // popover: the sheet and its backdrop are outside the popover, and must not count as a tap
 // beside it (which closes a popover and drops its preview).
 import type { Locator, Page } from '@playwright/test';
-import { expect, openApp, pause, plate, sceneCount, sceneIds, settled, store, tap, tapThrough, test, withoutKeyboard } from './helpers';
+import { expect, fingers, openApp, pause, plate, sceneCount, sceneIds, settled, store, tap, tapThrough, test, withoutKeyboard } from './helpers';
 
 test.describe('the entry sheet over a popover', { tag: '@touch' }, () => {
   const arrayPanel = (page: Page): Locator => page.locator('.array-panel');
@@ -97,7 +97,7 @@ test.describe('the entry sheet over a popover', { tag: '@touch' }, () => {
     await openArray(page);
     await expect.poll(() => sceneCount(page)).toBe(2);
     const p = await plate(page);
-    await page.touchscreen.tap(p.x + 80, p.y + p.height - 220);
+    await (await fingers(page)).tap(p.x + 80, p.y + p.height - 220);
     await expect(arrayPanel(page)).toHaveCount(0);
     await expect.poll(() => sceneCount(page)).toBe(1);
   });

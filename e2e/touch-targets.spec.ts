@@ -182,8 +182,8 @@ for (const viewport of [
       await settled(page);
       await expect(page.locator('.transform-box')).toBeVisible();
       // A trial tap: Playwright checks that a finger there would reach the control, and taps nothing.
-      await page.locator('.export-row .select-button').tap({ trial: true, timeout: 2000 });
-      await page.locator('.sidebar .import-button').tap({ trial: true, timeout: 2000 });
+      await page.locator('.export-row .select-button').tap({ trial: true });
+      await page.locator('.sidebar .import-button').tap({ trial: true });
     });
 
     test('the page itself does not scroll', async ({ page }) => {

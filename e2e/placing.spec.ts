@@ -28,10 +28,11 @@ test.describe('placing a shape with a finger', { tag: '@touch' }, () => {
   test('a tap on a library tile picks the shape up, and a tap on the plate puts it down', async ({ page }) => {
     const from = await centre(page.locator('.shape-grid .shape').first());
     const p = await plate(page);
-    await page.touchscreen.tap(from[0], from[1]);
+    const finger = await fingers(page);
+    await finger.tap(from[0], from[1]);
     await expect.poll(() => store(page, (m) => Boolean(m.getState().placing)), 'the tap picks the shape up').toBe(true);
     expect(await sceneCount(page), 'and puts nothing down yet').toBe(0);
-    await page.touchscreen.tap(p.x + 120, p.y + p.height - 260);
+    await finger.tap(p.x + 120, p.y + p.height - 260);
     await expect.poll(() => sceneCount(page), 'the tap on the plate puts it down').toBe(1);
     expect(await store(page, (m) => Boolean(m.getState().placing))).toBe(false);
   });
@@ -40,7 +41,7 @@ test.describe('placing a shape with a finger', { tag: '@touch' }, () => {
     const finger = await fingers(page);
     const from = await centre(page.locator('.shape-grid .shape').first());
     const p = await plate(page);
-    await page.touchscreen.tap(from[0], from[1]);
+    await finger.tap(from[0], from[1]);
     await expect.poll(() => store(page, (m) => Boolean(m.getState().placing))).toBe(true);
     const before = await viewState(page);
     const px = p.x + 120;
@@ -61,7 +62,7 @@ test.describe('placing a shape with a finger', { tag: '@touch' }, () => {
     expect(await store(page, (m) => Boolean(m.getState().placing)), 'the shape is still carried').toBe(true);
     expect((await viewState(page)).distance, 'the camera came closer').toBeLessThan(before.distance * 0.9);
     // The pinch has not used the shape up: the next tap still places it.
-    await page.touchscreen.tap(px, py);
+    await finger.tap(px, py);
     await expect.poll(() => sceneCount(page), 'the next tap puts the shape down').toBe(1);
   });
 });

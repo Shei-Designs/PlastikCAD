@@ -99,8 +99,48 @@ export async function openApp(page: Page): Promise<void> {
   }).toPass({ timeout: 45_000 });
 }
 
-/** Waits a moment, for what has no state to wait on (a gesture between two touches, a click that must do nothing). */
-export const pause = (page: Page, ms = 150): Promise<void> => page.waitForTimeout(ms);
+/**
+ * The pages whose clock stands still (see `stopClock`): time passes on them only as `pause` says.
+ */
+const stopped = new WeakSet<Page>();
+
+/**
+ * Stops the page's clock: its timers, its animation frames and the times its events carry are from
+ * then on the test's to move, with `pause`. The app tells gestures apart by time (a finger held
+ * still for a moment is a long press, two fingers down and up quickly are a tap), and a machine
+ * that stalls between two steps of a gesture would otherwise change what the gesture is. With the
+ * clock stopped, a gesture takes the time the test gives it, however long the machine takes.
+ */
+export async function stopClock(page: Page): Promise<void> {
+  if (stopped.has(page)) return;
+  // The clock is stopped at a time a little ahead of its own. If it has passed that time before it
+  // hears of it, it refuses: it is then asked again, with more to spare.
+  for (let ahead = 100; ; ahead *= 4) {
+    try {
+      await page.clock.pauseAt((await page.evaluate(() => Date.now())) + ahead);
+      break;
+    } catch (e) {
+      if (ahead > 30_000) throw e;
+    }
+  }
+  stopped.add(page);
+}
+
+/**
+ * Lets time pass for the page, for what has no state to wait on (a gesture between two touches, a
+ * click that must do nothing). On a page whose clock is stopped it is that clock that is moved on,
+ * by `ms` and no more.
+ */
+export async function pause(page: Page, ms = 150): Promise<void> {
+  if (stopped.has(page)) await page.clock.runFor(ms);
+  else await page.waitForTimeout(ms);
+}
+
+/** Waits until the page has drawn the frame after the next. */
+async function frames(page: Page): Promise<void> {
+  if (stopped.has(page)) await page.clock.runFor(40);
+  else await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+}
 
 /** Waits until every object of the design is built and drawn, and the frame after that is on screen. */
 export async function settled(page: Page): Promise<void> {
@@ -114,7 +154,7 @@ export async function settled(page: Page): Promise<void> {
       { message: 'every object is built and drawn', timeout: 20_000 },
     )
     .toBe(true);
-  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+  await frames(page);
 }
 
 /** The on-screen entry sheet is used for number boxes, as on a tablet with no keyboard attached. */
@@ -192,50 +232,64 @@ export interface Fingers {
   move(down: Finger[]): Promise<void>;
   /** A finger lifts; `down` lists those still on the screen. */
   end(down?: Finger[]): Promise<void>;
+  /** One finger down and up again at a point. */
+  tap(x: number, y: number): Promise<void>;
 }
 
 /**
- * What `fingers` runs in the page after it has sent a touch: the number of pointer events of fingers
- * the page has heard, once that has passed `seen`. A touch that moves nothing is not heard at all,
- * so the wait is a short one. The first call on a page starts the count.
+ * What `fingers` runs in the page: the number of pointer events of fingers the page has heard. The
+ * first call on a page starts the count.
  */
-const TOUCHES_HEARD = (seen: number): Promise<number> =>
-  new Promise((done) => {
-    const w = window as Internals;
-    if (w.__touchesHeard === undefined) {
-      w.__touchesHeard = 0;
-      // On the window, on the way down: before anything in the app hears the same event.
-      for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) {
-        window.addEventListener(type, (e) => void ((e as PointerEvent).pointerType === 'touch' && w.__touchesHeard++), true);
-      }
-      done(0);
-      return;
+const TOUCHES_HEARD = (): number => {
+  const w = window as Internals;
+  if (w.__touchesHeard === undefined) {
+    w.__touchesHeard = 0;
+    // On the window, on the way down: before anything in the app hears the same event.
+    for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) {
+      window.addEventListener(type, (e) => void ((e as PointerEvent).pointerType === 'touch' && w.__touchesHeard++), true);
     }
-    const until = performance.now() + 400;
-    const look = (): void => {
-      if (w.__touchesHeard > seen || performance.now() > until) done(w.__touchesHeard);
-      else setTimeout(look, 4);
-    };
-    look();
-  });
+  }
+  return w.__touchesHeard as number;
+};
 
 /**
  * Real touch events, through the browser's debugging protocol: several fingers at once, which
- * `page.touchscreen` cannot do. The protocol answers when the browser has taken a touch, which on a
- * busy machine is well before the page has heard it: each step here ends once the page has, so what
- * a test does or looks at next comes after the touch and not beside it.
+ * `page.touchscreen` cannot do. Two things keep a gesture the same on a slow machine as on a fast
+ * one. The page's clock is stopped (see `stopClock`), so the time between two steps is what the
+ * test gives it with `pause`. And each step ends once the page has heard the touch: the protocol
+ * answers when the browser has taken it, which can be well before.
  */
 export async function fingers(page: Page): Promise<Fingers> {
   const cdp = await page.context().newCDPSession(page);
-  let seen = await page.evaluate(TOUCHES_HEARD, -1);
+  await stopClock(page);
+  let seen = await page.evaluate(TOUCHES_HEARD);
+  let last = '';
   const send = async (type: 'touchStart' | 'touchMove' | 'touchEnd', down: Finger[]): Promise<void> => {
+    // A move that moves no finger is not told to the page: there is nothing to wait for.
+    const where = JSON.stringify(down);
+    const silent = type === 'touchMove' && where === last;
+    last = where;
     await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: down.map(([x, y, id]) => ({ x, y, id, radiusX: 4, radiusY: 4, force: 1 })) });
-    seen = await page.evaluate(TOUCHES_HEARD, seen);
+    if (silent) return;
+    const until = Date.now() + 15_000;
+    for (;;) {
+      const heard = await page.evaluate(TOUCHES_HEARD);
+      if (heard > seen) {
+        seen = heard;
+        return;
+      }
+      if (Date.now() > until) throw new Error(`The page did not hear the ${type}.`);
+    }
   };
   return {
     start: (down) => send('touchStart', down),
     move: (down) => send('touchMove', down),
     end: (down = []) => send('touchEnd', down),
+    tap: async (x, y) => {
+      await send('touchStart', [[x, y, 0]]);
+      await pause(page, 40);
+      await send('touchEnd', []);
+    },
   };
 }
 
@@ -286,7 +340,7 @@ export async function plate(page: Page): Promise<Plate> {
 /** Frames the design at once, with no animation to wait for. */
 export async function fitView(page: Page): Promise<void> {
   await viewer(page, (v) => v.fit(true));
-  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+  await frames(page);
 }
 
 export interface ViewState {
@@ -397,7 +451,7 @@ export async function viewerAtRest(page: Page): Promise<void> {
     .poll(
       async () => {
         await viewerCalls(page);
-        await page.waitForTimeout(250);
+        await pause(page, 250);
         const calls = await viewerCalls(page);
         return calls.style + calls.sync + calls.frame + calls.measure;
       },
