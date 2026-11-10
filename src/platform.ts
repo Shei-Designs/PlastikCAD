@@ -23,6 +23,13 @@ export function isDesktop(): boolean {
   return isTauri();
 }
 
+/** Whether there may be a system keychain to keep a secret in: the desktop app only (see `secret_read` in lib.rs). */
+export const hasKeychain = (): boolean => isTauri() && !isAndroid();
+/** The secret the app keeps in the system's keychain, or null when it keeps none. Rejects where there is no keychain to ask. */
+export const secretRead = (): Promise<string | null> => command<string | null>('secret_read');
+export const secretWrite = (secret: string): Promise<void> => command('secret_write', { secret });
+export const secretRemove = (): Promise<void> => command('secret_remove');
+
 /** A newer version of the app, found among the releases. */
 export interface AppUpdate {
   version: string;

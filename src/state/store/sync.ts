@@ -153,7 +153,7 @@ export async function restoreSession(): Promise<void> {
     set({ storage: { location: projectStore().location, fixed, defaultDir } });
     // Edits made before the store was ready are written now.
     if (isDirty()) scheduleAutosave();
-    initSync({ device: getState().prefs.device, flush: () => saveProject(true), changed: applySyncReport, partsChanged: applyPartsSyncReport, notice: (text) => notify(text, 'error'), confirmDeletes: confirmSyncDeletes });
+    void initSync({ device: getState().prefs.device, flush: () => saveProject(true), changed: applySyncReport, partsChanged: applyPartsSyncReport, notice: (text) => notify(text, 'error'), confirmDeletes: confirmSyncDeletes });
     // The desktop app as it is installed looks for a newer version of itself; one run from the source tree has none to find.
     if (platform.updatesItself() && !import.meta.env.DEV) lookForUpdateQuietly();
     const opened = await platform.startupFiles();

@@ -458,8 +458,13 @@ are not.
 
 Unlinking stops the syncing, tells Google the app no longer has access, and
 leaves the projects where they are, here and in the Drive. While linked, the
-sign-in tokens are kept in the app's own browser storage on the device, in
-plain text like most desktop apps keep them; do not link on a shared account.
+desktop app keeps the sign-in in the system's keychain (the Keychain on
+macOS, the Credential Manager on Windows, GNOME Keyring or KWallet on Linux),
+where the system guards it; one kept by an earlier version in the app's own
+storage is moved there at the next start. On a Linux session with no keychain
+running it stays in the app's own storage, in plain text, and so it does in
+the Android app, whose sign-in lasts an hour at a time: do not link on a
+shared account there. The About box's report says which it is.
 
 A `.plastikcad` file is plain JSON, written to diff well: keys in a fixed order,
 one property per line, vectors on a single line. If you keep the projects

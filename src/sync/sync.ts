@@ -67,9 +67,10 @@ const subscribe = (l: () => void) => {
 export const getSyncStatus = (): SyncStatus => status;
 export const useSyncStatus = (): SyncStatus => useSyncExternalStore(subscribe, () => status);
 
-function setTokens(next: Tokens | null): void {
+/** `keep` is false for the sign-in as it was just read from where it is kept. */
+function setTokens(next: Tokens | null, keep = true): void {
   tokens = next;
-  saveTokens(next);
+  if (keep) void saveTokens(next);
   remote = next ? new DriveRemote(authorizedFetch(() => tokens, setTokens)) : null;
   partsRemote = remote ? new DriveRemote(authorizedFetch(() => tokens, setTokens), PARTS_FOLDER, remote) : null;
   publish({ linked: next !== null, email: next?.email ?? null });
@@ -89,21 +90,26 @@ export function initSync(options: {
   notice: (text: string) => void;
   flush: () => Promise<unknown>;
   confirmDeletes?: (plan: DeletePlan, what: 'projects' | 'parts') => Promise<boolean>;
-}): void {
+}): Promise<void> {
   device = options.device;
   onChanged = options.changed;
   onPartsChanged = options.partsChanged;
   onNotice = options.notice;
   beforeSync = options.flush;
   confirmDeletes = options.confirmDeletes ?? null;
-  setTokens(loadTokens());
   clearInterval(interval);
   interval = setInterval(() => void syncNow(), EVERY_MS);
   if (typeof window !== 'undefined') {
     window.addEventListener('online', () => void syncNow());
     window.addEventListener('focus', () => requestSync(1000));
   }
-  if (tokens) requestSync(2000);
+  // The sign-in is read from where it is kept, which on desktop is the system's keychain and takes a moment: the
+  // promise is for that. One made meanwhile (the user linking straight away) stands.
+  return loadTokens().then((kept) => {
+    if (tokens) return;
+    setTokens(kept, false);
+    if (tokens) requestSync(2000);
+  });
 }
 
 /** Signs in and runs a first pass. Rejects with a message fit to show. */

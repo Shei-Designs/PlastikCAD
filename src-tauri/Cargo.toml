@@ -43,3 +43,6 @@ strip = true
 tauri-plugin-single-instance = "2"
 # Finds a newer version among the releases, checks it against the key in tauri.conf.json, and installs it.
 tauri-plugin-updater = "2"
+# The system's keychain, where the Google sign-in is kept: the Keychain on macOS, the Credential Manager on Windows,
+# the Secret Service (GNOME Keyring, KWallet) on Linux, spoken to in Rust alone, with no system library to link.
+keyring = { version = "3", features = ["apple-native", "windows-native", "async-secret-service", "tokio", "crypto-rust"] }

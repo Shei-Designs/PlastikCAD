@@ -9,6 +9,7 @@ const encoder = new TextEncoder();
 let clock = 1000;
 
 vi.mock('../platform', () => ({
+  hasKeychain: () => false,
   isDesktop: () => true,
   listDesigns: async (dir: string): Promise<DesignEntry[]> =>
     Array.from(files, ([path, bytes]) => ({ path, name: path.slice(dir.length + 1), size: bytes.length, modified: clock }))

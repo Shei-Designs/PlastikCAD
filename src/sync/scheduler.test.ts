@@ -30,8 +30,8 @@ vi.mock('./google', () => {
   return {
     NeedsSignIn,
     isConfigured: () => true,
-    loadTokens: () => cloud.tokens,
-    saveTokens: (tokens: unknown) => void (cloud.tokens = tokens),
+    loadTokens: async () => cloud.tokens,
+    saveTokens: async (tokens: unknown) => void (cloud.tokens = tokens),
     authorizedFetch: () => async () => new Response('{}'),
     signIn: async () => ({ access: 'a', refresh: 'r', expires: Number.MAX_SAFE_INTEGER, email: null }),
     cancelSignIn: () => {},
@@ -122,7 +122,7 @@ beforeEach(async () => {
   local = folderAt('/home/me/PlastikCAD');
   keepIn(local);
   for (const [id, name] of [['project1', 'A'], ['project2', 'B'], ['project3', 'C']]) await local.write(null, name, serializeDoc(design(id, name)));
-  sync.initSync({
+  await sync.initSync({
     device: 'device0a',
     flush: async () => true,
     changed: (report) => void reports.push(report),

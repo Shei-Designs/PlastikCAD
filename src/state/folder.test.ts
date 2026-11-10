@@ -15,6 +15,7 @@ vi.mock('./geometry', () => ({
 }));
 vi.mock('../ui/ask', () => ({ askName: async (o: { value: string }) => o.value, tell: async (o: { actions: string[] }) => o.actions[0] }));
 vi.mock('../platform', () => ({
+  hasKeychain: () => false,
   isDesktop: () => true,
   isAndroid: () => false,
   confirm: async () => moveThem,

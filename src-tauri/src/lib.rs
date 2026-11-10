@@ -640,6 +640,78 @@ fn opened_files(app: AppHandle) -> Vec<String> {
     std::mem::take(&mut *app.state::<Opened>().0.lock().unwrap())
 }
 
+/// What the app keeps in the system's keychain goes under its own name there; the one thing it keeps is the Google sign-in.
+#[cfg(desktop)]
+const KEYCHAIN_SERVICE: &str = "com.sheidesigns.plastikcad";
+#[cfg(desktop)]
+const SIGN_IN_ENTRY: &str = "google-drive";
+
+/// An entry of the app's in the system's keychain: read (nothing when there is none), written, removed (none there is no error).
+#[cfg(desktop)]
+mod keychain {
+    use super::KEYCHAIN_SERVICE;
+    use keyring::{Entry, Error, Result};
+
+    pub fn read(account: &str) -> Result<Option<String>> {
+        match Entry::new(KEYCHAIN_SERVICE, account)?.get_password() {
+            Ok(secret) => Ok(Some(secret)),
+            Err(Error::NoEntry) => Ok(None),
+            Err(err) => Err(err),
+        }
+    }
+
+    pub fn write(account: &str, secret: &str) -> Result<()> {
+        Entry::new(KEYCHAIN_SERVICE, account)?.set_password(secret)
+    }
+
+    pub fn remove(account: &str) -> Result<()> {
+        match Entry::new(KEYCHAIN_SERVICE, account)?.delete_credential() {
+            Err(Error::NoEntry) => Ok(()),
+            done => done,
+        }
+    }
+}
+
+/// A call to the keychain, off the thread the window runs on: the system may put a box up (to unlock the keychain) and wait on it.
+#[cfg(desktop)]
+async fn in_keychain<T: Send + 'static>(call: impl FnOnce() -> keyring::Result<T> + Send + 'static) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(move || call().map_err(|err| format!("Could not use the system keychain: {err}")))
+        .await
+        .map_err(|err| err.to_string())?
+}
+
+/// The sign-in kept in the system's keychain, or nothing when none is kept. An error when there is
+/// no keychain to ask (a Linux session without one, the Android app): the app then keeps the
+/// sign-in in its own storage, as it did before.
+#[tauri::command]
+async fn secret_read() -> Result<Option<String>, String> {
+    #[cfg(desktop)]
+    return in_keychain(|| keychain::read(SIGN_IN_ENTRY)).await;
+    #[cfg(mobile)]
+    Err("There is no system keychain here".into())
+}
+
+/// Keeps the sign-in in the system's keychain, in place of any that was there.
+#[tauri::command]
+async fn secret_write(secret: String) -> Result<(), String> {
+    #[cfg(desktop)]
+    return in_keychain(move || keychain::write(SIGN_IN_ENTRY, &secret)).await;
+    #[cfg(mobile)]
+    {
+        let _ = secret;
+        Err("There is no system keychain here".into())
+    }
+}
+
+/// Takes the sign-in out of the system's keychain.
+#[tauri::command]
+async fn secret_remove() -> Result<(), String> {
+    #[cfg(desktop)]
+    return in_keychain(|| keychain::remove(SIGN_IN_ENTRY)).await;
+    #[cfg(mobile)]
+    Err("There is no system keychain here".into())
+}
+
 /// Where the releases are: the one page `open_releases` opens.
 const RELEASES_PAGE: &str = "https://github.com/Shei-Designs/PlastikCAD/releases/latest";
 
@@ -708,7 +780,10 @@ pub fn run() {
             opened_files,
             can_self_update,
             relaunch,
-            open_releases
+            open_releases,
+            secret_read,
+            secret_write,
+            secret_remove
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
@@ -730,6 +805,27 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Against the real keychain of the session, so only where there is one: `cargo test -- --ignored keychain`.
+    /// It uses an entry of its own, never the sign-in's.
+    #[test]
+    #[ignore = "needs a system keychain (a desktop session); CI has none"]
+    #[cfg(desktop)]
+    fn keychain_keeps_reads_replaces_and_removes_an_entry() {
+        let entry = "test-round-trip";
+        keychain::remove(entry).unwrap();
+        assert_eq!(keychain::read(entry).unwrap(), None);
+        keychain::write(entry, "first, with \u{e9} and \"quotes\"").unwrap();
+        assert_eq!(keychain::read(entry).unwrap().as_deref(), Some("first, with \u{e9} and \"quotes\""));
+        // As long as a sign-in is: a refresh token, an access token and the rest, as JSON.
+        let long = "x".repeat(4000);
+        keychain::write(entry, &long).unwrap();
+        assert_eq!(keychain::read(entry).unwrap(), Some(long));
+        keychain::remove(entry).unwrap();
+        assert_eq!(keychain::read(entry).unwrap(), None);
+        // Removing what is not there is no error.
+        keychain::remove(entry).unwrap();
+    }
     use std::sync::atomic::AtomicUsize;
 
     static DIRS: AtomicUsize = AtomicUsize::new(0);

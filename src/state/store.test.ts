@@ -75,6 +75,7 @@ vi.mock('../platform', () => ({
   shareBytes: async () => {},
   realPath: async (path: string) => path,
   isAndroid: () => false,
+  hasKeychain: () => false,
   updatesItself: () => true,
   findAppUpdate: async () => {
     if (release === 'unreachable') throw new Error('no network');

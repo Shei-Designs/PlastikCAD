@@ -7,6 +7,7 @@ import { tr } from '../i18n';
 import { rich } from '../i18n/rich';
 import { isAndroid, isDesktop, updatesItself } from '../platform';
 import { getState, lookForUpdate, updateApp, useEditor } from '../state/store';
+import { signInKeptIn } from '../sync/google';
 import { getSyncStatus } from '../sync/sync';
 import { Logo } from './icons';
 import { Modal } from './Modal';
@@ -45,7 +46,7 @@ export function About({ open, onClose }: { open: boolean; onClose: () => void })
     return diagnosticsReport([
       `Platform: ${isAndroid() ? 'Android app' : isDesktop() ? 'desktop app' : 'browser'}`,
       `Projects: ${storage?.location ?? 'kept by the browser'}${projectKey ? '' : ' (no project open)'}`,
-      `Google Drive: ${!sync.configured ? 'not set up in this build' : sync.linked ? `linked${sync.error ? `, ${sync.error}` : ''}` : 'not linked'}`,
+      `Google Drive: ${!sync.configured ? 'not set up in this build' : sync.linked ? `linked, the sign-in kept in ${signInKeptIn() === 'keychain' ? 'the system keychain' : "the app's own storage"}${sync.error ? `, ${sync.error}` : ''}` : 'not linked'}`,
     ]);
   };
   const copy = async () => {

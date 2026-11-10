@@ -38,9 +38,10 @@ export interface Tokens {
 
 export const isConfigured = (): boolean => GOOGLE_CLIENT.id.length > 0;
 
-export function loadTokens(): Tokens | null {
+/** A sign-in as it was kept, if it is one. */
+function read(text: string | null): Tokens | null {
   try {
-    const raw = JSON.parse(localStorage.getItem(TOKENS_KEY) ?? 'null') as Partial<Tokens> | null;
+    const raw = JSON.parse(text ?? 'null') as Partial<Tokens> | null;
     if (!raw || typeof raw.access !== 'string' || typeof raw.refresh !== 'string' || typeof raw.expires !== 'number') return null;
     return { access: raw.access, refresh: raw.refresh, expires: raw.expires, email: typeof raw.email === 'string' ? raw.email : null };
   } catch {
@@ -48,13 +49,80 @@ export function loadTokens(): Tokens | null {
   }
 }
 
-export function saveTokens(tokens: Tokens | null): void {
+/** The sign-in in the app's own storage, which any program run by the same user can read. */
+function stored(): Tokens | null {
+  try {
+    return read(localStorage.getItem(TOKENS_KEY));
+  } catch {
+    return null;
+  }
+}
+
+function store(tokens: Tokens | null): void {
   try {
     if (tokens) localStorage.setItem(TOKENS_KEY, JSON.stringify(tokens));
     else localStorage.removeItem(TOKENS_KEY);
   } catch {
     // Without storage the sign-in lasts for the session.
   }
+}
+
+/**
+ * Whether the sign-in is kept in the system's keychain: null until it has been tried, false once
+ * it has failed (a Linux session with no keychain running), after which the app's own storage is
+ * used as it was before there was any other place.
+ */
+let keychain: boolean | null = null;
+
+/** Where the sign-in is kept, for the report in the About box. */
+export const signInKeptIn = (): 'keychain' | 'storage' => (keychain ? 'keychain' : 'storage');
+
+/**
+ * The sign-in that was kept, if any. The desktop app keeps it in the system's keychain (the
+ * Keychain on macOS, the Credential Manager on Windows, the Secret Service on Linux), where the
+ * system guards it. One left in the app's own storage by an earlier version is moved there the
+ * first time. Where there is no keychain (the Android app, whose tokens last an hour; a browser;
+ * a Linux session without one), it is kept in the app's own storage.
+ */
+export async function loadTokens(): Promise<Tokens | null> {
+  const here = stored();
+  if (!platform.hasKeychain()) return here;
+  try {
+    const there = read(await platform.secretRead());
+    keychain = true;
+    // In both places, after a time the keychain could not be reached: the later one is the one in use.
+    const kept = there && here ? (here.expires > there.expires ? here : there) : (there ?? here);
+    if (here) {
+      if (kept === here) await platform.secretWrite(JSON.stringify(here));
+      store(null);
+    }
+    return kept;
+  } catch {
+    keychain = false;
+    return here;
+  }
+}
+
+/** One at a time, in the order asked: a refreshed token must not be written over by the one before it. */
+let saving: Promise<void> = Promise.resolve();
+
+/** Keeps the sign-in, or forgets it (null), in the place `loadTokens` describes. */
+export function saveTokens(tokens: Tokens | null): Promise<void> {
+  saving = saving.then(async () => {
+    if (keychain !== false && platform.hasKeychain()) {
+      try {
+        if (tokens) await platform.secretWrite(JSON.stringify(tokens));
+        else await platform.secretRemove();
+        keychain = true;
+        store(null);
+        return;
+      } catch {
+        keychain = false;
+      }
+    }
+    store(tokens);
+  });
+  return saving;
 }
 
 /** Android: Play services' tokens are good for an hour; this is when one is given up for a fresh one. */
