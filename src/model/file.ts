@@ -11,7 +11,7 @@ import { GENERATORS, RENAMED_PARTS, getGenerator } from '../parts/generators';
 import { sanitizeParams } from '../parts/generators/types';
 import { newId, usedAssets } from './ops';
 import { TEXT_FONTS } from './types';
-import type { Asset, Doc, OutlineShape, PartParamValue, Scene, SceneNode, ShapeKind, Texture, Vec3 } from './types';
+import type { Asset, Doc, Foreign, ForeignNode, OutlineShape, PartParamValue, Scene, SceneNode, ShapeKind, Texture, Vec3 } from './types';
 import { COLLISION_KINDS, DRIVE_KINDS, JOINT_TYPES, SENSOR_KINDS, WORLDS, defaultSensor } from '../robot/types';
 import type { CollisionKind, Drive, DriveRole, JointType, MassSpec, Robot, RobotJoint, RobotLink, RobotSensor, SensorKind } from '../robot/types';
 
@@ -86,10 +86,40 @@ export function canonical(node: SceneNode): Record<string, unknown> {
 
 const sortKeys = <T>(o: Record<string, T>): Record<string, T> => Object.fromEntries(Object.keys(o).sort().map((k) => [k, o[k]]));
 
+/** The keys of imported data named anywhere in what is carried for a newer version: an object there may use data this version does know. */
+function usedByForeign(doc: Doc): Set<string> {
+  const used = new Set<string>();
+  const look = (value: unknown): void => {
+    if (typeof value === 'string') {
+      if (hasOwn(doc.assets, value)) used.add(value);
+    } else if (Array.isArray(value)) value.forEach(look);
+    else if (isRecord(value)) Object.values(value).forEach(look);
+  };
+  look(doc.foreign?.nodes?.map((n) => n.raw));
+  return used;
+}
+
 /** Imported data that nothing in the scene refers to any more is not written. */
 export function liveAssets(doc: Doc): Record<string, Asset> {
-  const used = usedAssets(doc.scene);
+  const used = usedAssets(doc.scene, usedByForeign(doc));
   return sortKeys(Object.fromEntries(Object.entries(doc.assets).filter(([key]) => used.has(key))));
+}
+
+/** The id of a carried object, when it has one a design could know it by. */
+export const foreignId = (node: ForeignNode): string | null => (typeof node.raw.id === 'string' ? node.raw.id : null);
+
+/**
+ * The scene as it is written: the objects of the design, with those carried for a newer version
+ * put back where the file had them, each after the object it followed. One whose neighbour is gone
+ * goes to the end.
+ */
+function sceneToWrite(doc: Doc): Record<string, unknown>[] {
+  const out: { id: string | null; record: Record<string, unknown> }[] = doc.scene.map((node) => ({ id: node.id, record: canonical(node) }));
+  for (const node of doc.foreign?.nodes ?? []) {
+    const at = node.after === null ? 0 : out.findIndex((o) => o.id === node.after) + 1;
+    out.splice(node.after !== null && at === 0 ? out.length : at, 0, { id: foreignId(node), record: node.raw });
+  }
+  return out.map((o) => o.record);
 }
 
 /**
@@ -108,10 +138,12 @@ export function serializeDoc(doc: Doc): string {
     device: doc.device,
     saved: doc.saved,
     thumb: doc.thumb,
-    scene: doc.scene.map(canonical),
-    assets: liveAssets(doc),
+    scene: sceneToWrite(doc),
+    assets: sortKeys({ ...liveAssets(doc), ...doc.foreign?.assets }),
     // After the scene: a robot's links carry "name" lines of their own, which must not pass for the header's.
-    robot: doc.robot ? canonicalRobot(doc.robot) : undefined,
+    robot: doc.foreign?.robot ?? (doc.robot ? canonicalRobot(doc.robot) : undefined),
+    // What a newer version keeps in the design itself, as it was read.
+    ...doc.foreign?.fields,
   };
   return pretty(file, 0) + '\n';
 }
@@ -177,27 +209,61 @@ const MAX_NESTING = 64;
 const NEWER = tr('This design was saved by a newer version of the app. Update to open it.');
 /**
  * From this version of the format on, a file is read strictly: a kind of
- * object, part, option or sensor this build does not know can only have come
- * from a newer build, and dropping it or putting a default in its place would
- * lose it for good at the next save and on every device that save syncs to.
- * Such a file is refused instead. Older files are read as they always were,
- * what they name that the app no longer has left out.
+ * object, part, option or sensor this build does not know, or a field it has
+ * no name for, can only have come from a newer build, and dropping it or
+ * putting a default in its place would lose it for good at the next save and
+ * on every device that save syncs to. What holds it (the object, the robot,
+ * the piece of imported data) is instead carried as it was read, in the
+ * design's `foreign`, and written back unchanged. Older files are read as they
+ * always were, what they name that the app no longer has left out.
  */
 const STRICT_FROM = 3;
 /** Whether the file being read is one to be strict with; set by `parseFile` for the reading that follows it. */
 let strict = false;
-/** A value that names one of a fixed set: itself when it is one, else undefined, or the file refused when that can only mean a newer build wrote it. */
+/** The keys of the imported data being carried for a newer version, in the file being read: an object that uses one is carried too. */
+let carriedAssets = new Set<string>();
+
+/** Thrown while reading one thing of a strict file that this build does not wholly understand; whoever reads the thing carries it instead. */
+class NotKnown extends Error {}
+
+/** A value that names one of a fixed set: itself when it is one, else undefined, or the thing it is in not understood when that can only mean a newer build wrote it. */
 function oneOf<T extends string>(value: unknown, known: (v: string) => boolean): T | undefined {
   if (typeof value !== 'string') return undefined;
   if (known(value)) return value as T;
-  if (strict) throw new Error(NEWER);
+  if (strict) throw new NotKnown();
   return undefined;
 }
+
+/** A record of a strict file may have these fields and no others: one with more is not understood. */
+function only(record: Record<string, unknown>, known: ReadonlySet<string>): void {
+  if (strict && Object.keys(record).some((key) => !known.has(key))) throw new NotKnown();
+}
+
+/** The fields this build writes for an object: those of `canonical`, whatever the object. */
+const NODE_FIELDS: ReadonlySet<string> = new Set(Object.keys(canonical({ id: '', name: '', pos: [0, 0, 0], rot: [0, 0, 0], size: [1, 1, 1], hole: false, color: '', type: 'shape', shape: 'box', params: {} })));
+const TEXTURE_FIELDS = new Set(['asset', 'mode', 'scale', 'turn']);
+const CURVE_FIELDS = new Set(['kind', 'angle', 'flip', 'thickness']);
+/** The fields this build writes for a robot and what is in it (see `canonicalRobot`; a test holds the two together). */
+export const ROBOT_FIELDS = {
+  robot: new Set(['root', 'base', 'links', 'joints', 'sensors', 'drive', 'control', 'world', 'scripts']),
+  link: new Set(['node', 'name', 'mass', 'collision', 'friction']),
+  mass: new Set(['kind', 'grams', 'material', 'infill', 'shell']),
+  joint: new Set(['id', 'name', 'type', 'parent', 'child', 'origin', 'axis', 'lower', 'upper', 'effort', 'velocity', 'damping', 'friction', 'mimic', 'motor']),
+  mimic: new Set(['joint', 'multiplier', 'offset']),
+  sensor: new Set(['id', 'name', 'kind', 'link', 'origin', 'rot', 'rate', 'camera', 'lidar']),
+  camera: new Set(['hfov', 'width', 'height', 'near', 'far']),
+  lidar: new Set(['samples', 'hfov', 'min', 'max']),
+  // `left` and `right` are how files once held the two sides of a differential drive.
+  drive: new Set(['kind', 'roles', 'left', 'right']),
+} as const;
+/** The fields of a design file itself. */
+const FILE_FIELDS = new Set(['format', 'version', 'units', 'id', 'name', 'revision', 'parent', 'device', 'saved', 'thumb', 'scene', 'assets', 'robot']);
 
 /** A text curve as saved, if it is one: a kind, an angle in range, a side and a thickness. */
 function curveOf(raw: unknown): TextCurve | null {
   if (!raw || typeof raw !== 'object') return null;
   const c = raw as Record<string, unknown>;
+  only(c, CURVE_FIELDS);
   const kind = oneOf<'bend' | 'arc'>(c.kind, (k) => k === 'bend' || k === 'arc');
   if (!kind) return null;
   const angle = typeof c.angle === 'number' && Number.isFinite(c.angle) ? clampAngle(c.angle) : null;
@@ -215,6 +281,9 @@ function vec3(v: unknown, fallback: Vec3, positive = false): Vec3 {
 function readNode(raw: unknown, assets: Record<string, Asset>, depth: number): SceneNode | null {
   if (!isRecord(raw) || typeof raw.id !== 'string') return null;
   if (depth > MAX_NESTING) throw new Error(tr('This design is nested too deeply.'));
+  only(raw, NODE_FIELDS);
+  // Imported data this build cannot read is carried, and so is whatever is made of it.
+  if (strict && ((typeof raw.asset === 'string' && carriedAssets.has(raw.asset)) || (isRecord(raw.texture) && typeof raw.texture.asset === 'string' && carriedAssets.has(raw.texture.asset)))) throw new NotKnown();
   const base = {
     id: raw.id,
     name: typeof raw.name === 'string' ? raw.name : tr('Object'),
@@ -250,6 +319,8 @@ function readNode(raw: unknown, assets: Record<string, Asset>, depth: number): S
     if (!shape) return null;
     const params = { ...defaultParams(shape) };
     if (isRecord(raw.params)) {
+      // A setting this build's shape does not have.
+      only(raw.params, new Set(Object.keys(params)));
       for (const key of Object.keys(params)) {
         const v = raw.params[key];
         if (typeof v === 'number' && Number.isFinite(v)) params[key] = v;
@@ -280,7 +351,8 @@ function readNode(raw: unknown, assets: Record<string, Asset>, depth: number): S
     }
     if (!oneOf(part, (id) => GENERATORS.some((g) => g.id === id))) return null;
     const def = getGenerator(part);
-    // A choice this build does not offer would come back as the first one that it does.
+    // A setting this build's part does not have would be dropped, and a choice it does not offer would come back as the first one that it does.
+    if (rawParams) only(rawParams, new Set(def.groups.flatMap((g) => g.params.map((d) => d.key))));
     for (const g of def.groups) for (const d of g.params) if (d.type === 'select') oneOf(rawParams?.[d.key], (v) => d.options.some((o) => o.value === v));
     return {
       ...base,
@@ -316,30 +388,57 @@ function readNode(raw: unknown, assets: Record<string, Asset>, depth: number): S
 /** A texture whose image is in the design; anything else is left off. */
 function readTexture(raw: unknown, assets: Record<string, Asset>): { texture: Texture } | null {
   if (!isRecord(raw) || typeof raw.asset !== 'string' || assets[raw.asset]?.kind !== 'image') return null;
+  only(raw, TEXTURE_FIELDS);
   const scale = typeof raw.scale === 'number' && Number.isFinite(raw.scale) && raw.scale > 0 ? raw.scale : 50;
   const turn = typeof raw.turn === 'number' && Number.isFinite(raw.turn) ? raw.turn : 0;
   return { texture: { asset: raw.asset, mode: oneOf<Texture['mode']>(raw.mode, (m) => m === 'tile' || m === 'own' || m === 'wrap') ?? 'wrap', scale, turn } };
 }
 
-function readScene(raw: unknown, assets: Record<string, Asset>, depth = 0): Scene {
+/**
+ * The objects of a file. One that this build does not wholly understand goes into `carried` as
+ * the file had it; inside a group there is nowhere to carry it, and it is the group that is not
+ * understood.
+ */
+function readScene(raw: unknown, assets: Record<string, Asset>, depth = 0, carried?: ForeignNode[]): Scene {
   if (!Array.isArray(raw)) return [];
   const seen = new Set<string>();
   const out: Scene = [];
+  /** The object before, in the file: where one that is carried is put back. */
+  let last: string | null = null;
   for (const item of raw) {
-    const node = readNode(item, assets, depth);
+    let node: SceneNode | null;
+    try {
+      node = readNode(item, assets, depth);
+    } catch (e) {
+      if (!(e instanceof NotKnown) || !carried || !isRecord(item)) throw e;
+      if (typeof item.id === 'string') {
+        if (seen.has(item.id)) continue;
+        seen.add(item.id);
+      }
+      carried.push({ raw: item, after: last });
+      if (typeof item.id === 'string') last = item.id;
+      continue;
+    }
     if (!node || seen.has(node.id)) continue;
     seen.add(node.id);
     out.push(node);
+    last = node.id;
   }
   return out;
 }
 
-function readAssets(raw: unknown): Record<string, Asset> {
+/** The imported data of a file. A piece of a kind this build does not know goes into `carried` as the file had it. */
+function readAssets(raw: unknown, carried: Record<string, unknown>): Record<string, Asset> {
   const out: Record<string, Asset> = {};
   if (!isRecord(raw)) return out;
   for (const [key, value] of Object.entries(raw)) {
     // Assigning this key would swap the prototype of `out` rather than add an asset.
     if (key === '__proto__' || !isRecord(value)) continue;
+    // The three kinds read below are all there are.
+    if (strict && typeof value.kind === 'string' && value.kind !== 'mesh' && value.kind !== 'outline' && value.kind !== 'image') {
+      carried[key] = value;
+      continue;
+    }
     if (value.kind === 'mesh' && typeof value.positions === 'string' && typeof value.triangles === 'string') {
       out[key] = { kind: 'mesh', positions: value.positions, triangles: value.triangles, ...(typeof value.uv === 'string' && value.uv ? { uv: value.uv } : {}) };
     } else if (value.kind === 'outline' && Array.isArray(value.shapes)) {
@@ -356,8 +455,6 @@ function readAssets(raw: unknown): Record<string, Asset> {
     } else if (value.kind === 'image' && typeof value.data === 'string' && (value.mime === 'image/png' || value.mime === 'image/jpeg')) {
       const px = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 1 ? Math.round(v) : 0);
       if (px(value.width) && px(value.height)) out[key] = { kind: 'image', name: typeof value.name === 'string' ? value.name : tr('Picture'), mime: value.mime, data: value.data, width: px(value.width), height: px(value.height) };
-    } else {
-      oneOf(value.kind, (k) => k === 'mesh' || k === 'outline' || k === 'image');
     }
   }
   return out;
@@ -374,6 +471,9 @@ function readSensors(raw: unknown, ids: Set<string>): RobotSensor[] {
   if (!Array.isArray(raw)) return out;
   for (const x of raw) {
     if (!isRecord(x) || typeof x.id !== 'string' || seen.has(x.id) || typeof x.link !== 'string' || !ids.has(x.link)) continue;
+    only(x, ROBOT_FIELDS.sensor);
+    if (isRecord(x.camera)) only(x.camera, ROBOT_FIELDS.camera);
+    if (isRecord(x.lidar)) only(x.lidar, ROBOT_FIELDS.lidar);
     const kind = oneOf<SensorKind>(x.kind, (k) => SENSORS.has(k));
     if (!kind) continue;
     seen.add(x.id);
@@ -403,6 +503,7 @@ function readSensors(raw: unknown, ids: Set<string>): RobotSensor[] {
 }
 
 function readMass(raw: unknown): MassSpec {
+  if (isRecord(raw)) only(raw, ROBOT_FIELDS.mass);
   if (isRecord(raw) && raw.kind === 'measured') return { kind: 'measured', grams: Math.max(0, finite(raw.grams, 0)) };
   const r = isRecord(raw) ? raw : {};
   oneOf(r.kind, (k) => k === 'material');
@@ -412,6 +513,7 @@ function readMass(raw: unknown): MassSpec {
 /** The drive of a file: its kind and each joint's role, or the two sides of the differential drive files once held. Undefined without a kind or a joint. */
 function readDrive(raw: unknown, joints: Set<string>): Drive | undefined {
   if (!isRecord(raw)) return undefined;
+  only(raw, ROBOT_FIELDS.drive);
   const roles: Record<string, DriveRole> = {};
   const kinds = DRIVE_KINDS.find((k) => k.id === oneOf(raw.kind, (id) => DRIVE_KINDS.some((d) => d.id === id)));
   if (kinds && isRecord(raw.roles)) {
@@ -429,12 +531,14 @@ function readDrive(raw: unknown, joints: Set<string>): Drive | undefined {
 /** The robot of a file, with anything that names an object the scene no longer has left off. Undefined when there is none. */
 function readRobot(raw: unknown, scene: Scene): Robot | undefined {
   if (!isRecord(raw)) return undefined;
+  only(raw, ROBOT_FIELDS.robot);
   const ids = new Set(scene.map((n) => n.id));
   const links: RobotLink[] = [];
   const seenLinks = new Set<string>();
   if (Array.isArray(raw.links)) {
     for (const l of raw.links) {
       if (!isRecord(l) || typeof l.node !== 'string' || !ids.has(l.node) || seenLinks.has(l.node)) continue;
+      only(l, ROBOT_FIELDS.link);
       seenLinks.add(l.node);
       links.push({
         node: l.node,
@@ -451,6 +555,8 @@ function readRobot(raw: unknown, scene: Scene): Robot | undefined {
     for (const j of raw.joints) {
       if (!isRecord(j) || typeof j.id !== 'string' || seenJoints.has(j.id)) continue;
       if (typeof j.parent !== 'string' || typeof j.child !== 'string' || !ids.has(j.parent) || !ids.has(j.child)) continue;
+      only(j, ROBOT_FIELDS.joint);
+      if (isRecord(j.mimic)) only(j.mimic, ROBOT_FIELDS.mimic);
       seenJoints.add(j.id);
       const axis = vec3(j.axis, [0, 0, 1]);
       joints.push({
@@ -513,12 +619,30 @@ const readThumb = (raw: unknown): string | undefined =>
 /** Throws an Error fit to show the user when the text is not a design file. */
 export function parseDoc(text: string): Doc {
   const raw = parseFile(text);
-  const assets = readAssets(raw.assets);
+  const foreign: Required<Foreign> = { nodes: [], robot: {}, assets: {}, fields: {} };
+  const assets = readAssets(raw.assets, foreign.assets);
+  carriedAssets = new Set(Object.keys(foreign.assets));
   const thumb = readThumb(raw.thumb);
-  const doc: Doc = { id: readId(raw.id), name: readName(raw.name, tr('Untitled')), scene: readScene(raw.scene, assets), assets };
+  const doc: Doc = { id: readId(raw.id), name: readName(raw.name, tr('Untitled')), scene: readScene(raw.scene, assets, 0, foreign.nodes), assets };
   if (thumb) doc.thumb = thumb;
-  const robot = readRobot(raw.robot, doc.scene);
+  let robot: Robot | undefined;
+  try {
+    // A robot laid over an object that is carried cannot be read without losing that part of it: it is carried whole.
+    if (strict && isRecord(raw.robot) && robotNamesAny(raw.robot, new Set(foreign.nodes.map(foreignId)))) throw new NotKnown();
+    robot = readRobot(raw.robot, doc.scene);
+  } catch (e) {
+    if (!(e instanceof NotKnown) || !isRecord(raw.robot)) throw e;
+    foreign.robot = raw.robot;
+  }
   if (robot) doc.robot = robot;
+  if (strict) for (const [key, value] of Object.entries(raw)) if (!FILE_FIELDS.has(key) && key !== '__proto__') foreign.fields[key] = value;
+  const kept: Foreign = {
+    ...(foreign.nodes.length ? { nodes: foreign.nodes } : {}),
+    ...(Object.keys(foreign.robot).length ? { robot: foreign.robot } : {}),
+    ...(Object.keys(foreign.assets).length ? { assets: foreign.assets } : {}),
+    ...(Object.keys(foreign.fields).length ? { fields: foreign.fields } : {}),
+  };
+  if (Object.keys(kept).length) doc.foreign = kept;
   const revision = readRevision(raw.revision);
   if (revision) doc.revision = revision;
   const parent = readRevision(raw.parent);
@@ -529,6 +653,13 @@ export function parseDoc(text: string): Doc {
   const saved = savedTime(raw.saved);
   if (saved !== null) doc.saved = new Date(saved).toISOString();
   return doc;
+}
+
+/** Whether a robot as a file has it is laid over any of these objects: as a link, at either end of a joint, under a sensor, or as its base. */
+export function robotNamesAny(robot: Record<string, unknown>, ids: Set<string | null>): boolean {
+  const named = (value: unknown): boolean => typeof value === 'string' && ids.has(value);
+  const some = (list: unknown, ...fields: string[]): boolean => Array.isArray(list) && list.some((item) => isRecord(item) && fields.some((field) => named(item[field])));
+  return named(robot.root) || some(robot.links, 'node') || some(robot.joints, 'parent', 'child') || some(robot.sensors, 'link');
 }
 
 const readRevision = (raw: unknown): string | null => (typeof raw === 'string' && /^[a-z0-9]{8,32}$/.test(raw) ? raw : null);
@@ -602,7 +733,8 @@ export function readHeader(head: string): DocHeader | null {
 export function legacyVersions(text: string): Doc[] {
   const raw = parseFile(text);
   if (raw.version !== 1 || !Array.isArray(raw.versions)) return [];
-  const assets = readAssets(raw.assets);
+  // A file of version 1 is not read strictly: nothing in it is carried.
+  const assets = readAssets(raw.assets, {});
   const name = readName(raw.name, tr('Untitled'));
   const out: Doc[] = [];
   for (const v of raw.versions) {

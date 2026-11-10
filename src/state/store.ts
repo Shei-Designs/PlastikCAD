@@ -102,6 +102,7 @@ export {
   cancelEditing,
 } from './store/groups';
 export {
+  carriedNote,
   docToSave,
   provideThumbnail,
   saveProject,

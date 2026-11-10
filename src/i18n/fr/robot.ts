@@ -414,6 +414,7 @@ export const robot: Catalog = {
   'NEMA 23 stepper': 'Pas à pas NEMA 23',
 
   // Fitting followers, and the export (state/store/robot.ts)
+  'The robot needs a newer version of {app}: it is kept in the design, and cannot be worked on here.': 'Le robot nécessite une version plus récente de {app}\u00a0: il est conservé dans la conception et ne peut pas être modifié ici.',
   'The linkage does not close over the whole range of this joint; narrow its limits and try again.': 'Le mécanisme ne se ferme pas sur toute la course de cette articulation\u00a0; resserrez ses limites et réessayez.',
   'No other joint moves with this one.': 'Aucune autre articulation ne bouge avec celle-ci.',
   '{names} now follow this joint exactly.': { one: '{names} suit maintenant cette articulation exactement.', other: '{names} suivent maintenant cette articulation exactement.' },

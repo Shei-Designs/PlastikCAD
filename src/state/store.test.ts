@@ -665,6 +665,36 @@ describe('projects', () => {
     expect(deleted).toEqual([]);
   });
 
+  it('opens a design holding what a newer build made, says so, and saves it back with that still in it', async () => {
+    store.addShape('box');
+    store.addShape('cylinder');
+    await store.saveProject();
+    // The file as a newer build might have left it: a shape this one has not got, and a robot that hovers.
+    const text = (await kept.read('mem:1')).replace('"shape": "cylinder"', '"shape": "hypercylinder"').replace(/\n}\n$/, ',\n  "robot": {\n    "base": "hovering"\n  }\n}\n');
+    await store.receiveFiles([{ name: 'future.plastikcad', path: '/elsewhere/future.plastikcad', bytes: new TextEncoder().encode(text) }]);
+    expect(store.getState().projectKey).toBe('mem:2');
+    expect(store.getState().doc.scene.map((n) => n.type === 'shape' && n.shape)).toEqual(['box']);
+    const note = '1 object needs a newer version of PlastikCAD: it is kept in the design, and not shown. The robot needs a newer version of PlastikCAD: it is kept in the design, and cannot be worked on here.';
+    expect(store.carriedNote(store.getState().doc)).toBe(note);
+    expect(store.getState().notice).toMatchObject({ kind: 'info', text: note });
+    // There is no robot here to work on, and making one would put it in the other's place.
+    store.toggleRobotMode();
+    expect(store.getState().robot).toBe(false);
+    expect(store.getState().notice).toMatchObject({ kind: 'error', text: 'The robot needs a newer version of PlastikCAD: it is kept in the design, and cannot be worked on here.' });
+    // The rest is worked on as ever, undone and redone, and saved: what is carried is still in the file.
+    store.addShape('sphere');
+    store.undo();
+    store.redo();
+    expect(await store.saveProject()).toBe(true);
+    const back = await kept.read('mem:2');
+    expect(back).toContain('"shape": "hypercylinder"');
+    expect(back).toContain('"base": "hovering"');
+    expect(parseDoc(back).scene.length).toBe(2);
+    expect(parseDoc(back).foreign).toEqual(parseDoc(text).foreign);
+    // A design with nothing of the kind has nothing to say.
+    expect(store.carriedNote(parseDoc(await kept.read('mem:1')))).toBeNull();
+  });
+
   it('opens a design file by its old extension too', async () => {
     store.addShape('box');
     await store.saveProject();

@@ -1893,6 +1893,12 @@ kbd {
   font-size: 12px;
 }
 
+/* What the design holds for a newer version of the app: said above the list, which has no rows for it. */
+.empty.carried {
+  margin-bottom: 8px;
+  color: var(--text);
+}
+
 .object {
   display: flex;
   align-items: center;

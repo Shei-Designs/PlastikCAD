@@ -9,6 +9,7 @@ import type { FormatId } from '../../io/export';
 import { exportGlb } from '../glbExport';
 import * as platform from '../../platform';
 import { askName, tell } from '../../ui/ask';
+import { APP_NAME } from '../../appInfo';
 import { plural, tr } from '../../i18n';
 import { geometry } from '../geometry';
 import { fail, getState, notify } from './core';
@@ -91,6 +92,9 @@ export async function exportDesign(formatId: FormatId, selectionOnly: boolean): 
   }
   const where = await platform.saveAs(`${name}.${format.extension}`, filters, bytes, format.mime);
   if (!where) return false;
+  // What is carried for a newer version (see `Foreign`) has no shape here to export.
+  const carried = selectionOnly ? 0 : (getState().doc.foreign?.nodes?.length ?? 0);
+  if (carried) warnings = [...warnings, plural(carried, '{n} object that needs a newer version of {app} is not in the export.', '{n} objects that need a newer version of {app} are not in the export.', { app: APP_NAME })];
   for (const w of warnings) notify(w, 'error');
   await reportSaved([where.name], where.path ? where.path.slice(0, where.path.length - where.name.length).replace(/[\\/]$/, '') || where.path : tr('your downloads'), where.uri ? [where.uri] : [], format.mime);
   return true;

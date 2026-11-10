@@ -1,6 +1,7 @@
 // Robot mode: links, joints and sensors over the design's objects, the
 // drive, trying a pose, and the export of the robot description.
 import { zipSync } from 'fflate';
+import { APP_NAME } from '../../appInfo';
 import { mark, plural, tr } from '../../i18n';
 import { zipTime } from '../../io/format';
 import { eulerOf, tidyVec } from '../../model/math';
@@ -34,6 +35,8 @@ import { exportName, reportSaved } from './exporting';
 
 /** The panels turn to links and joints; whatever was being carried or lined up is let go of. */
 export function enterRobotMode(): void {
+  // A robot a newer version set up is carried as it is (see `Foreign`): there is none to work on here, and a new one would take its place.
+  if (getState().doc.foreign?.robot) return notify(tr('The robot needs a newer version of {app}: it is kept in the design, and cannot be worked on here.', { app: APP_NAME }), 'error');
   if (getState().mating) cancelMate();
   if (getState().aligning) stopAligning();
   cancelPlacing();

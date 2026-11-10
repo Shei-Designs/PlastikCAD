@@ -10,6 +10,7 @@ import {
   addShape,
   addText,
   cancelPlacing,
+  carriedNote,
   importModel,
   isDirty,
   newProject,
@@ -234,6 +235,8 @@ function ImportRow() {
 
 function Objects() {
   const scene = useEditor((s) => s.doc.scene);
+  // What the design holds for a newer version of the app, which has no row here.
+  const carried = useEditor((s) => carriedNote(s.doc));
   const selection = useEditor((s) => s.selection);
   // A finger held on a row toggles the object into the selection, and the tap that follows is not a click.
   const hold = useRef<{ timer: ReturnType<typeof setTimeout>; id: string } | null>(null);
@@ -259,6 +262,7 @@ function Objects() {
       <h2>
         {tr('Objects')} <span className="count">{scene.length || ''}</span>
       </h2>
+      {carried && <p className="empty carried">{carried}</p>}
       {scene.length === 0 ? (
         <p className="empty">{tr('Nothing yet. Pick a shape from the library and click on the plate to place it.')}</p>
       ) : (

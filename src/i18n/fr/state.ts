@@ -4,6 +4,18 @@
 import type { Catalog } from '../index';
 
 export const state: Catalog = {
+  // What a newer version of the app put in a design (state/store/project.ts, exporting.ts, importing.ts, customParts.ts)
+  '{n} objects need a newer version of {app}: they are kept in the design, and not shown.': {
+    one: '{n} objet nécessite une version plus récente de {app}\u00a0: il est conservé dans la conception, sans être affiché.',
+    other: '{n} objets nécessitent une version plus récente de {app}\u00a0: ils sont conservés dans la conception, sans être affichés.',
+  },
+  'The robot needs a newer version of {app}: it is kept in the design, and cannot be worked on here.': 'Le robot nécessite une version plus récente de {app}\u00a0: il est conservé dans la conception et ne peut pas être modifié ici.',
+  '{n} objects that need a newer version of {app} are not in the export.': {
+    one: '{n} objet nécessitant une version plus récente de {app} n’est pas exporté.',
+    other: '{n} objets nécessitant une version plus récente de {app} ne sont pas exportés.',
+  },
+  'This part needs a newer version of {app}.': 'Cette pièce nécessite une version plus récente de {app}.',
+
   // The name of a new design (model/file.ts, state/projects.ts)
   Untitled: 'Sans titre',
 

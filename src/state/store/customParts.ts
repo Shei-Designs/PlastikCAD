@@ -86,6 +86,8 @@ export async function saveAsPart(id: string): Promise<boolean> {
 /** A part from the bin as a new object for the design: fresh ids, named after the part, its pictures brought along. */
 async function loadPart(key: string): Promise<SceneNode> {
   const doc = parseDoc(await partStore().read(key));
+  // A part is one object: carried for a newer version (see `Foreign`), there is none to place.
+  if (doc.foreign?.nodes?.length) throw new Error(tr('This part needs a newer version of {app}.', { app: APP_NAME }));
   const node = doc.scene[0];
   if (!node) throw new Error(tr('This part is empty.'));
   const missing = Object.fromEntries(Object.entries(doc.assets).filter(([k]) => !getState().doc.assets[k]));

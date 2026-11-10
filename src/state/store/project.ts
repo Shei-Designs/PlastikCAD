@@ -173,6 +173,26 @@ export function adopt(doc: Doc, key: string | null): void {
   setPrefs({ lastProject: key });
   // Lettering outlines are sent again as the fonts come back; imported meshes of the closed design are dropped.
   geometry.forgetAssets(Object.keys(doc.assets));
+  // What the design holds that this version cannot show is said once for each design, not at every sync that brings it in again.
+  const note = carriedNote(doc);
+  if (note && told !== `${doc.id}:${note}`) notify(note);
+  told = note ? `${doc.id}:${note}` : null;
+}
+
+/** The design, and what was said of it, that the user was last told holds something for a newer version. */
+let told: string | null = null;
+
+/**
+ * What a design holds that a newer version of the app made and this one does not understand (see
+ * `Foreign`), in words for the user; null when there is nothing of the kind.
+ */
+export function carriedNote(doc: Doc): string | null {
+  const count = doc.foreign?.nodes?.length ?? 0;
+  const objects = count
+    ? plural(count, '{n} object needs a newer version of {app}: it is kept in the design, and not shown.', '{n} objects need a newer version of {app}: they are kept in the design, and not shown.', { app: APP_NAME })
+    : null;
+  const robot = doc.foreign?.robot ? tr('The robot needs a newer version of {app}: it is kept in the design, and cannot be worked on here.', { app: APP_NAME }) : null;
+  return objects && robot ? `${objects} ${robot}` : (objects ?? robot);
 }
 
 /** Writes what is pending before another project takes the screen; asks whether to go on if that fails. */

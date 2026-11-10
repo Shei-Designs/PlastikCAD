@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { emptyDoc, legacyVersions, parseDoc, readHeader, savedTime, serializeDoc } from './file';
+import { canonicalRobot, emptyDoc, legacyVersions, parseDoc, readHeader, ROBOT_FIELDS, savedTime, serializeDoc } from './file';
 import { geomKey } from './geomKey';
 import { apply, axisRotation, determinant, eulerOf, multiply, nodeMatrix, rotation } from './math';
 import type { Mat } from './math';
@@ -578,7 +578,8 @@ describe('design files', () => {
     expect(parseDoc(text).scene.length).toBe(3);
   });
 
-  it('refuses a file in its own format that names something it does not know, rather than dropping it and saving the rest', () => {
+  /** A design with a robot over it and a part that has a choice, as text, and the changes a newer build might have made to it. */
+  const withRobot = () => {
     const robot: Robot = { ...emptyRobot(), root: 'a', links: [{ node: 'a', mass: { kind: 'material', material: 'pla', infill: 20, shell: 1.2 }, collision: 'hull', friction: 0.8 }], joints: [{ id: 'j1', name: 'j', type: 'revolute', parent: 'a', child: 'b', origin: [0, 0, 0], axis: [0, 0, 1], lower: -90, upper: 90, effort: 1, velocity: 1, damping: 0, friction: 0 }], sensors: [defaultSensor('s1', 'cam', 'camera', 'a', [0, 0, 0])], drive: { kind: 'differential', roles: { j1: 'left' } }, world: 'slope' };
     const def = GENERATORS.find((g) => g.groups.some((group) => group.params.some((d) => d.type === 'select')))!;
     const choice = def.groups.flatMap((g) => g.params).find((d) => d.type === 'select')!;
@@ -586,26 +587,167 @@ describe('design files', () => {
     const gear = { ...shape('box'), id: 'b', type: 'part', part: def.id, params, natural: [20, 20, 5] } as unknown as SceneNode;
     delete (gear as { shape?: unknown }).shape;
     const text = serializeDoc({ ...sample(), scene: [{ ...shape('box'), id: 'a' }, gear, ...sample().scene.slice(1)], robot });
-    expect(parseDoc(text).robot?.sensors.length).toBe(1);
+    return { text, def, option: [`"${choice.key}": "${String(params[choice.key])}"`, `"${choice.key}": "from-the-future"`] as [string, string] };
+  };
+
+  it('carries an object a newer build made, as the file had it, and writes it back unchanged', () => {
+    const { text, def, option } = withRobot();
+    const all = parseDoc(text);
+    expect(all.foreign).toBeUndefined();
+    // Each names something this build does not have: a shape, a kind of object, a part, a choice, a font.
+    const newer: [string, string][] = [['"shape": "torus"', '"shape": "teapot"'], ['"type": "text"', '"type": "hologram"'], [`"part": "${def.id}"`, '"part": "warp-gear"'], option, ['"font": "stencil"', '"font": "comic"']];
+    for (const [known, unknown] of newer) {
+      expect(text, known).toContain(known);
+      const changed = text.replace(known, unknown);
+      const doc = parseDoc(changed);
+      expect(doc.foreign?.nodes?.length, unknown).toBe(1);
+      expect(doc.scene.length, unknown).toBe(all.scene.length - 1);
+      expect(serializeDoc(doc), unknown).toBe(changed);
+      // The same in a file from before: read as it always was, without the thing, and nothing carried.
+      expect(parseDoc(older(changed)).foreign, unknown).toBeUndefined();
+    }
+  });
+
+  it('carries the whole group when it is something inside it that this build does not know', () => {
+    const text = serializeDoc(sample());
+    const changed = text.replace('"shape": "cone"', '"shape": "teapot"');
+    const doc = parseDoc(changed);
+    expect(doc.foreign?.nodes?.map((n) => n.raw.type)).toEqual(['group']);
+    expect(doc.scene.some((n) => n.type === 'group')).toBe(false);
+    expect(serializeDoc(doc)).toBe(changed);
+  });
+
+  it('carries an object that has a field, or a setting, this build has no name for', () => {
+    const { text, def } = withRobot();
+    const key = Object.keys(defaultParams(def)).sort()[0];
+    const added: [string, string][] = [
+      ['"shape": "torus",', '"shape": "torus",\n          "fillet": 2,'],
+      ['"kind": "arc",', '"kind": "arc",\n        "spiral": true,'],
+      [`"${key}": `, `"aaa-new-setting": 4,\n        "${key}": `],
+    ];
+    for (const [known, more] of added) {
+      expect(text, known).toContain(known);
+      const changed = text.replace(known, more);
+      const doc = parseDoc(changed);
+      expect(doc.foreign?.nodes?.length, more).toBe(1);
+      expect(serializeDoc(doc), more).toBe(changed);
+    }
+  });
+
+  it('carries imported data of a kind it does not know, and the object made of it', () => {
+    const text = serializeDoc(sample());
+    const changed = text.replace('"kind": "outline"', '"kind": "voxels"');
+    const doc = parseDoc(changed);
+    expect(Object.keys(doc.foreign?.assets ?? {})).toEqual(['outline-1']);
+    expect(doc.assets['outline-1']).toBeUndefined();
+    expect(doc.foreign?.nodes?.map((n) => n.raw.type)).toEqual(['import']);
+    expect(serializeDoc(doc)).toBe(changed);
+  });
+
+  it('keeps the imported data that only a carried object uses', () => {
+    const text = serializeDoc(sample());
+    const changed = text.replace('"type": "import"', '"type": "import-2"');
+    const doc = parseDoc(changed);
+    expect(doc.scene.some((n) => n.type === 'import')).toBe(false);
+    expect(doc.assets['outline-1']?.kind).toBe('outline');
+    expect(serializeDoc(doc)).toBe(changed);
+  });
+
+  it('carries the robot whole when any of it is new to this build, or it is laid over an object that is carried', () => {
+    const { text } = withRobot();
     const newer: [string, string][] = [
-      ['"shape": "box"', '"shape": "teapot"'],
-      ['"type": "shape"', '"type": "hologram"'],
-      [`"part": "${def.id}"`, '"part": "warp-gear"'],
-      [`"${choice.key}": "${String(params[choice.key])}"`, `"${choice.key}": "from-the-future"`],
-      ['"font": "stencil"', '"font": "comic"'],
-      ['"kind": "outline"', '"kind": "voxels"'],
       ['"kind": "camera"', '"kind": "sonar"'],
       ['"type": "revolute"', '"type": "spherical"'],
       ['"collision": "hull"', '"collision": "capsules"'],
       ['"kind": "differential"', '"kind": "tracked"'],
       ['"world": "slope"', '"world": "moon"'],
+      ['"collision": "hull",', '"collision": "hull",\n        "restitution": 0.4,'],
+      // Nothing new in the robot itself: the object it calls its base is.
+      ['"shape": "box"', '"shape": "hyperbox"'],
     ];
     for (const [known, unknown] of newer) {
       expect(text, known).toContain(known);
-      expect(() => parseDoc(text.replace(known, unknown)), unknown).toThrow(/newer version/);
-      // The same in a file from before: read as it always was, without the thing.
-      expect(() => parseDoc(older(text).replace(known, unknown)), unknown).not.toThrow();
+      const changed = text.replace(known, unknown);
+      const doc = parseDoc(changed);
+      expect(doc.robot, unknown).toBeUndefined();
+      expect(doc.foreign?.robot, unknown).toBeTruthy();
+      expect(serializeDoc(doc), unknown).toBe(changed);
+      expect(() => parseDoc(older(changed)), unknown).not.toThrow();
     }
+  });
+
+  it('keeps a field of the design itself that it does not know', () => {
+    const text = serializeDoc(sample());
+    const changed = text.replace(/\n}\n$/, ',\n  "materials": {\n    "walnut": "#5a3d2b"\n  }\n}\n');
+    const doc = parseDoc(changed);
+    expect(doc.foreign?.fields).toEqual({ materials: { walnut: '#5a3d2b' } });
+    expect(doc.scene.length).toBe(parseDoc(text).scene.length);
+    expect(serializeDoc(doc)).toBe(changed);
+  });
+
+  it('keeps what it carries through an edit of the rest, each object after the one it followed', () => {
+    const boxes = ['a', 'b', 'c', 'd'].map((id) => ({ ...shape('box'), id }));
+    // The file's "b" and "d" are of a kind this build does not know.
+    const text = serializeDoc({ ...sample(), scene: boxes, assets: {} }).replace(/"id": "(b|d)",\n {6}"type": "shape"/g, '"id": "$1",\n      "type": "hologram"');
+    const ids = (t: string): string[] => [...t.matchAll(/^ {6}"id": "(\w+)"/gm)].map((m) => m[1]);
+    const doc = parseDoc(text);
+    expect(doc.scene.map((n) => n.id)).toEqual(['a', 'c']);
+    expect(doc.foreign?.nodes?.map((n) => [n.raw.id, n.after])).toEqual([['b', 'a'], ['d', 'c']]);
+    // "c" is moved and "e" added: the carried ones stay where they were.
+    const moved = serializeDoc({ ...doc, scene: [doc.scene[0], { ...doc.scene[1], pos: [5, 0, 0] }, { ...shape('box'), id: 'e' }] });
+    expect(ids(moved)).toEqual(['a', 'b', 'c', 'd', 'e']);
+    expect(parseDoc(moved).foreign).toEqual(doc.foreign);
+    // "c" is deleted: what followed it goes to the end, and is still all there.
+    const without = serializeDoc({ ...doc, scene: [doc.scene[0]] });
+    expect(ids(without)).toEqual(['a', 'b', 'd']);
+    expect(parseDoc(without).foreign?.nodes?.map((n) => n.raw)).toEqual(doc.foreign?.nodes?.map((n) => n.raw));
+  });
+
+  it('still refuses a file of a later version of the format, which may be laid out in another way', () => {
+    const text = serializeDoc(sample()).replace(`"version": ${FILE_VERSION}`, `"version": ${FILE_VERSION + 1}`);
+    expect(() => parseDoc(text)).toThrow(/newer version/);
+  });
+
+  it('knows every field it writes for a robot as one it can read', () => {
+    const robot: Robot = {
+      ...emptyRobot(),
+      root: 'a',
+      links: [
+        { node: 'a', name: 'base', mass: { kind: 'material', material: 'pla', infill: 20, shell: 1.2 }, collision: 'hull', friction: 0.8 },
+        { node: 'b', mass: { kind: 'measured', grams: 12 }, collision: 'hull', friction: 0.8 },
+      ],
+      joints: [
+        { id: 'j1', name: 'j', type: 'revolute', parent: 'a', child: 'b', origin: [0, 0, 0], axis: [0, 0, 1], lower: -90, upper: 90, effort: 1, velocity: 1, damping: 0, friction: 0, motor: 'sg90' },
+        { id: 'j2', name: 'k', type: 'revolute', parent: 'a', child: 'b', origin: [0, 0, 0], axis: [0, 0, 1], lower: -90, upper: 90, effort: 1, velocity: 1, damping: 0, friction: 0, mimic: { joint: 'j1', multiplier: 1, offset: 0 } },
+      ],
+      sensors: [defaultSensor('s1', 'cam', 'camera', 'a', [0, 0, 0]), defaultSensor('s2', 'scan', 'lidar', 'a', [0, 0, 0])],
+      drive: { kind: 'differential', roles: { j1: 'left' } },
+      control: false,
+      world: 'slope',
+      scripts: false,
+    };
+    const written = canonicalRobot(robot) as Record<string, Record<string, unknown>[] & Record<string, unknown>>;
+    const fields = (record: object): string[] => Object.entries(record).filter(([, v]) => v !== undefined).map(([k]) => k);
+    const check = (records: object[], known: ReadonlySet<string>, what: string): void => {
+      expect(records.length, what).toBeGreaterThan(0);
+      for (const record of records) expect(fields(record).filter((k) => !known.has(k)), what).toEqual([]);
+    };
+    const part = (records: Record<string, unknown>[], key: string): object[] => records.map((r) => r[key]).filter((v): v is object => typeof v === 'object' && v !== null);
+    check([written], ROBOT_FIELDS.robot, 'robot');
+    // Everything the robot can hold is in this one: no field goes unchecked for want of an example.
+    expect(fields(written).sort()).toEqual([...ROBOT_FIELDS.robot].sort());
+    check(written.links, ROBOT_FIELDS.link, 'link');
+    check(part(written.links, 'mass'), ROBOT_FIELDS.mass, 'mass');
+    check(written.joints, ROBOT_FIELDS.joint, 'joint');
+    check(part(written.joints, 'mimic'), ROBOT_FIELDS.mimic, 'mimic');
+    check(written.sensors, ROBOT_FIELDS.sensor, 'sensor');
+    check(part(written.sensors, 'camera'), ROBOT_FIELDS.camera, 'camera');
+    check(part(written.sensors, 'lidar'), ROBOT_FIELDS.lidar, 'lidar');
+    check([written.drive], ROBOT_FIELDS.drive, 'drive');
+    // And the design with it is read back with nothing carried.
+    const doc = parseDoc(serializeDoc({ ...sample(), scene: [{ ...shape('box'), id: 'a' }, { ...shape('box'), id: 'b' }], assets: {}, robot }));
+    expect(doc.foreign).toBeUndefined();
+    expect(doc.robot?.joints.length).toBe(2);
   });
 
   it('stores lettering as its words, and falls back to a font it knows', () => {
@@ -623,7 +765,11 @@ describe('design files', () => {
       return node;
     });
     const text = serializeDoc({ ...doc, scene: [...doc.scene, ...parts] });
-    expect(() => parseDoc(text)).toThrow(/newer version/);
+    // In its own format they are parts this build does not have, carried like any other.
+    const carried = parseDoc(text);
+    expect(carried.foreign?.nodes?.map((n) => n.raw.part)).toEqual(['toString', 'constructor', '__proto__', 'hasOwnProperty']);
+    expect(carried.scene.some((n) => n.type === 'part')).toBe(false);
+    expect(serializeDoc(carried)).toBe(text);
     const back = parseDoc(older(text));
     expect(back.scene.length).toBe(doc.scene.length);
     expect(back.scene.some((n) => n.type === 'part')).toBe(false);
