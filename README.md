@@ -93,6 +93,11 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
   whichever way an object is turned; *Object axes* (O) puts a single object's
   handles on its own axes instead, to size and move a turned part along
   itself.
+- **Panels** – a tab on each edge of the plate hides the panel on that side
+  and brings it back, to give the plate the whole window; the app remembers
+  which are hidden. On a window too narrow for them beside the plate (a
+  tablet held upright) the panels start hidden and lie over the plate, one at
+  a time, when called for.
 - **Ghosts** – the ghost button (or G) fades the selected objects to faint
   shadows that nothing picks: a click or a drag goes through them to whatever
   is around or inside, so a part nested in another can be adjusted without
@@ -457,9 +462,9 @@ plus the thumbnail line at the top (and `Trash/` and `History/` belong in
 | --- | --- |
 | Orbit / pan / zoom | Right drag / middle drag (or Shift + right drag) / wheel |
 | Select | Click; Shift-click adds; drag on the plate for a box selection |
-| Touch | One finger orbits, two pan and zoom, wherever they land (on an object too); tap an object to select it, tap the plate to clear; hold an object (on the plate or in the Objects list) to add it to the selection; hold the plate and drag for a box selection |
+| Touch | One finger orbits, two pan and zoom, wherever they land (on an object too); tap an object to select it, tap the plate to clear; hold an object (on the plate or in the Objects list) to add it to the selection; hold the plate and drag for a box selection; tap with two fingers to undo, with three to redo; a ring fills round a finger held still, to show the hold taking; while the pen is near, a resting hand is ignored |
 | Move | Drag (Shift keeps to one axis); arrow keys nudge by the snap step, Shift ×10 |
-| Raise or lower | Arrow handle; Ctrl+Up / Ctrl+Down |
+| Raise or lower | Arrow handle; Ctrl+↑ / Ctrl+↓ |
 | Resize | Corner and edge grips; the top grip pulls the height up, the bottom grip pulls it down; Shift scales evenly. With several objects selected the grips sit on the box round them all and stretch them together |
 | Type a value | Click any grip instead of dragging it, type the value (two for a corner grip, e.g. `20 x 15`), Enter |
 | Turn | Colored arcs, in 15° steps; Shift 45°, Alt 1° |
@@ -473,7 +478,7 @@ plus the thumbnail line at the top (and `Trash/` and `History/` belong in
 | Turn 90° about an axis | Shift+X / Shift+Y / Shift+Z; add Alt to turn the other way |
 | Align | L shows anchor dots on the selection: hover one to preview, click to apply; click one of the objects to make it the anchor, Esc to finish |
 | Measure | M: click a feature, then another, for the distance (with its X, Y and Z parts), the angle between edges or faces, or a circle's diameter; the snap symbols on the bar choose what the pointer takes hold of (points, edge middles, edges, circles, quadrants, face centers, faces, object centers), mixed as in a drafting program; Esc clears, then finishes |
-| Align by key | Alt+← / → / ↓ / ↑ (left / right / front / back), Alt+PgDn / PgUp (bottom / top); add Shift to center on that axis; Alt+C centers on X and Y, Alt+Shift+C on Z as well |
+| Align by key | Alt+← / Alt+→ / Alt+↓ / Alt+↑ (left / right / front / back), Alt+PgDn / Alt+PgUp (bottom / top); add Shift to center on that axis; Alt+C centers on X and Y, Alt+Shift+C on Z as well |
 | Object axes | O puts a single object's handles on its own axes; again for the plate's |
 | Fit to view | F |
 | Undo / redo | Ctrl+Z / Ctrl+Y or Ctrl+Shift+Z |

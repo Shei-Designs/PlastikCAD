@@ -108,6 +108,8 @@ export interface ViewerEvents {
   onMarkerPick(id: string): void;
   /** Measure mode: a feature clicked on the plate. */
   onMeasurePick(feature: Feature): void;
+  /** Two fingers tapped on the plate (`undo`) or three (`redo`). Returns whether there was a step to take. */
+  onHistory(step: 'undo' | 'redo'): boolean;
 }
 
 export type HandleKind =

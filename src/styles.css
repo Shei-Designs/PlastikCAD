@@ -178,6 +178,125 @@ ul {
   border-left: 1px solid var(--border);
 }
 
+/* Each panel keeps its own column, so that one hidden leaves the others where they are. */
+.sidebar {
+  grid-column: 1;
+}
+
+.stage {
+  grid-column: 2;
+}
+
+.inspector {
+  grid-column: 3;
+}
+
+/* A hidden panel gives its room to the plate. It stays in the page, so what is being typed in it is not lost. */
+.app.no-left .sidebar,
+.app.no-right .inspector {
+  display: none;
+}
+
+.app.no-left {
+  grid-template-columns: 0 minmax(0, 1fr) minmax(292px, 360px);
+}
+
+.app.no-right {
+  grid-template-columns: minmax(236px, 280px) minmax(0, 1fr) 0;
+}
+
+.app.no-left.no-right {
+  grid-template-columns: 0 minmax(0, 1fr) 0;
+}
+
+/* The tab that hides a panel or brings it back: on the plate's edge, half way down, out of the way of the bars. */
+.panel-tab {
+  position: absolute;
+  top: 50%;
+  z-index: 6;
+  width: 16px;
+  height: 56px;
+  margin-top: -28px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.panel-tab.left {
+  left: 0;
+  border-left: 0;
+  border-radius: 0 8px 8px 0;
+}
+
+.panel-tab.right {
+  right: 0;
+  border-right: 0;
+  border-radius: 8px 0 0 8px;
+}
+
+.panel-tab:hover {
+  color: var(--text);
+  background: var(--panel-raised);
+}
+
+.panel-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+@media (pointer: coarse) {
+  .panel-tab {
+    width: 28px;
+    height: 72px;
+    margin-top: -36px;
+  }
+}
+
+/* A narrow window (a tablet held upright) has no room for the panels beside the plate: they lie over it, one at a
+   time, and the plate keeps the whole width. The tab of a panel on show sits on its outer edge. */
+@media (max-width: 900px) {
+  .app,
+  .app.no-left,
+  .app.no-right,
+  .app.no-left.no-right {
+    grid-template-columns: 0 minmax(0, 1fr) 0;
+  }
+
+  .sidebar,
+  .inspector {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    z-index: 20;
+    width: min(300px, 86vw);
+    box-shadow: var(--shadow);
+  }
+
+  .sidebar {
+    left: 0;
+  }
+
+  .inspector {
+    right: 0;
+  }
+
+  .panel-tab {
+    z-index: 21;
+  }
+
+  .app:not(.no-left) .panel-tab.left {
+    left: min(300px, 86vw);
+  }
+
+  .app:not(.no-right) .panel-tab.right {
+    right: min(300px, 86vw);
+  }
+}
+
 .stage {
   position: relative;
   min-width: 0;
@@ -3650,5 +3769,99 @@ kbd {
   /* Room for the taller boxes: three across the panel's narrowest width. */
   .field {
     margin-bottom: 10px;
+  }
+}
+
+/* ---------- touch feedback in the 3D view (src/viewer/touchFeedback.ts) ---------- */
+
+/* The ring that fills at a finger while a long press builds. The viewer sets --hold, the time it takes. */
+.hold-ring {
+  position: absolute;
+  display: none;
+  width: 80px;
+  height: 80px;
+  margin: -40px 0 0 -40px;
+  color: var(--accent);
+  pointer-events: none;
+  /* Unseen for the first moment, so that a tap does not flash it. */
+  animation: hold-ring-appear 80ms ease-out 100ms both;
+}
+
+.hold-ring svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  /* The filling starts at the top. */
+  transform: rotate(-90deg);
+}
+
+.hold-ring circle {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 4;
+}
+
+/* A rim in the panel's color, so that the ring shows on an object of any color. */
+.hold-ring .halo {
+  stroke: var(--panel);
+  stroke-width: 7;
+  opacity: 0.45;
+}
+
+.hold-ring .track {
+  opacity: 0.3;
+}
+
+.hold-ring .fill {
+  stroke-linecap: round;
+  /* The length of the circle: 2π × 36. */
+  stroke-dasharray: 226.2;
+  stroke-dashoffset: 226.2;
+  animation: hold-ring-fill var(--hold, 450ms) linear both;
+}
+
+@keyframes hold-ring-appear {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes hold-ring-fill {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* The word in the middle of the view after a tap of two or three fingers. The viewer sets --stay, how long it is there. */
+.touch-note {
+  left: 50%;
+  top: 40%;
+  padding: 6px 14px;
+  font-weight: 600;
+  transform: translate(-50%, -50%);
+  animation: touch-note-fade var(--stay, 900ms) ease-in both;
+}
+
+@keyframes touch-note-fade {
+  0%,
+  65% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Without motion: a whole ring that stands still, and a word that stays as it is until it goes. */
+@media (prefers-reduced-motion: reduce) {
+  .hold-ring .fill {
+    stroke-dashoffset: 0;
+    animation: none;
+  }
+
+  .touch-note {
+    animation: none;
   }
 }

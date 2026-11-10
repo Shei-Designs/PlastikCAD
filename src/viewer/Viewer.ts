@@ -300,7 +300,7 @@ export class Viewer {
     this.disposed = true;
     this.fallback?.remove();
     if (!this.ok) return;
-    this.input.removeMarquee();
+    this.input.removeOverlays();
     if (this.raf) cancelAnimationFrame(this.raf);
     this.input.endHold();
     if (this.ground) {

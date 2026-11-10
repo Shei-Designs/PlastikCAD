@@ -37,7 +37,7 @@ import { LONG_PRESS_MS } from '../viewer/gesture';
 import { RobotExport, RobotModeBar, RobotPanel } from './RobotPanel';
 import { CommitInput } from './Fields';
 import { useSyncStatus } from '../sync/sync';
-import { MOD } from './keys';
+import { shortcut, tip } from './keymap';
 import { MenuItem } from './Menu';
 import { kindOf } from './nodeKind';
 import { Popover } from './Popover';
@@ -74,7 +74,7 @@ function FileBar() {
     <div className="file-bar">
       <span className={dirty || saving ? 'dirty-dot on' : 'dirty-dot'} title={status} role="status" aria-label={status} />
       <CommitInput className="doc-name" label="Project name" title="Project name" value={name} onCommit={renameProject} />
-      <button type="button" className="icon-button" title={`Projects (${MOD}O)`} aria-label={news ? 'Projects: sync has something to say' : 'Projects'} onClick={openProjects}>
+      <button type="button" className="icon-button" title={tip('projects')} aria-label={news ? 'Projects: sync has something to say' : 'Projects'} onClick={openProjects}>
         <ProjectsIcon />
         {news && <span className={trouble ? 'news-dot trouble' : 'news-dot'} />}
       </button>
@@ -84,10 +84,10 @@ function FileBar() {
       <Popover className="icon-button" title="File" button={<MenuIcon />} align="right">
         {(close) => (
           <div className="menu" role="menu">
-            <MenuItem label="New project" keys={`${MOD}N`} run={() => void newProject()} close={close} />
-            <MenuItem label="Projects…" keys={`${MOD}O`} run={openProjects} close={close} />
-            <MenuItem label="Open project file…" keys={`${MOD}Shift+O`} run={() => void openProjectFile()} close={close} />
-            <MenuItem label="Save a copy…" keys={`${MOD}Shift+S`} run={() => void saveCopy()} close={close} />
+            <MenuItem label="New project" keys={shortcut('newProject')} run={() => void newProject()} close={close} />
+            <MenuItem label="Projects…" keys={shortcut('projects')} run={openProjects} close={close} />
+            <MenuItem label="Open project file…" keys={shortcut('openFile')} run={() => void openProjectFile()} close={close} />
+            <MenuItem label="Save a copy…" keys={shortcut('saveCopy')} run={() => void saveCopy()} close={close} />
             <hr />
             <MenuItem label={`About ${APP_NAME}…`} run={() => setAbout(true)} close={close} />
           </div>
@@ -209,7 +209,7 @@ function Shapes() {
 function ImportRow() {
   return (
     <div className="import-row">
-      <button type="button" className="import-button" title={`Import a model, drawing or picture (${MOD}I)`} onClick={() => void importModel()}>
+      <button type="button" className="import-button" title={tip('import', 'Import a model, drawing or picture')} onClick={() => void importModel()}>
         <ImportIcon />
         Import model or picture…
       </button>

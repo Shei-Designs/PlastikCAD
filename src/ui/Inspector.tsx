@@ -11,7 +11,8 @@ import { geometry } from '../state/geometry';
 import { editPicture, editText, imageAssets, notify, pickImage, saveAsPart, setColor, setHole, setSelectedLocked, setTexture, toggleLocked, updateNode, updateSelected, useEditor } from '../state/store';
 import { CommitInput, formatNumber, NumberBox, SliderField } from './Fields';
 import { Hint } from './Hint';
-import { MOD } from './keys';
+import { shortcutRows, tip } from './keymap';
+import { useCoarsePointer, useKeyboardAttached } from './inputMode';
 import { partFigures } from '../parts/figures';
 import { tell } from './ask';
 import { CloseIcon, LockIcon, PictureIcon, SaveAsPartIcon, UnlockIcon, WarningIcon } from './icons';
@@ -25,45 +26,6 @@ const TOUCH = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)'
 
 /** Fingers need bigger swatches than fit in one row: the row keeps the first few colors, the custom swatch covers the rest. */
 const SWATCHES = TOUCH ? PALETTE.slice(0, 7) : PALETTE;
-
-const SHORTCUTS: [string, string][] = [
-  ...(TOUCH
-    ? ([
-        ['Orbit', 'One finger'],
-        ['Pan / zoom', 'Two fingers'],
-        ['Select more', 'Hold an object'],
-        ['Box select', 'Hold the plate, then drag'],
-        ['Clear selection', 'Tap the plate'],
-      ] as [string, string][])
-    : ([
-        ['Orbit', 'Right drag'],
-        ['Pan', 'Middle drag · Shift+right drag'],
-        ['Zoom', 'Wheel'],
-      ] as [string, string][])),
-  ['Move', 'Drag · arrow keys'],
-  ['Raise or lower', `Arrow handle · ${MOD}↑↓`],
-  ['Resize height', 'Drag top or bottom grip'],
-  ['Type a size', 'Click a grip'],
-  ['Undo / redo', `${MOD}Z / ${MOD}Y`],
-  ['Copy / cut / paste', `${MOD}C / ${MOD}X / ${MOD}V`],
-  ['Select all', `${MOD}A`],
-  ['Delete', 'Delete'],
-  ['Duplicate', `${MOD}D`],
-  ['Group / ungroup', `${MOD}G / ${MOD}Shift+G`],
-  ['Solid / hole', 'S / H'],
-  ['Mirror', 'X / Y / Z'],
-  ['Rotate 90°', 'Shift+X / Y / Z · Alt reverses'],
-  ['Ghost / un-ghost all', 'G / Shift+G'],
-  ['Align', 'L'],
-  ['Measure', 'M'],
-  ['Object axes', 'O'],
-  ['Align to edge', 'Alt+arrows / PgUp / PgDn'],
-  ['Align centers', 'Alt+Shift+arrows'],
-  ['Center on plate', 'Alt+C'],
-  ['Drop onto the plate', 'D'],
-  ['Fit to view', 'F'],
-  ['Import model or picture', `${MOD}I`],
-];
 
 export function NameField({ node }: { node: SceneNode }) {
   return <CommitInput className="name-input" label="Name" value={node.name} onCommit={(name) => updateNode(node.id, { name })} />;
@@ -82,10 +44,10 @@ function Appearance({ nodes }: { nodes: SceneNode[] }) {
       <legend>Material</legend>
       <div className="field">
         <div className="segmented" role="radiogroup" aria-label="Solid or hole">
-          <button type="button" role="radio" aria-checked={solid} className={solid ? 'on' : ''} title="Adds material (S)" disabled={locked} onClick={() => setHole(false)}>
+          <button type="button" role="radio" aria-checked={solid} className={solid ? 'on' : ''} title={tip('solid', 'Adds material')} disabled={locked} onClick={() => setHole(false)}>
             Solid
           </button>
-          <button type="button" role="radio" aria-checked={hole} className={hole ? 'on' : ''} title="Cuts material away from what it is grouped with (H)" disabled={locked} onClick={() => setHole(true)}>
+          <button type="button" role="radio" aria-checked={hole} className={hole ? 'on' : ''} title={tip('hole', 'Cuts material away from what it is grouped with')} disabled={locked} onClick={() => setHole(true)}>
             Hole
           </button>
         </div>
@@ -418,18 +380,27 @@ function Overview() {
           </dl>
         </fieldset>
       )}
-      <fieldset className="group">
-        <legend>Shortcuts</legend>
-        <dl className="facts keys">
-          {SHORTCUTS.map(([what, keys]) => (
-            <div key={what}>
-              <dt>{what}</dt>
-              <dd>{keys}</dd>
-            </div>
-          ))}
-        </dl>
-      </fieldset>
+      <Shortcuts />
     </>
+  );
+}
+
+/** The keys and gestures of the app. A tablet shows its keys once a keyboard is docked, and loses them when it goes. */
+function Shortcuts() {
+  const keyboard = useKeyboardAttached();
+  const coarse = useCoarsePointer();
+  return (
+    <fieldset className="group">
+      <legend>Shortcuts</legend>
+      <dl className="facts keys">
+        {shortcutRows(keyboard, coarse).map(([what, how]) => (
+          <div key={what}>
+            <dt>{what}</dt>
+            <dd>{how}</dd>
+          </div>
+        ))}
+      </dl>
+    </fieldset>
   );
 }
 

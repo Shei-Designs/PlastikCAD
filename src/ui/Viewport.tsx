@@ -85,7 +85,8 @@ import {
 import { ArrayPanel } from './ArrayPanel';
 import { pressedByTouch, recentTouch, selectOnFocus } from './Fields';
 import { enterByTouch, keyboardAttached, openTouchEntry } from './TouchEntry';
-import { MOD } from './keys';
+import { groupKeys, tip } from './keymap';
+import type { CommandId } from './keymap';
 import { Popover } from './Popover';
 import { MatePanel } from './MatePanel';
 import { placeReadout } from './readout';
@@ -99,6 +100,9 @@ const VIEWS: { id: ViewPreset; label: string }[] = [
   { id: 'side', label: 'Side' },
 ];
 
+
+/** The keymap's command behind each button of the Mirror panel, by axis. */
+const MIRRORS: CommandId[] = ['mirrorX', 'mirrorY', 'mirrorZ'];
 
 /** The viewer other parts of the app may talk to (fit to view from a shortcut, cancel a drag). */
 export const viewerRef: { current: Viewer | null } = { current: null };
@@ -119,10 +123,10 @@ function Actions() {
   return (
     <>
       <div className="tool-group">
-        <button type="button" className="chip icon" title={`Group (${MOD}G)`} aria-label="Group" disabled={count < 2} onClick={() => void groupSelected()}>
+        <button type="button" className="chip icon" title={tip('group')} aria-label="Group" disabled={count < 2} onClick={() => void groupSelected()}>
           <GroupIcon />
         </button>
-        <button type="button" className="chip icon" title={`Ungroup (${MOD}Shift+G)`} aria-label="Ungroup" disabled={!hasGroup} onClick={ungroupSelected}>
+        <button type="button" className="chip icon" title={tip('ungroup')} aria-label="Ungroup" disabled={!hasGroup} onClick={ungroupSelected}>
           <UngroupIcon />
         </button>
       </div>
@@ -130,7 +134,7 @@ function Actions() {
         <button
           type="button"
           className={aligning ? 'chip icon on' : 'chip icon'}
-          title="Align (L)"
+          title={tip('align')}
           aria-label="Align"
           aria-pressed={aligning}
           disabled={count < 2 && !aligning && !marker}
@@ -138,19 +142,19 @@ function Actions() {
         >
           <AlignIcon />
         </button>
-        <button type="button" className={measuring ? 'chip icon on' : 'chip icon'} title="Measure (M)" aria-label="Measure" aria-pressed={measuring} onClick={toggleMeasuring}>
+        <button type="button" className={measuring ? 'chip icon on' : 'chip icon'} title={tip('measure')} aria-label="Measure" aria-pressed={measuring} onClick={toggleMeasuring}>
           <RulerIcon />
         </button>
-        <button type="button" className={objectAxes ? 'chip icon on' : 'chip icon'} title="Object axes (O)" aria-label="Object axes" aria-pressed={objectAxes} onClick={toggleObjectAxes}>
+        <button type="button" className={objectAxes ? 'chip icon on' : 'chip icon'} title={tip('objectAxes')} aria-label="Object axes" aria-pressed={objectAxes} onClick={toggleObjectAxes}>
           <ObjectAxesIcon />
         </button>
-        <Popover className="chip icon" title="Mirror (X / Y / Z)" button={<MirrorIcon />} disabled={none} align="right">
+        <Popover className="chip icon" title={`Mirror (${groupKeys('Mirror')})`} button={<MirrorIcon />} disabled={none} align="right">
           {() => (
             <div className="align-panel">
               <p>Mirrors the selection across the chosen axis.</p>
               <div className="segmented">
                 {(['X', 'Y', 'Z'] as const).map((label, axis) => (
-                  <button key={label} type="button" title={`Flip ${label} (${label})`} onClick={() => mirrorSelected(axis as 0 | 1 | 2)}>
+                  <button key={label} type="button" title={tip(MIRRORS[axis])} onClick={() => mirrorSelected(axis as 0 | 1 | 2)}>
                     Flip {label}
                   </button>
                 ))}
@@ -158,26 +162,26 @@ function Actions() {
             </div>
           )}
         </Popover>
-        <button type="button" className="chip icon" title="Drop onto the plate (D)" aria-label="Drop onto the plate" disabled={none} onClick={dropSelected}>
+        <button type="button" className="chip icon" title={tip('drop')} aria-label="Drop onto the plate" disabled={none} onClick={dropSelected}>
           <DropIcon />
         </button>
       </div>
       <div className="tool-group">
-        <button type="button" className="chip icon" title="Ghost (G)" aria-label="Ghost" disabled={none} onClick={ghostSelected}>
+        <button type="button" className="chip icon" title={tip('ghost')} aria-label="Ghost" disabled={none} onClick={ghostSelected}>
           <GhostIcon />
         </button>
-        <button type="button" className="chip icon" title="Un-ghost all (Shift+G)" aria-label="Un-ghost all" disabled={!ghosts} onClick={unghostAll}>
+        <button type="button" className="chip icon" title={tip('unghostAll')} aria-label="Un-ghost all" disabled={!ghosts} onClick={unghostAll}>
           <UnghostIcon />
         </button>
       </div>
       <div className="tool-group">
-        <button type="button" className="chip icon" title={`Duplicate in place (${MOD}D)`} aria-label="Duplicate" disabled={none} onClick={duplicateSelected}>
+        <button type="button" className="chip icon" title={tip('duplicate', 'Duplicate in place')} aria-label="Duplicate" disabled={none} onClick={duplicateSelected}>
           <DuplicateIcon />
         </button>
         <Popover className="chip icon" title="Array" button={<ArrayIcon />} disabled={none} align="right">
           {(close) => <ArrayPanel close={close} />}
         </Popover>
-        <button type="button" className="chip icon" title="Delete (Delete)" aria-label="Delete" disabled={none} onClick={deleteSelected}>
+        <button type="button" className="chip icon" title={tip('delete')} aria-label="Delete" disabled={none} onClick={deleteSelected}>
           <TrashIcon />
         </button>
       </div>
@@ -223,10 +227,10 @@ function History() {
   const canRedo = useEditor((s) => s.canRedo);
   return (
     <div className="tool-group">
-      <button type="button" className="chip icon" title={`Undo (${MOD}Z)`} aria-label="Undo" disabled={!canUndo} onClick={undo}>
+      <button type="button" className="chip icon" title={tip('undo')} aria-label="Undo" disabled={!canUndo} onClick={undo}>
         <UndoIcon />
       </button>
-      <button type="button" className="chip icon" title={`Redo (${MOD}Y)`} aria-label="Redo" disabled={!canRedo} onClick={redo}>
+      <button type="button" className="chip icon" title={tip('redo')} aria-label="Redo" disabled={!canRedo} onClick={redo}>
         <RedoIcon />
       </button>
     </div>
@@ -267,7 +271,7 @@ const ViewWidget = memo(function ViewWidget({ viewer }: { viewer: React.RefObjec
             </button>
           ))}
         </div>
-        <button type="button" className="chip icon" title="Fit to view (F)" aria-label="Fit to view" onClick={() => viewer.current?.fit()}>
+        <button type="button" className="chip icon" title={tip('fit')} aria-label="Fit to view" onClick={() => viewer.current?.fit()}>
           <FitIcon />
         </button>
       </div>
@@ -651,6 +655,12 @@ export function Viewport() {
         onMarkerMove: dragMarker,
         onMarkerDrop: endMarkerDrag,
         onMeasurePick: pickMeasure,
+        // Two fingers tapped on the plate undo and three redo; the viewer is told whether there was a step to take.
+        onHistory: (step) => {
+          const can = step === 'undo' ? getState().canUndo : getState().canRedo;
+          if (can) (step === 'undo' ? undo : redo)();
+          return can;
+        },
         onMarkerPick: (id) => {
           const robot = getState().doc.robot;
           if (robot?.joints.some((j) => j.id === id)) selectJoint(id);

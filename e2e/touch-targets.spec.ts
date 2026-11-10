@@ -88,7 +88,14 @@ for (const viewport of [
       await openApp(page);
     });
 
+    // Upright there is no room for the panels beside the plate: they start out of the way and lie over it when
+    // called for, one at a time. A test that measures a panel puts it on show, as a tap on its tab would.
+    const show = async (page: Page, side: 'left' | 'right'): Promise<void> => {
+      if (upright) await store(page, (m, left) => m.setPrefs({ leftPanel: left, rightPanel: !left }), side === 'left');
+    };
+
     test('the inspector of a shape, of a text and of a part', async ({ page }) => {
+      await show(page, 'right');
       await store(page, (m) => m.addShape('fillet'));
       await settled(page);
       await expectFingerSized(page, '.inspector', 'a shape in the inspector');
@@ -131,6 +138,7 @@ for (const viewport of [
     });
 
     test('the File menu and the list of export formats', async ({ page }) => {
+      await show(page, 'left');
       await store(page, (m) => {
         m.addShape('box');
         m.select([]);
@@ -147,9 +155,6 @@ for (const viewport of [
     });
 
     test('the measure bar', async ({ page }) => {
-      // Known to fail upright: the stage is 260 px wide there and the row of feature chips is wider,
-      // so the chips at both ends are cut off. The app is laid out for a tablet held sideways.
-      test.fixme(upright, 'The measure bar is wider than the stage of a tablet held upright.');
       await store(page, (m) => {
         m.addShape('box');
         m.select([]);
@@ -165,21 +170,21 @@ for (const viewport of [
         m.setPrefs({ sidebar: 'structure' });
       });
       await settled(page);
+      await show(page, 'left');
       await expect(page.locator('.outline-row').first()).toBeVisible();
       await expectFingerSized(page, '.sidebar', 'the Structure tab');
       await store(page, (m) => {
         m.select([]);
         m.openPartsBin();
       });
+      await show(page, 'right');
       await expectFingerSized(page, '.inspector', 'the parts bin');
     });
 
     test('the Dimensions box leaves the sidebar\'s Import and Export controls free', async ({ page }) => {
-      // Known to fail upright: the box is wider than the 260 px stage and lies over the bottom of the
-      // sidebar, so Import, the format list and Export cannot be tapped while something is selected.
-      test.fixme(upright, 'The Dimensions box covers the bottom of the sidebar on a tablet held upright.');
       await store(page, (m) => m.addShape('box'));
       await settled(page);
+      await show(page, 'left');
       await expect(page.locator('.transform-box')).toBeVisible();
       // A trial tap: Playwright checks that a finger there would reach the control, and taps nothing.
       await page.locator('.export-row .select-button').tap({ trial: true });

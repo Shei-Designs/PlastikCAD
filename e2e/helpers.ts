@@ -230,7 +230,7 @@ export interface Fingers {
   /** A finger goes down; `down` lists every finger then on the screen. */
   start(down: Finger[]): Promise<void>;
   move(down: Finger[]): Promise<void>;
-  /** A finger lifts; `down` lists those still on the screen. */
+  /** Fingers lift: those listed, or all of them when none is. */
   end(down?: Finger[]): Promise<void>;
   /** One finger down and up again at a point. */
   tap(x: number, y: number): Promise<void>;
@@ -289,6 +289,43 @@ export async function fingers(page: Page): Promise<Fingers> {
       await send('touchStart', [[x, y, 0]]);
       await pause(page, 40);
       await send('touchEnd', []);
+    },
+  };
+}
+
+export interface Pen {
+  /** The pen comes over a point of the page without touching it, or moves there in the air. */
+  hover(x: number, y: number): Promise<void>;
+  /** Its tip goes down, moves while down, and lifts (it then hovers where it lifted). */
+  down(x: number, y: number): Promise<void>;
+  drag(x: number, y: number): Promise<void>;
+  up(x: number, y: number): Promise<void>;
+  /** The pen is taken out of the range of the screen. */
+  leave(): Promise<void>;
+}
+
+/**
+ * A pen, through the browser's debugging protocol: the mouse events it sends can be given a pen's
+ * pointer type, and the page then hears real pointer events of type 'pen' (over, move, down, up).
+ * The protocol has no way to lift a pen out of range. Moved off the page it is heard to leave as
+ * one is (`pointerout` to nothing), but not while a finger is down, when the browser has it move
+ * on over the document instead: so `leave` moves it off and then says so itself, with an event
+ * made in the page.
+ */
+export async function pen(page: Page): Promise<Pen> {
+  const cdp = await page.context().newCDPSession(page);
+  const send = (type: 'mouseMoved' | 'mousePressed' | 'mouseReleased', x: number, y: number, pressed: boolean): Promise<void> =>
+    cdp
+      .send('Input.dispatchMouseEvent', { type, x, y, pointerType: 'pen', ...(type === 'mouseMoved' && !pressed ? {} : { button: 'left', buttons: pressed ? 1 : 0, clickCount: 1 }) })
+      .then(() => undefined);
+  return {
+    hover: (x, y) => send('mouseMoved', x, y, false),
+    down: (x, y) => send('mousePressed', x, y, true),
+    drag: (x, y) => send('mouseMoved', x, y, true),
+    up: (x, y) => send('mouseReleased', x, y, false),
+    leave: async () => {
+      await send('mouseMoved', -5, -5, false);
+      await page.evaluate(() => void window.dispatchEvent(new PointerEvent('pointerout', { pointerType: 'pen', bubbles: true, relatedTarget: null })));
     },
   };
 }
@@ -366,6 +403,16 @@ export function viewState(page: Page): Promise<ViewState> {
     controlPointers: v.controls._pointers.length,
   }));
 }
+
+export interface PenWatch {
+  /** What the viewer has heard of the pen: its tip is down, it is in range of the screen. */
+  down: boolean;
+  near: boolean;
+  /** How many touches it is ignoring as the hand that holds the pen. */
+  palms: number;
+}
+
+export const penWatch = (page: Page): Promise<PenWatch> => viewer(page, (v) => ({ down: v.input.pen.down as boolean, near: v.input.pen.near as boolean, palms: v.input.palms.size as number }));
 
 /** Whether a press at that point of the page would land on an object. */
 export function hitsObject(page: Page, x: number, y: number): Promise<boolean> {

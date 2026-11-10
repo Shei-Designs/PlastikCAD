@@ -30,7 +30,7 @@ import {
 import { cancelLink, syncNow, useSyncStatus } from '../sync/sync';
 import { RenameInput } from './Fields';
 import { CloseIcon, Logo, MoreIcon } from './icons';
-import { MOD } from './keys';
+import { tip } from './keymap';
 import { MenuItem } from './Menu';
 import { when } from './when';
 import { Modal } from './Modal';
@@ -245,7 +245,7 @@ export function Projects() {
           {view.kind === 'versions' && <span className="projects-gap" />}
           {view.kind === 'projects' ? (
             <>
-              <button type="button" className="primary" title={`New project (${MOD}N)`} onClick={() => void newProject()}>
+              <button type="button" className="primary" title={tip('newProject')} onClick={() => void newProject()}>
                 New project
               </button>
               <button type="button" className="chip" title="Brings a design file from anywhere in as a project." onClick={() => void openProjectFile()}>
