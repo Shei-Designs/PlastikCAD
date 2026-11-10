@@ -1,5 +1,5 @@
 import { unzipSync } from 'fflate';
-import { determinant, IDENTITY, multiply, scaling } from '../model/math';
+import { apply, determinant, IDENTITY, multiply, scaling } from '../model/math';
 import type { Mat } from '../model/math';
 import type { ImportedModel, ImportedPart } from './import';
 import { MeshBuilder } from './weld';
@@ -78,7 +78,7 @@ export function parse3mf(bytes: Uint8Array, name = 'Model'): ImportedModel {
         return true;
       },
     });
-    for (const name in unzipped) files.set(partName(name), unzipped[name]);
+    for (const file in unzipped) files.set(partName(file), unzipped[file]);
   } catch (e) {
     if (e instanceof Error && e.message === TOO_BIG) throw e;
     throw new Error('This 3MF file is damaged, or is not a 3MF file.');
@@ -122,10 +122,14 @@ export function parse3mf(bytes: Uint8Array, name = 'Model'): ImportedModel {
     }
     return b;
   };
-  const emit = (path: string, id: string, transform: Mat, depth: number, inherited: string | undefined) => {
-    const object = load(path)?.objects.get(id);
-    if (!object || depth > MAX_DEPTH) return;
+  /** `unit` is that of the model part `placement` is written in; an object kept in another part is in that part's unit. */
+  const emit = (path: string, id: string, placement: Mat, unit: number, depth: number, inherited: string | undefined) => {
+    const model = load(path);
+    const object = model?.objects.get(id);
+    if (!model || !object || depth > MAX_DEPTH) return;
     if (++visits > MAX_COMPONENTS) throw new Error('This 3MF file has too many components to open.');
+    const rescale = model.unit / unit;
+    const transform = rescale === 1 ? placement : multiply(placement, scaling([rescale, rescale, rescale]));
     const { vertices, triangles, colors } = object;
     const own = object.color ?? inherited;
     if (triangles.length) {
@@ -135,12 +139,10 @@ export function parse3mf(bytes: Uint8Array, name = 'Model'): ImportedModel {
       // Welded per color, so the index of a vertex is looked up afresh for each builder it goes into.
       const placed = new Float64Array(vertices.length);
       for (let v = 0; v < vertices.length; v += 3) {
-        const x = vertices[v];
-        const y = vertices[v + 1];
-        const z = vertices[v + 2];
-        placed[v] = m[0] * x + m[3] * y + m[6] * z + m[9];
-        placed[v + 1] = m[1] * x + m[4] * y + m[7] * z + m[10];
-        placed[v + 2] = m[2] * x + m[5] * y + m[8] * z + m[11];
+        const w = apply(m, [vertices[v], vertices[v + 1], vertices[v + 2]]);
+        placed[v] = w[0];
+        placed[v + 1] = w[1];
+        placed[v + 2] = w[2];
       }
       const count = vertices.length / 3;
       // A mirroring transform turns the triangles inside out; swap two corners to put them right.
@@ -175,12 +177,12 @@ export function parse3mf(bytes: Uint8Array, name = 'Model'): ImportedModel {
         builder.triangle(cache[a], cache[b], cache[c]);
       }
     }
-    for (const c of object.components) emit(c.path ?? path, c.id, multiply(transform, c.transform), depth + 1, own);
+    for (const c of object.components) emit(c.path ?? path, c.id, multiply(transform, c.transform), model.unit, depth + 1, own);
   };
   const toMm = scaling([root.unit, root.unit, root.unit]);
   for (const item of items) {
     builders = new Map();
-    emit(item.path ?? rootPath, item.id, multiply(toMm, item.transform), 0, undefined);
+    emit(item.path ?? rootPath, item.id, multiply(toMm, item.transform), root.unit, 0, undefined);
     const object = load(item.path ?? rootPath)?.objects.get(item.id);
     const itemName = object?.name || name;
     for (const [color, builder] of builders) {
@@ -254,10 +256,11 @@ function parseModel(xml: Uint8Array): Model {
     id = undefined;
   };
 
+  // Names are matched without their prefix: a file may write the core elements under one (`<c:object>`).
   while (scan.next()) {
     if (scan.closing) {
-      if (scan.is('object')) endObject();
-    } else if (scan.is('vertex')) {
+      if (scan.localIs('object')) endObject();
+    } else if (scan.localIs('vertex')) {
       if (id === undefined) continue;
       scan.numbers(XYZ, values);
       if (vertexLength + 3 > vertices.length) {
@@ -269,7 +272,7 @@ function parseModel(xml: Uint8Array): Model {
       vertices[vertexLength++] = values[0];
       vertices[vertexLength++] = values[1];
       vertices[vertexLength++] = values[2];
-    } else if (scan.is('triangle')) {
+    } else if (scan.localIs('triangle')) {
       if (id === undefined) continue;
       scan.numbers(V123, values);
       // Negated so that NaN fails too.
@@ -291,7 +294,7 @@ function parseModel(xml: Uint8Array): Model {
       triangles[triangleLength++] = values[0];
       triangles[triangleLength++] = values[1];
       triangles[triangleLength++] = values[2];
-    } else if (scan.is('object')) {
+    } else if (scan.localIs('object')) {
       endObject();
       const attrs = scan.attrs();
       id = attrs.id;
@@ -303,23 +306,22 @@ function parseModel(xml: Uint8Array): Model {
       vertexLength = 0;
       triangleLength = 0;
       if (scan.selfClosing) endObject();
-    } else if (scan.is('basematerials') || scan.is('m:colorgroup') || scan.localIs('colorgroup')) {
-      if (scan.closing) continue;
+    } else if (scan.localIs('basematerials') || scan.localIs('colorgroup')) {
       const list: (string | undefined)[] = [];
       const gid = scan.attrs().id;
       if (gid !== undefined) palettes.set(gid, list);
       // Its entries follow until it closes; they are read into the newest list.
       palette = list;
-    } else if (scan.is('base') || scan.localIs('color')) {
+    } else if (scan.localIs('base') || scan.localIs('color')) {
       if (id === undefined && palette) {
         const attrs = scan.attrs();
         palette.push(hexColor(attrs.displaycolor ?? attrs.color));
       }
-    } else if (scan.is('component')) {
+    } else if (scan.localIs('component')) {
       if (id !== undefined) pushPart(components, scan.attrs());
-    } else if (scan.is('item')) {
+    } else if (scan.localIs('item')) {
       pushPart(model.items, scan.attrs());
-    } else if (scan.is('model')) {
+    } else if (scan.localIs('model')) {
       // Looked up as an own key only: "toString" is not a unit.
       const unit = scan.attrs().unit ?? 'millimeter';
       model.unit = Object.prototype.hasOwnProperty.call(UNITS, unit) ? UNITS[unit] : 1;

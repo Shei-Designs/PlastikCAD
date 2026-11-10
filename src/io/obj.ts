@@ -1,7 +1,7 @@
 import { APP_NAME } from '../appInfo';
 import { PALETTE } from '../geometry/shapes';
 import type { ColoredObject } from '../worker/protocol';
-import { encodeText, fmt } from './format';
+import { encodeText, fmt, joinBytes, TextPieces } from './format';
 
 const objName = (name: string): string => name.trim().replace(/\s+/g, '_') || 'part';
 
@@ -18,22 +18,24 @@ export function writeObj(objects: ColoredObject[], name: string, units = 'millim
   const colors: string[] = [];
   for (const o of objects) for (const p of o.parts) if (p.color && !colors.includes(p.color)) colors.push(p.color);
   const mtlName = `${objName(name)}.mtl`;
-  const lines: string[] = [`# ${APP_NAME} - units: ${units}`];
-  if (colors.length) lines.push(`mtllib ${mtlName}`);
+  const pieces: Uint8Array[] = [];
+  const out = new TextPieces((bytes) => pieces.push(bytes));
+  out.line(`# ${APP_NAME} - units: ${units}`);
+  if (colors.length) out.line(`mtllib ${mtlName}`);
   let offset = 0;
   for (const o of objects) {
-    lines.push(`o ${objName(o.name)}`);
+    out.line(`o ${objName(o.name)}`);
     for (const part of o.parts) {
       const { positions: p, triangles: t } = part.mesh;
-      if (o.parts.length > 1) lines.push(`g ${objName(o.name)}_${part.color ? materialName(part.color) : 'part'}`);
-      if (part.color) lines.push(`usemtl ${materialName(part.color)}`);
-      for (let i = 0; i < p.length; i += 3) lines.push(`v ${fmt(p[i])} ${fmt(p[i + 1])} ${fmt(p[i + 2])}`);
-      for (let i = 0; i < t.length; i += 3) lines.push(`f ${t[i] + 1 + offset} ${t[i + 1] + 1 + offset} ${t[i + 2] + 1 + offset}`);
+      if (o.parts.length > 1) out.line(`g ${objName(o.name)}_${part.color ? materialName(part.color) : 'part'}`);
+      if (part.color) out.line(`usemtl ${materialName(part.color)}`);
+      for (let i = 0; i < p.length; i += 3) out.line(`v ${fmt(p[i])} ${fmt(p[i + 1])} ${fmt(p[i + 2])}`);
+      for (let i = 0; i < t.length; i += 3) out.line(`f ${t[i] + 1 + offset} ${t[i + 1] + 1 + offset} ${t[i + 2] + 1 + offset}`);
       offset += p.length / 3;
     }
   }
-  lines.push('');
-  const obj = encodeText(lines.join('\n'));
+  out.flush();
+  const obj = joinBytes(pieces);
   if (colors.length === 0) return { obj, mtl: null, mtlName };
   const mtl: string[] = [`# ${APP_NAME} materials`];
   for (const color of colors) {

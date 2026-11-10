@@ -45,6 +45,8 @@ export class Simulation {
   private readonly joints = new Map<string, number>();
   /** Sensor name → where its reading starts in sensordata, and how many numbers it is. */
   private readonly sensors = new Map<string, { at: number; dim: number }>();
+  /** Time asked for and not yet stepped: what is left of a time step after each call, s. */
+  private owed = 0;
 
   private constructor(
     private readonly mj: MainModule,
@@ -104,12 +106,18 @@ export class Simulation {
     if (this.model.nkey > 0) this.mj.mj_resetDataKeyframe(this.model, this.data, 0);
     else this.mj.mj_resetData(this.model, this.data);
     (this.data.ctrl as Float64Array).fill(0);
+    this.owed = 0;
     this.mj.mj_forward(this.model, this.data);
   }
 
-  /** Steps time on by about `seconds`; the number of steps taken. */
+  /**
+   * Steps time on by `seconds`: as many whole time steps as fit, the rest carried to the next call, so that
+   * a frame's worth at a time keeps pace with the clock. The number of steps taken.
+   */
   step(seconds: number): number {
-    const n = Math.max(0, Math.round(seconds / this.timestep));
+    this.owed += Math.max(0, seconds);
+    const n = Math.floor(this.owed / this.timestep + 1e-9);
+    this.owed -= n * this.timestep;
     for (let i = 0; i < n; i++) this.mj.mj_step(this.model, this.data);
     return n;
   }

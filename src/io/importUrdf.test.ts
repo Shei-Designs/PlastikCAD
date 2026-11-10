@@ -4,9 +4,11 @@ import { buildRobotPackage } from '../robot/export';
 import { ROBOTS } from '../robot/fixtures';
 import { linkNodes, linkOf } from '../robot/model';
 import { boundsSize, boxBounds } from '../model/math';
+import { decodeFloat32, decodeUint32 } from './base64';
 import { encodeText } from './format';
 import { meshPath, parseUrdf, urdfMeshFiles } from './importUrdf';
 import type { Companion } from './import';
+import { writeStl } from './stl';
 
 beforeAll(async () => {
   await initKernel();
@@ -274,11 +276,68 @@ describe('parseUrdf', () => {
     expect(() => parseUrdf(encodeText('<robot name="x"><link name="a"/></robot>'))).toThrow('No link');
   });
 
+  it('refuses a file nested deeper than any robot is, or one that trips the reader up, in words fit to show', () => {
+    const deep = encodeText(`<robot name="x"><link name="a"/>${'<a>'.repeat(200_000)}${'</a>'.repeat(200_000)}</robot>`);
+    expect(() => parseUrdf(deep)).toThrow(/nested too deeply/);
+    expect(() => urdfMeshFiles(deep)).toThrow(/nested too deeply/);
+  });
+
   it('lists the mesh files a URDF names and finds the path inside the package', () => {
     const urdf = encodeText('<robot name="x"><link name="a"><visual><geometry><mesh filename="package://pkg/meshes/visual/a.obj"/></geometry></visual><collision><geometry><mesh filename="file:///tmp/a.stl"/></geometry></collision></link></robot>');
     expect(urdfMeshFiles(urdf)).toEqual(['package://pkg/meshes/visual/a.obj', 'file:///tmp/a.stl']);
     expect(meshPath('package://pkg/meshes/visual/a.obj')).toBe('meshes/visual/a.obj');
     expect(meshPath('file:///tmp/a.stl')).toBe('tmp/a.stl');
     expect(meshPath('meshes\\a.stl')).toBe('meshes/a.stl');
+  });
+
+  it('never points outside the robot\'s folder, whatever a mesh reference says', () => {
+    // A package path that climbs out of its package, and an address on the network, are refused.
+    expect(meshPath('package://p/../../../../etc/passwd')).toBe('');
+    expect(meshPath('package://p/meshes/../../../secret.stl')).toBe('');
+    expect(meshPath('https://example.com/a.stl')).toBe('');
+    // What is left of any other reference has no way up in it, nor a root or a drive to start from.
+    expect(meshPath('package://p/meshes/./visual/../a.stl')).toBe('meshes/a.stl');
+    expect(meshPath('../../../../../dev/zero')).toBe('dev/zero');
+    expect(meshPath('../meshes/a.stl')).toBe('meshes/a.stl');
+    expect(meshPath('meshes/../../../a.stl')).toBe('a.stl');
+    expect(meshPath('C:\\Users\\x\\a.stl')).toBe('Users/x/a.stl');
+    expect(meshPath('file:///C:/Users/x/a.stl')).toBe('Users/x/a.stl');
+    // Only meshes that can be read, at a path that is allowed, are asked for.
+    const mesh = (filename: string) => `<visual><geometry><mesh filename="${filename}"/></geometry></visual>`;
+    const urdf = encodeText(
+      `<robot name="x"><link name="base">${mesh('package://p/../../../../etc/passwd')}${mesh('../../../../../../dev/zero')}${mesh('package://p/../../home/me/secret.stl')}${mesh('../meshes/a.STL')}<collision><geometry><box size="1 1 1"/></geometry></collision></link></robot>`,
+    );
+    expect(urdfMeshFiles(urdf)).toEqual(['../meshes/a.STL']);
+    // The refused ones are dropped with a word about each, and not asked for afterwards.
+    const imported = parseUrdf(urdf, [{ name: 'secret.stl', bytes: new Uint8Array(84) }]);
+    expect(imported.missing).toEqual(['../meshes/a.STL']);
+    expect(imported.warnings.filter((w) => w.includes('etc/passwd') || w.includes('secret.stl'))).toHaveLength(2);
+    expect(imported.scene).toHaveLength(1);
+  });
+
+  it('drops the corners a mesh scale throws out of range, and keeps a sound mesh', () => {
+    const tetra = { positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]), triangles: new Uint32Array([0, 2, 1, 0, 1, 3, 1, 2, 3, 0, 3, 2]) };
+    const urdf = encodeText(
+      '<robot name="r"><link name="base"><visual><geometry><mesh filename="package://p/meshes/a.stl"/></geometry></visual><visual><origin xyz="1 0 0"/><geometry><mesh filename="package://p/meshes/a.stl" scale="1e40 1 1"/></geometry></visual></link></robot>',
+    );
+    const imported = parseUrdf(urdf, [{ name: 'meshes/a.stl', bytes: writeStl(tetra, 't') }]);
+    const asset = Object.values(imported.assets)[0];
+    if (asset.kind !== 'mesh') throw new Error('expected a mesh');
+    const positions = decodeFloat32(asset.positions);
+    const triangles = decodeUint32(asset.triangles);
+    expect(Array.from(positions).every(Number.isFinite)).toBe(true);
+    expect(Math.max(...triangles)).toBeLessThan(positions.length / 3);
+    // The first visual whole, and the one face of the second that the scale left where it was.
+    expect(triangles.length / 3).toBe(5);
+  });
+
+  it('knows a material by its name once a visual has defined it', () => {
+    const box = '<geometry><box size="1 1 1"/></geometry>';
+    const urdf = encodeText(
+      `<robot name="r"><link name="a"><visual>${box}<material name="red"><color rgba="1 0 0 1"/></material></visual></link><link name="b"><visual>${box}<material name="red"/></visual></link><link name="c"><visual>${box}<material name="late"/></visual></link><link name="d"><visual>${box}<material name="late"><color rgba="0 0 1 1"/></material></visual></link>` +
+        '<joint name="j" type="fixed"><parent link="a"/><child link="b"/><origin xyz="2 0 0"/></joint><joint name="k" type="fixed"><parent link="a"/><child link="c"/><origin xyz="4 0 0"/></joint><joint name="l" type="fixed"><parent link="a"/><child link="d"/><origin xyz="6 0 0"/></joint></robot>',
+    );
+    // By name, wherever the visual that gives the color stands in the file.
+    expect(parseUrdf(urdf).scene.map((n) => n.color)).toEqual(['#ff0000', '#ff0000', '#0000ff', '#0000ff']);
   });
 });

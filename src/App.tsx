@@ -48,12 +48,14 @@ import {
   unghostAll,
   useEditor,
 } from './state/store';
+import { ErrorBoundary } from './ui/ErrorBoundary';
 import { Inspector } from './ui/Inspector';
 import { Projects } from './ui/Projects';
 import { Sidebar } from './ui/Sidebar';
 import { initInput } from './ui/inputMode';
 import { AskDialog } from './ui/AskDialog';
 import { TouchEntrySheet } from './ui/TouchEntry';
+import { commitTyping } from './ui/typing';
 import { Viewport, viewerRef } from './ui/Viewport';
 import { CloseIcon, WarningIcon } from './ui/icons';
 
@@ -66,10 +68,13 @@ const typing = (target: EventTarget | null): boolean => {
   return target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable;
 };
 
-/** Lets a box being typed in commit its value first, so a save takes the number on screen. */
-const commitTyping = (): void => {
-  const active = document.activeElement;
-  if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement) active.blur();
+/**
+ * What a part of the window that failed to draw offers (see ErrorBoundary): load the app again, once
+ * whatever is still pending has been written, or save a copy of the design first.
+ */
+export const crashActions = {
+  onReload: (): void => void saveProject().finally(() => window.location.reload()),
+  onSaveCopy: (): void => void saveCopy(),
 };
 
 function onKeyDown(e: KeyboardEvent): void {
@@ -278,11 +283,17 @@ export default function App() {
 
   return (
     <div className="app">
-      <Sidebar />
+      <ErrorBoundary frame="sidebar" {...crashActions}>
+        <Sidebar />
+      </ErrorBoundary>
       <main className="stage">
-        <Viewport />
+        <ErrorBoundary frame="viewport" {...crashActions}>
+          <Viewport />
+        </ErrorBoundary>
       </main>
-      <Inspector />
+      <ErrorBoundary frame="inspector" {...crashActions}>
+        <Inspector />
+      </ErrorBoundary>
       <Projects />
       <TouchEntrySheet />
       <AskDialog />

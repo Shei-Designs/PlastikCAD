@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { evaluate, initKernel } from '../evaluate';
+import { evaluate, initKernel } from '../testing';
 import { QUALITY } from '../types';
 import { ALL_MOTORS, MOTORS, dcMotor, gearmotor, servo, stepper } from './motors';
 import { defaultParams } from './types';
@@ -43,6 +43,13 @@ describe('motor mounts', () => {
     expect(r.stats.volume / (area * 4)).toBeGreaterThan(0.97);
     expect(r.stats.volume / (area * 4)).toBeLessThan(1.0);
     expect(r.info.find((i) => i.label === 'Bolt pattern')?.value).toBe('4 × M3, 31.00 × 31.00 mm');
+    // Six holes round the shaft are named by the circle they are on, whatever its size.
+    for (const m of ALL_MOTORS.filter((x) => x.holes.length === 6)) {
+      const family = MOTORS.find((def) => def.groups[0].params[0].type === 'select' && def.groups[0].params[0].options.some((o) => o.value === m.id))!;
+      const circle = 2 * Math.hypot(m.holes[0][0], m.holes[0][1]);
+      expect(made(family, { motor: m.id, form: 'plate' }).info.find((i) => i.label === 'Bolt pattern')?.value).toBe(`6 × ${m.screw}, on a ${Number(circle.toFixed(2))} mm circle`);
+    }
+    expect(made(gearmotor, { motor: '37d', form: 'plate' }).info.find((i) => i.label === 'Bolt pattern')?.value).toBe('6 × M3, on a 31 mm circle');
     // Tapped holes are smaller, so the plate keeps more.
     const tapped = made(stepper, { motor: 'nema17', form: 'plate', boltFit: 'tap' });
     expect(tapped.stats.volume).toBeGreaterThan(r.stats.volume);
@@ -84,11 +91,13 @@ describe('motor mounts', () => {
     expect(extent(body.stats, 0)).toBeCloseTo(32.2, 2);
   });
 
-  it('puts the 28BYJ-48 ears off the shaft line and refuses a bracket for a motor that has none', () => {
+  it('puts the 28BYJ-48 shaft 8 mm off the middle of its body, the ears across that middle, and refuses a bracket for a motor that has none', () => {
     const r = made(stepper, { motor: '28byj48', form: 'body' });
     expect(r.stats.max[2]).toBeCloseTo(10, 6);
     expect(r.stats.max[0]).toBeCloseTo(21, 2);
-    expect(r.stats.min[1]).toBeCloseTo(-14, 2);
+    // The Ø28 can sits 8 below the shaft, which is at the origin: from -22 to 6.
+    expect(r.stats.min[1]).toBeCloseTo(-22, 2);
+    expect(r.stats.max[1]).toBeCloseTo(6, 2);
     // The plate reaches a margin past the ear holes: 35 between them, plus 6 each side.
     const plate = made(stepper, { motor: '28byj48', form: 'plate', margin: 6 });
     expect(extent(plate.stats, 0)).toBeCloseTo(47, 1);

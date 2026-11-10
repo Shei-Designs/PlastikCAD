@@ -7,6 +7,7 @@ import { jointInDesign } from '../robot/model';
 import type { Bounds } from '../model/math';
 import type { GroupNode, PartNode, SceneNode } from '../model/types';
 import type { PickedFile } from '../platform';
+import type { SyncReport } from '../sync/engine';
 
 /** Lets a test hold the kernel's answer back until it says so. */
 let gate: Promise<void> = Promise.resolve();
@@ -87,6 +88,9 @@ const only = () => {
   expect(selected().length).toBe(1);
   return selected()[0];
 };
+
+/** What a sync pass reports, with nothing in it but what the test says. */
+const synced = (patch: Partial<SyncReport>): SyncReport => ({ uploaded: [], downloaded: [], merged: [], kept: [], deletedLocally: [], deletedRemotely: [], changedKeys: [], removedKeys: [], movedKeys: [], busy: [], held: [], errors: [], ...patch });
 
 /** Two boxes 30 mm apart along X, `a` at x = 30 and `b` at the origin, both selected. */
 function twoBoxes(): { a: string; b: string } {
@@ -695,7 +699,7 @@ describe('projects', () => {
     await store.saveProject();
     const key = store.getState().projectKey!;
     const box = scene()[0].id;
-    const report = { uploaded: [], downloaded: ['Plate'], merged: [], kept: [], deletedLocally: [], deletedRemotely: [], changedKeys: [key], removedKeys: [], movedKeys: [] };
+    const report = synced({ downloaded: ['Plate'], changedKeys: [key] });
     // Clean editor: the incoming version replaces what is on screen.
     const incoming = parseDoc(await kept.read(key));
     incoming.scene = [{ ...incoming.scene[0], pos: [5, 0, 10] as [number, number, number] }, { ...incoming.scene[0], id: 'remote01', name: 'From afar' }];
@@ -731,6 +735,61 @@ describe('projects', () => {
     expect(scene()).toEqual([]);
   });
 
+  it('keeps an unsaved change to the robot when a sync pass brings in another, and keeps what came in as a project of its own', async () => {
+    store.addShape('box');
+    const a = scene()[0].id;
+    store.addShape('box');
+    const b = scene()[1].id;
+    const joint = store.addJoint(a, b)!;
+    store.renameProject('Arm');
+    await store.saveProject();
+    const key = store.getState().projectKey!;
+    // Unsaved here: the joint's lower limit. From the other device: its upper limit.
+    store.updateJoint(joint, { lower: -10 });
+    const incoming = parseDoc(await kept.read(key));
+    incoming.robot = { ...incoming.robot!, joints: incoming.robot!.joints.map((j) => ({ ...j, upper: 45 })) };
+    incoming.revision = 'remoterev1';
+    await kept.write(key, incoming.name, serializeDoc(incoming));
+    await store.applySyncReport(synced({ downloaded: ['Arm'], changedKeys: [key] }));
+    expect(store.getState().doc.robot!.joints[0]).toMatchObject({ lower: -10, upper: 90 });
+    expect(store.isDirty()).toBe(true);
+    const copy = (await kept.list()).find((p) => p.name === 'Arm (other device)')!;
+    expect(parseDoc(await kept.read(copy.key)).robot!.joints[0]).toMatchObject({ lower: -90, upper: 45 });
+    expect(store.getState().notice?.text).toBe('"Arm" was changed on two devices at once; both versions were kept.');
+    // A robot changed on the other side alone is simply taken, unsaved edits to the objects merged onto it.
+    await store.saveProject();
+    store.nudgeSelected([1, 0, 0]);
+    const next = parseDoc(await kept.read(key));
+    next.robot = { ...next.robot!, base: 'fixed' };
+    next.revision = 'remoterev2';
+    await kept.write(key, next.name, serializeDoc(next));
+    await store.applySyncReport(synced({ downloaded: ['Arm'], changedKeys: [key] }));
+    expect(store.getState().doc.robot).toMatchObject({ base: 'fixed', joints: [{ lower: -10 }] });
+  });
+
+  it('says everything a sync pass did in one notice', async () => {
+    store.addShape('box');
+    await store.saveProject();
+    await store.applySyncReport(synced({ kept: ['Plate', 'Lid'], deletedLocally: ['A', 'B', 'C', 'D'], downloaded: ['Lid'] }));
+    expect(store.getState().notice?.text).toBe('"Plate" was changed on two devices at once; both versions were kept. "Lid" was changed on two devices at once; both versions were kept. Deleted on another device: "A", "B", "C" and 1 more.');
+    await store.applySyncReport(synced({ downloaded: ['Lid'] }));
+    expect(store.getState().notice).toMatchObject({ kind: 'ok', text: 'Synced "Lid" from Google Drive.' });
+  });
+
+  it('stamps a rename of a project that is not open as a save, so that sync carries it', async () => {
+    store.addShape('box');
+    store.renameProject('Plate');
+    await store.saveProject();
+    const key = store.getState().projectKey!;
+    const before = parseDoc(await kept.read(key));
+    await store.startProject('Other');
+    await store.renameProjectAt(key, 'Base plate');
+    const after = parseDoc(await kept.read(key));
+    expect(after.name).toBe('Base plate');
+    expect(after.revision).not.toBe(before.revision);
+    expect(after.parent).toBe(before.revision);
+  });
+
   it('reports a failed save once and keeps the changes pending', async () => {
     vi.spyOn(kept, 'write').mockRejectedValue(new Error('disk full'));
     store.addShape('box');
@@ -746,6 +805,43 @@ describe('projects', () => {
 
 describe('mating gears', () => {
   const mateIn = (s = scene()) => s.find((n) => n.id === store.getState().mating?.id) as PartNode | undefined;
+
+  it('leaves the wizard open when undo has nothing to go back to', async () => {
+    await store.startProject();
+    await store.addPart('gears');
+    const gear = scene()[0];
+    // A fresh history: opening the project again from what was saved.
+    await store.saveProject();
+    const key = store.getState().projectKey!;
+    await store.startProject('Elsewhere');
+    await store.openProject(key);
+    store.startMate(gear.id);
+    await store.previewMate({ kind: 'gear', teeth: 20, backlash: 0.1, extra: 0.1, angle: 0 });
+    expect(store.getState().mating).not.toBeNull();
+    store.undo();
+    expect(store.getState().mating).not.toBeNull();
+    expect(scene().length).toBe(2);
+    store.cancelMate();
+    expect(scene().length).toBe(1);
+  });
+
+  it('undoes an accepted mate without taking the robot with it', async () => {
+    await store.addPart('gears');
+    const gear = scene()[0];
+    store.addShape('box');
+    expect(store.addJoint(gear.id, scene()[1].id)).not.toBeNull();
+    store.leaveRobotMode();
+    store.startMate(gear.id);
+    await store.previewMate({ kind: 'gear', teeth: 20, backlash: 0.1, extra: 0.1, angle: 0 });
+    await store.commitMate();
+    expect(scene().length).toBe(3);
+    store.undo();
+    expect(scene().length).toBe(2);
+    expect(store.getState().doc.robot?.joints.length).toBe(1);
+    store.redo();
+    expect(scene().length).toBe(3);
+    expect(store.getState().doc.robot?.joints.length).toBe(1);
+  });
 
   it('does not keep the previous preview while the one asked for is still being built', async () => {
     await store.addPart('gears');
@@ -838,6 +934,20 @@ describe('importing', () => {
     await store.receiveFiles([ascii([[0, 0, 0, 10, 0, 0, 0, 10, 2], [0, 0, 0, 0, 10, 2, 10, 0, 0]])]);
     expect(scene().length).toBe(1);
     expect(scene()[0]).toMatchObject({ type: 'import', size: [10, 10, 2] });
+  });
+
+  it('brings in the files it can read when one among them cannot be, and names that one', async () => {
+    const good = ascii([[0, 0, 0, 10, 0, 0, 0, 10, 2], [0, 0, 0, 0, 10, 2, 10, 0, 0]]);
+    const empty: PickedFile = { name: 'broken.stl', path: null, bytes: new Uint8Array(0) };
+    await store.receiveFiles([{ ...good, name: 'first.stl' }, empty, { ...good, name: 'last.stl' }]);
+    expect(scene().map((n) => n.name)).toEqual(['first', 'last']);
+    expect(store.getState().notice).toMatchObject({ kind: 'error' });
+    expect(store.getState().notice?.text).toMatch(/^broken\.stl: /);
+    // Alone, it is still an error, and nothing comes in.
+    await store.startProject();
+    await store.receiveFiles([empty]);
+    expect(scene()).toEqual([]);
+    expect(store.getState().notice?.text).toMatch(/^broken\.stl: /);
   });
 
   it('reads a material library named after the OBJ beside it when the one it names is not there', async () => {

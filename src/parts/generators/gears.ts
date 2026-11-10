@@ -307,6 +307,12 @@ function rackTopEdge(o: {
   return pts;
 }
 
+/** Material below a rack's tooth roots unless its settings say otherwise: what a rack made as a gear's mate gets. */
+export const RACK_BASE_HEIGHT = 6;
+
+/** Height of a rack's pitch line above its bottom face, where its origin is. */
+export const rackPitchLine = (baseHeight: number, clearance: number, module: number): number => baseHeight + (1 + clearance) * module;
+
 export const rack: GeneratorDef = {
   id: 'rack',
   name: 'Gear rack',
@@ -324,7 +330,7 @@ export const rack: GeneratorDef = {
           key: 'baseHeight',
           label: 'Base height',
           help: 'Material below the tooth roots.',
-          default: 6,
+          default: RACK_BASE_HEIGHT,
           min: 0.5,
           max: 100,
           step: 0.5,
@@ -365,7 +371,7 @@ export const rack: GeneratorDef = {
     const alpha = Math.atan(Math.tan(an) / Math.cos(helix));
     const pitch = (Math.PI * mn) / Math.cos(helix);
     const length = n * pitch;
-    const pitchLine = base + (1 + c) * mn;
+    const pitchLine = rackPitchLine(base, c, mn);
     const top = pitchLine + mn;
 
     const edge = (first: number, count: number) =>

@@ -60,6 +60,19 @@ describe('file names', () => {
     expect(fileNameFor('x'.repeat(200))).toBe(`${'x'.repeat(80)}.plastikcad`);
   });
 
+  it('never makes a hidden file, half a character or a name Windows keeps for itself', () => {
+    expect(fileNameFor('.config')).toBe('config.plastikcad');
+    expect(fileNameFor(' . ..hidden')).toBe('hidden.plastikcad');
+    expect(fileNameFor('...')).toBe('Untitled.plastikcad');
+    // An emoji across the eightieth place is cut whole, so the name still goes into a URL.
+    const cut = fileNameFor(`${'x'.repeat(79)}\u{1F600}!`);
+    expect(cut).toBe(`${'x'.repeat(79)}\u{1F600}.plastikcad`);
+    expect(() => encodeURIComponent(cut)).not.toThrow();
+    expect(fileNameFor('NUL')).toBe('NUL project.plastikcad');
+    expect(fileNameFor('com1')).toBe('com1 project.plastikcad');
+    expect(fileNameFor('Console')).toBe('Console.plastikcad');
+  });
+
   it('numbers a name another file already has, ignoring case, but not the file itself', () => {
     expect(uniqueFileName('Box.plastikcad', ['Lid.plastikcad'])).toBe('Box.plastikcad');
     expect(uniqueFileName('Box.plastikcad', ['box.plastikcad'])).toBe('Box (2).plastikcad');
@@ -122,6 +135,42 @@ describe('the projects folder', () => {
     // A change of case alone keeps the file, number and all.
     expect(await store.write(renamed, 'hinge', design('p0000001', 'hinge'))).toBe(renamed);
     expect(await store.write(key, 'draft', design('p0000001', 'draft'))).toBe(key);
+  });
+
+  it('puts a renamed file back under its old name when the write that follows fails', async () => {
+    const store = new DiskProjects(DIR);
+    const key = await store.write(null, 'Draft', design('p0000001', 'Draft'));
+    const platform = await import('../platform');
+    const write = vi.spyOn(platform, 'writePath').mockRejectedValueOnce(new Error('No space left on device'));
+    await expect(store.write(key, 'Hinge', design('p0000001', 'Hinge'))).rejects.toThrow(/No space left/);
+    write.mockRestore();
+    expect([...files.keys()]).toEqual([key]);
+    // The editor still knows the project by its old key, and the next save goes through.
+    expect(await store.write(key, 'Hinge', design('p0000001', 'Hinge'))).toBe(`${DIR}/Hinge.plastikcad`);
+    expect([...files.keys()]).toEqual([`${DIR}/Hinge.plastikcad`]);
+  });
+
+  it('discards into a Trash folder inside the projects folder, never over what is already there', async () => {
+    const store = new DiskProjects(DIR);
+    const first = await store.write(null, 'Box', design('p0000001', 'Box'));
+    await store.discard(first);
+    expect([...files.keys()]).toEqual([`${DIR}/Trash/Box.plastikcad`]);
+    const second = await store.write(null, 'Box', design('p0000002', 'Box'));
+    await store.discard(second);
+    expect([...files.keys()].sort()).toEqual([`${DIR}/Trash/Box (2).plastikcad`, `${DIR}/Trash/Box.plastikcad`]);
+    // What is in the trash is not a project any more.
+    expect(await store.list()).toEqual([]);
+  });
+
+  it('dates a project by when the design says it was saved, and by its file only when it does not say', async () => {
+    const saved = '2026-11-08T09:30:00.000Z';
+    files.set(`${DIR}/Dated.plastikcad`, encoder.encode(serializeDoc({ ...emptyDoc(), id: 'dated001', name: 'Dated', scene: [makeShape('box')], saved })));
+    files.set(`${DIR}/Plain.plastikcad`, encoder.encode(design('plain001', 'Plain')));
+    // The files themselves carry a date that says nothing, as after a restore.
+    clock = 1_794_310;
+    const listed = await new DiskProjects(DIR).list();
+    expect(listed.find((p) => p.name === 'Dated')!.modified).toBe(Date.parse(saved));
+    expect(listed.find((p) => p.name === 'Plain')!.modified).toBe(1_794_310);
   });
 
   it('remembers headers until a file changes', async () => {

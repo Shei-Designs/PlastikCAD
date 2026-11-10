@@ -178,7 +178,7 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, SetEnvironmentVariable
+from launch.actions import AppendEnvironmentVariable, DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
@@ -200,8 +200,8 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument('headless', default_value='false', description='Run the Gazebo server without the window'),
-        # So that Gazebo can find package://${name}/meshes/...
-        SetEnvironmentVariable('GZ_SIM_RESOURCE_PATH', os.path.dirname(share)),
+        # So that Gazebo can find package://${name}/meshes/..., beside whatever is on its path already
+        AppendEnvironmentVariable('GZ_SIM_RESOURCE_PATH', os.path.dirname(share)),
         gz_sim,
         Node(
             package='robot_state_publisher',
@@ -289,11 +289,10 @@ has joints under it: \`/arm_controller\` takes joint trajectories. The URDF
 says \`${SHARE_PLACEHOLDER}\` where it means the package's share folder; the
 launch files fill that in, so no xacro is needed.
 
-Isaac Sim opens the URDF as it is (File > Import). Add \`${name}\` and this
-folder to the importer's ROS package list so the \`package://\` mesh paths
-resolve, or import from a sourced workspace where the package is built; set
-Base Type to Mobile unless the robot is bolted down, and give the joints
-drive gains (velocity on wheels, position on servos), which URDF does not
-carry. The importer writes the USD itself.
+For Isaac Sim, export the robot from ${APP_NAME} as an Isaac Sim stage: it
+opens and runs as it is, with the drives, the sensors and a ROS 2 graph
+written in. The URDF can still be imported there (File > Import), with
+\`${name}\` and this folder on the importer's ROS package list so the
+\`package://\` mesh paths resolve.
 `;
 }

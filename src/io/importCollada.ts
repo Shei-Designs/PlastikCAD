@@ -4,18 +4,17 @@
 // axis is up; parts come out Z up in millimeters. Collada is what most ROS
 // robot descriptions draw their links with.
 import type { MeshWithUV } from '../geometry/mesh';
-import { determinant, multiply } from '../model/math';
+import { apply, determinant, IDENTITY, multiply } from '../model/math';
 import type { Mat } from '../model/math';
 import type { Companion, ImportedImage, ImportedModel, ImportedPart } from './import';
-import { hex, imageMime } from './importObj';
-import { MeshBuilder } from './weld';
+import { hex, imageMime } from './material';
+import { cutPolygon, MeshBuilder } from './weld';
 import { childOf, childrenOf, localName, xmlTree } from './xml';
 import type { XmlElement } from './xml';
 
 const MAX_TRIANGLES = 20_000_000;
 const MAX_NODES = 100_000;
 const MAX_DEPTH = 64;
-const IDENT: Mat = [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0];
 
 /** A `<source>`: its numbers and how the accessor reads them. */
 interface Source {
@@ -117,7 +116,7 @@ export function parseCollada(bytes: Uint8Array, name = 'Model', companions: Comp
     let out: ImportedImage | undefined;
     const from = image && (childOf(image, 'init_from')?.text || (childOf(image, 'init_from') && childOf(childOf(image, 'init_from')!, 'ref')?.text) || '');
     if (from) {
-      const file = decodeURIComponent(from.replace(/^file:\/*/, '')).replace(/\\/g, '/');
+      const file = unescaped(from.replace(/^file:\/*/, '')).replace(/\\/g, '/');
       const tail = file.split('/').pop()!.toLowerCase();
       const mime = imageMime(tail);
       const companion = companions.find((c) => c.name.split('/').pop()!.toLowerCase() === tail);
@@ -204,20 +203,14 @@ export function parseCollada(bytes: Uint8Array, name = 'Model', companions: Comp
       if (triangles > MAX_TRIANGLES) throw new Error('This Collada file has too many triangles to open.');
       const builder = new MeshBuilder(Math.max(16, inputs.position.source.count), Math.max(16, corners));
       const position = inputs.position.source;
-      const m = world;
       const placedVertex = new Map<number, number>();
       const vertex = (i: number): number => {
         let v = placedVertex.get(i);
         if (v !== undefined) return v;
         const o = position.offset + i * position.stride;
         if (i < 0 || o + 2 >= position.data.length) return -1;
-        const x = position.data[o];
-        const y = position.data[o + 1];
-        const z = position.data[o + 2];
-        const wx = m[0] * x + m[3] * y + m[6] * z + m[9];
-        const wy = m[1] * x + m[4] * y + m[7] * z + m[10];
-        const wz = m[2] * x + m[5] * y + m[8] * z + m[11];
-        const [px, py, pz] = placed(wx, wy, wz);
+        const w = apply(world, [position.data[o], position.data[o + 1], position.data[o + 2]]);
+        const [px, py, pz] = placed(w[0], w[1], w[2]);
         v = builder.vertex(px * unit, py * unit, pz * unit);
         placedVertex.set(i, v);
         return v;
@@ -233,8 +226,21 @@ export function parseCollada(bytes: Uint8Array, name = 'Model', companions: Comp
       for (const poly of polygons) {
         const n = poly.length / inputs.stride;
         const at = (k: number) => poly[k * inputs.stride + inputs.position.offset];
-        for (let k = 1; k + 1 < n; k++) {
-          const [a, b, c] = mirrored ? [0, k + 1, k] : [0, k, k + 1];
+        // A fan around the first corner, unless the polygon is not convex.
+        let cut: number[] | null = null;
+        if (n > 3) {
+          const corners: number[] = [];
+          for (let k = 0; k < n; k++) {
+            const o = position.offset + at(k) * position.stride;
+            if (!(o >= 0 && o + 2 < position.data.length)) break;
+            corners.push(position.data[o], position.data[o + 1], position.data[o + 2]);
+          }
+          if (corners.length === n * 3) cut = cutPolygon(corners);
+        }
+        const count = cut ? cut.length / 3 : n - 2;
+        for (let t = 0; t < count; t++) {
+          const [i, j, l] = cut ? [cut[t * 3], cut[t * 3 + 1], cut[t * 3 + 2]] : [0, t + 1, t + 2];
+          const [a, b, c] = mirrored ? [i, l, j] : [i, j, l];
           const before = builder.size;
           builder.triangle(vertex(at(a)), vertex(at(b)), vertex(at(c)));
           if (tex && builder.size > before) for (const corner of [a, b, c]) uv.push(...uvOf(poly, corner));
@@ -291,19 +297,28 @@ export function parseCollada(bytes: Uint8Array, name = 'Model', companions: Comp
   const scene = childOf(root, 'scene');
   const library = childOf(root, 'library_visual_scenes');
   const visual = ref(scene && childOf(scene, 'instance_visual_scene')?.attrs.url) ?? (library && childOf(library, 'visual_scene'));
-  if (visual) for (const node of childrenOf(visual, 'node')) visit(node, IDENT, 0);
+  if (visual) for (const node of childrenOf(visual, 'node')) visit(node, IDENTITY, 0);
   // No scene: every geometry, where it is.
   if (parts.length === 0 && !visual) {
     const geometries = childOf(root, 'library_geometries');
-    for (const geometry of geometries ? childrenOf(geometries, 'geometry') : []) emitGeometry(geometry, new Map(), undefined, IDENT);
+    for (const geometry of geometries ? childrenOf(geometries, 'geometry') : []) emitGeometry(geometry, new Map(), undefined, IDENTITY);
   }
   if (parts.length === 0) throw new Error('This Collada file has no meshes.');
   return { kind: 'model', parts, used: parts.flatMap((p) => (p.image ? [p.image.name] : [])) };
 }
 
+/** A file reference with its `%20` and the like read; one with a `%` that escapes nothing is taken as it is. */
+function unescaped(reference: string): string {
+  try {
+    return decodeURIComponent(reference);
+  } catch {
+    return reference;
+  }
+}
+
 /** A node's own transform: its transformation elements, applied in the order written. */
 function localMatrix(node: XmlElement): Mat {
-  let m = IDENT;
+  let m = IDENTITY;
   for (const e of node.children) {
     const kind = localName(e.name);
     const v = kind === 'matrix' || kind === 'translate' || kind === 'rotate' || kind === 'scale' ? e.text.trim().split(/\s+/).map(Number) : null;
@@ -321,7 +336,7 @@ function localMatrix(node: XmlElement): Mat {
 /** A turn of `angle` radians about the axis (x, y, z). */
 function axisAngle(x: number, y: number, z: number, angle: number): Mat {
   const n = Math.hypot(x, y, z);
-  if (n === 0) return IDENT;
+  if (n === 0) return IDENTITY;
   x /= n;
   y /= n;
   z /= n;
@@ -331,6 +346,3 @@ function axisAngle(x: number, y: number, z: number, angle: number): Mat {
   // Columns: the images of X, Y and Z.
   return [c + x * x * k, y * x * k + z * s, z * x * k - y * s, x * y * k - z * s, c + y * y * k, z * y * k + x * s, x * z * k + y * s, y * z * k - x * s, c + z * z * k, 0, 0, 0];
 }
-
-/** For tests: whether the bytes look like a Collada document. */
-export const looksLikeCollada = (head: string): boolean => /<COLLADA[\s>]/.test(head);

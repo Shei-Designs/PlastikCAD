@@ -6,7 +6,7 @@
 // clearance and long enough to pass through a wall: make it a hole and group
 // it with the wall. Parts lie flat, centered on the wall; turn them to face
 // through a side.
-import { arc, circle } from '../math2d';
+import { arc, circle, roundedRect } from '../math2d';
 import { extrude, translate } from '../types';
 import type { Polygon, Quality, Shape2D, Solid, Vec2 } from '../types';
 import { bool, num, str } from './types';
@@ -28,31 +28,17 @@ export interface Opening {
 function outline(o: Opening, grow: number, q: Quality, cx = 0, cy = 0): Polygon {
   const w = o.w + 2 * grow;
   const h = o.h + 2 * grow;
+  if (o.bottom === undefined) return roundedRect(cx, cy, w, h, o.r + grow, q);
+  // A D-sub style trapezoid: sloping sides, corners rounded with square arcs moved in.
   const r = Math.max(0, Math.min(o.r + grow, w / 2, h / 2));
   const n = Math.max(2, Math.round(q.circle / 4));
-  if (o.bottom !== undefined) {
-    // A D-sub style trapezoid: sloping sides, corners rounded with square arcs moved in.
-    const bw = o.bottom + 2 * grow;
-    const slope = Math.atan2((w - bw) / 2, h);
-    return [
-      ...arc(cx + w / 2 - r, cy + h / 2 - r, r, -slope, Math.PI / 2, n),
-      ...arc(cx - w / 2 + r, cy + h / 2 - r, r, Math.PI / 2, Math.PI + slope, n),
-      ...arc(cx - bw / 2 + r, cy - h / 2 + r, r, Math.PI + slope, 1.5 * Math.PI, n),
-      ...arc(cx + bw / 2 - r, cy - h / 2 + r, r, 1.5 * Math.PI, 2 * Math.PI - slope, n),
-    ];
-  }
-  if (r <= 0)
-    return [
-      [cx - w / 2, cy - h / 2],
-      [cx + w / 2, cy - h / 2],
-      [cx + w / 2, cy + h / 2],
-      [cx - w / 2, cy + h / 2],
-    ];
+  const bw = o.bottom + 2 * grow;
+  const slope = Math.atan2((w - bw) / 2, h);
   return [
-    ...arc(cx + w / 2 - r, cy - h / 2 + r, r, -Math.PI / 2, 0, n),
-    ...arc(cx + w / 2 - r, cy + h / 2 - r, r, 0, Math.PI / 2, n),
-    ...arc(cx - w / 2 + r, cy + h / 2 - r, r, Math.PI / 2, Math.PI, n),
-    ...arc(cx - w / 2 + r, cy - h / 2 + r, r, Math.PI, 1.5 * Math.PI, n),
+    ...arc(cx + w / 2 - r, cy + h / 2 - r, r, -slope, Math.PI / 2, n),
+    ...arc(cx - w / 2 + r, cy + h / 2 - r, r, Math.PI / 2, Math.PI + slope, n),
+    ...arc(cx - bw / 2 + r, cy - h / 2 + r, r, Math.PI + slope, 1.5 * Math.PI, n),
+    ...arc(cx + bw / 2 - r, cy - h / 2 + r, r, 1.5 * Math.PI, 2 * Math.PI - slope, n),
   ];
 }
 

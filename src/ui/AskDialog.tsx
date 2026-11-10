@@ -1,17 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { answer, useQuestion } from './ask';
+import { Modal } from './Modal';
 
 /** The box the questions in `ask.ts` are put in. */
 export function AskDialog() {
   const question = useQuestion();
-  const dialog = useRef<HTMLDialogElement>(null);
   const box = useRef<HTMLInputElement>(null);
   const [text, setText] = useState('');
+  // The box is on show by the time this runs: a child's effects come before its parent's.
   useEffect(() => {
-    const d = dialog.current;
-    if (!d) return;
-    if (question && !d.open) d.showModal();
-    else if (!question && d.open) d.close();
     if (question?.kind === 'name') {
       setText(question.value);
       // Offered selected, so a new name can be typed straight over it.
@@ -20,20 +17,7 @@ export function AskDialog() {
   }, [question]);
   const back = () => answer(null);
   return (
-    <dialog
-      ref={dialog}
-      className="ask"
-      aria-label={question?.title}
-      onCancel={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        back();
-      }}
-      onKeyDown={(e) => e.stopPropagation()}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) back();
-      }}
-    >
+    <Modal open={Boolean(question)} onClose={back} className="ask" label={question?.title}>
       {question?.kind === 'name' && (
         <form
           className="ask-body"
@@ -80,6 +64,6 @@ export function AskDialog() {
           </div>
         </div>
       )}
-    </dialog>
+    </Modal>
   );
 }

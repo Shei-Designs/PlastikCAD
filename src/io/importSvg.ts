@@ -1,15 +1,11 @@
-import type { OutlineShape, Polygon, Vec2 } from '../model/types';
-import { signedArea } from './outline';
+import type { OutlineShape, Polygon } from '../model/types';
+import { applyTo, maxStretch, mul, signedArea, TOLERANCE, turnSegments } from './outline';
+import type { Matrix } from './outline';
 import { XmlScanner } from './xml';
 
-/** How far a flattened curve may stray from the true one, in mm. */
-const TOLERANCE = 0.02;
 /** Segments per curve that is not straight, however small: imports are often scaled up afterwards. */
 const MIN_CURVE = 4;
 const MAX_CURVE = 1000;
-/** The same limits for arcs, per full turn. */
-const MIN_TURN = 24;
-const MAX_TURN = 1440;
 
 /** Millimeters per CSS pixel, the size of a user unit unless the root element says otherwise. */
 const PX = 25.4 / 96;
@@ -26,19 +22,6 @@ const SKIPPED = new Set(['defs', 'clipPath', 'mask', 'pattern', 'symbol', 'marke
 
 const TAU = Math.PI * 2;
 const RAD = Math.PI / 180;
-
-/** Affine transform in the order of SVG's matrix(): x' = a·x + c·y + e, y' = b·x + d·y + f. */
-type Matrix = [a: number, b: number, c: number, d: number, e: number, f: number];
-
-/** a·b: apply b first, then a. */
-const mul = (a: Matrix, b: Matrix): Matrix => [
-  a[0] * b[0] + a[2] * b[1],
-  a[1] * b[0] + a[3] * b[1],
-  a[0] * b[2] + a[2] * b[3],
-  a[1] * b[2] + a[3] * b[3],
-  a[0] * b[4] + a[2] * b[5] + a[4],
-  a[1] * b[4] + a[3] * b[5] + a[5],
-];
 
 /** What an element hands down to its children. */
 interface Frame {
@@ -68,17 +51,25 @@ const ROOT: Frame = { transform: [PX, 0, 0, -PX, 0, 0], evenodd: false, visible:
 export function parseSvg(bytes: Uint8Array): { shapes: OutlineShape[]; color?: string }[] {
   const scan = new XmlScanner(toUtf8(bytes));
   const stack: Frame[] = [];
+  // The name of the element each frame is of, to match closing tags against, and how many of each name are open.
+  const open: string[] = [];
+  const openCount = new Map<string, number>();
   // Shapes by fill color, in the order the colors first appear; a shape without one goes under undefined.
   const parts = new Map<string | undefined, OutlineShape[]>();
   let count = 0;
   let sawRoot = false;
 
   while (scan.next()) {
+    const name = scan.name().replace(/^svg:/, '');
     if (scan.closing) {
-      stack.pop();
+      // Closes the nearest element of that name and whatever was left open inside it; one that closes nothing is passed over.
+      if (!openCount.get(name)) continue;
+      const at = open.lastIndexOf(name);
+      for (let i = at; i < open.length; i++) openCount.set(open[i], openCount.get(open[i])! - 1);
+      open.length = at;
+      stack.length = at;
       continue;
     }
-    const name = scan.name().replace(/^svg:/, '');
     const parent = stack[stack.length - 1] ?? ROOT;
     let frame = parent;
     if (!parent.skip) {
@@ -101,7 +92,10 @@ export function parseSvg(bytes: Uint8Array): { shapes: OutlineShape[]; color?: s
         }
       }
     }
-    if (!scan.selfClosing) stack.push(frame);
+    if (scan.selfClosing) continue;
+    stack.push(frame);
+    open.push(name);
+    openCount.set(name, (openCount.get(name) ?? 0) + 1);
   }
 
   if (!sawRoot) throw new Error('This is not an SVG file.');
@@ -162,7 +156,9 @@ function toUtf8(bytes: Uint8Array): Uint8Array {
 // ---------------------------------------------------------------------------
 // Attributes
 
-const NUMBER = '[+-]?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][+-]?\\d+)?';
+// Written so that a run of digits can be read one way only: a number of thousands of digits followed by something
+// that is not a length would otherwise be tried in as many ways as it has digits.
+const NUMBER = '[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?';
 const NUMBERS = new RegExp(NUMBER, 'g');
 const LENGTH = new RegExp(`^\\s*(${NUMBER})\\s*([a-zA-Z%]*)\\s*$`);
 
@@ -208,7 +204,8 @@ function inherit(parent: Frame, attrs: Record<string, string>): Frame {
 
 function parseTransform(s: string): Matrix {
   let m: Matrix = [1, 0, 0, 1, 0, 0];
-  const re = /([a-zA-Z]+)\s*\(([^)]*)\)/g;
+  // From the start of a word only, so that a long word with no bracket after it is gone through once.
+  const re = /\b([a-zA-Z]+)\s*\(([^)]*)\)/g;
   for (let match = re.exec(s); match; match = re.exec(s)) {
     const a = numbers(match[2]);
     let t: Matrix | undefined;
@@ -332,18 +329,10 @@ function outline(name: string, attrs: Record<string, string>, m: Matrix): Polygo
 
   const out: Polygon[] = [];
   for (const contour of contours) {
-    const cleaned = clean(contour.map(([x, y]): Vec2 => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]]));
+    const cleaned = clean(contour.map((p) => applyTo(m, p)));
     if (cleaned) out.push(cleaned);
   }
   return out;
-}
-
-/** Largest factor by which the transform lengthens a segment (its greatest singular value). */
-function maxStretch(m: Matrix): number {
-  const p = (m[0] * m[0] + m[1] * m[1] + m[2] * m[2] + m[3] * m[3]) / 2;
-  const q = (m[0] * m[0] + m[1] * m[1] - m[2] * m[2] - m[3] * m[3]) / 2;
-  const r = m[0] * m[2] + m[1] * m[3];
-  return Math.sqrt(p + Math.hypot(q, r));
 }
 
 /** Drops repeated points; undefined if what is left encloses nothing. */
@@ -362,17 +351,6 @@ function clean(contour: Polygon): Polygon | undefined {
     out.pop();
   }
   return out.length >= 3 && Math.abs(signedArea(out)) >= MIN_AREA ? out : undefined;
-}
-
-/**
- * Segments for a full turn of an arc, so that no chord strays more than
- * `tolerance` from it. Always a multiple of four: arcs put their points at
- * multiples of the step, which lands one on each extreme of the ellipse and
- * makes the outline exactly as wide and tall as the true shape.
- */
-function turnSegments(radius: number, tolerance: number): number {
-  const step = tolerance < radius ? 2 * Math.acos(1 - tolerance / radius) : Math.PI;
-  return Math.ceil(Math.min(Math.max(TAU / step, MIN_TURN), MAX_TURN) / 4) * 4;
 }
 
 function ellipse(cx: number, cy: number, rx: number, ry: number, tolerance: number): Polygon[] {

@@ -1,7 +1,9 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
+import { flushSync } from 'react-dom';
 import { Hint } from './Hint';
 import { enterByTouch } from './TouchEntry';
+import { typedNumber } from './typed';
 
 const decimals = (step: number) => Math.max(0, -Math.floor(Math.log10(step) + 1e-9));
 
@@ -16,6 +18,9 @@ export function selectOnFocus(e: { target: HTMLInputElement }): void {
 
 /** Whether the last press on the page was a finger, a moment ago. */
 export const recentTouch = (): boolean => lastPress.type === 'touch' && performance.now() - lastPress.time < 1000;
+
+/** Whether the last press on the page was a finger, however long ago: a drag still going on is that finger's. */
+export const pressedByTouch = (): boolean => lastPress.type === 'touch';
 
 /** At most `places` decimals, without trailing zeros. */
 export const formatNumber = (value: number, places = 2) => String(Number(value.toFixed(places)));
@@ -58,11 +63,11 @@ export function NumberBox({ value, onChange, tag, unit, step = 1, min = -Infinit
     sent.current = next;
     onChange(next);
   };
-  const commit = (raw: string) => {
-    const parsed = Number(raw.replace(',', '.'));
-    if (raw.trim() === '' || !Number.isFinite(parsed)) return;
-    const next = clamp(parsed);
-    if (next !== value) send(next);
+  /** Sends what was typed, within the box's limits; returns the number taken, or null when the text is not one. */
+  const commit = (raw: string): number | null => {
+    const next = typedNumber(raw, { min, max, integer });
+    if (next !== null && next !== value) send(next);
+    return next;
   };
 
   return (
@@ -78,7 +83,7 @@ export function NumberBox({ value, onChange, tag, unit, step = 1, min = -Infinit
         disabled={disabled}
         value={text}
         // A finger does not type into the box under the keypad: the entry sheet takes the value instead (unless a keyboard is attached).
-        onPointerDown={(e) => enterByTouch(e, { label, value: formatNumber(value, places), unit, inputMode: integer ? 'numeric' : 'decimal', onCommit: commit })}
+        onPointerDown={(e) => enterByTouch(e, { label, value: formatNumber(value, places), unit, inputMode: integer ? 'numeric' : 'decimal', onCommit: (raw) => void commit(raw) })}
         onFocus={(e) => {
           setEditing(true);
           selectOnFocus(e);
@@ -95,8 +100,12 @@ export function NumberBox({ value, onChange, tag, unit, step = 1, min = -Infinit
             setText(formatNumber(next, places));
             if (next !== value) send(next);
           } else if (e.key === 'Enter') {
-            commit(text);
-            e.currentTarget.select();
+            // The box shows what was taken: a value typed past a limit reads as the limit at once, not only once the box
+            // is left. Drawn before the text is selected again, or the new text would arrive unselected.
+            const box = e.currentTarget;
+            const taken = commit(text);
+            if (taken !== null) flushSync(() => setText(formatNumber(taken, places)));
+            box.select();
           } else if (e.key === 'Escape') {
             setText(formatNumber(value, places));
             e.currentTarget.blur();
@@ -105,6 +114,79 @@ export function NumberBox({ value, onChange, tag, unit, step = 1, min = -Infinit
       />
       {unit && <span className="unit">{unit}</span>}
     </span>
+  );
+}
+
+interface CommitInputProps {
+  /** The text as it stands; shown again whenever it changes from outside. */
+  value: string;
+  /** Told what was typed, trimmed, when that is neither empty nor what was there. */
+  onCommit: (text: string) => void;
+  label: string;
+  className: string;
+  title?: string;
+  /** For a finger without a keyboard: the entry sheet opens instead, under this heading. */
+  sheet?: string;
+}
+
+/** Text box for a name, taken when typing is done (Enter or leaving the box); Escape puts the old one back. */
+export function CommitInput({ value, onCommit, label, className, title, sheet }: CommitInputProps) {
+  const [text, setText] = useState(value);
+  useEffect(() => setText(value), [value]);
+  // Set by Escape for the blur it causes: that blur still sees what was typed, and must not take it.
+  const dropped = useRef(false);
+  const commit = (next: string) => {
+    const clean = dropped.current ? '' : next.trim();
+    dropped.current = false;
+    if (clean && clean !== value) onCommit(clean);
+    else setText(value);
+  };
+  return (
+    <input
+      className={className}
+      aria-label={label}
+      title={title}
+      spellCheck={false}
+      value={text}
+      onPointerDown={sheet ? (e) => enterByTouch(e, { label: sheet, value: text, inputMode: 'text', onCommit: commit }) : undefined}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={() => commit(text)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur();
+        if (e.key === 'Escape') {
+          dropped.current = true;
+          e.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
+
+/**
+ * Text box to rename a card in place: it takes the focus with the name selected. `onDone` is told
+ * the new name when the box is left (Enter leaves it), or null when there is nothing to change:
+ * the box is empty, the name is the same, or Escape put it back.
+ */
+export function RenameInput({ name, label, onDone }: { name: string; label: string; onDone: (value: string | null) => void }) {
+  return (
+    <input
+      className="text-input"
+      aria-label={label}
+      defaultValue={name}
+      autoFocus
+      onFocus={selectOnFocus}
+      onBlur={(e) => {
+        const value = e.currentTarget.value;
+        onDone(value.trim() && value.trim() !== name ? value : null);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur();
+        if (e.key === 'Escape') {
+          e.currentTarget.value = name;
+          e.currentTarget.blur();
+        }
+      }}
+    />
   );
 }
 

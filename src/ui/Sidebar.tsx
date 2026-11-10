@@ -1,9 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { APP_NAME } from '../appInfo';
 import { SHAPES } from '../geometry/shapes';
 import { HOLE_COLOR } from '../model/ops';
-import type { SceneNode } from '../model/types';
 import {
   addPart,
   addPicture,
@@ -34,76 +33,55 @@ import {
 import { About } from './About';
 import { ExportPanel } from './ExportPanel';
 import { EyeIcon, EyeOffIcon, GhostIcon, ImportIcon, LockIcon, Logo, MenuIcon, MoonIcon, ProjectsIcon, RobotIcon, SunIcon, UnlockIcon } from './icons';
+import { LONG_PRESS_MS } from '../viewer/gesture';
 import { RobotExport, RobotModeBar, RobotPanel } from './RobotPanel';
+import { CommitInput } from './Fields';
+import { MOD } from './keys';
+import { MenuItem } from './Menu';
+import { kindOf } from './nodeKind';
 import { Popover } from './Popover';
 import { CATEGORIES, GENERATORS, getGenerator } from '../parts/generators';
 import { partThumbnail } from './partThumbnails';
 import { Structure } from './Structure';
 import { PART_THUMBNAILS, partsBinThumbnail, pictureThumbnail, shapeThumbnail, textThumbnail } from './thumbnails';
 
-const MOD = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform) ? '⌘' : 'Ctrl+';
+/**
+ * A finger's press is captured by the tile it lands on, and the plate would hear nothing of the drag
+ * that follows: the tile lets the press go, so that a shape can be carried straight onto the plate.
+ */
+const letGo = (e: ReactPointerEvent<HTMLElement>): void => {
+  // The capture is on whatever part of the tile the finger landed on: its picture, as a rule.
+  const pressed = e.target as Element;
+  if (pressed.hasPointerCapture(e.pointerId)) pressed.releasePointerCapture(e.pointerId);
+};
 
 function FileBar() {
   const name = useEditor((s) => s.doc.name);
   const dirty = useEditor(isDirty);
   const saving = useEditor((s) => s.saving);
-  const [text, setText] = useState(name);
-  useEffect(() => setText(name), [name]);
   const [about, setAbout] = useState(false);
   const robot = useEditor((s) => s.robot);
   const status = saving ? 'Saving…' : dirty ? 'Changes not saved yet' : 'All changes saved';
 
-  const item = (label: string, keys: string, run: () => void, close: () => void) => (
-    <button
-      type="button"
-      className="menu-item"
-      onClick={() => {
-        close();
-        run();
-      }}
-    >
-      <span>{label}</span>
-      {keys && <kbd>{keys}</kbd>}
-    </button>
-  );
-
   return (
     <div className="file-bar">
       <span className={dirty || saving ? 'dirty-dot on' : 'dirty-dot'} title={status} role="status" aria-label={status} />
-      <input
-        className="doc-name"
-        aria-label="Project name"
-        title="Project name"
-        spellCheck={false}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onBlur={() => {
-          renameProject(text);
-          setText((t) => t.trim() || name);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') e.currentTarget.blur();
-          if (e.key === 'Escape') {
-            setText(name);
-            e.currentTarget.blur();
-          }
-        }}
-      />
+      <CommitInput className="doc-name" label="Project name" title="Project name" value={name} onCommit={renameProject} />
       <button type="button" className="icon-button" title={`Projects (${MOD}O)`} aria-label="Projects" onClick={openProjects}>
         <ProjectsIcon />
       </button>
-      <button type="button" className={robot ? 'icon-button on' : 'icon-button'} title={robot ? 'Leave Robot mode' : 'Robot mode: joints, masses and a URDF export'} aria-label="Robot mode" aria-pressed={robot} onClick={toggleRobotMode}>
+      <button type="button" className={robot ? 'icon-button on' : 'icon-button'} title="Robot mode" aria-label="Robot mode" aria-pressed={robot} onClick={toggleRobotMode}>
         <RobotIcon />
       </button>
       <Popover className="icon-button" title="File" button={<MenuIcon />} align="right">
         {(close) => (
           <div className="menu" role="menu">
-            {item('New project', `${MOD}N`, () => void newProject(), close)}
-            {item('Projects…', `${MOD}O`, openProjects, close)}
-            {item('Open project file…', `${MOD}Shift+O`, () => void openProjectFile(), close)}
-            {item('Save a copy…', `${MOD}Shift+S`, () => void saveCopy(), close)}
+            <MenuItem label="New project" keys={`${MOD}N`} run={() => void newProject()} close={close} />
+            <MenuItem label="Projects…" keys={`${MOD}O`} run={openProjects} close={close} />
+            <MenuItem label="Open project file…" keys={`${MOD}Shift+O`} run={() => void openProjectFile()} close={close} />
+            <MenuItem label="Save a copy…" keys={`${MOD}Shift+S`} run={() => void saveCopy()} close={close} />
             <hr />
-            {item(`About ${APP_NAME}…`, '', () => setAbout(true), close)}
+            <MenuItem label={`About ${APP_NAME}…`} run={() => setAbout(true)} close={close} />
           </div>
         )}
       </Popover>
@@ -132,7 +110,9 @@ function Shapes() {
               title={def.summary}
               // Pressing starts carrying the shape, so it can also be dragged straight onto the plate.
               onPointerDown={(e) => {
-                if (e.button === 0) startPlacing(def.kind);
+                if (e.button !== 0) return;
+                letGo(e);
+                startPlacing(def.kind);
               }}
               onDoubleClick={() => addShape(def.kind)}
               // Keyboard activation has no pointer to follow.
@@ -151,7 +131,9 @@ function Shapes() {
             className={placing?.type === 'text' ? 'shape selected' : 'shape'}
             title="Places lettering to emboss, or engrave as a hole."
             onPointerDown={(e) => {
-              if (e.button === 0) void startPlacingText();
+              if (e.button !== 0) return;
+              letGo(e);
+              void startPlacingText();
             }}
             onDoubleClick={() => void addText()}
             onClick={(e) => {
@@ -168,7 +150,9 @@ function Shapes() {
             className={placing?.type === 'picture' ? 'shape selected' : 'shape'}
             title="Places a picture that prints onto the object it is grouped with."
             onPointerDown={(e) => {
-              if (e.button === 0) void startPlacingPicture();
+              if (e.button !== 0) return;
+              letGo(e);
+              void startPlacingPicture();
             }}
             onDoubleClick={() => void addPicture()}
             onClick={(e) => {
@@ -189,7 +173,9 @@ function Shapes() {
               className={placing?.type === 'part' && placingFamily === c.id ? 'shape selected' : 'shape'}
               title={c.summary}
               onPointerDown={(e) => {
-                if (e.button === 0) void startPlacingPart(c.id);
+                if (e.button !== 0) return;
+                letGo(e);
+                void startPlacingPart(c.id);
               }}
               onDoubleClick={() => void addPart(c.id)}
               onClick={(e) => {
@@ -222,19 +208,6 @@ function ImportRow() {
     </div>
   );
 }
-
-const describe = (node: SceneNode): string =>
-  node.type === 'group'
-    ? `Group of ${node.children.length}`
-    : node.type === 'import'
-      ? 'Imported'
-      : node.type === 'text'
-        ? 'Text'
-        : node.type === 'part'
-          ? getGenerator(node.part).name
-          : node.type === 'picture'
-            ? 'Picture'
-            : (SHAPES.find((s) => s.kind === node.shape)?.name ?? '');
 
 function Objects() {
   const scene = useEditor((s) => s.doc.scene);
@@ -276,7 +249,7 @@ function Objects() {
                 <button
                   type="button"
                   className="object-main"
-                  title={node.ghost ? `${describe(node)} (ghost)` : describe(node)}
+                  title={node.ghost ? `${kindOf(node)} (ghost)` : kindOf(node)}
                   onPointerDown={(e) => {
                     if (!away) startHold(e, node.id);
                   }}
@@ -379,9 +352,6 @@ function Brand({ theme }: { theme: 'dark' | 'light' }) {
     </div>
   );
 }
-
-/** How long a finger rests on a row before it adds the object to the selection instead of selecting it alone. */
-const LONG_PRESS_MS = 450;
 
 export function Sidebar() {
   const theme = useEditor((s) => s.prefs.theme);

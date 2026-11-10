@@ -1,1 +1,1 @@
--keep class com.sheidesigns.plastikcad.input.** { *; }
+-keep class com.sheidesigns.plastikcad.device.** { *; }

@@ -1,7 +1,6 @@
 // The projects browser: every project in the store, newest first, to open,
 // rename, duplicate or delete; plus where they are kept.
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { KeyboardEvent } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { APP_NAME } from '../appInfo';
 import { isDesktop } from '../platform';
 import type { ProjectInfo } from '../state/projects';
@@ -20,52 +19,16 @@ import {
   useEditor,
 } from '../state/store';
 import { cancelLink, syncNow, useSyncStatus } from '../sync/sync';
-import { selectOnFocus } from './Fields';
+import { RenameInput } from './Fields';
 import { CloseIcon, Logo, MoreIcon } from './icons';
+import { MOD } from './keys';
+import { MenuItem } from './Menu';
+import { when } from './when';
+import { Modal } from './Modal';
 import { Popover } from './Popover';
-
-const MOD = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform) ? '⌘' : 'Ctrl+';
-
-/** "Just now", "12 min ago", or the date, for the card. */
-export function when(modified: number, now = Date.now()): string {
-  const minutes = Math.round((now - modified) / 60_000);
-  if (minutes < 1) return 'Just now';
-  if (minutes < 60) return `${minutes} min ago`;
-  const date = new Date(modified);
-  const today = new Date(now);
-  const sameDay = date.toDateString() === today.toDateString();
-  const time = date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-  if (sameDay) return `Today ${time}`;
-  const yesterday = new Date(now - 86_400_000);
-  if (date.toDateString() === yesterday.toDateString()) return `Yesterday ${time}`;
-  return date.toLocaleDateString(undefined, { year: date.getFullYear() === today.getFullYear() ? undefined : 'numeric', month: 'short', day: 'numeric' });
-}
 
 function Card({ item, current, refresh }: { item: ProjectInfo; current: boolean; refresh: () => void }) {
   const [renaming, setRenaming] = useState(false);
-  const commit = (value: string) => {
-    setRenaming(false);
-    if (value.trim() && value.trim() !== item.name) void renameProjectAt(item.key, value).then(refresh);
-  };
-  const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') e.currentTarget.blur();
-    if (e.key === 'Escape') {
-      e.currentTarget.value = item.name;
-      e.currentTarget.blur();
-    }
-  };
-  const action = (label: string, run: () => void, close: () => void, danger = false) => (
-    <button
-      type="button"
-      className={danger ? 'menu-item danger' : 'menu-item'}
-      onClick={() => {
-        close();
-        run();
-      }}
-    >
-      <span>{label}</span>
-    </button>
-  );
   return (
     <li className={current ? 'project current' : 'project'}>
       <button type="button" className="project-open" title={current ? 'Open now' : `Open ${item.name}`} onClick={() => void openProject(item.key)}>
@@ -73,7 +36,14 @@ function Card({ item, current, refresh }: { item: ProjectInfo; current: boolean;
       </button>
       <div className="project-row">
         {renaming ? (
-          <input className="text-input" aria-label="Project name" defaultValue={item.name} autoFocus onFocus={selectOnFocus} onBlur={(e) => commit(e.currentTarget.value)} onKeyDown={onKey} />
+          <RenameInput
+            name={item.name}
+            label="Project name"
+            onDone={(value) => {
+              setRenaming(false);
+              if (value !== null) void renameProjectAt(item.key, value).then(refresh);
+            }}
+          />
         ) : (
           <button type="button" className="project-name clip" title={item.name} onClick={() => void openProject(item.key)}>
             {item.name}
@@ -82,11 +52,11 @@ function Card({ item, current, refresh }: { item: ProjectInfo; current: boolean;
         <Popover className="icon-button" title="Actions" button={<MoreIcon />} align="right" fixed>
           {(close) => (
             <div className="menu" role="menu">
-              {action('Open', () => void openProject(item.key), close)}
-              {action('Rename', () => setRenaming(true), close)}
-              {action('Duplicate', () => void duplicateProject(item.key).then(refresh), close)}
+              <MenuItem label="Open" run={() => void openProject(item.key)} close={close} />
+              <MenuItem label="Rename" run={() => setRenaming(true)} close={close} />
+              <MenuItem label="Duplicate" run={() => void duplicateProject(item.key).then(refresh)} close={close} />
               <hr />
-              {action('Delete…', () => void deleteProject(item.key, item.name).then(refresh), close, true)}
+              <MenuItem label="Delete…" danger run={() => void deleteProject(item.key, item.name).then(refresh)} close={close} />
             </div>
           )}
         </Popover>
@@ -105,7 +75,7 @@ function DriveRow() {
     return (
       <>
         <span className="clip">Google Drive: not linked{sync.error ? ` · ${sync.error}` : ''}</span>
-        <button type="button" className="chip" title={sync.busy ? 'Gives up the sign-in' : 'Keeps your projects in step across devices through your Google Drive'} onClick={() => (sync.busy ? cancelLink() : void linkGoogleDrive())}>
+        <button type="button" className="chip" title={sync.busy ? 'Gives up the sign-in.' : 'Keeps your projects in step across devices through your Google Drive.'} onClick={() => (sync.busy ? cancelLink() : void linkGoogleDrive())}>
           {sync.busy ? 'Cancel sign-in' : 'Link Google Drive…'}
         </button>
       </>
@@ -117,10 +87,10 @@ function DriveRow() {
       <span className={sync.error && !sync.busy ? 'clip sync-error' : 'clip'}>
         Google Drive: {sync.email ?? 'linked'} · {state}
       </span>
-      <button type="button" className="chip" disabled={sync.busy} title="Syncs with Google Drive now" onClick={() => void syncNow()}>
+      <button type="button" className="chip" disabled={sync.busy} title="Syncs with Google Drive now." onClick={() => void syncNow()}>
         Sync now
       </button>
-      <button type="button" className="chip" disabled={sync.busy} title="Stops syncing with Google Drive" onClick={() => void unlinkGoogleDrive()}>
+      <button type="button" className="chip" disabled={sync.busy} title="Stops syncing with Google Drive." onClick={() => void unlinkGoogleDrive()}>
         Unlink
       </button>
     </>
@@ -133,7 +103,6 @@ export function Projects() {
   const storage = useEditor((s) => s.storage);
   const [items, setItems] = useState<ProjectInfo[] | null>(null);
   const [query, setQuery] = useState('');
-  const dialog = useRef<HTMLDialogElement>(null);
 
   const refresh = useCallback(() => void listProjects().then(setItems), []);
   useEffect(() => {
@@ -148,38 +117,25 @@ export function Projects() {
     if (open) refresh();
   }, [synced, open, refresh]);
 
-  useEffect(() => {
-    const d = dialog.current;
-    if (!d) return;
-    if (open && !d.open) d.showModal();
-    else if (!open && d.open) d.close();
-  }, [open]);
-
   const needle = query.trim().toLowerCase();
   const shown = items?.filter((i) => !needle || i.name.toLowerCase().includes(needle)) ?? [];
 
   return (
-    <dialog
-      ref={dialog}
+    <Modal
+      open={open}
+      onClose={closeProjects}
       className="projects"
-      aria-label="Projects"
-      onCancel={(e) => {
-        // Escape closes the browser and nothing else (it would otherwise also clear the selection).
-        e.preventDefault();
-        e.stopPropagation();
-        closeProjects();
-      }}
+      label="Projects"
       onKeyDown={(e) => {
-        e.stopPropagation();
         // The search box swallows Escape (it clears itself) before the dialog's cancel event can fire.
         if (e.key === 'Escape') {
           e.preventDefault();
           closeProjects();
+        } else if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'n') {
+          // The window's own shortcuts are kept out while the browser is open; this one is on its button.
+          e.preventDefault();
+          void newProject();
         }
-      }}
-      onClick={(e) => {
-        // A click on the backdrop lands on the dialog itself, not on its contents.
-        if (e.target === e.currentTarget) closeProjects();
       }}
     >
       <div className="projects-body">
@@ -189,7 +145,7 @@ export function Projects() {
           <button type="button" className="primary" title={`New project (${MOD}N)`} onClick={() => void newProject()}>
             New project
           </button>
-          <button type="button" className="chip" title="Brings a design file from anywhere in as a project" onClick={() => void openProjectFile()}>
+          <button type="button" className="chip" title="Brings a design file from anywhere in as a project." onClick={() => void openProjectFile()}>
             Open project file…
           </button>
           <button type="button" className="icon-button" title="Close (Esc)" aria-label="Close" onClick={closeProjects}>
@@ -230,6 +186,6 @@ export function Projects() {
           </div>
         </footer>
       </div>
-    </dialog>
+    </Modal>
   );
 }

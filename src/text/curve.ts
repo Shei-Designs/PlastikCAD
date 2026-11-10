@@ -88,5 +88,14 @@ export function curvedSize(curve: TextCurve, flat: Vec2, thickness: number): Vec
   return [max[0] - min[0], max[1] - min[1], max[2] - min[2]];
 }
 
-/** How finely the mesh must be cut along the letters for the curve to read smooth: about two degrees a step. */
-export const curveStep = (curve: TextCurve, width: number): number => Math.max(curveRadius(curve, width) * (2 * Math.PI) / 180, 0.05);
+/** About the most triangles curved lettering is cut into, however tall it is and however far round it goes. */
+export const CURVED_TRIANGLES = 300_000;
+
+/**
+ * How finely the mesh must be cut along the letters for the curve to read
+ * smooth: about two degrees a step. With the `area` of the flat lettering's
+ * surface, no finer than keeps it within `CURVED_TRIANGLES`: every edge is cut
+ * to the step, which leaves triangles of about half its square.
+ */
+export const curveStep = (curve: TextCurve, width: number, area = 0): number =>
+  Math.max((curveRadius(curve, width) * (2 * Math.PI)) / 180, 0.05, Math.sqrt((2 * area) / CURVED_TRIANGLES));

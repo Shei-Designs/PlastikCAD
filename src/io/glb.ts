@@ -45,8 +45,14 @@ const pad = (n: number, to = 4) => (to - (n % to)) % to;
 
 export function writeGlb(objects: GlbObject[], name: string): Uint8Array {
   const views: { bytes: Uint8Array; target?: number }[] = [];
-  // The same picture (by its bytes) is embedded once however many parts wear it.
-  const embedded = new Map<Uint8Array, number>();
+  // The same picture is embedded once however many parts wear it. It is known by its bytes, not by the array they
+  // come in: pictures of one length are few, and are compared byte for byte.
+  const embedded = new Map<number, { bytes: Uint8Array; image: number }[]>();
+  const sameBytes = (a: Uint8Array, b: Uint8Array): boolean => {
+    if (a === b) return true;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  };
   const accessors: Record<string, unknown>[] = [];
   const images: Record<string, unknown>[] = [];
   const textures: Record<string, unknown>[] = [];
@@ -97,11 +103,15 @@ export function writeGlb(objects: GlbObject[], name: string): Uint8Array {
         }
       }
       attributes.TEXCOORD_0 = accessor(uv, 2, false);
-      let image = embedded.get(o.skin.image);
+      const bytes = o.skin.image;
+      const mime = o.skin.mime;
+      const ofLength = embedded.get(bytes.length) ?? [];
+      let image = ofLength.find((e) => images[e.image].mimeType === mime && sameBytes(e.bytes, bytes))?.image;
       if (image === undefined) {
-        images.push({ bufferView: view(o.skin.image), mimeType: o.skin.mime, name: o.name });
+        images.push({ bufferView: view(bytes), mimeType: mime, name: o.name });
         image = images.length - 1;
-        embedded.set(o.skin.image, image);
+        ofLength.push({ bytes, image });
+        embedded.set(bytes.length, ofLength);
       }
       const wrap = o.skin.repeat ? REPEAT : CLAMP_TO_EDGE;
       samplers.push({ magFilter: LINEAR, minFilter: LINEAR_MIPMAP_LINEAR, wrapS: wrap, wrapT: wrap });

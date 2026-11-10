@@ -11,7 +11,7 @@ import { writeGlb } from '../io/glb';
 import type { GlbObject } from '../io/glb';
 import { emptyBounds, expandBounds, nodeMatrix } from '../model/math';
 import type { Bounds } from '../model/math';
-import type { Asset, SceneNode } from '../model/types';
+import type { Asset, ImageAsset, SceneNode } from '../model/types';
 import { SkinPainter } from '../viewer/skin';
 import type { Painted } from '../viewer/skin';
 import { geometry } from './geometry';
@@ -29,6 +29,11 @@ export async function exportGlb(nodes: SceneNode[], assets: Record<string, Asset
       });
     }
   };
+  // The bytes of each picture, read or encoded once however many objects wear it: a JPEG by its asset, a painting by itself.
+  const jpegs = new Map<string, Uint8Array>();
+  const pngs = new Map<Painted, Uint8Array>();
+  const jpeg = (key: string, asset: ImageAsset): Uint8Array => jpegs.get(key) ?? jpegs.set(key, SkinPainter.bytes(asset)).get(key)!;
+  const png = async (painted: Painted): Promise<Uint8Array> => pngs.get(painted) ?? pngs.set(painted, await SkinPainter.png(painted)).get(painted)!;
   /** One glTF primitive: the mesh (in the node's built frame) with its color and, if the node wears one, its skin. */
   const object = async (node: SceneNode, render: RenderMesh, bounds: Bounds, color: string, skin: Skin | null): Promise<GlbObject> => {
     const out: GlbObject = { name: node.name, of: node.id, positions: render.positions, normals: render.normals, matrix: nodeMatrix(node), color };
@@ -41,8 +46,8 @@ export async function exportGlb(nodes: SceneNode[], assets: Record<string, Asset
     out.normals = mesh.normals;
     const asset = skin.kind === 'stickers' ? null : assets[skin.asset];
     // A JPEG has no transparency, so it goes out as it is; anything else is flattened onto the object's color.
-    if (asset?.kind === 'image' && asset.mime === 'image/jpeg') out.skin = { uv: mesh.uv, image: SkinPainter.bytes(asset), mime: asset.mime, repeat: skinRepeats(skin) };
-    else out.skin = { uv: mesh.uv, image: await SkinPainter.png(painted), mime: 'image/png', repeat: skinRepeats(skin) };
+    if (skin.kind !== 'stickers' && asset?.kind === 'image' && asset.mime === 'image/jpeg') out.skin = { uv: mesh.uv, image: jpeg(skin.asset, asset), mime: asset.mime, repeat: skinRepeats(skin) };
+    else out.skin = { uv: mesh.uv, image: await png(painted), mime: 'image/png', repeat: skinRepeats(skin) };
     return out;
   };
   try {

@@ -74,7 +74,34 @@ describe('SkinPainter', () => {
   });
 });
 
+/** Stands in for the canvas a skin is painted on; its PNG is whatever was last painted, by color. */
+function stubCanvas(): void {
+  const canvas = () => {
+    const g = { fillStyle: '', fillRect: () => {}, drawImage: () => {} };
+    return { width: 0, height: 0, getContext: () => g, toBlob: (done: (blob: Blob) => void) => done(new Blob([`png on ${g.fillStyle}`])) };
+  };
+  vi.stubGlobal('document', { createElement: canvas });
+}
+
 describe('exportGlb', () => {
+  it('embeds a picture once for all the objects that wear it', async () => {
+    const image = { width: 4, height: 2, close: vi.fn() } as unknown as ImageBitmap;
+    stubDecoder(() => Promise.resolve(image));
+    stubCanvas();
+    const { exportGlb } = await import('./glbExport');
+    const { readGlb } = await import('../io/glb');
+    const pictures: Record<string, Asset> = {
+      ...assets,
+      photo: { kind: 'image', name: 'photo.jpg', mime: 'image/jpeg', data: btoa('a photograph'), width: 1, height: 1 },
+    };
+    const wearing = (asset: string, color: string): SceneNode => ({ ...makeShape('box'), color, texture: { asset, mode: 'tile', scale: 10, turn: 0 } });
+    // Three objects in the same photograph, two in one drawing on the same color, and one in that drawing on another.
+    const nodes = [wearing('photo', '#ff0000'), wearing('photo', '#00ff00'), wearing('photo', '#ff0000'), wearing('img', '#ff0000'), wearing('img', '#ff0000'), wearing('img', '#0000ff')];
+    const { json } = readGlb(await exportGlb(nodes, pictures, 'Design'));
+    expect((json.textures as { source: number }[]).map((t) => t.source)).toEqual([0, 0, 0, 1, 1, 2]);
+    expect((json.images as { mimeType: string }[]).map((i) => i.mimeType)).toEqual(['image/jpeg', 'image/png', 'image/png']);
+  });
+
   it('fails with the picture that could not be read instead of waiting forever', async () => {
     stubDecoder(() => Promise.reject(new Error('bad bytes')));
     const { exportGlb } = await import('./glbExport');

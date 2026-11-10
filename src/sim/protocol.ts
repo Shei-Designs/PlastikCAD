@@ -4,8 +4,10 @@ import type { DriveSpec } from '../robot/export';
 import type { SimActuator } from './mujoco';
 
 export type SimRequest =
-  /** Loads a MuJoCo model: its XML and the mesh files it refers to, by the names the XML uses. Replaces any model loaded before. */
-  | { type: 'load'; xml: string; files: { name: string; bytes: Uint8Array }[]; drive: DriveSpec | null; lidars: { name: string; rays: number }[]; touches: string[] }
+  /** Loads a MuJoCo model: its XML and the mesh files it refers to, by the names the XML uses. Replaces any model loaded before. `id` comes back with the answer, to tell it from an earlier load's. */
+  | { type: 'load'; id: number; xml: string; files: { name: string; bytes: Uint8Array }[]; drive: DriveSpec | null; lidars: { name: string; rays: number }[]; touches: string[] }
+  /** Lets the model go and frees it. */
+  | { type: 'unload' }
   /** Runs time, or holds it. */
   | { type: 'run'; running: boolean }
   /** Back to the start pose, time zero, controls off. */
@@ -16,10 +18,11 @@ export type SimRequest =
   | { type: 'target'; actuator: string; value: number };
 
 export type SimResponse =
-  | { type: 'loaded'; bodies: string[]; actuators: SimActuator[]; timestep: number }
+  | { type: 'loaded'; id: number; bodies: string[]; actuators: SimActuator[]; timestep: number }
   /**
    * Where every body is: 7 numbers each in `bodies` order, position xyz (m) then quaternion wxyz; every lidar's rays in `lidars`
    * order, meters, -1 where a ray hits nothing; and every touch sensor's force in `touches` order, newtons, -1 where the model lacks it.
    */
   | { type: 'frame'; time: number; poses: Float64Array; ranges: Float32Array; touches: Float32Array }
-  | { type: 'error'; message: string };
+  /** `id` is the load that failed, when it was a load. */
+  | { type: 'error'; message: string; id?: number };

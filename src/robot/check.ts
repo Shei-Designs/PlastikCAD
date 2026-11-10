@@ -7,8 +7,9 @@ import type { Doc } from '../model/types';
 import type { LinkProperties } from '../worker/protocol';
 import { massOf, plausibleInertia, tensorOf } from './inertia';
 import { boxBounds } from '../model/math';
-import { jointInDesign, linkNodes, linkOf, robotOf, sensorInDesign, spanningTree } from './model';
-import { DRIVE_KINDS, withRole } from './types';
+import { followFault, jointInDesign, linkNodes, linkOf, robotOf, sensorInDesign, spanningTree } from './model';
+import type { FollowFault } from './model';
+import { withRole } from './types';
 import type { Robot, RobotJoint } from './types';
 
 export interface Problem {
@@ -21,6 +22,14 @@ export interface Problem {
   /** Id of the sensor it is about. */
   sensor?: string;
 }
+
+/** Why a follower's leader will not do, as the checks say it after the two joints' names. */
+const FOLLOW_FAULTS: Record<FollowFault, string> = {
+  fixed: 'which is fixed and never moves. Follow a joint that moves.',
+  loop: 'which closes a loop and is not a joint in every export. Follow a joint on the way from the base.',
+  'left-out': 'which is left out of the robot. Follow a joint on the way from the base.',
+  ring: 'which follows it in turn. Clear Follows on one of them.',
+};
 
 /** The collision mesh past which a simulator slows down noticeably. */
 export const HEAVY_COLLISION = 20_000;
@@ -48,7 +57,7 @@ export function checkRobot(doc: Doc, props: Map<string, LinkProperties>, robot: 
   }
   for (const j of tree.loops) warn(`${j.name}: closes a loop. Kept in SDF and MuJoCo, left out of URDF.`, { joint: j.id });
 
-  const jointIds = new Set(robot.joints.map((j) => j.id));
+  const jointById = new Map(robot.joints.map((j) => [j.id, j]));
   for (const j of robot.joints) {
     if (!ids.has(j.parent) || !ids.has(j.child)) {
       error(`"${j.name}" joins an object that is hidden, a hole or gone.`, { joint: j.id });
@@ -59,8 +68,14 @@ export function checkRobot(doc: Doc, props: Map<string, LinkProperties>, robot: 
     if ((j.type === 'revolute' || j.type === 'prismatic') && !(j.lower < j.upper)) error(`"${j.name}": the lower limit must be below the upper one.`, { joint: j.id });
     if (j.type !== 'fixed' && !(j.effort > 0 && j.velocity > 0)) warn(`${j.name}: Effort or Velocity is 0, so nothing can move it.`, { joint: j.id });
     if (j.mimic) {
+      const leader = jointById.get(j.mimic.joint);
       if (j.mimic.joint === j.id) error(`"${j.name}" follows itself.`, { joint: j.id });
-      else if (!jointIds.has(j.mimic.joint)) error(`"${j.name}" follows a joint that is gone.`, { joint: j.id });
+      else if (!leader) error(`"${j.name}" follows a joint that is gone.`, { joint: j.id });
+      else if (j.type !== 'fixed') {
+        // A fixed joint's Follows is not written. Any other is written against its leader's name, which the file must then hold as a joint that moves.
+        const fault = followFault(robot, tree, j, leader);
+        if (fault) error(`${j.name}: follows ${leader.name}, ${FOLLOW_FAULTS[fault]}`, { joint: j.id });
+      }
     }
   }
 
@@ -97,7 +112,6 @@ export function checkRobot(doc: Doc, props: Map<string, LinkProperties>, robot: 
   }
   if (robot.drive) {
     const drive = robot.drive;
-    const kind = DRIVE_KINDS.find((k) => k.id === drive.kind)!;
     const joint = (id: string) => robot.joints.find((j) => j.id === id);
     const count = (role: Parameters<typeof withRole>[1]) => withRole(drive, role).filter(joint).length;
     for (const [id, role] of Object.entries(drive.roles)) {
@@ -108,12 +122,16 @@ export function checkRobot(doc: Doc, props: Map<string, LinkProperties>, robot: 
       } else if (j.type !== 'continuous' && j.type !== 'revolute') error(`"${j.name}" drives a wheel but does not turn.`, { joint: j.id });
       if (j.mimic) error(`"${j.name}" is in the drive and follows another joint; it cannot do both.`, { joint: j.id });
     }
-    if (kind.id === 'differential' && (count('left') === 0 || count('right') === 0)) error('The drive needs at least one wheel joint on each side.');
-    if (kind.id === 'ackermann' && (count('left') === 0 || count('right') === 0 || count('steer-left') !== 1 || count('steer-right') !== 1)) error('An Ackermann drive needs a driven wheel on each side and one steering joint on each side.');
-    if (kind.id === 'mecanum' && (['front-left', 'front-right', 'rear-left', 'rear-right'] as const).some((r) => count(r) !== 1)) error('A mecanum drive needs one wheel at each corner.');
+    if (drive.kind === 'differential' && (count('left') === 0 || count('right') === 0)) error('The drive needs at least one wheel joint on each side.');
+    if (drive.kind === 'ackermann' && (count('left') === 0 || count('right') === 0 || count('steer-left') !== 1 || count('steer-right') !== 1)) error('An Ackermann drive needs a driven wheel on each side and one steering joint on each side.');
+    if (drive.kind === 'mecanum' && (['front-left', 'front-right', 'rear-left', 'rear-right'] as const).some((r) => count(r) !== 1)) error('A mecanum drive needs one wheel at each corner.');
     // The drive controller turns every wheel about one axle direction; a wheel turned another way drags.
+    // A wheel whose object is hidden, a hole or gone has no axle to compare; its joint is faulted above.
     const wheels = Object.entries(drive.roles).filter(([, role]) => !role.startsWith('steer')).map(([id]) => joint(id)).filter((j): j is RobotJoint => Boolean(j));
-    const axles = wheels.map((j) => jointInDesign(j, nodes.find((n) => n.id === j.child)!).axis);
+    const axles = wheels.flatMap((j) => {
+      const child = nodes.find((n) => n.id === j.child);
+      return child ? [jointInDesign(j, child).axis] : [];
+    });
     if (axles.some((a) => Math.abs(a[0] * axles[0][0] + a[1] * axles[0][1] + a[2] * axles[0][2]) < Math.cos((5 * Math.PI) / 180))) warn('Drive: the wheel axles do not all run the same way, so a wheel will drag.');
   }
   if (robot.base === 'fixed' && robot.drive) warn('Base: fixed to the world, so the drive cannot move it.');

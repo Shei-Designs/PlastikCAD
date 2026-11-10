@@ -27,6 +27,10 @@ const cart = (): UsdModel => ({
   controlled: [],
 });
 
+/** A number written in the prim called `prim`, by its attribute's name. */
+const attr = (usda: string, prim: string, name: string): number => Number(new RegExp(`"${prim}" \\([\\s\\S]*?${name} = (\\S+)`).exec(usda)?.[1]);
+const PER_DEGREE = Math.PI / 180;
+
 describe('writeUsda', () => {
   it('writes an articulation of rigid links with masses, meshes, collisions, joints and drives', () => {
     const usda = writeUsda(cart());
@@ -54,7 +58,8 @@ describe('writeUsda', () => {
     expect(usda).toContain('point3f physics:localPos0 = (0, -0.06, 0.02)');
     expect(usda).toContain('quatf physics:localRot0 = (0.707107, 0, 0, 0.707107)');
     expect(usda).not.toContain('physics:lowerLimit');
-    expect(usda).toContain('float drive:angular:physics:damping = 0.005');
+    // USD Physics takes an angular drive's gains per degree: 0.1 N·m over 20 rad/s, a degree at a time.
+    expect(attr(usda, 'wheel_joint', 'drive:angular:physics:damping')).toBeCloseTo((0.1 / 20) * PER_DEGREE, 8);
     expect(usda).toContain('float drive:angular:physics:maxForce = 0.1');
     expect(usda).toContain('float drive:angular:physics:stiffness = 0');
     // The floor, the lights and the physics scene.
@@ -99,14 +104,47 @@ describe('writeUsda', () => {
     expect(usda).toContain('rel physics:body1 = </World/Test_cart/body>');
     expect(usda).toContain('float physics:lowerLimit = -57.2958');
     expect(usda).toContain('float physics:upperLimit = 57.2958');
-    expect(usda).toContain('float drive:angular:physics:stiffness = 20');
-    expect(usda).toContain('float drive:angular:physics:damping = 1');
+    expect(attr(usda, 'wheel_joint', 'drive:angular:physics:stiffness')).toBeCloseTo(20 * PER_DEGREE, 6);
+    expect(attr(usda, 'wheel_joint', 'drive:angular:physics:damping')).toBeCloseTo(PER_DEGREE, 6);
     expect(usda).toContain('token node:type = "isaacsim.ros2.bridge.ROS2SubscribeJointState"');
     expect(usda).not.toContain('IsaacComputeOdometry');
     // 90 rays over 90° is a ray a degree; Isaac scans the whole circle, so 360 rays a turn at 10 Hz.
     expect(usda).toContain('float omni:sensor:Core:validStartAzimuthDeg = 0');
     expect(usda).toContain('float omni:sensor:Core:validEndAzimuthDeg = 360');
     expect(usda).toContain('uint omni:sensor:Core:reportRateBaseHz = 3600');
+  });
+
+  it('gives a turning joint its drive gains per degree and a sliding one per meter', () => {
+    const m = cart();
+    const wheel = m.joints[0];
+    m.joints = [
+      wheel,
+      { ...wheel, name: 'hinge', type: 'revolute', limit: { lower: -1, upper: 1, effort: 2, velocity: 3 }, drive: 'position' },
+      { ...wheel, name: 'slide', type: 'prismatic', limit: { lower: 0, upper: 0.1, effort: 5, velocity: 0.2 }, drive: 'position' },
+      { ...wheel, name: 'idler', type: 'continuous', dynamics: { damping: 0.04, friction: 0 }, drive: null },
+    ];
+    const usda = writeUsda(m);
+    // A servo reaches full effort a tenth of a radian (or of a meter) off: 20 N·m/rad is 0.349 N·m a degree; 50 N/m stays 50.
+    expect(attr(usda, 'hinge', 'drive:angular:physics:stiffness')).toBeCloseTo((2 / 0.1) * PER_DEGREE, 6);
+    expect(attr(usda, 'hinge', 'drive:angular:physics:damping')).toBeCloseTo((2 / 0.1 / 20) * PER_DEGREE, 6);
+    expect(attr(usda, 'slide', 'drive:linear:physics:stiffness')).toBeCloseTo(5 / 0.1, 6);
+    expect(attr(usda, 'slide', 'drive:linear:physics:damping')).toBeCloseTo(5 / 0.1 / 20, 6);
+    expect(attr(usda, 'wheel_joint', 'drive:angular:physics:stiffness')).toBe(0);
+    // A joint nothing drives keeps its own damping, per degree too, written once.
+    expect(attr(usda, 'idler', 'drive:angular:physics:damping')).toBeCloseTo(0.04 * PER_DEGREE, 8);
+    const idler = usda.slice(usda.indexOf('"idler"'));
+    expect(idler.slice(0, idler.indexOf('\n}')).match(/physics:damping/g)).toHaveLength(1);
+  });
+
+  it('gears a rack to its pinion per degree of the pinion', () => {
+    const m = cart();
+    const wheel = m.joints[0];
+    // 28.6 mm of travel a radian: 0.5 mm a degree.
+    m.joints = [wheel, { ...wheel, name: 'rack', type: 'prismatic', limit: { lower: -0.1, upper: 0.1, effort: 5, velocity: 0.2 }, drive: null, mimic: { joint: 'wheel_joint', multiplier: 0.0286479, offset: 0 } }];
+    const usda = writeUsda(m);
+    expect(Math.abs(attr(usda, 'rack', 'gearing'))).toBeCloseTo(0.0005, 7);
+    expect(usda).toContain('referenceJointAxis = "rotX"');
+    expect(usda).toContain('referenceJoint = </World/Test_cart/Joints/wheel_joint>');
   });
 
   it('names prims the way USD allows', () => {

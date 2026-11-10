@@ -5,6 +5,7 @@
 // line drawn on the plate runs between the two nearest points.
 import { closestOnCircle, closestOnSegment } from './features';
 import type { Feature, PointKind } from './features';
+import { add, dot, length, normalize, scale, sub } from '../model/math';
 import type { Vec3 } from '../model/types';
 
 export interface Measurement {
@@ -16,16 +17,6 @@ export interface Measurement {
   from: Vec3;
   to: Vec3 | null;
 }
-
-const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
-const scale = (a: Vec3, s: number): Vec3 => [a[0] * s, a[1] * s, a[2] * s];
-const dot = (a: Vec3, b: Vec3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-const length = (a: Vec3): number => Math.hypot(a[0], a[1], a[2]);
-const normalize = (a: Vec3): Vec3 => {
-  const n = length(a);
-  return n > 0 ? scale(a, 1 / n) : [0, 0, 1];
-};
 
 /** Millimetres to two decimals, without trailing zeros. */
 export const mm = (v: number): string => `${Number((Math.abs(v) < 5e-3 ? 0 : v).toFixed(2))} mm`;
@@ -39,7 +30,7 @@ const between = (a: Vec3, b: Vec3): { acute: number; text: string } => {
   return { acute, text: Math.abs(acute - 90) < 0.05 ? deg(90) : `${deg(acute)} (${deg(180 - acute)})` };
 };
 
-const NAMES: Record<Feature['kind'], string> = { point: 'Point', middle: 'Edge middle', quadrant: 'Quadrant', facecenter: 'Face centre', center: 'Object centre', edge: 'Edge', face: 'Face', circle: 'Circle' };
+const NAMES: Record<Feature['kind'], string> = { point: 'Point', middle: 'Edge middle', quadrant: 'Quadrant', facecenter: 'Face center', center: 'Object center', edge: 'Edge', face: 'Face', circle: 'Circle' };
 
 /** A feature's own figures. */
 export function describe(f: Feature): Measurement {
@@ -57,7 +48,7 @@ export function describe(f: Feature): Measurement {
     case 'circle': {
       const whole = f.sweep >= 359.9;
       const head = whole ? `Circle Ø ${mm(2 * f.radius)}` : `Arc R ${mm(f.radius)}, ${deg(f.sweep)}`;
-      return { text: whole ? `Ø ${mm(2 * f.radius)}` : `R ${mm(f.radius)}`, lines: [head, whole ? `R ${mm(f.radius)}` : `Ø ${mm(2 * f.radius)}`, `centre ${place(f.center)}`], from: f.center, to: null };
+      return { text: whole ? `Ø ${mm(2 * f.radius)}` : `R ${mm(f.radius)}`, lines: [head, whole ? `R ${mm(f.radius)}` : `Ø ${mm(2 * f.radius)}`, `center ${place(f.center)}`], from: f.center, to: null };
     }
     case 'face':
       return { text: `${Number(f.area.toFixed(1))} mm²`, lines: [`${f.flat ? 'Face' : 'Surface'} ${Number(f.area.toFixed(1))} mm²`, `normal ${place(f.normal)}`], from: f.at, to: null };
@@ -101,7 +92,7 @@ const foot = (p: Vec3, on: Vec3, normal: Vec3): Vec3 => sub(p, scale(normal, dot
  */
 export function measure(a: Feature, b: Feature): Measurement {
   if (isPoint(a) && isPoint(b)) {
-    const m = apart(pointOf(a), pointOf(b), a.kind === 'circle' && b.kind === 'circle' ? 'Centres' : 'Distance');
+    const m = apart(pointOf(a), pointOf(b), a.kind === 'circle' && b.kind === 'circle' ? 'Centers' : 'Distance');
     if (a.kind === 'circle' && b.kind === 'circle') {
       const axes = between(a.normal, b.normal);
       if (axes.acute > 0.05) m.lines.push(`axes ${axes.text} apart`);

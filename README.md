@@ -2,7 +2,7 @@
   <img src="docs/banner.svg" alt="PlastikCAD: fast solid modelling for 3D printing" width="100%">
 </h1>
 
-Fast solid modeling for 3D printing: a desktop app for bashing out a part from
+Fast solid modeling for 3D printing: an app for bashing out a part from
 a few simple shapes.
 Drop boxes, cylinders and wedges on the plate, add a gear, a pulley or a
 threaded rod made to your numbers, turn some of it into holes, group, and
@@ -18,6 +18,17 @@ PlastikCAD supersedes [Gearwright](https://github.com/AOShei/gearwright): every
 part type and parameter it had is in here, as objects you can combine with
 everything else.
 
+## Install
+
+Installers for Windows, macOS (Apple Silicon and Intel) and Linux (AppImage,
+`.deb`, `.rpm`) are on the
+[releases page](https://github.com/Shei-Designs/PlastikCAD/releases/latest),
+which also says which file to pick and how to get past the first-launch
+warning: the builds are not code-signed yet. There is no update check; a new
+version is installed over the old one, and devices that sync through Google
+Drive should be updated together (see [Google Drive](#google-drive)). The
+Android app is built from source for now (see [Development](#development)).
+
 ## How it works
 
 It is the Tinkercad way of modeling, without the cloud and without the clutter:
@@ -25,13 +36,21 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
 - **Shapes** – box and cylinder (both with optional rounded edges), sphere,
   cone, pyramid, wedge, roof, round roof, polygon prism, torus and dome. Click
   one, then click on the plate (or on top of another object) to put it down.
-- **Parts** – the Gear, Pulley and Screw tiles place a parametric part. The
-  panel shows what it is for, a picture menu of the kinds in that family, the
-  parameters in tabs (gear, tooth form, hub, bore; thread, head; and so on),
-  the dimensions that follow from them (pitch diameter, outside diameter,
-  center distance...). A part is just an object: group it, cut it, scale it.
-  See
-  [Parts](#parts) for the list.
+- **Parts** – a tile for each family (gears, pulleys and sprockets, screws
+  and threads, rails, pipes and ducts, dev boards, fans, panel cutouts, motor
+  mounts) places a parametric part. The panel shows what it is for, a picture
+  menu of the kinds in that family, the parameters in tabs (gear, tooth form,
+  hub, bore; thread, head; and so on), the dimensions that follow from them
+  (pitch diameter, outside diameter, center distance...). A part is just an
+  object: group it, cut it, scale it. See [Parts](#parts) for the list.
+- **Mating gears** – *Add mating gear…* on a gear, rack or worm opens a small
+  wizard that makes the gear that runs with it: a gear, an internal ring, a
+  rack, a worm wheel (a helical gear cut to the worm's lead) or the second
+  bevel of a pair, by tooth count or ratio,
+  with backlash and extra center distance to suit the printer. The mate
+  stands meshed beside its gear at the right center distance, on whichever
+  side you turn it to, and follows the numbers as they are typed; *Accept*
+  keeps it as a part of its own.
 - **Text** – lettering in four print-friendly fonts (sans, slab serif,
   monospace, stencil), on one line or several. Put it on a face and group it
   to emboss; make it a hole and sink it in a little (Ctrl+Down) to engrave.
@@ -70,7 +89,10 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
   box appears on that edge to type the value. Or type exact numbers in the
   panel on the right. Select several objects and the grips sit on the box
   round them all: dragging one stretches them together, and clicking the top
-  grip shows their combined height.
+  grip shows their combined height. The handles follow the plate's axes
+  whichever way an object is turned; *Object axes* (O) puts a single object's
+  handles on its own axes instead, to size and move a turned part along
+  itself.
 - **Ghosts** – the ghost button (or G) fades the selected objects to faint
   shadows that nothing picks: a click or a drag goes through them to whatever
   is around or inside, so a part nested in another can be adjusted without
@@ -127,7 +149,7 @@ kits are their carrier boards, all on the same 100 × 79 mm outline with the
 ports along one long edge, and say how far the module stack reaches up. Every
 board has its sockets recorded; the Nano's one USB opening takes the classic's mini plug,
 the Every's micro plug and the Nano ESP32's USB-C, which all sit on the same
-centre. The ESP32 figures are the least certain: only Espressif's own DevKitC
+center. The ESP32 figures are the least certain: only Espressif's own DevKitC
 has a published drawing, so the part says so.
 A motor mount knows the motor's mounting face from its maker's drawing: the
 bolt pattern, the pilot boss or the body that drops through, and the shaft.
@@ -238,7 +260,9 @@ in the design file and synced with it.
   MuJoCo export brings its Python starters.
 - **Checks.** The overview lists what stops an export (no base, a link no
   joint reaches, limits the wrong way round, a drive missing a wheel on a
-  side, a link with no mass or an impossible inertia) and what goes through
+  side, a link with no mass or an impossible inertia, a joint set to follow
+  one that is fixed, closes a loop, is left out or follows it back) and what
+  goes through
   with a note (a joint that closes a loop, a joint with no effort or speed,
   drive wheels whose axles do not run the same way, a camera whose near
   plane clips the floor out of its picture, an open mesh, a heavy collision
@@ -263,7 +287,7 @@ in the design file and synced with it.
   stops the test drive too; the design is not touched.
 - **Export** first says what goes out, the base and everything joined to
   it, whether other objects will be ignored, and any warnings; then writes
-  a zip in one of three forms. A *ROS 2 package*:
+  a zip in one of four forms. A *ROS 2 package*:
   `urdf/<name>.urdf` with the sensors, drive and friction in `<gazebo>`
   blocks (and `<name>.urdf.xacro` beside it, the same with the Gazebo blocks
   behind `use_gazebo:=false` and the controllers behind
@@ -323,10 +347,18 @@ your Documents folder unless you pick another in the projects browser (Ctrl+O).
 (The app used to be called BashCAD: a `BashCAD` folder from then is renamed on
 the first start, its `.bashcad` files with it, and a `.bashcad` file still opens.)
 The browser lists every project with a thumbnail, newest first, to open,
-rename, duplicate or delete them; renaming a project renames its file. On
+rename, duplicate or delete them; renaming a project renames its file. A
+project is dated by when it was last saved, which the design itself records
+(in UTC), not by the date of its file: the order is the same on every device
+it syncs to, and a copy, a sync or a restore does not make an old project
+look new. On
 Android, projects live in the app's own storage, and a copy saved for sharing
 goes to `Download/PlastikCAD`. In a plain browser they are kept by the browser
 itself, per profile.
+
+The app runs once: double-clicking a design while it is open hands the file
+to the window that is already there rather than start a second one on the
+same projects folder.
 
 Two commands move designs in and out of the projects folder. **Open project
 file…** (Ctrl+Shift+O, also dropping or double-clicking a `.plastikcad` file,
@@ -354,8 +386,27 @@ hand; bring such a file in with **Open project file…** instead.
 A project edited on two devices before they sync is merged object by object.
 When the same object was changed on both, both versions are kept: the other
 device's copy appears as a project of its own, named "… (other device)", on
-both devices. A project deleted on one device is deleted on the others,
-unless it was changed there since, in which case it comes back.
+both devices. The robot of a design counts as one thing: changed on one
+device it is taken from there, changed on both the two versions are kept the
+same way. A project deleted on one device is deleted on the others, unless it
+was changed there since, in which case it comes back.
+
+Sync is careful about what it removes. A project deleted on another device
+is not destroyed here: on desktop and Android it moves to a `Trash` folder
+inside the projects folder, which is yours to empty (bring one back with
+**Open project file…**); what is deleted from the Drive goes to the Drive's
+own trash. A sync that would delete more than half of the projects at once,
+on either side, asks first and offers to keep them instead: that is what an
+emptied Drive folder or a projects folder gone missing looks like, far more
+often than a wish. What two places agreed on is remembered for that pair of
+places only, so linking another Google account, or choosing another projects
+folder, starts over by copying what each side has to the other and deletes
+nothing. A project saved while a sync is running is left for the next one.
+
+Devices that sync should run the same version of the app. A design saved by
+a newer version than the one reading it is refused with a word to update,
+never opened with the parts the older version does not know left out, since
+its next save would lose them on every device.
 
 Unlinking stops the syncing, tells Google the app no longer has access, and
 leaves the projects where they are, here and in the Drive. While linked, the
@@ -365,7 +416,7 @@ plain text like most desktop apps keep them; do not link on a shared account.
 A `.plastikcad` file is plain JSON, written to diff well: keys in a fixed order,
 one property per line, vectors on a single line. If you keep the projects
 folder in git, a change to one object shows up as a change to a few lines,
-plus the thumbnail line at the top.
+plus the thumbnail line at the top (and `Trash/` belongs in `.gitignore`).
 
 ```json
 {
@@ -386,13 +437,14 @@ plus the thumbnail line at the top.
 | --- | --- |
 | Orbit / pan / zoom | Right drag / middle drag (or Shift + right drag) / wheel |
 | Select | Click; Shift-click adds; drag on the plate for a box selection |
-| Touch | One finger orbits, two pan and zoom; tap an object to select it, tap the plate to clear; hold an object (on the plate or in the Objects list) to add it to the selection; hold the plate and drag for a box selection |
+| Touch | One finger orbits, two pan and zoom, wherever they land (on an object too); tap an object to select it, tap the plate to clear; hold an object (on the plate or in the Objects list) to add it to the selection; hold the plate and drag for a box selection |
 | Move | Drag (Shift keeps to one axis); arrow keys nudge by the snap step, Shift ×10 |
 | Raise or lower | Arrow handle; Ctrl+Up / Ctrl+Down |
 | Resize | Corner and edge grips; the top grip pulls the height up, the bottom grip pulls it down; Shift scales evenly. With several objects selected the grips sit on the box round them all and stretch them together |
 | Type a value | Click any grip instead of dragging it, type the value (two for a corner grip, e.g. `20 x 15`), Enter |
 | Turn | Colored arcs, in 15° steps; Shift 45°, Alt 1° |
-| Duplicate / copy / paste | Ctrl+D / Ctrl+C / Ctrl+V |
+| Duplicate / copy / cut / paste | Ctrl+D / Ctrl+C / Ctrl+X / Ctrl+V |
+| Select all / delete | Ctrl+A / Delete or Backspace |
 | Group / ungroup | Ctrl+G / Ctrl+Shift+G |
 | Ghost / un-ghost all | G / Shift+G |
 | Solid / hole | S / H |
@@ -400,10 +452,11 @@ plus the thumbnail line at the top.
 | Flip (mirror) on an axis | X / Y / Z |
 | Turn 90° about an axis | Shift+X / Shift+Y / Shift+Z; add Alt to turn the other way |
 | Align | L shows anchor dots on the selection: hover one to preview, click to apply; click one of the objects to make it the anchor, Esc to finish |
-| Measure | M: click a feature, then another, for the distance (with its X, Y and Z parts), the angle between edges or faces, or a circle's diameter; the snap symbols on the bar choose what the pointer takes hold of (points, edge middles, edges, circles, quadrants, face centres, faces, object centres), mixed as in a drafting program; Esc clears, then finishes |
-| Align by key | Alt+← / → / ↓ / ↑ (left / right / front / back), Alt+PgDn / PgUp (bottom / top); add Shift to center on that axis; Alt+C centers on X and Y |
+| Measure | M: click a feature, then another, for the distance (with its X, Y and Z parts), the angle between edges or faces, or a circle's diameter; the snap symbols on the bar choose what the pointer takes hold of (points, edge middles, edges, circles, quadrants, face centers, faces, object centers), mixed as in a drafting program; Esc clears, then finishes |
+| Align by key | Alt+← / → / ↓ / ↑ (left / right / front / back), Alt+PgDn / PgUp (bottom / top); add Shift to center on that axis; Alt+C centers on X and Y, Alt+Shift+C on Z as well |
+| Object axes | O puts a single object's handles on its own axes; again for the plate's |
 | Fit to view | F |
-| Undo / redo | Ctrl+Z / Ctrl+Y |
+| Undo / redo | Ctrl+Z / Ctrl+Y or Ctrl+Shift+Z |
 | Projects / open project file / new project / save a copy | Ctrl+O / Ctrl+Shift+O / Ctrl+N / Ctrl+Shift+S (Ctrl+S writes pending changes at once) |
 | Import | Ctrl+I |
 
@@ -534,9 +587,13 @@ every machine: [Inter](https://rsms.me/inter/) (sans),
 [Allerta Stencil](https://fonts.google.com/specimen/Allerta+Stencil), all in
 bold or heavy cuts with Latin and extended Latin characters. Inter, JetBrains
 Mono and Allerta Stencil are under the SIL Open Font License 1.1; Roboto Slab
-is under the Apache License 2.0; the license texts are in
-`public/font-licenses/` and ship with the app. A design stores only the
-words, not their outlines.
+is under the Apache License 2.0. The app's own lettering is Inter, with the
+product name in [Space Grotesk](https://floriankarsten.github.io/space-grotesk/)
+(SIL Open Font License 1.1). The license texts are in `public/font-licenses/`
+and ship with the app, beside `THIRD-PARTY-NOTICES.txt` with the licenses of
+the libraries it is built on (Manifold, MuJoCo, three.js, React, opentype.js,
+fflate, earcut and the Tauri API). A design stores only the words, not their
+outlines.
 
 ## Development
 
@@ -549,12 +606,13 @@ platform.
 pnpm install
 pnpm tauri dev      # run the desktop app with hot reload
 pnpm dev            # or just the UI, in a browser at http://localhost:1430
-pnpm test           # model, geometry, part and file-format tests
+pnpm test           # model, geometry, part, file-format, sync and robot export tests (cargo test in src-tauri for the Rust side)
 pnpm smoke:robots   # exports the reference robots and runs them in MuJoCo (pip install mujoco)
 pnpm smoke:ros      # the same in ROS 2 Jazzy, RViz (screenshots) and Gazebo, in Docker
 pnpm smoke:isaac    # the same in Isaac Sim through its URDF importer (ISAACSIM_PYTHON=~/isaacsim-env/bin/python)
 pnpm smoke:usd      # the exported Isaac Sim stages opened, played and driven over ROS 2 in Isaac Sim
 pnpm typecheck
+pnpm notices        # after adding or removing a dependency: writes public/THIRD-PARTY-NOTICES.txt again
 pnpm tauri build    # build installers into src-tauri/target/release/bundle
 pnpm tauri android build --apk   # the Android app, with the Tauri Android prerequisites installed
 ```
@@ -568,8 +626,13 @@ and `docs/banner.svg`; after a change, rasterize the tile at 1024 px
 included, with `pnpm tauri icon docs/brand/icon.json` — see
 [the Tauri docs](https://tauri.app/develop/icons/).
 
-Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds installers
-for all three platforms and attaches them to a draft GitHub release.
+Every push runs `.github/workflows/ci.yml`: the type check, the tests and the
+build, the Rust lints and tests, a compile of the native side on macOS and
+Windows, and the reference robots in MuJoCo. Pushing a `v*` tag runs
+`.github/workflows/release.yml`, which runs the tests again, then builds
+installers for all three platforms and attaches them to a draft GitHub
+release. The version number is set in `package.json`, `src-tauri/tauri.conf.json`
+and `src-tauri/Cargo.toml`; a test fails when they differ.
 
 ### Google Drive sync in your own build
 
@@ -607,17 +670,20 @@ src/
     shapes.ts         the basic shapes: their parameters and how each is built
     kernel.ts         turns nodes into meshes (Manifold kernel), with caching
   worker/             runs the kernel off the UI thread
-  state/              the editor: selection, undo, files, preferences
-  viewer/             three.js view: drawing, picking, handles
-  parts/              the gear, pulley, sprocket and thread generators
-  io/                 STL, 3MF, OBJ, GLB, SVG, DXF, URDF, SDF, MJCF writers; STL, OBJ, 3MF, GLB, Collada, SVG, DXF, URDF readers
-  robot/              Robot mode: links and joints, materials and mass properties, checks, the ROS 2 package
+  state/              the editor: selection, undo, projects, preferences, the test drive (store.ts is the one door to it, over the modules in store/)
+  viewer/             three.js view: Viewer.ts and its parts (drawing, picking, handles, pointer input, measuring, the robot overlay)
+  parts/              the part generators (gears, pulleys, threads, rails, ducts, boards, fans, cutouts, motors) and the mating-gear maths
+  io/                 STL, 3MF, OBJ, GLB, SVG, DXF, URDF, SDF, MJCF, USD writers; STL, OBJ, 3MF, GLB, Collada, SVG, DXF, URDF readers
+  robot/              Robot mode: links and joints, materials and mass properties, checks, the export packages
+  sim/                the test drive: MuJoCo (WebAssembly) in a worker
   sync/               Google sign-in (PKCE, loopback), Drive remote, three-way merge, sync engine
   text/               fonts, and laying words out as outlines
   ui/                 React components
-  platform.ts         desktop app or plain browser: dialogs, files, drops
+  platform.ts         desktop app, Android or plain browser: dialogs, files, drops
 src-tauri/            native window, file dialogs, reading and writing files (Rust)
-  plugins/device/     Android: reports a hardware keyboard and the on-screen keypad, writes picked documents (Kotlin)
+  plugins/device/     Android: reports a hardware keyboard and the on-screen keypad, writes picked documents, signs in through Play services (Kotlin)
+tools/                the simulator smoke tests (MuJoCo, ROS 2 and Gazebo in Docker, Isaac Sim), and the notices script
+fixtures/robots/      the reference robots the smoke tests export
 ```
 
 A design is a flat list of nodes: shapes, parts, text, imports, pictures, and groups of

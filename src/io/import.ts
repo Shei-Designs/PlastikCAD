@@ -99,20 +99,20 @@ export function importFile(fileName: string, bytes: Uint8Array, companions: Comp
   const name = extensionOf(base) ? base.replace(/\.[^.]+$/, '') : base || 'Import';
   switch (extension) {
     case 'stl':
-      return { kind: 'model', parts: [{ name, mesh: checkedMesh(parseStl(bytes)) }], used: [] };
+      return guarded('STL', () => ({ kind: 'model', parts: [{ name, mesh: checkedMesh(parseStl(bytes)) }], used: [] }));
     case 'obj':
-      return checkedModel(parseObj(bytes, name, companions));
+      return guarded('OBJ', () => checkedModel(parseObj(bytes, name, companions)));
     case '3mf':
-      return checkedModel(parse3mf(bytes, name));
+      return guarded('3MF', () => checkedModel(parse3mf(bytes, name)));
     case 'glb':
     case 'gltf':
-      return checkedModel(parseGlb(bytes, name));
+      return guarded('glTF', () => checkedModel(parseGlb(bytes, name)));
     case 'dae':
-      return checkedModel(parseCollada(bytes, name, companions));
+      return guarded('Collada', () => checkedModel(parseCollada(bytes, name, companions)));
     case 'svg':
-      return { kind: 'outline', parts: parseSvg(bytes).map((part) => ({ ...part, shapes: checkedOutline(part.shapes) })) };
+      return guarded('SVG', () => ({ kind: 'outline', parts: parseSvg(bytes).map((part) => ({ ...part, shapes: checkedOutline(part.shapes) })) }));
     case 'dxf':
-      return { kind: 'outline', parts: parseDxf(bytes).map((part) => ({ ...part, shapes: checkedOutline(part.shapes) })) };
+      return guarded('DXF', () => ({ kind: 'outline', parts: parseDxf(bytes).map((part) => ({ ...part, shapes: checkedOutline(part.shapes) })) }));
     default: {
       const given = extensionOf(fileName);
       const what = given ? `.${given} files` : 'Files of this type';
@@ -123,15 +123,38 @@ export function importFile(fileName: string, bytes: Uint8Array, companions: Comp
 }
 
 /**
- * The mesh, once every coordinate is known to be a finite number. The readers
- * drop such vertices themselves; this is the last line before the geometry
- * kernel, which cannot cope with NaN or infinity.
+ * Runs a reader. What a reader says itself is a plain Error fit to show the
+ * user; anything else (a TypeError, a RangeError) is the reader falling over
+ * a file broken in a way it did not expect, and is put in such words here.
  */
-export function checkedMesh<T extends { positions: Float32Array; triangles: Uint32Array }>(mesh: T): T {
+export function guarded<T>(format: string, read: () => T): T {
+  try {
+    return read();
+  } catch (e) {
+    if (e instanceof Error && e.constructor === Error) throw e;
+    throw new Error(`This ${format} file is damaged or not supported.`);
+  }
+}
+
+/**
+ * The mesh, once every coordinate is known to be a finite number and every
+ * triangle to point at vertices that exist. The readers drop such vertices
+ * themselves; this is the last line before the geometry kernel, which cannot
+ * cope with NaN, infinity or a corner that is not there. A texture coordinate
+ * that is not a number is no reason to refuse the mesh: it is made zero.
+ */
+export function checkedMesh<T extends { positions: Float32Array; triangles: Uint32Array; uv?: Float32Array }>(mesh: T): T {
   const p = mesh.positions;
   for (let i = 0; i < p.length; i++) {
     if (!Number.isFinite(p[i])) throw new Error('This file holds coordinates that are not numbers, and cannot be imported.');
   }
+  const t = mesh.triangles;
+  const count = p.length / 3;
+  for (let i = 0; i < t.length; i++) {
+    if (!(t[i] < count)) throw new Error('This file is damaged: its triangles point at corners it does not have.');
+  }
+  const uv = mesh.uv;
+  if (uv) for (let i = 0; i < uv.length; i++) if (!Number.isFinite(uv[i])) uv[i] = 0;
   return mesh;
 }
 

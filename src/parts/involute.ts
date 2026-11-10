@@ -112,11 +112,16 @@ function segmentIntersection(a: Vec2, b: Vec2, c: Vec2, d: Vec2): Vec2 | null {
   return [a[0] + t * rx, a[1] + t * ry];
 }
 
+/** Pitch and root circle radii of a tooth, which need no flank: the root circle never closes below 0.05 module. */
+export function toothRadii(spec: ToothSpec): { pitch: number; root: number } {
+  const r = (spec.teeth * spec.module) / 2;
+  return { pitch: r, root: Math.max(r - spec.dedendum, 0.05 * spec.module) };
+}
+
 export function toothProfile(spec: ToothSpec, q: Quality): ToothProfile {
   const { teeth: z, module: m, pressureAngle: alpha } = spec;
-  const r = (z * m) / 2;
+  const { pitch: r, root: rf } = toothRadii(spec);
   const rb = r * Math.cos(alpha);
-  const rf = Math.max(r - spec.dedendum, 0.05 * m);
   const ra = Math.max(r + spec.addendum, rf + 0.05 * m);
   const tanA = Math.tan(alpha);
   const sinA = Math.sin(alpha);

@@ -7,6 +7,7 @@ import { initKernel, robotGeometry } from '../geometry/kernel';
 import type { Doc } from '../model/types';
 import { buildMjcfModel } from '../robot/export';
 import { ROBOTS } from '../robot/fixtures';
+import { forward } from '../robot/kinematics';
 import { linkNodes, linkOf } from '../robot/model';
 import { loadMujoco, Simulation } from './mujoco';
 
@@ -156,9 +157,67 @@ describe('the car', () => {
     expect(position(sim, base)[1]).toBeGreaterThan(0.1);
     sim.dispose();
   });
+
+  it('steers when its body reaches over the wheels: the robot\'s own shapes pass through each other, as in Gazebo and Isaac Sim', () => {
+    const doc = make('car');
+    // The body widened into a shell over the front wheels and their knuckles.
+    doc.scene[0] = { ...doc.scene[0], size: [380, 440, 80] };
+    const { sim, base } = simulate(doc);
+    const steer = sim.actuators.filter((a) => a.kind === 'servo');
+    sim.step(0.5);
+    sim.drive(1, 1);
+    sim.step(1.5);
+    expect(sim.jointValue(steer[0].joint)).toBeGreaterThan(0.4);
+    expect(yaw(sim, base)).toBeGreaterThan(10);
+    expect(position(sim, base)[1]).toBeGreaterThan(0.1);
+    sim.dispose();
+  });
+
+  it('gives a wheel with no speed no motor, and still runs on the other', () => {
+    const doc = make('car');
+    doc.robot!.joints[0].velocity = 0;
+    const { sim, base } = simulate(doc);
+    expect(sim.actuators.filter((a) => a.kind === 'motor')).toHaveLength(1);
+    sim.drive(1, 0);
+    sim.step(1);
+    // Every body is somewhere, and every joint at some angle: nothing has become not a number.
+    expect([...sim.poses()].every(Number.isFinite)).toBe(true);
+    for (const a of sim.actuators) expect(Number.isFinite(sim.jointValue(a.joint))).toBe(true);
+    expect(position(sim, base)[1]).toBeGreaterThan(0.02);
+    sim.dispose();
+  });
 });
 
 describe('the arm', () => {
+  it('keeps pace with the clock when stepped a frame at a time', () => {
+    const { sim } = simulate(make('arm'));
+    // Sixty frames of a sixtieth of a second: each is eight time steps and a third, and the thirds add up.
+    for (let i = 0; i < 60; i++) sim.step(1 / 60);
+    expect(sim.time).toBeCloseTo(1, 2);
+    sim.reset();
+    expect(sim.step(0.0015)).toBe(0);
+    expect(sim.step(0.0015)).toBe(1);
+    sim.dispose();
+  });
+
+  it('moves a follower as far as the pose in the app does: a rack going 0.5 mm for each degree of its pinion', () => {
+    const doc = make('arm');
+    const [turret, shoulder] = doc.robot!.joints;
+    // The upper arm slides sideways off the turret as the turret turns, the way a rack runs on a pinion.
+    Object.assign(shoulder, { type: 'prismatic', axis: [1, 0, 0], lower: -60, upper: 60, mimic: { joint: turret.id, multiplier: 0.5, offset: 0 } });
+    const { sim } = simulate(doc);
+    const servo = sim.actuators.find((a) => a.joint === 'Turret_joint')!;
+    sim.setTarget(servo.name, 1);
+    sim.step(3);
+    const turned = (sim.jointValue('Turret_joint') * 180) / Math.PI;
+    expect(turned).toBeGreaterThan(40);
+    const posed = forward(doc.robot!, doc.scene, new Map([[turret.id, turned]]));
+    // Within half a millimeter of the 28 or so the app shows.
+    expect(posed.values.get(shoulder.id)).toBeGreaterThan(20);
+    expect(sim.jointValue('Shoulder') * 1000).toBeCloseTo(posed.values.get(shoulder.id)!, 0);
+    sim.dispose();
+  });
+
   it('holds a servo at its target within its range', () => {
     const { sim } = simulate(make('arm'));
     const shoulder = sim.actuators.find((a) => a.joint === 'Shoulder')!;
@@ -183,6 +242,24 @@ describe('the quadruped', () => {
     sim.step(2);
     // The base's frame sits on the floor under the body; it stays there as long as the legs hold.
     expect(Math.abs(position(sim, base)[2])).toBeLessThan(0.01);
+    for (const leg of ['front_left', 'rear_right']) expect(Math.abs(sim.jointValue(`Knee_${leg}`))).toBeLessThan(0.2);
+    sim.dispose();
+  });
+
+  it('stands on the slope as it stands on the flat', () => {
+    const doc = make('quadruped');
+    doc.robot!.world = 'slope';
+    const { sim, base } = simulate(doc);
+    sim.step(3);
+    const i = sim.bodies.indexOf(base);
+    const p = sim.poses();
+    const [w, x, y, z] = [p[7 * i + 3], p[7 * i + 4], p[7 * i + 5], p[7 * i + 6]];
+    // The body's own up against the floor's, which is tilted 0.14 rad about X: upright on it, and the base's frame still on the floor under the body.
+    const up = [2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y)];
+    const normal = [0, -Math.sin(0.14), Math.cos(0.14)];
+    expect(up[0] * normal[0] + up[1] * normal[1] + up[2] * normal[2]).toBeGreaterThan(0.99);
+    const [px, py, pz] = position(sim, base);
+    expect(Math.abs(px * normal[0] + py * normal[1] + pz * normal[2])).toBeLessThan(0.01);
     for (const leg of ['front_left', 'rear_right']) expect(Math.abs(sim.jointValue(`Knee_${leg}`))).toBeLessThan(0.2);
     sim.dispose();
   });

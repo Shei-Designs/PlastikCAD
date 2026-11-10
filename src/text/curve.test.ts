@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clampAngle, curveRadius, curvedSize, textWarp } from './curve';
+import { clampAngle, CURVED_TRIANGLES, curveRadius, curvedSize, curveStep, textWarp } from './curve';
 import type { TextCurve } from './curve';
 
 const bend = (angle: number, flip = false): TextCurve => ({ kind: 'bend', angle, flip, thickness: 1 });
@@ -63,5 +63,23 @@ describe('curvedSize', () => {
     expect(clampAngle(0)).toBe(5);
     expect(clampAngle(400)).toBe(355);
     expect(curveRadius(bend(360), 20)).toBeCloseTo(20 / ((355 * Math.PI) / 180), 9);
+  });
+});
+
+describe('curveStep', () => {
+  it('cuts about two degrees a step, and no finer than a twentieth of a unit', () => {
+    expect(curveStep(bend(180), 90)).toBeCloseTo(1, 9);
+    expect(curveStep(arc(90), 45)).toBeCloseTo(1, 9);
+    expect(curveStep(bend(355), 1)).toBe(0.05);
+  });
+
+  it('cuts coarser where the surface is so large that the triangles would run past the budget', () => {
+    // An ordinary label is cut as its curve asks: 240 square units at this step is some forty thousand triangles.
+    const step = curveStep(bend(180), 10);
+    expect(curveStep(bend(180), 10, 240)).toBe(step);
+    // A cut at length L leaves triangles of about L² / 2 each.
+    const coarse = curveStep(bend(355), 4, 1508);
+    expect(coarse).toBeGreaterThan(curveStep(bend(355), 4));
+    expect((2 * 1508) / coarse ** 2).toBeCloseTo(CURVED_TRIANGLES, 3);
   });
 });

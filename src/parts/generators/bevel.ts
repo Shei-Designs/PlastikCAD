@@ -1,5 +1,5 @@
 import { addHubAndBore, boreGroup, boreRadius, hubGroup } from '../features';
-import { clampBacklash, gearOutline, standardTooth, toothProfile } from '../involute';
+import { clampBacklash, gearOutline, standardTooth, toothProfile, toothRadii } from '../involute';
 import { arcSegments, toDeg, TAU } from '../math2d';
 import { triangulate } from '../meshUtil';
 import { intersection, mirror, revolve, translate } from '../types';
@@ -13,6 +13,31 @@ import type { GeneratorDef, InfoItem, Params } from './types';
 // the large end is that of a spur gear with teeth/cos(pitch angle) teeth, and
 // every tooth surface is a straight line to the pitch cone apex. That is the
 // usual construction for cut and printed bevel gears.
+
+/**
+ * The pitch cone, and how far behind the pitch circle the back face lies along the back cone
+ * (`tBack`): what the build lays the gear out from, and what places its mate.
+ */
+function cone(p: Params) {
+  const z = Math.round(num(p, 'teeth'));
+  const zMate = Math.round(num(p, 'mateTeeth'));
+  const m = num(p, 'module');
+  const delta = Math.atan2(z, zMate); // pitch cone half-angle
+  const sinD = Math.sin(delta);
+  const cosD = Math.cos(delta);
+  const r = (m * z) / 2;
+  const coneDistance = r / sinD;
+  // Root depth of the spur gear equivalent on the back cone (see the build).
+  const virtual = toothRadii(standardTooth({ teeth: z / cosD, module: m, pressureAngle: num(p, 'pressureAngle'), clearance: num(p, 'clearance') }));
+  const tBack = Math.min(virtual.pitch - virtual.root + num(p, 'baseThickness'), (0.98 * r) / cosD);
+  return { z, zMate, m, delta, sinD, cosD, r, coneDistance, tBack };
+}
+
+/** Height of the pitch cone apex above the mounting face (the part's origin, under the hub): a mating gear's axis passes through it. */
+export function bevelApexHeight(p: Params): number {
+  const { coneDistance, cosD, sinD, tBack } = cone(p);
+  return num(p, 'hubHeight') + coneDistance * cosD + tBack * sinD;
+}
 
 export const bevelGear: GeneratorDef = {
   id: 'bevel',
@@ -93,14 +118,7 @@ export const bevelGear: GeneratorDef = {
   ],
   build(p: Params, q: Quality) {
     const warnings: string[] = [];
-    const z = Math.round(num(p, 'teeth'));
-    const zMate = Math.round(num(p, 'mateTeeth'));
-    const m = num(p, 'module');
-    const delta = Math.atan2(z, zMate); // pitch cone half-angle
-    const sinD = Math.sin(delta);
-    const cosD = Math.cos(delta);
-    const r = (m * z) / 2;
-    const coneDistance = r / sinD;
+    const { z, zMate, m, delta, sinD, cosD, r, coneDistance, tBack } = cone(p);
     let face = num(p, 'faceWidth');
     if (face > coneDistance / 2) {
       face = coneDistance / 2;
@@ -131,7 +149,6 @@ export const bevelGear: GeneratorDef = {
     const addendum = profile.outerRadius - rv;
     const dedendum = rv - profile.rootRadius;
     const tOut = addendum + m;
-    const tBack = Math.min(dedendum + num(p, 'baseThickness'), (0.98 * r) / cosD);
     const k = (coneDistance - face) / coneDistance;
     const back = backCone(-tBack);
     const front = backCone(-dedendum, k);

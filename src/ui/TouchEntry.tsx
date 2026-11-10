@@ -95,6 +95,8 @@ export function TouchEntrySheet() {
   const entry = useSyncExternalStore(subscribe, () => current);
   const box = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
   const panel = useRef<HTMLDivElement | null>(null);
+  /** The entry the backdrop was last pressed under. */
+  const pressed = useRef<TouchEntry | null>(null);
   // Kept in the middle of the room above the keypad, as that room changes.
   const [top, setTop] = useState(64);
   useLayoutEffect(() => {
@@ -155,7 +157,17 @@ export function TouchEntrySheet() {
   };
   return (
     <>
-      <div className="touch-entry-backdrop" onPointerDown={cancel} />
+      {/* Closed by the click, not the press: gone at the press, the tap's click would land on whatever lies underneath.
+          The tap that opened the sheet ends in a click here too, which is told apart by where its press began. */}
+      <div
+        className="touch-entry-backdrop"
+        onPointerDown={() => {
+          pressed.current = entry;
+        }}
+        onClick={() => {
+          if (pressed.current === entry) cancel();
+        }}
+      />
       <div className="touch-entry" ref={panel} style={{ top }} role="dialog" aria-label={entry.label} onKeyDown={onKey}>
         <div className="touch-entry-head">
           <span className="touch-entry-label clip">{entry.label}</span>

@@ -108,4 +108,45 @@ describe('parseCollada', () => {
     }
     expect(Math.abs(volume)).toBeCloseTo(100 * 100 * 100, 0);
   });
+
+  it('cuts a polygon that is not convex into triangles that stay inside it', () => {
+    // An L of area 3 m², listed from the corner next to its notch, with texture coordinates that follow the corners.
+    const model = parseCollada(encode(flat('<polylist count="1"><input semantic="VERTEX" source="#v" offset="0"/><input semantic="TEXCOORD" source="#uv" offset="1"/><vcount>6</vcount><p>2 2 3 3 4 4 5 5 0 0 1 1</p></polylist>')));
+    const { positions: p, triangles: t, uv } = model.parts[0].mesh;
+    expect(t.length).toBe(4 * 3);
+    let total = 0;
+    for (let i = 0; i < t.length; i += 3) {
+      const [a, b, c] = [t[i] * 3, t[i + 1] * 3, t[i + 2] * 3];
+      const area = ((p[b] - p[a]) * (p[c + 1] - p[a + 1]) - (p[c] - p[a]) * (p[b + 1] - p[a + 1])) / 2;
+      expect(area).toBeGreaterThan(0);
+      total += area;
+      // Each corner still carries the texture coordinate written for it: here, its own position in meters.
+      for (const [k, v] of [a, b, c].entries()) expect([uv![(i + k) * 2] * 1000, uv![(i + k) * 2 + 1] * 1000]).toEqual([p[v], p[v + 1]]);
+    }
+    expect(total).toBeCloseTo(3e6, 0);
+  });
 });
+
+describe('a Collada file that is not as it should be', () => {
+  const textured = (image: string) =>
+    `<COLLADA><asset><up_axis>Z_UP</up_axis></asset><library_images><image id="i"><init_from>${image}</init_from></image></library_images><library_effects><effect id="e"><profile_COMMON><technique><lambert><diffuse><texture texture="i"/></diffuse></lambert></technique></profile_COMMON></effect></library_effects><library_materials><material id="m"><instance_effect url="#e"/></material></library_materials><library_geometries><geometry id="g"><mesh><source id="p"><float_array>0 0 0 1 0 0 0 1 0</float_array><technique_common><accessor stride="3"/></technique_common></source><vertices id="v"><input semantic="POSITION" source="#p"/></vertices><triangles material="m"><input semantic="VERTEX" source="#v" offset="0"/><p>0 1 2</p></triangles></mesh></geometry></library_geometries></COLLADA>`;
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+
+  it('finds a picture whose name has a percent sign in it, escaped or not', () => {
+    const plain = parseCollada(encode(textured('100%_wood.png')), 'a', [{ name: '100%_wood.png', bytes: png }]);
+    expect(plain.parts[0].image?.name).toBe('100%_wood.png');
+    const escaped = parseCollada(encode(textured('file:///tmp/my%20wood.png')), 'a', [{ name: 'my wood.png', bytes: png }]);
+    expect(escaped.parts[0].image?.name).toBe('my wood.png');
+  });
+
+  it('refuses a file nested deeper than any drawing is, without falling over', () => {
+    const deep = `<COLLADA>${'<a>'.repeat(200_000)}${'</a>'.repeat(200_000)}</COLLADA>`;
+    expect(() => importFile('a.dae', encode(deep))).toThrow(/nested too deeply/);
+  });
+});
+
+/** A Z-up file in meters with one flat geometry: an L-shaped outline of six corners, and texture coordinates equal to their positions. */
+const flat = (primitive: string) => `<COLLADA><asset><up_axis>Z_UP</up_axis></asset><library_geometries><geometry id="g"><mesh>
+  <source id="p"><float_array>0 0 0 2 0 0 2 1 0 1 1 0 1 2 0 0 2 0</float_array><technique_common><accessor stride="3"/></technique_common></source>
+  <source id="uv"><float_array>0 0 2 0 2 1 1 1 1 2 0 2</float_array><technique_common><accessor stride="2"/></technique_common></source>
+  <vertices id="v"><input semantic="POSITION" source="#p"/></vertices>${primitive}</mesh></geometry></library_geometries></COLLADA>`;

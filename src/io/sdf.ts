@@ -8,7 +8,7 @@ import type { Tensor } from '../robot/inertia';
 import type { JointType } from '../robot/types';
 import { escapeXml, fmt } from './format';
 import { pad, surfaceXml } from './gazebo';
-import type { UrdfGeometry } from './urdf';
+import type { Naming, UrdfGeometry } from './urdf';
 
 export interface SdfLink {
   name: string;
@@ -38,6 +38,18 @@ export interface SdfJoint {
 
 const vec = (v: Vec3): string => v.map((x) => fmt(x, 6)).join(' ');
 const num = (x: number): string => fmt(x, 9);
+
+/** The joint that bolts a fixed base to the world. */
+const WORLD_JOINT = 'world_joint';
+
+/** Links, joints and frames share one set of names in a model, beside the two SDF keeps for itself. Sensors have their own, which their topics come from. */
+const inModel = (name: string): string => `model/${name}`;
+export const SDF_NAMES: Naming = {
+  reserved: [inModel('world'), inModel('__model__'), inModel(WORLD_JOINT)],
+  link: (name) => [inModel(name)],
+  joint: (name) => [inModel(name)],
+  sensor: (name) => [`sensor/${name}`],
+};
 
 function geometryXml(g: UrdfGeometry): string {
   if ('mesh' in g) return `<geometry><mesh><uri>${escapeXml(g.mesh)}</uri></mesh></geometry>`;
@@ -113,7 +125,7 @@ export function writeSdf(name: string, links: SdfLink[], joints: SdfJoint[], plu
     '  <self_collide>false</self_collide>',
     ...links.map(linkXml),
     ...(footprint ? [`  <frame name="${escapeXml(footprint.name)}" attached_to="${escapeXml(footprint.base)}"><pose>0 0 0 0 0 ${fmt(-footprint.turn || 0, 6)}</pose></frame>`] : []),
-    ...(fixedToWorld ? [`  <joint name="world_joint" type="fixed">\n    <parent>world</parent>\n    <child>${escapeXml(fixedToWorld)}</child>\n  </joint>`] : []),
+    ...(fixedToWorld ? [`  <joint name="${WORLD_JOINT}" type="fixed">\n    <parent>world</parent>\n    <child>${escapeXml(fixedToWorld)}</child>\n  </joint>`] : []),
     ...joints.map(jointXml),
     ...plugins.map((p) => pad(p, '  ')),
     '</model>',

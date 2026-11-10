@@ -1,12 +1,17 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
+import type { MainModule } from '@mujoco/mujoco';
+import { xmlTree } from '../io/xml';
+import type { XmlElement } from '../io/xml';
 import { emptyDoc } from '../model/file';
-import type { SceneNode } from '../model/types';
+import type { Doc, SceneNode } from '../model/types';
+import { loadMujoco, Simulation } from '../sim/mujoco';
 import type { LinkGeometry } from '../worker/protocol';
 import { checkRobot } from './check';
 import { buildIsaacStage, buildMjcfModel, buildRobotPackage, buildSdfModel, exportSummary } from './export';
+import type { RobotPackage } from './export';
 import { meshProperties } from './inertia';
 import { driveForward, jointInChild, jointInDesign, linkNodes, spanningTree } from './model';
-import { defaultJoint, defaultLink, defaultSensor } from './types';
+import { defaultJoint, defaultLink, defaultSensor, DRIVE_KINDS, SENSOR_KINDS } from './types';
 import { ROBOTS } from './fixtures';
 import type { Robot } from './types';
 
@@ -128,6 +133,62 @@ describe('checkRobot', () => {
     expect(checkRobot(d, props)).toEqual([]);
   });
 
+  it('never throws, whatever becomes of an object the robot names', () => {
+    for (const { make } of ROBOTS) {
+      const count = make().scene.length;
+      for (let i = 0; i < count; i++) {
+        for (const fate of ['hidden', 'hole', 'gone'] as const) {
+          for (const kind of DRIVE_KINDS) {
+            const d = make();
+            const r = d.robot!;
+            const lost = d.scene[i];
+            // Everything that can point at an object points at this one: a sensor of every kind on it, and its joints in the drive, as wheels and as steering.
+            r.sensors.push(...SENSOR_KINDS.map((k) => defaultSensor(`on-${k.id}`, `${k.name} on it`, k.id, lost.id, [0, 0, 0])));
+            const joined = r.joints.filter((j) => j.child === lost.id || j.parent === lost.id);
+            r.drive = { kind: kind.id, roles: { ...r.drive?.roles, ...Object.fromEntries(joined.map((j, n) => [j.id, kind.roles[n % kind.roles.length].id])) } };
+            const props = new Map(linkNodes(d.scene).map((n) => [n.id, boxGeometry(n).props]));
+            d.scene = fate === 'gone' ? d.scene.filter((n) => n !== lost) : d.scene.map((n) => (n === lost ? { ...n, hidden: fate === 'hidden', hole: fate === 'hole' } : n));
+            let problems: ReturnType<typeof checkRobot> = [];
+            expect(() => (problems = checkRobot(d, props))).not.toThrow();
+            // The loss is told as an error, which is what stops the export and the test drive.
+            expect(problems.some((p) => p.level === 'error')).toBe(true);
+          }
+        }
+      }
+    }
+  });
+
+  it('faults a follower whose leader is fixed, closes a loop, is left out or follows it back, and nothing else', () => {
+    const props = new Map([...geometry()].map(([id, g]) => [id, g.props]));
+    const errors = (d: Doc) => checkRobot(d, props).filter((p) => p.level === 'error');
+    // A follower of a joint that moves, and a follower of that follower, are sound.
+    const sound = doc();
+    sound.robot!.joints[1].mimic = { joint: 'j1', multiplier: 2, offset: 10 };
+    expect(errors(sound)).toEqual([]);
+    const fixed = doc();
+    fixed.robot!.joints[0].type = 'fixed';
+    fixed.robot!.joints[1].mimic = { joint: 'j1', multiplier: 1, offset: 0 };
+    const loop = doc();
+    loop.robot!.joints.push({ ...defaultJoint('j3', 'closing', arm.id, wheel.id, [0, 0, 0]) });
+    loop.robot!.joints[1].mimic = { joint: 'j3', multiplier: 1, offset: 0 };
+    const stray = doc();
+    stray.scene.push(node('stray001', 'Spare bracket', [50, 50, 5], [10, 10, 10]), node('stray002', 'Other bracket', [70, 50, 5], [10, 10, 10]));
+    stray.robot!.joints.push({ ...defaultJoint('j5', 'spare hinge', 'stray001', 'stray002', [0, 0, 0]) });
+    stray.robot!.joints[1].mimic = { joint: 'j5', multiplier: 1, offset: 0 };
+    const ring = doc();
+    ring.robot!.joints[0].mimic = { joint: 'j2', multiplier: 1, offset: 0 };
+    ring.robot!.joints[1].mimic = { joint: 'j1', multiplier: 1, offset: 0 };
+    for (const [d, followers] of [[fixed, ['j2']], [loop, ['j2']], [stray, ['j2']], [ring, ['j1', 'j2']]] as const) {
+      const told = errors(d);
+      expect(told.map((p) => p.joint)).toEqual(followers);
+      // One line each, naming the follower first and saying what to do.
+      for (const p of told) expect(p.text).toMatch(/^(left wheel joint|shoulder): follows [^.]+\. [A-Z][^.]+\.$/);
+    }
+    // A fixed joint's Follows is never written, so it is not faulted.
+    fixed.robot!.joints[1].type = 'fixed';
+    expect(errors(fixed)).toEqual([]);
+  });
+
   it('warns about loops and open meshes', () => {
     const d = doc();
     d.robot!.joints.push({ ...defaultJoint('j3', 'closing', arm.id, wheel.id, [0, 0, 0]) });
@@ -204,6 +265,23 @@ describe('buildRobotPackage', () => {
     const urdf = text(buildRobotPackage(d, geometry()).files.find((f) => f.name === 'urdf/test_rover.urdf')!.bytes);
     expect(urdf).toContain('<mimic joint="left_wheel_joint" multiplier="2" offset="0.174533"/>');
   });
+
+  it('turns a follower\'s multiplier into the units of both joints: a rack 0.5 mm a degree is 28.6 mm a radian', () => {
+    const d = doc();
+    d.robot!.joints[1] = { ...d.robot!.joints[1], type: 'prismatic', lower: -20, upper: 20, mimic: { joint: 'j1', multiplier: 0.5, offset: 2 } };
+    const expected = 0.5e-3 / (Math.PI / 180);
+    const urdf = text(buildRobotPackage(d, geometry()).files.find((f) => f.name === 'urdf/test_rover.urdf')!.bytes);
+    const sdf = text(buildSdfModel(d, geometry()).files.find((f) => f.name === 'model.sdf')!.bytes);
+    const mjcf = text(buildMjcfModel(d, geometry()).files.find((f) => f.name === 'test_rover.xml')!.bytes);
+    expect(Number(/<mimic joint="left_wheel_joint" multiplier="([^"]+)" offset="0.002"\/>/.exec(urdf)?.[1])).toBeCloseTo(expected, 5);
+    expect(Number(/<mimic joint="left_wheel_joint"><multiplier>([^<]+)<\/multiplier><offset>0.002<\/offset>/.exec(sdf)?.[1])).toBeCloseTo(expected, 5);
+    expect(Number(/<joint joint1="shoulder" joint2="left_wheel_joint" polycoef="0.002 (\S+) 0 0 0"\/>/.exec(mjcf)?.[1])).toBeCloseTo(expected, 5);
+    // The other way round, a pinion following its rack: degrees a millimeter become radians a meter.
+    d.robot!.joints[0].mimic = { joint: 'j2', multiplier: 2, offset: 0 };
+    d.robot!.joints[1].mimic = undefined;
+    const back = text(buildRobotPackage(d, geometry()).files.find((f) => f.name === 'urdf/test_rover.urdf')!.bytes);
+    expect(Number(/<mimic joint="shoulder" multiplier="([^"]+)"/.exec(back)?.[1])).toBeCloseTo((2 * Math.PI) / 180 / 1e-3, 3);
+  });
 });
 
 /** The test robot as a rover: sensors of every kind, one wheel joint each side, the base free. */
@@ -232,6 +310,35 @@ describe('sensors, drive and control', () => {
     expect(urdf).not.toContain('tread_link');
     expect(urdf).not.toContain('preserveFixedJoint');
     expect(text(buildRobotPackage(rover(), geometry()).files.find((f) => f.name === 'config/bridge.yaml')!.bytes)).toContain('ros_gz_interfaces/msg/Contacts');
+  });
+
+  it('names the base\'s collision as Gazebo renames it when a touch sensor sits on the base under a footprint', () => {
+    const d = rover();
+    d.robot!.sensors.push({ ...defaultSensor('s5', 'belly', 'touch', body.id, [0, 0, -10]) });
+    const urdf = text(buildRobotPackage(d, geometry()).files.find((f) => f.name === 'urdf/test_rover.urdf')!.bytes);
+    // The base is folded into the massless footprint, where its collision gets the footprint's name in front; keeping
+    // the joint instead would leave the footprint without mass, and Gazebo drops such a link with all below it.
+    expect(/<sensor name="belly" type="contact">[\s\S]*?<collision>([^<]+)<\/collision>/.exec(urdf)?.[1]).toBe('base_footprint_fixed_joint_lump__Body_collision');
+    expect(urdf).not.toMatch(/<gazebo reference="base_footprint_joint">/);
+    // Bolted down there is no footprint, and the collision keeps its name.
+    d.robot!.base = 'fixed';
+    const bolted = text(buildRobotPackage(d, geometry()).files.find((f) => f.name === 'urdf/test_rover.urdf')!.bytes);
+    expect(/<sensor name="belly" type="contact">[\s\S]*?<collision>([^<]+)<\/collision>/.exec(bolted)?.[1]).toBe('Body_collision');
+  });
+
+  it('says so when the drive is left out because a wheel is not joined to the base', () => {
+    const d = rover();
+    // The right wheel's joint hangs from a bracket nothing joins to the base.
+    d.scene.push(node('stray001', 'Spare bracket', [50, 50, 5], [10, 10, 10]), node('stray002', 'Loose wheel', [70, 50, 5], [10, 10, 10]));
+    d.robot!.joints[2] = { ...d.robot!.joints[2], parent: 'stray001', child: 'stray002' };
+    const geo = new Map(linkNodes(d.scene).map((n) => [n.id, boxGeometry(n)]));
+    for (const build of [buildRobotPackage, buildSdfModel, buildMjcfModel, buildIsaacStage]) {
+      const pkg = build(d, geo);
+      expect(pkg.warnings.filter((w) => w.startsWith('Drive: '))).toEqual([expect.stringMatching(/^Drive: right wheel joint is not joined to the base, so the drive is left out\. [A-Z][^.]+\.$/)]);
+      expect(pkg.files.some((f) => /drive\.json$/.test(f.name))).toBe(false);
+    }
+    // A whole drive says nothing.
+    expect(buildRobotPackage(rover(), geometry()).warnings.filter((w) => w.startsWith('Drive: '))).toEqual([]);
   });
 
   it('keeps the fixed joint under a touch sensor, or Gazebo folds the link away and renames its collision', () => {
@@ -336,7 +443,8 @@ describe('Isaac Sim stage', () => {
     expect(usda).toContain('def PhysicsRevoluteJoint "left_wheel_joint"');
     // The wheel joint sits 4 mm inboard of the wheel's center (y 40, z 10), in the body's frame at the origin.
     expect(usda).toMatch(/def PhysicsRevoluteJoint "left_wheel_joint"[\s\S]*?point3f physics:localPos0 = \(0, 0.036, 0.01\)/);
-    expect(usda).toMatch(/def PhysicsRevoluteJoint "shoulder"[\s\S]*?float physics:lowerLimit = -90[\s\S]*?float physics:upperLimit = 90[\s\S]*?float drive:angular:physics:stiffness = 10/);
+    // The shoulder's servo: 10 N·m a tenth of a radian off is 100 N·m/rad, 1.745 N·m a degree as USD Physics counts it.
+    expect(usda).toMatch(/def PhysicsRevoluteJoint "shoulder"[\s\S]*?float physics:lowerLimit = -90[\s\S]*?float physics:upperLimit = 90[\s\S]*?float drive:angular:physics:stiffness = 1\.7453/);
     expect(usda).toContain('def Camera "front_cam"');
     expect(usda).toContain('def OmniLidar "top_lidar"');
     expect(usda).toContain('def IsaacImuSensor "imu"');
@@ -509,5 +617,227 @@ describe('the footprint ROS expects', () => {
     const { urdf, sdf } = build('arm');
     expect(urdf).not.toContain('base_footprint');
     expect(sdf).not.toContain('base_footprint');
+  });
+});
+
+/** Every element whose children share a name with a sibling, as "parent > name": what SDF forbids, and so Gazebo in a URDF. (ros2_control lists a joint's interfaces by kind, not by name.) */
+function siblingClashes(xml: string): string[] {
+  const out: string[] = [];
+  const walk = (e: XmlElement) => {
+    const seen = new Set<string>();
+    for (const c of e.children) {
+      const name = c.attrs.name;
+      if (name === undefined) continue;
+      if (seen.has(name)) out.push(`${e.name} > ${name}`);
+      seen.add(name);
+    }
+    e.children.filter((c) => c.name !== 'ros2_control').forEach(walk);
+  };
+  walk(xmlTree(new TextEncoder().encode(xml))!);
+  return out;
+}
+
+/** Every name a MuJoCo model gives twice to one kind of thing: bodies, joints, sites, cameras, sensors, actuators. */
+function mjcfClashes(xml: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const walk = (e: XmlElement, section: string) => {
+    for (const c of e.children) {
+      const kind = section || (c.name === 'freejoint' ? 'joint' : c.name);
+      const key = `${kind}/${c.attrs.name}`;
+      if (c.attrs.name !== undefined) {
+        if (seen.has(key)) out.push(key);
+        seen.add(key);
+      }
+      walk(c, section || (c.name === 'sensor' || c.name === 'actuator' ? c.name : ''));
+    }
+  };
+  walk(xmlTree(new TextEncoder().encode(xml))!, '');
+  return out;
+}
+
+/** Every prim of a USD stage that shares its name with a sibling, as its path. */
+function usdClashes(usda: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const path: string[] = [];
+  for (const line of usda.split('\n')) {
+    const m = /^( *)def \w+ "([^"]+)"/.exec(line);
+    if (!m) continue;
+    path.length = m[1].length / 4;
+    path.push(m[2]);
+    const key = path.join('/');
+    if (seen.has(key)) out.push(key);
+    seen.add(key);
+  }
+  return out;
+}
+
+const file = (pkg: RobotPackage, name: RegExp): string => text(pkg.files.find((f) => name.test(f.name))!.bytes);
+
+describe('names', () => {
+  let mj: MainModule;
+  beforeAll(async () => {
+    mj = await loadMujoco();
+  });
+  const loads = (pkg: ReturnType<typeof buildMjcfModel>) => Simulation.load(mj, file(pkg, /\.xml$/), pkg.files.filter((f) => f.name.startsWith('meshes/')), pkg.drive).dispose();
+
+  /**
+   * Names the writers use themselves, and names they make from a link's, a joint's or a sensor's: the world and its
+   * joint, the footprint, MuJoCo's free joint and base readings, the stage's scopes and a link's meshes, and what
+   * comes of a sensor or a joint called "camera" (its frame, its optical frame, its readings, its rays).
+   */
+  const TAKEN = ['world', 'world joint', 'base_footprint', 'base_footprint joint', 'root', 'root joint', 'base', 'base site', 'base quat', 'base gyro', 'base vel', 'base acc', 'Joints', 'visual 0', 'collision 0', 'camera', 'camera joint', 'camera link', 'camera optical frame', 'camera optical joint', 'camera pos', 'camera vel', 'camera gyro', 'camera accel', 'camera site', 'camera 0', 'camera ray0', 'camera servo', 'floor', '__model__'];
+
+  /** A robot that takes every one of those names three times over: for a link, for a joint, and for a sensor of every kind. */
+  const hostile = (base: Robot['base']): { d: Doc; geo: Map<string, LinkGeometry> } => {
+    const d = emptyDoc();
+    d.name = 'Sun';
+    const hub = node('hub00000', 'hub', [0, 0, 10], [40, 40, 20]);
+    const parts = TAKEN.map((name, i) => node(`part${i}`, name, [60 + 30 * i, 0, 10], [20, 20, 20]));
+    d.scene = [hub, ...parts];
+    const joints = parts.map((part, i) => ({ ...defaultJoint(`j${i}`, TAKEN[(i + 1) % TAKEN.length], hub.id, part.id, [0, 0, 0]), axis: [0, 1, 0] as [number, number, number], ...(i < 2 ? { type: 'continuous' as const } : {}) }));
+    const sensors = parts.flatMap((part, i) => SENSOR_KINDS.map((k) => ({ ...defaultSensor(`s${i}${k.id}`, TAKEN[(i + 2) % TAKEN.length], k.id, part.id, [0, 0, 0]), lidar: { samples: 4, hfov: 360, min: 100, max: 4000 } })));
+    d.robot = { root: hub.id, base, links: [], joints, sensors, control: true, ...(base === 'free' ? { drive: { kind: 'differential', roles: { j0: 'left', j1: 'right' } } } : {}) };
+    return { d, geo: new Map(d.scene.map((n) => [n.id, boxGeometry(n)])) };
+  };
+
+  it.each(['free', 'fixed'] as const)('are all different in every export of a %s robot named after the writers\' own names', (base) => {
+    const { d, geo } = hostile(base);
+    const ros = buildRobotPackage(d, geo);
+    expect(siblingClashes(file(ros, /\.urdf$/))).toEqual([]);
+    expect(siblingClashes(file(ros, /\.urdf\.xacro$/))).toEqual([]);
+    // The robot is spawned into the world by its package's name.
+    expect(siblingClashes(file(ros, /^worlds\//))).toEqual([]);
+    expect([...file(ros, /^worlds\//).matchAll(/<(?:light|model)[^>]* name="([^"]+)"/g)].map((m) => m[1])).not.toContain(ros.name);
+    const sdf = buildSdfModel(d, geo);
+    expect(siblingClashes(file(sdf, /^model\.sdf$/))).toEqual([]);
+    expect(siblingClashes(file(sdf, /^worlds\//))).toEqual([]);
+    const usd = buildIsaacStage(d, geo);
+    expect(usdClashes(file(usd, /\.usda$/))).toEqual([]);
+    const mjcf = buildMjcfModel(d, geo);
+    expect(mjcfClashes(file(mjcf, /\.xml$/))).toEqual([]);
+    expect(() => loads(mjcf)).not.toThrow();
+    // Each sensor keeps one name of its own in every format, which its topics and readings go by.
+    for (const pkg of [ros, sdf]) {
+      const topics = [...file(pkg, /\.urdf$|^model\.sdf$/).matchAll(/<sensor name="([^"]+)"/g)].map((m) => m[1]);
+      expect(new Set(topics).size).toBe(d.robot!.sensors.length);
+    }
+  });
+
+  it('keep the stage\'s and the world\'s own clear of a robot named after them', () => {
+    for (const name of ['Sun', 'Dome', 'Ground', 'Looks', 'PhysicsMaterials', 'ROS2', 'physicsScene', 'sun', 'ground_plane']) {
+      const d = rover();
+      d.name = name;
+      expect(usdClashes(file(buildIsaacStage(d, geometry()), /\.usda$/))).toEqual([]);
+      const sdf = buildSdfModel(d, geometry());
+      const world = file(sdf, /^worlds\//);
+      // The model is included under its own name, beside the world's light and floor.
+      const model = /<model name="([^"]+)"/.exec(file(sdf, /^model\.sdf$/))![1];
+      expect([...world.matchAll(/<(?:light|model)[^>]* name="([^"]+)"/g)].map((m) => m[1])).not.toContain(model);
+    }
+  });
+
+  it('leave a robot with nothing to clash as it was named', () => {
+    const d = rover();
+    const urdf = file(buildRobotPackage(d, geometry()), /\.urdf$/);
+    for (const name of ['Body', 'Left_wheel', 'Arm_upper', 'front_cam_link', 'front_cam_optical_frame', 'top_lidar_link', 'imu_link', 'base_footprint']) expect(urdf).toContain(`<link name="${name}"`);
+    // A sensor may share its link's name: they are different things in every format.
+    d.robot!.sensors[2] = { ...d.robot!.sensors[2], name: 'Body' };
+    for (const build of [buildRobotPackage, buildSdfModel, buildMjcfModel, buildIsaacStage]) {
+      const out = file(build(d, geometry()), /\.urdf$|^model\.sdf$|^test_rover\.xml$|\.usda$/);
+      expect(out).toMatch(/(<sensor name="Body" type="imu"|<site name="Body" |def IsaacImuSensor "Body")/);
+    }
+  });
+
+  it('never has a follower name a joint the file does not hold', () => {
+    const cases: Doc[] = [];
+    // The leader fixed, closing a loop, left out, and following back: the checks stop these, the writers still write what loads.
+    const fixed = doc();
+    fixed.robot!.joints[0].type = 'fixed';
+    fixed.robot!.joints[1].mimic = { joint: 'j1', multiplier: 1, offset: 0 };
+    const loop = doc();
+    loop.robot!.joints.push({ ...defaultJoint('j3', 'closing', arm.id, wheel.id, [0, 0, 0]) });
+    loop.robot!.joints[1].mimic = { joint: 'j3', multiplier: 1, offset: 0 };
+    const follower = doc();
+    follower.robot!.joints[1] = { ...follower.robot!.joints[1], type: 'fixed', mimic: { joint: 'j1', multiplier: 1, offset: 0 } };
+    const ring = doc();
+    ring.robot!.joints[0].mimic = { joint: 'j2', multiplier: 1, offset: 0 };
+    ring.robot!.joints[1].mimic = { joint: 'j1', multiplier: 1, offset: 0 };
+    cases.push(fixed, loop, follower, ring);
+    for (const d of cases) {
+      const urdf = file(buildRobotPackage(d, geometry()), /\.urdf$/);
+      const moving = new Set([...urdf.matchAll(/<joint name="([^"]+)" type="(?!fixed)/g)].map((m) => m[1]));
+      for (const m of urdf.matchAll(/<mimic joint="([^"]+)"/g)) expect(moving).toContain(m[1]);
+      const usda = file(buildIsaacStage(d, geometry()), /\.usda$/);
+      for (const m of usda.matchAll(/referenceJoint = <[^>]*\/([^/>]+)>/g)) expect(usda).toMatch(new RegExp(`def Physics(Revolute|Prismatic)Joint "${m[1]}"`));
+      expect(() => loads(buildMjcfModel(d, geometry()))).not.toThrow();
+    }
+  });
+});
+
+describe('odd numbers', () => {
+  let mj: MainModule;
+  beforeAll(async () => {
+    mj = await loadMujoco();
+  });
+
+  /** Ways a robot's numbers can be left: each takes a robot and zeroes or upsets one kind of figure in it. */
+  const UPSETS: Record<string, (r: Robot) => void> = {
+    'no effort': (r) => r.joints.forEach((j) => (j.effort = 0)),
+    'no velocity': (r) => r.joints.forEach((j) => (j.velocity = 0)),
+    'no damping or friction': (r) => r.joints.forEach((j) => Object.assign(j, { damping: 0, friction: 0 })),
+    'limits at zero': (r) => r.joints.forEach((j) => Object.assign(j, { lower: 0, upper: 0 })),
+    'limits the wrong way round': (r) => r.joints.forEach((j) => Object.assign(j, { lower: 30, upper: -30 })),
+    'negative figures': (r) => r.joints.forEach((j) => Object.assign(j, { effort: -1, velocity: -1, damping: -1, friction: -1 })),
+    'no friction on any link': (r) => r.links.forEach((l) => (l.friction = 0)),
+    'weightless links': (r) => r.links.forEach((l) => (l.mass = { kind: 'measured', grams: 0 })),
+    'empty sensors': (r) => r.sensors.forEach((x) => Object.assign(x, { rate: 0, camera: { hfov: 0, width: 0, height: 0, near: 0, far: 0 }, lidar: { samples: 0, hfov: 0, min: 0, max: 0 } })),
+    'one-ray lidars and one-pixel cameras': (r) => r.sensors.forEach((x) => Object.assign(x, { camera: { ...x.camera, width: 1, height: 1, hfov: 180 }, lidar: { ...x.lidar, samples: 1 } })),
+    'followers by nothing': (r) => r.joints.slice(1).forEach((j) => (r.drive?.roles[j.id] ? null : (j.mimic = { joint: r.joints[0].id, multiplier: 0, offset: 0 }))),
+  };
+
+  it.each(Object.keys(UPSETS))('write no NaN or Infinity into any export: %s', (upset) => {
+    for (const { make } of ROBOTS) {
+      const d = make();
+      UPSETS[upset](d.robot!);
+      const geo = new Map(linkNodes(d.scene).map((n) => [n.id, boxGeometry(n)]));
+      const mjcf = buildMjcfModel(d, geo);
+      for (const pkg of [buildRobotPackage(d, geo), buildSdfModel(d, geo), mjcf, buildIsaacStage(d, geo)]) {
+        for (const f of pkg.files.filter((f) => /\.(urdf|xacro|sdf|xml|usda|json|yaml)$/.test(f.name))) {
+          const bad = text(f.bytes).split('\n').filter((l) => /NaN|Infinity/.test(l));
+          expect(bad, `${d.name}, ${f.name}`).toEqual([]);
+        }
+      }
+      // What the checks let through, MuJoCo takes, and still has numbers after a moment of it.
+      const props = new Map([...geo].map(([id, g]) => [id, g.props]));
+      if (checkRobot(d, props).some((p) => p.level === 'error')) continue;
+      const sim = Simulation.load(mj, file(mjcf, /\.xml$/), mjcf.files.filter((f) => f.name.startsWith('meshes/')), mjcf.drive);
+      sim.drive(1, 1);
+      sim.step(0.1);
+      expect([...sim.poses()].every(Number.isFinite), d.name).toBe(true);
+      sim.dispose();
+    }
+  });
+});
+
+describe('what goes beside the robot', () => {
+  it('adds the package to Gazebo\'s resource path without dropping what was on it', () => {
+    const launch = file(buildRobotPackage(rover(), geometry()), /gazebo\.launch\.py$/);
+    expect(launch).not.toMatch(/SetEnvironmentVariable\(\s*'GZ_SIM_RESOURCE_PATH'/);
+    expect(launch).toMatch(/AppendEnvironmentVariable\(\s*'GZ_SIM_RESOURCE_PATH'/);
+    expect(launch).toMatch(/from launch\.actions import [^\n]*AppendEnvironmentVariable/);
+  });
+
+  it('points Isaac Sim users at the stage export, which needs no setting up', () => {
+    const readme = file(buildRobotPackage(rover(), geometry()), /README\.md$/);
+    expect(readme).toContain('Isaac Sim stage');
+    expect(readme).not.toMatch(/drive\s+gains/);
+  });
+
+  it('reads where the robot starts only after MuJoCo has worked it out', () => {
+    const drive = file(buildMjcfModel(rover(), geometry()), /drive\.py$/);
+    expect(drive.indexOf('mj_forward(')).toBeGreaterThan(-1);
+    expect(drive.indexOf('mj_forward(')).toBeLessThan(drive.indexOf('subtree_com['));
   });
 });

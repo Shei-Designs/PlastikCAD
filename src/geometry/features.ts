@@ -10,6 +10,7 @@
 // Everything is in the coordinates the positions are given in: the caller
 // passes the mesh as placed in the design.
 import { CREASE_ANGLE } from './mesh';
+import { add, cross, dot, length, normalize, scale, sub } from '../model/math';
 import type { Vec3 } from '../model/types';
 
 export type FeatureKind = 'point' | 'middle' | 'edge' | 'circle' | 'quadrant' | 'facecenter' | 'face' | 'center';
@@ -19,11 +20,11 @@ export const FEATURE_KINDS: { id: FeatureKind; label: string; help: string }[] =
   { id: 'point', label: 'Points', help: 'Snaps to corners, where edges meet.' },
   { id: 'middle', label: 'Edge middles', help: 'Snaps to the middle of a straight edge.' },
   { id: 'edge', label: 'Edges', help: 'Takes a straight edge: its length, and angles between edges.' },
-  { id: 'circle', label: 'Circles', help: 'Takes a round edge or arc: its diameter, and distances from its centre.' },
+  { id: 'circle', label: 'Circles', help: 'Takes a round edge or arc: its diameter, and distances from its center.' },
   { id: 'quadrant', label: 'Quadrants', help: 'Snaps to the four quadrant points of a circle.' },
-  { id: 'facecenter', label: 'Face centres', help: 'Snaps to the centre of a flat face.' },
+  { id: 'facecenter', label: 'Face centers', help: 'Snaps to the center of a flat face.' },
   { id: 'face', label: 'Faces', help: 'Takes a flat face or curved surface: its area, and angles between faces.' },
-  { id: 'center', label: 'Object centres', help: 'Snaps to the centre of each object.' },
+  { id: 'center', label: 'Object centers', help: 'Snaps to the center of each object.' },
 ];
 
 /** The snaps that land on a single point. */
@@ -85,7 +86,7 @@ export interface FeatureIndex {
   regionOf: Int32Array;
   /** Per-triangle normals, 3 per triangle. */
   normals: Float32Array;
-  /** Centre of mass of the enclosed volume; null for an open mesh with none to speak of. */
+  /** Centre of mass of the enclosed volume; null for an open mesh, which encloses none. */
   mass: Vec3 | null;
   /** Centre of the box round the object. */
   box: Vec3;
@@ -100,16 +101,6 @@ const STRAIGHT = 1;
 /** Positions this close (mm) are one vertex. */
 const WELD = 1e-3;
 
-const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
-const scale = (a: Vec3, s: number): Vec3 => [a[0] * s, a[1] * s, a[2] * s];
-const dot = (a: Vec3, b: Vec3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-const cross = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-const length = (a: Vec3): number => Math.hypot(a[0], a[1], a[2]);
-const normalize = (a: Vec3): Vec3 => {
-  const n = length(a);
-  return n > 0 ? scale(a, 1 / n) : [0, 0, 1];
-};
 const degrees = (a: Vec3, b: Vec3): number => (Math.acos(Math.max(-1, Math.min(1, dot(a, b)))) * 180) / Math.PI;
 
 /**
@@ -169,7 +160,6 @@ export function indexFeatures(positions: Float32Array): FeatureIndex {
     moment[1] += ((a[1] + b[1] + c[1]) / 4) * v;
     moment[2] += ((a[2] + b[2] + c[2]) / 4) * v;
   }
-  const mass: Vec3 | null = Math.abs(volume) > 1e-6 ? scale(moment, 1 / volume) : null;
 
   // Edges, with the triangles on each; the sharp ones are creases or the rim of an open mesh.
   const edgeTris = new Map<number, number[]>();
@@ -185,9 +175,27 @@ export function indexFeatures(positions: Float32Array): FeatureIndex {
   const normalOf = (t: number): Vec3 => [normals[t * 3], normals[t * 3 + 1], normals[t * 3 + 2]];
   const cosCrease = Math.cos((CREASE_ANGLE * Math.PI) / 180);
   const sharp = new Set<number>();
+  // A surface encloses a volume only when it is closed: every edge run along as often one way as the
+  // other. What the triangles of an open mesh add up to depends on where it lies, and means nothing.
+  let closed = triCount > 0;
   for (const [key, tris] of edgeTris) {
     if (tris.length !== 2 || dot(normalOf(tris[0]), normalOf(tris[1])) < cosCrease) sharp.add(key);
+    if (!closed) continue;
+    const a = Math.floor(key / vertexCount);
+    const b = key % vertexCount;
+    if (a === b) continue;
+    let balance = 0;
+    for (const t of tris) {
+      for (let k = 0; k < 3; k++) {
+        const from = tri[t * 3 + k];
+        const to = tri[t * 3 + ((k + 1) % 3)];
+        if (from === a && to === b) balance++;
+        else if (from === b && to === a) balance--;
+      }
+    }
+    if (balance !== 0) closed = false;
   }
+  const mass: Vec3 | null = closed && Math.abs(volume) > 1e-6 ? scale(moment, 1 / volume) : null;
 
   // Regions: triangles joined across smooth edges.
   const regionOf = new Int32Array(triCount).fill(-1);

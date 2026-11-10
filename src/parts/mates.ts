@@ -12,6 +12,8 @@ import { eulerOf, multiply, rotation } from '../model/math';
 import type { Mat } from '../model/math';
 import type { PartNode, Vec3 } from '../model/types';
 import { inv } from './involute';
+import { bevelApexHeight } from './generators/bevel';
+import { RACK_BASE_HEIGHT, rackPitchLine } from './generators/gears';
 import type { Params } from './generators/types';
 
 export type MateKind = 'gear' | 'ring' | 'rack' | 'wheel' | 'bevel';
@@ -117,9 +119,11 @@ export function mateOf(source: PartNode, req: MateRequest): Mate {
   const ratio = z2 / z1;
 
   if (req.kind === 'gear') {
-    // Working center distance of an external pair, the mate unshifted.
+    // Working center distance of an external pair, the mate unshifted. The shift is a share of the normal
+    // module; in the plane the gears mesh in that is x·cos β of the transverse one, at tan αt = tan αn / cos β,
+    // so the two cosines cancel and the normal pressure angle is what the shift goes with.
     const nominal = (mt * (z1 + z2)) / 2;
-    const invW = inv(at) + (2 * x1 * Math.tan(at)) / (z1 + z2);
+    const invW = inv(at) + (2 * x1 * Math.tan(an)) / (z1 + z2);
     if (invW <= 0) warnings.push('The profile shift is too negative for the pair to mesh; the mate is placed at the nominal center distance.');
     const working = Math.abs(x1) < 1e-9 || invW <= 0 ? nominal : (nominal * Math.cos(at)) / Math.cos(invInverse(invW));
     const center = working + req.extra;
@@ -135,9 +139,12 @@ export function mateOf(source: PartNode, req: MateRequest): Mate {
     if (z2 <= z1 + 4) warnings.push('A ring needs a good few more teeth than the pinion inside it.');
     if (Math.abs(x1) > 1e-9) warnings.push('The ring is laid out for an unshifted pinion; the profile shift is ignored.');
     const center = (mt * (z2 - z1)) / 2 - req.extra;
+    // The pinion meshes on its far side from the ring's center, where a pinion with an odd tooth count has
+    // a space opposite the tooth that faces the center: its turn is counted from a tooth on that side.
+    const inside = wrap(theta + 180 - rz1, p1);
     // The ring's tooth spaces are centered on its own +X: one goes on the line of centers, which from
     // the ring's center points back at the gear. Pinion and ring turn the same way.
-    const rotation = theta + 180 - delta * (z1 / z2);
+    const rotation = theta + 180 - inside * (z1 / z2);
     const params: Params = {
       module: mn,
       teeth: z2,
@@ -155,10 +162,10 @@ export function mateOf(source: PartNode, req: MateRequest): Mate {
   const r1 = (mt * z1) / 2 + x1 * mn;
   const center = r1 + req.extra;
   const c = num(p, 'clearance', 0.25);
-  const base = 6;
+  const base = RACK_BASE_HEIGHT;
   const pitch = Math.PI * mn;
   const length = z2 * pitch;
-  const pitchLine = base + (1 + c) * mn;
+  const pitchLine = rackPitchLine(base, c, mn);
   // Tooth spaces sit at whole pitches from the rack's end. Turning the gear back by delta carried the
   // rack back along with it (a rack rolls on the gear's reference circle, whatever the profile shift),
   // so the space that faces the gear's nearest tooth is that far off the line of centers; the rack is
@@ -264,21 +271,20 @@ function bevelMate(source: PartNode, req: MateRequest, warnings: string[]): Mate
   const z1 = Math.max(1, Math.round(num(p, 'teeth', 20)));
   const z2 = Math.max(1, Math.round(num(p, 'mateTeeth', 20)));
   const m = num(p, 'module', 2);
-  const c = num(p, 'clearance', 0.25);
-  const baseThickness = num(p, 'baseThickness', 3);
-  /** Height of the pitch cone apex above the part's mounting face (its origin). */
-  const apexHeight = (z: number, zMate: number, hub: number): number => {
-    const delta = Math.atan2(z, zMate);
-    const r = (m * z) / 2;
-    const coneDistance = r / Math.sin(delta);
-    const rv = r / Math.cos(delta);
-    const dedendum = Math.min((1 + c) * m, rv - 0.05 * m);
-    const tBack = Math.min(dedendum + baseThickness, (0.98 * r) / Math.cos(delta));
-    return hub + coneDistance * Math.cos(delta) + tBack * Math.sin(delta);
-  };
+  /** Height of the pitch cone apex above the part's mounting face (its origin): the generator's own figure, a missing setting made up. */
+  const apexHeight = (z: number, zMate: number): number =>
+    bevelApexHeight({
+      module: m,
+      teeth: z,
+      mateTeeth: zMate,
+      pressureAngle: num(p, 'pressureAngle', 20),
+      clearance: num(p, 'clearance', 0.25),
+      baseThickness: num(p, 'baseThickness', 3),
+      hubHeight: num(p, 'hubHeight', 0),
+    });
   const params: Params = { ...p, teeth: z2, mateTeeth: z1, backlash: req.backlash };
-  const apex1 = apexHeight(z1, z2, num(p, 'hubHeight', 0));
-  const apex2 = apexHeight(z2, z1, num(params, 'hubHeight', 0));
+  const apex1 = apexHeight(z1, z2);
+  const apex2 = apexHeight(z2, z1);
 
   const theta = req.angle;
   const dir: Vec3 = [Math.cos((theta * Math.PI) / 180), Math.sin((theta * Math.PI) / 180), 0];

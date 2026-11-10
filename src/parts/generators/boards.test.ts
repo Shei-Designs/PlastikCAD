@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { evaluate, initKernel } from '../evaluate';
+import { evaluate, initKernel } from '../testing';
 import { QUALITY } from '../types';
 import { ALL_BOARDS, BOARDS, arduino, esp32, jetson, raspberryPi } from './boards';
 import { defaultParams } from './types';

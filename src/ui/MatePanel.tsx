@@ -99,7 +99,7 @@ export function MatePanel() {
           />
         )}
       </div>
-      <Figure label="Backlash" help="How much thinner than ideal the mate's teeth are made. Printed gears usually want 0.1–0.3 mm." value={backlash} unit="mm" min={0} max={2} step={0.05} onChange={setBacklash} />
+      <Figure label="Backlash" help="Sets how much thinner than ideal the mate's teeth are made." value={backlash} unit="mm" min={0} max={2} step={0.05} onChange={setBacklash} />
       <Figure
         label={current === 'bevel' ? 'Extra mounting distance' : 'Extra center distance'}
         help={
@@ -116,7 +116,7 @@ export function MatePanel() {
         step={0.05}
         onChange={setExtra}
       />
-      <Figure label="Side" help="Where the mate goes, as an angle around this gear: 0° is +X, 90° is +Y." value={angle} unit="°" min={-360} max={360} onChange={setAngle} />
+      <Figure label="Side" help="Sets the angle around this gear where the mate goes. 0° is +X, 90° is +Y." value={angle} unit="°" min={-360} max={360} onChange={setAngle} />
       {mate.note && <p className="field-note">{mate.note}</p>}
       {mate.warnings.map((w) => (
         <p key={w} className="field-note warn">

@@ -5,7 +5,7 @@
 // the browser. The id inside the file identifies the project across copies
 // and devices (that is what sync will use); the key says where it is now.
 import { FILE_EXTENSION, FILE_FORMAT } from '../appInfo';
-import { HEAD_BYTES, parseDoc, readHeader, serializeDoc } from '../model/file';
+import { HEAD_BYTES, parseDoc, readHeader, savedTime, serializeDoc } from '../model/file';
 import type { DocHeader } from '../model/file';
 import { newId } from '../model/ops';
 import type { Doc } from '../model/types';
@@ -36,17 +36,26 @@ export interface ProjectStore {
    */
   write(key: string | null, name: string, text: string): Promise<string>;
   remove(key: string): Promise<void>;
+  /**
+   * Takes a project out of the store without destroying it, where the store
+   * has somewhere to put it: for deletions the user did not make on this
+   * device, which sync carries over from another.
+   */
+  discard?(key: string): Promise<void>;
 }
 
 const decoder = new TextDecoder();
 const encoder = new TextEncoder();
+
+/** Where a projects folder keeps what sync deleted from it, until the user empties it. */
+export const TRASH_FOLDER = 'Trash';
 
 /** The header of a project from its full text, for stores that keep whole texts. */
 function headerOf(text: string): DocHeader {
   const header = readHeader(text.slice(0, HEAD_BYTES));
   if (header) return header;
   const doc = parseDoc(text);
-  return { id: doc.id, name: doc.name, revision: doc.revision ?? null, thumb: doc.thumb ?? null };
+  return { id: doc.id, name: doc.name, revision: doc.revision ?? null, saved: savedTime(doc.saved), thumb: doc.thumb ?? null };
 }
 
 /** A file name for a project name: no path separators or characters some file systems refuse, not too long. */
@@ -55,10 +64,14 @@ export function fileNameFor(name: string): string {
     .replace(/[\\/:*?"<>|\u0000-\u001f]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-    .replace(/[. ]+$/, '')
-    .slice(0, 80)
-    .trim();
-  return `${clean || 'Untitled'}.${FILE_EXTENSION}`;
+    // A leading dot would hide the file, from the projects browser as from everything else.
+    .replace(/^[. ]+/, '')
+    .replace(/[. ]+$/, '');
+  // Cut by characters, not code units: half of a pair is not a name any file system or URL takes.
+  const short = Array.from(clean).slice(0, 80).join('').trim();
+  // Names Windows keeps for devices, whatever their extension.
+  const safe = /^(con|prn|aux|nul|com\d|lpt\d)$/i.test(short) ? `${short} project` : short;
+  return `${safe || 'Untitled'}.${FILE_EXTENSION}`;
 }
 
 /** `Name.plastikcad`, or `Name (2).plastikcad` when a different file already has that name (compared ignoring case, as some file systems do). */
@@ -100,7 +113,9 @@ export class DiskProjects implements ProjectStore {
         cached = { modified: entry.modified, size: entry.size, header };
         this.heads.set(entry.path, cached);
       }
-      out.push({ key: entry.path, id: cached.header.id, name: cached.header.name, revision: cached.header.revision, modified: entry.modified, size: entry.size, thumb: cached.header.thumb });
+      // Dated by the design's own word of when it was saved, where it has one. The file's date says when the file was
+      // written here: the moment of a sync or a copy, and after a device restore it has been seen to read 1970.
+      out.push({ key: entry.path, id: cached.header.id, name: cached.header.name, revision: cached.header.revision, modified: cached.header.saved ?? entry.modified, size: entry.size, thumb: cached.header.thumb });
     }
     for (const path of this.heads.keys()) if (!entries.some((e) => e.path === path)) this.heads.delete(path);
     return out;
@@ -131,13 +146,30 @@ export class DiskProjects implements ProjectStore {
       target = join(this.location, uniqueFileName(wanted, taken, key ? baseName(key) : undefined));
       if (key && target !== key) await platform.moveFile(key, target);
     }
-    await platform.writePath(target!, encoder.encode(text));
+    try {
+      await platform.writePath(target!, encoder.encode(text));
+    } catch (e) {
+      // The file must not be left under a name its project does not know it by: every later save would look for it at the old one.
+      if (key && target !== key) await platform.moveFile(target!, key).catch(() => {});
+      throw e;
+    }
     this.heads.delete(target!);
     return target!;
   }
 
   async remove(key: string): Promise<void> {
     await platform.removeFile(key);
+    this.heads.delete(key);
+  }
+
+  /** The folder discarded projects are moved to, inside the projects folder. */
+  get trash(): string {
+    return join(this.location, TRASH_FOLDER);
+  }
+
+  async discard(key: string): Promise<void> {
+    const taken = (await platform.listDesigns(this.trash)).map((e) => e.name);
+    await platform.moveFile(key, join(this.trash, uniqueFileName(baseName(key), taken)));
     this.heads.delete(key);
   }
 }
@@ -268,7 +300,8 @@ export class DbProjects implements ProjectStore {
     const at = key ?? newId();
     const header = headerOf(text);
     await transact<void>(this.name, 'readwrite', (tx) => {
-      tx.objectStore(META).put({ key: at, id: header.id, name, revision: header.revision, modified: Date.now(), size: text.length, thumb: header.thumb } satisfies MetaRecord);
+      // Dated as the projects folder on disk dates a project: by when the design says it was saved.
+      tx.objectStore(META).put({ key: at, id: header.id, name, revision: header.revision, modified: header.saved ?? Date.now(), size: text.length, thumb: header.thumb } satisfies MetaRecord);
       tx.objectStore(TEXTS).put(text, at);
     });
     return at;

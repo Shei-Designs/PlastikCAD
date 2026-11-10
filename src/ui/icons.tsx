@@ -50,12 +50,6 @@ export const InfoIcon = () => (
     <path d="M12 11v5.5M12 7.6v.2" />
   </Icon>
 );
-export const NoteIcon = () => (
-  <Icon>
-    <path d="M6 4.5h9l3.5 3.5V19a.5.5 0 0 1-.5.5H6a.5.5 0 0 1-.5-.5V5a.5.5 0 0 1 .5-.5Z" />
-    <path d="M8.5 11h7M8.5 14.5h7" />
-  </Icon>
-);
 export const ChevronIcon = () => (
   <Icon width="12" height="12" strokeWidth="2.4">
     <path d="m6 9 6 6 6-6" />

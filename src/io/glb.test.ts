@@ -113,6 +113,16 @@ describe('glb', () => {
     expect((json.meshes as { primitives: { attributes: Record<string, number> }[] }[])[0].primitives[0].attributes.TEXCOORD_0).toBe(2);
   });
 
+  it('embeds a picture once, however many objects wear it', () => {
+    // The same bytes in arrays of their own, as an exporter that reads the picture again for every object hands them over.
+    const wearing = (name: string, image: Uint8Array) => ({ name, positions, normals, matrix: translation([0, 0, 0]), color: '#ffffff', skin: { uv: new Float32Array(6), image, mime: 'image/png' as const, repeat: false } });
+    const other = png.slice();
+    other[10] = 9;
+    const { json } = readGlb(writeGlb([wearing('A', png.slice()), wearing('B', png.slice()), wearing('C', other), wearing('D', png.slice())], 'D'));
+    expect((json.images as unknown[]).length).toBe(2);
+    expect((json.textures as { source: number }[]).map((t) => t.source)).toEqual([0, 0, 1, 0]);
+  });
+
   it('converts colors to linear', () => {
     expect(linearColor('#ffffff')).toEqual([1, 1, 1]);
     expect(linearColor('#000000')).toEqual([0, 0, 0]);

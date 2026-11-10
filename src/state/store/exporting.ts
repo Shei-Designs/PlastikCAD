@@ -1,0 +1,94 @@
+// The design written out in an exchange format, and the word of where an
+// export went.
+import { exportMesh, exportOutline, FORMATS } from '../../io/export';
+import { writeObj } from '../../io/obj';
+import { zipSync } from 'fflate';
+import { zipTime } from '../../io/format';
+import { write3mf } from '../../io/threemf';
+import type { FormatId } from '../../io/export';
+import { exportGlb } from '../glbExport';
+import * as platform from '../../platform';
+import { askName, tell } from '../../ui/ask';
+import { geometry } from '../geometry';
+import { fail, getState, notify } from './core';
+import { selectedNodes } from './editing';
+
+/**
+ * Word of files written to the app's own folder (Android), in a box that
+ * waits: where they are, and Share… to hand them to another app. Elsewhere a
+ * toast says where the file went.
+ */
+/**
+ * Says where an export went: a toast, or on Android a box that offers to share
+ * it. Files that belong together (`bundle`) are shared as one zip of that name.
+ */
+export async function reportSaved(names: string[], where: string, uris: string[], mime: string, bundle?: { name: string; files: { name: string; bytes: Uint8Array }[] }): Promise<void> {
+  const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  if (!platform.canShare() || uris.length === 0) return notify(`Saved ${list} to ${where}`, 'ok');
+  const chosen = await tell({ title: 'Exported', text: `${list} ${names.length === 1 ? 'is' : 'are'} in ${where}.`, actions: ['Share…', 'Done'] });
+  if (chosen !== 'Share…') return;
+  if (bundle && bundle.files.length > 1) {
+    const zipped = zipSync(Object.fromEntries(bundle.files.map((f) => [f.name, f.bytes])), { mtime: zipTime() });
+    await platform.shareBytes(`${bundle.name}.zip`, zipped, 'application/zip').catch(fail);
+  } else {
+    await platform.share(uris, mime).catch(fail);
+  }
+}
+
+/** On Android the name is asked for in the app (the file goes to its own folder); elsewhere the save dialog names the file. Null if backed out. */
+export async function exportName(suggested: string, extension: string): Promise<string | null> {
+  if (!platform.keepsExports()) return suggested;
+  return askName({ title: 'Export', label: 'File name', value: suggested, suffix: `.${extension}`, okLabel: 'Export' });
+}
+
+/** Writes the design (or just the selection) in an exchange format and says where it went. Returns false if canceled. */
+export async function exportDesign(formatId: FormatId, selectionOnly: boolean): Promise<boolean> {
+  const format = FORMATS.find((f) => f.id === formatId)!;
+  const nodes = selectionOnly ? selectedNodes() : getState().doc.scene;
+  const name = await exportName(getState().doc.name, format.extension);
+  if (!name) return false;
+  const filters = [{ name: format.label, extensions: [format.extension] }];
+  let bytes: Uint8Array;
+  let warnings: string[] = [];
+  if (format.id === 'obj') {
+    // The colors live in a material library beside the file, named after it: so the place is chosen
+    // first, and the files written for the name they were given there.
+    const worker = await geometry.prepare(nodes, getState().doc.assets);
+    const result = await worker.exportColored(nodes, true);
+    // The two go side by side, the library named after the file.
+    const bundle = { name, files: [] as { name: string; bytes: Uint8Array }[] };
+    const where = await platform.saveBundle(`${name}.obj`, filters, format.mime, (base) => {
+      const written = writeObj(result.objects, base);
+      const files = [{ name: `${base}.obj`, bytes: written.obj, mime: format.mime }];
+      if (written.mtl) files.push({ name: written.mtlName, bytes: written.mtl, mime: 'text/plain' });
+      bundle.name = base;
+      bundle.files = files;
+      return files;
+    });
+    if (!where) return false;
+    for (const w of result.warnings) notify(w, 'error');
+    // Shared as one zip, so the two travel together.
+    await reportSaved(bundle.files.map((f) => f.name), where.where, where.uris, '*/*', bundle);
+    return true;
+  }
+  if (format.id === 'glb') {
+    bytes = await exportGlb(nodes, getState().doc.assets, name);
+  } else if (format.id === '3mf') {
+    // Objects stay apart, each in its colors, so a slicer can print them in their materials.
+    const worker = await geometry.prepare(nodes, getState().doc.assets);
+    const result = await worker.exportColored(nodes, true);
+    bytes = write3mf(result.objects, name);
+    warnings = result.warnings;
+  } else {
+    const worker = await geometry.prepare(nodes, getState().doc.assets);
+    // Exports are always made at fine detail: curves get more facets than are drawn on screen.
+    const result = await worker.export(nodes, format.kind === '2d', true);
+    bytes = format.id === 'svg' || format.id === 'dxf' ? exportOutline(format.id, result.outline ?? [], name) : exportMesh(format.id, result.mesh, name);
+    warnings = result.warnings;
+  }
+  const where = await platform.saveAs(`${name}.${format.extension}`, filters, bytes, format.mime);
+  if (!where) return false;
+  for (const w of warnings) notify(w, 'error');
+  await reportSaved([where.name], where.path ? where.path.slice(0, where.path.length - where.name.length).replace(/[\\/]$/, '') || where.path : 'your downloads', where.uri ? [where.uri] : [], format.mime);
+  return true;
+}

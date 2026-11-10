@@ -1,8 +1,8 @@
 {
   "format": "plastikcad",
-  "version": 2,
+  "version": 3,
   "units": "mm",
-  "id": "erdklgfr",
+  "id": "fxreferencecar",
   "name": "Reference car",
   "scene": [
     {

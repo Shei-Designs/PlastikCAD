@@ -27,7 +27,8 @@ function joint(name: string, parent: SceneNode, child: SceneNode, origin: Vec3, 
 
 /** The design, with every joint's effort, velocity and damping fitted to the sides it moves. */
 function design(name: string, scene: SceneNode[], robot: Robot): Doc {
-  const doc = emptyDoc();
+  // An id that follows from the name: the files written from these stay the same from one run to the next.
+  const doc = { ...emptyDoc(), id: `fx${name.toLowerCase().replace(/[^a-z0-9]/g, '')}`.slice(0, 32) };
   doc.name = name;
   doc.scene = scene;
   const nodes = linkNodes(scene);

@@ -15,7 +15,7 @@
 //
 // Boards lie along X with the origin at their lower-left corner as the
 // drawing shows them; the app centers the part afterwards.
-import { arc, circle, offsetPolygon } from '../math2d';
+import { arc, circle, offsetPolygon, roundedRectFrom } from '../math2d';
 import { cylinder, difference, extrude, rotate, translate, union } from '../types';
 import type { Polygon, Quality, Shape2D, Solid, Vec2 } from '../types';
 import { mm, num, str } from './types';
@@ -46,7 +46,6 @@ export interface Board {
   overhang?: { length: number; width: number };
   /** The board's own outline, CCW from its lower-left corner, when it is not a rounded rectangle. */
   outline?: (q: Quality) => Polygon;
-  /** Shown as a warning: clones of this board differ. */
   /** A line or two for the dropdown: holes, orientation, what to check. */
   note: string;
   /** The sockets along the board's edges, from its drawing. */
@@ -365,25 +364,6 @@ export const JETSON: Board[] = [
 
 // --- 2D helpers ------------------------------------------------------------------
 
-/** CCW rounded rectangle with its lower-left corner at (x, y). */
-function roundedRect(x: number, y: number, w: number, h: number, r: number, q: Quality): Polygon {
-  r = Math.max(0, Math.min(r, w / 2, h / 2));
-  if (r === 0)
-    return [
-      [x, y],
-      [x + w, y],
-      [x + w, y + h],
-      [x, y + h],
-    ];
-  const n = Math.max(2, Math.round(q.circle / 4));
-  return [
-    ...arc(x + w - r, y + r, r, -Math.PI / 2, 0, n),
-    ...arc(x + w - r, y + h - r, r, 0, Math.PI / 2, n),
-    ...arc(x + r, y + h - r, r, Math.PI / 2, Math.PI, n),
-    ...arc(x + r, y + r, r, Math.PI, 1.5 * Math.PI, n),
-  ];
-}
-
 const rect = (x0: number, y0: number, x1: number, y1: number): Polygon => [
   [x0, y0],
   [x1, y0],
@@ -393,7 +373,7 @@ const rect = (x0: number, y0: number, x1: number, y1: number): Polygon => [
 
 /** The board outline grown by `grow` all round. */
 const outlineOf = (b: Board, grow: number, q: Quality): Polygon =>
-  b.outline ? offsetPolygon(b.outline(q), grow) : roundedRect(-grow, -grow, b.length + 2 * grow, b.width + 2 * grow, b.corner + grow, q);
+  b.outline ? offsetPolygon(b.outline(q), grow) : roundedRectFrom(-grow, -grow, b.length + 2 * grow, b.width + 2 * grow, b.corner + grow, q);
 
 /** The module's reach past the +X end, grown by `grow`, as a rectangle overlapping the board's edge. */
 const overhangOf = (b: Board, grow: number): Polygon | null =>
@@ -609,7 +589,7 @@ function build(boards: Board[], p: Params, q: Quality): BuildResult {
       if (forPlug && reach > 0) {
         // The plug envelope, from the edge outwards, centered on the socket.
         const plug = plugOf(s);
-        const face = roundedRect(-plug.w / 2, -plug.h / 2, plug.w, plug.h, plug.r, q);
+        const face = roundedRectFrom(-plug.w / 2, -plug.h / 2, plug.w, plug.h, plug.r, q);
         const along = extrude([face], reach);
         const zc = PCB + s.h / 2;
         if (s.edge === 'bottom') pieces.push(translate(rotate(along, [90, 0, 0]), [s.at, 0, zc]));

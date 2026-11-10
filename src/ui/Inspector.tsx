@@ -9,8 +9,9 @@ import { TEXT_FONTS } from '../model/types';
 import type { ImageAsset, PictureMapping, PictureNode, SceneNode, ShapeNode, TextAlign, TextNode } from '../model/types';
 import { geometry } from '../state/geometry';
 import { editPicture, editText, imageAssets, notify, pickImage, saveAsPart, setColor, setHole, setSelectedLocked, setTexture, toggleLocked, updateNode, updateSelected, useEditor } from '../state/store';
-import { formatNumber, NumberBox, SliderField } from './Fields';
+import { CommitInput, formatNumber, NumberBox, SliderField } from './Fields';
 import { Hint } from './Hint';
+import { MOD } from './keys';
 import { partFigures } from '../parts/figures';
 import { tell } from './ask';
 import { CloseIcon, LockIcon, PictureIcon, SaveAsPartIcon, UnlockIcon, WarningIcon } from './icons';
@@ -19,8 +20,6 @@ import { RobotInspector } from './RobotInspector';
 import { PartFields } from './PartFields';
 import { Sections } from './Sections';
 import type { Section } from './Sections';
-
-const MOD = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform) ? '⌘' : 'Ctrl+';
 
 const TOUCH = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 
@@ -45,6 +44,10 @@ const SHORTCUTS: [string, string][] = [
   ['Raise or lower', `Arrow handle · ${MOD}↑↓`],
   ['Resize height', 'Drag top or bottom grip'],
   ['Type a size', 'Click a grip'],
+  ['Undo / redo', `${MOD}Z / ${MOD}Y`],
+  ['Copy / cut / paste', `${MOD}C / ${MOD}X / ${MOD}V`],
+  ['Select all', `${MOD}A`],
+  ['Delete', 'Delete'],
   ['Duplicate', `${MOD}D`],
   ['Group / ungroup', `${MOD}G / ${MOD}Shift+G`],
   ['Solid / hole', 'S / H'],
@@ -52,6 +55,8 @@ const SHORTCUTS: [string, string][] = [
   ['Rotate 90°', 'Shift+X / Y / Z · Alt reverses'],
   ['Ghost / un-ghost all', 'G / Shift+G'],
   ['Align', 'L'],
+  ['Measure', 'M'],
+  ['Object axes', 'O'],
   ['Align to edge', 'Alt+arrows / PgUp / PgDn'],
   ['Align centers', 'Alt+Shift+arrows'],
   ['Center on plate', 'Alt+C'],
@@ -61,29 +66,7 @@ const SHORTCUTS: [string, string][] = [
 ];
 
 export function NameField({ node }: { node: SceneNode }) {
-  const [text, setText] = useState(node.name);
-  useEffect(() => setText(node.name), [node.name]);
-  return (
-    <input
-      className="name-input"
-      aria-label="Name"
-      spellCheck={false}
-      value={text}
-      onChange={(e) => setText(e.target.value)}
-      onBlur={() => {
-        const clean = text.trim();
-        if (clean && clean !== node.name) updateNode(node.id, { name: clean });
-        else setText(node.name);
-      }}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') e.currentTarget.blur();
-        if (e.key === 'Escape') {
-          setText(node.name);
-          e.currentTarget.blur();
-        }
-      }}
-    />
-  );
+  return <CommitInput className="name-input" label="Name" value={node.name} onCommit={(name) => updateNode(node.id, { name })} />;
 }
 
 function Appearance({ nodes }: { nodes: SceneNode[] }) {
@@ -333,7 +316,7 @@ function PictureFields({ node }: { node: PictureNode }) {
           <dd>{shows}</dd>
         </div>
       </dl>
-      <p className="field-note">{node.mapping === 'flat' ? 'Starts facing up: turn it 90° about X to face the front. Grouped with an object, it prints onto the first surface behind it.' : 'Curves back around an axis behind it. Put that axis on the object\'s and match the diameter (a touch bigger is fine): grouped, it prints inwards onto the first surface within the band, and leaves alone what sticks out past it, like a handle.'}</p>
+      <p className="field-note">{node.mapping === 'flat' ? 'Prints onto the first surface behind it when grouped with an object.' : 'Prints inwards onto the first surface inside the band when grouped with an object.'}</p>
     </fieldset>
   );
 }
@@ -395,12 +378,12 @@ function TextureFields({ node }: { node: SceneNode }) {
           ))}
           <option value="new">Another picture…</option>
         </select>
-        <button type="button" className={tiled ? 'chip on' : 'chip'} aria-pressed={tiled} title={tiled ? 'Repeats the picture over every side; off, it goes once around the object like a label' : 'Repeats the picture over every side, for patterns and materials'} disabled={locked} onClick={() => setTexture({ ...texture, mode: tiled ? plain : 'tile' })}>
+        <button type="button" className={tiled ? 'chip on' : 'chip'} aria-pressed={tiled} title="Repeats the picture over every side." disabled={locked} onClick={() => setTexture({ ...texture, mode: tiled ? plain : 'tile' })}>
           Tile
         </button>
       </div>
-      {texture.mode === 'wrap' && <SliderField label="Turn" help="Turns the picture round the object. At 0° its middle faces the front; 90° turns it to the right side, 180° to the back." value={texture.turn} min={-180} max={180} step={1} integer unit="°" disabled={locked} onChange={(v) => setTexture({ ...texture, turn: v })} />}
-      {texture.mode === 'tile' && <SliderField label="Tile size" help="How many millimeters one repeat of the picture covers." value={texture.scale} min={2} max={500} step={1} unit="mm" disabled={locked} onChange={(v) => setTexture({ ...texture, scale: v })} />}
+      {texture.mode === 'wrap' && <SliderField label="Turn" help="Turns the picture round the object. 0° puts its middle at the front." value={texture.turn} min={-180} max={180} step={1} integer unit="°" disabled={locked} onChange={(v) => setTexture({ ...texture, turn: v })} />}
+      {texture.mode === 'tile' && <SliderField label="Tile size" help="Sets the size of one repeat of the picture." value={texture.scale} min={2} max={500} step={1} unit="mm" disabled={locked} onChange={(v) => setTexture({ ...texture, scale: v })} />}
     </div>
   );
 }
@@ -499,7 +482,7 @@ function Design() {
         <div className="grow">
           <NameField node={node} />
         </div>
-        <LockToggle locked={Boolean(node.locked)} title={node.locked ? 'Locked: press to unlock' : 'Lock: keeps the object from being moved or changed'} onClick={() => toggleLocked(node.id)} />
+        <LockToggle locked={Boolean(node.locked)} title={node.locked ? 'Unlock' : 'Lock'} onClick={() => toggleLocked(node.id)} />
         <button type="button" className="icon-button" title="Save as a custom part, to place in any design" aria-label="Save as a part" onClick={() => void saveAsPart(node.id)}>
           <SaveAsPartIcon />
         </button>

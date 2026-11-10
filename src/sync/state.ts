@@ -38,6 +38,33 @@ function transact<T>(store: RecordStore, mode: IDBTransactionMode, run: (store: 
   );
 }
 
+const BINDING_KEY = 'plastikcad:sync:places:v1';
+
+/** The pair of places each set of records was agreed between, as `bindRecords` wants it; null when none is on record. */
+export function loadBinding(store: RecordStore): string | null {
+  try {
+    const all = JSON.parse(localStorage.getItem(BINDING_KEY) ?? '{}') as Record<string, unknown>;
+    const value = all?.[store];
+    return typeof value === 'string' ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveBinding(store: RecordStore, binding: string | null): void {
+  try {
+    const all = (JSON.parse(localStorage.getItem(BINDING_KEY) ?? '{}') ?? {}) as Record<string, unknown>;
+    if (binding === null) delete all[store];
+    else all[store] = binding;
+    localStorage.setItem(BINDING_KEY, JSON.stringify(all));
+  } catch {
+    // Without storage the records are trusted for the session only as far as they were before.
+  }
+}
+
+/** The records of one set on this device, or null where there is nowhere to keep them. */
+export const openSyncState = (store: RecordStore): DbSyncState | null => (typeof indexedDB === 'undefined' ? null : new DbSyncState(store));
+
 export class DbSyncState implements SyncState {
   constructor(private readonly store: RecordStore = STORES.projects) {}
   all(): Promise<SyncRecord[]> {

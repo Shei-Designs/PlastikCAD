@@ -13,7 +13,7 @@
 // frame of the object (see builtSize). v runs upwards, as in a GL texture.
 // Round things are measured from the front: the middle of a band, and of a
 // wrapped texture, faces -Y, which is where the Front view looks from.
-import { apply, invert } from '../model/math';
+import { apply, dot, invert, unit } from '../model/math';
 import type { Mat } from '../model/math';
 import type { PictureMapping, Vec3 } from '../model/types';
 
@@ -65,15 +65,8 @@ const faceNormal = (p: Float32Array, i: number): Vec3 => {
   return [n[0] / len, n[1] / len, n[2] / len];
 };
 
-const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-
 /** A direction (not a point) taken through the linear part of a matrix. */
 const direction = (m: Mat, d: Vec3): Vec3 => [m[0] * d[0] + m[3] * d[1] + m[6] * d[2], m[1] * d[0] + m[4] * d[1] + m[7] * d[2], m[2] * d[0] + m[5] * d[1] + m[8] * d[2]];
-
-const unit = (v: Vec3): Vec3 => {
-  const len = Math.hypot(...v) || 1;
-  return [v[0] / len, v[1] / len, v[2] / len];
-};
 
 /** A mesh with texture coordinates: unindexed corners with their normals, as a RenderMesh, and two floats per corner. */
 export interface SkinMesh {

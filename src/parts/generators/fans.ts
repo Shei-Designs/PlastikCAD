@@ -6,7 +6,7 @@
 //
 // Everything is built with the fan's axis along Z, lying flat and centered
 // on the wall it sits in: turn the part to face through a side wall.
-import { TAU, arc, arcSegments, circle, regularPolygon, signedArea } from '../math2d';
+import { TAU, arc, arcSegments, circle, regularPolygon, roundedRect, signedArea } from '../math2d';
 import { cylinder, extrude, intersection, rotate, translate, union } from '../types';
 import type { Polygon, Quality, Shape2D, Solid, Vec2 } from '../types';
 import { CUTOUT_LENGTH } from './cutouts';
@@ -100,12 +100,10 @@ const rect = (x0: number, y0: number, x1: number, y1: number): Polygon => [
   [x0, y1],
 ];
 
+/** The fan frame's outline: a square of side `s` about the origin, grown by `grow` all round. */
 export function roundedSquare(s: number, r: number, q: Quality, grow = 0): Polygon {
-  const h = s / 2 + grow;
-  const rr = Math.min(r + grow, h);
-  const n = Math.max(2, Math.round(q.circle / 4));
-  if (rr <= 0) return rect(-h, -h, h, h);
-  return [...arc(h - rr, -h + rr, rr, -Math.PI / 2, 0, n), ...arc(h - rr, h - rr, rr, 0, Math.PI / 2, n), ...arc(-h + rr, h - rr, rr, Math.PI / 2, Math.PI, n), ...arc(-h + rr, -h + rr, rr, Math.PI, 1.5 * Math.PI, n)];
+  const side = 2 * (s / 2 + grow);
+  return roundedRect(0, 0, side, side, r + grow, q);
 }
 
 /**

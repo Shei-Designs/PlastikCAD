@@ -2,7 +2,7 @@
 // a roller seat arc on the pitch circle, joined tangentially to flank arcs
 // centered on the neighboring rollers, with the tips cut at the outside diameter.
 import { addHubAndBore, boreGroup, boreRadius, boreShape, hubGroup } from '../features';
-import { arc, arcSegments, dedupe, polar, rotatePoint, TAU } from '../math2d';
+import { arc, arcN, arcSegments, dedupe, polar, rotatePoint, TAU } from '../math2d';
 import { extrude, intersection, revolve } from '../types';
 import type { Polygon, Quality, Solid, Vec2 } from '../types';
 import { bool, mm, num, str } from './types';
@@ -28,12 +28,6 @@ const CHAINS: Record<string, Chain> = {
   '06B': { label: '06B (3/8")', pitch: 9.525, roller: 6.35, width: 5.72 },
   '08B': { label: '08B (1/2")', pitch: 12.7, roller: 8.51, width: 7.75 },
 };
-
-/** Segment count for an arc, bounded by chord error rather than by angle alone. */
-function arcN(q: Quality, r: number, sweep: number, min = 2): number {
-  const step = 2 * Math.acos(Math.max(0, 1 - 1 / (q.circle * Math.max(r, 1e-9))));
-  return Math.max(min, Math.min(arcSegments(q, sweep), Math.ceil(Math.abs(sweep) / step)));
-}
 
 interface SprocketGeometry {
   outline: Polygon;
