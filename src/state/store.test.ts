@@ -665,34 +665,42 @@ describe('projects', () => {
     expect(deleted).toEqual([]);
   });
 
-  it('opens a design holding what a newer build made, says so, and saves it back with that still in it', async () => {
+  it('offers a copy of a project a newer build saved, without what it does not know, and leaves the project as it is', async () => {
     store.addShape('box');
     store.addShape('cylinder');
+    await store.renameProject('Lid');
     await store.saveProject();
-    // The file as a newer build might have left it: a shape this one has not got, and a robot that hovers.
-    const text = (await kept.read('mem:1')).replace('"shape": "cylinder"', '"shape": "hypercylinder"').replace(/\n}\n$/, ',\n  "robot": {\n    "base": "hovering"\n  }\n}\n');
-    await store.receiveFiles([{ name: 'future.plastikcad', path: '/elsewhere/future.plastikcad', bytes: new TextEncoder().encode(text) }]);
-    expect(store.getState().projectKey).toBe('mem:2');
+    // The project as a newer build might have left it: a shape this one has not got, and a robot that hovers.
+    const newer = (await kept.read('mem:1')).replace('"shape": "cylinder"', '"shape": "hypercylinder"').replace(/\n}\n$/, ',\n  "robot": {\n    "base": "hovering"\n  }\n}\n');
+    const key = await kept.write(null, 'Lid', newer);
+    // Not taken: the open project stays, and nothing is made.
+    choose = (actions) => actions[1];
+    await store.openProject(key);
+    expect(told.pop()).toMatchObject({
+      title: 'Made with a newer version',
+      text: '"Lid" was saved by a newer version of PlastikCAD. Update the app to open it as it is. This version can open a copy of it without 2 things it does not know. The project itself stays as it is.',
+      actions: ['Open a copy', 'Cancel'],
+    });
+    expect(store.getState().projectKey).toBe('mem:1');
+    expect(kept.records.size).toBe(2);
+    // Taken: a project of its own, with what this build knows of the other.
+    choose = (actions) => actions[0];
+    await store.openProject(key);
+    expect(store.getState().projectKey).toBe('mem:3');
+    expect(store.getState().doc.name).toBe('Lid copy');
     expect(store.getState().doc.scene.map((n) => n.type === 'shape' && n.shape)).toEqual(['box']);
-    const note = '1 object needs a newer version of PlastikCAD: it is kept in the design, and not shown. The robot needs a newer version of PlastikCAD: it is kept in the design, and cannot be worked on here.';
-    expect(store.carriedNote(store.getState().doc)).toBe(note);
-    expect(store.getState().notice).toMatchObject({ kind: 'info', text: note });
-    // There is no robot here to work on, and making one would put it in the other's place.
-    store.toggleRobotMode();
-    expect(store.getState().robot).toBe(false);
-    expect(store.getState().notice).toMatchObject({ kind: 'error', text: 'The robot needs a newer version of PlastikCAD: it is kept in the design, and cannot be worked on here.' });
-    // The rest is worked on as ever, undone and redone, and saved: what is carried is still in the file.
-    store.addShape('sphere');
-    store.undo();
-    store.redo();
-    expect(await store.saveProject()).toBe(true);
-    const back = await kept.read('mem:2');
-    expect(back).toContain('"shape": "hypercylinder"');
-    expect(back).toContain('"base": "hovering"');
-    expect(parseDoc(back).scene.length).toBe(2);
-    expect(parseDoc(back).foreign).toEqual(parseDoc(text).foreign);
-    // A design with nothing of the kind has nothing to say.
-    expect(store.carriedNote(parseDoc(await kept.read('mem:1')))).toBeNull();
+    expect(store.getState().doc.robot).toMatchObject({ base: 'fixed' });
+    expect(store.getState().notice).toMatchObject({ kind: 'ok', text: 'Opened "Lid copy".' });
+    const copy = parseDoc(await kept.read('mem:3'));
+    expect(copy.id).not.toBe(parseDoc(await kept.read('mem:1')).id);
+    expect(copy.revision).toBeUndefined();
+    // The newer build's project is as it was, to the letter.
+    expect(await kept.read(key)).toBe(newer);
+    // The same for a design file from outside, named after the file when it has no name of its own.
+    await store.receiveFiles([{ name: 'Bracket.plastikcad', path: '/elsewhere/Bracket.plastikcad', bytes: new TextEncoder().encode(newer.replace('"name": "Lid"', '"name": "Untitled"')) }]);
+    expect(told.pop()?.text).toMatch(/^"Bracket" was saved by a newer version/);
+    expect(store.getState().doc.name).toBe('Bracket copy');
+    expect(kept.records.size).toBe(4);
   });
 
   it('opens a design file by its old extension too', async () => {

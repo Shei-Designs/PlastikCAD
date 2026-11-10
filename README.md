@@ -25,8 +25,8 @@ Installers for Windows, macOS (Apple Silicon and Intel) and Linux (AppImage,
 [releases page](https://github.com/Shei-Designs/PlastikCAD/releases/latest),
 which also says which file to pick and how to get past the first-launch
 warning: the builds are not code-signed yet. There is no update check; a new
-version is installed over the old one. Devices that sync through Google Drive
-need not all be on the same version (see [Google Drive](#google-drive)). The
+version is installed over the old one, and devices that sync through Google
+Drive should be updated together (see [Google Drive](#google-drive)). The
 Android app is built from source for now (see [Development](#development)).
 
 ## Languages
@@ -438,17 +438,16 @@ places only, so linking another Google account, or choosing another projects
 folder, starts over by copying what each side has to the other and deletes
 nothing. A project saved while a sync is running is left for the next one.
 
-Devices that sync need not run the same version of the app. What a newer
-version put in a design that an older one does not know (a new kind of part,
-an object with a new setting, a robot with a new kind of sensor) the older
-one keeps exactly as it found it and writes back with every save: such an
-object is not shown, the app says how many there are, and the rest of the
-design is worked on as usual. A robot with something new in it, or laid over
-such an object, is kept the same way and cannot be worked on until the app is
-updated. Two things are outside this. A number that a newer version lets go
-further than an older one does (more teeth, say) is brought back within the
-older one's limits when it saves. And the first released version, 0.1, opens
-none of the designs later versions save: update it.
+A design made in an older version of the app opens in a newer one as it is.
+The other way round, a design saved by a newer version than the one reading
+it is not opened as it is: the older version's next save would lose what it
+does not know (a new kind of part, a new setting) on every device. It says
+the design needs a newer version, and offers to open a copy instead, a
+project of its own, without those things; it says how many there are first,
+and the design itself is left untouched. Sync leaves such a design alone on
+the older device and names it, until the app there is updated. So devices
+that sync are best kept on the same version, and nothing is lost when they
+are not.
 
 Unlinking stops the syncing, tells Google the app no longer has access, and
 leaves the projects where they are, here and in the Drive. While linked, the

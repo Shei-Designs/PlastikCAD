@@ -216,30 +216,4 @@ export interface Doc {
   saved?: string;
   /** The robot laid over the design (Robot mode): links, joints and their physical settings. */
   robot?: Robot;
-  /** What a newer version of the app put in the design that this one does not understand. */
-  foreign?: Foreign;
-}
-
-/**
- * The parts of a design that a newer version of the app wrote and this one does not understand:
- * a kind of object it does not have, an object with a setting it does not know. They are kept
- * exactly as they were read and written back unchanged with every save, so that the design can be
- * worked on here and loses nothing. They are not shown, and nothing here can change them.
- */
-export interface Foreign {
-  /** Objects, in the order the file had them. */
-  nodes?: ForeignNode[];
-  /** The robot, when it has something this version does not know, or is laid over an object that is carried here. */
-  robot?: Record<string, unknown>;
-  /** Imported data of a kind this version does not know, by its key. */
-  assets?: Record<string, unknown>;
-  /** Fields of the design itself. */
-  fields?: Record<string, unknown>;
-}
-
-export interface ForeignNode {
-  /** The object as the file had it. */
-  raw: Record<string, unknown>;
-  /** The id of the object it came after in the file, to be written back in its place; null for the first. */
-  after: string | null;
 }
