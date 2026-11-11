@@ -148,10 +148,10 @@ function header(bytes: Uint8Array): { lines: string[]; body: number } {
  * Stanford PLY, as scanners and mesh tools write it: text or binary, either
  * byte order. The points and faces make one part. Its colors, which a PLY
  * file gives point by point or face by face, come in as a picture the part
- * wears, each face in one color (that of the face, or the mean of its
- * corners); a file that names a picture for its texture coordinates wears
- * that picture instead, when it came along. PLY has no units: millimeters
- * are taken, as they are.
+ * wears: a face the file gives a color is that color all over, and one whose
+ * points have colors goes from each corner's color to the next; a file that
+ * names a picture for its texture coordinates wears that picture instead,
+ * when it came along. PLY has no units: millimeters are taken, as they are.
  */
 export function parsePly(bytes: Uint8Array, name = 'Model', companions: Companion[] = []): ImportedModel {
   if (bytes.length === 0) throw new Error(tr('This PLY file is empty.'));
@@ -301,9 +301,9 @@ export function parsePly(bytes: Uint8Array, name = 'Model', companions: Companio
   const welded = new Int32Array(vertexCount).fill(-1);
   for (let v = 0; v < vertexCount; v++) if (used[v]) welded[v] = builder.vertex(positions[v * 3], positions[v * 3 + 1], positions[v * 3 + 2]);
 
-  // The triangles, with what each keeps: its place on the picture, or its color.
+  // The triangles, with what each keeps: its place on the picture, or the colors of its three corners.
   const uv: number[] = [];
-  let colors = new Uint8Array(colored ? Math.max(48, cornerCount * 3) : 0);
+  let colors = new Uint8Array(colored ? Math.max(144, cornerCount * 9) : 0);
   const outline: number[] = [];
   let at = 0;
   for (let f = 0; f < faceCount; f++) {
@@ -336,12 +336,12 @@ export function parsePly(bytes: Uint8Array, name = 'Model', companions: Companio
           else uv.push(vertexUV![v * 2], vertexUV![v * 2 + 1]);
         }
       } else if (colored) {
-        const o = before * 3;
-        if (o + 3 > colors.length) colors = grow(colors);
-        for (let k = 0; k < 3; k++) {
-          // The face's own color, or the mean of its corners'.
-          colors[o + k] = faceColors ? faceColors[f * 3 + k] : Math.round((vertexColors![a * 3 + k] + vertexColors![b * 3 + k] + vertexColors![c * 3 + k]) / 3);
-        }
+        const o = before * 9;
+        if (o + 9 > colors.length) colors = grow(colors);
+        // The face's own color at every corner, or each corner's own.
+        const from = faceColors ? [f * 3, f * 3, f * 3] : [a * 3, b * 3, c * 3];
+        const source = faceColors ?? vertexColors!;
+        for (let corner = 0; corner < 3; corner++) for (let k = 0; k < 3; k++) colors[o + corner * 3 + k] = source[from[corner] + k];
       }
     }
   }
@@ -373,31 +373,66 @@ function grow<T extends Int32Array | Float32Array | Uint8Array>(a: T): T {
   return grown;
 }
 
-/** The most colors the picture of a part's faces holds: 256 by 256 of them. */
+/** The most colors the picture of a part's faces holds, when each face has one: 256 by 256 of them. */
 const PALETTE = 65536;
+/** The most triangles' worth of corner colors the picture holds, when colors run across the faces: 1024 by 1024. */
+const BLOCKS = 1 << 20;
 
 /** A byte with its bits spread three apart, to weave three channels into one number. */
 const SPREAD = new Uint32Array(256);
 for (let v = 0; v < 256; v++) for (let bit = 0; bit < 8; bit++) if (v & (1 << bit)) SPREAD[v] |= 1 << (bit * 3);
+/** A color as one number in which colors near each other are near each other. */
+const weave = (r: number, g: number, b: number): number => (SPREAD[r] << 2) | (SPREAD[g] << 1) | SPREAD[b];
+
+/** How bright each value of a channel is, 0 to 1: a picture is blended in light, not in the values it is stored in. */
+const LIGHT = new Float64Array(256);
+for (let v = 0; v < 256; v++) LIGHT[v] = v <= 10 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4;
+/** The value of a channel that is nearest a brightness. */
+const stored = (light: number): number => byte((light <= 0.0031308 ? light * 12.92 : 1.055 * light ** (1 / 2.4) - 0.055) * 255);
+
+const hex = (r: number, g: number, b: number): string => `#${[r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+
+export interface Painted {
+  color: string;
+  picture?: { png: Uint8Array; uv: Float32Array };
+}
 
 /**
- * The colors of a part's triangles (three bytes each) as the design keeps
- * them: the one color when they all have the same, or else their mean and a
- * picture that holds each color once, with for every corner of every triangle
- * the middle of the pixel of its triangle's color. A triangle whose corners
- * are all at one pixel's middle is that color all over, however the picture
- * is drawn. Colors near each other sit near each other in the picture, so
- * that one scaled down still looks right.
+ * The colors of a part's triangles (nine bytes each: red, green and blue at
+ * each corner) as the design keeps them: the one color when there is only
+ * one, or else their mean and a picture, with for every corner of every
+ * triangle its place on it. Triangles that are each one color all over share
+ * a picture that holds each color once (`paintFlat`); as soon as one goes
+ * from a color to another, the picture holds the corners (`paintBlended`).
  */
-function paint(colors: Uint8Array, count: number): { color: string; picture?: { png: Uint8Array; uv: Float32Array } } {
-  const hex = (r: number, g: number, b: number): string => `#${[r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+export function paint(colors: Uint8Array, count: number, blocks = BLOCKS): Painted {
+  const sum = [0, 0, 0];
+  let flat = true;
+  for (let t = 0; t < count; t++) {
+    const o = t * 9;
+    for (let i = 0; i < 9; i++) sum[i % 3] += colors[o + i];
+    if (flat) for (let i = 3; i < 9; i++) if (colors[o + i] !== colors[o + (i % 3)]) flat = false;
+  }
+  const color = hex(Math.round(sum[0] / (count * 3)), Math.round(sum[1] / (count * 3)), Math.round(sum[2] / (count * 3)));
+  const picture = flat ? paintFlat(colors, count) : paintBlended(colors, count, blocks);
+  return picture ? { color, picture } : { color };
+}
+
+/**
+ * A picture that holds each color once, with every corner of a triangle at
+ * the middle of the pixel of its color: a triangle whose corners are all at
+ * one pixel's middle is that color all over, however the picture is drawn.
+ * Colors near each other sit near each other in the picture, so that one
+ * scaled down still looks right. Nothing, when there is one color only.
+ */
+function paintFlat(colors: Uint8Array, count: number): Painted['picture'] {
   // Coarser steps, when there are more colors than the picture holds: no scan has that many that the eye tells apart.
   let bits = 8;
   let places = new Map<number, number>();
   const key = (t: number): number => {
     let k = 0;
     for (let c = 0; c < 3; c++) {
-      const top = colors[t * 3 + c] >> (8 - bits);
+      const top = colors[t * 9 + c] >> (8 - bits);
       k = (k << 8) | (bits === 8 ? top : (top << (8 - bits)) | (top >> (2 * bits - 8)));
     }
     return k;
@@ -408,13 +443,9 @@ function paint(colors: Uint8Array, count: number): { color: string; picture?: { 
     if (places.size <= PALETTE) break;
     bits--;
   }
-  const sum = [0, 0, 0];
-  for (let i = 0; i < count * 3; i++) sum[i % 3] += colors[i];
-  const mean = hex(Math.round(sum[0] / count), Math.round(sum[1] / count), Math.round(sum[2] / count));
-  if (places.size === 1) return { color: mean };
+  if (places.size === 1) return undefined;
 
-  const weave = (k: number): number => (SPREAD[k >> 16] << 2) | (SPREAD[(k >> 8) & 0xff] << 1) | SPREAD[k & 0xff];
-  const order = [...places.keys()].sort((p, q) => weave(p) - weave(q));
+  const order = [...places.keys()].sort((p, q) => weave(p >> 16, (p >> 8) & 0xff, p & 0xff) - weave(q >> 16, (q >> 8) & 0xff, q & 0xff));
   let width = 2;
   while (width * width < order.length) width *= 2;
   const height = Math.ceil(order.length / width);
@@ -438,5 +469,130 @@ function paint(colors: Uint8Array, count: number): { color: string; picture?: { 
       uv[t * 6 + c * 2 + 1] = v;
     }
   }
-  return { color: mean, picture: { png: writePng(width, height, rgb), uv } };
+  return { png: writePng(width, height, rgb), uv };
+}
+
+/** How far outside what a pixel can hold a brightness is. */
+const beyond = (light: number): number => (light < 0 ? -light : light > 1 ? light - 1 : 0);
+
+/**
+ * A picture that holds, for each triangle, a block of two pixels by two:
+ * one corner's color, the next one's beside it, the third's under it, and
+ * the triangle's corners at the middles of those three pixels. Drawn the way
+ * pictures are, each point between pixel middles a blend of the four around
+ * it, the triangle goes evenly from each corner's color to the next: the
+ * fourth pixel is given the color that leaves the blend of the other three
+ * as it is (the second and third less the first, in light).
+ *
+ * That color can be brighter than white or darker than black, and the pixel
+ * then holds the nearest there is. The corner that comes first is the one
+ * that keeps it within reach, or nearest to it: there is one that does for
+ * all but triangles whose corners are each the brightest in a channel of
+ * their own (pure red, green and blue), which come out a little off toward
+ * the side across from the first corner, by a quarter of the excess at most.
+ *
+ * Triangles with the same three colors share a block, and blocks of colors
+ * near each other sit near each other, so that the picture scaled down still
+ * looks right: at half its size, each block is one color.
+ */
+function paintBlended(colors: Uint8Array, count: number, blocks: number): Painted['picture'] {
+  const stepped = new Uint8Array(count * 9);
+  /** Which corner of each triangle comes first in its block. */
+  const first = new Uint8Array(count);
+  const order = new Uint32Array(count);
+  const rank = new Uint32Array(count);
+  const block = new Uint32Array(count);
+  const differ = (p: number, q: number): number => {
+    for (let i = 0; i < 9; i++) if (stepped[p * 9 + i] !== stepped[q * 9 + i]) return stepped[p * 9 + i] - stepped[q * 9 + i];
+    return 0;
+  };
+  const step = new Uint8Array(256);
+  const light = new Float64Array(9);
+  let used = 0;
+  // Coarser steps, when there are more triangles of colors of their own than the picture holds.
+  for (let bits = 8; ; bits--) {
+    const top = (1 << bits) - 1;
+    for (let v = 0; v < 256; v++) step[v] = Math.round(((v >> (8 - bits)) * 255) / top);
+    for (let t = 0; t < count; t++) {
+      const o = t * 9;
+      for (let i = 0; i < 9; i++) light[i] = LIGHT[step[colors[o + i]]];
+      // The corner that keeps the fourth pixel within reach; of several that do, the one that puts the darkest
+      // color first, so that triangles with the same three colors are the same whichever corner they begin with.
+      let best = 0;
+      let least = Infinity;
+      for (let corner = 0; corner < 3; corner++) {
+        const [a, b, c] = [corner * 3, ((corner + 1) % 3) * 3, ((corner + 2) % 3) * 3];
+        const excess = beyond(light[b] + light[c] - light[a]) + beyond(light[b + 1] + light[c + 1] - light[a + 1]) + beyond(light[b + 2] + light[c + 2] - light[a + 2]);
+        let sooner = excess < least;
+        if (excess === least) {
+          for (let i = 0; i < 9; i++) {
+            const d = step[colors[o + ((a + i) % 9)]] - step[colors[o + ((best * 3 + i) % 9)]];
+            if (d !== 0) {
+              sooner = d < 0;
+              break;
+            }
+          }
+        }
+        if (sooner) {
+          least = excess;
+          best = corner;
+        }
+      }
+      first[t] = best;
+      const sum = [0, 0, 0];
+      for (let i = 0; i < 9; i++) {
+        const value = step[colors[o + ((best * 3 + i) % 9)]];
+        stepped[o + i] = value;
+        sum[i % 3] += value;
+      }
+      order[t] = t;
+      rank[t] = weave(Math.round(sum[0] / 3), Math.round(sum[1] / 3), Math.round(sum[2] / 3));
+    }
+    order.sort((p, q) => rank[p] - rank[q] || differ(p, q));
+    used = 0;
+    for (let i = 0; i < count; i++) {
+      if (i === 0 || differ(order[i], order[i - 1]) !== 0) used++;
+      block[order[i]] = used - 1;
+    }
+    if (used <= blocks || bits === 1) break;
+  }
+
+  let across = 1;
+  while (across * across < used) across *= 2;
+  const down = Math.ceil(used / across);
+  const width = across * 2;
+  const height = down * 2;
+  const rgb = new Uint8Array(width * height * 3);
+  const put = (place: number, t: number): void => {
+    const x = (place % across) * 2;
+    const y = Math.floor(place / across) * 2;
+    const o = t * 9;
+    for (let k = 0; k < 3; k++) {
+      const [a, b, c] = [stepped[o + k], stepped[o + 3 + k], stepped[o + 6 + k]];
+      rgb[(y * width + x) * 3 + k] = a;
+      rgb[(y * width + x + 1) * 3 + k] = b;
+      rgb[((y + 1) * width + x) * 3 + k] = c;
+      rgb[((y + 1) * width + x + 1) * 3 + k] = stored(LIGHT[b] + LIGHT[c] - LIGHT[a]);
+    }
+  };
+  for (let i = 0; i < count; i++) {
+    const t = order[i];
+    if (i === 0 || block[t] !== block[order[i - 1]]) put(block[t], t);
+  }
+  // What is left of the last row repeats the last block.
+  for (let place = used; place < across * down; place++) put(place, order[count - 1]);
+
+  const uv = new Float32Array(count * 6);
+  for (let t = 0; t < count; t++) {
+    const x = (block[t] % across) * 2;
+    const y = Math.floor(block[t] / across) * 2;
+    for (let corner = 0; corner < 3; corner++) {
+      // Where the corner is in the block: 0 the first pixel, 1 the one beside it, 2 the one under it.
+      const slot = (corner + 3 - first[t]) % 3;
+      uv[t * 6 + corner * 2] = (x + (slot === 1 ? 1.5 : 0.5)) / width;
+      // Texture coordinates go up from the bottom of the picture, its rows down from the top.
+      uv[t * 6 + corner * 2 + 1] = 1 - (y + (slot === 2 ? 1.5 : 0.5)) / height;
+    }
+  }
+  return { png: writePng(width, height, rgb), uv };
 }
