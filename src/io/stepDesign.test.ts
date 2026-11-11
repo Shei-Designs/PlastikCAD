@@ -53,7 +53,7 @@ const count = (step: string, entity: string): number => (step.match(new RegExp(`
  * Writes the node as the app does, reads the file back, and holds the two against each other.
  * Answers whether the node went out as true surfaces, and how many faces of each kind the file has.
  */
-function roundTrip(node: SceneNode, asShown = false): { exact: boolean; faces: number; planes: number; cylinders: number; cones: number; spheres: number; tori: number } {
+function roundTrip(node: SceneNode, asShown = false, slack = 5e-3): { exact: boolean; faces: number; planes: number; cylinders: number; cones: number; spheres: number; tori: number } {
   const colored = exportColored([node], true);
   // As the app writes it: what cannot be rebuilt goes out with the facets the screen has, not the finest.
   const shown = asShown ? exportColored([node], false) : null;
@@ -66,8 +66,8 @@ function roundTrip(node: SceneNode, asShown = false): { exact: boolean; faces: n
   expect(back.parts.length, node.name).toBeGreaterThanOrEqual(objects.length);
   const total = back.parts.reduce((sum, p) => sum + volume(p.mesh), 0);
   // The kernel's own facets out and in: the volume to a part in a hundred thousand, the box to a micron. True
-  // surfaces read back as finer facets than the kernel's: the volume to half a percent, the box to a twentieth of a millimeter.
-  expect(Math.abs(total - want.volume) / want.volume, `${node.name}: volume ${total} for ${want.volume}`).toBeLessThan(exact ? 5e-3 : 1e-5);
+  // surfaces read back as finer facets than the kernel's: the volume to half a percent (`slack`), the box to a twentieth of a millimeter.
+  expect(Math.abs(total - want.volume) / want.volume, `${node.name}: volume ${total} for ${want.volume}`).toBeLessThan(exact ? slack : 1e-5);
   const got = box(back.parts.map((p) => p.mesh));
   [...want.bounds.min, ...want.bounds.max].forEach((v, i) => expect(Math.abs(got[i] - v), `${node.name}: box`).toBeLessThan(exact ? 0.05 : 1e-3));
   const step = new TextDecoder().decode(bytes);
@@ -88,9 +88,13 @@ describe('the design as a STEP file', () => {
     return { ...base, id: kind, name: def.name, type: 'shape', shape: kind, params: defaultParams(kind), size: def.defaultSize, ...over };
   };
 
+  // A fillet is a sliver of a bar: the reader's facets across its hollow, each within its fiftieth of a
+  // millimeter of the curve, add more to so little than half a percent.
+  const FILLET = 0.025;
+
   for (const def of SHAPES) {
     it(`writes a ${def.kind} that reads back as it was`, () => {
-      roundTrip(shapeNode(def.kind));
+      roundTrip(shapeNode(def.kind), false, def.kind === 'fillet' ? FILLET : undefined);
     });
   }
 
@@ -122,10 +126,28 @@ describe('the design as a STEP file', () => {
   });
 
   it('falls back on the facets for what has no simple surface, and still writes it true to size', () => {
-    // A ball squeezed into an egg, a mirrored wedge turned off the axes, a dome.
+    // A ball squeezed into an egg, a dome and a round roof stretched likewise, a fillet wider than tall.
     expect(roundTrip(shapeNode('sphere', { size: [20, 20, 30] })).exact).toBe(false);
-    expect(roundTrip(shapeNode('dome')).exact).toBe(false);
+    expect(roundTrip(shapeNode('dome', { size: [20, 20, 15] })).exact).toBe(false);
+    expect(roundTrip(shapeNode('dome', { size: [30, 20, 10] })).exact).toBe(false);
+    expect(roundTrip(shapeNode('roundroof', { size: [20, 20, 15] })).exact).toBe(false);
+    expect(roundTrip(shapeNode('fillet', { size: [8, 20, 5] })).exact).toBe(false);
+    // A round roof of three steps is flat faces, and a fillet of one step a chamfer.
+    expect(roundTrip(shapeNode('roundroof', { params: { ...defaultParams('roundroof'), sides: 3 } })).exact).toBe(false);
+    expect(roundTrip(shapeNode('fillet', { params: { ...defaultParams('fillet'), sides: 1 } })).exact).toBe(false);
     expect(roundTrip(shapeNode('wedge', { flip: [true, false, false], rot: [10, 20, 30] })).exact).toBe(true);
+  });
+
+  it('writes a dome, a round roof and a fillet as the round surfaces they are, while they are not stretched', () => {
+    // Half a ball: its skin and its flat.
+    expect(roundTrip(shapeNode('dome'))).toMatchObject({ exact: true, faces: 2, spheres: 1, planes: 1 });
+    // Half a round bar: its back, its flat and its two ends.
+    expect(roundTrip(shapeNode('roundroof'))).toMatchObject({ exact: true, faces: 4, cylinders: 1, planes: 3 });
+    // A fillet: its hollow, its two flats and its two ends.
+    expect(roundTrip(shapeNode('fillet'), false, FILLET)).toMatchObject({ exact: true, faces: 5, cylinders: 1, planes: 4 });
+    // Longer, turned over and off the axes, they are the same surfaces.
+    expect(roundTrip(shapeNode('roundroof', { size: [20, 60, 10], rot: [90, 20, 0] }))).toMatchObject({ exact: true, cylinders: 1 });
+    expect(roundTrip(shapeNode('fillet', { size: [5, 40, 5], flip: [true, false, false] }), false, FILLET)).toMatchObject({ exact: true, cylinders: 1 });
   });
 
   const partNode = (id: string, params: Record<string, number | string | boolean> = {}): PartNode => {

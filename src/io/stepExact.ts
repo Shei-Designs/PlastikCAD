@@ -7,7 +7,8 @@
 //
 // Not everything can be rebuilt: a twisted extrusion (a helical gear, a
 // thread), an imported mesh, lettering, a rounded rim, a shape stretched in a
-// way that leaves no simple surface. `exactShape` then answers null, and the
+// way that leaves no simple surface (a ball into an egg, a dome or a round
+// roof taller than half its width). `exactShape` then answers null, and the
 // writer falls back on the kernel's own facets (see stepExport.ts). It also
 // falls back when what was rebuilt does not match the kernel's solid in
 // volume and extent: nothing goes out on trust.
@@ -268,6 +269,8 @@ class Builder {
       const [face] = this.faces([section], ([x, z]) => [x, -d / 2, z]);
       return this.result(new oc.BRepPrimAPI_MakePrism(face, this.keep(new oc.gp_Vec(0, d, 0)), false, true));
     };
+    /** Points along a curve, close enough together to be found again as the arc they lie on (see arcs.ts). */
+    const arc = (steps: number, at: (a: number) => [number, number]): Polygon => Array.from({ length: steps + 1 }, (_, i) => at(i / steps));
     switch (node.shape) {
       case 'box': {
         const box = this.result(new oc.BRepPrimAPI_MakeBox(this.point(-w / 2, -d / 2, -h / 2), w, d, h));
@@ -324,8 +327,22 @@ class Builder {
         if (!near(a, r) || center - a < 1e-6) return none();
         return this.result(new oc.BRepPrimAPI_MakeTorus(center, r));
       }
+      case 'roundroof': {
+        // Half a round bar lying on its flat: round only while it is half as tall as it is wide. Stretched it is half an oval, and of few steps flat faces, which the facets say as well.
+        if (!round || !near(h, w / 2)) return none();
+        return lying(arc(64, (a) => [(Math.cos(a * Math.PI) * w) / 2, Math.sin(a * Math.PI) * h - h / 2]));
+      }
+      case 'fillet': {
+        // What a quarter-round bar leaves of a square one: the solid corner at +X +Z, the hollow running from the top at -X down to the bottom at +X.
+        if (!round || !near(w, h)) return none();
+        return lying([[w / 2, h / 2], ...arc(32, (a) => [Math.cos(((1 - a) * Math.PI) / 2) * w - w / 2, Math.sin(((1 - a) * Math.PI) / 2) * h - h / 2])]);
+      }
+      case 'dome': {
+        // Half a ball on its flat: a quarter circle turned round, while it is as deep as wide and half as tall.
+        if (!round || !near(w, d) || !near(h, w / 2)) return none();
+        return this.turned([[0, -h / 2], ...arc(32, (a) => [Math.cos((a * Math.PI) / 2) * h, Math.sin((a * Math.PI) / 2) * h - h / 2])]);
+      }
       default:
-        // A dome, a round roof and a fillet are stretched circles in all but one case each: left to the facets.
         return none();
     }
   }
