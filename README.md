@@ -853,6 +853,22 @@ installers for all three platforms and attaches them to a draft GitHub
 release. The version number is set in `package.json`, `src-tauri/tauri.conf.json`
 and `src-tauri/Cargo.toml`; a test fails when they differ.
 
+Before a tag is pushed, `pnpm check:apps` tries the built apps themselves,
+which no test above does: the desktop app as a binary, off the screen, and
+the Android app on the emulator, each with the tests' way in built into its
+web bundle. It makes a design, exports it in every format and hands each
+file back, goes through the projects folder (rename, earlier saves, trash),
+opens files from other programs, exports a robot in every format and runs
+its test drive, and on Android presses the real Back key and opens the share
+sheet. A check also fails when the app reports an error, a refused native
+call or a file its content policy kept out. It takes a few minutes once
+both apps have been built before, and is not part of the CI: it needs `gamescope`, `WebKitWebDriver` and
+`dbus-run-session` for the desktop, and the Android SDK with an emulator for
+Android (`pnpm check:apps desktop` or `android` runs one alone;
+`tools/apps/run.sh` says the rest). The desktop app is started on a message
+bus and in a home folder of its own, so that it cannot reach the keychain,
+and with it a linked Google Drive: the run stops if it finds one linked.
+
 ### Updates
 
 The desktop app updates itself with Tauri's updater. A release build signs
