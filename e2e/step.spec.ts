@@ -88,6 +88,36 @@ test.describe('STEP and compressed glTF', { tag: '@mouse' }, () => {
     expect(errors).toEqual([]);
   });
 
+  test('a helical gear goes out as a STEP solid of smooth faces, and comes back the same size', async ({ page, errors }) => {
+    await openApp(page);
+    await store(page, async (m) => {
+      await m.addPart('gears');
+      await m.editPart(m.getState().doc.scene[0].id, { part: 'helical' });
+      m.setPrefs({ format: 'step' });
+    });
+    await settled(page);
+    const size = await store(page, (m) => m.getState().doc.scene[0].size);
+    const download = page.waitForEvent('download');
+    expect(await store(page, (m) => m.exportDesign('step', false))).toBe(true);
+    const step = readFileSync(await (await download).path());
+    const text = step.toString('latin1');
+    // One solid whose teeth are surfaces that wind, four at the least to a tooth; as facets it is several times the size.
+    expect(text.match(/MANIFOLD_SOLID_BREP/g)).toHaveLength(1);
+    expect((text.match(/B_SPLINE_SURFACE_WITH_KNOTS/g) ?? []).length).toBeGreaterThanOrEqual(96);
+    expect(step.length).toBeLessThan(5_000_000);
+    await store(page, (m) => {
+      m.selectAll();
+      m.deleteSelected();
+    });
+    await dropFiles(page, [{ name: 'gear.step', bytes: [...step] }]);
+    await expect.poll(() => sceneCount(page), { timeout: 60_000 }).toBe(1);
+    await settled(page);
+    const back = await store(page, (m) => m.getState().doc.scene[0].size);
+    for (let k = 0; k < 3; k++) expect(Math.abs(back[k] - size[k])).toBeLessThan(0.05);
+    expect((await notices(page)).filter((n) => n.kind === 'error')).toEqual([]);
+    expect(errors).toEqual([]);
+  });
+
   test('a plate with a hole drilled through it goes out as a STEP solid whose hole is a cylinder, and comes back the same size', async ({ page, errors }) => {
     await openApp(page);
     await store(page, async (m) => {
