@@ -13,6 +13,7 @@ import type { PartNode, SceneNode, ShapeNode } from '../model/types';
 import { getGenerator } from '../parts/generators';
 import { defaultParams as partDefaults } from '../parts/generators/types';
 import { parseStep } from './importStep';
+import { boxSlack } from './stepExact';
 import { loadOcc } from './occ';
 import { writeStep } from './stepExport';
 
@@ -66,10 +67,10 @@ function roundTrip(node: SceneNode, asShown = false, slack = 5e-3): { exact: boo
   expect(back.parts.length, node.name).toBeGreaterThanOrEqual(objects.length);
   const total = back.parts.reduce((sum, p) => sum + volume(p.mesh), 0);
   // The kernel's own facets out and in: the volume to a part in a hundred thousand, the box to a micron. True
-  // surfaces read back as finer facets than the kernel's: the volume to half a percent (`slack`), the box to a twentieth of a millimeter.
+  // surfaces read back as finer facets than the kernel's: the volume to half a percent (`slack`), the box to what a curve stands out from its facets.
   expect(Math.abs(total - want.volume) / want.volume, `${node.name}: volume ${total} for ${want.volume}`).toBeLessThan(exact ? slack : 1e-5);
   const got = box(back.parts.map((p) => p.mesh));
-  [...want.bounds.min, ...want.bounds.max].forEach((v, i) => expect(Math.abs(got[i] - v), `${node.name}: box`).toBeLessThan(exact ? 0.05 : 1e-3));
+  [...want.bounds.min, ...want.bounds.max].forEach((v, i) => expect(Math.abs(got[i] - v), `${node.name}: box`).toBeLessThan(exact ? boxSlack(want.bounds) : 1e-3));
   const step = new TextDecoder().decode(bytes);
   return {
     exact: exact === 1,
@@ -126,16 +127,24 @@ describe('the design as a STEP file', () => {
   });
 
   it('falls back on the facets for what has no simple surface, and still writes it true to size', () => {
-    // A ball squeezed into an egg, a dome and a round roof stretched likewise, a fillet wider than tall.
+    // A ball squeezed into an egg, a dome taller than half a ball or deeper than wide, an oval cone.
     expect(roundTrip(shapeNode('sphere', { size: [20, 20, 30] })).exact).toBe(false);
     expect(roundTrip(shapeNode('dome', { size: [20, 20, 15] })).exact).toBe(false);
     expect(roundTrip(shapeNode('dome', { size: [30, 20, 10] })).exact).toBe(false);
-    expect(roundTrip(shapeNode('roundroof', { size: [20, 20, 15] })).exact).toBe(false);
-    expect(roundTrip(shapeNode('fillet', { size: [8, 20, 5] })).exact).toBe(false);
+    expect(roundTrip(shapeNode('cone', { size: [30, 20, 20] })).exact).toBe(false);
     // A round roof of three steps is flat faces, and a fillet of one step a chamfer.
     expect(roundTrip(shapeNode('roundroof', { params: { ...defaultParams('roundroof'), sides: 3 } })).exact).toBe(false);
     expect(roundTrip(shapeNode('fillet', { params: { ...defaultParams('fillet'), sides: 1 } })).exact).toBe(false);
     expect(roundTrip(shapeNode('wedge', { flip: [true, false, false], rot: [10, 20, 30] })).exact).toBe(true);
+  });
+
+  it('writes a round roof or a fillet stretched out of round as the oval bar it has become', () => {
+    // A round roof taller or flatter than half a round bar: half an oval bar, with its flat and its ends.
+    expect(roundTrip(shapeNode('roundroof', { size: [20, 20, 15] }))).toMatchObject({ exact: true, faces: 4, planes: 3, cylinders: 0 });
+    expect(roundTrip(shapeNode('roundroof', { size: [40, 20, 6], rot: [0, 90, 20] }))).toMatchObject({ exact: true, faces: 4, planes: 3 });
+    // A fillet wider than tall, or taller than wide.
+    expect(roundTrip(shapeNode('fillet', { size: [8, 20, 5] }), false, FILLET)).toMatchObject({ exact: true, faces: 5, planes: 4, cylinders: 0 });
+    expect(roundTrip(shapeNode('fillet', { size: [4, 20, 9], flip: [false, false, true] }), false, FILLET)).toMatchObject({ exact: true, faces: 5, planes: 4 });
   });
 
   it('writes a dome, a round roof and a fillet as the round surfaces they are, while they are not stretched', () => {
