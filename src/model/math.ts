@@ -216,6 +216,20 @@ export function boxBounds(node: SceneNode): Bounds {
 
 export const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 export const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+export const scale = (a: Vec3, s: number): Vec3 => [a[0] * s, a[1] * s, a[2] * s];
+export const dot = (a: Vec3, b: Vec3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+export const cross = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+export const length = (a: Vec3): number => Math.hypot(a[0], a[1], a[2]);
+/** `a` at unit length; a vector of no length comes back as +Z, so that what is measured along it stays a number. */
+export const normalize = (a: Vec3): Vec3 => {
+  const n = length(a);
+  return n > 0 ? scale(a, 1 / n) : [0, 0, 1];
+};
+/** `a` at unit length, a vector of no length left as it is. It divides where `normalize` multiplies, so the two differ in the last bit. */
+export const unit = (a: Vec3): Vec3 => {
+  const l = Math.hypot(a[0], a[1], a[2]) || 1;
+  return [a[0] / l, a[1] / l, a[2] / l];
+};
 
 /**
  * Rounds to 1/10000 mm so that drags and repeated edits don't accumulate noise

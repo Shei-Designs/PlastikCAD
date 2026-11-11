@@ -6,6 +6,12 @@
 // document editor, and may open whatever the user points it at. The fs plugin
 // is still used from here to open what the Android pickers hand back, which
 // are content URIs rather than paths.
+//
+// What the commands will touch is limited by kind instead of by place: the
+// webview can read the kinds of file the app opens, write the kinds it saves,
+// and move or delete designs, and nothing else. Should a script ever run in
+// the webview that is not the app's own, it cannot read a key or a browser
+// profile, nor write a start-up script.
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -20,6 +26,8 @@ use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use serde::Serialize;
 use tauri::ipc::{InvokeBody, Request, Response};
+#[cfg(desktop)]
+use tauri::Emitter;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_fs::{FilePath, FsExt, OpenOptions};
 use tauri_plugin_opener::OpenerExt;
@@ -105,8 +113,36 @@ fn file_path(path: &str) -> FilePath {
     parsed
 }
 
+/// The extension of a design file, and the one from before the app was PlastikCAD.
+const DESIGN_EXTENSION: &str = "plastikcad";
+const OLD_DESIGN_EXTENSION: &str = "bashcad";
+/// What the app opens: designs, the models, drawings and pictures it imports, and what those name beside them.
+const READABLE: &[&str] = &[DESIGN_EXTENSION, OLD_DESIGN_EXTENSION, "stl", "obj", "mtl", "3mf", "glb", "gltf", "dae", "svg", "dxf", "urdf", "xacro", "png", "jpg", "jpeg"];
+/// What the app saves: designs and exports.
+const WRITABLE: &[&str] = &[DESIGN_EXTENSION, "stl", "3mf", "obj", "mtl", "glb", "svg", "dxf", "zip"];
+const DESIGNS: &[&str] = &[DESIGN_EXTENSION, OLD_DESIGN_EXTENSION];
+
+/// Whether a path names a file of one of `kinds`, by its extension, whatever its case. A hidden file is none of them.
+fn is_kind(path: &Path, kinds: &[&str]) -> bool {
+    let hidden = path.file_name().is_none_or(|name| name.to_string_lossy().starts_with('.'));
+    !hidden && path.extension().and_then(|ext| ext.to_str()).is_some_and(|ext| kinds.iter().any(|kind| ext.eq_ignore_ascii_case(kind)))
+}
+
+/// Refuses a path that is not a file of one of `kinds`. What an Android picker hands out is a `content://` URI with
+/// no name to go by, and is the user's own choice of document, granted by the system: those pass, there. Any other
+/// URL is refused, since what it names is not what its last letters say.
+fn allowed(path: &str, kinds: &[&str], doing: &str) -> Result<(), String> {
+    let document = cfg!(target_os = "android") && path.starts_with("content://");
+    if document || (!path.contains("://") && is_kind(Path::new(path), kinds)) {
+        return Ok(());
+    }
+    let name = Path::new(path).file_name().map_or_else(|| path.to_owned(), |name| name.to_string_lossy().into_owned());
+    Err(format!("Could not {doing} {name}: PlastikCAD does not {doing} this kind of file"))
+}
+
 #[tauri::command]
 async fn read_file(app: AppHandle, path: String) -> Result<Response, String> {
+    allowed(&path, READABLE, "open")?;
     let read = app.fs().read(file_path(&path));
     #[cfg(target_os = "android")]
     let read = read.or_else(|err| {
@@ -124,8 +160,12 @@ async fn read_file(app: AppHandle, path: String) -> Result<Response, String> {
 /// descriptor the provider opens usually points at the real file. Null where
 /// it cannot be told.
 #[tauri::command]
-fn real_path(app: AppHandle, path: String) -> Option<String> {
-    let parsed = file_path(&path);
+async fn real_path(app: AppHandle, path: String) -> Option<String> {
+    real_path_of(&app, &path)
+}
+
+fn real_path_of(app: &AppHandle, path: &str) -> Option<String> {
+    let parsed = file_path(path);
     if let Ok(path) = parsed.clone().into_path() {
         return Some(path.to_string_lossy().into_owned());
     }
@@ -153,8 +193,8 @@ fn real_path(app: AppHandle, path: String) -> Option<String> {
 
 /// The name of a file, extension included, or null if it has none.
 #[tauri::command]
-fn file_name(app: AppHandle, path: String) -> Option<String> {
-    let real = real_path(app, path)?;
+async fn file_name(app: AppHandle, path: String) -> Option<String> {
+    let real = real_path_of(&app, &path)?;
     Path::new(&real).file_name().map(|name| name.to_string_lossy().into_owned()).filter(|name| name.contains('.'))
 }
 
@@ -215,6 +255,9 @@ async fn stage_share(app: AppHandle, request: Request<'_>) -> Result<String, Str
 #[tauri::command]
 async fn delete_file(path: String) -> Result<(), String> {
     let target = Path::new(&path);
+    if !is_kind(target, DESIGNS) {
+        return Err(format!("Could not delete {path}: it is not a design"));
+    }
     if !target.is_file() {
         return Err(format!("Could not delete {path}: it is not a file"));
     }
@@ -225,6 +268,9 @@ async fn delete_file(path: String) -> Result<(), String> {
 /// without loading the meshes it may carry.
 #[tauri::command]
 async fn read_head(path: String, limit: u64) -> Result<Response, String> {
+    if !is_kind(Path::new(&path), DESIGNS) {
+        return Err(format!("Could not read {path}: it is not a design"));
+    }
     let mut bytes = Vec::new();
     fs::File::open(&path)
         .and_then(|file| file.take(limit).read_to_end(&mut bytes))
@@ -286,6 +332,7 @@ async fn write_file(app: AppHandle, request: Request<'_>) -> Result<(), String> 
         .get("path")
         .and_then(|value| percent_decode(value.as_bytes()))
         .ok_or("Could not write the file: no valid path was given")?;
+    allowed(&path, WRITABLE, "save")?;
     let bytes = body_bytes(request.body()).ok_or_else(|| format!("Could not write {path}: the data was not bytes"))?;
     write_bytes(&app, &path, &bytes).map_err(|err| format!("Could not write {path}: {err}"))
 }
@@ -335,21 +382,28 @@ async fn list_designs(dir: String) -> Result<Vec<DesignEntry>, String> {
 
 #[tauri::command]
 async fn remove_file(path: String) -> Result<(), String> {
+    if !is_kind(Path::new(&path), DESIGNS) {
+        return Err(format!("Could not delete {path}: it is not a design"));
+    }
     fs::remove_file(&path).map_err(|err| format!("Could not delete {path}: {err}"))
 }
 
-/// Moves a file, within a folder or to another one, never over an existing file.
+/// Moves a design, within a folder or to another one, never over an existing file.
 fn move_path(from: &Path, to: &Path) -> io::Result<()> {
+    if !is_kind(from, DESIGNS) || !is_kind(to, DESIGNS) {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "only designs are moved"));
+    }
     if to.exists() {
         return Err(io::Error::new(io::ErrorKind::AlreadyExists, "a file of that name already exists"));
+    }
+    // The folder is made on the way if need be (the trash, the first time something goes into it).
+    if let Some(parent) = to.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+        fs::create_dir_all(parent)?;
     }
     if fs::rename(from, to).is_ok() {
         return Ok(());
     }
     // Another file system: copy, then remove the original once the copy is whole.
-    if let Some(parent) = to.parent() {
-        fs::create_dir_all(parent)?;
-    }
     fs::copy(from, to)?;
     fs::remove_file(from)
 }
@@ -391,7 +445,7 @@ fn adopt_old_folder(old: &Path, new: &Path) {
 }
 
 #[tauri::command]
-fn default_projects_dir(app: AppHandle) -> Result<ProjectsHome, String> {
+async fn default_projects_dir(app: AppHandle) -> Result<ProjectsHome, String> {
     let paths = app.path();
     #[cfg(mobile)]
     let (dir, fixed) = (paths.app_data_dir().map(|dir| dir.join("projects")), true);
@@ -424,6 +478,8 @@ struct SignIns(Mutex<HashMap<u16, (TcpListener, Arc<AtomicBool>)>>);
 
 /// How long the browser is given before the sign-in is abandoned.
 const SIGN_IN_TIMEOUT: Duration = Duration::from_secs(300);
+/// Where every sign-in starts.
+const SIGN_IN_PAGE: &str = "https://accounts.google.com/";
 
 /// Listens on a free loopback port and returns it, for the redirect address.
 #[tauri::command]
@@ -445,9 +501,16 @@ async fn oauth_wait(app: AppHandle, port: u16, url: String) -> Result<String, St
         .unwrap()
         .remove(&port)
         .ok_or("No sign-in is waiting on that port")?;
+    // The one page this opens is Google's sign-in.
+    if !url.starts_with(SIGN_IN_PAGE) {
+        return Err("Could not open the sign-in page: it is not Google's".into());
+    }
     // Cancel can still reach it while it waits.
     app.state::<SignIns>().0.lock().unwrap().insert(port, (listener.try_clone().map_err(|err| err.to_string())?, cancelled.clone()));
-    app.opener().open_url(&url, None::<&str>).map_err(|err| format!("Could not open the browser: {err}"))?;
+    if let Err(err) = app.opener().open_url(&url, None::<&str>) {
+        app.state::<SignIns>().0.lock().unwrap().remove(&port);
+        return Err(format!("Could not open the browser: {err}"));
+    }
     let result = tauri::async_runtime::spawn_blocking(move || wait_for_redirect(&listener, &cancelled, SIGN_IN_TIMEOUT))
         .await
         .map_err(|err| err.to_string())?;
@@ -469,7 +532,8 @@ fn wait_for_redirect(listener: &TcpListener, cancelled: &AtomicBool, timeout: Du
     loop {
         match listener.accept() {
             Ok((stream, _)) => {
-                if let Some(query) = answer_browser(stream)? {
+                // A connection that breaks off, or is not the browser at all, is not the end of the sign-in.
+                if let Ok(Some(query)) = answer_browser(stream) {
                     return Ok(query);
                 }
             }
@@ -505,8 +569,11 @@ fn answer_browser(mut stream: TcpStream) -> io::Result<Option<String>> {
     let request = String::from_utf8_lossy(&buffer);
     let target = request.lines().next().and_then(|line| line.split_whitespace().nth(1)).unwrap_or("");
     let query = target.split_once('?').map(|(_, q)| q.to_owned());
-    let ours = query.as_deref().is_some_and(|q| q.split('&').any(|p| p.starts_with("code=") || p.starts_with("error=")));
-    let (status, body) = if ours {
+    let has = |key: &str| query.as_deref().is_some_and(|q| q.split('&').any(|p| p.starts_with(key)));
+    let ours = has("code=") || has("error=");
+    let (status, body) = if has("error=") {
+        ("200 OK", "<!doctype html><meta charset=utf-8><title>PlastikCAD</title><body style=\"font-family:sans-serif;padding:2em\"><h2>Not signed in</h2><p>Google did not grant access. You can close this page and try again from PlastikCAD.</p>")
+    } else if ours {
         ("200 OK", "<!doctype html><meta charset=utf-8><title>PlastikCAD</title><body style=\"font-family:sans-serif;padding:2em\"><h2>Signed in</h2><p>You can close this page and go back to PlastikCAD.</p>")
     } else {
         ("404 Not Found", "")
@@ -516,17 +583,11 @@ fn answer_browser(mut stream: TcpStream) -> io::Result<Option<String>> {
     Ok(if ours { query } else { None })
 }
 
-/// The extension of a design file, and the one from before the app was PlastikCAD.
-const DESIGN_EXTENSION: &str = "plastikcad";
-const OLD_DESIGN_EXTENSION: &str = "bashcad";
-
 /// Only a design may be opened from the command line: a `.plastikcad` (or an
 /// old `.bashcad`) file, whatever its case. Anything else on the command line (a flag, a stray
 /// document) is ignored.
 fn is_design_path(path: &Path) -> bool {
-    path.extension()
-        .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| ext.eq_ignore_ascii_case(DESIGN_EXTENSION) || ext.eq_ignore_ascii_case(OLD_DESIGN_EXTENSION))
+    is_kind(path, DESIGNS)
 }
 
 /// The first argument naming an existing design, made absolute.
@@ -544,17 +605,59 @@ fn startup_file() -> Option<String> {
     startup_file_from(std::env::args_os().skip(1))
 }
 
+/// Designs handed to the app once it runs: by a second launch, which hands
+/// its arguments over and quits rather than open the same projects folder in
+/// a second window, and by macOS, which opens a file by event, not argument.
+#[derive(Default)]
+struct Opened(Mutex<Vec<String>>);
+
+/// The existing designs among `args`, each made absolute against the folder it was given in.
+#[cfg(desktop)]
+fn designs_among(args: impl Iterator<Item = OsString>, cwd: &Path) -> Vec<String> {
+    args.map(PathBuf::from)
+        .map(|path| if path.is_absolute() { path } else { cwd.join(path) })
+        .filter(|path| is_design_path(path) && path.is_file())
+        .filter_map(|path| path.into_os_string().into_string().ok())
+        .collect()
+}
+
+/// Queues designs for the webview, tells it some are waiting, and brings the window forward.
+#[cfg(desktop)]
+fn hand_over(app: &AppHandle, paths: Vec<String>) {
+    if !paths.is_empty() {
+        app.state::<Opened>().0.lock().unwrap().extend(paths);
+        let _ = app.emit("opened", ());
+    }
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
+/// The designs handed over since this was last asked.
+#[tauri::command]
+fn opened_files(app: AppHandle) -> Vec<String> {
+    std::mem::take(&mut *app.state::<Opened>().0.lock().unwrap())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(target_os = "linux")]
     apply_webkit_workarounds();
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // First among the plugins, so that a second launch is turned away before anything else starts up.
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+        hand_over(app, designs_among(args.into_iter().skip(1).map(OsString::from), Path::new(&cwd)));
+    }));
+    builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_device::init())
         .manage(SignIns::default())
+        .manage(Opened::default())
         .invoke_handler(tauri::generate_handler![
             read_file,
             file_name,
@@ -571,10 +674,24 @@ pub fn run() {
             oauth_start,
             oauth_wait,
             oauth_cancel,
-            startup_file
+            startup_file,
+            opened_files
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|_app, _event| {
+            // macOS opens a double-clicked design by event, at launch and afterwards alike.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Opened { urls } = _event {
+                let paths = urls
+                    .into_iter()
+                    .filter_map(|url| url.to_file_path().ok())
+                    .filter(|path| is_design_path(path))
+                    .filter_map(|path| path.into_os_string().into_string().ok())
+                    .collect();
+                hand_over(_app, paths);
+            }
+        });
 }
 
 #[cfg(test)]
@@ -700,6 +817,60 @@ mod tests {
             assert_eq!(fs::read(&real).unwrap(), b"new");
             assert!(fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
         }
+    }
+
+    #[test]
+    fn only_the_kinds_of_file_the_app_handles_pass() {
+        assert!(allowed("/home/me/Documents/part.STL", READABLE, "open").is_ok());
+        assert!(allowed("C:\\Users\\me\\robot.urdf", READABLE, "open").is_ok());
+        assert!(allowed("/home/me/Documents/PlastikCAD/Box.plastikcad", WRITABLE, "save").is_ok());
+        assert!(allowed("/home/me/export.zip", WRITABLE, "save").is_ok());
+        // Keys, profiles and start-up scripts are none of them, whatever they are dressed as.
+        for path in ["/home/me/.ssh/id_rsa", "/etc/passwd", "/home/me/.bashrc", "/home/me/notes.txt", "/home/me/.hidden.stl", "/home/me/stl", ""] {
+            assert!(allowed(path, READABLE, "open").is_err(), "{path}");
+            assert!(allowed(path, WRITABLE, "save").is_err(), "{path}");
+        }
+        for path in ["/home/me/.config/autostart/run.desktop", "/home/me/run.sh", "/home/me/picture.png", "/home/me/robot.urdf"] {
+            assert!(allowed(path, WRITABLE, "save").is_err(), "{path}");
+        }
+        // A URL names what its path says, not what it ends in; only Android's documents are taken on trust.
+        assert!(allowed("file:///etc/passwd?x.stl", READABLE, "open").is_err());
+        assert!(allowed("file:///home/me/part.stl", READABLE, "open").is_err());
+        assert_eq!(allowed("content://com.android.providers/document/1", READABLE, "open").is_ok(), cfg!(target_os = "android"));
+        assert_eq!(
+            allowed("/home/me/notes.txt", READABLE, "open").unwrap_err(),
+            "Could not open notes.txt: PlastikCAD does not open this kind of file"
+        );
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn a_second_launch_hands_over_only_existing_designs_made_absolute() {
+        let dir = TempDir::new();
+        fs::write(dir.path("Box.plastikcad"), b"{}").unwrap();
+        fs::write(dir.path("notes.txt"), b"x").unwrap();
+        let args = ["--flag", "Box.plastikcad", "notes.txt", "Gone.plastikcad"].map(OsString::from);
+        let found = designs_among(args.into_iter(), &dir.0);
+        assert_eq!(found, vec![dir.path("Box.plastikcad").to_string_lossy().into_owned()]);
+        let absolute = [dir.path("Box.plastikcad").into_os_string()];
+        assert_eq!(designs_among(absolute.into_iter(), Path::new("/elsewhere")), found);
+    }
+
+    #[test]
+    fn only_designs_are_moved_or_deleted() {
+        let dir = TempDir::new();
+        let notes = dir.path("notes.txt");
+        fs::write(&notes, b"keep").unwrap();
+        let design = dir.path("Box.plastikcad");
+        fs::write(&design, b"{}").unwrap();
+        assert!(move_path(&notes, &dir.path("notes.plastikcad")).is_err());
+        assert!(move_path(&design, &dir.path("Box.txt")).is_err());
+        assert!(move_path(&design, &dir.path(".Box.plastikcad")).is_err());
+        assert_eq!(dir.names(), vec!["Box.plastikcad", "notes.txt"]);
+        // Into a folder that is not there yet, as the first design into the trash goes.
+        move_path(&design, &dir.path("Trash").join("Box.plastikcad")).unwrap();
+        assert_eq!(dir.names(), vec!["Trash", "notes.txt"]);
+        assert!(dir.path("Trash").join("Box.plastikcad").is_file());
     }
 
     #[test]

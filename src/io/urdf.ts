@@ -4,7 +4,7 @@
 import { APP_NAME } from '../appInfo';
 import type { Vec3 } from '../model/types';
 import type { Tensor } from '../robot/inertia';
-import type { JointType } from '../robot/types';
+import type { JointType, SensorKind } from '../robot/types';
 import { escapeXml, fmt } from './format';
 
 export interface UrdfInertial {
@@ -51,7 +51,7 @@ export interface UrdfExtras {
   /** The base link's name when the robot is bolted to the world: a `world` link and a fixed joint hold it there. */
   fixedToWorld?: string;
   /** A root link facing the robot's forward along +X, as ROS expects, over the base link, which is turned by `turn` radians about Z in it. */
-  footprint?: { name: string; base: string; turn: number };
+  footprint?: { name: string; joint: string; base: string; turn: number };
 }
 
 export interface UrdfJoint {
@@ -146,12 +146,12 @@ export function writeUrdf(name: string, links: UrdfLink[], joints: UrdfJoint[], 
   // In xacro the package is a property, so the meshes follow a rename.
   const inPackage = (text: string): string => (xacro ? text.split(`package://${xacro.package}/`).join('package://${package}/') : text);
   const body = links.map((l) => inPackage(linkXml(l, materials)));
-  if (extras.fixedToWorld) body.unshift('  <link name="world"/>');
+  if (extras.fixedToWorld) body.unshift(`  <link name="${WORLD_LINK}"/>`);
   const fp = extras.footprint;
   if (fp) body.unshift(`  <link name="${escapeXml(fp.name)}"/>`);
   const jointLines = [
-    ...(extras.fixedToWorld ? [`  <joint name="world_joint" type="fixed">\n    <parent link="world"/>\n    <child link="${escapeXml(extras.fixedToWorld)}"/>\n  </joint>`] : []),
-    ...(fp ? [`  <joint name="${escapeXml(fp.name)}_joint" type="fixed">\n    <parent link="${escapeXml(fp.name)}"/>\n    <child link="${escapeXml(fp.base)}"/>\n    <origin xyz="0 0 0" rpy="0 0 ${fmt(fp.turn, 6)}"/>\n  </joint>`] : []),
+    ...(extras.fixedToWorld ? [`  <joint name="${WORLD_JOINT}" type="fixed">\n    <parent link="${WORLD_LINK}"/>\n    <child link="${escapeXml(extras.fixedToWorld)}"/>\n  </joint>`] : []),
+    ...(fp ? [`  <joint name="${escapeXml(fp.joint)}" type="fixed">\n    <parent link="${escapeXml(fp.name)}"/>\n    <child link="${escapeXml(fp.base)}"/>\n    <origin xyz="0 0 0" rpy="0 0 ${fmt(fp.turn, 6)}"/>\n  </joint>`] : []),
     ...joints.map(jointXml),
   ];
   const head = [...materials].map(([n, rgba]) => `  <material name="${n}">\n    <color rgba="${rgba}"/>\n  </material>`);
@@ -219,16 +219,67 @@ export function urdfName(raw: string, fallback = 'link'): string {
   return /^[A-Za-z]/.test(named) ? named : `${fallback}_${named}`;
 }
 
-/** Each name made different from the ones before it: a repeat gets _2, _3… */
-export function uniqueNames<T>(items: T[], nameOf: (item: T) => string): Map<T, string> {
-  const taken = new Set<string>();
-  const out = new Map<T, string>();
-  for (const item of items) {
-    const base = nameOf(item);
-    let name = base;
-    for (let n = 2; taken.has(name); n++) name = `${base}_${n}`;
-    taken.add(name);
-    out.set(item, name);
+/**
+ * The names a file holds, handed out so that no two things of a kind share one: a name already taken gets _2, _3…
+ * Each name is kept as a key with its kind in front ("joint/elbow"), since a file may let a body and a joint share
+ * a name but never two joints. `reserved` are the keys the writer uses itself, as text or as a pattern.
+ */
+export class NameSet {
+  private readonly taken = new Set<string>();
+  private readonly patterns: RegExp[] = [];
+
+  constructor(reserved: Iterable<string | RegExp> = []) {
+    for (const r of reserved) {
+      if (typeof r === 'string') this.taken.add(r);
+      else this.patterns.push(r);
+    }
   }
+
+  private free(key: string): boolean {
+    return !this.taken.has(key) && !this.patterns.some((p) => p.test(key));
+  }
+
+  /** `base`, or the first of base_2, base_3… whose every key is free; the keys are taken. */
+  take(base: string, keys: (name: string) => string[] = (name) => [name]): string {
+    let name = base;
+    for (let n = 2; !keys(name).every((k) => this.free(k)); n++) name = `${base}_${n}`;
+    for (const k of keys(name)) this.taken.add(k);
+    return name;
+  }
+}
+
+/**
+ * What a writer names in its file, as keys for a `NameSet`: the names it uses itself, and every name it writes for
+ * a link, a joint or a sensor called `name`, the thing's own and the ones made from it (a sensor's frame, a joint's
+ * reading). The robot's names are drawn against these, so nothing the user typed lands on one.
+ */
+export interface Naming {
+  reserved: (string | RegExp)[];
+  link: (name: string) => string[];
+  joint: (name: string) => string[];
+  /** `rays` is how many rays a lidar casts. */
+  sensor: (name: string, kind: SensorKind, rays: number) => string[];
+}
+
+/** Each name made different from the ones before it: a repeat gets _2, _3… `names` holds what is taken already, by the keys `keys` gives a name. */
+export function uniqueNames<T>(items: T[], nameOf: (item: T) => string, names = new NameSet(), keys: (name: string, item: T) => string[] = (name) => [name]): Map<T, string> {
+  const out = new Map<T, string>();
+  for (const item of items) out.set(item, names.take(nameOf(item), (name) => keys(name, item)));
   return out;
 }
+
+/** The link that stands for the world, and the joint that bolts a fixed base to it. Gazebo reads `world` so in any robot. */
+const WORLD_LINK = 'world';
+const WORLD_JOINT = 'world_joint';
+
+/**
+ * Links, joints and frames share one set of names: Gazebo turns the URDF into SDF, where they do. Sensors have
+ * their own, which their topics come from; the frames a sensor hangs in are links and joints like any other.
+ */
+const inModel = (name: string): string => `model/${name}`;
+export const URDF_NAMES: Naming = {
+  reserved: [inModel(WORLD_LINK), inModel(WORLD_JOINT)],
+  link: (name) => [inModel(name)],
+  joint: (name) => [inModel(name)],
+  sensor: (name) => [`sensor/${name}`],
+};

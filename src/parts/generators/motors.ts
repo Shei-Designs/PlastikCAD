@@ -8,7 +8,7 @@
 //
 // Everything is built round the mounting face, which lies in the XY plane
 // with the shaft pointing up +Z; the body form hangs the motor below it.
-import { arc, circle } from '../math2d';
+import { arc, circle, roundedRect } from '../math2d';
 import { cylinder, extrude, rotate, translate, union } from '../types';
 import type { Polygon, Quality, Shape2D, Solid, Vec2 } from '../types';
 import { bool, num, str } from './types';
@@ -73,7 +73,8 @@ export const STEPPERS: Motor[] = [
   {
     id: '28byj48',
     label: '28BYJ-48 geared stepper',
-    face: { d: 28 },
+    // The ears run across the middle of the can; the shaft comes out 8 mm above it, away from the wires.
+    face: { d: 28, at: [0, -8] },
     holes: [
       [-17.5, -8],
       [17.5, -8],
@@ -83,7 +84,7 @@ export const STEPPERS: Motor[] = [
     shaft: { d: 5, len: 10, flat: 3 },
     body: { w: 28, h: 28, round: true, below: 19 },
     tabs: { w: 42, h: 7, t: 1, at: [0, -8] },
-    note: 'Ears 35 mm apart, 8 mm off the shaft on the wire side; the shaft is on the body center.',
+    note: 'Ears 35 mm apart across the middle of the body; the shaft is 8 mm off center, away from the wires.',
   },
 ];
 
@@ -214,24 +215,6 @@ export const DC_MOTORS: Motor[] = [
 
 // --- 2D ----------------------------------------------------------------------------------
 
-function roundedRect(cx: number, cy: number, w: number, h: number, r: number, q: Quality): Polygon {
-  r = Math.max(0, Math.min(r, w / 2, h / 2));
-  if (r === 0)
-    return [
-      [cx - w / 2, cy - h / 2],
-      [cx + w / 2, cy - h / 2],
-      [cx + w / 2, cy + h / 2],
-      [cx - w / 2, cy + h / 2],
-    ];
-  const n = Math.max(2, Math.round(q.circle / 4));
-  return [
-    ...arc(cx + w / 2 - r, cy - h / 2 + r, r, -Math.PI / 2, 0, n),
-    ...arc(cx + w / 2 - r, cy + h / 2 - r, r, 0, Math.PI / 2, n),
-    ...arc(cx - w / 2 + r, cy + h / 2 - r, r, Math.PI / 2, Math.PI, n),
-    ...arc(cx - w / 2 + r, cy - h / 2 + r, r, Math.PI, 1.5 * Math.PI, n),
-  ];
-}
-
 /** A shaft section: a circle with a flat (or two) when the shaft has one. */
 function shaftSection(d: number, flat: number | undefined, q: Quality): Polygon {
   const r = d / 2;
@@ -361,7 +344,10 @@ function build(motors: Motor[], p: Params, q: Quality): BuildResult {
   const holesText = () => {
     const xs = [...new Set(m.holes.map((h) => h[0]))];
     const ys = [...new Set(m.holes.map((h) => h[1]))];
-    const span = m.holes.length === 4 && xs.length === 2 && ys.length === 2 ? `${Math.abs(xs[1] - xs[0]).toFixed(2)} × ${Math.abs(ys[1] - ys[0]).toFixed(2)} mm` : m.holes.length === 2 && ys.length === 1 ? `${Math.abs(xs[1] - xs[0]).toFixed(2)} mm apart` : m.holes.length === 6 ? 'on a 31 mm circle' : `${m.holes.length} holes`;
+    // Six holes all as far from the shaft as each other lie on a circle of twice that.
+    const reach = m.holes.map(([x, y]) => Math.hypot(x, y));
+    const ringed = m.holes.length === 6 && reach.every((r) => Math.abs(r - reach[0]) < 1e-6);
+    const span = m.holes.length === 4 && xs.length === 2 && ys.length === 2 ? `${Math.abs(xs[1] - xs[0]).toFixed(2)} × ${Math.abs(ys[1] - ys[0]).toFixed(2)} mm` : m.holes.length === 2 && ys.length === 1 ? `${Math.abs(xs[1] - xs[0]).toFixed(2)} mm apart` : ringed ? `on a ${Number((2 * reach[0]).toFixed(2))} mm circle` : `${m.holes.length} holes`;
     return `${m.holes.length} × ${m.screw}, ${span}`;
   };
   if (m.holes.length) info.push({ label: 'Bolt pattern', value: holesText() });

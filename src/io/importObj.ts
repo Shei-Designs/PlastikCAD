@@ -1,7 +1,8 @@
 import type { MeshWithUV } from '../geometry/mesh';
 import type { Companion, ImportedImage, ImportedModel, ImportedPart } from './import';
+import { hex, imageMime } from './material';
 import { ByteReader } from './scan';
-import { MeshBuilder } from './weld';
+import { cutPolygon, MeshBuilder } from './weld';
 
 const NEWLINE = 10;
 const RETURN = 13;
@@ -49,6 +50,7 @@ export function parseObj(bytes: Uint8Array, name = 'Model', companions: Companio
   buckets.set(undefined, bucket);
   const libraries: string[] = [];
   const polygon: number[] = [];
+  const corners: number[] = [];
   let anyTexcoord = false;
 
   // Steps over blanks within a line; a backslash at the end of a line continues it on the next.
@@ -123,11 +125,27 @@ export function parseObj(bytes: Uint8Array, name = 'Model', companions: Companio
         polygon.push(v >= 0 && v < 0x7fffffff ? v : -1, vt);
         while (reader.pos < n && bytes[reader.pos] > SPACE && bytes[reader.pos] !== BACKSLASH) reader.pos++;
       }
-      for (let i = 4; i < polygon.length; i += 2) {
+      // A fan around the first corner, unless the face is not convex. One that comes before its vertices
+      // has no shape to tell by yet, and gets the fan.
+      let cut: number[] | null = null;
+      if (polygon.length > 6) {
+        corners.length = 0;
+        for (let i = 0; i < polygon.length; i += 2) {
+          const v = polygon[i];
+          if (v < 0 || v >= vertexCount) break;
+          corners.push(positions[v * 3], positions[v * 3 + 1], positions[v * 3 + 2]);
+        }
+        if (corners.length * 2 === polygon.length * 3) cut = cutPolygon(corners);
+      }
+      const count = cut ? cut.length / 3 : polygon.length / 2 - 2;
+      for (let t = 0; t < count; t++) {
+        const a = cut ? cut[t * 3] * 2 : 0;
+        const b = cut ? cut[t * 3 + 1] * 2 : t * 2 + 2;
+        const c = cut ? cut[t * 3 + 2] * 2 : t * 2 + 4;
         if (bucket.length + 6 > bucket.faces.length) bucket.faces = growI(bucket.faces);
-        bucket.faces.set([polygon[0], polygon[1], polygon[i - 2], polygon[i - 1], polygon[i], polygon[i + 1]], bucket.length);
+        bucket.faces.set([polygon[a], polygon[a + 1], polygon[b], polygon[b + 1], polygon[c], polygon[c + 1]], bucket.length);
         bucket.length += 6;
-        if (polygon[1] >= 0 || polygon[i - 1] >= 0 || polygon[i + 1] >= 0) anyTexcoord = true;
+        if (polygon[a + 1] >= 0 || polygon[b + 1] >= 0 || polygon[c + 1] >= 0) anyTexcoord = true;
       }
     } else if (startsWith(bytes, reader.pos, 'usemtl')) {
       reader.pos += 6;
@@ -140,7 +158,11 @@ export function parseObj(bytes: Uint8Array, name = 'Model', companions: Companio
       bucket = found;
     } else if (startsWith(bytes, reader.pos, 'mtllib')) {
       reader.pos += 6;
-      for (const lib of lineText().split(/\s+/)) if (lib) libraries.push(lib);
+      // One library whose name may have spaces in it, or several: several when each word is a file name of its own.
+      const line = lineText();
+      const words = line.split(/\s+/).filter(Boolean);
+      if (findCompanion(companions, line) || !words.every((w) => /\.[^./\\]+$/.test(w))) libraries.push(line);
+      else libraries.push(...words);
     }
     reader.pos = lineEnd(bytes, reader.pos) + 1;
   }
@@ -212,16 +234,28 @@ function loadMaterials(libraries: string[], companions: Companion[]): Map<string
         const [r, g, b] = line.slice(2).trim().split(/\s+/).map(Number);
         if ([r, g, b].every((v) => Number.isFinite(v))) current.color = hex(r, g, b);
       } else if (/^map_Kd\s/i.test(line)) {
-        // Options (-s, -o, ...) may come first; the file name is the last word.
+        // Options (-s, -o, ...) may come first, and the name may have spaces in it: the picture is the longest
+        // tail of the line that came along.
         const words = line.slice(6).trim().split(/\s+/);
-        const image = findCompanion(companions, words[words.length - 1]);
+        let image: Companion | undefined;
+        for (let from = 0; from < words.length && !image; from++) image = findCompanion(companions, words.slice(from).join(' '));
         const mime = image && imageMime(image.name);
         if (image && mime) current.image = { name: image.name, mime, bytes: image.bytes };
-        else current.imageRef = baseOf(words[words.length - 1]);
+        else current.imageRef = baseOf(textureName(words));
       }
     }
   }
   return out;
+}
+
+/** The file name a texture line ends in, past its options (`-s 1 1 1`, `-clamp on`). */
+function textureName(words: string[]): string {
+  let i = 0;
+  while (i < words.length - 1 && words[i].startsWith('-')) {
+    i++;
+    while (i < words.length - 1 && /^(-?[\d.]+(e-?\d+)?|on|off)$/i.test(words[i])) i++;
+  }
+  return words.slice(i).join(' ');
 }
 
 /** The file name a reference ends in, folders dropped. */
@@ -231,17 +265,6 @@ const baseOf = (ref: string): string => ref.replace(/\\/g, '/').split('/').pop()
 function findCompanion(companions: Companion[], ref: string): Companion | undefined {
   const base = baseOf(ref).toLowerCase();
   return base ? companions.find((c) => baseOf(c.name).toLowerCase() === base) : undefined;
-}
-
-export function imageMime(name: string): ImportedImage['mime'] | undefined {
-  const ext = name.split('.').pop()?.toLowerCase();
-  return ext === 'png' ? 'image/png' : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : undefined;
-}
-
-/** sRGB hex from channels in 0..1. */
-export function hex(r: number, g: number, b: number): string {
-  const c = (v: number) => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, '0');
-  return `#${c(r)}${c(g)}${c(b)}`;
 }
 
 function startsWith(bytes: Uint8Array, at: number, word: string): boolean {

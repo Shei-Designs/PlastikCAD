@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { PartNode, Vec3 } from '../model/types';
-import { evaluate, initKernel } from './evaluate';
+import { evaluate, initKernel } from './testing';
 import { getGenerator } from './generators';
 import { defaultParams, sanitizeParams } from './generators/types';
 import { fixedMateTeeth, mateKinds, mateOf, sourceTeeth } from './mates';
@@ -110,6 +110,22 @@ describe('mating gears', () => {
     }
   });
 
+  it('meshes a ring with a pinion of an odd tooth count, which has a space opposite each tooth', () => {
+    // Inside a ring the pinion meshes on its far side from the ring's center.
+    for (const [z1, z2, rz, angle] of [
+      [15, 45, 0, 0],
+      [17, 51, 0, 0],
+      [13, 40, 0, 0],
+      [15, 44, 9, 75],
+      [12, 40, 5, -130],
+    ]) {
+      const ring = check('spur', { module: 2, teeth: z1, backlash: 0 }, rz, { kind: 'ring', teeth: z2, backlash: 0.1, extra: 0, angle });
+      expect(ring.mate.center).toBeCloseTo(z2 - z1, 6);
+      expect(overlap(ring.a, ring.b), `ring ${z1}:${z2}`).toBeLessThan(0.05);
+      expect(overlap(ring.a, turned(ring.mate, 360 / z2 / 8)), `ring ${z1}:${z2} crash`).toBeGreaterThan(10);
+    }
+  });
+
   it('lays a rack along a gear, centered on it to the nearest tooth', () => {
     for (const [teeth, rz, angle] of [
       [12, 0, -90],
@@ -190,6 +206,32 @@ describe('mating gears', () => {
     }
     expect(fixedMateTeeth(part('bevel', { mateTeeth: 27 }))).toBe(27);
     expect(fixedMateTeeth(part('spur', {}))).toBeNull();
+  });
+
+  it('sets a shifted helical pair apart by the shift in the normal plane', () => {
+    const an = (20 * Math.PI) / 180;
+    const inv = (a: number) => Math.tan(a) - a;
+    for (const [kind, helix, x, z1, z2, expected] of [
+      ['helical', 20, 0.5, 12, 24, 39.2404],
+      ['herringbone', 30, 0.5, 12, 24, 42.5123],
+      ['helical', 45, 0.8, 10, 20, 43.9328],
+      ['helical', 20, -0.2, 20, 30, 52.798],
+    ] as [string, number, number, number, number, number][]) {
+      const { mate, a, b } = check(kind, { module: 2, teeth: z1, helixAngle: helix, profileShift: x, backlash: 0 }, 0, { kind: 'gear', teeth: z2, backlash: 0, extra: 0, angle: 0 });
+      const label = `${kind} ${helix}° x ${x}`;
+      // Worked by hand: inv αwt = inv αt + 2·xn·tan αn / (z1 + z2), a = mt·(z1 + z2)/2 · cos αt / cos αwt.
+      expect(mate.center, label).toBeCloseTo(expected, 3);
+      const beta = (helix * Math.PI) / 180;
+      const at = Math.atan(Math.tan(an) / Math.cos(beta));
+      const aw = Math.acos(((2 / Math.cos(beta)) * (z1 + z2) * Math.cos(at)) / 2 / mate.center);
+      expect(inv(aw), label).toBeCloseTo(inv(at) + (2 * x * Math.tan(an)) / (z1 + z2), 9);
+      expect(overlap(a, b), label).toBeLessThan(0.05);
+    }
+    // An unshifted pair stands at the nominal distance, and a spur pair where it always did.
+    const plain = mateOf(part('helical', { module: 2, teeth: 12, helixAngle: 20, profileShift: 0 }), { kind: 'gear', teeth: 24, backlash: 0, extra: 0, angle: 0 });
+    expect(plain.center).toBeCloseTo((2 / Math.cos((20 * Math.PI) / 180)) * 18, 9);
+    const spur = mateOf(part('spur', { module: 2, teeth: 12, profileShift: 0.5 }), { kind: 'gear', teeth: 24, backlash: 0, extra: 0, angle: 0 });
+    expect(spur.center).toBeCloseTo(36.9185, 3);
   });
 
   it('warns about a gear it cannot fully honor', () => {

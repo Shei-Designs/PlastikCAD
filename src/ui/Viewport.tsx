@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { CSSProperties, JSX } from 'react';
 import { geometry } from '../state/geometry';
 import { SNAP_STEPS } from '../state/persist';
@@ -42,7 +42,7 @@ import {
   unghostAll,
   useEditor,
 } from '../state/store';
-import { apply, multiply, rotation } from '../model/math';
+import { apply, cross, multiply, rotation, unit } from '../model/math';
 import { FEATURE_KINDS } from '../geometry/features';
 import type { FeatureKind } from '../geometry/features';
 import { describe as describeFeature, measure as measureBetween } from '../geometry/measure';
@@ -83,11 +83,14 @@ import {
   WarningIcon,
 } from './icons';
 import { ArrayPanel } from './ArrayPanel';
-import { recentTouch, selectOnFocus } from './Fields';
+import { pressedByTouch, recentTouch, selectOnFocus } from './Fields';
 import { enterByTouch, keyboardAttached, openTouchEntry } from './TouchEntry';
+import { MOD } from './keys';
 import { Popover } from './Popover';
 import { MatePanel } from './MatePanel';
+import { placeReadout } from './readout';
 import { TransformBox } from './TransformBox';
+import { commitTyping } from './typing';
 
 const VIEWS: { id: ViewPreset; label: string }[] = [
   { id: 'iso', label: '3D' },
@@ -101,25 +104,25 @@ const VIEWS: { id: ViewPreset; label: string }[] = [
 export const viewerRef: { current: Viewer | null } = { current: null };
 
 function Actions() {
-  const scene = useEditor((s) => s.doc.scene);
-  const selection = useEditor((s) => s.selection);
-  const picked = useMemo(() => scene.filter((n) => selection.includes(n.id)), [scene, selection]);
-  const aligning = useEditor((s) => s.aligning);
+  // How many objects are picked and whether a group is among them is all the buttons go by, so that
+  // a drag, which changes the scene on every move, leaves the bar as it is.
+  const count = useEditor((s) => (s.selection.length ? s.doc.scene.reduce((n, node) => n + (s.selection.includes(node.id) ? 1 : 0), 0) : 0));
+  const hasGroup = useEditor((s) => s.selection.length > 0 && s.doc.scene.some((n) => n.type === 'group' && s.selection.includes(n.id)));
+  const aligning = useEditor((s) => Boolean(s.aligning));
   const measuring = useEditor((s) => Boolean(s.measuring));
   const objectAxes = useEditor((s) => s.objectAxes);
   /** A picked joint or sensor lines up with an object's box, on its own. */
   const marker = useEditor((s) => Boolean(s.joint || s.sensor));
   const ghosts = useEditor(hasGhosts);
-  const none = picked.length === 0;
-  const hasGroup = picked.some((n) => n.type === 'group');
+  const none = count === 0;
 
   return (
     <>
       <div className="tool-group">
-        <button type="button" className="chip icon" title="Group (Ctrl+G)" aria-label="Group" disabled={picked.length < 2} onClick={() => void groupSelected()}>
+        <button type="button" className="chip icon" title={`Group (${MOD}G)`} aria-label="Group" disabled={count < 2} onClick={() => void groupSelected()}>
           <GroupIcon />
         </button>
-        <button type="button" className="chip icon" title="Ungroup (Ctrl+Shift+G)" aria-label="Ungroup" disabled={!hasGroup} onClick={ungroupSelected}>
+        <button type="button" className="chip icon" title={`Ungroup (${MOD}Shift+G)`} aria-label="Ungroup" disabled={!hasGroup} onClick={ungroupSelected}>
           <UngroupIcon />
         </button>
       </div>
@@ -129,8 +132,8 @@ function Actions() {
           className={aligning ? 'chip icon on' : 'chip icon'}
           title="Align (L)"
           aria-label="Align"
-          aria-pressed={Boolean(aligning)}
-          disabled={picked.length < 2 && !aligning && !marker}
+          aria-pressed={aligning}
+          disabled={count < 2 && !aligning && !marker}
           onClick={toggleAligning}
         >
           <AlignIcon />
@@ -147,7 +150,7 @@ function Actions() {
               <p>Mirrors the selection across the chosen axis.</p>
               <div className="segmented">
                 {(['X', 'Y', 'Z'] as const).map((label, axis) => (
-                  <button key={label} type="button" title={`Press ${label}`} onClick={() => mirrorSelected(axis as 0 | 1 | 2)}>
+                  <button key={label} type="button" title={`Flip ${label} (${label})`} onClick={() => mirrorSelected(axis as 0 | 1 | 2)}>
                     Flip {label}
                   </button>
                 ))}
@@ -160,21 +163,21 @@ function Actions() {
         </button>
       </div>
       <div className="tool-group">
-        <button type="button" className="chip icon" title="Ghost: fades the selection out of reach, so what is around or inside it can be worked on (G)" aria-label="Ghost" disabled={none} onClick={ghostSelected}>
+        <button type="button" className="chip icon" title="Ghost (G)" aria-label="Ghost" disabled={none} onClick={ghostSelected}>
           <GhostIcon />
         </button>
-        <button type="button" className="chip icon" title="Un-ghost all: brings every ghost back within reach (Shift+G)" aria-label="Un-ghost all" disabled={!ghosts} onClick={unghostAll}>
+        <button type="button" className="chip icon" title="Un-ghost all (Shift+G)" aria-label="Un-ghost all" disabled={!ghosts} onClick={unghostAll}>
           <UnghostIcon />
         </button>
       </div>
       <div className="tool-group">
-        <button type="button" className="chip icon" title="Duplicate in place (Ctrl+D)" aria-label="Duplicate" disabled={none} onClick={duplicateSelected}>
+        <button type="button" className="chip icon" title={`Duplicate in place (${MOD}D)`} aria-label="Duplicate" disabled={none} onClick={duplicateSelected}>
           <DuplicateIcon />
         </button>
-        <Popover className="chip icon" title="Array (grid or ring)" button={<ArrayIcon />} disabled={none} align="right">
+        <Popover className="chip icon" title="Array" button={<ArrayIcon />} disabled={none} align="right">
           {(close) => <ArrayPanel close={close} />}
         </Popover>
-        <button type="button" className="chip icon" title="Delete (Del)" aria-label="Delete" disabled={none} onClick={deleteSelected}>
+        <button type="button" className="chip icon" title="Delete (Delete)" aria-label="Delete" disabled={none} onClick={deleteSelected}>
           <TrashIcon />
         </button>
       </div>
@@ -220,10 +223,10 @@ function History() {
   const canRedo = useEditor((s) => s.canRedo);
   return (
     <div className="tool-group">
-      <button type="button" className="chip icon" title="Undo (Ctrl+Z)" aria-label="Undo" disabled={!canUndo} onClick={undo}>
+      <button type="button" className="chip icon" title={`Undo (${MOD}Z)`} aria-label="Undo" disabled={!canUndo} onClick={undo}>
         <UndoIcon />
       </button>
-      <button type="button" className="chip icon" title="Redo (Ctrl+Y)" aria-label="Redo" disabled={!canRedo} onClick={redo}>
+      <button type="button" className="chip icon" title={`Redo (${MOD}Y)`} aria-label="Redo" disabled={!canRedo} onClick={redo}>
         <RedoIcon />
       </button>
     </div>
@@ -236,7 +239,7 @@ function History() {
  * presets and fit beneath it. The triad is drawn on the canvas, so the widget
  * tells the viewer where its space is.
  */
-function ViewWidget({ viewer }: { viewer: React.RefObject<Viewer | null> }) {
+const ViewWidget = memo(function ViewWidget({ viewer }: { viewer: React.RefObject<Viewer | null> }) {
   const space = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = space.current;
@@ -270,7 +273,7 @@ function ViewWidget({ viewer }: { viewer: React.RefObject<Viewer | null> }) {
       </div>
     </div>
   );
-}
+});
 
 /**
  * Boxes on the object's edges after a grip was clicked: type the value(s),
@@ -374,6 +377,13 @@ function HandleInput({ prompt, onClose }: { prompt: HandlePrompt; onClose: () =>
                 e.preventDefault();
                 submit();
               } else if (e.key === 'Escape') onClose();
+              else if (e.key === 'Tab') {
+                // Tab goes round the handle's own boxes and never leaves for the rest of the page.
+                e.preventDefault();
+                const boxes = host.current?.querySelectorAll('input');
+                const n = boxes?.length ?? 0;
+                if (n > 1) boxes?.[(i + (e.shiftKey ? n - 1 : 1)) % n]?.focus();
+              }
               e.stopPropagation();
             }}
           />
@@ -434,14 +444,17 @@ function jointMarkerOf(joint: RobotJoint, child: SceneNode): Marker {
   const turn = rotation(child.rot);
   const own = apply(turn, [1, 0, 0]);
   const pick: Vec3 = Math.abs(own[0] * axis[0] + own[1] * axis[1] + own[2] * axis[2]) < 0.9 ? own : apply(turn, [0, 1, 0]);
-  const y = normalize(cross(axis, pick));
+  const y = unit(cross(axis, pick));
   const x = cross(y, axis);
   const matrix: Mat = [x[0], x[1], x[2], y[0], y[1], y[2], axis[0], axis[1], axis[2], origin[0], origin[1], origin[2]];
   return { kind: 'joint', type: joint.type, matrix };
 }
 
+/** What of the editor's state the markers are worked out from. */
+type MarkerState = Pick<EditorState, 'doc' | 'robot' | 'joint' | 'sensor' | 'prefs'>;
+
 /** The picked joint or sensor. */
-function robotMarker(s: EditorState): Marker | null {
+function robotMarker(s: MarkerState): Marker | null {
   const sensor = s.sensor ? s.doc.robot?.sensors.find((x) => x.id === s.sensor) : undefined;
   const link = sensor && s.doc.scene.find((n) => n.id === sensor.link);
   if (sensor && link) return sensorMarkerOf(sensor, link);
@@ -451,7 +464,7 @@ function robotMarker(s: EditorState): Marker | null {
 }
 
 /** Every other joint and sensor, for Robot mode when it shows them all. */
-function robotMarkers(s: EditorState): { id: string; marker: Marker }[] | null {
+function robotMarkers(s: MarkerState): { id: string; marker: Marker }[] | null {
   if (!s.robot || !s.prefs.robotMarkers || !s.doc.robot) return null;
   const byId = new Map(s.doc.scene.map((n) => [n.id, n]));
   const out: { id: string; marker: Marker }[] = [];
@@ -467,7 +480,7 @@ function robotMarkers(s: EditorState): { id: string; marker: Marker }[] | null {
 }
 
 /** While the test drive runs: every sensor on its link where the simulation has it, a lidar's with what its rays read and a touch sensor's with whether it is pressed, for the plate to draw the readouts. */
-function drivenMarkers(s: EditorState, frames: Map<string, Mat>, readings: Map<string, number[]>): { id: string; marker: Marker }[] | null {
+function drivenMarkers(s: MarkerState, frames: Map<string, Mat>, readings: Map<string, number[]>): { id: string; marker: Marker }[] | null {
   if (!s.robot || !s.doc.robot) return null;
   const byId = new Map(s.doc.scene.map((n) => [n.id, n]));
   const out: { id: string; marker: Marker }[] = [];
@@ -484,11 +497,54 @@ function drivenMarkers(s: EditorState, frames: Map<string, Mat>, readings: Map<s
   return out;
 }
 
-const cross = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-const normalize = (v: Vec3): Vec3 => {
-  const n = Math.hypot(...v) || 1;
-  return [v[0] / n, v[1] / n, v[2] / n];
-};
+/**
+ * The bar over the plate. It is its own component, drawn again only for what it shows: the viewport
+ * around it is drawn again on every move of a drag.
+ */
+const Toolbar = memo(function Toolbar() {
+  const edges = useEditor((s) => s.prefs.edges);
+  const grid = useEditor((s) => s.prefs.grid);
+  const snap = useEditor((s) => s.prefs.snap);
+  // On a narrow stage the bar wraps onto a second row; what sits under it is told how tall it is.
+  const bar = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = bar.current;
+    const host = el?.closest<HTMLElement>('.viewport');
+    if (!el || !host) return;
+    const tell = () => host.style.setProperty('--bar', `${el.offsetHeight}px`);
+    tell();
+    const watch = new ResizeObserver(tell);
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, []);
+  return (
+    <div className="view-toolbar">
+      <div className="toolbar" role="toolbar" aria-label="Tools" ref={bar}>
+        <History />
+        <div className="tool-group">
+          <button type="button" className={edges ? 'chip on' : 'chip'} aria-pressed={edges} onClick={() => setPrefs({ edges: !edges })}>
+            Edges
+          </button>
+          <button type="button" className={grid ? 'chip on' : 'chip'} aria-pressed={grid} onClick={() => setPrefs({ grid: !grid })}>
+            Grid
+          </button>
+          <label className="chip select" title="Sets the step that moves and sizes snap to.">
+            Snap
+            <select value={snap} onChange={(e) => setPrefs({ snap: Number(e.target.value) })}>
+              {SNAP_STEPS.map((s) => (
+                <option key={s} value={s}>
+                  {s === 0 ? 'Off' : `${s} mm`}
+                </option>
+              ))}
+            </select>
+            <ChevronIcon />
+          </label>
+        </div>
+        <Actions />
+      </div>
+    </div>
+  );
+});
 
 export function Viewport() {
   const host = useRef<HTMLDivElement>(null);
@@ -496,14 +552,27 @@ export function Viewport() {
   const readout = useRef<HTMLDivElement>(null);
   const viewer = useRef<Viewer | null>(null);
 
-  const state = useEditor((s) => s);
-  const { prefs, placing, selection, busy, aligning, editing, mating, pose } = state;
+  // Each piece of the editor's state on its own, so that a change to the rest (a notice, a save) draws nothing here.
+  const prefs = useEditor((s) => s.prefs);
+  const placing = useEditor((s) => s.placing);
+  const selection = useEditor((s) => s.selection);
+  const busy = useEditor((s) => s.busy);
+  const aligning = useEditor((s) => s.aligning);
+  const editing = useEditor((s) => s.editing);
+  const mating = useEditor((s) => s.mating);
+  const pose = useEditor((s) => s.pose);
+  const doc = useEditor((s) => s.doc);
+  const robot = useEditor((s) => s.robot);
+  const joint = useEditor((s) => s.joint);
+  const sensor = useEditor((s) => s.sensor);
+  const jointPick = useEditor((s) => s.jointPick);
+  const state = useMemo(() => ({ doc, robot, joint, sensor, prefs }), [doc, robot, joint, sensor, prefs]);
   // The test drive: while it runs, the links are drawn where the simulation has them.
   useSyncExternalStore(sim.subscribe, sim.getRevision);
   const driven = sim.get();
   const simFrames = driven.status === 'ready' && driven.frames.size > 0 ? driven.frames : null;
-  useEffect(() => sim.check(state.doc, state.robot), [state.doc.scene, state.doc.robot, state.robot]);
-  const highlight = state.highlight;
+  useEffect(() => sim.check(doc, robot), [doc.scene, doc.robot, robot]);
+  const highlight = useEditor((s) => s.highlight);
   // The joint markers sit where the design has the joints; while the simulation moves the links they would mislead, so they rest.
   // The sensors ride their links instead, a lidar's rays reaching to what they read, so a tilt or a range can be judged on the move.
   const marker = useMemo(() => (simFrames ? null : robotMarker(state)), [state.joint, state.sensor, state.doc, simFrames]);
@@ -524,9 +593,10 @@ export function Viewport() {
     if (at || followed.current) viewer.current?.follow([to[0] - from[0], to[1] - from[1], to[2] - from[2]]);
     followed.current = at;
   }, [driven.base, simFrames]);
-  const snaps = useMemo(() => (state.jointPick ? jointSnaps(state) : null), [state.jointPick, state.joint, state.sensor, state.doc]);
+  // The store's own state is the one these were read from: the snap points follow the same four things.
+  const snaps = useMemo(() => (jointPick ? jointSnaps(getState()) : null), [jointPick, joint, sensor, doc]);
   // Measure mode: the picks and what they say, for the plate to draw and the bar to show.
-  const measuring = state.measuring;
+  const measuring = useEditor((s) => s.measuring);
   const measureResult = useMemo(() => {
     if (!measuring) return null;
     const [a, b] = measuring.picks;
@@ -538,8 +608,8 @@ export function Viewport() {
   useEffect(() => {
     viewer.current?.dismissPrompt();
   }, [selection, editing]);
-  const scene = state.doc.scene;
-  const assets = state.doc.assets;
+  const scene = doc.scene;
+  const assets = doc.assets;
   const revision = useSyncExternalStore(geometry.subscribe, geometry.getRevision);
 
   useEffect(() => {
@@ -561,16 +631,17 @@ export function Viewport() {
           el.hidden = text === null;
           if (text === null) return;
           el.textContent = text;
+          // Beside the pointer and inside the view; above a finger, which would cover it.
           const rect = host.current!.getBoundingClientRect();
-          el.style.left = `${x - rect.left + 16}px`;
-          el.style.top = `${y - rect.top + 16}px`;
+          const { left, top } = placeReadout({ x: x - rect.left, y: y - rect.top }, { width: el.offsetWidth, height: el.offsetHeight }, rect, pressedByTouch());
+          el.style.left = `${left}px`;
+          el.style.top = `${top}px`;
         },
         boundsOf: (node) => geometry.bounds(node),
         onAlignHover: previewAlign,
         onAlignPick: commitAlign,
         onAnchor: setAlignAnchor,
         onHandleClick: setPrompt,
-        onSnapHover: () => undefined,
         onSnapPick: (index) => {
           const point = jointSnaps(getState())[index];
           if (point) pickJointSnap(point);
@@ -597,7 +668,7 @@ export function Viewport() {
   }, []);
 
   useEffect(() => {
-    viewer.current?.setOptions({ theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap, interactive: true, align: aligning, highlight, snaps, marker, markers, ground, preview, measure, objectAxes });
+    viewer.current?.setOptions({ theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap, align: aligning, highlight, snaps, marker, markers, ground, preview, measure, objectAxes });
   }, [prefs.theme, prefs.edges, prefs.grid, prefs.snap, aligning, highlight, snaps, marker, markers, ground, preview, measure, objectAxes]);
 
   useEffect(() => {
@@ -628,7 +699,7 @@ export function Viewport() {
   }, [items, assets]);
 
   // A different design on screen: frame it.
-  const shownKey = state.epoch;
+  const shownKey = useEditor((s) => s.epoch);
   const framed = useRef(-1);
   useEffect(() => {
     if (framed.current === shownKey) return;
@@ -647,34 +718,17 @@ export function Viewport() {
 
   return (
     <div className="viewport">
-      <div className="canvas-host" ref={host} />
+      <div
+        className="canvas-host"
+        ref={host}
+        // A value still being typed in a box is taken before the press changes the selection under it.
+        onPointerDownCapture={(e) => {
+          if (e.button === 0) commitTyping();
+        }}
+      />
       <div className="readout" ref={readout} hidden />
       {prompt && <HandleInput key={JSON.stringify(prompt.kind)} prompt={prompt} onClose={() => viewer.current?.dismissPrompt()} />}
-      <div className="view-toolbar">
-        <div className="toolbar" role="toolbar" aria-label="Tools">
-          <History />
-          <div className="tool-group">
-            <button type="button" className={prefs.edges ? 'chip on' : 'chip'} aria-pressed={prefs.edges} onClick={() => setPrefs({ edges: !prefs.edges })}>
-              Edges
-            </button>
-            <button type="button" className={prefs.grid ? 'chip on' : 'chip'} aria-pressed={prefs.grid} onClick={() => setPrefs({ grid: !prefs.grid })}>
-              Grid
-            </button>
-            <label className="chip select" title="Grid that moves and sizes snap to">
-              Snap
-              <select value={prefs.snap} onChange={(e) => setPrefs({ snap: Number(e.target.value) })}>
-                {SNAP_STEPS.map((s) => (
-                  <option key={s} value={s}>
-                    {s === 0 ? 'Off' : `${s} mm`}
-                  </option>
-                ))}
-              </select>
-              <ChevronIcon />
-            </label>
-          </div>
-          <Actions />
-        </div>
-      </div>
+      <Toolbar />
       <ViewWidget viewer={viewer} />
 
       {editing && (

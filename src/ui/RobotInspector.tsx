@@ -8,7 +8,7 @@ import type { Mat } from '../model/math';
 import type { SceneNode, Vec3 } from '../model/types';
 import { massOf, principalMoments, tensorOf } from '../robot/inertia';
 import { MATERIALS, materialOf } from '../robot/materials';
-import { jointInDesign, linkOf, robotForward, sensorInDesign } from '../robot/model';
+import { followFault, jointInDesign, linkOf, robotForward, sensorInDesign } from '../robot/model';
 import { MOTORS } from '../robot/motors';
 import { COLLISION_KINDS, DRIVE_KINDS, driveJoints, JOINT_TYPES, SENSOR_KINDS, WORLDS } from '../robot/types';
 import type { DriveKind, DriveRole, RobotJoint, RobotLink, RobotSensor, SensorKind, World } from '../robot/types';
@@ -656,7 +656,7 @@ function JointPanel({ joint }: { joint: RobotJoint }) {
               value={joint.mimic?.joint ?? ''}
               label="Follows"
               placeholder="Nothing"
-              options={robot.joints.filter((j) => j.id !== joint.id).map((j) => ({ value: j.id, label: j.name }))}
+              options={robot.joints.filter((j) => j.id !== joint.id && (j.id === joint.mimic?.joint || !followFault(robot, tree, joint, j))).map((j) => ({ value: j.id, label: j.name }))}
               onChange={(id) => updateJoint(joint.id, { mimic: { joint: id, multiplier: joint.mimic?.multiplier ?? 1, offset: joint.mimic?.offset ?? 0 } })}
             />,
             'A passive joint moved by another, as in a linkage: it goes as far as that one times the multiplier, plus the offset.',

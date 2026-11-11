@@ -4,6 +4,7 @@
 // never loads them.
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { APP_NAME } from './appInfo';
+import { asError } from './errors';
 
 export interface FileFilter {
   name: string;
@@ -36,7 +37,16 @@ async function command<T>(name: string, args?: Record<string, unknown> | Uint8Ar
   try {
     return await invoke<T>(name, args, headers && { headers });
   } catch (reason) {
-    throw reason instanceof Error ? reason : new Error(String(reason));
+    throw asError(reason);
+  }
+}
+
+/** A command of the Android device plugin, with what it rejects with made an Error. */
+async function device<T>(name: string, args?: Record<string, unknown>): Promise<T> {
+  try {
+    return await invoke<T>(`plugin:device|${name}`, args);
+  } catch (reason) {
+    throw asError(reason);
   }
 }
 
@@ -96,7 +106,7 @@ export async function pickFiles(options: { filters: FileFilter[]; multiple?: boo
     // The device plugin's picker: every file is offered, as the system picker filters by the type a file was
     // stored with, which a GLB or a design file rarely has (they show greyed out), and the app reads what each
     // one is itself. Its grant also lets the app delete what was picked, when asked to.
-    const { uris } = await invoke<{ uris: string[] }>('plugin:device|pick_documents', { multiple });
+    const { uris } = await device<{ uris: string[] }>('pick_documents', { multiple });
     return Promise.all(uris.map(readPath));
   }
   const { open } = await import('@tauri-apps/plugin-dialog');
@@ -161,7 +171,7 @@ export const keepsExports = (): boolean => isAndroid();
 
 /** Android: opens the share sheet with the given files. */
 export async function share(uris: string[], mime: string): Promise<void> {
-  await invoke('plugin:device|share', { uris, mime });
+  await device('share', { uris, mime });
 }
 
 /** Android: opens the share sheet with a file made for the occasion (a zip of an export bundle), staged in the app's cache. */
@@ -187,14 +197,27 @@ export async function chooseSave(suggestedName: string, filters: FileFilter[], m
   // Android keeps the type the document was created with; given as a MIME type (which the plugin passes
   // through as it is), rather than left to the extension, which the system may not know. The device
   // plugin picks a type the name survives, as the system adds the extension it knows for a type.
-  const path = await save({ defaultPath: suggestedName, filters: isAndroid() ? [{ name: filters[0]?.name ?? mime, extensions: [await androidMime(suggestedName, mime)] }] : filters });
-  if (!path) return null;
+  const picked = await save({ defaultPath: suggestedName, filters: isAndroid() ? [{ name: filters[0]?.name ?? mime, extensions: [await androidMime(suggestedName, mime)] }] : filters });
+  if (!picked) return null;
+  const path = isAndroid() ? picked : withExtension(picked, filters);
   return { path, name: await nameOf(path) };
+}
+
+/**
+ * A name typed into the save dialog without its extension, or with another,
+ * gets the one the file is: the dialogs do not all add it themselves, and the
+ * app writes only the kinds of file it makes.
+ */
+export function withExtension(path: string, filters: FileFilter[]): string {
+  const wanted = filters.flatMap((f) => f.extensions).map((e) => e.toLowerCase());
+  if (wanted.length === 0) return path;
+  const extension = /\.([^./\\]+)$/.exec(path)?.[1].toLowerCase();
+  return extension && wanted.includes(extension) ? path : `${path}.${wanted[0]}`;
 }
 
 /** Android: the type to create a document of this name as, for the name to be kept. */
 async function androidMime(name: string, mime: string): Promise<string> {
-  const answer = await invoke<{ mime: string }>('plugin:device|mime_for', { name, mime }).catch(() => null);
+  const answer = await device<{ mime: string }>('mime_for', { name, mime }).catch(() => null);
   return answer?.mime ?? mime;
 }
 
@@ -331,12 +354,12 @@ export const oauthCancel = (session: SignInSession): Promise<void> => command<vo
  * "cancelled".
  */
 export async function androidAuthorize(scope: string, silent: boolean): Promise<string> {
-  const { accessToken } = await invoke<{ accessToken: string }>('plugin:device|authorize', { scope, silent });
+  const { accessToken } = await device<{ accessToken: string }>('authorize', { scope, silent });
   return accessToken;
 }
 
 /** Android: forgets a token Play services holds, so the account is asked again next time. */
-export const androidClearToken = (token: string): Promise<void> => invoke<void>('plugin:device|clear_token', { token }).catch(() => undefined);
+export const androidClearToken = (token: string): Promise<void> => device<void>('clear_token', { token }).catch(() => undefined);
 
 /**
  * The files the app was started with: the design passed on the command line
@@ -344,22 +367,42 @@ export const androidClearToken = (token: string): Promise<void> => invoke<void>(
  */
 export async function startupFiles(): Promise<string[]> {
   if (!isTauri()) return [];
-  if (isAndroid()) return (await invoke<{ uris: string[] }>('plugin:device|opened_files').catch(() => ({ uris: [] }))).uris;
+  if (isAndroid()) return (await device<{ uris: string[] }>('opened_files').catch(() => ({ uris: [] }))).uris;
   const path = await command<string | null>('startup_file');
-  return path ? [path] : [];
+  // macOS hands the design it was launched with over by event, not as an argument: it is waiting here.
+  const waiting = await command<string[]>('opened_files').catch(() => []);
+  return [...new Set([...(path ? [path] : []), ...waiting])];
 }
 
 /**
- * Android: files handed to the running app (a tap in the Files app while it is
- * open). Fetched when the plugin says some arrived. Returns an unsubscribe function.
+ * Files handed to the running app: a tap in the Files app on Android, a
+ * design double-clicked on desktop. Fetched when word comes that some
+ * arrived. Returns an unsubscribe function.
  */
 export function onFilesOpened(handler: (paths: string[]) => void): () => void {
-  if (!isAndroid()) return () => {};
+  if (!isTauri()) return () => {};
   let stopped = false;
   let stop: (() => void) | null = null;
+  if (!isAndroid()) {
+    // Desktop: a design double-clicked while the app runs. The second launch hands it over and quits.
+    import('@tauri-apps/api/event')
+      .then(({ listen }) => listen('opened', async () => {
+        const paths = await command<string[]>('opened_files');
+        if (paths.length > 0) handler(paths);
+      }))
+      .then((unlisten) => {
+        stop = unlisten;
+        if (stopped) stop();
+      })
+      .catch(console.error);
+    return () => {
+      stopped = true;
+      stop?.();
+    };
+  }
   import('@tauri-apps/api/core')
     .then(({ addPluginListener }) => addPluginListener('device', 'opened', async () => {
-      const { uris } = await invoke<{ uris: string[] }>('plugin:device|opened_files');
+      const { uris } = await device<{ uris: string[] }>('opened_files');
       if (uris.length > 0) handler(uris);
     }))
     .then((listener) => {
@@ -378,7 +421,7 @@ export const canDelete = (path: string | null): boolean => isTauri() && path !==
 
 /** Deletes a file the user picked or opened: by path on desktop, through its provider on Android. */
 export async function deleteFile(path: string): Promise<void> {
-  if (path.includes('://')) return void (await invoke('plugin:device|delete_document', { uri: path }));
+  if (path.includes('://')) return void (await device('delete_document', { uri: path }));
   await command<void>('delete_file', { path });
 }
 

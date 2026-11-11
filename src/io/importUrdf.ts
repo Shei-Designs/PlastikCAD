@@ -7,7 +7,7 @@
 // file is in meters and radians; the design gets millimeters and degrees.
 import { defaultParams } from '../geometry/shapes';
 import type { MeshData } from '../geometry/mesh';
-import { apply, boxBounds, eulerOf, IDENTITY, invert, multiply, rotation, tidyVec } from '../model/math';
+import { apply, boxBounds, determinant, eulerOf, IDENTITY, invert, multiply, rotation, tidyVec } from '../model/math';
 import type { Mat } from '../model/math';
 import { newId } from '../model/ops';
 import type { Asset, SceneNode, ShapeKind, Vec3 } from '../model/types';
@@ -16,7 +16,7 @@ import { jointInChild, linkNodes, sensorInLink } from '../robot/model';
 import { DEFAULT_MASS, defaultJoint, defaultLink, defaultSensor } from '../robot/types';
 import type { CollisionKind, DriveKind, DriveRole, JointType, Robot, RobotJoint, RobotLink, RobotSensor, SensorKind } from '../robot/types';
 import { encodeFloat32, encodeUint32 } from './base64';
-import { centerMesh, IMPORT_EXTENSIONS, importFile } from './import';
+import { centerMesh, checkedMesh, guarded, importFile } from './import';
 import type { Companion } from './import';
 import { urdfName } from './urdf';
 import { MeshBuilder } from './weld';
@@ -41,6 +41,8 @@ const DEG = 180 / Math.PI;
 const IMPORT_COLOR = '#8fa3bf';
 /** A link that moves but has no shape of its own gets a small box to stand for it, mm. */
 const PLACEHOLDER = 10;
+/** The kinds of file a link's mesh can be read from. */
+const MESH_EXTENSIONS = ['stl', 'obj', 'dae', 'glb', 'gltf', '3mf'];
 
 type Geometry = { mesh: string; scale: Vec3 } | { box: Vec3 } | { cylinder: { radius: number; length: number } } | { sphere: { radius: number } };
 
@@ -127,24 +129,45 @@ function geometryOf(element: XmlElement | undefined): Geometry | null {
   return null;
 }
 
-/** The mesh files the URDF names, as written (`package://…`, `file://…`, or a path), so that the caller can fetch them before reading the robot. */
+/**
+ * The mesh files the URDF names, as written (`package://…`, `file://…`, or a
+ * path), so that the caller can fetch them before reading the robot. Only
+ * those that may be fetched: meshes of a kind that can be read, at a path
+ * `meshPath` allows.
+ */
 export function urdfMeshFiles(bytes: Uint8Array): string[] {
   const root = xmlTree(bytes);
   const out = new Set<string>();
   const walk = (el: XmlElement) => {
-    if (localName(el.name) === 'mesh' && el.attrs.filename) out.add(el.attrs.filename);
+    if (localName(el.name) === 'mesh' && el.attrs.filename && MESH_EXTENSIONS.includes(extensionOf(meshPath(el.attrs.filename)))) out.add(el.attrs.filename);
     for (const c of el.children) walk(c);
   };
   if (root) walk(root);
   return [...out];
 }
 
-/** The path inside the package: `package://pkg/meshes/a.stl` → `meshes/a.stl`; a plain or `file://` path as it is, without a leading slash. */
+/**
+ * The path inside the package: `package://pkg/meshes/a.stl` → `meshes/a.stl`;
+ * a plain or `file://` path as it is, without a root or a drive to start
+ * from. The caller looks for the path in the folders around the URDF, so it
+ * must not lead out of them: every `..` is worked out here, and a plain path
+ * loses the ones that would climb above where it starts. Empty for a
+ * reference that is refused: a package path that climbs out of its package,
+ * or an address that is not a file (`http://…`).
+ */
 export function meshPath(filename: string): string {
-  const slashes = filename.replace(/\\/g, '/');
-  const scheme = /^(package|model):\/\/[^/]+\/(.*)$/.exec(slashes);
-  if (scheme) return scheme[2];
-  return slashes.replace(/^file:\/\//, '').replace(/^\/+/, '');
+  const slashes = filename.trim().replace(/\\/g, '/');
+  const scheme = /^(package|model):\/\/[^/]+\/(.*)$/i.exec(slashes);
+  if (!scheme && /^(?!file:)[a-z][a-z0-9+.-]*:\/\//i.test(slashes)) return '';
+  const path = (scheme ? scheme[2] : slashes.replace(/^file:\/\//i, '')).replace(/^\/+/, '').replace(/^[a-z]:\//i, '');
+  const parts: string[] = [];
+  for (const part of path.split('/')) {
+    if (part === '' || part === '.') continue;
+    if (part !== '..') parts.push(part);
+    else if (parts.length) parts.pop();
+    else if (scheme) return '';
+  }
+  return parts.join('/');
 }
 
 const extensionOf = (name: string): string => /\.([^./\\]+)$/.exec(name)?.[1].toLowerCase() ?? '';
@@ -167,8 +190,9 @@ function findMesh(companions: Companion[], filename: string): Companion | undefi
 
 /** Adds a mesh to the builder, each vertex carried through `m`; a mirroring transform has the triangles turned round to keep them facing out. */
 function addMesh(builder: MeshBuilder, mesh: MeshData, m: Mat): void {
-  const det = m[0] * (m[4] * m[8] - m[5] * m[7]) - m[3] * (m[1] * m[8] - m[2] * m[7]) + m[6] * (m[1] * m[5] - m[2] * m[4]);
-  const index = new Uint32Array(mesh.positions.length / 3);
+  const det = determinant(m);
+  // Signed: a vertex that is not finite has the index -1, which drops the triangles that use it.
+  const index = new Int32Array(mesh.positions.length / 3);
   for (let i = 0; i < index.length; i++) {
     const p = apply(m, [mesh.positions[3 * i], mesh.positions[3 * i + 1], mesh.positions[3 * i + 2]]);
     index[i] = builder.vertex(p[0], p[1], p[2]);
@@ -259,10 +283,15 @@ function shapeOf(link: Link, companions: Companion[], warnings: string[], missin
         color ??= s.color;
         continue;
       }
+      const inside = meshPath(g.mesh);
+      if (!inside) {
+        warnings.push(`"${link.name}" is drawn with "${g.mesh}", which is not a file in the robot's package; it was left out.`);
+        continue;
+      }
       const file = findMesh(companions, g.mesh);
-      const name = meshPath(g.mesh).split('/').pop() ?? g.mesh;
+      const name = inside.split('/').pop() ?? g.mesh;
       if (!file) {
-        if (IMPORT_EXTENSIONS.includes(extensionOf(name))) missing.add(g.mesh);
+        if (MESH_EXTENSIONS.includes(extensionOf(name))) missing.add(g.mesh);
         else warnings.push(`"${link.name}" is drawn with "${name}", a kind of mesh file that cannot be read.`);
         continue;
       }
@@ -374,9 +403,12 @@ function readSensor(element: XmlElement, host: SceneNode, pose: Mat): RobotSenso
     const range = childOf(lidar, 'range');
     const min = num(horizontal && childOf(horizontal, 'min_angle')?.text);
     const max = num(horizontal && childOf(horizontal, 'max_angle')?.text);
+    const samples = num(horizontal && childOf(horizontal, 'samples')?.text);
+    // A full circle is written one step short of where it began, so that its first and last rays are not the same ray.
+    const whole = min !== undefined && max !== undefined && samples !== undefined && samples > 1 && Math.abs(((max - min) * samples) / (samples - 1) - 2 * Math.PI) < 1e-4;
     sensor.lidar = {
-      samples: num(horizontal && childOf(horizontal, 'samples')?.text) ?? sensor.lidar.samples,
-      hfov: min !== undefined && max !== undefined ? Number(((max - min) * DEG).toFixed(1)) : sensor.lidar.hfov,
+      samples: samples ?? sensor.lidar.samples,
+      hfov: whole ? 360 : min !== undefined && max !== undefined ? Number(((max - min) * DEG).toFixed(1)) : sensor.lidar.hfov,
       min: range && num(childOf(range, 'min')?.text) !== undefined ? num(childOf(range, 'min')?.text)! * MM : sensor.lidar.min,
       max: range && num(childOf(range, 'max')?.text) !== undefined ? num(childOf(range, 'max')?.text)! * MM : sensor.lidar.max,
     };
@@ -418,6 +450,10 @@ function readDrive(plugin: XmlElement): { kind: DriveKind; roles: [DriveRole, st
  * to show the user when the file is not a URDF.
  */
 export function parseUrdf(bytes: Uint8Array, companions: Companion[] = []): ImportedRobot {
+  return guarded('URDF', () => readUrdf(bytes, companions));
+}
+
+function readUrdf(bytes: Uint8Array, companions: Companion[]): ImportedRobot {
   const root = xmlTree(bytes);
   if (!root || localName(root.name) !== 'robot') throw new Error('This is not a URDF file: it does not hold a <robot>.');
   if (Object.keys(root.attrs).some((a) => a.startsWith('xmlns:xacro')) || root.children.some((c) => c.name.startsWith('xacro:'))) {
@@ -432,6 +468,13 @@ export function parseUrdf(bytes: Uint8Array, companions: Companion[] = []): Impo
     const color = hexOf(childOf(m, 'color')?.attrs.rgba);
     if (m.attrs.name && color) materials.set(m.attrs.name, color);
   }
+  // A visual may define a material where it uses it; other links then know it by its name too.
+  for (const l of childrenOf(root, 'link'))
+    for (const v of childrenOf(l, 'visual'))
+      for (const m of childrenOf(v, 'material')) {
+        const color = hexOf(childOf(m, 'color')?.attrs.rgba);
+        if (m.attrs.name && color && !materials.has(m.attrs.name)) materials.set(m.attrs.name, color);
+      }
   const links = new Map<string, Link>();
   for (const l of childrenOf(root, 'link')) {
     const name = l.attrs.name;
@@ -509,6 +552,12 @@ export function parseUrdf(bytes: Uint8Array, companions: Companion[] = []): Impo
       const placed = multiply(designPose(name), shape.pose);
       node = { ...common, type: 'shape', shape: shape.shape, params: defaultParams(shape.shape), pos: tidyVec(translationOf(placed)), rot: eulerOf(rotationOf(placed)), size: tidyVec(shape.size) };
     } else {
+      try {
+        checkedMesh(shape.mesh);
+      } catch {
+        warnings.push(`"${name}" has a mesh that could not be read and was left out.`);
+        continue;
+      }
       const { size, center } = centerMesh(shape.mesh);
       if (!size.every((v) => v > 0)) {
         warnings.push(`"${name}" is flat or empty and was left out.`);

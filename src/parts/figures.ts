@@ -1,5 +1,6 @@
-// The figures a part works out about itself, kept per node so the inspector
+// The figures a part works out about itself, kept per part so the inspector
 // (warnings), the transform box (dimensions) and the fields share one build.
+import { partKey } from '../model/geomKey';
 import type { PartNode } from '../model/types';
 import { getGenerator } from './generators';
 import { sanitizeParams } from './generators/types';
@@ -10,12 +11,15 @@ type Figures = Pick<BuildResult, 'info' | 'warnings'>;
 
 const NONE: Figures = { info: [], warnings: [] };
 
-// Nodes are immutable: an edit makes a new object, so the node itself is the cache key.
-const cache = new WeakMap<PartNode, Figures>();
+// By generator and parameters: a part being moved is a new node at every step of the drag, the same part throughout.
+const cache = new Map<string, Figures>();
+/** A slider being dragged makes a new set of parameters at every step; only the latest are worth keeping. */
+const KEEP = 200;
 
 /** Derived dimensions and warnings of a part; empty when it cannot be built. Generators are pure functions, so this is worked out here, the mesh in the worker. */
 export function partFigures(node: PartNode): Figures {
-  let figures = cache.get(node);
+  const key = partKey(node);
+  let figures = cache.get(key);
   if (!figures) {
     try {
       const def = getGenerator(node.part);
@@ -24,7 +28,8 @@ export function partFigures(node: PartNode): Figures {
     } catch {
       figures = NONE;
     }
-    cache.set(node, figures);
+    cache.set(key, figures);
+    if (cache.size > KEEP) cache.delete(cache.keys().next().value as string);
   }
   return figures;
 }

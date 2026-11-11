@@ -2,7 +2,7 @@
 // how each is built. Only the *types* of the Manifold kernel are imported
 // here, so the UI can use this file without pulling the WASM kernel in; the
 // worker passes the loaded kernel to `buildShape`.
-import type { Manifold, ManifoldToplevel } from 'manifold-3d';
+import type { Manifold, ManifoldToplevel, Mesh } from 'manifold-3d';
 import { builtSize } from '../model/math';
 import type { Polygon, ShapeKind, ShapeNode, Vec2, Vec3 } from '../model/types';
 
@@ -335,7 +335,13 @@ function taper({ k, keep }: BuildContext, sides: number, top: number): Manifold 
 /** Solid from a closed mesh with outward-facing (CCW) triangles. */
 function solid({ k, keep }: BuildContext, positions: Float32Array, triangles: number[]): Manifold {
   const mesh = new k.Mesh({ numProp: 3, vertProperties: positions, triVerts: Uint32Array.from(triangles) });
-  return keep(new k.Manifold(mesh));
+  // Through the class behind `k.Manifold`: the wrapper throws on a mesh that is not manifold without
+  // freeing the solid it made. Made this way it is kept, so it is freed with the rest.
+  const Raw = Object.getPrototypeOf(k.Manifold.prototype).constructor as new (mesh: Mesh) => Manifold;
+  const made = keep(new Raw(mesh));
+  const status = made.status();
+  if (status !== 'NoError') throw new Error(`Geometry kernel error: ${status}`);
+  return made;
 }
 
 /**
@@ -459,6 +465,8 @@ const BUILDERS: Record<ShapeKind, (c: BuildContext) => Manifold> = {
   torus(c) {
     const { size, p } = c;
     const r = size[2] / 2;
+    // An oval ring is built as one, so that its width is the same all the way round.
+    if (Number.isFinite(size[0]) && Number.isFinite(size[1]) && Math.abs(size[0] - size[1]) > 1e-9) return ovalTorus(c);
     // Radial half-width of the ring's section: the ring width when one is set, else round, unless
     // the hole would close up - then it is squeezed so that the hole just does.
     const a = p.ring > 0 ? Math.min(p.ring / 2, size[0] / 4) : Math.min(r, size[0] / 4);
@@ -490,6 +498,79 @@ const BUILDERS: Record<ShapeKind, (c: BuildContext) => Manifold> = {
   },
 };
 
+/**
+ * A torus whose outline is an ellipse: the section (an ellipse itself, the ring
+ * width across and the height tall) is carried round just inside the outline,
+ * square to it, so the ring is as wide at the ends of the oval as along its
+ * sides. Stretching a round torus instead would thin the ring where the oval
+ * is narrow.
+ *
+ * Each point of the section runs round on a curve a fixed distance inside the
+ * outline. Where the oval turns tighter than that distance, at the ends of a
+ * long one, such a curve crosses itself; the part past the crossing lies
+ * inside the ring and is left out, so the curve comes to a corner on the long
+ * axis instead. The points it would have had there all become that corner:
+ * the hole ends in a point at each end and the ring keeps its width
+ * everywhere else.
+ */
+function ovalTorus(c: BuildContext): Manifold {
+  const { size, p } = c;
+  const r = size[2] / 2;
+  // Worked out with the long axis along X, and turned a quarter afterwards when it is Y.
+  const turned = size[1] > size[0];
+  const [A, B] = turned ? [size[1] / 2, size[0] / 2] : [size[0] / 2, size[1] / 2];
+  // Half the ring's width: what is set, else round, and never more than closes the hole across the narrow way.
+  const a = Math.min(p.ring > 0 ? p.ring / 2 : r, B / 2);
+  const rings = p.sides;
+  const n = Math.max(8, Math.round(p.sides / 8) * 4);
+  const positions: number[] = [];
+  const put = (x: number, y: number, z: number): number => {
+    positions.push(turned ? -y : x, turned ? x : y, z);
+    return positions.length / 3 - 1;
+  };
+  // The vertex of ring i at place j of the section; the corners are made once for each end and place.
+  const ids: number[][] = [];
+  const corners = new Map<string, number>();
+  for (let i = 0; i < rings; i++) {
+    const turn = (i * TAU) / rings;
+    const [cos, sin] = [Math.cos(turn), Math.sin(turn)];
+    // The length of the outline's normal (B cos, A sin) there.
+    const length = Math.hypot(B * cos, A * sin);
+    const row: number[] = [];
+    for (let j = 0; j < n; j++) {
+      const t = (j * TAU) / n;
+      const inward = a * (1 - Math.cos(t));
+      const z = r * Math.sin(t);
+      // Past the crossing: the curve this far inside the outline has gone over the long axis.
+      if (length * B <= inward * A) {
+        const end = cos >= 0 ? 1 : -1;
+        const key = `${end}:${j}`;
+        let corner = corners.get(key);
+        if (corner === undefined) {
+          const sin2 = Math.min(1, Math.max(0, ((inward * A) / B) ** 2 - B * B) / (A * A - B * B));
+          corner = put((end * Math.sqrt(1 - sin2) * (A * A - B * B)) / A, 0, z);
+          corners.set(key, corner);
+        }
+        row.push(corner);
+      } else {
+        row.push(put(A * cos - ((B * cos) / length) * inward, B * sin - ((A * sin) / length) * inward, z));
+      }
+    }
+    ids.push(row);
+  }
+  const at = (i: number, j: number) => ids[i % rings][j % n];
+  const triangles: number[] = [];
+  for (let i = 0; i < rings; i++) {
+    for (let j = 0; j < n; j++) {
+      const [v0, v1, v2, v3] = [at(i, j), at(i + 1, j), at(i + 1, j + 1), at(i, j + 1)];
+      // Beside a corner a quad has shrunk to a triangle, or to nothing.
+      if (v0 !== v1 && v1 !== v2 && v0 !== v2) triangles.push(v0, v1, v2);
+      if (v0 !== v2 && v2 !== v3 && v0 !== v3) triangles.push(v0, v2, v3);
+    }
+  }
+  return solid(c, Float32Array.from(positions), triangles);
+}
+
 /** Stretches and moves a solid so that its bounding box is exactly `size`, centered on the origin. */
 function fit(m: Manifold, size: Vec3, keep: Keep): Manifold {
   if (m.isEmpty()) throw new Error('This shape is empty.');
@@ -500,11 +581,6 @@ function fit(m: Manifold, size: Vec3, keep: Keep): Manifold {
   return keep(m.transform([s[0], 0, 0, 0, 0, s[1], 0, 0, 0, 0, s[2], 0, t[0], t[1], t[2], 1]));
 }
 
-/**
- * Builds a shape node at its built size (see `builtSize`), centered on the
- * origin. Everything made along the way, the result included, is handed to
- * `keep`; the caller deletes what it does not need.
- */
 /**
  * Shapes whose side count is only there to approximate a curve. A prism or a
  * pyramid is its number of sides; these are round, and a cylinder with fewer
@@ -519,6 +595,11 @@ export function refineParams(kind: ShapeKind, p: Record<string, number>): Record
   return { ...p, sides: Math.min(256, p.sides * 2) };
 }
 
+/**
+ * Builds a shape node at its built size (see `builtSize`), centered on the
+ * origin. Everything made along the way, the result included, is handed to
+ * `keep`; the caller deletes what it does not need.
+ */
 export function buildShape(k: ManifoldToplevel, node: ShapeNode, keep: Keep, fine = false): Manifold {
   const size = builtSize(node);
   const p = fine ? refineParams(node.shape, clampParams(node)) : clampParams(node);

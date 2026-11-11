@@ -26,13 +26,16 @@ export interface MeshWithUV extends MeshData {
 
 /**
  * Where the faces of a group came from: for each triangle, an index into
- * `sources`, the path of ids (from the group's children down) of the part
- * that made it. `NO_SOURCE` for a face of unknown origin. A triangle of a
- * RenderMesh and the indexed mesh it was made from share a number.
+ * `sources`, the path (from the group's children down) to the part that made
+ * it. Each step is the part's place among its parent's children, pictures not
+ * counted, rather than its id: groups of the same geometry share one build,
+ * and the parts of a copy have ids of their own. `NO_SOURCE` for a face of
+ * unknown origin. A triangle of a RenderMesh and the indexed mesh it was made
+ * from share a number.
  */
 export interface Faces {
   source: Uint16Array;
-  sources: string[][];
+  sources: number[][];
 }
 
 export const NO_SOURCE = 0xffff;

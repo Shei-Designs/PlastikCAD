@@ -1,10 +1,12 @@
 import { strFromU8, unzipSync } from 'fflate';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { APP_NAME } from '../appInfo';
 import type { MeshData } from '../geometry/mesh';
 import type { Polygon } from '../model/types';
 import { exportMesh, exportOutline, FORMATS } from './export';
+import { importFile } from './import';
 import { writeObj } from './obj';
+import { zipTime } from './format';
 import { write3mf } from './threemf';
 
 const text = (b: Uint8Array) => new TextDecoder().decode(b);
@@ -45,6 +47,28 @@ const SIDES = 96;
 const ring = ringMesh(10, 3, 5, SIDES);
 const ringTriangles = SIDES * 8;
 const ringVolume = (SIDES / 2) * Math.sin((Math.PI * 2) / SIDES) * (10 * 10 - 3 * 3) * 5;
+
+// A mesh big enough that its text runs to megabytes.
+const BIG_SIDES = 8000;
+const big = ringMesh(10, 3, 5, BIG_SIDES);
+
+/** Runs `write` and returns what it wrote, with the length of the longest string it turned into bytes in one go. */
+function longestString<T>(write: () => T): { written: T; longest: number } {
+  const encode = vi.spyOn(TextEncoder.prototype, 'encode');
+  try {
+    const written = write();
+    return { written, longest: Math.max(0, ...encode.mock.calls.map(([s]) => s?.length ?? 0)) };
+  } finally {
+    encode.mockRestore();
+  }
+}
+
+/** The one mesh of a file read back in. */
+function readBack(name: string, bytes: Uint8Array): MeshData {
+  const model = importFile(name, bytes);
+  if (model.kind !== 'model' || model.parts.length !== 1) throw new Error('expected one part');
+  return model.parts[0].mesh;
+}
 
 const circle = (r: number, n: number): Polygon =>
   Array.from({ length: n }, (_, i) => [r * Math.cos((Math.PI * 2 * i) / n), r * Math.sin((Math.PI * 2 * i) / n)]);
@@ -108,6 +132,26 @@ describe('STL', () => {
   });
 });
 
+describe('exporting on a device whose clock was never set', () => {
+  it('still packs a 3MF, stamped with the earliest date a zip can hold', () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date(1970, 0, 21));
+      expect(new Date(zipTime()).getFullYear()).toBe(1980);
+      const files = unzipSync(write3mf([{ name: 'Ring', parts: [{ color: '#d8605a', mesh: ring }] }], 'ring'));
+      expect(Object.keys(files)).toContain('3D/3dmodel.model');
+      vi.setSystemTime(new Date(2150, 0, 1));
+      expect(new Date(zipTime()).getFullYear()).toBe(2099);
+      expect(() => write3mf([{ name: 'Ring', parts: [{ color: '#d8605a', mesh: ring }] }], 'ring')).not.toThrow();
+      // A clock that is right is left alone.
+      vi.setSystemTime(new Date(2026, 10, 10, 12));
+      expect(zipTime()).toBe(new Date(2026, 10, 10, 12).getTime());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('3MF', () => {
   it('is a zip with the three core parts', () => {
     const files = unzipSync(write3mf([{ name: 'Ring', parts: [{ color: '#d8605a', mesh: ring }] }], 'ring <1> & "co"'));
@@ -146,6 +190,24 @@ describe('3MF', () => {
     // A color off the palette is named by its value.
     expect(strFromU8(unzipSync(write3mf([{ name: 'X', parts: [{ color: '#123456', mesh: tetra }] }], 'x'))['3D/3dmodel.model'])).toContain('<base name="#123456" displaycolor="#123456FF"/>');
   });
+
+  it('writes a large model a piece at a time, never as one string of all of it', () => {
+    const { written, longest } = longestString(() => write3mf([{ name: 'Big', parts: [{ color: '#d8605a', mesh: big }] }], 'big'));
+    expect(longest).toBeLessThan(1 << 20);
+    // Nothing is lost or doubled where one piece ends and the next begins.
+    const files = unzipSync(written);
+    expect(Object.keys(files)).toEqual(['[Content_Types].xml', '_rels/.rels', '3D/3dmodel.model']);
+    const xml = strFromU8(files['3D/3dmodel.model']);
+    expect(xml.length).toBeGreaterThan(4 << 20);
+    expect(xml.startsWith('<?xml version="1.0" encoding="UTF-8"?>\n<model unit="millimeter"')).toBe(true);
+    expect(xml.endsWith('  <build>\n    <item objectid="2"/>\n  </build>\n</model>\n')).toBe(true);
+    const lines = xml.split('\n');
+    expect(lines.filter((l) => /^ {10}<vertex x="-?[\d.]+" y="-?[\d.]+" z="-?[\d.]+"\/>$/.test(l)).length).toBe(big.positions.length / 3);
+    expect(lines.filter((l) => /^ {10}<triangle v1="\d+" v2="\d+" v3="\d+"\/>$/.test(l)).length).toBe(BIG_SIDES * 8);
+    const back = readBack('big.3mf', written);
+    expect(back.triangles.length).toBe(big.triangles.length);
+    expect(Array.from(back.triangles.subarray(-3))).toEqual(Array.from(big.triangles.subarray(-3)));
+  });
 });
 
 describe('OBJ', () => {
@@ -174,9 +236,23 @@ describe('OBJ', () => {
     expect(lines).toContain('o my_part');
     expect(lines.filter((l) => l.startsWith('v '))).toEqual(['v 0 0 0', 'v 10 0 0', 'v 0 10 0', 'v 0 0 10']);
     expect(lines.filter((l) => l.startsWith('f '))).toEqual(['f 1 3 2', 'f 1 2 4', 'f 2 3 4', 'f 1 4 3']);
-    const big = text(exportMesh('obj', ring, 'ring')).split('\n');
-    expect(big.filter((l) => l.startsWith('v ')).length).toBe(ring.positions.length / 3);
-    expect(big.filter((l) => l.startsWith('f ')).length).toBe(ringTriangles);
+    const more = text(exportMesh('obj', ring, 'ring')).split('\n');
+    expect(more.filter((l) => l.startsWith('v ')).length).toBe(ring.positions.length / 3);
+    expect(more.filter((l) => l.startsWith('f ')).length).toBe(ringTriangles);
+  });
+
+  it('writes a large model a piece at a time, never as one string of all of it', () => {
+    const { written, longest } = longestString(() => writeObj([{ name: 'Big', parts: [{ color: '#d8605a', mesh: big }] }], 'big'));
+    expect(longest).toBeLessThan(1 << 20);
+    // Nothing is lost or doubled where one piece ends and the next begins.
+    const lines = text(written.obj).split('\n');
+    expect(written.obj.length).toBeGreaterThan(1 << 20);
+    expect(lines.slice(0, 4)).toEqual([lines[0], 'mtllib big.mtl', 'o Big', 'usemtl Red']);
+    expect(lines.length).toBe(4 + big.positions.length / 3 + BIG_SIDES * 8 + 1);
+    expect(lines.slice(4).every((l, i) => (i < big.positions.length / 3 ? /^v -?[\d.]+ -?[\d.]+ -?[\d.]+$/ : i < lines.length - 5 ? /^f \d+ \d+ \d+$/ : /^$/).test(l))).toBe(true);
+    const back = readBack('big.obj', written.obj);
+    expect(back.triangles.length).toBe(big.triangles.length);
+    expect(Array.from(back.triangles.subarray(-3))).toEqual(Array.from(big.triangles.subarray(-3)));
   });
 });
 

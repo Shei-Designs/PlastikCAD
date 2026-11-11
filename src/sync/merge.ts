@@ -7,7 +7,7 @@ import type { Doc, SceneNode } from '../model/types';
 
 export interface Merged {
   doc: Doc;
-  /** Objects changed differently on both sides; the local version was kept for each. */
+  /** Objects changed differently on both sides, the robot counting as one; the local version was kept for each. */
   conflicts: number;
 }
 
@@ -72,10 +72,14 @@ export function mergeDocs(base: Doc | null, local: Doc, remote: Doc): Merged {
   if (local.name !== remote.name && base && local.name === base.name) name = remote.name;
   // Asset keys are content hashes, so the same key is the same data on both sides.
   const assets = { ...remote.assets, ...local.assets };
-  // The robot is one thing: the side that changed it has it, the local side when both did.
-  const robotText = (d: Doc) => (d.robot ? JSON.stringify(canonicalRobot(d.robot)) : '');
+  // The robot is one thing: the side that changed it has it. Changed differently on both, it is a conflict like an
+  // object's, and the local one is kept.
+  const robotText = (d: Doc | null) => (d?.robot ? JSON.stringify(canonicalRobot(d.robot)) : '');
   let robot = local.robot;
-  if (robotText(local) !== robotText(remote) && base && robotText(local) === robotText(base)) robot = remote.robot;
+  if (robotText(local) !== robotText(remote)) {
+    if (base && robotText(local) === robotText(base)) robot = remote.robot;
+    else if (!base || robotText(remote) !== robotText(base)) conflicts++;
+  }
   const { robot: _own, ...rest } = local;
   return { doc: { ...rest, name, scene, assets, ...(robot ? { robot } : {}) }, conflicts };
 }

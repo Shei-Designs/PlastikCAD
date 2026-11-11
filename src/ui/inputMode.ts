@@ -20,7 +20,6 @@ const listeners = new Set<(state: InputState) => void>();
 function take(next: InputState): void {
   if (state && state.hardwareKeyboard === next.hardwareKeyboard && state.keypadVisible === next.keypadVisible && state.keypadHeight === next.keypadHeight) return;
   state = next;
-  document.documentElement.style.setProperty('--keypad', next.keypadVisible ? `${next.keypadHeight}px` : '0px');
   for (const l of listeners) l(next);
 }
 

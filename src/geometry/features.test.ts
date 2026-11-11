@@ -47,6 +47,28 @@ describe('indexFeatures', () => {
     expect(lengths).toEqual([5, 5, 5, 5, 10, 10, 10, 10, 20, 20, 20, 20]);
   });
 
+  it('centres an open mesh on its box: what its triangles enclose depends on where it lies', async () => {
+    // A 10 mm box far from the origin, as loose triangles; then the same without its top.
+    const positions = (await build(geomKey(shape('box')), shape('box'))).render.positions.map((v) => v * 10 + 105);
+    const whole = indexFeatures(positions);
+    near(whole.mass!, [105, 105, 105]);
+    near(whole.center, [105, 105, 105]);
+    const topless: number[] = [];
+    for (let t = 0; t < positions.length; t += 9) {
+      const tri = Array.from(positions.subarray(t, t + 9));
+      if (!(tri[2] > 109.9 && tri[5] > 109.9 && tri[8] > 109.9)) topless.push(...tri);
+    }
+    expect(topless.length).toBe(positions.length - 18);
+    const open = indexFeatures(Float32Array.from(topless));
+    expect(open.mass).toBeNull();
+    near(open.box, [105, 105, 105]);
+    near(open.center, [105, 105, 105]);
+    // Two boxes that meet along an edge are closed all the same, four triangles to that edge or not.
+    const pair = indexFeatures(Float32Array.from([...positions, ...positions.map((v, i) => (i % 3 === 2 ? v : v + 10))]));
+    near(pair.mass!, [110, 110, 105]);
+    near(pair.center, [110, 110, 105]);
+  });
+
   it('reads a cylinder as two circles, two flat caps and one curved surface', async () => {
     const index = await indexOf(shape('cylinder', { size: [10, 10, 20] }));
     expect(index.circles).toHaveLength(2);

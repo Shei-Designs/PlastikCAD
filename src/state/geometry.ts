@@ -12,6 +12,8 @@ import type { BuildResult } from '../worker/protocol';
 export type GeomEntry = { state: 'pending' } | { state: 'ready'; result: BuildResult } | { state: 'error'; message: string };
 
 const KEEP = 400;
+/** How many outlines of lettering that no node shows any more the worker may hold on to. */
+const SPARE_LETTERING = 32;
 
 /** The lettering in a scene, at any depth. */
 function textNodes(nodes: Scene, out: TextNode[] = []): TextNode[] {
@@ -33,6 +35,8 @@ class GeometryStore {
   /** Nodes with a build under way, by id, and the key of it; a newer key for the same node waits its turn. */
   private inFlight = new Map<string, string>();
   private deferred = new Map<string, string>();
+  /** Whether outlines of lettering have gone to the worker since the ones out of use were last let go. */
+  private lettered = false;
 
   /** The worker is started on first use. */
   worker(): GeometryClient {
@@ -86,6 +90,11 @@ class GeometryStore {
         continue;
       }
       this.start(node.id, key, node);
+    }
+    if (this.lettered) {
+      // Every change to a label's words leaves its outlines with the worker; the ones no longer shown are let go.
+      this.lettered = false;
+      this.client?.forgetLettering(new Set(textNodes(nodes).map(textAssetKey)), SPARE_LETTERING);
     }
     if (this.entries.size > KEEP) {
       const wanted = new Set(nodes.map(geomKey));
@@ -151,7 +160,10 @@ class GeometryStore {
       const outline = outlineOf(text);
       if (outline) outlines[textAssetKey(text)] = { kind: 'outline', shapes: outline.shapes };
     }
-    if (ready) this.worker().syncAssets(outlines);
+    if (ready) {
+      this.worker().syncAssets(outlines);
+      this.lettered = true;
+    }
     return ready;
   }
 

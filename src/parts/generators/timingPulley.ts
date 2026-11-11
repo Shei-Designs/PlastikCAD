@@ -4,7 +4,7 @@
 // tolerances. The fit can be tuned with the tooth clearance parameter.
 import { addHubAndBore, boreGroup, boreRadius, boreShape, hubGroup } from '../features';
 import type { BoreDefaults, HubDefaults } from '../features';
-import { arc, arcSegments, dedupe, deg, polar, rotatePoint, TAU } from '../math2d';
+import { arc, arcN, arcSegments, dedupe, deg, polar, rotatePoint, TAU } from '../math2d';
 import { extrude, revolve, union } from '../types';
 import type { Polygon, Quality, Solid, Vec2 } from '../types';
 import { mm, num, str } from './types';
@@ -66,12 +66,6 @@ const IMPERIAL: Record<string, BeltProfile> = {
 const BELT_MARGIN = 1;
 /** Small step left between the OD and the start of the flange chamfer, so the two surfaces never coincide. */
 const FLANGE_STEP = 0.1;
-
-/** Segment count for a small arc, bounded by chord error rather than by angle alone. */
-function arcN(q: Quality, r: number, sweep: number, min = 2): number {
-  const step = 2 * Math.acos(Math.max(0, 1 - 1 / (q.circle * Math.max(r, 1e-9))));
-  return Math.max(min, Math.min(arcSegments(q, sweep), Math.ceil(Math.abs(sweep) / step)));
-}
 
 /**
  * Half of one groove, for a groove centered on the +X axis: points from the

@@ -12,23 +12,22 @@ import type { BridgeTopic } from '../io/rosPackage';
 import type { GazeboSensor } from '../io/gazebo';
 import { writeObj } from '../io/obj';
 import { bridgeYaml, cmakeLists, controllersYaml, displayLaunch, gazeboLaunch, packageXml, readme, rvizConfig, SHARE_PLACEHOLDER } from '../io/rosPackage';
-import { writeMjcf } from '../io/mjcf';
+import { drivable, MJCF_NAMES, writeMjcf } from '../io/mjcf';
 import type { MjcfBody, MjcfModel } from '../io/mjcf';
-import { modelConfig, writeSdf } from '../io/sdf';
+import { modelConfig, SDF_NAMES, writeSdf } from '../io/sdf';
 import type { SdfJoint, SdfLink } from '../io/sdf';
 import { writeStl } from '../io/stl';
-import { writeUsda } from '../io/usd';
+import { robotPrim, USD_NAMES, writeUsda } from '../io/usd';
 import type { UsdCollision, UsdJoint, UsdModel } from '../io/usd';
-import { uniqueNames, urdfName, writeUrdf } from '../io/urdf';
-import type { UrdfJoint, UrdfLink, UrdfShape } from '../io/urdf';
+import { NameSet, uniqueNames, URDF_NAMES, urdfName, writeUrdf } from '../io/urdf';
+import type { Naming, UrdfJoint, UrdfLink, UrdfShape } from '../io/urdf';
 import type { LinkGeometry } from '../worker/protocol';
 import { massOf, tensorOf, toSI } from './inertia';
 import type { Tensor } from './inertia';
-import { jointInDesign, linkNodes, linkOf, robotForward, robotOf, sensorInDesign, spanningTree } from './model';
+import { followFault, jointInDesign, linkNodes, linkOf, robotForward, robotOf, sensorInDesign, spanningTree } from './model';
 import { motorOf } from './motors';
 import { drivePy, envPy, trainPy } from '../io/scripts';
 import { DRIVE_KINDS, driveJoints, withRole } from './types';
-import { usdName } from '../io/usd';
 import { APP_NAME } from '../appInfo';
 import type { DriveKind, DriveRole, Robot, RobotJoint, World } from './types';
 export interface PackageFile {
@@ -116,6 +115,9 @@ interface Prepared {
   files: PackageFile[];
   warnings: string[];
   order: string[];
+  /** The names taken in the file so far, and how the writer keys them; a frame added later is drawn against them. */
+  names: NameSet;
+  naming: Naming;
   linkNames: Map<string, string>;
   jointNames: Map<RobotJoint, string>;
   frames: Map<string, Vec3>;
@@ -130,16 +132,18 @@ interface Prepared {
   controlled: string[];
 }
 
-function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, meshUri: (path: string) => string): Prepared {
+function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, meshUri: (path: string) => string, naming: Naming): Prepared {
   const warnings: string[] = [];
   const nodes = linkNodes(doc.scene);
   const tree = spanningTree(robot, nodes.map((n) => n.id));
   if (tree.order.length === 0) throw new Error('The robot has no base link.');
   const pkg = packageName(doc.name);
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
-  const linkNames = uniqueNames(tree.order, (id) => urdfName(linkOf(robot, id).name ?? nodeById.get(id)!.name));
+  // Every name is drawn from one set, seeded with the names the writer uses itself: links first, then joints, then sensors.
+  const names = new NameSet(naming.reserved);
+  const linkNames = uniqueNames(tree.order, (id) => urdfName(linkOf(robot, id).name ?? nodeById.get(id)!.name), names, naming.link);
   const allJoints = [...tree.order.slice(1).map((id) => tree.parentJoint.get(id)!), ...tree.loops];
-  const jointNames = uniqueNames(allJoints, (j) => urdfName(j.name, 'joint'));
+  const jointNames = uniqueNames(allJoints, (j) => urdfName(j.name, 'joint'), names, naming.joint);
   // Each joint as it sits in the design, and where each link's frame is there (mm).
   const placedJoints = new Map(allJoints.map((j) => [j.id, jointInDesign(j, nodeById.get(j.child)!)]));
   const frames = new Map<string, Vec3>();
@@ -198,8 +202,10 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
     const parentFrame = frames.get(j.parent)!;
     const placed = placedJoints.get(j.id)!;
     const scale = j.type === 'prismatic' ? M : RAD;
-    const leader = j.mimic && allJoints.find((o) => o.id === j.mimic!.joint);
-    const mimic = leader && jointNames.has(leader) ? { joint: jointNames.get(leader)!, multiplier: j.mimic!.multiplier, offset: j.mimic!.offset * scale } : undefined;
+    // A follower is written only against a leader the file holds and that moves; the checks stop anything else.
+    const leader = j.mimic && j.type !== 'fixed' ? allJoints.find((o) => o.id === j.mimic!.joint) : undefined;
+    // The multiplier is follower units per leader unit: mm per degree, for a rack on a pinion, becomes meters per radian.
+    const mimic = leader && !followFault(robot, tree, j, leader) ? { joint: jointNames.get(leader)!, multiplier: (j.mimic!.multiplier * scale) / (leader.type === 'prismatic' ? M : RAD), offset: j.mimic!.offset * scale } : undefined;
     return {
       name: jointNames.get(j)!,
       type: j.type,
@@ -217,10 +223,9 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
   const loopJoints = tree.loops.map(jointOf);
 
   // Sensors: each in its link, placed from the link's frame, its turn as the design has it (the link frames are parallel to the design's axes).
-  const sensorNames = uniqueNames(robot.sensors, (x) => urdfName(x.name, 'sensor'));
-  const sensors: Prepared['sensors'] = robot.sensors
-    .filter((x) => nodeById.has(x.link) && frames.has(x.link))
-    .map((x) => {
+  const placedSensors = robot.sensors.filter((x) => nodeById.has(x.link) && frames.has(x.link));
+  const sensorNames = uniqueNames(placedSensors, (x) => urdfName(x.name, 'sensor'), names, (name, x) => naming.sensor(name, x.kind, Math.min(x.lidar.samples, MAX_LIDAR_RAYS)));
+  const sensors: Prepared['sensors'] = placedSensors.map((x) => {
       const node = nodeById.get(x.link)!;
       const placed = sensorInDesign(x, node);
       const frame = frames.get(x.link)!;
@@ -229,7 +234,8 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
       return {
         id: x.id,
         name,
-        frame: `${name}_link`,
+        // The link it sits in; a URDF gives it a frame of its own instead.
+        frame: linkNames.get(x.link)!,
         kind: x.kind,
         rate: x.rate,
         camera: { hfov: x.camera.hfov * RAD, width: x.camera.width, height: x.camera.height, near: x.camera.near * M, far: x.camera.far * M },
@@ -242,12 +248,12 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
         touch: (geometry.get(x.link) ? Math.hypot(...boundsSize(geometry.get(x.link)!.bounds)) / 2 : 5) * M,
         collision: `${linkNames.get(x.link)!}_collision`,
       };
-    });
+  });
 
   // The drive: each part's joints by name, the wheels' radius from their boxes, the track and wheelbase from where the joints sit.
   let drive: PreparedDrive | null = null;
-  if (robot.drive) {
-    const def = DRIVE_KINDS.find((k) => k.id === robot.drive!.kind)!;
+  const def = robot.drive && DRIVE_KINDS.find((k) => k.id === robot.drive!.kind);
+  if (def) {
     const named = (role: DriveRole) => withRole(robot.drive, role).map((id) => allJoints.find((j) => j.id === id)).filter((j): j is RobotJoint => Boolean(j));
     const parts = Object.fromEntries(def.roles.map((r) => [r.id, named(r.id)])) as Record<DriveRole, RobotJoint[]>;
     const has = (role: DriveRole, n?: number) => (n === undefined ? parts[role].length > 0 : parts[role].length === n);
@@ -281,12 +287,16 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
           drive.steeringLimit = (Math.min(...[sl, sr].map((j) => Math.min(Math.abs(j.lower), Math.abs(j.upper)))) * Math.PI) / 180;
         }
       }
+    } else {
+      // A drive short of a part is not written; the usual cause is a wheel no joint reaches from the base.
+      const lost = driveJoints(robot.drive).map((id) => robot.joints.find((j) => j.id === id)).filter((j): j is RobotJoint => Boolean(j) && !allJoints.includes(j!));
+      warnings.push(lost.length ? `Drive: ${lost.map((j) => j.name).join(', ')} ${lost.length === 1 ? 'is' : 'are'} not joined to the base, so the drive is left out. Join every wheel to the base.` : 'Drive: a wheel or steering joint is missing, so the drive is left out. Give every part of the drive its joint.');
     }
   }
   const driven = new Set(driveJoints(robot.drive));
   const controlled = robot.control ? tree.order.slice(1).map((id) => tree.parentJoint.get(id)!).filter((j) => j.type !== 'fixed' && !j.mimic && !driven.has(j.id)).map((j) => jointNames.get(j)!) : [];
 
-  return { pkg, robotName: urdfName(doc.name, 'robot'), files, warnings, order: tree.order, linkNames, jointNames, frames, links, treeJoints, loopJoints, sensors, drive, controlled };
+  return { pkg, robotName: urdfName(doc.name, 'robot'), files, warnings, order: tree.order, names, naming, linkNames, jointNames, frames, links, treeJoints, loopJoints, sensors, drive, controlled };
 }
 
 /**
@@ -294,13 +304,12 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
  * `base_footprint`, over the base link, which keeps the design's axes and is turned by `turn`
  * radians about Z in it. Nothing for an arm bolted down, or a robot without wheels to say.
  */
-function footprintOf(p: Prepared, robot: Robot, taken: Iterable<string>): { name: string; base: string; turn: number } | undefined {
+function footprintOf(p: Prepared, robot: Robot): { name: string; joint: string; base: string; turn: number } | undefined {
   if (!p.drive || robot.base === 'fixed') return undefined;
-  const used = new Set(taken);
-  let name = 'base_footprint';
-  for (let n = 2; used.has(name); n++) name = `base_footprint_${n}`;
+  // The frame and the joint that holds the base under it are named clear of everything the robot has.
+  const name = p.names.take('base_footprint', (n) => [...p.naming.link(n), ...p.naming.joint(`${n}_joint`)]);
   const [fx, fy] = p.drive.forward;
-  return { name, base: p.linkNames.get(robot.root!)!, turn: -Math.atan2(fy, fx) || 0 };
+  return { name, joint: `${name}_joint`, base: p.linkNames.get(robot.root!)!, turn: -Math.atan2(fy, fx) || 0 };
 }
 
 /** The prepared drive as the Gazebo plugin wants it. */
@@ -352,34 +361,40 @@ const OPTICAL: Vec3 = [-Math.PI / 2, 0, -Math.PI / 2];
  * `geometry` is what the kernel made of each link, by node id.
  */
 export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot = robotOf(doc)): RobotPackage {
-  const p = prepare(doc, geometry, robot, (path) => `package://${packageName(doc.name)}/${path}`);
+  const p = prepare(doc, geometry, robot, (path) => `package://${packageName(doc.name)}/${path}`, URDF_NAMES);
   const { pkg, files, warnings } = p;
   const fixedToWorld = robot.base === 'fixed' ? p.linkNames.get(robot.root!) : undefined;
+  const base = p.linkNames.get(robot.root!)!;
+  const footprint = footprintOf(p, robot);
   for (const j of p.loopJoints) warnings.push(`"${j.name}" closes a loop and was left out of the URDF (the SDF export keeps it).`);
   const links: UrdfLink[] = p.links.map(({ frame: _f, node: _n, ...l }) => l);
   const joints: UrdfJoint[] = [...p.treeJoints];
   // Each sensor is a frame of its own on a fixed joint; a camera also gets the optical frame ROS expects (Z forward, X right).
   // A touch sensor feels a collision, so it sits on the link that has one; Gazebo must then keep that link
   // as one of its own, since a link folded into its parent across a fixed joint has its collision renamed.
+  // The base under a footprint cannot be kept so: the footprint has no mass, and Gazebo drops a massless link
+  // with all below it unless the base is folded in. There the sensor names the collision as Gazebo renames it.
   for (const s of p.sensors) {
     if (s.kind === 'touch') {
       const link = links.find((l) => l.name === s.link);
-      if (link) link.sensors = [...(link.sensors ?? []), sensorXml({ ...s, frame: s.link })];
+      const folded = footprint && s.link === base ? { collision: `${footprint.name}_fixed_joint_lump__${base}_collision` } : {};
+      if (link) link.sensors = [...(link.sensors ?? []), sensorXml({ ...s, ...folded })];
       const carrier = joints.find((j) => j.child === s.link);
       if (carrier?.type === 'fixed') carrier.preserve = true;
       continue;
     }
-    links.push({ name: s.frame, inertial: null, visual: [], collision: [], sensors: [sensorXml(s)] });
-    joints.push({ name: `${s.name}_joint`, type: 'fixed', parent: s.link, child: s.frame, origin: s.xyz, rpy: s.rpy, axis: [0, 0, 1] });
+    // The frames are named after the sensor, clear of the robot's own links and joints.
+    const frame = p.names.take(`${s.name}_link`, p.naming.link);
+    links.push({ name: frame, inertial: null, visual: [], collision: [], sensors: [sensorXml({ ...s, frame })] });
+    joints.push({ name: p.names.take(`${s.name}_joint`, p.naming.joint), type: 'fixed', parent: s.link, child: frame, origin: s.xyz, rpy: s.rpy, axis: [0, 0, 1] });
     if (s.kind === 'camera' || s.kind === 'depth') {
-      links.push({ name: `${s.name}_optical_frame`, inertial: null, visual: [], collision: [] });
-      joints.push({ name: `${s.name}_optical_joint`, type: 'fixed', parent: s.frame, child: `${s.name}_optical_frame`, origin: [0, 0, 0], rpy: OPTICAL, axis: [0, 0, 1] });
+      const optical = p.names.take(`${s.name}_optical_frame`, p.naming.link);
+      links.push({ name: optical, inertial: null, visual: [], collision: [] });
+      joints.push({ name: p.names.take(`${s.name}_optical_joint`, p.naming.joint), type: 'fixed', parent: frame, child: optical, origin: [0, 0, 0], rpy: OPTICAL, axis: [0, 0, 1] });
     }
   }
-  const base = p.linkNames.get(robot.root!)!;
   // The robot's box in the design, for RViz to look at: the base link's frame is the design's origin.
   const extent = unionBounds(p.links.map((l) => geometry.get(l.node.id)!.bounds));
-  const footprint = footprintOf(p, robot, links.map((l) => l.name));
   const plugins = [jointStateXml(), ...(p.drive ? [driveXml(gazeboDrive(p.drive, footprint?.name ?? base))] : [])];
   const control = p.controlled.length ? { joints: p.controlled, controllersYaml: `${SHARE_PLACEHOLDER}/config/controllers.yaml` } : undefined;
   const controllers = control ? ['joint_state_broadcaster', 'arm_controller'] : [];
@@ -404,13 +419,13 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
  * included, the meshes, a world that includes it, and a note on running it.
  */
 export function buildSdfModel(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot = robotOf(doc)): RobotPackage {
-  const p = prepare(doc, geometry, robot, (path) => `model://${packageName(doc.name)}/${path}`);
+  const p = prepare(doc, geometry, robot, (path) => `model://${packageName(doc.name)}/${path}`, SDF_NAMES);
   const { pkg, files, warnings } = p;
   const sensorsByLink = new Map<string, string[]>();
   for (const s of p.sensors) {
     const list = sensorsByLink.get(s.link) ?? [];
     // In SDF the sensor sits in its link at its own pose, and its frame is the link's.
-    list.push(sensorXml({ ...s, frame: s.link, pose: { xyz: s.xyz, rpy: s.rpy } }));
+    list.push(sensorXml({ ...s, pose: { xyz: s.xyz, rpy: s.rpy } }));
     sensorsByLink.set(s.link, list);
   }
   const links: SdfLink[] = p.links.map(({ frame, node: _n, ...l }) => ({ ...l, pose: frame.map((x) => x * M) as Vec3, sensors: sensorsByLink.get(l.name) }));
@@ -435,12 +450,12 @@ export function buildSdfModel(doc: Doc, geometry: Map<string, LinkGeometry>, rob
     return { name: j.name, type: j.type, parent: j.parent, child: j.child, pose, axis: j.axis, limit: j.limit, dynamics: j.dynamics, ...(j.mimic && !onLoop.has(j.name) ? { mimic: j.mimic } : {}) };
   });
   const base = p.linkNames.get(robot.root!)!;
-  const footprint = footprintOf(p, robot, links.map((l) => l.name));
+  const footprint = footprintOf(p, robot);
   const plugins = [jointStateXml(), ...(p.drive ? [driveXml(gazeboDrive(p.drive, footprint?.name ?? base))] : [])];
   files.unshift(
     { name: 'model.config', bytes: encodeText(modelConfig(pkg, `${doc.name}, made with PlastikCAD`)) },
     { name: 'model.sdf', bytes: encodeText(writeSdf(p.robotName, links, joints, plugins, robot.base === 'fixed' ? p.linkNames.get(robot.root!) : undefined, footprint)) },
-    { name: `worlds/${pkg}.sdf`, bytes: encodeText(worldXml(pkg, pkg)) },
+    { name: `worlds/${pkg}.sdf`, bytes: encodeText(worldXml(pkg, pkg, p.robotName)) },
     { name: 'README.md', bytes: encodeText(sdfReadme(pkg, doc.name, footprint)) },
   );
   return { name: pkg, files, warnings };
@@ -499,7 +514,7 @@ export function exportSummary(doc: Doc, format: ExportFormat, robot: Robot = rob
  * on running it. Opens and plays as it is.
  */
 export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot = robotOf(doc)): RobotPackage {
-  const p = prepare(doc, geometry, robot, (path) => path);
+  const p = prepare(doc, geometry, robot, (path) => path, USD_NAMES);
   const { pkg, warnings } = p;
   const velocity = new Set(p.drive?.wheels ?? []);
   const position = new Set([...p.controlled, ...(p.drive?.steer ?? [])]);
@@ -523,7 +538,8 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
     axis: j.axis,
     limit: j.limit,
     dynamics: j.dynamics,
-    mimic: j.mimic,
+    // A joint that closes a loop stands outside the articulation, where PhysX has no followers.
+    mimic: loop ? undefined : j.mimic,
     armature: j.armature,
     loop,
     drive: velocity.has(j.name) ? 'velocity' : position.has(j.name) ? 'position' : null,
@@ -589,7 +605,7 @@ ${topics.map((t) => `- ${t}`).join('\n')}
 Sensor frames are named after the sensors; the base frame is \`${model.root}\`.${model.sensors.some((s) => s.kind === 'lidar') ? ' A lidar\nscans the whole circle in Isaac Sim, at the angular step of the design.' : ''}
 ${model.sensors.some((s) => s.kind === 'touch') ? '\nTouch sensors are Isaac contact sensors on their links; read them from a\nscript or the Contact Sensor window, as the ROS 2 bridge has no publisher\nfor them.\n' : ''}
 The floor is a stand-in: place the robot in a world of your own by
-referencing this stage, or copy the \`${usdName(model.name)}\` prim into it.
+referencing this stage, or copy the \`${robotPrim(model.name)}\` prim into it.
 `;
 }
 
@@ -602,9 +618,11 @@ export const MAX_LIDAR_RAYS = 90;
  * the floor the user picked for it.
  */
 export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot = robotOf(doc), world: World = 'flat'): MjcfPackage {
-  const p = prepare(doc, geometry, robot, (path) => path);
+  const p = prepare(doc, geometry, robot, (path) => path, MJCF_NAMES);
   const { pkg, files, warnings } = p;
   const byName = new Map(p.links.map((l) => [l.name, l]));
+  // A joint with no effort or speed gets no actuator, and the drive does not name one for it.
+  const actuated = new Set(p.treeJoints.filter(drivable).map((j) => j.name));
   const childrenOf = new Map<string, UrdfJoint[]>();
   for (const j of p.treeJoints) childrenOf.set(j.parent, [...(childrenOf.get(j.parent) ?? []), j]);
   const sensorsOf = (link: string) => p.sensors.filter((s) => s.link === link);
@@ -640,9 +658,9 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
     // A loop joint's origin is given in its parent's frame; the connect anchor is in the first body's frame.
     connects: p.loopJoints.map((j) => ({ body1: j.parent, body2: j.child, anchor: j.origin })),
     followers: [...p.treeJoints, ...p.loopJoints].filter((j) => j.mimic && p.treeJoints.some((t) => t.name === j.name)).map((j) => ({ joint: j.name, leader: j.mimic!.joint, multiplier: j.mimic!.multiplier, offset: j.mimic!.offset })),
-    servos: [...p.controlled, ...(p.drive?.steer ?? [])],
+    servos: [...p.controlled, ...(p.drive?.steer ?? [])].filter((j) => actuated.has(j)),
     // The wheels get velocity motors; steering joints position servos, as the simulator has no plugin to turn them.
-    wheels: p.drive?.wheels ?? [],
+    wheels: (p.drive?.wheels ?? []).filter((j) => actuated.has(j)),
   };
   const collisions = p.links.map((l) => `${l.name}: ${linkOf(robot, l.node.id).collision}`);
   files.unshift({ name: `${pkg}.xml`, bytes: encodeText(writeMjcf(model)) }, { name: 'README.md', bytes: encodeText(mjcfReadme(pkg, doc.name, collisions, robot.scripts !== false, p.sensors.some((s) => s.kind === 'lidar'))) });
@@ -654,7 +672,7 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
   let drive: DriveSpec | null = null;
   if (p.drive) {
     const actuator = (joint: string) => (p.drive!.steer.includes(joint) ? `${joint}_servo` : `${joint}_motor`);
-    const roles = Object.fromEntries(Object.entries(p.drive.roles).map(([role, joints]) => [role, (joints ?? []).map(actuator)]));
+    const roles = Object.fromEntries(Object.entries(p.drive.roles).map(([role, joints]) => [role, (joints ?? []).filter((j) => actuated.has(j)).map(actuator)]));
     const { kind, forward, wheelRadius, wheelSeparation, wheelBase, kingpinWidth, steeringLimit } = p.drive;
     drive = { kind, units: 'meters, radians', forward, roles, wheelRadius, wheelSeparation, wheelBase, kingpinWidth, steeringLimit };
     files.push({ name: 'drive.json', bytes: encodeText(JSON.stringify(drive, null, 2) + '\n') });

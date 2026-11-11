@@ -13,6 +13,7 @@ import type { Vec3 } from '../model/types';
 import type { Tensor } from '../robot/inertia';
 import type { DriveKind, JointType, SensorKind } from '../robot/types';
 import { fmt } from './format';
+import type { Naming } from './urdf';
 
 export type UsdCollision =
   /** A mesh in the link's frame; `convex` for a hull, else PhysX decomposes it. */
@@ -113,6 +114,26 @@ const str = (s: string): string => `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\
 export const usdName = (raw: string): string => {
   const s = raw.replace(/[^A-Za-z0-9_]/g, '_');
   return /^[0-9]/.test(s) ? `_${s}` : s || '_';
+};
+
+/** The prims the stage puts under /World beside the robot's. */
+const WORLD_PRIMS = ['physicsScene', 'Dome', 'Sun', 'Ground', 'Looks', 'PhysicsMaterials', 'ROS2'];
+/** The scope under the robot's prim that holds its joints, beside its links, and the joint that bolts a fixed base down. */
+const JOINTS_SCOPE = 'Joints';
+const ROOT_JOINT = 'root_joint';
+
+/** The robot's prim under /World, clear of the stage's own prims there. */
+export const robotPrim = (name: string): string => {
+  const prim = usdName(name);
+  return WORLD_PRIMS.includes(prim) ? `${prim}_2` : prim;
+};
+
+/** Links are prims under the robot's, joints under its joints scope, sensors under their links beside the link's meshes. */
+export const USD_NAMES: Naming = {
+  reserved: [`link/${JOINTS_SCOPE}`, `link/${ROOT_JOINT}`, /^sensor\/(visual|collision)_\d+$/],
+  link: (name) => [`link/${name}`],
+  joint: (name) => [`joint/${name}`],
+  sensor: (name) => [`sensor/${name}`],
 };
 
 /** The quaternion of a rotation matrix (column-major 3×3 in `m`). */
@@ -446,7 +467,8 @@ function linkPrim(l: UsdLink, sensors: UsdSensor[], touched: boolean): string[] 
   return [`def Xform "${l.name}" (`, `    prepend apiSchemas = [${apis.join(', ')}]`, ')', '{', ...indent(body, 1), '}'];
 }
 
-function jointPrim(j: UsdJoint, robot: string): string[] {
+/** `leader` is the joint a follower follows. */
+function jointPrim(j: UsdJoint, robot: string, leader?: UsdJoint): string[] {
   const type = j.type === 'fixed' ? 'PhysicsFixedJoint' : j.type === 'prismatic' ? 'PhysicsPrismaticJoint' : 'PhysicsRevoluteJoint';
   const moving = j.type !== 'fixed';
   const drive = j.type === 'prismatic' ? 'linear' : 'angular';
@@ -461,25 +483,29 @@ function jointPrim(j: UsdJoint, robot: string): string[] {
       body.push(`float physics:lowerLimit = ${fmt(j.limit.lower * scale, 4)}`, `float physics:upperLimit = ${fmt(j.limit.upper * scale, 4)}`);
     }
     // The drive: a wheel is told a speed and resists with its damping alone; a servo holds a position, stiff
-    // enough to reach it within a tenth of a radian (or a tenth of a meter) at full effort, damped to settle.
+    // enough to reach it within a tenth of a radian (or a tenth of a meter) at full effort, damped to settle;
+    // a joint nothing drives keeps its own damping. USD Physics takes an angular drive's gains per degree.
     const effort = j.limit?.effort ?? 1;
     const velocity = j.limit?.velocity || 1;
-    const [stiffness, damping] = j.drive === 'velocity' ? [0, effort / velocity] : j.drive === 'position' ? [effort / 0.1, effort / 0.1 / 20] : [0, 0];
+    const perUnit = j.type === 'prismatic' ? 1 : 1 / DEG;
+    const [stiffness, damping] = j.drive === 'velocity' ? [0, effort / velocity] : j.drive === 'position' ? [effort / 0.1, effort / 0.1 / 20] : [0, Math.max(j.dynamics?.damping ?? 0, 0)];
     body.push(
-      `float drive:${drive}:physics:damping = ${fmt(damping, 6)}`,
+      `float drive:${drive}:physics:damping = ${fmt(damping * perUnit, 9)}`,
       `float drive:${drive}:physics:maxForce = ${fmt(effort, 6)}`,
-      `float drive:${drive}:physics:stiffness = ${fmt(stiffness, 6)}`,
+      `float drive:${drive}:physics:stiffness = ${fmt(stiffness * perUnit, 9)}`,
       `uniform token drive:${drive}:physics:type = "force"`,
       `float drive:${drive}:physics:targetPosition = 0`,
       `float drive:${drive}:physics:targetVelocity = 0`,
     );
     if (j.dynamics) body.push(`float physxJoint:jointFriction = ${fmt(j.dynamics.friction, 6)}`);
     if (j.armature) body.push(`float physxJoint:armature = ${fmt(j.armature, 9)}`);
-    if (j.dynamics && j.drive === null && j.dynamics.damping > 0) body.push(`float drive:${drive}:physics:damping = ${fmt(j.dynamics.damping, 6)}`);
     if (j.mimic) {
       const axis = j.type === 'prismatic' ? 'transX' : 'rotX';
-      // PhysX holds this joint + gearing × the leader + offset = 0.
-      body.push(`rel physxMimicJoint:${axis}:referenceJoint = </World/${robot}/Joints/${j.mimic.joint}>`, `uniform token physxMimicJoint:${axis}:referenceJointAxis = "${axis}"`, `float physxMimicJoint:${axis}:gearing = ${fmt(-j.mimic.multiplier, 6)}`, `float physxMimicJoint:${axis}:offset = ${fmt(-j.mimic.offset * (j.type === 'prismatic' ? 1 : DEG), 6)}`);
+      const leaderAxis = (leader?.type ?? j.type) === 'prismatic' ? 'transX' : 'rotX';
+      // PhysX holds this joint + gearing × the leader + offset = 0, a turning joint's place in degrees.
+      const degrees = (type: JointType) => (type === 'prismatic' ? 1 : DEG);
+      const gearing = (-j.mimic.multiplier * degrees(j.type)) / degrees(leader?.type ?? j.type);
+      body.push(`rel physxMimicJoint:${axis}:referenceJoint = </World/${robot}/${JOINTS_SCOPE}/${j.mimic.joint}>`, `uniform token physxMimicJoint:${axis}:referenceJointAxis = "${leaderAxis}"`, `float physxMimicJoint:${axis}:gearing = ${fmt(gearing, 9)}`, `float physxMimicJoint:${axis}:offset = ${fmt(-j.mimic.offset * degrees(j.type), 6)}`);
     }
   }
   if (j.loop) body.push('bool physxJoint:excludeFromArticulation = 1');
@@ -709,7 +735,7 @@ function rosGraph(model: UsdModel, robotPath: string, linkPath: (link: string) =
 
 /** The stage as USDA text. */
 export function writeUsda(model: UsdModel): string {
-  const robot = usdName(model.name);
+  const robot = robotPrim(model.name);
   const robotPath = `/World/${robot}`;
   const linkPath = (link: string) => `${robotPath}/${link}`;
   const colors = new Map<string, [number, number, number]>();
@@ -785,13 +811,13 @@ export function writeUsda(model: UsdModel): string {
       [
         'bool physxArticulation:enabledSelfCollisions = 0',
         ...(model.fixedBase
-          ? ['', 'def PhysicsFixedJoint "root_joint"', '{', `    rel physics:body1 = <${linkPath(model.root)}>`, `    point3f physics:localPos0 = ${v3(model.links.find((l) => l.name === model.root)?.pos ?? [0, 0, 0])}`, '    point3f physics:localPos1 = (0, 0, 0)', '}']
+          ? ['', `def PhysicsFixedJoint "${ROOT_JOINT}"`, '{', `    rel physics:body1 = <${linkPath(model.root)}>`, `    point3f physics:localPos0 = ${v3(model.links.find((l) => l.name === model.root)?.pos ?? [0, 0, 0])}`, '    point3f physics:localPos1 = (0, 0, 0)', '}']
           : []),
         ...model.links.flatMap((l) => ['', ...linkPrim(l, sensorsOf(l.name), touched.has(l.name))]),
         '',
-        'def Scope "Joints"',
+        `def Scope "${JOINTS_SCOPE}"`,
         '{',
-        ...indent(model.joints.flatMap((j, i) => [...(i ? [''] : []), ...jointPrim(j, robot)]), 1),
+        ...indent(model.joints.flatMap((j, i) => [...(i ? [''] : []), ...jointPrim(j, robot, j.mimic && model.joints.find((o) => o.name === j.mimic!.joint))]), 1),
         '}',
       ],
       1,

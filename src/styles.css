@@ -10,9 +10,11 @@
   --border: #263130;
   --text: #eef2f0;
   --muted: #aab5b2;
-  --faint: #7d8986;
+  --faint: #818d8a;
   --accent: #17cdd3;
   --accent-strong: #3fdbe0;
+  /* The accent where it is words rather than a mark: the same here, deeper on the light variant. */
+  --accent-text: #17cdd3;
   --on-accent: #0a0d0d;
   --signal: #ff6b1a;
   --signal-strong: #ff8440;
@@ -33,7 +35,9 @@
 }
 
 :root[data-theme='light'] {
-  /* The light variant: Bone and Ink with the same teal tint; both accents a shade deeper, as they are text here. */
+  /* The light variant: Bone and Ink with the same teal tint. The teal is a shade deeper so that a mark in it stands
+     3:1 off every ground here, and deeper again where it is words (4.5:1); the faint text likewise. Tape keeps its
+     colour and carries Ink, as on the dark variant: white on it fell short. */
   --bg: #eef2f0;
   --panel: #ffffff;
   --panel-raised: #f7faf9;
@@ -42,13 +46,14 @@
   --border: #d3dbd8;
   --text: #0c1211;
   --muted: #46524f;
-  --faint: #6d7976;
-  --accent: #0f9ea3;
+  --faint: #5f6b68;
+  --accent: #0d9297;
   --accent-strong: #0b8488;
+  --accent-text: #086f73;
   --on-accent: #ffffff;
   --signal: #e8590f;
-  --signal-strong: #c94d0a;
-  --on-signal: #ffffff;
+  --signal-strong: #f47a35;
+  --on-signal: #0c1211;
   --warn-bg: #fff1d6;
   --warn-text: #7a4e00;
   --error-bg: #fbe3de;
@@ -360,26 +365,6 @@ ul {
   color: var(--muted);
 }
 
-.part {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 4px 8px;
-  border: 0;
-  border-radius: 7px;
-  background: none;
-  text-align: left;
-}
-
-.part:hover {
-  background: var(--panel-raised);
-}
-
-.part.selected {
-  background: var(--control);
-}
-
 .thumb {
   display: grid;
   place-items: center;
@@ -392,14 +377,6 @@ ul {
 .thumb svg {
   width: 28px;
   height: 28px;
-}
-
-.part.selected .thumb {
-  color: var(--accent);
-}
-
-.part.selected .part-name {
-  font-weight: 600;
 }
 
 /* ---------- about box ---------- */
@@ -457,7 +434,7 @@ ul {
 }
 
 .about-link a {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .about-body .primary {
@@ -742,20 +719,15 @@ ul {
   pointer-events: none;
 }
 
+/* The select inside draws no outline of its own; the chip shows the keyboard's focus for it. */
+.chip.select:has(select:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .chip.on {
   color: var(--text);
   border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
-}
-
-.swatches {
-  display: flex;
-  gap: 6px;
-  margin-left: auto;
-  padding: 5px 8px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--panel) 88%, transparent);
-  backdrop-filter: blur(6px);
 }
 
 .swatch {
@@ -1145,16 +1117,6 @@ ul {
 
 .number-box.disabled {
   opacity: 0.5;
-}
-
-.triple {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
-}
-
-.triple .number-box {
-  width: auto;
 }
 
 .field-note {
@@ -1715,15 +1677,6 @@ select:hover {
   background: var(--control);
 }
 
-.menu-title {
-  padding: 4px 8px 2px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--faint);
-}
-
 kbd {
   font: inherit;
   font-size: 11.5px;
@@ -1732,11 +1685,6 @@ kbd {
 }
 
 /* ---------- shapes and objects ---------- */
-
-.catalog {
-  display: flex;
-  flex-direction: column;
-}
 
 .shape-grid {
   display: grid;
@@ -1774,8 +1722,7 @@ kbd {
   color: var(--accent);
 }
 
-.shape:disabled,
-.part:disabled {
+.shape:disabled {
   opacity: 0.45;
 }
 
@@ -1894,7 +1841,7 @@ kbd {
 }
 
 .mini.on {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 /* ---------- stage overlays ---------- */
@@ -2258,12 +2205,6 @@ kbd {
   font-size: 12px;
 }
 
-.align-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .array-panel {
   width: 272px;
 }
@@ -2427,16 +2368,6 @@ kbd {
   width: auto;
   height: 30px;
   padding: 0 20px;
-}
-
-.align-row > span {
-  width: 10px;
-  color: var(--faint);
-  font-weight: 600;
-}
-
-.align-row .segmented {
-  flex: 1;
 }
 
 /* ---------- inspector ---------- */
@@ -2640,6 +2571,12 @@ kbd {
   color: var(--text);
 }
 
+/* The keyboard's focus is a ring, so that it is told from the row under the pointer. */
+.outline-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
 .outline-row.on .dot {
   box-shadow: 0 0 0 2px var(--accent);
 }
@@ -2665,12 +2602,6 @@ kbd {
 
 .structure-actions .chip {
   flex: none;
-}
-
-.structure-actions .buttons {
-  display: flex;
-  flex: none;
-  gap: 6px;
 }
 
 /* ---------- notes ---------- */
@@ -2774,12 +2705,16 @@ kbd {
 }
 
 .projects-search {
-  flex: 1;
+  flex: 1 1 160px;
+  width: auto;
+  min-width: 120px;
   max-width: 260px;
 }
 
 .projects-head .primary {
+  height: 30px;
   margin-left: auto;
+  padding: 0 14px;
 }
 
 .projects .empty {
@@ -2874,7 +2809,7 @@ kbd {
 }
 
 .project.current .project-when {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .projects-foot {
@@ -2909,22 +2844,11 @@ kbd {
   color: #e5636a;
 }
 
-.projects-search {
-  flex: 1 1 160px;
-  width: auto;
-  min-width: 120px;
-}
-
 .projects-head .primary,
 .projects-head .chip {
   flex: none;
   width: auto;
   white-space: nowrap;
-}
-
-.projects-head .primary {
-  height: 30px;
-  padding: 0 14px;
 }
 
 /* ---------- touch screens: bigger targets ---------- */
@@ -3036,11 +2960,6 @@ kbd {
   .swatch-row .swatch {
     max-width: 32px;
   }
-
-  .swatches .swatch {
-    width: 24px;
-    height: 24px;
-  }
 }
 
 /* ---------- touch entry sheet ---------- */
@@ -3141,7 +3060,7 @@ kbd {
 
 .robot-mode-title {
   font-weight: 600;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .robot-bar-actions {
@@ -3270,12 +3189,6 @@ kbd {
   text-decoration: underline;
 }
 
-.export-format {
-  flex: 1;
-  text-align: right;
-  color: var(--text);
-}
-
 /* Wide select chips sit on their own in a field row. */
 .chip.select.wide {
   max-width: 60%;
@@ -3342,7 +3255,7 @@ kbd {
 }
 
 .chip.pick.on {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .export-note.problems.warn:hover {
@@ -3381,4 +3294,259 @@ kbd {
 /* A motor's figures run to several decimals (a servo's damping is thousandths), so the Motion boxes are a little wider. */
 .group.motion .field.inline .number-box {
   width: 118px;
+}
+
+/* ---------- a part of the window that failed to draw ---------- */
+
+.crashed {
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+
+.crashed.whole {
+  height: 100%;
+  background: var(--bg);
+}
+
+.crash {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  text-align: center;
+}
+
+.crash p {
+  color: var(--muted);
+}
+
+.crash .crash-detail {
+  max-width: 260px;
+  color: var(--faint);
+  font-size: 12px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.crash-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.crash-actions .chip,
+.crash-actions .primary {
+  width: auto;
+  height: 34px;
+  padding: 0 16px;
+}
+
+/* ---------- touch screens: the inspector, the menus and the panels over the plate ---------- */
+
+/* Last in the sheet, so that it has the final word over the sizes set above for a mouse. */
+@media (pointer: coarse) {
+  /* The finger-sized bar is wider than the stage on a tablet: it wraps onto a second row rather than running under the panels. */
+  .toolbar {
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    justify-content: center;
+    row-gap: 4px;
+  }
+
+  .tool-group {
+    flex-wrap: wrap;
+  }
+
+  /* Under the bar, however many rows it takes (the bar says how tall it is). */
+  .mode-banner,
+  .mate-panel {
+    top: calc(var(--bar, 50px) + 22px);
+  }
+
+  .chip {
+    height: 40px;
+    padding: 0 14px;
+  }
+
+  .chip.icon {
+    width: 40px;
+    padding: 0;
+  }
+
+  .chip.select {
+    padding-right: 9px;
+  }
+
+  .chip.select select {
+    height: 38px;
+  }
+
+  .chip.pick {
+    height: 40px;
+  }
+
+  .measure-kinds .chip.icon {
+    width: 40px;
+    height: 40px;
+  }
+
+  .measure-kinds .chip svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .icon-button {
+    width: 40px;
+    height: 40px;
+  }
+
+  .segmented button {
+    height: 40px;
+  }
+
+  .number-box,
+  select,
+  .select-button,
+  .name-input,
+  .text-input,
+  .bin-row .text-input {
+    height: 40px;
+  }
+
+  .text-input.area {
+    height: auto;
+  }
+
+  .primary,
+  .import-button,
+  .projects-head .primary,
+  .array-foot .primary,
+  .mate-actions .primary,
+  .mate-actions .chip,
+  .crash-actions .chip,
+  .crash-actions .primary,
+  .touch-entry-buttons .chip,
+  .touch-entry-buttons .primary {
+    height: 40px;
+  }
+
+  .menu-item {
+    height: 44px;
+  }
+
+  .menu-item.format {
+    height: auto;
+    min-height: 44px;
+    padding: 6px 8px;
+  }
+
+  /* Where there is room, a little more: the main action of the inspector and the tabs of its settings. */
+  .inspector .primary,
+  .section-tabs button {
+    height: 44px;
+  }
+
+  .page-tabs button {
+    height: 40px;
+  }
+
+  /* The library gives back what the taller tabs and buttons take, so that it still fits a 1280 × 800 tablet without scrolling. */
+  .library h2 {
+    margin-top: 6px;
+    margin-bottom: 2px;
+  }
+
+  .library .shape {
+    padding: 2px 2px 3px;
+  }
+
+  .transform-dims-toggle {
+    height: 40px;
+  }
+
+  /* The small buttons in a heading keep the heading's height: the button is finger-sized around its icon and reaches past the row. */
+  .legend-button {
+    width: 40px;
+    height: 40px;
+    margin: -11px -8px -11px 0;
+  }
+
+  .transform-label .legend-button {
+    margin-left: -6px;
+  }
+
+  .inspector-note .legend-button {
+    margin: -6px -2px -6px 0;
+  }
+
+  .notice-close {
+    width: 32px;
+    height: 32px;
+  }
+
+  /* The "i" beside a label: its own size to the eye, a finger's to the touch. */
+  .hint {
+    position: relative;
+  }
+
+  .hint::before {
+    content: '';
+    position: absolute;
+    inset: -13px;
+  }
+
+  /* A switch a thumb can flip: drawn larger, and it answers a little beyond its edge. */
+  .switch {
+    width: 50px;
+    height: 30px;
+    border-radius: 15px;
+  }
+
+  .switch::before {
+    content: '';
+    position: absolute;
+    inset: -5px -4px;
+  }
+
+  .switch::after {
+    width: 24px;
+    height: 24px;
+  }
+
+  .switch:checked::after {
+    transform: translateX(20px);
+  }
+
+  input[type='range'] {
+    height: 40px;
+  }
+
+  input[type='range']::-webkit-slider-runnable-track {
+    height: 6px;
+    border-radius: 3px;
+  }
+
+  input[type='range']::-webkit-slider-thumb {
+    width: 28px;
+    height: 28px;
+    margin-top: -11px;
+  }
+
+  input[type='range']::-moz-range-track,
+  input[type='range']::-moz-range-progress {
+    height: 6px;
+    border-radius: 3px;
+  }
+
+  input[type='range']::-moz-range-thumb {
+    width: 24px;
+    height: 24px;
+  }
+
+  /* Room for the taller boxes: three across the panel's narrowest width. */
+  .field {
+    margin-bottom: 10px;
+  }
 }

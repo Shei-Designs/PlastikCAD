@@ -42,10 +42,12 @@ export function sensorXml(s: GazeboSensor): string {
       '  </camera>',
     );
   } else if (s.kind === 'lidar') {
+    // A full circle stops one step short of where it began, as `lidarAngles` has it, or its first and last rays are the same ray.
+    const lastStep = s.lidar.hfov >= 2 * Math.PI - 1e-6 && s.lidar.samples > 1 ? s.lidar.hfov / s.lidar.samples : 0;
     lines.push(
       '  <lidar>',
       '    <scan>',
-      `      <horizontal><samples>${s.lidar.samples}</samples><resolution>1</resolution><min_angle>${fmt(-s.lidar.hfov / 2, 6)}</min_angle><max_angle>${fmt(s.lidar.hfov / 2, 6)}</max_angle></horizontal>`,
+      `      <horizontal><samples>${s.lidar.samples}</samples><resolution>1</resolution><min_angle>${fmt(-s.lidar.hfov / 2, 6)}</min_angle><max_angle>${fmt(s.lidar.hfov / 2 - lastStep, 6)}</max_angle></horizontal>`,
       '    </scan>',
       `    <range><min>${fmt(s.lidar.min, 4)}</min><max>${fmt(s.lidar.max, 4)}</max><resolution>0.01</resolution></range>`,
       '  </lidar>',
@@ -134,8 +136,12 @@ export function surfaceXml(friction: number): string {
   return `<surface><friction><ode><mu>${fmt(friction, 4)}</mu><mu2>${fmt(friction, 4)}</mu2></ode></friction></surface>`;
 }
 
-/** The system plugins an empty world needs for sensors and physics, with the robot's model included when `include` is given. */
-export function worldXml(name: string, include?: string): string {
+/**
+ * The system plugins an empty world needs for sensors and physics, with the robot's model included when `include` is given.
+ * `robot` is the name the robot goes by in the world; the light and the floor keep clear of it.
+ */
+export function worldXml(name: string, include?: string, robot = name): string {
+  const own = (n: string): string => (n === robot ? `${n}_2` : n);
   return `<?xml version="1.0"?>
 <sdf version="1.9">
   <world name="${escapeXml(name)}">
@@ -146,14 +152,14 @@ export function worldXml(name: string, include?: string): string {
     <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors"><render_engine>ogre2</render_engine></plugin>
     <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
     <plugin filename="gz-sim-contact-system" name="gz::sim::systems::Contact"/>
-    <light type="directional" name="sun">
+    <light type="directional" name="${own('sun')}">
       <cast_shadows>true</cast_shadows>
       <pose>0 0 10 0 0 0</pose>
       <diffuse>0.8 0.8 0.8 1</diffuse>
       <specular>0.2 0.2 0.2 1</specular>
       <direction>-0.5 0.1 -0.9</direction>
     </light>
-    <model name="ground_plane">
+    <model name="${own('ground_plane')}">
       <static>true</static>
       <link name="link">
         <collision name="collision"><geometry><plane><normal>0 0 1</normal><size>100 100</size></plane></geometry>${surfaceXml(1)}</collision>

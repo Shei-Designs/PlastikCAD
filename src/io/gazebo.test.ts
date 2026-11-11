@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { driveXml } from './gazebo';
+import { driveXml, sensorXml, worldXml } from './gazebo';
+import type { GazeboSensor } from './gazebo';
 
 describe('driveXml', () => {
   const shared = { baseFrame: 'Body', wheelRadius: 0.02, wheelSeparation: 0.092 };
@@ -19,5 +20,29 @@ describe('driveXml', () => {
     expect(xml).toContain('gz-sim-diff-drive-system');
     expect(xml.match(/<left_joint>/g)?.length).toBe(2);
     expect(xml.match(/<right_joint>/g)?.length).toBe(2);
+  });
+});
+
+describe('sensorXml', () => {
+  const lidar = (samples: number, hfov: number): GazeboSensor => ({ name: 'scan', frame: 'scan_link', kind: 'lidar', rate: 10, camera: { hfov: 1, width: 1, height: 1, near: 0.1, far: 1 }, lidar: { samples, hfov, min: 0.1, max: 10 } });
+  const sweep = (xml: string) => [Number(/<min_angle>([^<]+)</.exec(xml)![1]), Number(/<max_angle>([^<]+)</.exec(xml)![1])];
+  it('stops a full-circle lidar one step short, so its first and last rays are not the same ray', () => {
+    const [min, max] = sweep(sensorXml(lidar(36, 2 * Math.PI)));
+    expect(min).toBeCloseTo(-Math.PI, 5);
+    // 36 rays 10° apart: the last looks 10° short of where the first does.
+    expect(max - min).toBeCloseTo((2 * Math.PI * 35) / 36, 5);
+  });
+  it('sweeps a narrower lidar from end to end', () => {
+    const [min, max] = sweep(sensorXml(lidar(90, Math.PI)));
+    expect([min, max]).toEqual([expect.closeTo(-Math.PI / 2, 5), expect.closeTo(Math.PI / 2, 5)]);
+  });
+});
+
+describe('worldXml', () => {
+  it('names its light and floor clear of the robot spawned beside them', () => {
+    for (const robot of ['rover', 'sun', 'ground_plane']) {
+      const names = [...worldXml(robot).matchAll(/<(?:light|model)[^>]* name="([^"]+)"/g)].map((m) => m[1]);
+      expect(new Set([...names, robot]).size).toBe(names.length + 1);
+    }
   });
 });

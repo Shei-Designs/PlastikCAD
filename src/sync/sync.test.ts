@@ -6,8 +6,9 @@ import { makeShape, newId } from '../model/ops';
 import type { Doc, SceneNode } from '../model/types';
 import { MemoryProjects } from '../state/projects';
 import { DriveRemote } from './drive';
-import { MemorySyncState, synchronize } from './engine';
-import type { Remote, RemoteFile, SyncReport } from './engine';
+import { emptyRobot } from '../robot/types';
+import { bindRecords, MemorySyncState, synchronize } from './engine';
+import type { DeletePlan, Remote, RemoteFile, SyncReport } from './engine';
 import { authUrl, challengeOf, revoke } from './google';
 import { mergeDocs } from './merge';
 
@@ -18,6 +19,9 @@ class FakeRemote implements Remote {
   files = new Map<string, { file: RemoteFile; text: string }>();
   calls = { list: 0, download: 0, upload: 0, remove: 0 };
   failOn: string | null = null;
+  failAll = false;
+  /** Run once, in the middle of the next download: something that happens while a pass is under way. */
+  meanwhile: (() => Promise<void>) | null = null;
   private serial = 0;
   async list(): Promise<RemoteFile[]> {
     this.calls.list++;
@@ -25,13 +29,16 @@ class FakeRemote implements Remote {
   }
   async download(file: RemoteFile): Promise<string> {
     this.calls.download++;
+    const run = this.meanwhile;
+    this.meanwhile = null;
+    await run?.();
     const found = this.files.get(file.id);
     if (!found) throw new Error('gone');
     return found.text;
   }
   async upload(existing: RemoteFile | null, name: string, text: string, meta: { projectId: string; revision: string | null }): Promise<RemoteFile> {
     this.calls.upload++;
-    if (this.failOn === meta.projectId) throw new Error(`cannot upload ${name}`);
+    if (this.failAll || this.failOn === meta.projectId) throw new Error(`cannot upload ${name}`);
     const id = existing?.id ?? `remote-${++this.serial}`;
     const file: RemoteFile = { id, name: `${name}.plastikcad`, projectId: meta.projectId, revision: meta.revision, modified: Date.now() };
     this.files.set(id, { file, text });
@@ -48,8 +55,21 @@ class FakeRemote implements Remote {
     this.files.set(id, { file, text: serializeDoc(doc) });
     return file;
   }
+  /** Replaces a design there as another device would. */
+  replace(doc: Doc): void {
+    const entry = [...this.files.values()].find((f) => f.file.projectId === doc.id)!;
+    entry.text = serializeDoc(doc);
+    entry.file = { ...entry.file, revision: doc.revision ?? null };
+  }
   textOf(projectId: string): string | undefined {
     return [...this.files.values()].find((f) => f.file.projectId === projectId)?.text;
+  }
+}
+
+/** A remote that can also say how a file stands now, as Drive can. */
+class StatRemote extends FakeRemote {
+  async stat(file: RemoteFile): Promise<RemoteFile | null> {
+    return this.files.get(file.id)?.file ?? null;
   }
 }
 
@@ -207,11 +227,13 @@ describe('sync engine', () => {
     expect((await local.list()).length).toBe(3);
   });
 
-  it('goes on past a project that fails and reports the failure at the end', async () => {
+  it('goes on past a project that fails and reports the failure beside what it did', async () => {
     await local.write(null, 'Bad', serializeDoc(design('project1', 'Bad', [box('a')])));
     await local.write(null, 'Good', serializeDoc(design('project2', 'Good', [box('b')])));
     remote.failOn = 'project1';
-    await expect(sync()).rejects.toThrow(/cannot upload Bad/);
+    const report = await sync();
+    expect(report.errors.map(String)).toEqual(['Error: cannot upload Bad']);
+    expect(report.uploaded).toEqual(['Good']);
     expect(remote.textOf('project2')).toBeDefined();
     expect(remote.textOf('project1')).toBeUndefined();
     remote.failOn = null;
@@ -224,6 +246,209 @@ describe('sync engine', () => {
     const report = await sync();
     expect(report.uploaded).toEqual([]);
     expect(remote.files.size).toBe(0);
+  });
+});
+
+describe('what a pass must not destroy', () => {
+  const three = async (): Promise<void> => {
+    for (const [id, name] of [['project1', 'A'], ['project2', 'B'], ['project3', 'C']]) await local.write(null, name, serializeDoc(design(id, name, [box(id)])));
+    await sync();
+  };
+
+  it('holds a deletion of most of the projects until someone says, and then deletes or restores as told', async () => {
+    await three();
+    // The remote folder was emptied: trashed in the Drive, or another account signed in to.
+    const empty = new FakeRemote();
+    const held = await synchronize(local, empty, state, { device: 'device0a' });
+    expect(held.held.sort()).toEqual(['A', 'B', 'C']);
+    expect(held.deletedLocally).toEqual([]);
+    expect((await local.list()).length).toBe(3);
+    expect(empty.files.size).toBe(0);
+
+    // Asked, and told to keep them: they go back up.
+    const asked: DeletePlan[] = [];
+    const restored = await synchronize(local, empty, state, { device: 'device0a', confirmDeletes: async (plan) => (asked.push(plan), false) });
+    expect(asked).toEqual([{ side: 'local', names: ['A', 'B', 'C'], total: 3 }]);
+    expect(restored.uploaded.sort()).toEqual(['A', 'B', 'C']);
+    expect((await local.list()).length).toBe(3);
+    expect(empty.files.size).toBe(3);
+
+    // Told to delete: they go.
+    const again = new FakeRemote();
+    const deleted = await synchronize(local, again, state, { device: 'device0a', confirmDeletes: async () => true });
+    expect(deleted.deletedLocally.sort()).toEqual(['A', 'B', 'C']);
+    expect((await local.list()).length).toBe(0);
+  });
+
+  it('asks the same before trashing most of the remote copies, and brings them back when told to keep them', async () => {
+    await three();
+    // The projects folder was changed to an empty one.
+    const emptyFolder = new MemoryProjects();
+    const held = await synchronize(emptyFolder, remote, state, { device: 'device0a' });
+    expect(held.held.sort()).toEqual(['A', 'B', 'C']);
+    expect(remote.files.size).toBe(3);
+    const restored = await synchronize(emptyFolder, remote, state, { device: 'device0a', confirmDeletes: async (plan) => plan.side !== 'remote' });
+    expect(restored.downloaded.sort()).toEqual(['A', 'B', 'C']);
+    expect(remote.files.size).toBe(3);
+    expect((await emptyFolder.list()).length).toBe(3);
+  });
+
+  it('lets a single deletion through without asking', async () => {
+    await three();
+    const fileB = [...remote.files.values()].find((f) => f.file.projectId === 'project2')!;
+    remote.files.delete(fileB.file.id);
+    const report = await synchronize(local, remote, state, { device: 'device0a', confirmDeletes: async () => expect.unreachable('one of three is not a mass deletion') });
+    expect(report.deletedLocally).toEqual(['B']);
+  });
+
+  it('forgets what was agreed when either place is another than it was, so an empty new place is filled rather than obeyed', async () => {
+    await three();
+    expect(await bindRecords(state, null, 'folder-1\n/home/me/PlastikCAD')).toBe(false);
+    expect(await bindRecords(state, 'folder-1\n/home/me/PlastikCAD', 'folder-1\n/home/me/PlastikCAD')).toBe(false);
+    expect(state.records.size).toBe(3);
+    // Another account's folder: nothing is deleted here, everything goes up.
+    expect(await bindRecords(state, 'folder-1\n/home/me/PlastikCAD', 'folder-2\n/home/me/PlastikCAD')).toBe(true);
+    const other = new FakeRemote();
+    const report = await synchronize(local, other, state, { device: 'device0a' });
+    expect(report.uploaded.sort()).toEqual(['A', 'B', 'C']);
+    expect(report.deletedLocally).toEqual([]);
+    // Another projects folder: nothing is trashed there, everything comes down.
+    expect(await bindRecords(state, 'folder-2\n/home/me/PlastikCAD', 'folder-2\n/mnt/usb')).toBe(true);
+    const fresh = new MemoryProjects();
+    const down = await synchronize(fresh, other, state, { device: 'device0a' });
+    expect(down.downloaded.sort()).toEqual(['A', 'B', 'C']);
+    expect(down.deletedRemotely).toEqual([]);
+    expect(other.files.size).toBe(3);
+  });
+
+  it('leaves a project saved while the pass ran for the next pass, which then merges it', async () => {
+    const v1 = design('project1', 'Plate', [box('a')]);
+    const key = await local.write(null, v1.name, serializeDoc(v1));
+    await sync();
+    // Another device moved the box; while this pass downloads that, autosave writes a second object here.
+    remote.replace(edited(v1, [box('a', -5)]));
+    const here = edited(v1, [box('a'), box('mine')]);
+    remote.meanwhile = async () => void (await local.write(key, here.name, serializeDoc(here)));
+    const report = await sync();
+    expect(report.busy).toEqual(['Plate']);
+    expect(report.changedKeys).toEqual([]);
+    expect(parseDoc(await local.read(key)).revision).toBe(here.revision);
+    const next = await sync();
+    expect(next.merged).toEqual(['Plate']);
+    expect(parseDoc(await local.read(key)).scene.map((n) => [n.id, n.pos[0]])).toEqual([
+      ['a', -5],
+      ['mine', 0],
+    ]);
+  });
+
+  it('does not delete here a project saved while the pass ran', async () => {
+    await three();
+    const info = (await local.list()).find((p) => p.id === 'project2')!;
+    const fileB = [...remote.files.values()].find((f) => f.file.projectId === 'project2')!;
+    remote.files.delete(fileB.file.id);
+    // A download for another project gives the save its moment.
+    remote.replace(edited(design('project1', 'A', [box('project1')], parseDoc(await local.read((await local.list()).find((p) => p.id === 'project1')!.key)).revision), [box('project1', 4)]));
+    remote.meanwhile = async () => void (await local.write(info.key, 'B', serializeDoc(edited(parseDoc(await local.read(info.key)), [box('project2', 7)]))));
+    const report = await sync();
+    expect(report.busy).toEqual(['B']);
+    expect(report.deletedLocally).toEqual([]);
+    expect((await sync()).uploaded).toEqual(['B']);
+    expect(parseDoc(remote.textOf('project2')!).scene[0].pos[0]).toBe(7);
+  });
+
+  it('does not replace a remote file another device replaced since the listing', async () => {
+    const stat = new StatRemote();
+    const v1 = design('project1', 'Plate', [box('a')]);
+    const key = await local.write(null, v1.name, serializeDoc(v1));
+    await synchronize(local, stat, state, { device: 'device0a' });
+    await local.write(key, 'Plate', serializeDoc(edited(v1, [box('a', 5)])));
+    // The other device uploads between this pass's listing and its upload.
+    const there = edited(v1, [box('a'), box('theirs')]);
+    const list = stat.list.bind(stat);
+    stat.list = async () => {
+      const listed = await list();
+      stat.replace(there);
+      return listed;
+    };
+    const report = await synchronize(local, stat, state, { device: 'device0a' });
+    expect(report.busy).toEqual(['Plate']);
+    expect(parseDoc(stat.textOf('project1')!).revision).toBe(there.revision);
+    stat.list = list;
+    const next = await synchronize(local, stat, state, { device: 'device0a' });
+    expect(next.merged).toEqual(['Plate']);
+    expect(parseDoc(stat.textOf('project1')!).scene.map((n) => n.id)).toEqual(['a', 'theirs']);
+  });
+
+  it('still says what it wrote here when another project fails', async () => {
+    const open = design('project1', 'Open', [box('a')]);
+    const key = await local.write(null, open.name, serializeDoc(open));
+    await sync();
+    remote.replace(edited(open, [box('a', 9)]));
+    await local.write(null, 'Bad', serializeDoc(design('project2', 'Bad', [box('b')])));
+    remote.failOn = 'project2';
+    const report = await sync();
+    expect(report.errors.length).toBe(1);
+    expect(report.changedKeys).toEqual([key]);
+    expect(report.downloaded).toEqual(['Open']);
+  });
+
+  it('makes one copy of a conflict however often the pass has to be tried', async () => {
+    const v1 = design('project1', 'Plate', [box('a')]);
+    const key = await local.write(null, v1.name, serializeDoc(v1));
+    await sync();
+    await local.write(key, 'Plate', serializeDoc(edited(v1, [box('a', 5)])));
+    remote.replace(edited(v1, [box('a', -5)]));
+    remote.failAll = true;
+    for (let i = 0; i < 3; i++) expect((await sync()).errors.length).toBeGreaterThan(0);
+    expect((await local.list()).map((p) => p.name).sort()).toEqual(['Plate', 'Plate (other device)']);
+    remote.failAll = false;
+    await sync();
+    expect((await sync()).errors).toEqual([]);
+    expect((await local.list()).map((p) => p.name).sort()).toEqual(['Plate', 'Plate (other device)']);
+    expect([...remote.files.values()].map((f) => f.file.name).sort()).toEqual(['Plate (other device).plastikcad', 'Plate.plastikcad']);
+    expect(state.records.size).toBe(2);
+    expect((await sync()).uploaded).toEqual([]);
+  });
+
+  it('only notes a save both sides already hold when its own record of it was lost', async () => {
+    const v1 = design('project1', 'Plate', [box('a')]);
+    const key = await local.write(null, v1.name, serializeDoc(v1));
+    await sync();
+    const stale = { ...state.records.get('project1')! };
+    const v2 = edited(v1, [box('a', 5)]);
+    await local.write(key, 'Plate', serializeDoc(v2));
+    await sync();
+    // The app quit between the upload and noting it.
+    state.records.set('project1', stale);
+    const report = await sync();
+    expect(report.merged).toEqual([]);
+    expect(report.changedKeys).toEqual([]);
+    expect(parseDoc(await local.read(key)).revision).toBe(v2.revision);
+    expect(state.records.get('project1')!.revision).toBe(v2.revision);
+  });
+
+  it('puts what was deleted elsewhere in the store\'s trash where it has one', async () => {
+    const discarded: string[] = [];
+    const withTrash = Object.assign(local, { discard: async (k: string) => void (discarded.push(k), await local.remove(k)) });
+    await three();
+    const fileB = [...remote.files.values()].find((f) => f.file.projectId === 'project2')!;
+    remote.files.delete(fileB.file.id);
+    const report = await synchronize(withTrash, remote, state, { device: 'device0a' });
+    expect(discarded).toEqual(report.removedKeys);
+    expect(discarded.length).toBe(1);
+  });
+
+  it('names the project a newer build saved, and leaves this device\'s copy of it alone', async () => {
+    const v1 = design('project1', 'Plate', [box('a')]);
+    const key = await local.write(null, v1.name, serializeDoc(v1));
+    await sync();
+    const newer = edited(v1, [box('a', 3)]);
+    remote.replace(newer);
+    const entry = [...remote.files.values()][0];
+    entry.text = entry.text.replace('"shape": "box"', '"shape": "hyperbox"');
+    const report = await sync();
+    expect(report.errors.map(String)).toEqual(['Error: "Plate": This design was saved by a newer version of the app. Update to open it.']);
+    expect(parseDoc(await local.read(key)).revision).toBe(v1.revision);
   });
 });
 
@@ -263,6 +488,18 @@ describe('three-way merge', () => {
     // Without a base, an object that differs on the two sides is a conflict; one only one side has is an addition.
     expect(mergeDocs(null, local, remote).conflicts).toBe(0);
     expect(mergeDocs(null, { ...local, scene: [box('b', 1)] }, remote).conflicts).toBe(1);
+  });
+
+  it('takes the robot from the side that changed it, and counts one changed differently on both as a conflict', () => {
+    const b = { ...base(), robot: { ...emptyRobot(), root: 'a' } };
+    const fixed = { ...b, robot: { ...b.robot, base: 'fixed' as const } };
+    const rooted = { ...b, robot: { ...b.robot, root: 'b' } };
+    expect(mergeDocs(b, b, fixed)).toMatchObject({ conflicts: 0, doc: { robot: { base: 'fixed' } } });
+    expect(mergeDocs(b, rooted, b)).toMatchObject({ conflicts: 0, doc: { robot: { root: 'b' } } });
+    expect(mergeDocs(b, rooted, fixed)).toMatchObject({ conflicts: 1, doc: { robot: { root: 'b', base: 'free' } } });
+    expect(mergeDocs(b, fixed, fixed).conflicts).toBe(0);
+    // Without a base there is no telling who changed it.
+    expect(mergeDocs(null, rooted, fixed).conflicts).toBe(1);
   });
 });
 
@@ -374,5 +611,17 @@ describe('Google Drive remote', () => {
 
     answers.push(() => new Response(JSON.stringify({ error: { message: 'Rate limit exceeded' } }), { status: 403 }));
     await expect(drive.download(made)).rejects.toThrow('Google Drive could not download Plate.plastikcad: Rate limit exceeded');
+  });
+
+  it('says how a file stands now: its revision, or nothing once it is trashed or gone', async () => {
+    const drive = new DriveRemote(fetch);
+    const file: RemoteFile = { id: 'f1', name: 'Plate.plastikcad', projectId: 'project1', revision: 'r1', modified: 0 };
+    answers.push(() => ({ id: 'f1', name: 'Plate.plastikcad', appProperties: { projectId: 'project1', revision: 'r2' } }));
+    expect(await drive.stat(file)).toMatchObject({ id: 'f1', revision: 'r2' });
+    expect(calls[0].url).toContain('/files/f1?fields=');
+    answers.push(() => ({ id: 'f1', name: 'Plate.plastikcad', trashed: true, appProperties: { projectId: 'project1', revision: 'r2' } }));
+    expect(await drive.stat(file)).toBeNull();
+    answers.push(() => new Response('{}', { status: 404 }));
+    expect(await drive.stat(file)).toBeNull();
   });
 });

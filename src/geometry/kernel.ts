@@ -5,7 +5,7 @@ import { curveStep, textWarp } from '../text/curve';
 import type { TextCurve } from '../text/curve';
 import Module from 'manifold-3d';
 import type { CrossSection, Manifold, ManifoldToplevel, Mat4, Mesh } from 'manifold-3d';
-import { geomKey, textAssetKey, textThickness } from '../model/geomKey';
+import { geomKey, isTextAsset, textAssetKey, textThickness } from '../model/geomKey';
 import { paintOf } from '../model/ops';
 import { apply, determinant, emptyBounds, expandBounds, isEmptyBounds, nodeMatrix, unionBounds } from '../model/math';
 import type { Bounds, Mat } from '../model/math';
@@ -42,25 +42,47 @@ export function initKernel(wasmUrl?: string): Promise<ManifoldToplevel> {
   return loading;
 }
 
+/**
+ * Lets go of a kernel that has stopped working (out of memory, say, after
+ * which every call into it fails), so that the next `initKernel` loads a
+ * fresh one. What was built goes with it; the imported data stays.
+ */
+export function resetKernel(): void {
+  kernel = null;
+  loading = null;
+  // Dropped, not freed: these solids belong to the kernel that is gone.
+  cache.clear();
+  touched.clear();
+}
+
 type Vec2Arg = number | [number, number];
-type PolygonsVec = { delete(): void };
+type Point = [number, number] | { x: number; y: number };
+type Vec<T> = { push_back(item: T): void; size(): number; get(i: number): T; delete(): void };
+type ContourVec = Vec<{ x: number; y: number }>;
+type PolygonsVec = Vec<ContourVec>;
 type RawCrossSection = { _ToPolygons(): PolygonsVec };
 type RawModule = {
+  Vector_vec2: new () => ContourVec;
+  Vector2_vec2: new () => PolygonsVec;
   _Extrude(polygons: PolygonsVec, height: number, divisions: number, twist: number, scaleTop: { x: number; y: number }): Manifold;
   _Revolve(polygons: PolygonsVec, segments: number, degrees: number): Manifold;
 };
 
+/** The kernel's numbers for the fill rules, as the binding has them. */
+const FILL_RULES: Record<string, number> = { EvenOdd: 0, NonZero: 1, Positive: 2, Negative: 3 };
+
 /**
- * Mends the JS binding: its `extrude` and `revolve` copy the section's polygons
- * into a kernel vector that they never free, some bytes a point on every call,
- * which adds up over the rebuilds of a part. (Its `CrossSection` constructor
- * and `toPolygons` leak a little too; those are only used once per asset.)
+ * Mends the JS binding, which copies polygons into kernel vectors that it
+ * never frees, some bytes a point on every call: the section's own in
+ * `extrude` and `revolve`, each contour's on the way into the `CrossSection`
+ * constructor and on the way out of `toPolygons`. A part makes a section and
+ * extrudes or revolves it on every rebuild, so that added up without end.
  */
 export function patchBinding(m: ManifoldToplevel): void {
   const raw = m as unknown as RawModule;
   // `m.CrossSection` is a wrapper function whose prototype merely inherits from the class's own,
   // where the methods live (and where the instances look them up).
-  const proto = Object.getPrototypeOf(m.CrossSection.prototype) as RawCrossSection & Record<string, unknown>;
+  const proto = Object.getPrototypeOf(m.CrossSection.prototype) as RawCrossSection & Record<string, unknown> & { constructor: new (polygons: PolygonsVec, fillRule: number) => CrossSection };
   const vec2 = (v: Vec2Arg) => (typeof v === 'number' ? { x: v, y: v } : { x: v[0], y: v[1] });
   proto.extrude = function (this: RawCrossSection, height: number, divisions = 0, twist = 0, scaleTop: Vec2Arg = [1, 1], center = false) {
     const polygons = this._ToPolygons();
@@ -82,6 +104,60 @@ export function patchBinding(m: ManifoldToplevel): void {
       polygons.delete();
     }
   };
+  proto.toPolygons = function (this: RawCrossSection) {
+    const polygons = this._ToPolygons();
+    try {
+      const out: [number, number][][] = [];
+      for (let i = 0; i < polygons.size(); i++) {
+        // A copy of the contour, which is ours to free.
+        const contour = polygons.get(i);
+        try {
+          const points: [number, number][] = [];
+          for (let j = 0; j < contour.size(); j++) {
+            const p = contour.get(j);
+            points.push([p.x, p.y]);
+          }
+          out.push(points);
+        } finally {
+          contour.delete();
+        }
+      }
+      return out;
+    } finally {
+      polygons.delete();
+    }
+  };
+
+  // The wrapper function itself is what leaks on the way in, so it is replaced by one that does not,
+  // carrying everything the old one had on it (`union`, `square`, the prototype and so on).
+  const Shipped = m.CrossSection as unknown as object;
+  const Raw = proto.constructor;
+  const Mended = function (polygons: Point[] | Point[][], fillRule = 'Positive') {
+    // The binding's rule: a list that starts with fewer than three entries is a single contour.
+    const contours = ((polygons[0] as unknown[]).length < 3 ? [polygons] : polygons) as Point[][];
+    const vec = new raw.Vector2_vec2();
+    try {
+      for (const contour of contours) {
+        const points = new raw.Vector_vec2();
+        try {
+          for (const p of contour) points.push_back(Array.isArray(p) ? { x: p[0], y: p[1] } : p);
+          // The kernel takes a copy; ours is freed below.
+          vec.push_back(points);
+        } finally {
+          points.delete();
+        }
+      }
+      return new Raw(vec, FILL_RULES[fillRule] ?? FILL_RULES.Positive);
+    } finally {
+      vec.delete();
+    }
+  };
+  for (const key of Reflect.ownKeys(Shipped)) {
+    if (key === 'length' || key === 'name' || key === 'arguments' || key === 'caller') continue;
+    if (key === 'prototype') Mended.prototype = m.CrossSection.prototype;
+    else Object.defineProperty(Mended, key, Object.getOwnPropertyDescriptor(Shipped, key)!);
+  }
+  (m as unknown as { CrossSection: unknown }).CrossSection = Mended;
 }
 
 /**
@@ -112,21 +188,28 @@ export function setAssets(incoming: Record<string, Asset>): void {
   if (replaced) clearCache();
 }
 
-/** Drops the imported data of designs that are no longer open, and anything built from it. */
+/**
+ * Drops the imported data of designs that are no longer open, and anything
+ * built from it. The outlines of lettering go without that: the key of what
+ * was built from them names the words, so it stays good.
+ */
 export function forgetAssets(keep: Iterable<string>): void {
   const wanted = new Set(keep);
   let dropped = false;
   for (const id of [...assets.keys()]) {
     if (wanted.has(id)) continue;
     assets.delete(id);
-    dropped = true;
+    if (!isTextAsset(id)) dropped = true;
   }
   if (dropped) clearCache();
 }
 
+/** Number of assets held, lettering included. */
+export const assetCount = (): number => assets.size;
+
 function sameAsset(a: Asset, b: Asset): boolean {
   if (a === b) return true;
-  if (a.kind === 'mesh') return b.kind === 'mesh' && a.positions === b.positions && a.triangles === b.triangles;
+  if (a.kind === 'mesh') return b.kind === 'mesh' && a.positions === b.positions && a.triangles === b.triangles && a.uv === b.uv;
   if (a.kind === 'image') return b.kind === 'image' && a.data === b.data;
   return b.kind === 'outline' && JSON.stringify(a.shapes) === JSON.stringify(b.shapes);
 }
@@ -171,10 +254,14 @@ function decodeMesh(asset: MeshAsset): MeshWithUV {
 
 type Deletable = { delete(): void };
 
-/** A part of a group, by the kernel's id for its faces and the path of ids (from the group's children down) to it. */
+/**
+ * A part of a group, by the kernel's id for its faces and the path to it (see
+ * `Faces`): places, not node ids, since a copy of the group shares this build
+ * and its parts have ids of their own.
+ */
 interface Source {
   id: number;
-  path: string[];
+  path: number[];
 }
 
 /** The geometry of a node as built: at its built size, centered on the origin. */
@@ -262,27 +349,27 @@ function checked(m: Manifold): Manifold {
 }
 
 /**
- * Set for the length of an export at fine detail: curved shapes and parts are
- * then built with more facets than are shown, under keys of their own.
+ * The node's built geometry, from the cache or made now. `fine` is for an
+ * export at fine detail: curved shapes and parts are then built with more
+ * facets than are shown, under keys of their own. It is handed down to
+ * everything a build is made of.
  */
-let refining = false;
-
-function builtOf(k: ManifoldToplevel, node: SceneNode, key = (refining ? 'fine:' : '') + geomKey(node)): Built {
+function builtOf(k: ManifoldToplevel, node: SceneNode, fine: boolean, key = (fine ? 'fine:' : '') + geomKey(node)): Built {
   let entry = cache.get(key);
   if (entry) cache.delete(key);
-  else entry = construct(k, node);
+  else entry = construct(k, node, fine);
   cache.set(key, entry);
   touched.add(key);
   return entry;
 }
 
-function construct(k: ManifoldToplevel, node: SceneNode): Built {
+function construct(k: ManifoldToplevel, node: SceneNode, fine: boolean): Built {
   switch (node.type) {
     case 'shape':
-      return solidEntry(scoped((keep) => checked(buildShape(k, node, keep, refining))));
+      return solidEntry(scoped((keep) => checked(buildShape(k, node, keep, fine))));
     case 'group': {
       const sources: Source[] = [];
-      const solid = scoped((keep) => groupSolid(k, node, keep, sources));
+      const solid = scoped((keep) => groupSolid(k, node, keep, fine, sources));
       return { solid, triangles: solid.numTri(), sources };
     }
     case 'import': {
@@ -291,7 +378,7 @@ function construct(k: ManifoldToplevel, node: SceneNode): Built {
       return asset.kind === 'mesh' ? meshEntry(k, node, asset) : solidEntry(outlineSolid(k, node, asset));
     }
     case 'part':
-      return solidEntry(scoped((keep) => partSolid(k, node, keep)));
+      return solidEntry(scoped((keep) => partSolid(k, node, keep, fine)));
     case 'text': {
       // The outlines of lettering are sent along like imported drawings (see `textAssetKey`).
       const asset = assets.get(textAssetKey(node));
@@ -331,8 +418,8 @@ function pictureSheet(k: ManifoldToplevel, node: PictureNode, keep: Keep): Manif
 const solidEntry = (solid: Manifold): Built => ({ solid, triangles: solid.numTri() });
 
 /** The node's built solid in its parent's coordinates. */
-function placed(k: ManifoldToplevel, node: SceneNode, keep: Keep): Manifold {
-  const { solid } = builtOf(k, node);
+function placed(k: ManifoldToplevel, node: SceneNode, keep: Keep, fine: boolean): Manifold {
+  const { solid } = builtOf(k, node, fine);
   if (!solid) {
     throw new Error(`"${node.name}" is not a watertight mesh, so it cannot be combined with other shapes.`);
   }
@@ -346,22 +433,35 @@ function placed(k: ManifoldToplevel, node: SceneNode, keep: Keep): Manifold {
  * of its own, which the kernel carries through to the faces of the result; a
  * group keeps the ids of its own parts instead, so that they can be told
  * apart all the way down (whoever colors the faces decides where to stop).
+ * `used` holds the ids that have gone into the result so far.
  */
-function combine(k: ManifoldToplevel, nodes: SceneNode[], keep: Keep, sources?: Source[]): Manifold | null {
+function combine(k: ManifoldToplevel, nodes: SceneNode[], keep: Keep, fine: boolean, sources?: Source[], used = new Set<number>()): Manifold | null {
   const solids: Manifold[] = [];
   const holes: Manifold[] = [];
+  let place = -1;
   // Pictures lie on the surface; they are neither added nor cut.
   for (const node of nodes) {
     if (node.type === 'picture') continue;
-    let solid = placed(k, node, keep);
+    place++;
+    let solid = placed(k, node, keep, fine);
     if (sources) {
-      const entry = node.type === 'group' ? builtOf(k, node) : null;
-      const inner = entry?.solid ? entry.sources : undefined;
-      if (inner) {
-        for (const s of inner) sources.push({ id: s.id, path: [node.id, ...s.path] });
+      const entry = node.type === 'group' ? builtOf(k, node, fine) : null;
+      let inner = entry?.solid ? entry.sources : undefined;
+      if (inner && node.type === 'group') {
+        if (inner.some((s) => used.has(s.id))) {
+          // The same group a second time (copies share one build): its faces would be taken for the
+          // first one's, so this one is made again, its parts under ids of their own.
+          inner = [];
+          solid = keep(groupSolid(k, node, keep, fine, inner, used).transform(mat4(nodeMatrix(node))));
+        }
+        for (const s of inner) {
+          used.add(s.id);
+          sources.push({ id: s.id, path: [place, ...s.path] });
+        }
       } else {
         solid = keep(solid.asOriginal());
-        sources.push({ id: solid.originalID(), path: [node.id] });
+        used.add(solid.originalID());
+        sources.push({ id: solid.originalID(), path: [place] });
       }
     }
     (node.hole ? holes : solids).push(solid);
@@ -371,33 +471,33 @@ function combine(k: ManifoldToplevel, nodes: SceneNode[], keep: Keep, sources?: 
   return holes.length === 0 ? body : keep(k.Manifold.difference([body, ...holes]));
 }
 
-function groupSolid(k: ManifoldToplevel, node: GroupNode, keep: Keep, sources?: Source[]): Manifold {
-  const result = combine(k, node.children, keep, sources);
+function groupSolid(k: ManifoldToplevel, node: GroupNode, keep: Keep, fine: boolean, sources?: Source[], used?: Set<number>): Manifold {
+  const result = combine(k, node.children, keep, fine, sources, used);
   if (!result) throw new Error('This group has nothing left: it only contains holes.');
   if (checked(result).isEmpty()) throw new Error('This group has nothing left: its holes remove everything.');
   return result;
 }
 
 /** A parametric part as its generator makes it: standing on the plate, its axis or corner at the origin. */
-function partAsBuilt(k: ManifoldToplevel, node: PartNode, keep: Keep): Manifold {
+function partAsBuilt(k: ManifoldToplevel, node: PartNode, keep: Keep, fine: boolean): Manifold {
   // A design saved with an older set of parameters gets the defaults for whatever it lacks.
   const def = getGenerator(node.part);
-  const built = def.build(sanitizeParams(def, node.params), refining ? QUALITY.fine : QUALITY.normal);
+  const built = def.build(sanitizeParams(def, node.params), fine ? QUALITY.fine : QUALITY.normal);
   const solid = checked(buildSolid(k, built.solid, keep));
   if (solid.isEmpty()) throw new Error(`"${node.name}" came out empty with these settings.`);
   return solid;
 }
 
 /** A parametric part, moved from standing on the plate to being centered on its box like every other node. */
-function partSolid(k: ManifoldToplevel, node: PartNode, keep: Keep): Manifold {
-  const solid = partAsBuilt(k, node, keep);
+function partSolid(k: ManifoldToplevel, node: PartNode, keep: Keep, fine: boolean): Manifold {
+  const solid = partAsBuilt(k, node, keep, fine);
   const { min, max } = solid.boundingBox();
   return keep(solid.translate([-(min[0] + max[0]) / 2, -(min[1] + max[1]) / 2, -(min[2] + max[2]) / 2]));
 }
 
 /** A part's box in its generator's frame, which says where the generator's origin sits in the box. */
 export function partBox(node: PartNode): Bounds | null {
-  return operation((k) => scoped((keep) => toBounds(partAsBuilt(k, node, keep).boundingBox())));
+  return operation((k) => scoped((keep) => toBounds(partAsBuilt(k, node, keep, false).boundingBox())));
 }
 
 function outlineSolid(k: ManifoldToplevel, node: SceneNode, asset: OutlineAsset, thickness = 1): Manifold {
@@ -410,9 +510,7 @@ function outlineSolid(k: ManifoldToplevel, node: SceneNode, asset: OutlineAsset,
     }
     const section = parts.length === 1 ? parts[0] : keep(k.CrossSection.union(parts));
     if (section.isEmpty()) throw new Error(`"${node.name}" has no filled areas to extrude.`);
-    // 1 mm thick (or as asked), centered like the artwork itself already is. Not with the binding's own
-    // `center` option, which leaks the uncentered solid. (Polygons going into and out of a CrossSection
-    // leak a little too, some bytes a point; that is tolerable once per asset, and nothing here repeats it.)
+    // 1 mm thick (or as asked), centered like the artwork itself already is.
     return checked(keep(keep(section.extrude(thickness, 0, 0, [1, 1])).translate([0, 0, -thickness / 2])));
   });
 }
@@ -436,7 +534,8 @@ function curvedText(k: ManifoldToplevel, node: TextNode, asset: OutlineAsset, cu
     flat[0] = 2 * w;
     flat[1] = 2 * h;
     const warp = textWarp(curve, flat, thickness);
-    const fine = keep(keep(outlineSolid(k, node, asset, thickness)).refineToLength(curveStep(curve, flat[0])));
+    const straight = keep(outlineSolid(k, node, asset, thickness));
+    const fine = keep(straight.refineToLength(curveStep(curve, flat[0], straight.surfaceArea())));
     const bent = keep(
       fine.warp((v) => {
         const [x, y, z] = warp([v[0], v[1], v[2]]);
@@ -602,7 +701,7 @@ function concatenate(parts: MeshData[]): MeshData {
 /** Geometry of one node at its built size, centered on the origin (see `builtSize`); `key` is its `geomKey`. */
 export function build(key: string, node: SceneNode): BuildResult {
   return operation((k) => {
-    const entry = builtOf(k, node, key);
+    const entry = builtOf(k, node, false, key);
     if (!entry.solid) {
       const { positions, triangles, uv } = entry.open;
       const render = creasedNormals(positions, triangles, CREASE_ANGLE);
@@ -636,18 +735,19 @@ export function build(key: string, node: SceneNode): BuildResult {
 
 /**
  * Bounds of what the nodes would make as a group (solids merged, holes cut
- * away), in the nodes' own coordinates. Null if nothing would be left.
+ * away), in the nodes' own coordinates. Null if nothing would be left. Hidden
+ * nodes count: a group takes them in and shows them (see `makeGroup`).
  */
 export function measure(nodes: SceneNode[]): Bounds | null {
   return operation((k) =>
     scoped((keep) => {
-      const visible = nodes.filter((n) => !n.hidden && n.type !== 'picture');
-      if (!visible.some((n) => n.hole)) {
+      const parts = nodes.filter((n) => n.type !== 'picture');
+      if (!parts.some((n) => n.hole)) {
         // Nothing is cut away, so the boxes of the parts say it all; no need to merge them.
-        const bounds = unionBounds(visible.map((n) => toBounds(placed(k, n, keep).boundingBox())));
+        const bounds = unionBounds(parts.map((n) => toBounds(placed(k, n, keep, false).boundingBox())));
         return isEmptyBounds(bounds) ? null : bounds;
       }
-      const result = combine(k, visible, keep);
+      const result = combine(k, parts, keep, false);
       if (!result || checked(result).isEmpty()) return null;
       return toBounds(result.boundingBox());
     }),
@@ -660,12 +760,7 @@ export function measure(nodes: SceneNode[]): Bounds | null {
  * passed through unchanged, with a warning.
  */
 export function exportNodes(nodes: SceneNode[], outline: boolean, fine = false, local = false): ExportResult {
-  refining = fine;
-  try {
-    return exportAt(nodes, outline, local);
-  } finally {
-    refining = false;
-  }
+  return exportAt(nodes, outline, fine, local);
 }
 
 /**
@@ -677,32 +772,27 @@ export function exportNodes(nodes: SceneNode[], outline: boolean, fine = false, 
  * With `local` the parts stay in the nodes' own built frames (see `builtSize`).
  */
 export function exportColored(nodes: SceneNode[], fine = false, local = false): ColoredExport {
-  refining = fine;
-  try {
-    return operation((k) =>
-      scoped((keep): ColoredExport => {
-        const warnings: string[] = [];
-        const objects: ColoredObject[] = [];
-        for (const node of nodes) {
-          if (node.hole || node.hidden || node.type === 'picture') continue;
-          const entry = builtOf(k, node);
-          if (!entry.solid) {
-            const mesh = local ? { positions: entry.open.positions.slice(), triangles: entry.open.triangles.slice() } : transformed(entry.open, nodeMatrix(node));
-            objects.push({ name: node.name, parts: [{ color: node.color, mesh }] });
-            warnings.push(`"${node.name}" is not watertight and was exported as-is.`);
-            continue;
-          }
-          const matrix = mat4(nodeMatrix(node));
-          const parts: ColoredPart[] = coloredParts(k, node, keep).map((p) => ({ color: p.color, mesh: meshOf(local ? p.solid : keep(p.solid.transform(matrix))) }));
-          if (parts.length) objects.push({ name: node.name, parts });
+  return operation((k) =>
+    scoped((keep): ColoredExport => {
+      const warnings: string[] = [];
+      const objects: ColoredObject[] = [];
+      for (const node of nodes) {
+        if (node.hole || node.hidden || node.type === 'picture') continue;
+        const entry = builtOf(k, node, fine);
+        if (!entry.solid) {
+          const mesh = local ? { positions: entry.open.positions.slice(), triangles: entry.open.triangles.slice() } : transformed(entry.open, nodeMatrix(node));
+          objects.push({ name: node.name, parts: [{ color: node.color, mesh }] });
+          warnings.push(`"${node.name}" is not watertight and was exported as-is.`);
+          continue;
         }
-        if (objects.length === 0) throw new Error('There is nothing to export.');
-        return { objects, warnings };
-      }),
-    );
-  } finally {
-    refining = false;
-  }
+        const matrix = mat4(nodeMatrix(node));
+        const parts: ColoredPart[] = coloredParts(k, node, keep, fine).map((p) => ({ color: p.color, mesh: meshOf(local ? p.solid : keep(p.solid.transform(matrix))) }));
+        if (parts.length) objects.push({ name: node.name, parts });
+      }
+      if (objects.length === 0) throw new Error('There is nothing to export.');
+      return { objects, warnings };
+    }),
+  );
 }
 
 /**
@@ -711,12 +801,12 @@ export function exportColored(nodes: SceneNode[], fine = false, local = false): 
  * to be relied on; `watertight` says so.
  */
 export function massProperties(nodes: SceneNode[]): LinkProperties[] {
-  return operation((k) => scoped((keep) => nodes.map((node) => propertiesOf(k, node, keep))));
+  return operation((k) => scoped((keep) => nodes.map((node) => propertiesOf(k, node, keep, false))));
 }
 
-function propertiesOf(k: ManifoldToplevel, node: SceneNode, keep: Keep): LinkProperties {
-  const entry = builtOf(k, node);
-  const mesh = entry.solid ? meshOf(placed(k, node, keep)) : transformed(entry.open, nodeMatrix(node));
+function propertiesOf(k: ManifoldToplevel, node: SceneNode, keep: Keep, fine: boolean): LinkProperties {
+  const entry = builtOf(k, node, fine);
+  const mesh = entry.solid ? meshOf(placed(k, node, keep, fine)) : transformed(entry.open, nodeMatrix(node));
   return { id: node.id, ...meshProperties(mesh), watertight: Boolean(entry.solid), triangles: mesh.triangles.length / 3 };
 }
 
@@ -726,37 +816,32 @@ function propertiesOf(k: ManifoldToplevel, node: SceneNode, keep: Keep): LinkPro
  * for a box or none) and its mass properties.
  */
 export function robotGeometry(nodes: SceneNode[], collisions: Record<string, CollisionKind>, fine: boolean): LinkGeometry[] {
-  refining = fine;
-  try {
-    return operation((k) =>
-      scoped((keep) =>
-        nodes.map((node): LinkGeometry => {
-          const entry = builtOf(k, node);
-          const kind = collisions[node.id] ?? 'hull';
-          if (!entry.solid) {
-            const mesh = transformed(entry.open, nodeMatrix(node));
-            const points: [number, number, number][] = [];
-            for (let i = 0; i < mesh.positions.length; i += 3) points.push([mesh.positions[i], mesh.positions[i + 1], mesh.positions[i + 2]]);
-            const collision = kind === 'mesh' ? mesh : kind === 'hull' && points.length >= 4 ? meshOf(keep(k.Manifold.hull(points))) : null;
-            return { id: node.id, visual: [{ color: node.color, mesh }], collision, bounds: boundsOfPositions(mesh.positions), props: propertiesOf(k, node, keep) };
-          }
-          const matrix = mat4(nodeMatrix(node));
-          const visual = coloredParts(k, node, keep).map((p) => ({ color: p.color, mesh: meshOf(keep(p.solid.transform(matrix))) }));
-          const solid = placed(k, node, keep);
-          const collision = kind === 'mesh' ? meshOf(solid) : kind === 'hull' ? meshOf(keep(solid.hull())) : null;
-          return { id: node.id, visual, collision, bounds: toBounds(solid.boundingBox()), props: propertiesOf(k, node, keep) };
-        }),
-      ),
-    );
-  } finally {
-    refining = false;
-  }
+  return operation((k) =>
+    scoped((keep) =>
+      nodes.map((node): LinkGeometry => {
+        const entry = builtOf(k, node, fine);
+        const kind = collisions[node.id] ?? 'hull';
+        if (!entry.solid) {
+          const mesh = transformed(entry.open, nodeMatrix(node));
+          const points: [number, number, number][] = [];
+          for (let i = 0; i < mesh.positions.length; i += 3) points.push([mesh.positions[i], mesh.positions[i + 1], mesh.positions[i + 2]]);
+          const collision = kind === 'mesh' ? mesh : kind === 'hull' && points.length >= 4 ? meshOf(keep(k.Manifold.hull(points))) : null;
+          return { id: node.id, visual: [{ color: node.color, mesh }], collision, bounds: boundsOfPositions(mesh.positions), props: propertiesOf(k, node, keep, fine) };
+        }
+        const matrix = mat4(nodeMatrix(node));
+        const visual = coloredParts(k, node, keep, fine).map((p) => ({ color: p.color, mesh: meshOf(keep(p.solid.transform(matrix))) }));
+        const solid = placed(k, node, keep, fine);
+        const collision = kind === 'mesh' ? meshOf(solid) : kind === 'hull' ? meshOf(keep(solid.hull())) : null;
+        return { id: node.id, visual, collision, bounds: toBounds(solid.boundingBox()), props: propertiesOf(k, node, keep, fine) };
+      }),
+    ),
+  );
 }
 
 /** A node's solid in its built frame, split by color (see `exportColored`); the solids are the cache's own or kept. */
-function coloredParts(k: ManifoldToplevel, node: SceneNode, keep: Keep): { color: string; solid: Manifold }[] {
+function coloredParts(k: ManifoldToplevel, node: SceneNode, keep: Keep, fine: boolean): { color: string; solid: Manifold }[] {
   if (node.type !== 'group' || !node.mixed) {
-    const { solid } = builtOf(k, node);
+    const { solid } = builtOf(k, node, fine);
     if (!solid) throw new Error(`"${node.name}" is not a watertight mesh, so it cannot be combined with other shapes.`);
     return [{ color: paintOf(node), solid }];
   }
@@ -766,11 +851,11 @@ function coloredParts(k: ManifoldToplevel, node: SceneNode, keep: Keep): { color
   for (const child of node.children) {
     if (child.type === 'picture') continue;
     if (child.hole) {
-      holes.push(placed(k, child, keep));
+      holes.push(placed(k, child, keep, fine));
       continue;
     }
     const matrix = mat4(nodeMatrix(child));
-    for (const part of coloredParts(k, child, keep)) {
+    for (const part of coloredParts(k, child, keep, fine)) {
       const list = regions.get(part.color) ?? [];
       list.push(keep(part.solid.transform(matrix)));
       regions.set(part.color, list);
@@ -790,7 +875,7 @@ function coloredParts(k: ManifoldToplevel, node: SceneNode, keep: Keep): { color
 }
 
 /** With `local`, the nodes' geometry is left in their own built frames (see `builtSize`) instead of being placed. */
-function exportAt(nodes: SceneNode[], outline: boolean, local: boolean): ExportResult {
+function exportAt(nodes: SceneNode[], outline: boolean, fine: boolean, local: boolean): ExportResult {
   return operation((k) =>
     scoped((keep): ExportResult => {
       const warnings: string[] = [];
@@ -802,7 +887,7 @@ function exportAt(nodes: SceneNode[], outline: boolean, local: boolean): ExportR
       for (const node of nodes) {
         // A picture on its own is a sheet with nothing solid about it; the pictures on an object go out with the object's skin.
         if (node.hole || node.hidden || (node.type === 'picture' && !local)) continue;
-        const entry = builtOf(k, node);
+        const entry = builtOf(k, node, fine);
         if (entry.solid) {
           solids.push(local ? entry.solid : keep(entry.solid.transform(mat4(nodeMatrix(node)))));
           sources = local && nodes.length === 1 && entry.solid ? entry.sources : undefined;

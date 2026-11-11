@@ -1,9 +1,9 @@
-import { curvedSize } from '../text/curve';
+import { CURVED_TRIANGLES, curvedSize } from '../text/curve';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { geomKey, textAssetKey } from '../model/geomKey';
 import { add, apply, emptyBounds, expandBounds, nodeMatrix } from '../model/math';
 import type { Bounds } from '../model/math';
-import { alignNodes, makeGroup } from '../model/ops';
+import { alignNodes, cloneNode, makeGroup, sourceColor } from '../model/ops';
 import type { Asset, GroupNode, ImportNode, PictureNode, Polygon, SceneNode, ShapeKind, ShapeNode, TextNode, Vec3 } from '../model/types';
 import { build, cacheSize, clearCache, decodeBase64, exportColored, exportNodes, forgetAssets, initKernel, measure, rawManifold, SHEET, setAssets } from './kernel';
 import type { MeshData } from './mesh';
@@ -227,12 +227,21 @@ describe('measure', () => {
     expect(tilted.max[0]).toBeCloseTo(10 * Math.SQRT2, 6);
   });
 
-  it('skips hidden nodes and reports nothing as null', () => {
+  it('counts hidden nodes, which a group takes in and shows, and reports nothing as null', () => {
     const box = shape('box');
-    const far = shape('box', { pos: [100, 0, 0], hidden: true });
-    expectBounds(measure([box, far]), [-10, -10, -10], [10, 10, 10]);
+    const far = shape('box', { pos: [40, 0, 0], hidden: true });
+    expectBounds(measure([box, far]), [-10, -10, -10], [50, 10, 10]);
+    expectBounds(measure([far]), [30, -10, -10], [50, 10, 10]);
+    // A hidden hole cuts all the same.
+    const end = shape('box', { size: [10, 30, 30], pos: [8, 0, 0], hole: true, hidden: true });
+    expectBounds(measure([box, end]), [-10, -10, -10], [3, 10, 10]);
+    // The group made of them has the box of what it builds.
+    const g = makeGroup([box, far], measure([box, far])!, 'Group');
+    expect(g.children.some((c) => c.hidden)).toBe(false);
+    expect(g.size).toEqual([60, 20, 20]);
+    const built = make(g).bounds;
+    expectBounds(built, [-g.size[0] / 2, -g.size[1] / 2, -g.size[2] / 2], [g.size[0] / 2, g.size[1] / 2, g.size[2] / 2]);
     expect(measure([])).toBeNull();
-    expect(measure([far])).toBeNull();
     expect(measure([shape('box', { hole: true })])).toBeNull();
     expect(measure([box, shape('box', { size: [30, 30, 30], hole: true })])).toBeNull();
   });
@@ -255,15 +264,44 @@ describe('hole groups', () => {
 });
 
 describe('the parts a group was made from', () => {
-  /** How many triangles of the result each source part made, by its path. */
+  /** The ids of the parts along a path of places (see `Faces`). */
+  const idsAlong = (node: SceneNode, path: number[]): string[] => {
+    const ids: string[] = [];
+    let nodes = node.type === 'group' ? node.children : [];
+    for (const place of path) {
+      const part = nodes.filter((n) => n.type !== 'picture')[place];
+      ids.push(part.id);
+      nodes = part.type === 'group' ? part.children : [];
+    }
+    return ids;
+  };
+
+  /** How many triangles of the result each source part made, by the ids along its path. */
   const share = (node: SceneNode): Record<string, number> => {
     const faces = make(node).faces!;
     const out: Record<string, number> = {};
     for (const s of faces.source) {
-      const key = s === 0xffff ? '?' : faces.sources[s].join('/');
+      const key = s === 0xffff ? '?' : idsAlong(node, faces.sources[s]).join('/');
       out[key] = (out[key] ?? 0) + 1;
     }
     return out;
+  };
+
+  /** How many triangles of the result show each color. */
+  const colors = (node: GroupNode): Record<string, number> => {
+    const faces = make(node).faces!;
+    const out: Record<string, number> = {};
+    for (const s of faces.source) {
+      const color = s === 0xffff ? '?' : sourceColor(node, faces.sources[s]);
+      out[color] = (out[color] ?? 0) + 1;
+    }
+    return out;
+  };
+
+  const twoTone = (): GroupNode => {
+    const box = shape('box', { pos: [-10, 0, 10], color: '#ff0000' });
+    const rod = shape('cylinder', { pos: [10, 0, 10], color: '#00ff00' });
+    return makeGroup([box, rod], measure([box, rod])!, 'Two-tone');
   };
 
   it('tells which part made each face, through a union and a cut', () => {
@@ -292,12 +330,52 @@ describe('the parts a group was made from', () => {
     expect(share(painted)).toEqual(share(mixed));
   });
 
+  it('colors a copy of a group like the original, from the same build', () => {
+    const g = twoTone();
+    const original = colors(g);
+    expect(Object.keys(original).sort()).toEqual(['#00ff00', '#ff0000']);
+    const built = cacheSize();
+    // A duplicate, a paste and the copies of an array all come from `cloneNode`: new ids, the same geometry.
+    const copy = cloneNode(g);
+    expect(copy.children.map((c) => c.id)).not.toEqual(g.children.map((c) => c.id));
+    expect(colors(copy)).toEqual(original);
+    expect(exportNodes([copy], false, false, true).faces?.sources).toEqual([[0], [1]]);
+    // Repainted, the copy shows its own colors, face for face where the original showed its.
+    const repainted: GroupNode = { ...copy, children: copy.children.map((c, i) => ({ ...c, color: i ? '#0000ff' : '#ffff00' })) };
+    expect(colors(repainted)).toEqual({ '#ffff00': original['#ff0000'], '#0000ff': original['#00ff00'] });
+    expect(cacheSize()).toBe(built);
+  });
+
+  it('counts places past the pictures on a group, which share its build', () => {
+    const g = twoTone();
+    const label: PictureNode = { ...base('Picture'), type: 'picture', asset: 'img', mapping: 'flat', angle: 120, natural: [1, 1, 1], size: [10, 10, 1] };
+    const labelled: GroupNode = { ...g, children: [label, ...g.children] };
+    expect(geomKey(labelled)).toBe(geomKey(g));
+    expect(colors(labelled)).toEqual(colors(g));
+  });
+
+  it('tells two copies of one group inside a group apart', () => {
+    const first = twoTone();
+    const copy = cloneNode(first);
+    const second: GroupNode = { ...copy, pos: add(first.pos, [0, 50, 0]), children: copy.children.map((c, i) => ({ ...c, color: i ? '#0000ff' : '#ffff00' })) };
+    const outer = makeGroup([first, second], measure([first, second])!, 'Outer');
+    const alone = colors(first);
+    expect(colors(outer)).toEqual({ '#ff0000': alone['#ff0000'], '#00ff00': alone['#00ff00'], '#ffff00': alone['#ff0000'], '#0000ff': alone['#00ff00'] });
+    // And a level further down: a copy of the pair inside another group beside the pair itself.
+    const third = { ...cloneNode(first), pos: add(first.pos, [0, 100, 0]) };
+    const wrapped = makeGroup([third], measure([third])!, 'Wrapped');
+    const deep = makeGroup([first, wrapped], measure([first, wrapped])!, 'Deep');
+    const got = share(deep);
+    expect(Object.keys(got).sort()).toEqual([...first.children.map((c) => `${first.id}/${c.id}`), ...third.children.map((c) => `${wrapped.id}/${third.id}/${c.id}`)].sort());
+    expect(make(deep).volume).toBeCloseTo(2 * make(first).volume, 3);
+  });
+
   it('exports a group in place with the same face origins, and other things without', () => {
     const a = shape('box', { id: 'A', size: [10, 10, 10], pos: [-5, 0, 5] });
     const b = shape('box', { id: 'Bx', size: [10, 10, 10], pos: [5, 0, 5] });
     const g = makeGroup([a, b], measure([a, b])!, 'Two');
     const local = exportNodes([g], false, false, true);
-    expect(local.faces?.sources).toEqual([['A'], ['Bx']]);
+    expect(local.faces?.sources).toEqual([[0], [1]]);
     expect(local.faces!.source.length).toBe(local.mesh.triangles.length / 3);
     expect(exportNodes([g], false, false, false).faces).toBeUndefined();
     expect(exportNodes([a], false, false, true).faces).toBeUndefined();
@@ -496,6 +574,29 @@ describe('lettering', () => {
       // A different curve is different geometry.
       expect(geomKey(node)).not.toBe(geomKey(text({ curve: { ...curve, angle: curve.angle + 10 }, natural, size: natural })));
     }
+  });
+
+  it('cuts curved lettering no finer than its triangle budget allows', () => {
+    // A tall, narrow column of lettering wrapped nearly all the way round: cut at the step its curve
+    // asks for, it would come to well over a million triangles.
+    const curve = { kind: 'bend', angle: 355, flip: false, thickness: 1 } as const;
+    const natural = curvedSize(curve, [4, 150], 1);
+    const node = text({ text: 'column', curve, natural, size: natural });
+    const column: Polygon = [
+      [-2, -75],
+      [2, -75],
+      [2, 75],
+      [-2, 75],
+    ];
+    setAssets({ [textAssetKey(node)]: { kind: 'outline', shapes: [{ contours: [column], evenodd: false }] } });
+    const r = build(geomKey(node), node);
+    expect(r.watertight).toBe(true);
+    expect(r.triangles).toBeLessThan(1.5 * CURVED_TRIANGLES);
+    expect(r.triangles).toBeGreaterThan(0.5 * CURVED_TRIANGLES);
+    // Still the same lettering, round the same cylinder.
+    const radius = 4 / ((355 * Math.PI) / 180);
+    expect(r.volume / ((600 * (radius + 0.5)) / radius)).toBeCloseTo(1, 2);
+    for (let k = 0; k < 3; k++) expect(r.bounds.max[k] - r.bounds.min[k]).toBeCloseTo(natural[k], 1);
   });
 });
 
@@ -701,6 +802,15 @@ describe('imported meshes', () => {
     expect(make(node).volume).toBeCloseTo(8, 6);
     setAssets({ cube: meshAsset(CUBE_POSITIONS.map((v) => v * 2), CUBE_TRIANGLES) });
     expect(make(node).volume).toBeCloseTo(64, 6);
+  });
+
+  it('rebuilds when only the texture coordinates of an asset are replaced', () => {
+    const node = imported('mapped', [2, 2, 2]);
+    const withUv = (u: number): Asset => ({ ...meshAsset(CUBE_POSITIONS, CUBE_TRIANGLES), uv: encode(new Float32Array(CUBE_TRIANGLES.length * 2).fill(u)) } as Asset);
+    setAssets({ mapped: withUv(0.25) });
+    expect(Array.from(new Set(make(node).render.uv))).toEqual([0.25]);
+    setAssets({ mapped: withUv(0.75) });
+    expect(Array.from(new Set(make(node).render.uv))).toEqual([0.75]);
   });
 });
 

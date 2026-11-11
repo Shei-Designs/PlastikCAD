@@ -9,8 +9,25 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Nothing is built from a commit whose tests fail.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+
   # One job creates the draft so the platform builds don't race to create it.
   create-release:
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: write

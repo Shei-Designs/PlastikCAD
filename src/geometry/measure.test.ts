@@ -10,9 +10,9 @@ const circle = (center: [number, number, number], radius: number, normal: [numbe
 describe('describe', () => {
   it('says what one feature is', () => {
     expect(describeFeature(point([1, 2, 3])).lines).toEqual(['Point', '(1, 2, 3)']);
-    expect(describeFeature(point([1, 2, 3], 'center')).text).toBe('Object centre');
+    expect(describeFeature(point([1, 2, 3], 'center')).text).toBe('Object center');
     expect(describeFeature(edge([0, 0, 0], [30, 40, 0])).lines[0]).toBe('Edge 50 mm');
-    expect(describeFeature(circle([0, 0, 0], 5)).lines).toEqual(['Circle Ø 10 mm', 'R 5 mm', 'centre (0, 0, 0)']);
+    expect(describeFeature(circle([0, 0, 0], 5)).lines).toEqual(['Circle Ø 10 mm', 'R 5 mm', 'center (0, 0, 0)']);
     expect(describeFeature({ ...(circle([0, 0, 0], 5) as Extract<Feature, { kind: 'circle' }>), sweep: 90, ends: [[5, 0, 0], [0, 5, 0]] }).lines[0]).toBe('Arc R 5 mm, 90°');
     expect(describeFeature(face([0, 0, 0], [0, 0, 1])).lines[0]).toBe('Face 100 mm²');
     expect(describeFeature(face([0, 0, 0], [0, 0, 1], false)).lines[0]).toBe('Surface 100 mm²');
@@ -69,8 +69,8 @@ describe('measure', () => {
 
   it('treats circles as their centres, and says how their axes lie', () => {
     const m = measure(circle([0, 0, 0], 5), circle([20, 0, 0], 3, [1, 0, 0]));
-    expect(m.lines).toEqual(['Centres 20 mm', 'axes 90° apart']);
-    expect(measure(circle([0, 0, 0], 5), circle([0, 0, 8], 5)).lines).toEqual(['Centres 8 mm']);
+    expect(m.lines).toEqual(['Centers 20 mm', 'axes 90° apart']);
+    expect(measure(circle([0, 0, 0], 5), circle([0, 0, 8], 5)).lines).toEqual(['Centers 8 mm']);
     expect(measure(circle([0, 0, 0], 5), point([0, 0, 8])).text).toBe('8 mm');
   });
 });

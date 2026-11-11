@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { evaluate, initKernel } from './evaluate';
+import { evaluate, initKernel } from './testing';
 import {
   isoMetricProfile,
   pressureAngleProfile,

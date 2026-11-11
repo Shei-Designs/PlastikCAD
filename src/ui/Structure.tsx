@@ -4,58 +4,23 @@
 // part on the plate; pick one to edit the object at that layer, and to name it
 // and read or write its notes in the box fixed at the bottom.
 import { useEffect, useState } from 'react';
-import { shapeDef } from '../geometry/shapes';
-import { getGenerator } from '../parts/generators';
 import { MAX_NOTE } from '../model/file';
 import { HOLE_COLOR } from '../model/ops';
 import type { SceneNode } from '../model/types';
 import { editInside, setHighlight, setNameAt, setNote } from '../state/store';
+import { CommitInput } from './Fields';
+import { kindOf } from './nodeKind';
 import { enterByTouch } from './TouchEntry';
-
-const kindOf = (node: SceneNode): string =>
-  node.type === 'group'
-    ? `Group of ${node.children.length}`
-    : node.type === 'import'
-      ? 'Imported'
-      : node.type === 'text'
-        ? 'Text'
-        : node.type === 'part'
-          ? getGenerator(node.part).name
-          : node.type === 'picture'
-            ? 'Picture'
-            : shapeDef(node.shape).name;
 
 const countLeaves = (node: SceneNode): number => (node.type === 'group' ? node.children.reduce((n, c) => n + countLeaves(c), 0) : 1);
 const depthOf = (node: SceneNode): number => (node.type === 'group' ? 1 + Math.max(...node.children.map(depthOf)) : 0);
 
 /** The name of the picked layer, taken when typing is done (Enter or leaving the box); Escape puts the old one back. */
 function Name({ path, node }: { path: string[]; node: SceneNode }) {
-  const [text, setText] = useState(node.name);
-  useEffect(() => setText(node.name), [node.name]);
-  const commit = (next: string) => {
-    const clean = next.trim();
-    if (clean && clean !== node.name) setNameAt(path, clean);
-    else setText(node.name);
-  };
   return (
     <label className="details-field">
       <span className="notes-head">Name</span>
-      <input
-        className="text-input"
-        aria-label="Name"
-        spellCheck={false}
-        value={text}
-        onPointerDown={(e) => enterByTouch(e, { label: 'Name', value: text, inputMode: 'text', onCommit: commit })}
-        onChange={(e) => setText(e.target.value)}
-        onBlur={() => commit(text)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') e.currentTarget.blur();
-          if (e.key === 'Escape') {
-            setText(node.name);
-            e.currentTarget.blur();
-          }
-        }}
-      />
+      <CommitInput className="text-input" label="Name" sheet="Name" value={node.name} onCommit={(name) => setNameAt(path, name)} />
     </label>
   );
 }
@@ -75,7 +40,7 @@ function Notes({ path, node }: { path: string[]; node: SceneNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [note]);
   return (
-    <label className="details-field" title="Keeps reminders with this part of the object, saved in the design">
+    <label className="details-field" title="Keeps notes with this part of the object.">
       <span className="notes-head">Notes</span>
       <textarea
         className="text-input area"
@@ -163,7 +128,7 @@ export function Structure({ root }: { root: SceneNode }) {
   return (
     <div className="structure-tab">
       <div className="structure-scroll">
-        <h2 title="Hover a part to see it on the plate; pick one to edit it and to write its notes.">
+        <h2 title="Shows how the object was put together.">
           Structure
           <span className="count">{root.type === 'group' ? `${leaves} part${leaves === 1 ? '' : 's'}, ${levels} level${levels === 1 ? '' : 's'}` : ''}</span>
         </h2>
@@ -175,7 +140,7 @@ export function Structure({ root }: { root: SceneNode }) {
             <span className="clip">
               <strong>{chosen.name}</strong>
             </span>
-            <button type="button" className="chip" title="Edits this part inside the object" onClick={() => editInside(path)}>
+            <button type="button" className="chip" title="Edits this part inside the object." onClick={() => editInside(path)}>
               Edit here
             </button>
           </div>

@@ -72,6 +72,9 @@ export const textKey = (node: Pick<TextNode, 'text' | 'font' | 'align'>): string
  */
 export const textAssetKey = (node: Pick<TextNode, 'text' | 'font' | 'align'>): string => `text:${textKey(node)}`;
 
+/** Whether an asset name is that of a text node's outlines (see `textAssetKey`) rather than of imported data. */
+export const isTextAsset = (key: string): boolean => key.startsWith('text:');
+
 /** A child's geometry together with its placement inside the group. */
 function placedKey(node: SceneNode): string {
   const flip = node.flip ? node.flip.map((f) => (f ? 1 : 0)).join('') : '';

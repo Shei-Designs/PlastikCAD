@@ -2,46 +2,23 @@
 // objects the user saved from designs, searched and sorted, each pictured. A
 // part picked here is carried to the plate like a shape from the library.
 import { useEffect, useMemo, useState } from 'react';
-import type { KeyboardEvent } from 'react';
 import type { ProjectInfo } from '../state/projects';
 import { addCustomPart, closePartsBin, deletePart, listParts, pickPart, renamePartAt, useEditor } from '../state/store';
-import { selectOnFocus } from './Fields';
+import { RenameInput } from './Fields';
 import { CloseIcon, MoreIcon, PartsBinIcon } from './icons';
+import { MenuItem } from './Menu';
 import { Popover } from './Popover';
 
 type Sort = 'recent' | 'name';
 
 function Card({ item, on, onPick }: { item: ProjectInfo; on: boolean; onPick: () => void }) {
   const [renaming, setRenaming] = useState(false);
-  const commit = (value: string) => {
-    setRenaming(false);
-    if (value.trim() && value.trim() !== item.name) void renamePartAt(item.key, value);
-  };
-  const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') e.currentTarget.blur();
-    if (e.key === 'Escape') {
-      e.currentTarget.value = item.name;
-      e.currentTarget.blur();
-    }
-  };
-  const action = (label: string, run: () => void, close: () => void, danger = false) => (
-    <button
-      type="button"
-      className={danger ? 'menu-item danger' : 'menu-item'}
-      onClick={() => {
-        close();
-        run();
-      }}
-    >
-      <span>{label}</span>
-    </button>
-  );
   return (
     <li className={on ? 'bin-card on' : 'bin-card'}>
       <button
         type="button"
         className="bin-pick"
-        title={`${item.name}: pick, then click on the plate to place it. Double-click to add it at the middle.`}
+        title={`Places ${item.name}.`}
         aria-pressed={on}
         onClick={(e) => {
           // Keyboard activation has no plate to click on next.
@@ -54,7 +31,14 @@ function Card({ item, on, onPick }: { item: ProjectInfo; on: boolean; onPick: ()
       </button>
       <div className="bin-row">
         {renaming ? (
-          <input className="text-input" aria-label="Part name" defaultValue={item.name} autoFocus onFocus={selectOnFocus} onBlur={(e) => commit(e.currentTarget.value)} onKeyDown={onKey} />
+          <RenameInput
+            name={item.name}
+            label="Part name"
+            onDone={(value) => {
+              setRenaming(false);
+              if (value !== null) void renamePartAt(item.key, value);
+            }}
+          />
         ) : (
           <span className="bin-name clip" title={item.name}>
             {item.name}
@@ -63,10 +47,10 @@ function Card({ item, on, onPick }: { item: ProjectInfo; on: boolean; onPick: ()
         <Popover className="icon-button" title="Actions" button={<MoreIcon />} align="right" fixed>
           {(close) => (
             <div className="menu" role="menu">
-              {action('Add to the design', () => void addCustomPart(item.key), close)}
-              {action('Rename', () => setRenaming(true), close)}
+              <MenuItem label="Add to the design" run={() => void addCustomPart(item.key)} close={close} />
+              <MenuItem label="Rename" run={() => setRenaming(true)} close={close} />
               <hr />
-              {action('Delete…', () => void deletePart(item.key, item.name), close, true)}
+              <MenuItem label="Delete…" danger run={() => void deletePart(item.key, item.name)} close={close} />
             </div>
           )}
         </Popover>

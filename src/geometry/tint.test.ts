@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { makeGroup, makeShape } from '../model/ops';
+import { cloneNode, makeGroup, makeShape } from '../model/ops';
 import type { Vec3 } from '../model/types';
 import { FILL_UV } from './uv';
 import { cornerColors, tintKey, underPicture } from './tint';
@@ -11,7 +11,7 @@ const red = { ...makeShape('box'), id: 'r', color: '#ff0000' };
 const blue = { ...makeShape('sphere'), id: 'b', color: '#0000ff' };
 const group = makeGroup([red, blue], bounds, 'G');
 // Four faces: two from the box, one from the sphere, one of unknown origin.
-const faces: Faces = { source: new Uint16Array([0, 0, 1, NO_SOURCE]), sources: [['r'], ['b']] };
+const faces: Faces = { source: new Uint16Array([0, 0, 1, NO_SOURCE]), sources: [[0], [1]] };
 const RED = [1, 0, 0];
 const BLUE = [0, 0, 1];
 
@@ -42,5 +42,12 @@ describe('corner colors of a mixed group', () => {
     const key = tintKey(group, faces);
     expect(tintKey({ ...group, children: [red, { ...blue, color: '#00ff00' }] }, faces)).not.toBe(key);
     expect(tintKey({ ...group, pos: [5, 5, 5] }, faces)).toBe(key);
+  });
+
+  it('colors a copy of the group, whose parts have ids of their own, from the same faces', () => {
+    const copy = cloneNode(group);
+    expect(copy.children[0].id).not.toBe('r');
+    expect(Array.from(cornerColors(copy, faces, 4))).toEqual(Array.from(cornerColors(group, faces, 4)));
+    expect(tintKey(copy, faces)).toBe(tintKey(group, faces));
   });
 });

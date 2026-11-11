@@ -16,6 +16,12 @@ export const rotatePoint = ([x, y]: Vec2, a: number): Vec2 => {
 export const arcSegments = (q: Quality, angle: number, min = 1) =>
   Math.max(min, Math.ceil((Math.abs(angle) / TAU) * q.circle));
 
+/** Segment count for an arc, bounded by chord error rather than by angle alone. */
+export function arcN(q: Quality, r: number, sweep: number, min = 2): number {
+  const step = 2 * Math.acos(Math.max(0, 1 - 1 / (q.circle * Math.max(r, 1e-9))));
+  return Math.max(min, Math.min(arcSegments(q, sweep), Math.ceil(Math.abs(sweep) / step)));
+}
+
 /** Points along an arc from angle a0 to a1 (inclusive of both ends), n segments. */
 export function arc(cx: number, cy: number, r: number, a0: number, a1: number, n: number): Vec2[] {
   const pts: Vec2[] = [];
@@ -29,6 +35,35 @@ export function circle(r: number, n: number, cx = 0, cy = 0): Polygon {
   for (let i = 0; i < n; i++) pts.push(polar(r, (TAU * i) / n, cx, cy));
   return pts;
 }
+
+/** CCW rectangle between two edges each way with its corners rounded by `r`, which must fit; it starts at the lower-right corner. */
+function roundedBox(x0: number, y0: number, x1: number, y1: number, r: number, q: Quality): Polygon {
+  if (r <= 0)
+    return [
+      [x0, y0],
+      [x1, y0],
+      [x1, y1],
+      [x0, y1],
+    ];
+  const n = Math.max(2, Math.round(q.circle / 4));
+  return [
+    ...arc(x1 - r, y0 + r, r, -Math.PI / 2, 0, n),
+    ...arc(x1 - r, y1 - r, r, 0, Math.PI / 2, n),
+    ...arc(x0 + r, y1 - r, r, Math.PI / 2, Math.PI, n),
+    ...arc(x0 + r, y0 + r, r, Math.PI, 1.5 * Math.PI, n),
+  ];
+}
+
+/** The radius a rounded rectangle can have: no more than half its shorter side. */
+const cornerRadius = (r: number, w: number, h: number) => Math.max(0, Math.min(r, w / 2, h / 2));
+
+/** CCW rounded rectangle centered on (cx, cy), `w` across and `h` up. */
+export const roundedRect = (cx: number, cy: number, w: number, h: number, r: number, q: Quality): Polygon =>
+  roundedBox(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2, cornerRadius(r, w, h), q);
+
+/** CCW rounded rectangle with its lower-left corner at (x, y). Its edges are x, x + w, y and y + h to the last bit, which going by way of the center they would not always be. */
+export const roundedRectFrom = (x: number, y: number, w: number, h: number, r: number, q: Quality): Polygon =>
+  roundedBox(x, y, x + w, y + h, cornerRadius(r, w, h), q);
 
 /** CCW regular polygon given its apothem (center-to-flat distance). First flat faces +X. */
 export function regularPolygon(sides: number, apothem: number): Polygon {

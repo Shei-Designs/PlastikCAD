@@ -5,6 +5,7 @@
 // by ring, which keeps the geometry exact wherever the ring is: a bend is a
 // true torus section, a taper a true frustum, an offset taper a true
 // eccentric one.
+import { cross, scale, unit } from '../../model/math';
 import { arcSegments, polar, TAU } from '../math2d';
 import { difference, union } from '../types';
 import type { Quality, Solid, Vec2, Vec3 } from '../types';
@@ -61,12 +62,6 @@ interface Station {
 }
 
 const add = (a: Vec3, b: Vec3, s = 1): Vec3 => [a[0] + b[0] * s, a[1] + b[1] * s, a[2] + b[2] * s];
-const scale = (a: Vec3, s: number): Vec3 => [a[0] * s, a[1] * s, a[2] * s];
-const cross = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-const norm = (a: Vec3): Vec3 => {
-  const l = Math.hypot(a[0], a[1], a[2]) || 1;
-  return [a[0] / l, a[1] / l, a[2] / l];
-};
 
 /**
  * A closed mesh through the rings placed at the stations: quads between
@@ -113,8 +108,8 @@ function stretched(stations: Station[], by: number): Station[] {
   const second = stations[1];
   const last = stations[stations.length - 1];
   const before = stations[stations.length - 2];
-  out[0] = { ...first, p: add(first.p, norm(add(first.p, second.p, -1)), by) };
-  out[out.length - 1] = { ...last, p: add(last.p, norm(add(last.p, before.p, -1)), by) };
+  out[0] = { ...first, p: add(first.p, unit(add(first.p, second.p, -1)), by) };
+  out[out.length - 1] = { ...last, p: add(last.p, unit(add(last.p, before.p, -1)), by) };
   return out;
 }
 
@@ -360,7 +355,7 @@ export const tee: GeneratorDef = {
       { p: [length / 2, 0, 0], u: Y, v: Z },
     ];
     const t: Vec3 = [Math.cos(angle), 0, Math.sin(angle)];
-    const v = norm(cross(t, Y));
+    const v = unit(cross(t, Y));
     const reach = run.h / 2 / Math.sin(angle) + num(p, 'branchLength');
     const branchStations: Station[] = [
       { p: [0, 0, 0], u: Y, v },

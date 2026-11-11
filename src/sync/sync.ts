@@ -3,13 +3,15 @@
 // every few minutes. Status is published for the UI; the editor is told what
 // changed under it. Nothing here knows about the editor's state.
 import { useSyncExternalStore } from 'react';
+import { asError } from '../errors';
 import { hasPartStore, hasProjectStore, partStore, projectStore } from '../state/projects';
 import { DriveRemote } from './drive';
-import { synchronize } from './engine';
-import type { SyncReport } from './engine';
+import { bindRecords, synchronize } from './engine';
+import type { DeletePlan, Remote, SyncReport, SyncState } from './engine';
 import { authorizedFetch, cancelSignIn, isConfigured, loadTokens, NeedsSignIn, revoke, saveTokens, signIn } from './google';
 import type { Tokens } from './google';
-import { DbSyncState, STORES } from './state';
+import { loadBinding, openSyncState, saveBinding, STORES } from './state';
+import type { RecordStore } from './state';
 
 /** The Drive folder the custom parts go in, inside the app's folder. */
 export const PARTS_FOLDER = 'Parts';
@@ -35,13 +37,16 @@ const listeners = new Set<() => void>();
 let tokens: Tokens | null = null;
 let remote: DriveRemote | null = null;
 let partsRemote: DriveRemote | null = null;
-const state = typeof indexedDB === 'undefined' ? null : new DbSyncState(STORES.projects);
-const partsState = typeof indexedDB === 'undefined' ? null : new DbSyncState(STORES.parts);
+const state = openSyncState(STORES.projects);
+const partsState = openSyncState(STORES.parts);
 let device = '';
-let onChanged: ((report: SyncReport) => void) | null = null;
-let onPartsChanged: ((report: SyncReport) => void) | null = null;
+let onChanged: ((report: SyncReport) => void | Promise<void>) | null = null;
+let onPartsChanged: ((report: SyncReport) => void | Promise<void>) | null = null;
 let onNotice: ((text: string) => void) | null = null;
 let beforeSync: (() => Promise<unknown>) | null = null;
+let confirmDeletes: ((plan: DeletePlan, what: 'projects' | 'parts') => Promise<boolean>) | null = null;
+/** How many callers have asked for sync to hold off; no pass starts while any has. */
+let paused = 0;
 let timer: ReturnType<typeof setTimeout> | undefined;
 let interval: ReturnType<typeof setInterval> | undefined;
 let running: Promise<SyncReport | null> | null = null;
@@ -72,14 +77,23 @@ function useTokens(next: Tokens | null): void {
  * Picks up the linked account, if any, and starts the schedule. `changed` is
  * told what each pass wrote or removed among the projects, `partsChanged`
  * among the custom parts; `flush` runs before a pass so that pending edits
- * are on disk first.
+ * are on disk first; `confirmDeletes` is asked before a pass deletes most of
+ * the projects (or parts) on one side, and says whether to go ahead.
  */
-export function initSync(options: { device: string; changed: (report: SyncReport) => void; partsChanged: (report: SyncReport) => void; notice: (text: string) => void; flush: () => Promise<unknown> }): void {
+export function initSync(options: {
+  device: string;
+  changed: (report: SyncReport) => void | Promise<void>;
+  partsChanged: (report: SyncReport) => void | Promise<void>;
+  notice: (text: string) => void;
+  flush: () => Promise<unknown>;
+  confirmDeletes?: (plan: DeletePlan, what: 'projects' | 'parts') => Promise<boolean>;
+}): void {
   device = options.device;
   onChanged = options.changed;
   onPartsChanged = options.partsChanged;
   onNotice = options.notice;
   beforeSync = options.flush;
+  confirmDeletes = options.confirmDeletes ?? null;
   useTokens(loadTokens());
   clearInterval(interval);
   interval = setInterval(() => void syncNow(), EVERY_MS);
@@ -116,6 +130,8 @@ export async function unlinkAccount(): Promise<void> {
   useTokens(null);
   await state?.clear();
   await partsState?.clear();
+  saveBinding(STORES.projects, null);
+  saveBinding(STORES.parts, null);
   publish({ lastSync: null, error: null });
   if (old) await revoke(old);
 }
@@ -134,6 +150,7 @@ export function syncNow(): Promise<SyncReport | null> {
     again = true;
     return running;
   }
+  if (paused) return Promise.resolve(null);
   running = pass().finally(() => {
     running = null;
     if (again) {
@@ -144,6 +161,34 @@ export function syncNow(): Promise<SyncReport | null> {
   return running;
 }
 
+/**
+ * Runs `work` with sync held off: the pass under way is let finish first and
+ * none starts until the work is done. For changes to where the projects are
+ * kept, which a pass must never see half made.
+ */
+export async function withSyncPaused<T>(work: () => Promise<T>): Promise<T> {
+  paused++;
+  clearTimeout(timer);
+  try {
+    await running;
+    return await work();
+  } finally {
+    paused--;
+    if (!paused) requestSync(1000);
+  }
+}
+
+/** One set (the projects, or the parts) brought into line, its records first checked against the places they were agreed for. */
+async function syncSet(store: RecordStore, what: 'projects' | 'parts', local: ReturnType<typeof projectStore>, to: DriveRemote, records: SyncState): Promise<SyncReport> {
+  const places = `${await to.folder()}\n${local.location ?? ''}`;
+  await bindRecords(records, loadBinding(store), places);
+  saveBinding(store, places);
+  const ask = confirmDeletes;
+  return synchronize(local, to as Remote, records, { device, ...(ask ? { confirmDeletes: (plan: DeletePlan) => ask(plan, what) } : {}) });
+}
+
+const touched = (report: SyncReport): boolean => report.changedKeys.length > 0 || report.removedKeys.length > 0 || report.kept.length > 0;
+
 async function pass(): Promise<SyncReport | null> {
   if (!tokens || !remote || !state || !hasProjectStore()) return null;
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
@@ -153,13 +198,21 @@ async function pass(): Promise<SyncReport | null> {
   publish({ busy: true, offline: false });
   try {
     await beforeSync?.();
-    const report = await synchronize(projectStore(), remote, state, { device });
-    if (report.changedKeys.length || report.removedKeys.length || report.kept.length) onChanged?.(report);
+    const report = await syncSet(STORES.projects, 'projects', projectStore(), remote, state);
+    // Told whatever else went wrong: the editor must take in what the pass did write, or it would save its old copy over it.
+    if (touched(report)) await onChanged?.(report);
+    let failure: unknown = report.errors[0];
+    let busy = report.busy.length > 0;
     // The parts after the projects, so that trouble with them never holds a project back.
-    if (partsRemote && partsState && hasPartStore()) {
-      const parts = await synchronize(partStore(), partsRemote, partsState, { device });
-      if (parts.changedKeys.length || parts.removedKeys.length || parts.kept.length) onPartsChanged?.(parts);
+    if (partsRemote && partsState && hasPartStore() && !(failure instanceof NeedsSignIn)) {
+      const parts = await syncSet(STORES.parts, 'parts', partStore(), partsRemote, partsState);
+      if (touched(parts)) await onPartsChanged?.(parts);
+      failure ??= parts.errors[0];
+      busy ||= parts.busy.length > 0;
     }
+    // Something was saved while the pass ran: once more, soon.
+    if (busy) again = true;
+    if (failure !== undefined) throw failure;
     publish({ busy: false, lastSync: Date.now(), error: null });
     return report;
   } catch (e) {
@@ -170,7 +223,7 @@ async function pass(): Promise<SyncReport | null> {
       onNotice?.(`Google Drive sync stopped: ${e.message}`);
       return null;
     }
-    const message = e instanceof Error ? e.message : String(e);
+    const message = asError(e).message;
     // Network trouble is not an error worth a red line; it will be tried again.
     const offline = /Failed to fetch|NetworkError|Load failed|network/i.test(message);
     publish({ busy: false, error: offline ? null : message, offline });

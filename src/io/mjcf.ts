@@ -8,7 +8,7 @@ import type { Tensor } from '../robot/inertia';
 import { lidarAngles } from '../robot/types';
 import type { JointType, World } from '../robot/types';
 import { escapeXml, fmt } from './format';
-import type { UrdfGeometry } from './urdf';
+import type { Naming, UrdfGeometry } from './urdf';
 
 export interface MjcfBody {
   name: string;
@@ -126,6 +126,34 @@ export function terrain(n: number, clear = 0.25): number[] {
   return out;
 }
 
+/** The free base's joint, and the site at its origin with the readings taken there. */
+const FREE_JOINT = 'root';
+const BASE_SITE = 'base_site';
+const BASE_SENSORS = { quat: 'base_quat', gyro: 'base_gyro', velocity: 'base_vel', acceleration: 'base_acc' };
+
+/**
+ * MuJoCo keeps a set of names for each kind of thing; `world` is its own body. Every joint has two readings, every
+ * sensor its sites and readings, and the robot's sensors are told apart by name whatever their kind.
+ */
+export const MJCF_NAMES: Naming = {
+  reserved: ['body/world', `joint/${FREE_JOINT}`, `site/${BASE_SITE}`, ...Object.values(BASE_SENSORS).map((n) => `sensor/${n}`)],
+  link: (name) => [`body/${name}`],
+  joint: (name) => [`joint/${name}`, `sensor/${name}_pos`, `sensor/${name}_vel`],
+  sensor: (name, kind, rays) => [
+    `robot/${name}`,
+    ...(kind === 'camera' || kind === 'depth'
+      ? [`camera/${name}`]
+      : kind === 'imu'
+        ? [`site/${name}`, `sensor/${name}_gyro`, `sensor/${name}_accel`]
+        : kind === 'touch'
+          ? [`site/${name}_site`, `sensor/${name}`]
+          : Array.from({ length: rays }, (_, i) => [`site/${name}_ray${i}`, `sensor/${name}_${i}`]).flat()),
+  ],
+};
+
+/** How far the slope is tilted about X, radians. */
+const SLOPE = 0.14;
+
 const vec = (v: Vec3): string => v.map((x) => fmt(x, 6)).join(' ');
 /** A gain or limit to four figures, whatever its size (a toy's motor is a few millinewton-meters). */
 const sig = (x: number): string => String(Number(x.toPrecision(4)));
@@ -193,6 +221,10 @@ function inertiaAboutJoint(b: MjcfBody, placed: Map<MjcfBody, Vec3>): number {
  * the velocity limit makes a motor that stalls at its speed limit, like a
  * real one.
  */
+/** Whether a joint can take an actuator: it moves, and has an effort and a speed to be moved by. Without them the gains are not numbers. */
+export const drivable = (j: Pick<MjcfJoint, 'type' | 'limit'> | undefined): boolean =>
+  Boolean(j && j.type !== 'fixed' && (!j.limit || (j.limit.effort > 0 && j.limit.velocity > 0 && Number.isFinite(j.limit.effort) && Number.isFinite(j.limit.velocity))));
+
 function actuatorGains(b: MjcfBody | undefined, placed: Map<MjcfBody, Vec3>): { kp: number; kv: number; effort: number; velocity: number } {
   const effort = b?.joint?.limit?.effort ?? DEFAULT_EFFORT;
   const velocity = b?.joint?.limit?.velocity ?? DEFAULT_VELOCITY;
@@ -253,8 +285,9 @@ export function writeMjcf(model: MjcfModel): string {
     return `<geom type="sphere" size="${fmt(g.sphere.radius, 6)}"${at}${rest}/>`;
   };
   const bodyXml = (b: MjcfBody, indent: string): string[] => {
-    const lines = [`${indent}<body name="${escapeXml(b.name)}" pos="${vec(b.pos)}">`];
-    if (b === model.base && model.floating) lines.push(`${indent}  <freejoint name="root"/>`);
+    // On the slope the robot stands tilted with the floor, about the origin its base sits at.
+    const lines = [`${indent}<body name="${escapeXml(b.name)}" pos="${vec(b.pos)}"${b === model.base && tilt ? ` quat="${tilt}"` : ''}>`];
+    if (b === model.base && model.floating) lines.push(`${indent}  <freejoint name="${FREE_JOINT}"/>`);
     if (b.joint && b.joint.type !== 'fixed') {
       const j = b.joint;
       const hinge = j.type !== 'prismatic';
@@ -270,8 +303,9 @@ export function writeMjcf(model: MjcfModel): string {
     for (const c of b.collision) lines.push(`${indent}  ${geomXml(c.geometry, c.origin, c.rpy, ` class="collision"${b.friction !== undefined ? ` friction="${fmt(b.friction, 4)} 0.005 0.0001"` : ''}`)}`);
     for (const cam of b.cameras ?? []) {
       const q = qmul(quatOf(cam.rpy).split(' ').map(Number), CAMERA_TURN).map((x) => fmt(x, 6)).join(' ');
-      // MuJoCo takes the vertical field of view.
-      const fovy = (2 * Math.atan(Math.tan(cam.hfov / 2) / cam.aspect) * 180) / Math.PI;
+      // MuJoCo takes the vertical field of view, more than nothing and less than half a turn.
+      const aspect = cam.aspect > 0 && Number.isFinite(cam.aspect) ? cam.aspect : 1;
+      const fovy = Math.min(Math.max((2 * Math.atan(Math.tan(cam.hfov / 2) / aspect) * 180) / Math.PI, 1), 179);
       lines.push(`${indent}  <camera name="${escapeXml(cam.name)}" pos="${vec(cam.pos)}" quat="${q}" fovy="${fmt(fovy, 3)}"/>`);
     }
     for (const imu of b.imus ?? []) lines.push(`${indent}  <site name="${escapeXml(imu.name)}" pos="${vec(imu.pos)}" quat="${quatOf(imu.rpy)}" size="0.005"/>`);
@@ -279,21 +313,29 @@ export function writeMjcf(model: MjcfModel): string {
     // A lidar is a fan of rangefinders: one site per ray, its Z along the ray.
     for (const l of b.lidars ?? []) lidarRays(l).forEach((ray, i) => lines.push(`${indent}  <site name="${escapeXml(l.name)}_ray${i}" pos="${vec(l.pos)}" zaxis="${vec(ray)}" size="0.002" rgba="1 0 0 0.3"/>`));
     // A site at the base's origin carries its orientation, turn rate and velocity for a controller.
-    if (b === model.base && model.floating) lines.push(`${indent}  <site name="base_site" pos="0 0 0" size="0.005"/>`);
+    if (b === model.base && model.floating) lines.push(`${indent}  <site name="${BASE_SITE}" pos="0 0 0" size="0.005"/>`);
     for (const child of b.children) lines.push(...bodyXml(child, `${indent}  `));
     lines.push(`${indent}</body>`);
     return lines;
   };
+  const tilt = model.world === 'slope' ? quatOf([SLOPE, 0, 0]) : '';
   const body = bodyXml(model.base, '    ');
   const imus = collect(model.base, (b) => b.imus ?? []);
   const touches = collect(model.base, (b) => b.touches ?? []);
   const lidars = collect(model.base, (b) => b.lidars ?? []);
   // Joints in the order the file gives them, which is the order of qpos.
   const joints = collect(model.base, (b) => (b.joint && b.joint.type !== 'fixed' ? [b.joint] : []));
-  const home = [...(model.floating ? ['0 0 0 1 0 0 0'] : []), ...joints.map(() => '0')].join(' ');
+  const home = [...(model.floating ? [`0 0 0 ${tilt || '1 0 0 0'}`] : []), ...joints.map(() => '0')].join(' ');
   const sensors = [
     ...joints.flatMap((j) => [`    <jointpos name="${escapeXml(j.name)}_pos" joint="${escapeXml(j.name)}"/>`, `    <jointvel name="${escapeXml(j.name)}_vel" joint="${escapeXml(j.name)}"/>`]),
-    ...(model.floating ? ['    <framequat name="base_quat" objtype="site" objname="base_site"/>', '    <gyro name="base_gyro" site="base_site"/>', '    <velocimeter name="base_vel" site="base_site"/>', '    <accelerometer name="base_acc" site="base_site"/>'] : []),
+    ...(model.floating
+      ? [
+          `    <framequat name="${BASE_SENSORS.quat}" objtype="site" objname="${BASE_SITE}"/>`,
+          `    <gyro name="${BASE_SENSORS.gyro}" site="${BASE_SITE}"/>`,
+          `    <velocimeter name="${BASE_SENSORS.velocity}" site="${BASE_SITE}"/>`,
+          `    <accelerometer name="${BASE_SENSORS.acceleration}" site="${BASE_SITE}"/>`,
+        ]
+      : []),
     ...imus.flatMap((imu) => [`    <gyro name="${escapeXml(imu.name)}_gyro" site="${escapeXml(imu.name)}"/>`, `    <accelerometer name="${escapeXml(imu.name)}_accel" site="${escapeXml(imu.name)}"/>`]),
     ...touches.map((t) => `    <touch name="${escapeXml(t.name)}" site="${escapeXml(t.name)}_site"/>`),
     ...lidars.flatMap((l) => Array.from({ length: l.rays }, (_, i) => `    <rangefinder name="${escapeXml(l.name)}_${i}" site="${escapeXml(l.name)}_ray${i}" cutoff="${sig(l.max)}"/>`)),
@@ -302,7 +344,7 @@ export function writeMjcf(model: MjcfModel): string {
     model.world === 'rough'
       ? '    <geom name="floor" type="hfield" hfield="terrain" material="floor" friction="1 0.005 0.0001"/>'
       : model.world === 'slope'
-        ? '    <geom name="floor" type="plane" size="5 5 0.1" euler="0.14 0 0" material="floor" friction="1 0.005 0.0001"/>'
+        ? `    <geom name="floor" type="plane" size="5 5 0.1" euler="${SLOPE} 0 0" material="floor" friction="1 0.005 0.0001"/>`
         : '    <geom name="floor" type="plane" size="5 5 0.1" material="floor" friction="1 0.005 0.0001"/>',
     // A course's blocks stand still in the world, facing the robot's way, tipped up ahead where a ramp is.
     ...worldBlocks(model.world, model.forward).map((b, i) => {
@@ -313,19 +355,22 @@ export function writeMjcf(model: MjcfModel): string {
   const placed = placeBodies(model.base);
   const jointed = new Map(collect(model.base, (b) => (b.joint ? [b] : [])).map((b) => [b.joint!.name, b]));
   const gainsOf = (name: string) => actuatorGains(jointed.get(name), placed);
+  // Only a joint the model holds, with an effort and a speed, gets an actuator or a constraint: anything else MuJoCo refuses, or reads as not a number.
+  const canDrive = (name: string) => drivable(jointed.get(name)?.joint);
+  const moves = (name: string) => jointed.get(name)?.joint?.type !== 'fixed' && jointed.has(name);
   const actuators = [
-    ...model.servos.map((j) => {
+    ...model.servos.filter(canDrive).map((j) => {
       const g = gainsOf(j);
       return `    <position name="${escapeXml(j)}_servo" joint="${escapeXml(j)}" kp="${sig(g.kp)}" kv="${sig(g.kv)}" forcerange="-${sig(g.effort)} ${sig(g.effort)}"/>`;
     }),
-    ...model.wheels.map((j) => {
+    ...model.wheels.filter(canDrive).map((j) => {
       const g = gainsOf(j);
       return `    <velocity name="${escapeXml(j)}_motor" joint="${escapeXml(j)}" kv="${sig(g.effort / g.velocity)}" ctrlrange="-${sig(g.velocity)} ${sig(g.velocity)}" forcerange="-${sig(g.effort)} ${sig(g.effort)}"/>`;
     }),
   ];
   const equality = [
     ...model.connects.map((c) => `    <connect body1="${escapeXml(c.body1)}" body2="${escapeXml(c.body2)}" anchor="${vec(c.anchor)}"/>`),
-    ...model.followers.map((f) => `    <joint joint1="${escapeXml(f.joint)}" joint2="${escapeXml(f.leader)}" polycoef="${fmt(f.offset, 6)} ${fmt(f.multiplier, 6)} 0 0 0"/>`),
+    ...model.followers.filter((f) => moves(f.joint) && moves(f.leader)).map((f) => `    <joint joint1="${escapeXml(f.joint)}" joint2="${escapeXml(f.leader)}" polycoef="${fmt(f.offset, 6)} ${fmt(f.multiplier, 6)} 0 0 0"/>`),
   ];
   return [
     `<!-- Made with ${APP_NAME}. Units: meters, kilograms, radians. -->`,
@@ -334,7 +379,8 @@ export function writeMjcf(model: MjcfModel): string {
     `  <option timestep="${TIMESTEP}" gravity="0 0 -9.81" integrator="implicitfast"/>`,
     '  <default>',
     '    <default class="visual"><geom contype="0" conaffinity="0" group="2"/></default>',
-    '    <default class="collision"><geom group="3" rgba="0.6 0.6 0.9 0.3"/></default>',
+    // The robot's shapes meet the floor and the course, never each other, as in the SDF and the USD stage.
+    '    <default class="collision"><geom group="3" conaffinity="0" rgba="0.6 0.6 0.9 0.3"/></default>',
     '  </default>',
     '  <asset>',
     ...[...meshes].map(([n, file]) => `    <mesh name="${n}" file="${escapeXml(file)}"/>`),

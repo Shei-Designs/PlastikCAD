@@ -2,7 +2,7 @@
 // them out on a canvas, which the viewer draws and the GLB export embeds.
 // Decoding is asynchronous; `paint` answers with what it has and calls
 // `onReady` once the rest has arrived.
-import { ATLAS_PAD, cellRect, layoutAtlas, skinAssets } from '../geometry/skin';
+import { cellRect, layoutAtlas, skinAssets } from '../geometry/skin';
 import type { Skin } from '../geometry/skin';
 import { base64ToBytes } from '../io/base64';
 import type { Asset, ImageAsset } from '../model/types';
@@ -13,7 +13,8 @@ export interface Painted {
   rects: [number, number, number, number][];
 }
 
-type Decoded = { state: 'loading' } | { state: 'ready'; image: ImageBitmap } | { state: 'failed' };
+/** `of` is the asset a failure was for (none: the design had no such image), so that another one under the same key is tried. */
+type Decoded = { state: 'loading' } | { state: 'ready'; image: ImageBitmap } | { state: 'failed'; of: Asset | undefined };
 
 export class SkinPainter {
   private images = new Map<string, Decoded>();
@@ -31,27 +32,44 @@ export class SkinPainter {
   image(key: string, assets: Record<string, Asset>): ImageBitmap | null {
     const have = this.images.get(key);
     if (have?.state === 'ready') return have.image;
-    if (have) return null;
     const asset = assets[key];
+    // A failure stands for the asset it was for: one that arrives later, or replaces it, is tried afresh.
+    if (have && (have.state === 'loading' || have.of === asset)) return null;
     if (asset?.kind !== 'image') {
-      this.images.set(key, { state: 'failed' });
+      this.images.set(key, { state: 'failed', of: asset });
       return null;
     }
-    this.images.set(key, { state: 'loading' });
+    const loading: Decoded = { state: 'loading' };
+    this.images.set(key, loading);
     // Either way whoever is waiting is told, so that a failed picture is reported rather than waited for forever.
     createImageBitmap(new Blob([SkinPainter.bytes(asset) as BlobPart], { type: asset.mime })).then(
       (image) => {
-        if (this.disposed) return image.close();
+        // Let go of in the meantime (see `retain`): nobody is waiting for it.
+        if (this.disposed || this.images.get(key) !== loading) return image.close();
         this.images.set(key, { state: 'ready', image });
         this.onReady();
       },
       () => {
-        if (this.disposed) return;
-        this.images.set(key, { state: 'failed' });
+        if (this.disposed || this.images.get(key) !== loading) return;
+        this.images.set(key, { state: 'failed', of: asset });
         this.onReady();
       },
     );
     return null;
+  }
+
+  /**
+   * Lets go of everything but the images and paintings named: the decoded
+   * pictures of objects that are gone, or no longer wear them, would otherwise
+   * stay in memory for as long as the app runs.
+   */
+  retain(images: ReadonlySet<string>, paintings: ReadonlySet<string>): void {
+    for (const [key, decoded] of this.images) {
+      if (images.has(key)) continue;
+      if (decoded.state === 'ready') decoded.image.close();
+      this.images.delete(key);
+    }
+    for (const key of this.painted.keys()) if (!paintings.has(key)) this.painted.delete(key);
   }
 
   /**
@@ -124,5 +142,3 @@ export class SkinPainter {
     this.onReady();
   }
 }
-
-export { ATLAS_PAD };

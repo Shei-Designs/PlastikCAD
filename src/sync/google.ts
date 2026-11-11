@@ -10,6 +10,7 @@
 // secret as secret), and VITE_GOOGLE_ANDROID_CLIENT_ID for an "Android"
 // client, which Play services finds by the app's package and signing key; the
 // id itself only says that the Android build is set up.
+import { asError } from '../errors';
 import * as platform from '../platform';
 
 const env = (name: string): string => (import.meta.env[name] as string | undefined) ?? '';
@@ -122,7 +123,7 @@ async function androidTokens(silent: boolean): Promise<Tokens> {
   try {
     access = await platform.androidAuthorize(SCOPE, silent);
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
+    const { message } = asError(e);
     if (message === 'needs-sign-in') throw new NeedsSignIn();
     if (message === 'cancelled') throw new Error('The sign-in was cancelled.');
     throw new Error(message);

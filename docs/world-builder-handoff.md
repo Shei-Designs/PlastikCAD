@@ -44,14 +44,14 @@ Everything is millimeters and Z up inside PlastikCAD; exports convert.
   parallel to the design axes. A driven robot's root is `base_footprint`,
   facing +X as ROS expects (URDF and SDF; the USD keeps the design frame).
 - **The design file** `.plastikcad` (JSON, `format: "plastikcad"`,
-  `version` 2): the scene as shapes, parts and operations rather than
+  `version` 3): the scene as shapes, parts and operations rather than
   triangles, plus the robot description under `robot`. The world builder
   should not need to read it; GLB and the robot packages are the interface.
   If it ever does, `src/model/file.ts` in the PlastikCAD repo is the reader.
 
 PlastikCAD's own repo: `github.com/Shei-Designs/PlastikCAD`. The export
-writers live in `src/io/` (`gltf.ts`, `urdf.ts`, `sdf.ts`, `gazebo.ts`,
-`mjcf.ts`, `rosPackage.ts`) and `src/robot/export.ts`; read them before
+writers live in `src/io/` (`glb.ts`, `urdf.ts`, `sdf.ts`, `gazebo.ts`,
+`mjcf.ts`, `usd.ts`, `rosPackage.ts`) and `src/robot/export.ts`; read them before
 deciding how the world builder imports a robot.
 
 ## 3. What the world builder must hand the simulators
@@ -123,9 +123,10 @@ heightmap (one source, three writers) or built from placed blocks.
 
 ## 6. How PlastikCAD's smoke tests can help
 
-`pnpm smoke:robots`, `pnpm smoke:ros` and `pnpm smoke:isaac` in the
-PlastikCAD repo export four reference robots (rover, car, quadruped, arm)
-and run them in MuJoCo, in ROS 2 Jazzy and Gazebo (Docker), and in Isaac
-Sim. The exported packages land in `fixtures/out/`. They are ready-made
+`pnpm smoke:robots`, `pnpm smoke:ros`, `pnpm smoke:isaac` and
+`pnpm smoke:usd` in the PlastikCAD repo export four reference robots (rover,
+car, quadruped, arm) and run them in MuJoCo, in ROS 2 Jazzy and Gazebo
+(Docker), in Isaac Sim through its URDF importer, and in Isaac Sim as the
+exported stages. The exported packages land in `fixtures/out/`. They are ready-made
 robots for the world builder to place and test with, and the smoke scripts
 show how each simulator is launched headless and checked.

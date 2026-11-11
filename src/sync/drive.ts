@@ -59,7 +59,8 @@ export class DriveRemote implements Remote {
     if (this.folderId) return this.folderId;
     const under = this.parent ? await this.parent.folder() : 'root';
     const q = `name = ${quote(this.folderName)} and mimeType = '${FOLDER_TYPE}' and ${quote(under)} in parents and trashed = false`;
-    const found = await body<{ files: DriveFile[] }>(await this.fetch(`${API}/files?q=${encodeURIComponent(q)}&fields=files(id,name)&pageSize=10`), 'find its folder');
+    // The oldest first, so that every device and every pass settles on the same one should there ever be two.
+    const found = await body<{ files: DriveFile[] }>(await this.fetch(`${API}/files?q=${encodeURIComponent(q)}&fields=files(id,name)&orderBy=createdTime&pageSize=10`), 'find its folder');
     if (found.files.length) return (this.folderId = found.files[0].id);
     const made = await body<DriveFile>(
       await this.fetch(`${API}/files?fields=id`, {
@@ -114,6 +115,16 @@ export class DriveRemote implements Remote {
     );
     const remote = toRemote(file);
     // Drive echoes an empty revision as missing.
+    if (remote.revision === '') remote.revision = null;
+    return remote;
+  }
+
+  async stat(file: RemoteFile): Promise<RemoteFile | null> {
+    const response = await this.fetch(`${API}/files/${encodeURIComponent(file.id)}?fields=${FILE_FIELDS},trashed`);
+    if (response.status === 404) return null;
+    const found = await body<DriveFile & { trashed?: boolean }>(response, `look at ${file.name}`);
+    if (found.trashed) return null;
+    const remote = toRemote(found);
     if (remote.revision === '') remote.revision = null;
     return remote;
   }

@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { evaluate, initKernel } from '../evaluate';
+import { evaluate, initKernel } from '../testing';
 import { selfIntersects, signedArea } from '../math2d';
 import { QUALITY } from '../types';
 import { gt2Pulley, htdPulley, mxlPulley, tPulley } from './timingPulley';

@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { emptyDoc, legacyVersions, parseDoc, readHeader, serializeDoc } from './file';
+import { emptyDoc, legacyVersions, parseDoc, readHeader, savedTime, serializeDoc } from './file';
 import { geomKey } from './geomKey';
 import { apply, axisRotation, determinant, eulerOf, multiply, nodeMatrix, rotation } from './math';
 import type { Mat } from './math';
 import { alignNodes, arrayNodes, arrayPlaces, boxBoundsOf, cloneNode, dissolve, frameAlong, layerMembers, makeGroup, makeShape, mirrorNodes, nodeAt, picturesOf, regroup, rotateNodes, scaleNodes, sourceColor, ungroup, usedAssets } from './ops';
 import type { Doc, GroupNode, PictureNode, SceneNode, ShapeNode, Vec3 } from './types';
-import { defaultJoint } from '../robot/types';
+import { defaultJoint, defaultSensor, emptyRobot } from '../robot/types';
+import type { Robot } from '../robot/types';
+import { FILE_VERSION } from '../appInfo';
+import { GENERATORS } from '../parts/generators';
+import { defaultParams } from '../parts/generators/types';
+
+/** A design file as an older build wrote it: the same text under the format version before this one read strictly. */
+const older = (text: string): string => text.replace(`"version": ${FILE_VERSION}`, '"version": 2');
 
 const close = (a: number[], b: number[], eps = 1e-6) => {
   expect(a.length).toBe(b.length);
@@ -259,21 +266,23 @@ describe('the colors of a group', () => {
 
   it('colors each face by the part it came from, cut faces by the first solid beside the hole', () => {
     const group = makeGroup([red, blue, bore], bounds, 'G');
-    expect(sourceColor(group, ['r'])).toBe('#ff0000');
-    expect(sourceColor(group, ['b'])).toBe('#0000ff');
-    expect(sourceColor(group, ['h'])).toBe('#ff0000');
-    expect(sourceColor(group, ['nope'])).toBe(group.color);
+    expect(sourceColor(group, [0])).toBe('#ff0000');
+    expect(sourceColor(group, [1])).toBe('#0000ff');
+    expect(sourceColor(group, [2])).toBe('#ff0000');
+    expect(sourceColor(group, [7])).toBe(group.color);
+    // A copy has ids of its own, and the same places.
+    expect(sourceColor(cloneNode(group), [1])).toBe('#0000ff');
   });
 
   it('lets a painted group inside color everything beneath it, and a mixed one show through', () => {
     const inner = makeGroup([red, blue], bounds, 'Inner');
     const outer = makeGroup([inner, bore], bounds, 'Outer');
-    expect(sourceColor(outer, [inner.id, 'b'])).toBe('#0000ff');
+    expect(sourceColor(outer, [0, 1])).toBe('#0000ff');
     const painted = makeGroup([{ ...inner, mixed: undefined, color: '#abcdef' }, bore], bounds, 'Outer');
-    expect(sourceColor(painted, [inner.id, 'b'])).toBe('#abcdef');
+    expect(sourceColor(painted, [0, 1])).toBe('#abcdef');
     // The hole's cut faces take the first solid's paint, through a mixed group to its first solid.
-    expect(sourceColor(outer, ['h'])).toBe('#ff0000');
-    expect(sourceColor(painted, ['h'])).toBe('#abcdef');
+    expect(sourceColor(outer, [1])).toBe('#ff0000');
+    expect(sourceColor(painted, [1])).toBe('#abcdef');
   });
 
   it('remembers through dissolving and regrouping whether a group was mixed', () => {
@@ -535,7 +544,7 @@ describe('design files', () => {
     delete (gone as { shape?: unknown }).shape;
     const kept: SceneNode = { ...shape('box'), type: 'part', part: 'fan-cutout', params: { size: '80', opening: 'guard' }, natural: [80, 80, 20] } as unknown as SceneNode;
     delete (kept as { shape?: unknown }).shape;
-    const back = parseDoc(serializeDoc({ ...doc, scene: [...doc.scene, gone, kept] }));
+    const back = parseDoc(older(serializeDoc({ ...doc, scene: [...doc.scene, gone, kept] })));
     expect(back.scene.length).toBe(doc.scene.length + 1);
     expect(back.scene.some((n) => n.type === 'part' && n.part === 'port-cutout')).toBe(false);
     const fan = back.scene.find((n) => n.type === 'part' && n.part === 'fan');
@@ -560,18 +569,49 @@ describe('design files', () => {
   it('rejects things that are not designs', () => {
     expect(() => parseDoc('not json')).toThrow(/JSON/);
     expect(() => parseDoc('{"format":"something-else"}')).toThrow(/not a design/);
-    expect(() => parseDoc(serializeDoc(emptyDoc()).replace('"version": 2', '"version": 99'))).toThrow(/newer/);
+    expect(() => parseDoc(serializeDoc(emptyDoc()).replace(`"version": ${FILE_VERSION}`, '"version": 99'))).toThrow(/newer/);
+    expect(() => parseDoc('{"format":"plastikcad","scene":[]}')).toThrow(/which version/);
   });
 
-  it('skips nodes it cannot make sense of', () => {
-    const text = serializeDoc(sample()).replace('"shape": "box"', '"shape": "teapot"');
+  it('skips what a file from an older version of the format names that the app no longer has', () => {
+    const text = older(serializeDoc(sample())).replace('"shape": "box"', '"shape": "teapot"');
     expect(parseDoc(text).scene.length).toBe(3);
+  });
+
+  it('refuses a file in its own format that names something it does not know, rather than dropping it and saving the rest', () => {
+    const robot: Robot = { ...emptyRobot(), root: 'a', links: [{ node: 'a', mass: { kind: 'material', material: 'pla', infill: 20, shell: 1.2 }, collision: 'hull', friction: 0.8 }], joints: [{ id: 'j1', name: 'j', type: 'revolute', parent: 'a', child: 'b', origin: [0, 0, 0], axis: [0, 0, 1], lower: -90, upper: 90, effort: 1, velocity: 1, damping: 0, friction: 0 }], sensors: [defaultSensor('s1', 'cam', 'camera', 'a', [0, 0, 0])], drive: { kind: 'differential', roles: { j1: 'left' } }, world: 'slope' };
+    const def = GENERATORS.find((g) => g.groups.some((group) => group.params.some((d) => d.type === 'select')))!;
+    const choice = def.groups.flatMap((g) => g.params).find((d) => d.type === 'select')!;
+    const params = defaultParams(def);
+    const gear = { ...shape('box'), id: 'b', type: 'part', part: def.id, params, natural: [20, 20, 5] } as unknown as SceneNode;
+    delete (gear as { shape?: unknown }).shape;
+    const text = serializeDoc({ ...sample(), scene: [{ ...shape('box'), id: 'a' }, gear, ...sample().scene.slice(1)], robot });
+    expect(parseDoc(text).robot?.sensors.length).toBe(1);
+    const newer: [string, string][] = [
+      ['"shape": "box"', '"shape": "teapot"'],
+      ['"type": "shape"', '"type": "hologram"'],
+      [`"part": "${def.id}"`, '"part": "warp-gear"'],
+      [`"${choice.key}": "${String(params[choice.key])}"`, `"${choice.key}": "from-the-future"`],
+      ['"font": "stencil"', '"font": "comic"'],
+      ['"kind": "outline"', '"kind": "voxels"'],
+      ['"kind": "camera"', '"kind": "sonar"'],
+      ['"type": "revolute"', '"type": "spherical"'],
+      ['"collision": "hull"', '"collision": "capsules"'],
+      ['"kind": "differential"', '"kind": "tracked"'],
+      ['"world": "slope"', '"world": "moon"'],
+    ];
+    for (const [known, unknown] of newer) {
+      expect(text, known).toContain(known);
+      expect(() => parseDoc(text.replace(known, unknown)), unknown).toThrow(/newer version/);
+      // The same in a file from before: read as it always was, without the thing.
+      expect(() => parseDoc(older(text).replace(known, unknown)), unknown).not.toThrow();
+    }
   });
 
   it('stores lettering as its words, and falls back to a font it knows', () => {
     const text = serializeDoc(sample());
     expect(text).toContain('"text": "M8\\nleft"');
-    const [label] = parseDoc(text.replace('"font": "stencil"', '"font": "comic"')).scene.slice(-1);
+    const [label] = parseDoc(older(text).replace('"font": "stencil"', '"font": "comic"')).scene.slice(-1);
     expect(label.type === 'text' && label.font).toBe('sans');
   });
 
@@ -582,7 +622,9 @@ describe('design files', () => {
       delete (node as { shape?: unknown }).shape;
       return node;
     });
-    const back = parseDoc(serializeDoc({ ...doc, scene: [...doc.scene, ...parts] }));
+    const text = serializeDoc({ ...doc, scene: [...doc.scene, ...parts] });
+    expect(() => parseDoc(text)).toThrow(/newer version/);
+    const back = parseDoc(older(text));
     expect(back.scene.length).toBe(doc.scene.length);
     expect(back.scene.some((n) => n.type === 'part')).toBe(false);
   });
@@ -655,23 +697,25 @@ describe('file headers', () => {
     const text = serializeDoc(doc());
     expect(text.indexOf('"id": "proj0001"')).toBeLessThan(text.indexOf('"scene"'));
     expect(text.indexOf('"thumb"')).toBeLessThan(text.indexOf('"scene"'));
-    expect(readHeader(text)).toEqual({ id: 'proj0001', name: 'Hinge "left"', revision: null, thumb: THUMB });
+    expect(readHeader(text)).toEqual({ id: 'proj0001', name: 'Hinge "left"', revision: null, saved: null, thumb: THUMB });
     // A file from when the app was BashCAD is the same file under another marker.
     const old = text.replace('"format": "plastikcad"', '"format": "bashcad"');
     expect(readHeader(old)).toEqual(readHeader(text));
     expect(parseDoc(old)).toEqual(parseDoc(text));
     expect(() => parseDoc(text.replace('"format": "plastikcad"', '"format": "othercad"'))).toThrow(/not a design made with this app/);
     // Only the start of the file, cut off inside the scene.
-    expect(readHeader(text.slice(0, text.indexOf('"scene"') + 40))).toEqual({ id: 'proj0001', name: 'Hinge "left"', revision: null, thumb: THUMB });
+    expect(readHeader(text.slice(0, text.indexOf('"scene"') + 40))).toEqual({ id: 'proj0001', name: 'Hinge "left"', revision: null, saved: null, thumb: THUMB });
+    // When it was saved is in the header too, for a folder to be listed newest first by.
+    expect(readHeader(serializeDoc({ ...emptyDoc(), saved: '2026-11-08T09:30:00.000Z' }))?.saved).toBe(Date.parse('2026-11-08T09:30:00.000Z'));
     expect(parseDoc(text)).toEqual(doc());
   });
 
   it('does not mistake an object for the header of a file without an id', () => {
     const text = serializeDoc(doc()).replace('  "id": "proj0001",\n', '').replace(`  "thumb": "${THUMB}",\n`, '');
-    expect(readHeader(text)).toEqual({ id: null, name: 'Hinge "left"', revision: null, thumb: null });
+    expect(readHeader(text)).toEqual({ id: null, name: 'Hinge "left"', revision: null, saved: null, thumb: null });
     // Cut off before the scene: the objects' names and ids are nowhere near.
     const head = text.slice(0, text.indexOf('"scene"'));
-    expect(readHeader(head)).toEqual({ id: null, name: 'Hinge "left"', revision: null, thumb: null });
+    expect(readHeader(head)).toEqual({ id: null, name: 'Hinge "left"', revision: null, saved: null, thumb: null });
   });
 
   it('refuses what is not a design laid out by the app', () => {
@@ -711,7 +755,7 @@ describe('pictures and textures', () => {
   it('drops a picture or texture whose image is gone, and never makes a picture a hole', () => {
     const d = doc();
     delete d.assets.img;
-    const text = serializeDoc({ ...d, assets: { img: { kind: 'image', name: 'x', mime: 'image/png', data: PNG, width: 1, height: 1 } } }).replace('"kind": "image"', '"kind": "nothing"');
+    const text = serializeDoc({ ...d, assets: { img: { kind: 'image', name: 'x', mime: 'image/png', data: PNG, width: 1, height: 1 } } }).replace('"kind": "image"', '"kind": 0');
     const back = parseDoc(text);
     expect(picturesOf(back.scene[0])).toEqual([]);
     expect(back.scene[1].texture).toBeUndefined();
@@ -726,6 +770,55 @@ describe('pictures and textures', () => {
     expect(geomKey(picture({ angle: 90 }))).not.toBe(geomKey(picture()));
     expect(withPicture.color).toBe('#f2f2f0');
     expect(picturesOf(withPicture).map((p) => p.id)).toEqual(['pic']);
+  });
+});
+
+describe('when a design says it was saved', () => {
+  const zone = process.env.TZ;
+  const noon = Date.UTC(2026, 10, 10, 12, 0, 0);
+
+  it('reads the form the app writes, and the same moment written with an offset, alike in every time zone', () => {
+    for (const tz of ['UTC', 'America/Los_Angeles', 'Asia/Tokyo']) {
+      process.env.TZ = tz;
+      expect(savedTime(new Date(noon).toISOString()), tz).toBe(noon);
+      expect(savedTime('2026-11-10T12:00:00Z'), tz).toBe(noon);
+      expect(savedTime('2026-11-10T12:00:00.250Z'), tz).toBe(noon + 250);
+      expect(savedTime('2026-11-10T12:00:00.123456789Z'), tz).toBe(noon + 123);
+      expect(savedTime('2026-11-10T13:00:00+01:00'), tz).toBe(noon);
+      expect(savedTime('2026-11-10T04:00:00-08:00'), tz).toBe(noon);
+    }
+    if (zone === undefined) delete process.env.TZ;
+    else process.env.TZ = zone;
+  });
+
+  it('takes nothing an engine might read its own way, or that no design was saved at', () => {
+    const not = [
+      '2026-11-10', // no time
+      '2026-11-10T12:00:00', // no offset: local time on one device, UTC on another
+      '2026-11-10 12:00:00Z',
+      '11/10/2026 12:00',
+      'Tue Nov 10 2026 12:00:00 GMT+0100',
+      '10 November 2026',
+      '2026-13-01T00:00:00Z',
+      '2026-02-30T00:00:00Z',
+      '2026-11-10T24:00:00Z',
+      '2026-11-10T12:60:00Z',
+      '1970-01-21T19:25:00Z', // what a clock that was never set stamps
+      '2400-01-01T00:00:00Z',
+      '',
+      1794310320000,
+      null,
+      undefined,
+    ];
+    for (const raw of not) expect(savedTime(raw), String(raw)).toBeNull();
+  });
+
+  it('keeps the stamp in a design as the app writes it, and drops one it cannot trust', () => {
+    const at = (saved: string) => parseDoc(serializeDoc({ ...emptyDoc(), saved })).saved;
+    expect(at('2026-11-10T12:00:00.000Z')).toBe('2026-11-10T12:00:00.000Z');
+    expect(at('2026-11-10T13:00:00+01:00')).toBe('2026-11-10T12:00:00.000Z');
+    expect(at('Tue Nov 10 2026 12:00:00')).toBeUndefined();
+    expect(readHeader(serializeDoc({ ...emptyDoc(), saved: '11/10/2026' }))?.saved).toBeNull();
   });
 });
 

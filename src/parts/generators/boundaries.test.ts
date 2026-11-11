@@ -2,7 +2,7 @@
 // parameters at their defaults, must still build a finite solid. Where a part has a "make" or
 // "form" choice every form is swept, since most parameters only matter for one of them.
 import { beforeAll, describe, expect, it } from 'vitest';
-import { evaluate, initKernel } from '../evaluate';
+import { evaluate, initKernel } from '../testing';
 import { QUALITY } from '../types';
 import { GENERATORS } from './index';
 import { defaultParams } from './types';

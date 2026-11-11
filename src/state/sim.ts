@@ -138,7 +138,7 @@ class SimStore {
       this.lidars = pkg.lidars;
       this.touches = pkg.touches;
       this.set({ drive: pkg.drive });
-      this.send({ type: 'load', xml, files, drive: pkg.drive, lidars: pkg.lidars.map(({ name, rays }) => ({ name, rays })), touches: pkg.touches.map((t) => t.name) });
+      this.send({ type: 'load', id: turn, xml, files, drive: pkg.drive, lidars: pkg.lidars.map(({ name, rays }) => ({ name, rays })), touches: pkg.touches.map((t) => t.name) });
       this.listen(true);
     } catch (e) {
       if (turn !== this.starts) return;
@@ -152,7 +152,8 @@ class SimStore {
     this.built = null;
     this.listen(false);
     if (this.state.status === 'off') return;
-    this.send({ type: 'run', running: false });
+    // The worker frees the model; one that was never spawned holds none.
+    this.worker?.postMessage({ type: 'unload' } satisfies SimRequest);
     this.set({ ...OFF });
   }
 
@@ -253,6 +254,8 @@ class SimStore {
 
   private receive(message: SimResponse): void {
     if (this.state.status === 'off') return;
+    // An answer to a load that a later one has overtaken is about another model than the one waited for.
+    if ((message.type === 'loaded' || message.type === 'error') && message.id !== undefined && message.id !== this.starts) return;
     switch (message.type) {
       case 'loaded': {
         this.bodyOrder = message.bodies;

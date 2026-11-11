@@ -113,6 +113,26 @@ export function spanningTree(robot: Robot, links: string[]): Tree {
   return { order, parentJoint, loops, unreached: links.filter((id) => !reached.has(id)) };
 }
 
+/** Why a joint cannot follow another: the leader never moves, closes a loop, is left out of the robot, or follows the follower in turn. */
+export type FollowFault = 'fixed' | 'loop' | 'left-out' | 'ring';
+
+/**
+ * What stops `joint` from following `leader`, or null when it can. A follower is written against its leader's
+ * name, so the leader must be a joint every export holds and that moves: one of the tree's, not fixed. Followers
+ * may follow followers, as long as the chain does not come round again.
+ */
+export function followFault(robot: Robot, tree: Tree, joint: RobotJoint, leader: RobotJoint): FollowFault | null {
+  if (leader.type === 'fixed') return 'fixed';
+  if (tree.loops.some((j) => j.id === leader.id)) return 'loop';
+  if (tree.parentJoint.get(leader.child)?.id !== leader.id) return 'left-out';
+  const seen = new Set<string>();
+  for (let at: RobotJoint | undefined = leader; at && !seen.has(at.id); at = at.mimic && robot.joints.find((j) => j.id === at!.mimic!.joint)) {
+    if (at.id === joint.id) return 'ring';
+    seen.add(at.id);
+  }
+  return null;
+}
+
 /**
  * The way a driven robot faces, read off its wheel labels: a unit vector along ±X or ±Y of the
  * design. Seen from behind, the right wheels stand to the right of the left ones; a mecanum

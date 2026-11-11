@@ -459,15 +459,16 @@ export function paintOf(node: SceneNode): string {
 
 /**
  * The color a mixed group shows on the faces that came from the part at
- * `path` (ids from its children down). A painted group inside it colors
- * everything beneath it; a hole has no color of its own, so the faces it cut
- * take the color of the first solid beside it.
+ * `path` (from its children down, each step a place among the children that
+ * are not pictures: see `Faces`). A painted group inside it colors everything
+ * beneath it; a hole has no color of its own, so the faces it cut take the
+ * color of the first solid beside it.
  */
-export function sourceColor(group: GroupNode, path: string[]): string {
+export function sourceColor(group: GroupNode, path: number[]): string {
   let nodes: SceneNode[] = group.children;
   let fallback = group.color;
-  for (const id of path) {
-    const node = nodes.find((n) => n.id === id);
+  for (const place of path) {
+    const node = nodes.filter((n) => n.type !== 'picture')[place];
     if (!node) return fallback;
     if (node.hole) {
       const solid = nodes.find((n) => !n.hole && n.type !== 'picture');

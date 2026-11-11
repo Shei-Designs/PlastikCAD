@@ -70,7 +70,7 @@ async function load(req: Extract<SimRequest, { type: 'load' }>): Promise<void> {
   sim = Simulation.load(mj, req.xml, req.files, req.drive);
   lidars = req.lidars;
   touches = req.touches;
-  post({ type: 'loaded', bodies: sim.bodies, actuators: sim.actuators, timestep: sim.timestep });
+  post({ type: 'loaded', id: req.id, bodies: sim.bodies, actuators: sim.actuators, timestep: sim.timestep });
   frame();
 }
 
@@ -80,6 +80,13 @@ self.onmessage = async (e: MessageEvent<SimRequest>) => {
     switch (req.type) {
       case 'load':
         await load(req);
+        break;
+      case 'unload':
+        // A load still waiting for the engine gives way too.
+        loads++;
+        stop();
+        sim?.dispose();
+        sim = null;
         break;
       case 'run':
         if (req.running) start();
@@ -97,6 +104,6 @@ self.onmessage = async (e: MessageEvent<SimRequest>) => {
         break;
     }
   } catch (e) {
-    post({ type: 'error', message: e instanceof Error ? e.message : String(e) });
+    post({ type: 'error', message: e instanceof Error ? e.message : String(e), ...(req.type === 'load' ? { id: req.id } : {}) });
   }
 };

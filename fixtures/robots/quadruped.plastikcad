@@ -1,8 +1,8 @@
 {
   "format": "plastikcad",
-  "version": 2,
+  "version": 3,
   "units": "mm",
-  "id": "0bwp59u2",
+  "id": "fxreferencequadruped",
   "name": "Reference quadruped",
   "scene": [
     {

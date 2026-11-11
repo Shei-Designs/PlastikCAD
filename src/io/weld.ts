@@ -1,3 +1,4 @@
+import earcut from 'earcut';
 import type { MeshData } from '../geometry/mesh';
 
 /**
@@ -147,4 +148,85 @@ function hash(x: number, y: number, z: number): number {
   h ^= h >>> 16;
   h = Math.imul(h, 0xc2b2ae35);
   return h ^ (h >>> 13);
+}
+
+/**
+ * How to cut a polygon into triangles when a fan around its first corner
+ * would leave its outline: triples of indices into its corners, wound as the
+ * polygon is. Null when the fan will do: for a triangle, a convex polygon, or
+ * one too crooked to tell. `xyz` holds the corners, three coordinates each.
+ */
+export function cutPolygon(xyz: ArrayLike<number>): number[] | null {
+  const n = xyz.length / 3;
+  if (n < 4) return null;
+  // The polygon's normal by Newell's method, which holds for corners that are not quite in one plane.
+  let nx = 0;
+  let ny = 0;
+  let nz = 0;
+  for (let i = 0; i < n; i++) {
+    const a = i * 3;
+    const b = ((i + 1) % n) * 3;
+    nx += (xyz[a + 1] - xyz[b + 1]) * (xyz[a + 2] + xyz[b + 2]);
+    ny += (xyz[a + 2] - xyz[b + 2]) * (xyz[a] + xyz[b]);
+    nz += (xyz[a] - xyz[b]) * (xyz[a + 1] + xyz[b + 1]);
+  }
+  const length = Math.hypot(nx, ny, nz);
+  if (!(length > 0) || !Number.isFinite(length)) return null;
+  // Convex when every corner turns the way the polygon goes round.
+  let convex = true;
+  for (let i = 0; i < n && convex; i++) {
+    const p = ((i + n - 1) % n) * 3;
+    const c = i * 3;
+    const q = ((i + 1) % n) * 3;
+    const ux = xyz[c] - xyz[p];
+    const uy = xyz[c + 1] - xyz[p + 1];
+    const uz = xyz[c + 2] - xyz[p + 2];
+    const vx = xyz[q] - xyz[c];
+    const vy = xyz[q + 1] - xyz[c + 1];
+    const vz = xyz[q + 2] - xyz[c + 2];
+    const turn = (uy * vz - uz * vy) * nx + (uz * vx - ux * vz) * ny + (ux * vy - uy * vx) * nz;
+    if (turn < -1e-10 * length * length) convex = false;
+  }
+  if (convex) return null;
+
+  // Two axes in the polygon's plane, from which it is seen going round counterclockwise.
+  nx /= length;
+  ny /= length;
+  nz /= length;
+  const ax = Math.abs(nx);
+  const ay = Math.abs(ny);
+  const az = Math.abs(nz);
+  // The axis furthest from the normal, crossed with it.
+  let [ux, uy, uz] = ax <= ay && ax <= az ? [0, nz, -ny] : ay <= az ? [-nz, 0, nx] : [ny, -nx, 0];
+  const ul = Math.hypot(ux, uy, uz);
+  ux /= ul;
+  uy /= ul;
+  uz /= ul;
+  const vx = ny * uz - nz * uy;
+  const vy = nz * ux - nx * uz;
+  const vz = nx * uy - ny * ux;
+  // A corner written twice running is one corner.
+  const kept: number[] = [];
+  const same = (a: number, b: number) => xyz[a * 3] === xyz[b * 3] && xyz[a * 3 + 1] === xyz[b * 3 + 1] && xyz[a * 3 + 2] === xyz[b * 3 + 2];
+  for (let i = 0; i < n; i++) if (kept.length === 0 || !same(i, kept[kept.length - 1])) kept.push(i);
+  while (kept.length > 1 && same(kept[0], kept[kept.length - 1])) kept.pop();
+  const flat = new Array<number>(kept.length * 2);
+  for (const [k, i] of kept.entries()) {
+    flat[k * 2] = xyz[i * 3] * ux + xyz[i * 3 + 1] * uy + xyz[i * 3 + 2] * uz;
+    flat[k * 2 + 1] = xyz[i * 3] * vx + xyz[i * 3 + 1] * vy + xyz[i * 3 + 2] * vz;
+  }
+  const cut = earcut(flat);
+  // Anything but a triangle less than two per corner means the outline crosses itself or folds flat: the fan is no worse.
+  if (cut.length !== (kept.length - 2) * 3) return null;
+  for (let t = 0; t < cut.length; t += 3) {
+    const [a, b, c] = [cut[t] * 2, cut[t + 1] * 2, cut[t + 2] * 2];
+    const area = (flat[b] - flat[a]) * (flat[c + 1] - flat[a + 1]) - (flat[b + 1] - flat[a + 1]) * (flat[c] - flat[a]);
+    const swap = area < 0;
+    cut[t] = kept[cut[t]];
+    const second = kept[cut[t + 1]];
+    const third = kept[cut[t + 2]];
+    cut[t + 1] = swap ? third : second;
+    cut[t + 2] = swap ? second : third;
+  }
+  return cut;
 }

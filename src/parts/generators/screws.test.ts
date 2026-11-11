@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { evaluate, initKernel } from '../evaluate';
+import { evaluate, initKernel } from '../testing';
 import { cylinder, intersection, QUALITY, translate } from '../types';
 import type { Quality, Solid } from '../types';
 import { leadScrew, leadScrewNut, METRIC_SIZES, metricBolt, metricNut } from './screws';

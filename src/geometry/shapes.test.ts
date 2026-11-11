@@ -4,6 +4,7 @@ import { builtSize } from '../model/math';
 import type { ShapeKind, ShapeNode, Vec3 } from '../model/types';
 import { build, clearCache, initKernel } from './kernel';
 import {
+  buildShape,
   clampParams,
   defaultParams,
   PALETTE,
@@ -281,9 +282,69 @@ describe('shapes', () => {
     const exact = 2 * Math.PI ** 2 * 11 * 16;
     expect(v).toBeLessThan(exact);
     expect(v / exact).toBeGreaterThan(0.97);
-    // Oval: the ring is stretched along Y.
-    const oval = volumeOf(shape('torus', { size: [30, 20, 8] }));
-    expect(oval).toBeCloseTo((v * 2) / 3, 3);
+  });
+
+  it('keeps the ring of an oval torus as wide at its ends as along its sides', async () => {
+    const k = await initKernel();
+    /** How far in the ring reaches from the rim along +X and +Y, on the middle plane: the two ends of the oval and its sides. */
+    const widths = (node: ShapeNode): [number, number] => {
+      const kept: { delete(): void }[] = [];
+      const m = buildShape(k, node, (o) => (kept.push(o), o));
+      const positions = m.getMesh().vertProperties;
+      let [x, y] = [Infinity, Infinity];
+      for (let i = 0; i < positions.length; i += 3) {
+        if (Math.abs(positions[i + 2]) > 1e-4) continue;
+        if (Math.abs(positions[i + 1]) < 1e-4 && positions[i] > 0) x = Math.min(x, positions[i]);
+        if (Math.abs(positions[i]) < 1e-4 && positions[i + 1] > 0) y = Math.min(y, positions[i + 1]);
+      }
+      const genus = m.genus();
+      for (const o of kept) o.delete();
+      expect(genus).toBe(1);
+      return [node.size[0] / 2 - x, node.size[1] / 2 - y];
+    };
+    // A set ring width, the same both ways; stretched from a round torus it would be 4 and 2.67.
+    const [atEnds, atSides] = widths(shape('torus', { size: [30, 20, 8], params: { sides: 48, ring: 4 } }));
+    expect(atEnds).toBeCloseTo(4, 3);
+    expect(atSides).toBeCloseTo(4, 3);
+    // A round section: as wide as the torus is tall along the sides. That is wider than the ends of this oval turn
+    // (a radius of 6.67), so the hole comes to a point there, a little further in than the width, on the long axis.
+    const round = widths(shape('torus', { size: [30, 20, 8] }));
+    expect(round[1]).toBeCloseTo(8, 3);
+    expect(round[0]).toBeCloseTo(15 - (Math.sqrt(1 - (144 - 100) / 125) * 125) / 15, 3);
+    // The section carried round the middle of the ring (Pappus): 2 by 4, along the outline less a turn of radius 2.
+    const outline = Math.PI * (3 * (15 + 10) - Math.sqrt((3 * 15 + 10) * (15 + 3 * 10)));
+    const exact = Math.PI * 2 * 4 * (outline - 2 * Math.PI * 2);
+    const v = volumeOf(shape('torus', { size: [30, 20, 8], params: { sides: 48, ring: 4 } }));
+    expect(v).toBeLessThan(exact);
+    expect(v / exact).toBeGreaterThan(0.97);
+    // Turned a quarter, it is the same ring.
+    expect(volumeOf(shape('torus', { size: [20, 30, 8], params: { sides: 48, ring: 4 } }))).toBeCloseTo(v, 3);
+  });
+
+  it('builds a long oval whose ring is wider than its ends turn, with the width kept along its sides', async () => {
+    // 60 by 20 turns with a radius of 3.3 mm at its ends; the ring is 8 wide.
+    const long = shape('torus', { size: [60, 20, 8], params: { sides: 48, ring: 8 } });
+    const k = await initKernel();
+    const kept: { delete(): void }[] = [];
+    const m = buildShape(k, long, (o) => (kept.push(o), o));
+    expect(m.status()).toBe('NoError');
+    expect(m.genus()).toBe(1);
+    const { min, max } = m.boundingBox();
+    expect([max[0] - min[0], max[1] - min[1], max[2] - min[2]].map((x) => +x.toFixed(4))).toEqual([60, 20, 8]);
+    const positions = m.getMesh().vertProperties;
+    let side = Infinity;
+    for (let i = 0; i < positions.length; i += 3) if (Math.abs(positions[i]) < 1e-4 && Math.abs(positions[i + 2]) < 1e-4 && positions[i + 1] > 0) side = Math.min(side, positions[i + 1]);
+    expect(10 - side).toBeCloseTo(8, 3);
+    const volume = m.volume();
+    for (const o of kept) o.delete();
+    // Less than the section carried all the way round would make, since the sections overlap at the ends, and more than half of it.
+    const outline = Math.PI * (3 * (30 + 10) - Math.sqrt((3 * 30 + 10) * (30 + 3 * 10)));
+    const swept = Math.PI * 4 * 4 * (outline - 2 * Math.PI * 4);
+    expect(volume).toBeLessThan(swept);
+    expect(volume).toBeGreaterThan(swept / 2);
+    // The hole closes across the narrow way at the same ring width as a round torus of that width would.
+    expect(paramMax('torus', 'ring', [60, 20, 8])).toBe(10);
+    expect(volumeOf(shape('torus', { size: [60, 20, 8], params: { sides: 48, ring: 10 } }))).toBeCloseTo(volumeOf(shape('torus', { size: [60, 20, 8], params: { sides: 48, ring: 40 } })), 6);
   });
 
   it('sets the width of the ring, and so the hole, by the ring width', () => {
@@ -297,6 +358,19 @@ describe('shapes', () => {
     const closed = volumeOf(shape('torus', { params: { ring: 15 } }));
     expect(closed).toBeCloseTo(volumeOf(shape('torus', { params: { ring: 40 } })), 6);
     expect(closed).toBeGreaterThan(thin);
+  });
+
+  it('hands a solid that came out wrong over to be freed, rather than leaving it in the kernel', async () => {
+    const k = await initKernel();
+    const kept: { delete(): void }[] = [];
+    const keep = <T extends { delete(): void }>(o: T): T => {
+      kept.push(o);
+      return o;
+    };
+    // A size that is not a number puts every point of the mesh nowhere.
+    expect(() => buildShape(k, shape('torus', { size: [Number.NaN, 30, 8] }), keep)).toThrow(/Geometry kernel error/);
+    expect(kept).toHaveLength(1);
+    for (const o of kept) o.delete();
   });
 
   it('closes the hole of a torus that is too tall for its width', () => {

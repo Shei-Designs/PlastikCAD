@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
+import { pressedOutside, TOUCH_ENTRY } from './outside';
 
 interface Props {
   /** Contents of the button that opens the panel. */
@@ -51,10 +52,11 @@ export function Popover({ button, title, className = 'chip', disabled, align = '
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => {
-      if (!root.current?.contains(e.target as Node)) setOpen(false);
+      if (pressedOutside(root.current, e.target)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
+      // While the entry sheet is up, Escape is the sheet's.
+      if (e.key !== 'Escape' || document.querySelector(TOUCH_ENTRY)) return;
       // Escape closes the panel and nothing else (it would otherwise also clear the selection).
       e.stopPropagation();
       setOpen(false);

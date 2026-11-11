@@ -36,6 +36,8 @@ def load():
     home = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_KEY, "home")
     if home >= 0:
         mujoco.mj_resetDataKeyframe(model, data, home)
+    # Works out where everything is at the start, so that it can be read before the first step.
+    mujoco.mj_forward(model, data)
     return model, data
 
 

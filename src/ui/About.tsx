@@ -1,9 +1,9 @@
 // The About box: name, version and license, opened from the File menu.
-import { useEffect, useRef } from 'react';
 import type React from 'react';
 import { APP_NAME, APP_URL, APP_VERSION, AUTHOR, AUTHOR_URL, PUBLISHER, PUBLISHER_URL } from '../appInfo';
 import { isDesktop } from '../platform';
 import { Logo } from './icons';
+import { Modal } from './Modal';
 
 /** A link that opens in the browser; on desktop, where the webview cannot leave the app, the address is shown instead. */
 function Link({ href, children }: { href: string; children: React.ReactNode }) {
@@ -16,30 +16,8 @@ function Link({ href, children }: { href: string; children: React.ReactNode }) {
 }
 
 export function About({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const dialog = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const d = dialog.current;
-    if (!d) return;
-    if (open && !d.open) d.showModal();
-    else if (!open && d.open) d.close();
-  }, [open]);
   return (
-    <dialog
-      ref={dialog}
-      className="about"
-      aria-label={`About ${APP_NAME}`}
-      onCancel={(e) => {
-        // Escape closes the box and nothing else (it would otherwise also clear the selection).
-        e.preventDefault();
-        e.stopPropagation();
-        onClose();
-      }}
-      onKeyDown={(e) => e.stopPropagation()}
-      onClick={(e) => {
-        // A click on the backdrop lands on the dialog itself, not on its contents.
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
+    <Modal open={open} onClose={onClose} className="about" label={`About ${APP_NAME}`}>
       <div className="about-body">
         <div className="brand">
           <Logo />
@@ -57,6 +35,6 @@ export function About({ open, onClose }: { open: boolean; onClose: () => void })
           Close
         </button>
       </div>
-    </dialog>
+    </Modal>
   );
 }

@@ -6,7 +6,7 @@ import { exportMesh, exportOutline } from './export';
 import { writeGlb } from './glb';
 import { write3mf } from './threemf';
 import { scaling, translation } from '../model/math';
-import { centerMesh, centerOutline, checkedMesh, checkedOutline, fileKind, IMPORT_EXTENSIONS, importFile } from './import';
+import { centerMesh, centerOutline, checkedMesh, checkedOutline, fileKind, guarded, IMPORT_EXTENSIONS, importFile } from './import';
 import type { Companion, ImportedModel } from './import';
 import type { OutlineShape } from '../model/types';
 import { signedArea } from './outline';
@@ -381,6 +381,62 @@ describe('OBJ import', () => {
     const m = mesh('a.obj', `v ${third} 0 0\nv 10 0 0\nv 0 10 0\nf 1 2 3\n`);
     expect(m.positions[0]).toBeCloseTo(1 / 3, 6);
   });
+
+  it('cuts a face that is not convex into triangles that stay inside it', () => {
+    // An L of area 3, its face listed from the corner next to the notch: a fan from there would spill over the notch.
+    const m = mesh('l.obj', 'v 0 0 0\nv 2 0 0\nv 2 1 0\nv 1 1 0\nv 1 2 0\nv 0 2 0\nf 3 4 5 6 1 2\n');
+    expect(m.triangles.length).toBe(4 * 3);
+    const areas = flatAreas(m);
+    expect(areas.every((a) => a > 0)).toBe(true);
+    expect(areas.reduce((sum, a) => sum + a, 0)).toBeCloseTo(3, 6);
+    // The same face seen from below keeps facing down, and one tilted out of every axis plane is cut as well.
+    expect(flatAreas(mesh('l.obj', 'v 0 0 0\nv 2 0 0\nv 2 1 0\nv 1 1 0\nv 1 2 0\nv 0 2 0\nf 2 1 6 5 4 3\n')).every((a) => a < 0)).toBe(true);
+    const tilted = mesh('l.obj', 'v 0 0 0\nv 2 0 2\nv 2 1 2\nv 1 1 1\nv 1 2 1\nv 0 2 0\nf 3 4 5 6 1 2\n');
+    expect(flatAreas(tilted).every((a) => a > 0)).toBe(true);
+    expect(flatAreas(tilted).reduce((sum, a) => sum + a, 0)).toBeCloseTo(3, 6);
+    // A dart, whose only diagonal inside it is not the one from its first corner.
+    const dart = flatAreas(mesh('d.obj', 'v 0 0 0\nv 1 1 0\nv 2 0 0\nv 1 3 0\nf 1 2 3 4\n'));
+    expect(dart.every((a) => a > 0)).toBe(true);
+    expect(dart.reduce((sum, a) => sum + a, 0)).toBeCloseTo(2, 6);
+  });
+
+  it('finds a material library and a picture whose names have spaces in them', () => {
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    const obj = 'mtllib my model.mtl\nv 0 0 0\nv 1 0 0\nv 0 1 0\nvt 0 0\nusemtl red\nf 1/1 2/1 3/1\n';
+    const got = modelOf('a.obj', obj, [
+      { name: 'my model.mtl', bytes: bytes('newmtl red\nKd 1 0 0\nmap_Kd -s 1 1 1 my tex.png\n') },
+      { name: 'my tex.png', bytes: png },
+    ]);
+    expect(got.parts[0].color).toBe('#ff0000');
+    expect(got.parts[0].image?.name).toBe('my tex.png');
+    expect(got.used.sort()).toEqual(['my model.mtl', 'my tex.png']);
+    expect(got.missing).toEqual([]);
+    // Several libraries on one line are still told apart, and a missing one is named whole.
+    const two = modelOf('a.obj', 'mtllib a.mtl b.mtl\nv 0 0 0\nv 1 0 0\nv 0 1 0\nusemtl red\nf 1 2 3\n', [{ name: 'b.mtl', bytes: bytes('newmtl red\nKd 0 0 1\n') }]);
+    expect(two.parts[0].color).toBe('#0000ff');
+    expect(two.missing).toEqual(['a.mtl']);
+    expect(modelOf('a.obj', obj).missing).toEqual(['my model.mtl']);
+  });
+
+  /** The signed area of each triangle of a mesh as seen from +Z. */
+  function flatAreas({ positions: p, triangles: t }: MeshData): number[] {
+    const out: number[] = [];
+    for (let i = 0; i < t.length; i += 3) {
+      const [a, b, c] = [t[i] * 3, t[i + 1] * 3, t[i + 2] * 3];
+      out.push(((p[b] - p[a]) * (p[c + 1] - p[a + 1]) - (p[c] - p[a]) * (p[b + 1] - p[a + 1])) / 2);
+    }
+    return out;
+  }
+});
+
+describe('a file that trips a reader up', () => {
+  it('is reported as damaged, in words fit to show', () => {
+    expect(() => guarded('OBJ', () => [].reduce((a) => a))).toThrow('This OBJ file is damaged or not supported.');
+    expect(() => guarded('STL', () => new Float32Array(-1))).toThrow('This STL file is damaged or not supported.');
+    // What a reader says itself is passed on as it is.
+    expect(() => guarded('OBJ', () => { throw new Error('This OBJ file has no faces.'); })).toThrow('This OBJ file has no faces.');
+    expect(guarded('OBJ', () => 7)).toBe(7);
+  });
 });
 
 describe('coordinates that are not numbers', () => {
@@ -392,6 +448,26 @@ describe('coordinates that are not numbers', () => {
     const far = { positions: new Float32Array([0, 0, 0, Infinity, 0, 0, 0, 1, 0]), triangles: new Uint32Array([0, 1, 2]) };
     expect(() => checkedMesh(far)).toThrow(/not numbers/);
     expect(() => checkedOutline([{ contours: [[[0, 0], [1, NaN], [1, 1]]], evenodd: false }])).toThrow(/not numbers/);
+  });
+
+  it('are refused as corners of triangles, and made zero as texture coordinates', () => {
+    const stray = { positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]), triangles: new Uint32Array([0, 1, 3]) };
+    expect(() => checkedMesh(stray)).toThrow(/damaged/);
+    // A texture coordinate with a number missing.
+    const m = mesh('a.obj', 'v 0 0 0\nv 10 0 0\nv 0 10 0\nvt 0.5\nvt 1 0\nf 1/1 2/2 3/2\n');
+    expect([...m.uv!]).toEqual([0.5, 0, 1, 0, 1, 0]);
+    // A glTF whose texture coordinates run out before its corners do.
+    const floats = (values: number[]) => `data:application/octet-stream;base64,${btoa(String.fromCharCode(...new Uint8Array(new Float32Array(values).buffer)))}`;
+    const gltf = {
+      asset: { version: '2.0' },
+      meshes: [{ primitives: [{ attributes: { POSITION: 0, TEXCOORD_0: 1 } }] }],
+      accessors: [{ bufferView: 0, componentType: 5126, count: 3, type: 'VEC3' }, { bufferView: 1, componentType: 5126, count: 2, type: 'VEC2' }],
+      bufferViews: [{ buffer: 0, byteLength: 36 }, { buffer: 1, byteLength: 16 }],
+      buffers: [{ byteLength: 36, uri: floats([0, 0, 0, 0.01, 0, 0, 0, 0.01, 0]) }, { byteLength: 16, uri: floats([0.25, 0.25, 0.75, 0.25]) }],
+    };
+    const g = mesh('a.gltf', JSON.stringify(gltf));
+    expect(g.uv!.length).toBe(6);
+    expect(Array.from(g.uv!).every(Number.isFinite)).toBe(true);
   });
 
   it('never reach the mesh a file reader returns', () => {
@@ -539,6 +615,24 @@ describe('3MF import', () => {
     expect(m.triangles.length).toBe(3 * 3);
   });
 
+  it('reads a model whose elements are written under a namespace prefix', () => {
+    const prefixed = model('unit="millimeter"', `<basematerials id="1"><base name="Red" displaycolor="#FF0000"/></basematerials><object id="1" pid="1" pindex="0">${TETRA}</object><object id="2"><components><component objectid="1" transform="1 0 0 0 1 0 0 0 1 5 0 0"/></components></object>`, '<item objectid="2"/>')
+      .replace(/<(\/?)(model|resources|basematerials|base|object|mesh|vertices|vertex|triangles|triangle|components|component|build|item|metadata)\b/g, '<$1c:$2')
+      .replace('xmlns=', 'xmlns:c=');
+    expect(prefixed).toContain('<c:vertex x="0"');
+    const got = modelOf('a.3mf', pack({ '_rels/.rels': RELS, '3D/3dmodel.model': prefixed }));
+    expect(got.parts.map((p) => [p.color, p.mesh.triangles.length / 3])).toEqual([['#ff0000', 4]]);
+    expect(meshBounds(got.parts[0].mesh)).toEqual({ min: [5, 0, 0], max: [6, 1, 1] });
+  });
+
+  it('takes the unit of another model part from that part', () => {
+    // The root is in millimeters; the part it places 3 mm along X is drawn in inches.
+    const root = model('unit="millimeter"', '<object id="7"><components><component p:path="/3D/Objects/object_1.model" objectid="1" transform="1 0 0 0 1 0 0 0 1 3 0 0"/></components></object>', '<item objectid="7"/>');
+    const part = model('unit="inch"', `<object id="1">${TETRA}</object>`, '');
+    const m = mesh('a.3mf', pack({ '_rels/.rels': RELS, '3D/3dmodel.model': root, '3D/Objects/object_1.model': part }));
+    expect(meshBounds(m)).toEqual({ min: [3, 0, 0], max: [28.4, 25.4, 25.4].map(Math.fround) });
+  });
+
   it('explains what is wrong with files that hold no mesh', () => {
     expect(() => mesh('a.3mf', new Uint8Array(0))).toThrow('This 3MF file is empty.');
     expect(() => mesh('a.3mf', bytes('this is not a zip archive at all'))).toThrow(
@@ -639,6 +733,26 @@ describe('glTF import', () => {
     expect(() => modelOf('x.gltf', 'nope')).toThrow(/JSON/);
     expect(() => modelOf('x.gltf', '{"asset":{"version":"2.0"},"extensionsRequired":["KHR_draco_mesh_compression"],"meshes":[{"primitives":[{"attributes":{"POSITION":0}}]}]}')).toThrow(/compressed/);
     expect(() => modelOf('x.gltf', '{"asset":{"version":"2.0"}}')).toThrow(/no meshes/);
+  });
+
+  it('says what is wrong with a damaged file, rather than falling over it', () => {
+    const file = (rest: object) => JSON.stringify({ asset: { version: '2.0' }, ...rest });
+    const triangle = `data:application/octet-stream;base64,${btoa(String.fromCharCode(...new Uint8Array(new Float32Array([0, 0, 0, 0.01, 0, 0, 0, 0.01, 0]).buffer)))}`;
+    const withAccessor = (accessor: object) => file({ meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }], accessors: [accessor], bufferViews: [{ buffer: 0, byteLength: 36 }], buffers: [{ byteLength: 36, uri: triangle }] });
+    // The file reads when nothing is wrong with it.
+    expect(mesh('x.gltf', withAccessor({ bufferView: 0, componentType: 5126, count: 3, type: 'VEC3' })).triangles.length).toBe(3);
+    expect(() => modelOf('x.gltf', file({ nodes: [{ mesh: 0 }], meshes: [{}] }))).toThrow(/damaged/);
+    expect(() => modelOf('x.gltf', file({ nodes: [{ mesh: 0 }], meshes: [{ primitives: [{}] }] }))).toThrow(/damaged/);
+    expect(() => modelOf('x.gltf', file({ nodes: 7, meshes: 'none' }))).toThrow(/damaged/);
+    expect(() => modelOf('x.gltf', file({ nodes: [{ mesh: 0, scale: { length: 3 } }], meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }] }))).toThrow(/damaged/);
+    expect(() => modelOf('x.gltf', file({ buffers: [{ byteLength: 3, uri: 'data:application/octet-stream;base64,@@@@' }] }))).toThrow(/damaged/);
+    // More corners than could be there, with or without the bytes to read them from.
+    expect(() => modelOf('x.gltf', withAccessor({ bufferView: 0, componentType: 5126, count: 4e9, type: 'VEC3' }))).toThrow(/damaged/);
+    expect(() => modelOf('x.gltf', withAccessor({ componentType: 5126, count: 4e9, type: 'VEC3' }))).toThrow(/damaged/);
+    expect(() => modelOf('x.gltf', withAccessor({ bufferView: 0, componentType: 5126, count: 3, type: 'toString' }))).toThrow(/damaged/);
+    // Corners kept as a few changes to a list of zeros are not read as zeros.
+    expect(() => modelOf('x.gltf', withAccessor({ componentType: 5126, count: 3, type: 'VEC3', sparse: { count: 1, indices: { bufferView: 0, componentType: 5123 }, values: { bufferView: 0 } } }))).toThrow(/sparse/);
+    expect(() => modelOf('x.gltf', 'null')).toThrow(/not a glTF/);
   });
 
   /** Sign of the volume a closed mesh (or here, the orientation of one triangle against +Z) encloses. */
@@ -773,6 +887,121 @@ describe('DXF import', () => {
     expect(() => importFile('d.dxf', bytes('hello'))).toThrow(/not a DXF/);
     expect(() => importFile('d.dxf', bytes(dxf(line(0, 0, 10, 10))))).toThrow(/no closed outlines/);
     expect(IMPORT_EXTENSIONS).toContain('dxf');
+  });
+
+  it('gives a bulge to the vertex it is written after, when only the bulged vertices carry one', () => {
+    // A slot 20 long with half-circle ends of radius 5, as AutoCAD writes it: no bulge on the straight sides.
+    const slot = '0\nLWPOLYLINE\n8\n0\n90\n4\n70\n1\n10\n0\n20\n0\n10\n20\n20\n0\n42\n1\n10\n20\n20\n10\n10\n0\n20\n10\n42\n1';
+    const [contour] = contoursOf(dxf(slot));
+    expect(Math.abs(signedArea(contour))).toBeCloseTo(200 + Math.PI * 25, 0);
+    const xs = contour.map((p) => p[0]);
+    const ys = contour.map((p) => p[1]);
+    expect(Math.min(...xs)).toBeCloseTo(-5, 1);
+    expect(Math.max(...xs)).toBeCloseTo(25, 1);
+    expect([Math.min(...ys), Math.max(...ys)]).toEqual([0, 10]);
+  });
+
+  it('gives up on a small file whose blocks multiply into a drawing that would never fit', () => {
+    const unit = '0\nBLOCK\n2\nB0\n10\n0\n20\n0\n' + line(0, 0, 1, 0) + '\n0\nENDBLK';
+    // An array of a thousand million copies.
+    const array = '0\nINSERT\n8\n0\n2\nB0\n10\n0\n20\n0\n70\n30000\n71\n30000\n44\n2\n45\n2';
+    expect(() => partsOf(dxf(array, { blocks: unit }))).toThrow(/too many/);
+    // The same of a block with nothing in it.
+    expect(() => partsOf(dxf(array, { blocks: '0\nBLOCK\n2\nB0\n10\n0\n20\n0\n0\nENDBLK' }))).toThrow(/too many/);
+    // Eight blocks, each holding forty of the one before.
+    let blocks = unit;
+    for (let i = 1; i <= 8; i++) blocks += `\n0\nBLOCK\n2\nB${i}\n10\n0\n20\n0\n0\nINSERT\n8\n0\n2\nB${i - 1}\n10\n0\n20\n0\n70\n40\n44\n2\n0\nENDBLK`;
+    const text = dxf('0\nINSERT\n8\n0\n2\nB8\n10\n0\n20\n0', { blocks });
+    expect(text.length).toBeLessThan(4096);
+    expect(() => partsOf(text)).toThrow(/too many/);
+  });
+
+  it('reads an arc or an ellipse whose angles are far out of range without hanging', () => {
+    // Angles of 1e30 degrees say nothing about where the arc is; it still ends, as some arc of this circle.
+    const arc = '0\nARC\n8\n0\n10\n0\n20\n0\n40\n10\n50\n1e30\n51\n0';
+    const closing = '0\nCIRCLE\n8\n0\n10\n50\n20\n0\n40\n2';
+    expect(contoursOf(dxf(`${arc}\n${closing}`)).length).toBe(1);
+    const ellipse = '0\nELLIPSE\n8\n0\n10\n0\n20\n0\n11\n10\n21\n0\n40\n0.5\n41\n1e300\n42\n-1e300';
+    expect(contoursOf(dxf(`${ellipse}\n${closing}`)).length).toBe(1);
+    // Two turns are one circle, drawn once.
+    const twice = '0\nARC\n8\n0\n10\n0\n20\n0\n40\n10\n50\n0\n51\n720';
+    const [circle] = contoursOf(dxf(twice));
+    expect(Math.abs(signedArea(circle))).toBeCloseTo(Math.PI * 100, -1);
+    // An ellipse closed a hair past a whole turn is still whole.
+    const whole = '0\nELLIPSE\n8\n0\n10\n0\n20\n0\n11\n10\n21\n0\n40\n0.5\n41\n0\n42\n6.2831853072';
+    expect(area(contoursOf(dxf(whole)))).toBeCloseTo(Math.PI * 10 * 5, 0);
+  });
+
+  it('chains tens of thousands of loose lines in good time', () => {
+    // One loop of 40,000 segments, each a line of its own, in no order.
+    const n = 40_000;
+    const lines: string[] = [];
+    for (let i = 0; i < n; i++) {
+      const a0 = (i / n) * 2 * Math.PI;
+      const a1 = (((i + 1) % n) / n) * 2 * Math.PI;
+      lines.push(line(1000 * Math.cos(a0), 1000 * Math.sin(a0), 1000 * Math.cos(a1), 1000 * Math.sin(a1)));
+    }
+    let seed = 7;
+    const random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let i = lines.length - 1; i > 0; i--) {
+      const j = Math.floor(random() * (i + 1));
+      [lines[i], lines[j]] = [lines[j], lines[i]];
+    }
+    const text = bytes(dxf(lines.join('\n')));
+    const started = performance.now();
+    const [contour] = contoursOf(text);
+    expect(performance.now() - started).toBeLessThan(1500);
+    expect(contour.length).toBe(n);
+    expect(Math.abs(signedArea(contour))).toBeCloseTo(Math.PI * 1e6, -1);
+  });
+
+  it('leaves out what is drawn in paper space', () => {
+    const contours = contoursOf(dxf(`${square(0, 0, 10)}\n${square(100, 100, 200, '\n67\n1')}`));
+    expect(contours.length).toBe(1);
+    expect(area(contours)).toBeCloseTo(100, 6);
+  });
+
+  it('mirrors an entity whose extrusion points down', () => {
+    const down = '\n210\n0\n220\n0\n230\n-1';
+    // A circle whose center is written at x = -10 stands at x = +10.
+    const [circle] = contoursOf(dxf(`0\nCIRCLE\n8\n0\n10\n-10\n20\n0\n40\n2${down}`));
+    const xs = circle.map((p) => p[0]);
+    expect([Math.min(...xs), Math.max(...xs)]).toEqual([8, 12]);
+    // A quarter arc about that center, from 0° to 90° as written, runs from (5, 0) up to (10, 5); a line closes it.
+    const [quarter] = contoursOf(dxf(`0\nARC\n8\n0\n10\n-10\n20\n0\n40\n5\n50\n0\n51\n90${down}\n${line(5, 0, 10, 5)}`));
+    expect(Math.abs(signedArea(quarter))).toBeCloseTo((Math.PI * 25) / 4 - 12.5, 0);
+    expect(quarter.every(([x, y]) => x > 4.99 && x < 10.01 && y > -0.01 && y < 5.01)).toBe(true);
+    // A polyline keeps its bulge on the mirrored side: a half disc bowing down, written bowing up.
+    const [half] = contoursOf(dxf(`0\nLWPOLYLINE\n8\n0\n90\n2\n70\n1\n10\n0\n20\n0\n42\n1\n10\n10\n20\n0${down}`));
+    expect(Math.abs(signedArea(half))).toBeCloseTo((Math.PI * 25) / 2, 0);
+    expect(Math.min(...half.map((p) => p[0]))).toBeCloseTo(-10, 6);
+    expect(Math.min(...half.map((p) => p[1]))).toBeCloseTo(-5, 1);
+    // An ellipse is written where it stands, and gone round the other way: a quarter of it from (10, 0) down to (0, -5).
+    const [ellipse] = contoursOf(dxf(`0\nELLIPSE\n8\n0\n10\n0\n20\n0\n11\n10\n21\n0\n40\n0.5\n41\n0\n42\n${Math.PI / 2}${down}\n${line(0, -5, 0, 0)}\n${line(0, 0, 10, 0)}`));
+    expect(Math.abs(signedArea(ellipse))).toBeCloseTo((Math.PI * 50) / 4, 0);
+    expect(ellipse.every(([x, y]) => x > -0.01 && x < 10.01 && y > -5.01 && y < 0.01)).toBe(true);
+    // A block placed that way is mirrored about the drawing's origin.
+    const blocks = '0\nBLOCK\n8\n0\n2\nUNIT\n10\n0\n20\n0\n' + square(0, 0, 1) + '\n0\nENDBLK';
+    const [placed] = contoursOf(dxf(`0\nINSERT\n8\n0\n2\nUNIT\n10\n-10\n20\n0${down}`, { blocks }));
+    const px = placed.map((p) => p[0]);
+    expect([Math.min(...px), Math.max(...px)]).toEqual([9, 10]);
+  });
+
+  it('says that a binary DXF has to be saved as text', () => {
+    const binary = new Uint8Array(64);
+    binary.set(bytes('AutoCAD Binary DXF\r\n\x1a\0'));
+    expect(() => importFile('d.dxf', binary)).toThrow(/Binary DXF/);
+  });
+
+  it('knows the very small and very large units of $INSUNITS', () => {
+    /** The side in millimeters of a square `size` units wide. */
+    const side = (unit: number, size: number) => Math.sqrt(area(contoursOf(dxf(square(0, 0, size), { header: `9\n$INSUNITS\n70\n${unit}` }))));
+    // Ångströms, gigameters, astronomical units, light years and parsecs.
+    expect(side(11, 1e8)).toBeCloseTo(10, 6);
+    expect(side(17, 1e-11)).toBeCloseTo(10, 6);
+    expect(side(18, 1e-13)).toBeCloseTo(14.95978707, 6);
+    expect(side(19, 1e-18)).toBeCloseTo(9.4607304725808, 6);
+    expect(side(20, 1e-18)).toBeCloseTo(30.856775814913673, 6);
   });
 });
 
@@ -1296,6 +1525,22 @@ describe('SVG import', () => {
         [10, 0],
         [10, -10],
       ]);
+    });
+
+    it('keeps its place among the elements when one is left open or closed twice', () => {
+      // HTML inside a foreignObject need not close its tags; what follows the foreignObject is still drawn.
+      expect(shapesOf(mm('<foreignObject><div>a<br>b</div></foreignObject><rect x="50" width="5" height="5"/>')).length).toBe(1);
+      // A closing tag too many closes nothing: the square after it is still 10 mm wide.
+      const [shape] = shapesOf(mm('<g><rect width="1" height="1" visibility="hidden"/></g></g><rect width="10" height="10"/>'));
+      expect(Math.abs(signedArea(shape.contours[0]))).toBeCloseTo(100, 6);
+    });
+
+    it('reads a very long number, or a very long word, in good time', () => {
+      const started = performance.now();
+      expect(() => shapesOf(`<svg width="${'1'.repeat(60_000)}!" viewBox="0 0 1 1"><rect width="1" height="1"/></svg>`)).not.toThrow();
+      expect(shapesOf(mm(`<rect transform="${'a'.repeat(60_000)}" width="10" height="10"/>`)).length).toBe(1);
+      expect(shapesOf(mm('<rect transform="translate(1,2)rotate(90)" width="10" height="5.5e0mm"/>')).length).toBe(1);
+      expect(performance.now() - started).toBeLessThan(1000);
     });
 
     it('says so when there is nothing to extrude', () => {

@@ -5,8 +5,12 @@ const GT = 62;
 const SLASH = 47;
 const QUOTE = 34;
 const APOSTROPHE = 39;
+const EQUALS = 61;
 
 const decoder = new TextDecoder();
+
+/** Elements within elements, past which a document read whole is refused: no real one comes near, and the readers walk it level by level. */
+const MAX_DEPTH = 512;
 
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
 
@@ -115,10 +119,26 @@ export class XmlScanner {
   attrs(): Record<string, string> {
     const out: Record<string, string> = {};
     const text = decoder.decode(this.bytes.subarray(this.attrStart, this.attrEnd));
-    const re = /([^\s=]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
-    for (let m = re.exec(text); m; m = re.exec(text)) {
-      const value = m[2] ?? m[3];
-      out[m[1]] = value.includes('&') ? decodeEntities(value) : value;
+    const n = text.length;
+    // Read by hand, a character at a time: a name, "=", a quoted value. Anything else is stepped over.
+    let i = 0;
+    while (i < n) {
+      while (i < n && isSpace(text.charCodeAt(i))) i++;
+      const start = i;
+      while (i < n && text.charCodeAt(i) !== EQUALS && !isSpace(text.charCodeAt(i))) i++;
+      const name = text.slice(start, i);
+      while (i < n && isSpace(text.charCodeAt(i))) i++;
+      if (text.charCodeAt(i) !== EQUALS) continue;
+      i++;
+      while (i < n && isSpace(text.charCodeAt(i))) i++;
+      const quote = text.charCodeAt(i);
+      if (!name || (quote !== QUOTE && quote !== APOSTROPHE)) continue;
+      const end = text.indexOf(text[i], i + 1);
+      // A quote that is never closed opens no value; it may still begin a name.
+      if (end < 0) continue;
+      const value = text.slice(i + 1, end);
+      out[name] = value.includes('&') ? decodeEntities(value) : value;
+      i = end + 1;
     }
     return out;
   }
@@ -194,8 +214,22 @@ export interface XmlElement {
   text: string;
 }
 
+/** `text` without every stretch from `open` to the next `close`, or with only the two markers gone when `keep` is set. */
+function without(text: string, open: string, close: string, keep: boolean): string {
+  let out = '';
+  let at = 0;
+  for (;;) {
+    const from = text.indexOf(open, at);
+    const to = from < 0 ? -1 : text.indexOf(close, from + open.length);
+    if (to < 0) return out + text.slice(at);
+    out += text.slice(at, from);
+    if (keep) out += text.slice(from + open.length, to);
+    at = to + close.length;
+  }
+}
+
 const textOf = (bytes: Uint8Array): string => {
-  const raw = decoder.decode(bytes).replace(/<!--[\s\S]*?-->/g, '').replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1');
+  const raw = without(without(decoder.decode(bytes), '<!--', '-->', false), '<![CDATA[', ']]>', true);
   return raw.includes('&') ? decodeEntities(raw) : raw;
 };
 
@@ -203,6 +237,7 @@ const textOf = (bytes: Uint8Array): string => {
  * The whole document as a tree, for the small files (a URDF, an SDF) whose
  * text content matters as much as their tags. Null when the document has no
  * element. Mismatched closing tags are taken as closing the open element.
+ * Throws on a document nested deeper than any real one.
  */
 export function xmlTree(bytes: Uint8Array): XmlElement | null {
   const scanner = new XmlScanner(bytes);
@@ -222,7 +257,9 @@ export function xmlTree(bytes: Uint8Array): XmlElement | null {
     const element: XmlElement = { name: scanner.name(), attrs: scanner.attrs(), children: [], text: '' };
     if (top) top.children.push(element);
     else root ??= element;
-    if (!scanner.selfClosing) stack.push(element);
+    if (scanner.selfClosing) continue;
+    if (stack.length >= MAX_DEPTH) throw new Error('This file is nested too deeply to read.');
+    stack.push(element);
   }
   for (const open of stack) open.text = open.text.trim();
   return root;
