@@ -566,18 +566,24 @@ the first one. An object is rebuilt there from what it is, so that a CAD
 program gets surfaces it can pick, measure and build on: a box is six
 planes, a cylinder a cylinder, a ball a sphere, a rounded box its flats with
 cylinders along the edges and spheres at the corners, and a plate with a
-hole drilled through it seven faces, the hole's wall one of them. Gears,
-pulleys, sprockets, rails, boards, fans, motor mounts and cutouts go out as
-their profiles raised, with circles and arcs where they have them. Whatever
+hole drilled through it seven faces, the hole's wall one of them. A dome is
+half a sphere, a round roof half a cylinder and a fillet a quarter of one,
+while they are not stretched. Gears, pulleys, sprockets, rails, boards,
+fans, motor mounts and cutouts go out as their profiles raised, with circles
+and arcs where they have them. Pipes and ducts go out as what they are: a
+straight run as cylinders (or flats with rounded corners), a bend as tori
+about its axis, a round reducer as cones, a tee as two pipes run together;
+only a reducer off its axis or between rectangles has no simple surface, and
+is the surface of straight lines from one end to the other. Whatever
 is rebuilt is held against the kernel's own solid (its volume to half a
 percent, its box to 0.05 mm) before it is written.
 
 What cannot be rebuilt goes out as the kernel's facets, sewn into a solid
 with the facets that lie in one plane joined: threads and helical gears
-(twisted as they rise), bevel gears and pipes, lettering, imported meshes,
-shapes stretched out of round (an egg from a ball), a rounded rim, a dome, a
-round roof, and any group that holds one of these or parts in several
-colors. Flat sides are still true planes; a curve is as many flat strips as
+(twisted as they rise), bevel gears, lettering, imported meshes, shapes
+stretched out of round (an egg from a ball, a dome taller than half its
+width), a rounded rim, and any group that holds one of these or parts in
+several colors. Flat sides are still true planes; a curve is as many flat strips as
 it has on screen, which makes a large file (some 1.6 kB a triangle). Such an
 object of more than 60,000 triangles is left out, and one that is not
 watertight goes out as a surface; both are said.
@@ -968,7 +974,7 @@ waits until someone needs it:
 - More parts: throated worm wheel, V-belt pulleys, imperial threads.
 - Assembly preview of meshing gears.
 - True surfaces in STEP files for what still goes out as facets: threads
-  and helical gears, pipes, domes and stretched shapes.
+  and helical gears, bevel gears and stretched shapes.
 
 ## License
 

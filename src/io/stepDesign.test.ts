@@ -186,6 +186,45 @@ describe('the design as a STEP file', () => {
     }, 120_000);
   }
 
+  describe('pipes and ducts', () => {
+    it('writes a straight pipe as two cylinders, one inside the other, and a solid one as one', () => {
+      // The outer wall, the bore and the two ring-shaped ends.
+      expect(roundTrip(partNode('pipe'))).toMatchObject({ exact: true, faces: 4, cylinders: 2, planes: 2 });
+      expect(roundTrip(partNode('pipe', { wall: 0 }))).toMatchObject({ exact: true, faces: 3, cylinders: 1, planes: 2 });
+    });
+
+    it('writes a rectangular duct as flats and rounded corners', () => {
+      // Four flats and four corners outside, the same inside, and two ends.
+      expect(roundTrip(partNode('pipe', { section: 'rect' }))).toMatchObject({ exact: true, faces: 18, planes: 10, cylinders: 8 });
+      expect(roundTrip(partNode('pipe', { section: 'rect', corner: 0, wall: 0 }))).toMatchObject({ exact: true, faces: 6, planes: 6 });
+    });
+
+    it('writes an elbow as a bend between two straight legs', () => {
+      // Outside and bore: a torus for the bend and a cylinder for each leg; and the two ends.
+      expect(roundTrip(partNode('elbow'))).toMatchObject({ exact: true, tori: 2, cylinders: 4, planes: 2 });
+      // Without legs, solid, at another angle: the bend alone.
+      expect(roundTrip(partNode('elbow', { legA: 0, legB: 0, wall: 0, angle: 45 }))).toMatchObject({ exact: true, tori: 1, cylinders: 0, planes: 2 });
+      // Hollow and without legs: the bore runs straight out through each end, which leaves the bend the bend it is.
+      expect(roundTrip(partNode('elbow', { legA: 0, legB: 0 }))).toMatchObject({ exact: true, tori: 2, cylinders: 0, planes: 2 });
+      // A rectangular one bends in cylinders, flat rings and, round its corners, tori.
+      const duct = roundTrip(partNode('elbow', { section: 'rect', angle: 120 }));
+      expect(duct.exact).toBe(true);
+      expect(duct.tori).toBe(8);
+    }, 120_000);
+
+    it('writes a reducer as a cone, and one off its axis or between rectangles as straight lines from end to end', () => {
+      expect(roundTrip(partNode('reducer'))).toMatchObject({ exact: true, cones: 2, planes: 2 });
+      expect(roundTrip(partNode('reducer', { offset: 4.5 })).exact).toBe(true);
+      expect(roundTrip(partNode('reducer', { section: 'rect' })).exact).toBe(true);
+    }, 120_000);
+
+    it('writes a tee as two pipes run together, square or leaning', () => {
+      expect(roundTrip(partNode('tee')).exact).toBe(true);
+      expect(roundTrip(partNode('tee', { branchAngle: 45, diameter2: 16 })).exact).toBe(true);
+      expect(roundTrip(partNode('tee', { section: 'rect' })).exact).toBe(true);
+    }, 120_000);
+  });
+
   it('writes a plate with a hole through it as one solid, and a two-colored group as a solid per color', () => {
     const plate: ShapeNode = { ...base, id: 'p', name: 'Plate', type: 'shape', shape: 'box', params: defaultParams('box'), size: [40, 30, 4], pos: [0, 0, 2], rot: [0, 0, 0] };
     const hole: ShapeNode = { ...base, id: 'h', name: 'Hole', type: 'shape', shape: 'cylinder', params: defaultParams('cylinder'), size: [8, 8, 10], pos: [5, 3, 2], rot: [0, 0, 0], hole: true };

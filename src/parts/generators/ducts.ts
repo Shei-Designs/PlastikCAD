@@ -99,29 +99,39 @@ function loft(stations: Station[], rings: Ring[]): Solid {
       positions[a + 2] * (positions[b] * positions[c + 1] - positions[b + 1] * positions[c]);
   }
   if (vol < 0) for (let t = 0; t < triangles.length; t += 3) [triangles[t + 1], triangles[t + 2]] = [triangles[t + 2], triangles[t + 1]];
-  return { op: 'mesh', positions, triangles };
+  return { op: 'mesh', positions, triangles, swept: { stations, rings } };
 }
 
-/** The same path with its two ends pushed out along their own direction, for a bore that must break through the end faces. */
+/**
+ * The same path carried on past its two ends, for a bore that must break through the end faces. An
+ * end the path runs straight into is simply moved out; an end on a bend gets a short straight
+ * stretch added before it instead, so that the bend stays the bend it is all the way to the face.
+ */
 function stretched(stations: Station[], by: number): Station[] {
-  const out = stations.slice();
-  const first = stations[0];
-  const second = stations[1];
-  const last = stations[stations.length - 1];
-  const before = stations[stations.length - 2];
-  out[0] = { ...first, p: add(first.p, unit(add(first.p, second.p, -1)), by) };
-  out[out.length - 1] = { ...last, p: add(last.p, unit(add(last.p, before.p, -1)), by) };
-  return out;
+  const same = (a: Vec3, b: Vec3): boolean => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) < 1e-9;
+  /** What stands for the end station `at`, whose neighbor along the path is `next`: itself moved out, or itself with one more beyond it. */
+  const end = (at: Station, next: Station): Station[] => {
+    const back = add(at.p, next.p, -1);
+    if (same(at.u, next.u) && same(at.v, next.v)) return [{ ...at, p: add(at.p, unit(back), by) }];
+    // Straight on through the face: along the section's own normal, away from the path.
+    const normal = unit(cross(at.u, at.v));
+    const away = back[0] * normal[0] + back[1] * normal[1] + back[2] * normal[2] >= 0 ? 1 : -1;
+    return [{ ...at, p: add(at.p, normal, away * by) }, at];
+  };
+  const last = stations.length - 1;
+  return [...end(stations[0], stations[1]), ...stations.slice(1, last), ...end(stations[last], stations[last - 1]).reverse()];
 }
 
 /** A sweep of one section along the stations: solid, or a wall around the same sweep of the inner section. */
 function sweep(stations: Station[], outer: Section, wall: number, q: Quality, rings?: (s: Section) => Ring[]): Solid {
   const n = q.circle;
   const nc = Math.max(2, Math.round(q.circle / 16));
-  const of = rings ?? ((s: Section) => stations.map(() => ring(s, n, nc)));
-  const body = loft(stations, of(outer));
+  // A ring for every station of the path it is for: the bore's path may have one more at either end.
+  const of = (path: Station[], s: Section): Ring[] => (rings ? rings(s) : path.map(() => ring(s, n, nc)));
+  const body = loft(stations, of(stations, outer));
   if (wall <= 0) return body;
-  return difference(body, loft(stretched(stations, 0.5), of(inner(outer, wall))));
+  const bore = stretched(stations, 0.5);
+  return difference(body, loft(bore, of(bore, inner(outer, wall))));
 }
 
 // --- parameters ----------------------------------------------------------------
