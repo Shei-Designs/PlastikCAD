@@ -72,8 +72,9 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
   tooth count, and the planets round it, meshed with both; it starts on a
   number of planets that can be spaced evenly, and says when the teeth do
   not allow the set asked for.
-- **Text** – lettering in four print-friendly fonts (sans, slab serif,
-  monospace, stencil), on one line or several. Put it on a face and group it
+- **Text** – lettering in seven print-friendly fonts (sans, slab serif,
+  monospace, stencil, condensed, rounded and a joined script), in Latin,
+  Cyrillic, Greek and Vietnamese, on one line or several. Put it on a face and group it
   to emboss; make it a hole and sink it in a little (Ctrl+Down) to engrave.
   Bend it round a cylinder (set the reach, or the diameter it has to fit,
   outside or inside) or lay it along an arc that rises or hangs, with its
@@ -767,11 +768,18 @@ by hand. Check critical dimensions against a datasheet before relying on them.
 Text is set in fonts that ship with the app, so a design looks the same on
 every machine: [Inter](https://rsms.me/inter/) (sans),
 [Roboto Slab](https://github.com/googlefonts/robotoslab) (slab serif),
-[JetBrains Mono](https://www.jetbrains.com/lp/mono/) (monospace) and
-[Allerta Stencil](https://fonts.google.com/specimen/Allerta+Stencil), all in
-bold or heavy cuts with Latin and extended Latin characters. Inter, JetBrains
-Mono and Allerta Stencil are under the SIL Open Font License 1.1; Roboto Slab
-is under the Apache License 2.0. The app's own lettering is Inter, with the
+[JetBrains Mono](https://www.jetbrains.com/lp/mono/) (monospace),
+[Allerta Stencil](https://fonts.google.com/specimen/Allerta+Stencil),
+[Oswald](https://github.com/googlefonts/OswaldFont) (condensed),
+[Nunito](https://github.com/googlefonts/nunito) (rounded) and
+[Pacifico](https://github.com/googlefonts/Pacifico) (script), all in bold or
+heavy cuts. Every font but the stencil has Latin, extended Latin, Cyrillic
+and Vietnamese characters; the sans, the slab serif and the monospace have
+Greek as well. A letter a font has not got is set in the sans, not as an
+empty box. Scripts that need more than letters set side by side (Arabic,
+Hebrew, the Indic scripts) and those of thousands of characters (Chinese,
+Japanese, Korean) are not there. All are under the SIL Open Font License
+1.1 but Roboto Slab, which is under the Apache License 2.0. The app's own lettering is Inter, with the
 product name in [Space Grotesk](https://floriankarsten.github.io/space-grotesk/)
 (SIL Open Font License 1.1). The license texts are in `public/font-licenses/`
 and ship with the app, beside `THIRD-PARTY-NOTICES.txt` with the licenses of
@@ -1002,7 +1010,7 @@ waits until someone needs it:
 The whole of what is planned, put off and dropped is in
 [docs/ROADMAP.md](docs/ROADMAP.md). Next in the app itself:
 
-- More scripts and fonts for lettering.
+- Lettering in scripts that need shaping or thousands of characters (Arabic, Hebrew, Indic, Chinese, Japanese, Korean).
 - More parts: throated worm wheel.
 - Assembly preview of meshing gears.
 - True surfaces in STEP files for what still goes out as facets: threads

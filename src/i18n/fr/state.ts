@@ -259,4 +259,7 @@ export const state: Catalog = {
   'Slab serif': 'Empattement carré',
   Monospace: 'Largeur fixe',
   Stencil: 'Pochoir',
+  Condensed: 'Étroite',
+  Rounded: 'Arrondie',
+  Script: 'Manuscrite',
 };
