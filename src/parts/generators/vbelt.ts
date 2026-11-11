@@ -88,7 +88,7 @@ export const vBeltPulley: GeneratorDef = {
   id: 'v-belt-pulley',
   name: tr('V-belt pulley'),
   category: 'pulleys',
-  summary: tr('Pulley for V-belts: classical sections Z to C and narrow sections SPZ to SPC, with one groove or several.'),
+  summary: tr('Pulley for V-belts, with one groove or several.'),
   groups: [
     {
       title: tr('Belt'),

@@ -175,7 +175,7 @@ export const RASPBERRY_PI: Board[] = [
     screw: 'M2',
     layout: 'Micro USB on the left.',
     sockets: [{ name: 'Micro USB', socket: 'micro-usb', edge: 'left', at: 10.5, w: 8, h: 2.9, out: 1.3 }],
-    note: tr('Four M2 holes, 47 × 11.4 mm. Micro USB on the left; often held by its header pins instead.'),
+    note: tr('Four M2 holes, 47 × 11.4 mm. Micro USB on the left.'),
   },
 ];
 
@@ -244,7 +244,7 @@ export const ARDUINO: Board[] = [
     // One socket stands for the three connectors: the classic's mini-B body (the tallest and the furthest out) and an
     // opening wide enough for a USB-C plug and tall enough for a micro-B one.
     sockets: [{ name: tr('USB (mini-B; micro-B on the Every, C on the Nano ESP32)'), socket: 'mini-usb', edge: 'left', at: 8.89, w: 7.7, h: 3.9, out: 1.8, plug: { w: 12.35, h: 8.5, r: 1.5 } }],
-    note: tr('Four M1.6 holes 1.27 mm in from the corners. USB on the left, centered, whichever Nano; usually held by its header pins.'),
+    note: tr('Four M1.6 holes 1.27 mm in from the corners. USB on the left, centered.'),
   },
 ];
 
@@ -261,7 +261,7 @@ export const ESP32: Board[] = [
     layout: 'Micro USB on the left. The module\'s antenna reaches 6 mm past the right-hand end of the board, which the blank, the pocket and the corner stops allow for. No mounting holes.',
     overhang: { length: 6.04, width: 18 },
     sockets: [{ name: 'Micro USB', socket: 'micro-usb', edge: 'left', at: 13.95, w: 7.4, h: 2.9, out: 0.95 }],
-    note: tr('No holes: blank, pocket or corner stops. Antenna reaches 6 mm past the right end; clones differ.'),
+    note: tr('No holes: blank, pocket or corner stops. Antenna reaches 6 mm past the right end.'),
   },
   {
     id: 'esp32-devkit-v1',
@@ -279,7 +279,7 @@ export const ESP32: Board[] = [
     screw: 'M2.5',
     layout: 'Micro USB on the left, centered on the board\'s width, antenna on the right. The holes sit 2.2 mm in from every edge.',
     sockets: [{ name: 'Micro USB', socket: 'micro-usb', edge: 'left', at: 14.1, w: 7.5, h: 2.9, out: 1 }],
-    note: tr('Four holes 2.2 mm in from the corners; USB left, antenna right. No maker drawing: the size, holes and USB are measured, and clones differ, some without holes.'),
+    note: tr('Four holes 2.2 mm in from the corners. USB on the left, antenna on the right.'),
   },
   {
     id: 'nodemcu-32s',
@@ -292,7 +292,7 @@ export const ESP32: Board[] = [
     screw: 'M3',
     layout: 'Micro USB on the left, centered on the board\'s width, antenna on the right. No mounting holes.',
     sockets: [{ name: 'Micro USB', socket: 'micro-usb', edge: 'left', at: 12.7, w: 7.5, h: 2.9, out: 1 }],
-    note: tr('No holes: blank, pocket or corner stops. Only the overall size is published, the USB is read off the maker\'s photo; measure yours.'),
+    note: tr('No holes: blank, pocket or corner stops.'),
   },
 ];
 
@@ -333,7 +333,7 @@ export const JETSON: Board[] = [
     screw: 'M2.5',
     layout: `${JETSON_LAYOUT} Module and heatsink reach about 27 mm above the carrier.`,
     sockets: JETSON_PORTS(HDMI_DP, JETSON_MICRO_USB),
-    note: tr('Four M2.5 holes, 86 × 58 mm. Ports along the bottom edge; the module and heatsink reach about 27 mm up. The sold kit measures 100 × 80 with the ports.'),
+    note: tr('Four M2.5 holes, 86 × 58 mm. Ports along the bottom edge.'),
   },
   {
     id: 'jetson-orin-nano',
@@ -346,7 +346,7 @@ export const JETSON: Board[] = [
     screw: 'M2.5',
     layout: `${JETSON_LAYOUT} The outer four holes carry the kit's base plate. Module, heatsink and fan reach about 28.5 mm above the carrier; the M.2 cards underneath need 4.3 mm.`,
     sockets: JETSON_PORTS({ name: 'DisplayPort', socket: 'displayport', edge: 'bottom', at: 22.8, w: 16.4, h: 7, out: 1.6 }, { name: 'USB-C', socket: 'usb-c', edge: 'bottom', at: 91.9, w: 9.2, h: 3.3, out: 1 }),
-    note: tr('Six M2.5 holes: the Nano\'s four plus two by the header end. DisplayPort and USB-C; the module, heatsink and fan reach about 28.5 mm up, the M.2 cards 4.3 mm down.'),
+    note: tr('Six M2.5 holes: the Nano\'s four plus two by the header end. DisplayPort and USB-C.'),
   },
   {
     id: 'jetson-xavier-nx',
@@ -359,7 +359,7 @@ export const JETSON: Board[] = [
     screw: 'M2.5',
     layout: `${JETSON_LAYOUT} The outer four holes carry the kit's base plate. Module, heatsink and fan reach about 28.5 mm above the carrier.`,
     sockets: JETSON_PORTS(HDMI_DP, JETSON_MICRO_USB),
-    note: tr('The Orin Nano kit\'s carrier and holes with the Nano kit\'s HDMI and DisplayPort stack and micro USB. Module, heatsink and fan reach about 28.5 mm up.'),
+    note: tr('The Orin Nano kit\'s carrier and holes, with HDMI, DisplayPort and micro USB.'),
   },
 ];
 
@@ -428,8 +428,8 @@ function groups(boards: Board[], defaultForm: Form): ParamGroup[] {
       params: [
         { key: 'stopHeight', label: tr('Height'), type: 'number', default: 5, min: 1, max: 60, step: 0.5, unit: 'mm', help: tr('Sets the height of the corner stops.'), visible: is('corners') },
         { key: 'stopThickness', label: tr('Thickness'), type: 'number', default: 2, min: 0.8, max: 10, step: 0.1, unit: 'mm', visible: is('corners') },
-        { key: 'stopLength', label: tr('Leg length'), type: 'number', default: 8, min: 2, max: 40, step: 0.5, unit: 'mm', help: tr('How far each stop runs along the two edges it holds.'), visible: is('corners') },
-        { key: 'stopGap', label: tr('Gap'), type: 'number', default: 0.3, min: 0, max: 3, step: 0.05, unit: 'mm', help: tr('Room between the board and the stops. 0.3 mm suits most printers.'), visible: is('corners') },
+        { key: 'stopLength', label: tr('Leg length'), type: 'number', default: 8, min: 2, max: 40, step: 0.5, unit: 'mm', help: tr('Sets how far each stop runs along the two edges it holds.'), visible: is('corners') },
+        { key: 'stopGap', label: tr('Gap'), type: 'number', default: 0.3, min: 0, max: 3, step: 0.05, unit: 'mm', help: tr('Sets the room between the board and the stops.'), visible: is('corners') },
       ],
     },
     {
@@ -458,13 +458,13 @@ function groups(boards: Board[], defaultForm: Form): ParamGroup[] {
       title: tr('Blank'),
       params: [
         { key: 'blankGap', label: tr('Gap all round'), type: 'number', default: 0, min: 0, max: 3, step: 0.05, unit: 'mm', help: tr('Adds clearance around the board blank. Any gap makes it a pocket cutter and removes the holes.'), visible: is('blank') },
-        { key: 'blankThickness', label: tr('Thickness'), type: 'number', default: 1.6, min: 0.5, max: 60, step: 0.1, unit: 'mm', help: tr('1.6 mm is the board. For a pocket, the depth of the pocket.'), visible: is('blank') },
+        { key: 'blankThickness', label: tr('Thickness'), type: 'number', default: 1.6, min: 0.5, max: 60, step: 0.1, unit: 'mm', help: tr('Sets the thickness of the blank, or the depth of the pocket.'), visible: is('blank') },
       ],
     },
     {
       title: tr('Connectors'),
       params: [
-        { key: 'reach', label: tr('Reach'), type: 'number', default: 15, min: 0, max: 60, step: 0.5, unit: 'mm', help: tr('How far every connector reaches out beyond the board edge: enough to pass right through the wall it faces.'), visible: is('connectors') },
+        { key: 'reach', label: tr('Reach'), type: 'number', default: 15, min: 0, max: 60, step: 0.5, unit: 'mm', help: tr('Sets how far every connector reaches beyond the board edge.'), visible: is('connectors') },
         {
           key: 'fit',
           label: tr('Past the edge'),
@@ -487,14 +487,14 @@ function groups(boards: Board[], defaultForm: Form): ParamGroup[] {
           label: tr('Base'),
           type: 'select',
           default: 'none',
-          help: tr('A plate under the posts or stops, the shape of the board with a margin, so the mount is one printable piece.'),
+          help: tr('Adds a plate under the posts or stops, the shape of the board with a margin.'),
           options: [
             { value: 'none', label: trx('base', 'None') },
             { value: 'plate', label: tr('Base plate') },
           ],
           visible: is('standoffs', 'corners'),
         },
-        { key: 'baseMargin', label: tr('Margin'), type: 'number', default: 3, min: 0, max: 30, step: 0.5, unit: 'mm', help: tr('How far the plate reaches beyond the board edge.'), visible: onBase },
+        { key: 'baseMargin', label: tr('Margin'), type: 'number', default: 3, min: 0, max: 30, step: 0.5, unit: 'mm', help: tr('Sets how far the plate reaches beyond the board edge.'), visible: onBase },
         { key: 'baseThickness', label: tr('Thickness'), type: 'number', default: 2, min: 0.5, max: 20, step: 0.1, unit: 'mm', visible: onBase },
       ],
     },

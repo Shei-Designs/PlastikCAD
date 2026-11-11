@@ -53,7 +53,7 @@ export const bevelGear: GeneratorDef = {
           type: 'number',
           key: 'module',
           label: tr('Module'),
-          help: tr('Tooth size at the large end. Both gears of a pair share it.'),
+          help: tr('Sets the tooth size at the large end.'),
           default: 2,
           min: 0.3,
           max: 20,
@@ -76,7 +76,7 @@ export const bevelGear: GeneratorDef = {
           type: 'number',
           key: 'faceWidth',
           label: tr('Face width'),
-          help: tr('Tooth length along the cone. Usually no more than a third of the cone distance.'),
+          help: tr('Sets the tooth length along the cone.'),
           default: 8,
           min: 1,
           max: 100,
@@ -87,7 +87,7 @@ export const bevelGear: GeneratorDef = {
           type: 'number',
           key: 'baseThickness',
           label: tr('Base thickness'),
-          help: tr('Material behind the tooth roots at the large end.'),
+          help: tr('Sets the thickness behind the tooth roots at the large end.'),
           default: 3,
           min: 0.5,
           max: 50,
@@ -104,7 +104,7 @@ export const bevelGear: GeneratorDef = {
           type: 'number',
           key: 'backlash',
           label: tr('Backlash'),
-          help: tr('Thins each tooth by this amount so printed gears run freely.'),
+          help: tr('Thins each tooth by this amount.'),
           default: 0.1,
           min: 0,
           max: 1,
@@ -137,7 +137,7 @@ export const bevelGear: GeneratorDef = {
       clearance: num(p, 'clearance'),
     });
     const profile = toothProfile(spec, q);
-    if (profile.undercut) warnings.push(tr('The teeth are undercut; use more teeth or a larger pressure angle for stronger teeth.'));
+    if (profile.undercut) warnings.push(tr('The teeth are undercut. More teeth or a larger pressure angle avoids it.'));
     // Angles around the gear axis are 1/cos(delta) times those on the developed back cone.
     const wrapped = { ...profile, flank: profile.flank.map((s) => ({ r: s.r, half: s.half / cosD })) };
     const developed = gearOutline(wrapped, z, q);

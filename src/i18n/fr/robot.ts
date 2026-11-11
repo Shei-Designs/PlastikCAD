@@ -110,7 +110,7 @@ export const robot: Catalog = {
   Weighed: 'Pesée',
   'Material [[made of]]': 'Matériau',
   Infill: 'Remplissage',
-  'How full the inside is printed; the shell stays solid.': 'Taux de remplissage de l’intérieur à l’impression\u00a0; la coque reste pleine.',
+  'Sets how full the inside is; the shell stays solid.': 'Définit le taux de remplissage de l’intérieur\u00a0; la coque reste pleine.',
   Shell: 'Coque',
   'Walls plus top and bottom layers, as one thickness.': 'Parois et couches du dessus et du dessous, en une seule épaisseur.',
   'Shell thickness': 'Épaisseur de la coque',

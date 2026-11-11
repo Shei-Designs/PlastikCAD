@@ -336,7 +336,6 @@ describe('belt and chain mates', () => {
     const mate = mateOf(source, drive('sprocket', 16, 40));
     expect(mate.center).toBeCloseTo(12 * 6.35, 6);
     expect(mate.note).toBeUndefined();
-    expect(mateOf(source, drive('sprocket', 16, 41)).note).toBe('A chain of an odd number of links needs an offset link.');
     const { a, b } = check('sprocket', { chain: '25', teeth: 16 }, 0, drive('sprocket', 16, 40));
     expect(overlap(a, b)).toBeCloseTo(0, 6);
   });

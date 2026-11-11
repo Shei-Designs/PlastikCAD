@@ -14,7 +14,7 @@ export const worm: GeneratorDef = {
   id: 'worm',
   name: tr('Worm'),
   category: 'gears',
-  summary: tr('Worm screw for high-ratio drives. Pair it with a helical gear cut at the lead angle.'),
+  summary: tr('Worm screw for a worm wheel.'),
   groups: [
     {
       title: tr('Worm'),
@@ -23,7 +23,7 @@ export const worm: GeneratorDef = {
           type: 'number',
           key: 'module',
           label: tr('Module'),
-          help: tr('Axial module: the thread pitch is π × module. Must match the transverse module of the mating gear.'),
+          help: tr('Sets the axial module. The thread pitch is π × module.'),
           default: 1,
           min: 0.3,
           max: 10,
@@ -34,7 +34,7 @@ export const worm: GeneratorDef = {
           type: 'number',
           key: 'starts',
           label: tr('Starts'),
-          help: tr('Number of threads. The ratio is gear teeth ÷ starts.'),
+          help: tr('Sets the number of threads. The ratio is gear teeth ÷ starts.'),
           default: 1,
           min: 1,
           max: 6,
@@ -55,7 +55,7 @@ export const worm: GeneratorDef = {
           type: 'number',
           key: 'pitchDiameter',
           label: tr('Pitch diameter'),
-          help: tr('A larger diameter gives a smaller lead angle (more self-locking) and room for a bigger bore.'),
+          help: tr('Sets the diameter at mid-thread.'),
           default: 12,
           min: 3,
           max: 200,
@@ -67,7 +67,7 @@ export const worm: GeneratorDef = {
           type: 'number',
           key: 'backlash',
           label: tr('Backlash'),
-          help: tr('The thread is thinned by this amount (measured along the axis).'),
+          help: tr('Thins the thread by this amount, along the axis.'),
           default: 0.1,
           min: 0,
           max: 1,
@@ -254,7 +254,7 @@ export const wormWheel: GeneratorDef = {
   id: 'worm-wheel',
   name: tr('Throated worm wheel'),
   category: 'gears',
-  summary: tr('Throated wheel for a worm: its teeth wrap round the worm, cut by the worm itself.'),
+  summary: tr('Worm wheel with teeth that wrap round the worm.'),
   groups: [
     {
       title: tr('Wheel'),

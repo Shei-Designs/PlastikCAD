@@ -63,14 +63,14 @@ test.describe('menus and boxes', { tag: '@mouse' }, () => {
     await expect(list).toHaveAttribute('aria-label', 'File format');
     const options = await list.locator('[role=option]').evaluateAll((all) => all.map((o) => `${o.getAttribute('aria-selected')} ${o.textContent}`));
     expect(options).toEqual([
-      'true STLBinary mesh for any slicer',
-      'false 3MFMesh with colors and units for slicers',
-      'false OBJText mesh with colors for modeling tools',
+      'true STLBinary mesh',
+      'false 3MFMesh with colors and units',
+      'false OBJText mesh with colors',
       'false PLYBinary mesh with a color on every face',
-      'false GLBMesh with pictures for scenes',
-      'false STEPSolids with true surfaces for CAD programs',
-      'false SVGTop-down outline for lasers',
-      'false DXFTop-down outline for CAD',
+      'false GLBMesh with pictures',
+      'false STEPSolids with true surfaces',
+      'false SVGTop-down outline as vector graphics',
+      'false DXFTop-down outline as a drawing',
     ]);
   });
 

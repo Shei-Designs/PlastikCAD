@@ -48,7 +48,7 @@ function outline(o: Opening, grow: number, q: Quality, cx = 0, cy = 0): Polygon 
 /** Every cutout is this long: it lies flat, centered on the wall, and can be stretched along its axis for a thicker one. */
 export const CUTOUT_LENGTH = 20;
 
-const clearanceParam = { key: 'clearance', label: tr('Clearance'), type: 'number' as const, default: 0.3, min: 0, max: 3, step: 0.05, unit: 'mm', help: tr('Added all round every opening and hole. 0.3 mm suits most printers; more for a loose fit.') };
+const clearanceParam = { key: 'clearance', label: tr('Clearance'), type: 'number' as const, default: 0.3, min: 0, max: 3, step: 0.05, unit: 'mm', help: tr('Adds this much all round every opening and hole.') };
 
 /** A prism of the shapes along Z, centered on the wall. */
 const prism = (shapes: Shape2D): Solid => translate(extrude(shapes, CUTOUT_LENGTH), [0, 0, -CUTOUT_LENGTH / 2]);
