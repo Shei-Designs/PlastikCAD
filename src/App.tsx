@@ -256,6 +256,25 @@ export default function App() {
     platform.setWindowTitle(`${dirty ? '• ' : ''}${name} – ${APP_NAME}`);
   }, [name, dirty]);
 
+  // On a narrow window the panels lie over the plate, one at a time. A window that becomes narrow with both on show
+  // (a tablet turned upright) is left a strip of plate between them, so both are put away; a tab brings either back.
+  useEffect(() => {
+    const fit = (): void => {
+      const { leftPanel, rightPanel } = getState().prefs;
+      if (narrowWindow() && leftPanel && rightPanel) setPrefs({ leftPanel: false, rightPanel: false });
+    };
+    fit();
+    window.addEventListener('resize', fit);
+    return () => window.removeEventListener('resize', fit);
+  }, []);
+
+  // The panels of the mating gear and of the array open over the plate where, on a narrow window, the inspector
+  // lies: it is put away for them, or they would open behind it and nothing would seem to have happened.
+  const besidePlate = useEditor((s) => s.mating !== null || s.arraying);
+  useEffect(() => {
+    if (besidePlate && narrowWindow() && getState().prefs.rightPanel) setPrefs({ rightPanel: false });
+  }, [besidePlate]);
+
   useEffect(() => {
     void initInput();
     void restoreSession();

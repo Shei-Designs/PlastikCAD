@@ -327,18 +327,32 @@ export class Handles {
 
   pick(event?: PointerEvent): Handle | null {
     if (!this.frame || this.list.length === 0) return null;
-    this.stage.gripScale = event?.pointerType === 'touch' ? TOUCH_GRIP_SCALE : 1;
+    // What the pointer is on as it is drawn is what is meant. A finger is given room round the grips as well, but only
+    // where it is on none of them: grown, the three align dots at a corner lie over one another and a corner grip lies
+    // over the turn arrow beside it, and the one nearest the eye was taken whichever the finger was on.
+    const exact = this.pickAt(1);
+    if (exact || event?.pointerType !== 'touch') return exact;
+    return this.pickAt(TOUCH_GRIP_SCALE);
+  }
+
+  /** The handle under the pointer with the grips drawn `scale` times their size. */
+  private pickAt(scale: number): Handle | null {
+    this.stage.gripScale = scale;
     this.layout();
     this.stage.overlay.updateMatrixWorld();
     this.stage.gripScale = 1;
+    const ray = this.stage.raycaster.ray;
+    const center = new Vector3();
     let best: Handle | null = null;
     let bestDistance = Infinity;
     for (const h of this.list) {
       // A greyed anchor dot is not there to be clicked, nor a hidden move arrow.
       if ((h.kind.type === 'align' && this.alignDone(h.kind)) || !h.object.visible) continue;
       const hit = this.stage.raycaster.intersectObject(h.object, true)[0];
-      // Grips win over rings when both are under the pointer: they are the smaller target.
-      const distance = hit ? hit.distance - (h.kind.type === 'rotate' ? 0 : 1e6) : Infinity;
+      if (!hit) continue;
+      // Grips win over rings when both are under the pointer: they are the smaller target. Among grips grown for a
+      // finger, where several can be under it at once, the one whose middle the pointer is nearest.
+      const distance = h.kind.type === 'rotate' ? hit.distance : (scale === 1 ? hit.distance : Math.sqrt(ray.distanceSqToPoint(h.object.getWorldPosition(center)))) - 1e6;
       if (distance < bestDistance) {
         best = h;
         bestDistance = distance;
