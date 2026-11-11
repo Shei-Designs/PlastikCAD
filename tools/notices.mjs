@@ -29,6 +29,9 @@ const sections = names.map((name) => {
   return [head, ...apacheNote, ...texts].join('\n\n');
 });
 
+// What ships inside another package under a license of its own: the Draco decoder, which three.js carries a copy of.
+sections.push(['draco (the decoder, as shipped inside three)', 'License: Apache-2.0', 'https://github.com/google/draco', '', 'The Apache License 2.0 is printed at the end of this file.'].join('\n'));
+
 const rule = `\n\n${'-'.repeat(72)}\n\n`;
 const intro = `${pkg.name === 'plastikcad' ? 'PlastikCAD' : pkg.name} includes the following libraries. Each is the work of its authors, under the license given with it.\nThe fonts that ship with the app have their licenses in the font-licenses folder beside this file.`;
 writeFileSync(join(root, 'public/THIRD-PARTY-NOTICES.txt'), `${[intro, ...sections, `Apache License 2.0\n\n${apache}`].join(rule)}\n`);

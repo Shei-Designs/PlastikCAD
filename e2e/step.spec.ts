@@ -1,12 +1,13 @@
-// STEP files in the built app: OpenCascade is fetched when the first one is read, in the geometry
-// worker, and the solids come in as objects of the size the file gives them.
+// The formats read and written by a library that is fetched for them, in the built app: STEP files
+// by OpenCascade, and glTF files compressed with Draco by its decoder. Neither is fetched until a file
+// asks for it, and what comes in is the size the file gives it.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { drawnCount, dropFiles, expect, notices, openApp, sceneCount, settled, store, test } from './helpers';
 
-const fixture = (name: string): number[] => [...readFileSync(fileURLToPath(new URL(`../fixtures/step/${name}`, import.meta.url)))];
+const fixture = (name: string, folder = 'step'): number[] => [...readFileSync(fileURLToPath(new URL(`../fixtures/${folder}/${name}`, import.meta.url)))];
 
-test.describe('STEP import', { tag: '@mouse' }, () => {
+test.describe('STEP and compressed glTF', { tag: '@mouse' }, () => {
   test('a STEP file of two solids comes in as a group of two parts, at their sizes and where the file put them', async ({ page, errors }) => {
     await openApp(page);
     // Nothing of OpenCascade is fetched until a STEP file asks for it.
@@ -71,6 +72,25 @@ test.describe('STEP import', { tag: '@mouse' }, () => {
     await dropFiles(page, [{ name: 'back.step', bytes: [...Buffer.from(step)] }]);
     await expect.poll(() => sceneCount(page), { timeout: 30_000 }).toBe(2);
     expect(await store(page, (m) => m.getState().doc.scene[1].size.map((v) => Math.round(v * 100) / 100))).toEqual([40, 30, 4]);
+    expect(errors).toEqual([]);
+  });
+
+  test('a glTF file compressed with Draco is unpacked by a decoder fetched for it, and comes in at its size', async ({ page, errors }) => {
+    await openApp(page);
+    const fetched: string[] = [];
+    page.on('request', (r) => {
+      if (/draco_decoder.*\.wasm/.test(r.url())) fetched.push(r.url());
+    });
+    await dropFiles(page, [{ name: 'box.glb', bytes: fixture('box-draco.glb', 'gltf') }]);
+    await expect.poll(() => sceneCount(page), { timeout: 30_000 }).toBe(1);
+    expect(fetched).toHaveLength(1);
+    const box = await store(page, (m) => {
+      const node = m.getState().doc.scene[0];
+      return { size: node.size.map((v) => Math.round(v * 10) / 10), color: node.color };
+    });
+    expect(box).toEqual({ size: [40, 30, 10], color: '#ff0000' });
+    await settled(page);
+    expect((await notices(page)).filter((n) => n.kind === 'error')).toEqual([]);
     expect(errors).toEqual([]);
   });
 });

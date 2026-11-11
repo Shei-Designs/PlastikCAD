@@ -1,16 +1,18 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import process from "node:process";
+import { dracoModule } from "./tools/dracoModule.ts";
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => ({
-  plugins: [react()],
+  plugins: [react(), dracoModule()],
   // A build made for the browser tests (`--mode e2e`) carries the hook they reach the app through; no other does.
   define: { "import.meta.env.VITE_E2E": JSON.stringify(mode === "e2e") },
   // That build also keeps the names of functions through minification: one test counts React's redraws by component name.
   build: mode === "e2e" ? { rolldownOptions: { output: { keepNames: true } } } : undefined,
-  worker: { format: "es" as const },
+  // The geometry worker is built apart from the page, with plugins of its own: it is where the Draco decoder is read.
+  worker: { format: "es" as const, plugins: () => [dracoModule()] },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
