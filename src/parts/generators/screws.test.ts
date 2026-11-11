@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { evaluate, initKernel } from '../testing';
 import { cylinder, intersection, QUALITY, translate } from '../types';
 import type { Quality, Solid } from '../types';
-import { HOLE_SIZES, inchBolt, inchNut, leadScrew, leadScrewNut, METRIC_SIZES, metricBolt, metricNut, screwHole, UNIFIED_SIZES } from './screws';
+import { HOLE_SIZES, inchBolt, inchNut, inchScrewHole, leadScrew, leadScrewNut, METRIC_SIZES, metricBolt, metricNut, screwHole, UNIFIED_SIZES } from './screws';
 import { defaultParams } from './types';
 import type { GeneratorDef, Params } from './types';
 
@@ -420,6 +420,75 @@ describe('inch bolt and nut', () => {
     expect(through({})).toBeLessThan(0.5);
     expect(through({ series: 'fine' })).toBeGreaterThan(2);
     expect(through({ hand: 'left' })).toBeGreaterThan(2);
+  });
+});
+
+describe('inch screw hole', () => {
+  const figure = (overrides: Params, label: string) => info(inchScrewHole, overrides, label);
+  /** A readout is given to a tenth of a millimeter: near enough to that. */
+  const near = (shown: number, exact: number) => expect(Math.abs(shown - exact)).toBeLessThan(0.06);
+  const IN = 25.4;
+
+  it('is a cutter with the settings of the metric hole, the series in place of the pitch', () => {
+    expect(inchScrewHole.cutter).toBe(true);
+    const keys = (def: typeof screwHole) => def.groups[0].params.map((param) => param.key);
+    expect(keys(inchScrewHole)).toEqual(keys(screwHole).map((key) => (key === 'pitch' ? 'series' : key)));
+  });
+
+  it('makes a clearance hole of the drill ASME B18.2.8 names for the fit, in every size', () => {
+    near(figure({ size: '1/4"' }, 'Hole diameter'), (9 / 32) * IN);
+    near(figure({ size: '1/4"', fit: 'close' }, 'Hole diameter'), (17 / 64) * IN);
+    near(figure({ size: '1/4"', fit: 'loose' }, 'Hole diameter'), (19 / 64) * IN);
+    near(figure({ size: '#10' }, 'Hole diameter'), 0.2055 * IN);
+    for (const size of UNIFIED_SIZES) {
+      let last = 0;
+      for (const fit of ['close', 'normal', 'loose']) {
+        const built = build(inchScrewHole, { size, fit, depth: 12 });
+        expect(built.warnings, `${size} ${fit}`).toEqual([]);
+        const d = parseFloat(built.info[0].value);
+        // Wider than the screw, and wider with each looser fit.
+        expect(d, `${size} ${fit}`).toBeGreaterThan(last);
+        last = d;
+        const { stats } = evaluate(built.solid);
+        expect(stats.max[2]).toBeCloseTo(12, 6);
+        near(stats.max[0] * 2, d);
+      }
+      const bolt = info(inchBolt, { size, clearance: 0 }, 'Major diameter');
+      expect(figure({ size, fit: 'close' }, 'Hole diameter'), size).toBeGreaterThan(bolt);
+    }
+  });
+
+  it('countersinks at 82°: shallower than the metric 90° cone would be for the same widths', () => {
+    const built = build(inchScrewHole, { size: '1/4"', recess: 'countersink', depth: 12 });
+    const hole = parseFloat(built.info[0].value);
+    const wide = parseFloat(built.info[1].value);
+    const deep = parseFloat(built.info[2].value);
+    // The sharp edge of a 1/4" flat head, plus the play of the hole.
+    near(wide, 0.507 * IN + ((9 / 32) * IN - 0.25 * IN));
+    near(deep, (0.507 * IN + (9 / 32) * IN - 0.25 * IN - (9 / 32) * IN) / 2 / Math.tan((41 * Math.PI) / 180));
+    expect(deep).toBeGreaterThan((wide - hole) / 2);
+    const { stats } = evaluate(built.solid);
+    near(stats.max[0] * 2, wide);
+  });
+
+  it('seats a socket cap or a nut of the inch size, and cuts a Unified thread', () => {
+    const bored = build(inchScrewHole, { size: '1/4"', recess: 'counterbore', depth: 12 });
+    // A 3/8" head and the play of a 9/32" hole round a 1/4" screw, a diameter deep.
+    near(parseFloat(bored.info[1].value), (3 / 8 + 9 / 32 - 1 / 4) * IN);
+    near(parseFloat(bored.info[2].value), 0.25 * IN);
+    const trap = build(inchScrewHole, { size: '1/4"', recess: 'nut', depth: 12 });
+    near(figure({ size: '1/4"', recess: 'nut', depth: 12 }, 'Across flats'), (7 / 16 + 9 / 32 - 1 / 4) * IN);
+    expect(evaluate(trap.solid).stats.volume).toBeGreaterThan(evaluate(build(inchScrewHole, { size: '1/4"', depth: 12 }).solid).stats.volume);
+    const tapped = build(inchScrewHole, { size: '1/4"', kind: 'tapped', series: 'fine', depth: 10 }, draft);
+    expect(tapped.info.find((i) => i.label === 'Thread')?.value).toBe('1/4-28 UNF');
+    expect(parseFloat(tapped.info.find((i) => i.label === 'Pitch')!.value)).toBeCloseTo(IN / 28, 2);
+    expect(volume(tapped.solid)).toBeGreaterThan(0);
+  });
+
+  it('asks for the bore of a heat-set insert, as no inch size has a usual one', () => {
+    const built = build(inchScrewHole, { size: '#8', kind: 'insert' });
+    expect(built.warnings).toEqual(['#8 inserts have no usual bore. Set the diameter.']);
+    expect(build(inchScrewHole, { size: '#8', kind: 'insert', bore: 5.5 }).warnings).toEqual([]);
   });
 });
 

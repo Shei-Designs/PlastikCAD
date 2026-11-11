@@ -32,16 +32,23 @@ interface ThreadSize {
   socket: number;
 }
 
-/** A metric size: hex head and nut of ISO 4017 / 4032, socket cap of ISO 4762. */
-interface MetricSize extends ThreadSize {
-  /** Coarse pitch (ISO 261). */
-  pitch: number;
-  /** Clearance hole for the screw: close, normal and loose (ISO 273 fine, medium and coarse). */
+/** What a hole for a screw of a size needs to know beside the screw itself. */
+interface HoleSize extends ThreadSize {
+  /** Clearance hole for the screw: close, normal and loose. */
   clearance: [number, number, number];
-  /** Head diameter of a countersunk screw, to its sharp edge (ISO 10642; DIN 965 below M3). */
+  /** Head diameter of a countersunk screw, to its sharp edge. */
   sunk: number;
   /** Bore for a heat-set insert, for the sizes the insert makers agree on. */
   insert?: number;
+}
+
+/**
+ * A metric size: hex head and nut of ISO 4017 / 4032, socket cap of ISO 4762. Its clearance holes are those of
+ * ISO 273 (fine, medium and coarse), its countersunk head that of ISO 10642 (DIN 965 below M3).
+ */
+interface MetricSize extends HoleSize {
+  /** Coarse pitch (ISO 261). */
+  pitch: number;
 }
 
 const METRIC: Record<string, MetricSize> = {
@@ -528,11 +535,20 @@ export const screwHole: GeneratorDef = {
     const warnings: string[] = [];
     const name = str(p, 'size');
     const size = METRIC[name];
+    return buildHole(name, size, () => metricPitch(p, size, warnings), 90, p, q, warnings);
+  },
+};
+
+/**
+ * The hole for a screw of a size, as a solid to cut with. `pitch` is asked for a threaded hole only (it may warn);
+ * `sink` is the angle of a countersunk head between its sides, 90° for a metric screw and 82° for an inch one.
+ */
+function buildHole(name: string, size: HoleSize, pitchOf: () => number, sink: number, p: Params, q: Quality, warnings: string[], more: InfoItem[] = []): BuildResult {
     const kind = str(p, 'kind');
     const depth = num(p, 'depth');
 
     if (kind === 'tapped') {
-      const pitch = metricPitch(p, size, warnings);
+      const pitch = pitchOf();
       const clearance = num(p, 'clearance');
       checkEngagement(size, pitch, clearance, warnings);
       const profile = isoMetricProfile(size.d, pitch, clearance);
@@ -544,6 +560,7 @@ export const screwHole: GeneratorDef = {
       return {
         solid,
         info: [
+          ...more,
           { label: tr('Thread major diameter'), value: mm(rMax * 2) },
           { label: tr('Thread minor diameter'), value: mm(rMin * 2) },
           { label: tr('Pitch'), value: mm(pitch) },
@@ -576,9 +593,9 @@ export const screwHole: GeneratorDef = {
       parts.push(translate(cylinder(wide / 2, deep, q.circle), [0, 0, depth - deep]));
       info.push({ label: tr('Recess diameter'), value: mm(wide, 1) }, { label: tr('Recess depth'), value: mm(deep, 1) });
     } else if (recess === 'countersink') {
-      // A 90° cone from the head's sharp edge down to the hole.
+      // A cone from the head's sharp edge down to the hole, at the angle of the head.
       const wide = size.sunk + play;
-      const deep = (wide - hole) / 2;
+      const deep = (wide - hole) / 2 / Math.tan((sink / 2) * (Math.PI / 180));
       if (deep > depth) warnings.push(tr('The recess was limited to the depth of the hole.'));
       const cut = Math.min(deep, depth);
       parts.push(translate(cylinder(wide / 2 - cut, cut, q.circle, wide / 2), [0, 0, depth - cut]));
@@ -590,6 +607,48 @@ export const screwHole: GeneratorDef = {
       info.push({ label: tr('Across flats'), value: mm(across, 1) }, { label: tr('Recess depth'), value: mm(deep, 1) });
     }
     return { solid: parts.length === 1 ? parts[0] : union(...parts), info, warnings };
+}
+
+/**
+ * What a hole for an inch screw adds to its size, in inches. The clearance holes are the drills ASME B18.2.8 names
+ * for a close, a normal and a loose fit; the countersunk head is the 82° flat head of ASME B18.6.3, to its sharp edge.
+ */
+const UNIFIED_HOLES: Record<string, { clearance: [number, number, number]; sunk: number }> = {
+  '#6': { clearance: [0.144, 0.154, 0.1695], sunk: 0.279 },
+  '#8': { clearance: [0.1695, 0.18, 0.1935], sunk: 0.332 },
+  '#10': { clearance: [0.196, 0.2055, 0.221], sunk: 0.385 },
+  '1/4"': { clearance: [17 / 64, 9 / 32, 19 / 64], sunk: 0.507 },
+  '5/16"': { clearance: [21 / 64, 11 / 32, 23 / 64], sunk: 0.635 },
+  '3/8"': { clearance: [25 / 64, 13 / 32, 27 / 64], sunk: 0.762 },
+  '7/16"': { clearance: [29 / 64, 15 / 32, 31 / 64], sunk: 0.812 },
+  '1/2"': { clearance: [17 / 32, 9 / 16, 39 / 64], sunk: 0.875 },
+  '5/8"': { clearance: [21 / 32, 11 / 16, 47 / 64], sunk: 1.125 },
+  '3/4"': { clearance: [25 / 32, 13 / 16, 29 / 32], sunk: 1.375 },
+};
+
+/** The hole an inch screw goes into: as the metric one, for the Unified sizes, with their 82° countersink. */
+export const inchScrewHole: GeneratorDef = {
+  id: 'inch-screw-hole',
+  name: tr('Inch screw hole'),
+  category: 'screws',
+  summary: tr('Hole for an inch screw, with room for its head, nut or insert.'),
+  cutter: true,
+  groups: [
+    {
+      title: tr('Hole'),
+      params: screwHole.groups[0].params.flatMap((param) =>
+        param.key === 'size' ? [unifiedSizeParam] : param.key === 'pitch' ? [{ ...seriesParam, visible: isKind('tapped') }] : [param],
+      ),
+    },
+  ],
+  build(p, q) {
+    const warnings: string[] = [];
+    const name = str(p, 'size');
+    const { size, pitch, info } = unified(p);
+    const hole = UNIFIED_HOLES[name];
+    if (!hole) throw new Error(`Unknown inch size "${name}"`);
+    const whole: HoleSize = { ...size, clearance: hole.clearance.map((d) => d * INCH) as [number, number, number], sunk: hole.sunk * INCH };
+    return buildHole(name, whole, () => pitch, 82, p, q, warnings, info);
   },
 };
 

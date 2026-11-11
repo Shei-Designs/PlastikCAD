@@ -109,9 +109,6 @@ What the reviews showed could be built, beyond mending. None is planned.
 
 Smaller pieces, each of which can be built without a session.
 
-- **Screw holes in inch sizes**: clearance holes, counterbores, 82°
-  countersinks and nut traps for the sizes the inch bolts come in. The
-  figures need a table to work from.
 - **A V-belt pulley's mate** in the mating wizard: a V-belt's length is not
   a tooth count, so it needs its own rule.
 - **STEP export**: true surfaces for helical and bevel gears and for
@@ -150,7 +147,7 @@ Things only the real devices and accounts can show.
 - Figures taken from memory or a single source: the M14 countersink, the
   M14 to M20 clearance holes, the heat-set insert bores, the M2 and M2.5
   head sizes, the motor presets, the V-belt groove sizes, the inch thread,
-  head and nut sizes.
+  head and nut sizes, the inch clearance holes and countersunk heads.
 - Google Drive's "Clean up…" against a real Drive.
 - The desktop app on a Mac: STEP and compressed glTF files, then an export
   (see the first finding of review 1, fixed on Linux and not tried there).

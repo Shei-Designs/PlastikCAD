@@ -249,6 +249,8 @@ export const partsDrive: Catalog = {
   'Sets the nut height. 0 takes the standard height.': 'Définit la hauteur de l’écrou. 0 prend la hauteur standard.',
   'Screw hole': 'Trou de vis',
   'Hole for a metric screw, with room for its head, nut or insert.': 'Trou pour une vis métrique, avec la place de sa tête, de son écrou ou de son insert.',
+  'Inch screw hole': 'Trou de vis en pouces',
+  'Hole for an inch screw, with room for its head, nut or insert.': 'Trou pour une vis en pouces, avec la place de sa tête, de son écrou ou de son insert.',
   Threaded: 'Taraudé',
   Fit: 'Ajustement',
   'Close [[fit]]': 'Serré',
