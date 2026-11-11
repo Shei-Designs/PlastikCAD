@@ -6,15 +6,30 @@ import { geometry } from '../state/geometry';
 import { ARRAY_LIMIT, arrayFrame, cancelArray, commitArray, previewArray, selectedNodes } from '../state/store';
 import type { ArrayRequest } from '../state/store';
 import { NumberBox } from './Fields';
+import { pressedOutside } from './outside';
 
 const AXES = ['X', 'Y', 'Z'] as const;
 const BIG = 100000;
 
 /**
- * The Array popover: lays the selection out in a grid or a ring, live, and
- * keeps the pattern on Apply. Closing the panel any other way drops it.
+ * The Array panel: lays the selection out in a grid or a ring, live, and
+ * keeps the pattern on Apply. It stays while the view is turned and zoomed
+ * for a look at the pattern; Cancel, Escape and a press anywhere else in the
+ * window (another tool, the inspector) drop it.
  */
-export function ArrayPanel({ close }: { close: () => void }) {
+export function ArrayPanel() {
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      if (!pressedOutside(root.current, e.target)) return;
+      // The view itself and the row that sets its angle are for looking, which the panel is open for;
+      // the Array button closes the panel itself.
+      if (e.target instanceof Element && e.target.closest('canvas, .view-widget, [data-array-button]')) return;
+      cancelArray();
+    };
+    window.addEventListener('pointerdown', onDown, true);
+    return () => window.removeEventListener('pointerdown', onDown, true);
+  }, []);
   // The selection as it was when the panel opened; the preview selects the pattern itself.
   const picked = useRef(selectedNodes()).current;
   const frame = useMemo(() => arrayFrame(picked), [picked]);
@@ -77,7 +92,6 @@ export function ArrayPanel({ close }: { close: () => void }) {
   const apply = () => {
     applied.current = true;
     commitArray();
-    close();
   };
   /** Spacing a fitted axis works out to, shown grayed. */
   const fittedPitch = (axis: 0 | 1 | 2): number => {
@@ -87,7 +101,7 @@ export function ArrayPanel({ close }: { close: () => void }) {
   };
 
   return (
-    <div className="align-panel array-panel">
+    <div className="mate-panel array-panel" role="dialog" aria-label={tr('Array')} ref={root}>
       <div className="array-title">{tr('Array')}</div>
       <div className="segmented" role="radiogroup" aria-label={tr('Pattern')}>
         {(['grid', 'ring'] as const).map((m) => (
@@ -199,6 +213,9 @@ export function ArrayPanel({ close }: { close: () => void }) {
       )}
       <div className="array-foot">
         <span className={tooMany ? 'field-note warn' : 'field-note'}>{tooMany ? tr('At most {limit} places', { limit: ARRAY_LIMIT }) : plural(places, '{n} place', '{n} places')}</span>
+        <button type="button" className="chip" onClick={cancelArray}>
+          {tr('Cancel')}
+        </button>
         <button type="button" className="primary" disabled={tooMany || places < 2 || seeds.length === 0} onClick={apply}>
           {tr('Apply')}
         </button>

@@ -2413,17 +2413,24 @@ kbd {
   width: 96px;
 }
 
+/* The count of places on a line of its own, then Cancel and Apply at the right, as in the mate panel. */
 .array-foot {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 8px;
   margin-top: 2px;
 }
 
 .array-foot .field-note {
+  flex: 1 0 100%;
   margin: 0;
-  white-space: nowrap;
+}
+
+.array-foot .chip {
+  height: 30px;
+  padding: 0 14px;
 }
 
 .array-foot .primary {
@@ -3686,6 +3693,7 @@ kbd {
   .import-button,
   .projects-head .primary,
   .array-foot .primary,
+  .array-foot .chip,
   .mate-actions .primary,
   .mate-actions .chip,
   .crash-actions .chip,

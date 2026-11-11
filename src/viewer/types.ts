@@ -44,6 +44,8 @@ export interface ViewerOptions {
   measure: { kinds: FeatureKind[]; picks: Feature[]; result: Measurement | null } | null;
   /** The handles of one selected object follow its own axes instead of the design's. */
   objectAxes: boolean;
+  /** A panel is laying the selection out (the Array panel): the view turns and zooms, but nothing in it is picked or moved. */
+  frozen: boolean;
 }
 
 /**

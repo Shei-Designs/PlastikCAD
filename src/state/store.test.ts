@@ -1085,6 +1085,39 @@ describe('mating gears', () => {
   });
 });
 
+describe('the Array panel', () => {
+  it('opens on a selection, shows a pattern that Apply keeps as one step, and drops it when closed any other way', async () => {
+    store.startArray();
+    expect(store.getState().arraying, 'nothing is selected, so there is nothing to lay out').toBe(false);
+    store.addShape('box');
+    store.startArray();
+    expect(store.getState().arraying).toBe(true);
+    store.previewArray({ kind: 'grid', count: [3, 1, 1], pitch: [30, 30, 30] });
+    expect(scene()).toHaveLength(3);
+    // The button again closes the panel and drops the pattern.
+    store.startArray();
+    expect(store.getState().arraying).toBe(false);
+    expect(scene()).toHaveLength(1);
+    store.startArray();
+    store.previewArray({ kind: 'grid', count: [2, 2, 1], pitch: [30, 30, 30] });
+    store.commitArray();
+    expect(store.getState().arraying).toBe(false);
+    expect(scene()).toHaveLength(4);
+    store.undo();
+    expect(scene()).toHaveLength(1);
+  });
+
+  it('closes when a mating gear is asked for', async () => {
+    await store.addPart('gears');
+    store.startArray();
+    expect(store.getState().arraying).toBe(true);
+    store.startMate(scene()[0].id);
+    expect(store.getState().arraying).toBe(false);
+    expect(store.getState().mating).not.toBeNull();
+    store.cancelMate();
+  });
+});
+
 describe('parts that cut', () => {
   it('makes a screw into a hole when it becomes a screw hole, and solid again when it is a screw once more', async () => {
     await store.addPart('screws');

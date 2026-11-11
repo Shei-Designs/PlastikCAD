@@ -138,11 +138,11 @@ for (const { viewport, words } of LANGUAGES.flatMap((words) => VIEWPORTS.map((vi
       await settled(page);
       await tap(page.locator(`button[aria-label="${words.array}"]`));
       await expect(page.locator('.array-panel')).toBeVisible();
-      await expectFingerSized(page, '.popover-panel', 'the Array panel');
+      await expectFingerSized(page, '.array-panel', 'the Array panel');
       await tap(page.locator('.array-panel .segmented button', { hasText: words.ring }));
-      await expectFingerSized(page, '.popover-panel', 'the Array panel for a ring');
+      await expectFingerSized(page, '.array-panel', 'the Array panel for a ring');
       await page.keyboard.press('Escape');
-      await expect(page.locator('.popover-panel')).toHaveCount(0);
+      await expect(page.locator('.array-panel')).toHaveCount(0);
       await tap(page.locator(`button[aria-label^="${words.mirror}"]`));
       await expect(page.locator('.popover-panel')).toBeVisible();
       await expectFingerSized(page, '.popover-panel', 'the Mirror panel');

@@ -63,7 +63,7 @@ import type { HandleKind, ViewItem, ViewPreset, ViewerEvents, ViewerOptions } fr
 
 export type { AlignMode, HandleKind, HandlePrompt, Marker, SnapPoint, ViewItem, ViewPreset, ViewerEvents, ViewerOptions } from './types';
 
-const DEFAULTS: ViewerOptions = { theme: 'dark', edges: true, grid: true, snap: 1, align: null, highlight: null, snaps: null, marker: null, markers: null, ground: null, preview: null, measure: null, objectAxes: false };
+const DEFAULTS: ViewerOptions = { theme: 'dark', edges: true, grid: true, snap: 1, align: null, highlight: null, snaps: null, marker: null, markers: null, ground: null, preview: null, measure: null, objectAxes: false, frozen: false };
 export const GIZMO_SIZE = 92;
 const GIZMO_MARGIN = 8;
 const PLATE_HALF = 100;

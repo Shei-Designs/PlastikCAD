@@ -91,6 +91,7 @@ export {
   commitAlign,
   ARRAY_LIMIT,
   arrayFrame,
+  startArray,
   previewArray,
   commitArray,
   cancelArray,

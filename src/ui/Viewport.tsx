@@ -33,6 +33,7 @@ import {
   select,
   setAlignAnchor,
   setPrefs,
+  startArray,
   stopWork,
   toggleAligning,
   toggleMeasuring,
@@ -118,6 +119,7 @@ function Actions() {
   const aligning = useEditor((s) => Boolean(s.aligning));
   const measuring = useEditor((s) => Boolean(s.measuring));
   const objectAxes = useEditor((s) => s.objectAxes);
+  const arraying = useEditor((s) => s.arraying);
   /** A picked joint or sensor lines up with an object's box, on its own. */
   const marker = useEditor((s) => Boolean(s.joint || s.sensor));
   const ghosts = useEditor(hasGhosts);
@@ -181,9 +183,9 @@ function Actions() {
         <button type="button" className="chip icon" title={tip('duplicate', tr('Duplicate in place'))} aria-label={tr('Duplicate')} disabled={none} onClick={duplicateSelected}>
           <DuplicateIcon />
         </button>
-        <Popover className="chip icon" title={tr('Array')} button={<ArrayIcon />} disabled={none} align="right">
-          {(close) => <ArrayPanel close={close} />}
-        </Popover>
+        <button type="button" className={arraying ? 'chip icon on' : 'chip icon'} title={tr('Array')} aria-label={tr('Array')} aria-pressed={arraying} data-array-button disabled={none} onClick={startArray}>
+          <ArrayIcon />
+        </button>
         <button type="button" className="chip icon" title={tip('delete')} aria-label={tr('Delete')} disabled={none} onClick={deleteSelected}>
           <TrashIcon />
         </button>
@@ -644,6 +646,7 @@ export function Viewport() {
   }, [measuring]);
   const measure = useMemo(() => (measuring ? { kinds: measuring.kinds, picks: measuring.picks, result: measureResult } : null), [measuring, measureResult]);
   const objectAxes = useEditor((s) => s.objectAxes);
+  const arraying = useEditor((s) => s.arraying);
   // Another selection, or an edit from elsewhere, and the typing boxes no longer belong to anything.
   useEffect(() => {
     viewer.current?.dismissPrompt();
@@ -716,8 +719,8 @@ export function Viewport() {
   }, []);
 
   useEffect(() => {
-    viewer.current?.setOptions({ theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap, align: aligning, highlight, snaps, marker, markers, ground, preview, measure, objectAxes });
-  }, [prefs.theme, prefs.edges, prefs.grid, prefs.snap, aligning, highlight, snaps, marker, markers, ground, preview, measure, objectAxes]);
+    viewer.current?.setOptions({ theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap, align: aligning, highlight, snaps, marker, markers, ground, preview, measure, objectAxes, frozen: arraying });
+  }, [prefs.theme, prefs.edges, prefs.grid, prefs.snap, aligning, highlight, snaps, marker, markers, ground, preview, measure, objectAxes, arraying]);
 
   const carrying = Boolean(placing);
   useEffect(() => {
@@ -801,6 +804,7 @@ export function Viewport() {
       {measuring && !placing && <MeasureBar kinds={measuring.kinds} picks={measuring.picks.length} result={measureResult?.lines ?? null} />}
 
       {mating && <MatePanel key={mating.id} />}
+      {arraying && <ArrayPanel />}
 
       <div className="corner">
         <div className="overlay">

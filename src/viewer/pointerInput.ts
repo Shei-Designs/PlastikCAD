@@ -277,6 +277,8 @@ export class PointerInput {
         break;
     }
     if (event.button !== 0) return;
+    // While a panel lays the selection out, a press picks and moves nothing: the camera has it.
+    if (this.stage.options.frozen) return;
     // Whatever the press does next, the boxes from the last click are stale.
     this.peers.prompts.dismiss();
     this.peers.rig.halt();

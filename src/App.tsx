@@ -5,6 +5,7 @@ import * as platform from './platform';
 import {
   alignSelected,
   alignSelectedOn,
+  cancelArray,
   cancelMate,
   cancelPlacing,
   clearMeasure,
@@ -110,7 +111,8 @@ const ACTIONS: Record<CommandId, (e: KeyboardEvent) => void> = {
   cancel: () => {
     if (viewerRef.current?.cancelGesture()) return;
     const s = getState();
-    if (s.mating) cancelMate();
+    if (s.arraying) cancelArray();
+    else if (s.mating) cancelMate();
     else if (s.measuring?.picks.length) clearMeasure();
     else if (s.measuring) stopMeasuring();
     else if (s.aligning) stopAligning();
@@ -180,6 +182,8 @@ function onKeyDown(e: KeyboardEvent): void {
   const command = commandFor(e);
   if (!command || (typing(e.target) && !command.typing)) return;
   if (!command.keepsDefault) e.preventDefault();
+  // While the Array panel has the selection laid out, only backing out and looking are open.
+  if (getState().arraying && command.id !== 'cancel' && command.id !== 'fit') return;
   // A command given from inside a text box takes what was being typed there with it.
   if (command.typing) commitTyping();
   ACTIONS[command.id](e);

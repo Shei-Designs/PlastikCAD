@@ -75,6 +75,8 @@ export interface EditorState {
    * the anchor object, which a click on any object changes.
    */
   aligning: { anchor: string | null; bounds: Bounds; done: boolean[]; marker?: boolean } | null;
+  /** The Array panel is open: the selection is laid out in a pattern for a look, until it is applied or dropped. */
+  arraying: boolean;
   /** Measure mode: the kinds of feature the pointer takes hold of, and the one or two picked so far. */
   measuring: { kinds: FeatureKind[]; picks: Feature[] } | null;
   /** The handles of one selected object follow its own axes instead of the design's; not saved. */
@@ -129,6 +131,7 @@ let state: EditorState = {
   pose: null,
   mating: null,
   aligning: null,
+  arraying: false,
   measuring: null,
   objectAxes: false,
   editing: null,

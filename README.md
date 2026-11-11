@@ -88,7 +88,9 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
   four corner holes in one go. For a ring, put the hole where the middle of
   the bolt circle goes and type its radius or diameter; or leave the hole where
   it is and ring it around the middle of the plate, or around any point. The
-  pattern shows live while the numbers are typed.
+  pattern shows live while the numbers are typed, and the panel stays while
+  the view is turned and zoomed for a look at it; *Apply* keeps the pattern,
+  and *Cancel*, Escape or a press on another tool drops it.
 - **Structure** – a grouped object shows its history as a tree in the panel:
   primitives on the left, each grouping a node further right, branches merging
   where things were grouped together. Hover a node to see that part on the
