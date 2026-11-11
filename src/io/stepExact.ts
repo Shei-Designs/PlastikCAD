@@ -7,11 +7,11 @@
 //
 // Not everything can be rebuilt: a twisted extrusion (a helical gear, a
 // thread), an imported mesh, lettering, a rounded rim, a shape stretched in a
-// way that leaves no simple surface (a ball into an egg, a dome or a round
-// roof taller than half its width). `exactShape` then answers null, and the
+// way that leaves no simple surface (a ball into an egg, an oval cone). `exactShape` then answers null, and the
 // writer falls back on the kernel's own facets (see stepExport.ts). It also
 // falls back when what was rebuilt does not match the kernel's solid in
-// volume and extent: nothing goes out on trust.
+// volume and extent, or does not come back from a STEP file as it went in:
+// nothing goes out on trust.
 import type { OpenCascadeInstance } from 'replicad-opencascadejs';
 import { clampParams, regularPolygon, ROUND } from '../geometry/shapes';
 import { flipSigns, rotation } from '../model/math';
@@ -150,6 +150,36 @@ class Builder {
     });
     if (out.length === 0) none();
     return out;
+  }
+
+  /**
+   * A flat face outlined by an arc of an oval and straight sides. The oval is centered at `center`,
+   * reaches `across` along the plane's first direction and `up` along its second, and the arc runs
+   * from angle `from` to `to` round it (radians, from the first direction towards the second); the
+   * straight sides go on from the arc's end through `corners` and back to its start. `place` says
+   * where a point of the plane is in space.
+   */
+  ovalFace(center: [number, number], across: number, up: number, from: number, to: number, corners: [number, number][], place: (p: [number, number]) => Vec3): Shape {
+    const { oc } = this;
+    const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    const origin = place(center);
+    const u = sub(place([center[0] + 1, center[1]]), origin);
+    const v = sub(place([center[0], center[1] + 1]), origin);
+    const normal: Vec3 = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+    // An oval is given by its longer half first: when that is the one across, its angles are the arc's own; when it is the one up, a quarter turn less.
+    const wide = across >= up;
+    const oval = this.keep(new oc.gp_Elips(this.frame(origin, normal, wide ? u : v), Math.max(across, up), Math.min(across, up)));
+    const turn = wide ? 0 : Math.PI / 2;
+    const at = (a: number): [number, number] => [center[0] + across * Math.cos(a), center[1] + up * Math.sin(a)];
+    const wire = this.keep(new oc.BRepBuilderAPI_MakeWire());
+    wire.Add(this.done(new oc.BRepBuilderAPI_MakeEdge(oval, from - turn, to - turn)).Edge());
+    const path = [at(to), ...corners, at(from)];
+    for (let i = 0; i + 1 < path.length; i++) {
+      if (Math.hypot(path[i + 1][0] - path[i][0], path[i + 1][1] - path[i][1]) < 1e-9) continue;
+      wire.Add(this.done(new oc.BRepBuilderAPI_MakeEdge(this.point(...place(path[i])), this.point(...place(path[i + 1])))).Edge());
+    }
+    if (!wire.IsDone()) none();
+    return this.keep(this.done(new oc.BRepBuilderAPI_MakeFace(this.keep(wire.Wire()), true)).Face());
   }
 
   // --- solids ------------------------------------------------------------------------------------
@@ -422,6 +452,7 @@ class Builder {
         return this.turned(profile);
       }
       case 'sphere':
+        // A ball stretched into an egg is an oval turned round an axis, which a STEP file has been seen not to keep (it is read back as another shape): left to the facets.
         return round && near(w, d) && near(d, h) ? this.result(new oc.BRepPrimAPI_MakeSphere(w / 2)) : none();
       case 'wedge':
         return lying([[-w / 2, -h / 2], [w / 2, -h / 2], [-w / 2, h / 2]]);
@@ -437,17 +468,20 @@ class Builder {
         return this.result(new oc.BRepPrimAPI_MakeTorus(center, r));
       }
       case 'roundroof': {
-        // Half a round bar lying on its flat: round only while it is half as tall as it is wide. Stretched it is half an oval, and of few steps flat faces, which the facets say as well.
-        if (!round || !near(h, w / 2)) return none();
-        return lying(arc(64, (a) => [(Math.cos(a * Math.PI) * w) / 2, Math.sin(a * Math.PI) * h - h / 2]));
+        // Half a round bar lying on its flat: a cylinder while it is half as tall as it is wide, and half an oval bar when it is not. Of few steps it is flat faces, which the facets say as well.
+        if (!round) return none();
+        if (near(h, w / 2)) return lying(arc(64, (a) => [(Math.cos(a * Math.PI) * w) / 2, Math.sin(a * Math.PI) * h - h / 2]));
+        return this.result(new oc.BRepPrimAPI_MakePrism(this.ovalFace([0, -h / 2], w / 2, h, 0, Math.PI, [], ([x, z]) => [x, -d / 2, z]), this.keep(new oc.gp_Vec(0, d, 0)), false, true));
       }
       case 'fillet': {
         // What a quarter-round bar leaves of a square one: the solid corner at +X +Z, the hollow running from the top at -X down to the bottom at +X.
-        if (!round || !near(w, h)) return none();
-        return lying([[w / 2, h / 2], ...arc(32, (a) => [Math.cos(((1 - a) * Math.PI) / 2) * w - w / 2, Math.sin(((1 - a) * Math.PI) / 2) * h - h / 2])]);
+        if (!round) return none();
+        if (near(w, h)) return lying([[w / 2, h / 2], ...arc(32, (a) => [Math.cos(((1 - a) * Math.PI) / 2) * w - w / 2, Math.sin(((1 - a) * Math.PI) / 2) * h - h / 2])]);
+        // Wider than tall, or taller than wide: the hollow is a quarter of an oval.
+        return this.result(new oc.BRepPrimAPI_MakePrism(this.ovalFace([-w / 2, -h / 2], w, h, 0, Math.PI / 2, [[w / 2, h / 2]], ([x, z]) => [x, -d / 2, z]), this.keep(new oc.gp_Vec(0, d, 0)), false, true));
       }
       case 'dome': {
-        // Half a ball on its flat: a quarter circle turned round, while it is as deep as wide and half as tall.
+        // Half a ball on its flat: a quarter circle turned round, while it is as deep as wide and half as tall. Taller or flatter it is an oval turned round, which is left to the facets like the egg.
         if (!round || !near(w, d) || !near(h, w / 2)) return none();
         return this.turned([[0, -h / 2], ...arc(32, (a) => [Math.cos((a * Math.PI) / 2) * h, Math.sin((a * Math.PI) / 2) * h - h / 2])]);
       }
@@ -500,22 +534,70 @@ class Builder {
   }
 }
 
-/** The volume and the box of a shape, to hold against the kernel's. */
-function measured(oc: Oc, shape: Shape, keep: Keep): { volume: number; bounds: Bounds } {
+/**
+ * The volume and the box of a shape, to hold against the kernel's. The box is worked out from the
+ * surfaces themselves; with `facets` it is that of fine facets laid over them instead, which is the
+ * one to go by where the library's own is loose (it is for an oval turned round an axis, once the
+ * shape is turned off the axes).
+ */
+function measured(oc: Oc, shape: Shape, keep: Keep, facets = false): { volume: number; bounds: Bounds } {
   const props = keep(new oc.GProp_GProps());
   oc.BRepGProp.VolumeProperties(shape, props, false, false, false);
   const box = keep(new oc.Bnd_Box());
-  oc.BRepBndLib.AddOptimal(shape, box, false, false);
+  if (facets) {
+    keep(new oc.BRepMesh_IncrementalMesh(shape, 0.01, false, 0.1, false));
+    oc.BRepBndLib.Add(shape, box, true);
+  } else oc.BRepBndLib.AddOptimal(shape, box, false, false);
   const min = keep(box.CornerMin());
   const max = keep(box.CornerMax());
   return { volume: props.Mass(), bounds: { min: [min.X(), min.Y(), min.Z()], max: [max.X(), max.Y(), max.Z()] } };
 }
 
 /**
+ * Whether a shape written to a STEP file of its own is read back with the
+ * volume it should have. What the library holds in memory and what it writes
+ * are not always the same thing: an oval turned round an axis is right in
+ * memory and comes back from the file as nothing, or as another shape.
+ */
+function survives(oc: Oc, shape: Shape, volume: number, keep: Keep): boolean {
+  const path = '/exact-check.step';
+  try {
+    const writer = keep(new oc.STEPControl_Writer());
+    const progress = keep(new oc.Message_ProgressRange());
+    if (writer.Transfer(shape, oc.STEPControl_StepModelType.STEPControl_AsIs, true, progress) !== oc.IFSelect_ReturnStatus.IFSelect_RetDone) return false;
+    if (writer.Write(path) !== oc.IFSelect_ReturnStatus.IFSelect_RetDone) return false;
+    const reader = keep(new oc.STEPControl_Reader());
+    if (reader.ReadFile(path) !== oc.IFSelect_ReturnStatus.IFSelect_RetDone) return false;
+    reader.TransferRoots(progress);
+    const back = keep(reader.OneShape());
+    if (back.IsNull()) return false;
+    const props = keep(new oc.GProp_GProps());
+    oc.BRepGProp.VolumeProperties(back, props, false, false, false);
+    return Math.abs(props.Mass() - volume) <= 0.005 * Math.abs(volume);
+  } catch {
+    return false;
+  } finally {
+    try {
+      oc.FS.unlink(path);
+    } catch {
+      // Never written.
+    }
+  }
+}
+
+/**
+ * How far the box of a true solid may be from the box of the kernel's facets
+ * of it, in millimeters: a twentieth of a millimeter, and a quarter of a
+ * percent of its largest side, which is what the flats of a curve of some
+ * fifty sides stand back from the curve itself.
+ */
+export const boxSlack = (bounds: Bounds): number => 0.05 + 0.0025 * Math.max(bounds.max[0] - bounds.min[0], bounds.max[1] - bounds.min[1], bounds.max[2] - bounds.min[2]);
+
+/**
  * The node as a true solid, placed in the design; null when it has no exact
  * form, or when the form it was given does not match `expect`, the kernel's
  * own solid: its volume to within the difference between a curve and its
- * facets, its box to a twentieth of a millimeter.
+ * facets, its box to within `boxSlack`.
  */
 export function exactShape(oc: Oc, node: SceneNode, expect: { volume: number; bounds: Bounds }, tools: ExactTools, keep: Keep): Shape | null {
   // With its faces joined where they lie on one surface, and failing that as it was built: two round
@@ -529,9 +611,17 @@ export function exactShape(oc: Oc, node: SceneNode, expect: { volume: number; bo
       continue;
     }
     try {
-      const got = measured(oc, shape, keep);
+      let got = measured(oc, shape, keep);
       if (!(Math.abs(got.volume - expect.volume) <= 0.005 * expect.volume)) continue;
-      if ([0, 1, 2].some((i) => Math.abs(got.bounds.min[i] - expect.bounds.min[i]) > 0.05 || Math.abs(got.bounds.max[i] - expect.bounds.max[i]) > 0.05)) continue;
+      // A round shape turned off the axes reaches a little further than its facets do, by more the larger it is.
+      const slack = boxSlack(expect.bounds);
+      const off = (): boolean => [0, 1, 2].some((i) => Math.abs(got.bounds.min[i] - expect.bounds.min[i]) > slack || Math.abs(got.bounds.max[i] - expect.bounds.max[i]) > slack);
+      if (off()) {
+        got = measured(oc, shape, keep, true);
+        if (off()) continue;
+      }
+      // And it has to come out of a STEP file as it went in: a solid that is right here has been seen to be read back as another.
+      if (!survives(oc, shape, expect.volume, keep)) continue;
       return shape;
     } catch {
       continue;
