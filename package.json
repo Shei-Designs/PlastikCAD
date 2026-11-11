@@ -10,7 +10,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "tsc && vite build && node tools/checkWorkerChunks.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "e2e": "playwright test",
