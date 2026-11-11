@@ -58,9 +58,9 @@ async function askUnit(name: string, extent: Vec3): Promise<number> {
  * companions as they stand, for the files that follow.
  */
 async function readModel(file: PickedFile, companions: PickedFile[]): Promise<{ data: Read; companions: PickedFile[] }> {
-  // Only an OBJ or a .gltf is read a second time, with the files it turned out to name; anything else hands its bytes over.
+  // Only an OBJ, a .gltf or a PLY is read a second time, with the files it turned out to name; anything else hands its bytes over.
   const kind = fileKind(file.name, file.bytes);
-  const obj = kind === 'obj' || kind === 'gltf';
+  const obj = kind === 'obj' || kind === 'gltf' || kind === 'ply';
   let scale: number | undefined;
   const read = async (found: PickedFile[]): Promise<Read> => {
     const worker = geometry.worker();

@@ -43,7 +43,7 @@ export type ImportResult =
   | { kind: 'units'; held: number; extent: Vec3 };
 
 /** The formats that say nothing of their unit: by custom millimeters, but meters and inches are common. */
-const UNITLESS = ['stl', 'obj'];
+const UNITLESS = ['stl', 'obj', 'ply'];
 /**
  * A model without a unit that is smaller than this as millimeters is asked
  * about: nothing printable is, while a robot's part written in meters or a

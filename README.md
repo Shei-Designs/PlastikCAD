@@ -128,7 +128,7 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
   once; the un-ghost button (Shift+G, or the ghost mark on a row of the
   Objects list) brings them back.
 - **Import** – the button at the bottom of the library (or Ctrl+I) takes STL,
-  OBJ, 3MF and GLB meshes, STEP solids from a CAD program, SVG and DXF drawings (extruded into a plate) and PNG or JPEG
+  OBJ, PLY, 3MF and GLB meshes, STEP solids from a CAD program, SVG and DXF drawings (extruded into a plate) and PNG or JPEG
   pictures; meshes and drawings then behave like any other object. Drop files
   on the window.
 - **Pictures** – the Picture tile in the library (or importing a PNG or JPEG)
@@ -597,7 +597,7 @@ left alone, since that is its shape.
 
 ## Import notes
 
-- **STL / OBJ** carry no units; coordinates are taken as millimeters (a URDF
+- **STL / OBJ / PLY** carry no units; coordinates are taken as millimeters (a URDF
   says its meshes are in meters, and the robot importer scales them so). A
   model that comes out under 5 mm across was most likely made in another
   unit: the app asks whether it is in meters, inches, centimeters or
@@ -628,6 +628,14 @@ left alone, since that is its shape.
   Each material comes in with its color (`Kd`)
   and picture (`map_Kd`), laid out by the file's texture coordinates. Without
   them, an OBJ comes in plain.
+- **PLY**: text or binary, as scanners and mesh tools write it; the points
+  and faces make one part. The colors a PLY file gives its points or its
+  faces come in as a picture the part wears, each face in one color (its
+  own, or the mean of its corners'), so a colored scan stays one solid and
+  goes out again with its colors as a GLB. A file that names a picture for
+  its texture coordinates (`comment TextureFile`) wears that picture
+  instead, read from beside it like an OBJ's. A file of points with no
+  faces (a point cloud, a splat) is refused.
 - **GLB / glTF**: meshes are placed by the scene's nodes and turned from Y up
   in meters to Z up in millimeters; each material brings its base color and
   picture, laid out by the file's texture coordinates. A `.gltf` that keeps
@@ -834,7 +842,7 @@ src/
   state/              the editor: selection, undo, projects, preferences, the test drive (store.ts is the one door to it, over the modules in store/)
   viewer/             three.js view: Viewer.ts and its parts (drawing, picking, handles, pointer input, measuring, the robot overlay)
   parts/              the part generators (gears, pulleys, threads, rails, ducts, boards, fans, cutouts, motors) and the mating-gear maths
-  io/                 STL, 3MF, OBJ, GLB, STEP, SVG, DXF, URDF, SDF, MJCF, USD writers; STL, OBJ, 3MF, GLB, Collada, STEP, SVG, DXF, URDF readers
+  io/                 STL, 3MF, OBJ, GLB, STEP, SVG, DXF, URDF, SDF, MJCF, USD writers; STL, OBJ, PLY, 3MF, GLB, Collada, STEP, SVG, DXF, URDF readers
   robot/              Robot mode: links and joints, materials and mass properties, checks, the export packages
   sim/                the test drive: MuJoCo (WebAssembly) in a worker
   sync/               Google sign-in (PKCE, loopback), Drive remote, three-way merge, sync engine

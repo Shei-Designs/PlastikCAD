@@ -7,6 +7,7 @@ import { parseCollada } from './importCollada';
 import { parseDxf } from './importDxf';
 import { parseGlb } from './importGlb';
 import { parseObj } from './importObj';
+import { parsePly } from './importPly';
 import { parseStl } from './importStl';
 import { parseSvg } from './importSvg';
 
@@ -58,7 +59,7 @@ export interface Companion {
   bytes: Uint8Array;
 }
 
-export const IMPORT_EXTENSIONS = ['stl', 'obj', '3mf', 'glb', 'gltf', 'dae', 'step', 'stp', 'svg', 'dxf'];
+export const IMPORT_EXTENSIONS = ['stl', 'obj', '3mf', 'glb', 'gltf', 'dae', 'ply', 'step', 'stp', 'svg', 'dxf'];
 /** The formats read by OpenCascade, which is loaded for them and so cannot answer at once (see importStep.ts). */
 export const STEP_EXTENSIONS = ['step', 'stp'];
 /** Pictures, which come in as picture sheets rather than solids. */
@@ -91,6 +92,7 @@ function sniff(bytes: Uint8Array): string {
     if (84 + count * 50 === bytes.length) return 'stl';
   }
   const head = new TextDecoder().decode(bytes.subarray(0, 2048)).replace(/^\ufeff/, '');
+  if (/^ply\r?\n/.test(head)) return 'ply';
   if (/^\s*solid\b/.test(head)) return 'stl';
   if (/^\s*ISO-10303-21\s*;/.test(head)) return 'step';
   if (/^\s*0\s*\r?\n\s*SECTION\b/.test(head) || /^\s*999\s*\r?\n/.test(head)) return 'dxf';
@@ -131,6 +133,8 @@ export function importFile(fileName: string, bytes: Uint8Array, companions: Comp
       return guarded('glTF', () => checkedModel(parseGlb(bytes, name, companions, tools.draco)));
     case 'dae':
       return guarded('Collada', () => checkedModel(parseCollada(bytes, name, companions)));
+    case 'ply':
+      return guarded('PLY', () => checkedModel(parsePly(bytes, name, companions)));
     case 'step':
     case 'stp':
       // Read by `parseStep`, which needs OpenCascade loaded first: whoever reads files in one go cannot have it.
