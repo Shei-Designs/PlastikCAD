@@ -1150,6 +1150,12 @@ describe('the Array panel', () => {
 });
 
 describe('parts that cut', () => {
+  it('brings a bearing seat in from its tile as a hole', async () => {
+    await store.addPart('bearings');
+    expect(scene()).toHaveLength(1);
+    expect(scene()[0]).toMatchObject({ type: 'part', part: 'bearing-seat', hole: true, name: 'Bearing seat' });
+  });
+
   it('makes a screw into a hole when it becomes a screw hole, and solid again when it is a screw once more', async () => {
     await store.addPart('screws');
     const [bolt] = scene();

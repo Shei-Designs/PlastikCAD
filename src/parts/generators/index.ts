@@ -1,4 +1,5 @@
 import { tr } from '../../i18n';
+import { bearingSeat } from './bearings';
 import { bevelGear } from './bevel';
 import { BOARDS } from './boards';
 import { CUTOUTS } from './cutouts';
@@ -31,6 +32,7 @@ export const GENERATORS: GeneratorDef[] = [
   screwHole,
   leadScrew,
   leadScrewNut,
+  bearingSeat,
   extrusion,
   ...DUCTS,
   ...BOARDS,
@@ -43,6 +45,7 @@ export const CATEGORIES: { id: Category; label: string; summary: string }[] = [
   { id: 'gears', label: tr('Gears'), summary: tr('Spur, helical, bevel, worm and other common gear types.') },
   { id: 'pulleys', label: tr('Pulleys & sprockets'), summary: tr('Pulleys & sprockets used for belt and chain driven systems.') },
   { id: 'screws', label: tr('Screws & threads'), summary: tr('Screws, bolts, nuts and threaded parts.') },
+  { id: 'bearings', label: tr('Bearing seats'), summary: tr('Seats for ball bearings and linear bearings.') },
   { id: 'frames', label: tr('Rails & frames'), summary: tr('Aluminum extrusion rails for frames and structures.') },
   { id: 'ducts', label: tr('Pipes & ducts'), summary: tr('Pipe and duct sections for routing air or cables.') },
   { id: 'boards', label: tr('Dev boards'), summary: tr('Mounts and cutouts for common dev boards.') },

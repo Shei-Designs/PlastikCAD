@@ -48,6 +48,7 @@ export const app: Catalog = {
   Gear: 'Engrenage',
   Pulley: 'Poulie',
   Screw: 'Vis',
+  Bearing: 'Roulement',
   Rail: 'Profilé',
   Pipe: 'Tuyau',
   Board: 'Carte',
