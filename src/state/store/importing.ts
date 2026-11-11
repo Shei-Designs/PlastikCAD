@@ -2,7 +2,7 @@
 // the plate, and a URDF as a robot.
 import { isDesignName } from '../../appInfo';
 import { plural, tr } from '../../i18n';
-import { fileKind, IMAGE_EXTENSIONS, IMPORT_EXTENSIONS, ZIP_EXTENSION } from '../../io/import';
+import { fileKind, IMAGE_EXTENSIONS, IMPORT_EXTENSIONS, namedLibrary, ZIP_EXTENSION } from '../../io/import';
 import { meshPath, parseUrdf, urdfMeshFiles } from '../../io/importUrdf';
 import { bytesToBase64 } from '../../io/base64';
 import { isUntitled } from '../../model/file';
@@ -485,7 +485,7 @@ async function urdfCompanions(file: PickedFile, companions: PickedFile[]): Promi
       if (!read) continue;
       found.push({ ...read, name: inside });
       if (extension(base) === 'obj') {
-        const named = /^\s*mtllib\s+(.+?)\s*$/m.exec(new TextDecoder().decode(read.bytes.subarray(0, 65536)))?.[1];
+        const named = namedLibrary(new TextDecoder().decode(read.bytes.subarray(0, 65536)));
         // Beside the mesh or below it, never above it or anywhere else on the disk.
         const library = named && !/^([\\/]|[a-z]:)/i.test(named) && !named.split(/[\\/]/).includes('..') ? named : undefined;
         const mtl = library && (await platform.readPath(`${folderOf(candidate)}/${library}`).catch(() => null));
@@ -571,3 +571,4 @@ export async function importModel(): Promise<void> {
     fail(e);
   }
 }
+
