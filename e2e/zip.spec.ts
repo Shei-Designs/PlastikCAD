@@ -1,8 +1,5 @@
 // Zip archives, in the built app: an archive dropped on the app is taken for the files in it, so a
 // model comes in with the material library and pictures packed beside it.
-import { readdirSync, readFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { strToU8, zipSync } from 'fflate';
 import type { Page } from '@playwright/test';
 import { cubeFile, dropFiles, expect, notices, openApp, pngBytes, sceneCount, settled, skins, store, test } from './helpers';
@@ -88,25 +85,42 @@ test.describe('zip archives', { tag: '@mouse' }, () => {
     expect(errors).toEqual([]);
   });
 
-  test('a robot package the app exported comes back as its robot', async ({ page, errors }) => {
+  test('a robot package comes in as its robot, the meshes of its links found in the archive', async ({ page, errors }) => {
     await openApp(page);
-    // The package as the export zips it: every file under the package's name.
-    const root = fileURLToPath(new URL('../fixtures/out/ros/reference_arm', import.meta.url));
-    const files: Record<string, Uint8Array> = {};
-    const walk = (dir: string): void => {
-      for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        const path = join(dir, entry.name);
-        if (entry.isDirectory()) walk(path);
-        else files[`reference_arm/${relative(root, path).replace(/\\/g, '/')}`] = new Uint8Array(readFileSync(path));
-      }
-    };
-    walk(root);
-    const links = Object.keys(files).filter((name) => /\/meshes\/visual\/.*\.obj$/.test(name)).length;
-    expect(links).toBeGreaterThan(0);
-    await dropFiles(page, [{ name: 'reference_arm.zip', bytes: zipped(files) }]);
-    await expect.poll(() => store(page, (m) => m.getState().doc.robot?.links.length ?? 0), { timeout: 30_000 }).toBe(links);
+    const cube = Uint8Array.from(await cubeFile(page, 'stl'));
+    // A package as ROS keeps one, and as the app exports it: everything under the package's name, the meshes named by the URDF.
+    const urdf = [
+      '<?xml version="1.0"?>',
+      '<robot name="crane">',
+      '  <link name="base"><visual><geometry><mesh filename="package://crane/meshes/visual/base.stl" scale="0.001 0.001 0.001"/></geometry></visual></link>',
+      '  <link name="arm"><visual><geometry><mesh filename="package://crane/meshes/visual/arm.stl" scale="0.001 0.001 0.001"/></geometry></visual></link>',
+      '  <joint name="lift" type="revolute">',
+      '    <parent link="base"/><child link="arm"/><origin xyz="0 0 0.02"/><axis xyz="0 1 0"/><limit lower="-1" upper="1" effort="1" velocity="1"/>',
+      '  </joint>',
+      '</robot>',
+      '',
+    ].join('\n');
+    await dropFiles(page, [
+      {
+        name: 'crane.zip',
+        bytes: zipped({
+          'crane/package.xml': strToU8('<package format="3"><name>crane</name></package>'),
+          'crane/launch/display.launch.py': strToU8('# launch'),
+          'crane/urdf/crane.urdf': strToU8(urdf),
+          'crane/meshes/visual/base.stl': cube,
+          'crane/meshes/visual/arm.stl': cube,
+        }),
+      },
+    ]);
+    await expect.poll(() => store(page, (m) => m.getState().doc.robot?.links.length ?? 0), { timeout: 30_000 }).toBe(2);
     await settled(page);
-    expect(await store(page, (m) => ({ mode: m.getState().robot, objects: m.getState().doc.scene.length, joints: m.getState().doc.robot?.joints.length ?? 0 }))).toMatchObject({ mode: true, objects: links });
+    const robot = await store(page, (m) => ({
+      mode: m.getState().robot,
+      joints: m.getState().doc.robot?.joints.length ?? 0,
+      // Both links have their shape: the meshes were found, not asked for.
+      links: m.getState().doc.scene.map((n) => ({ name: n.name, type: n.type, size: n.size.map((v) => Math.round(v)) })),
+    }));
+    expect(robot).toEqual({ mode: true, joints: 1, links: [{ name: 'base', type: 'import', size: [10, 10, 10] }, { name: 'arm', type: 'import', size: [10, 10, 10] }] });
     expect((await notices(page)).filter((n) => n.kind === 'error')).toEqual([]);
     expect(errors).toEqual([]);
   });
