@@ -3,8 +3,10 @@
 // takes seconds of that, which would otherwise hold up the screen.
 import { tr } from '../i18n';
 import { encodeFloat32, encodeUint32 } from '../io/base64';
-import { centerMesh, centerOutline, fileKind, importFile } from '../io/import';
-import type { Companion, Imported, ImportedImage } from '../io/import';
+import type { OpenCascadeInstance } from 'replicad-opencascadejs';
+import { centerMesh, centerOutline, checkedMesh, fileKind, guarded, importFile, STEP_EXTENSIONS } from '../io/import';
+import type { Companion, Imported, ImportedImage, ImportedModel } from '../io/import';
+import { parseStep } from '../io/importStep';
 import { hashString } from '../model/geomKey';
 import type { MeshAsset, OutlineAsset, Vec2, Vec3 } from '../model/types';
 
@@ -51,6 +53,12 @@ export const TINY = 5;
 /** What was read of a file whose unit is being asked, and the request it came with. */
 let held: { id: number; data: Imported } | null = null;
 
+/** A model whose every mesh has been checked for the numbers the kernel cannot take (see `checkedMesh`). */
+function checkedParts(model: ImportedModel): ImportedModel {
+  for (const part of model.parts) checkedMesh(part.mesh);
+  return model;
+}
+
 /** The size of everything in a model taken together. */
 function extentOf(data: Imported): Vec3 {
   const min: Vec3 = [Infinity, Infinity, Infinity];
@@ -74,10 +82,19 @@ function extentOf(data: Imported): Vec3 {
  * file that names no unit and comes out tiny is held, and `kind: 'units'`
  * asks which it is.
  */
-export function readFile(id: number, name: string, bytes: Uint8Array, companions: Companion[], scale?: number): ImportResult {
+export async function readFile(id: number, name: string, bytes: Uint8Array, companions: Companion[], scale?: number, occ?: () => Promise<OpenCascadeInstance>): Promise<ImportResult> {
   held = null;
-  const data = importFile(name, bytes, companions);
-  if (scale === undefined && data.kind === 'model' && UNITLESS.includes(fileKind(name, bytes))) {
+  const kind = fileKind(name, bytes);
+  let data: Imported;
+  if (STEP_EXTENSIONS.includes(kind)) {
+    if (!occ) throw new Error(tr('STEP files cannot be read here.'));
+    const oc = await occ().catch(() => {
+      throw new Error(tr('The STEP reader could not be loaded.'));
+    });
+    const base = name.slice(Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\')) + 1).replace(/\.[^.]+$/, '');
+    data = checkedParts(guarded('STEP', () => parseStep(oc, bytes, base || undefined)));
+  } else data = importFile(name, bytes, companions);
+  if (scale === undefined && data.kind === 'model' && UNITLESS.includes(kind)) {
     const extent = extentOf(data);
     const largest = Math.max(...extent);
     if (largest > 0 && largest < TINY) {

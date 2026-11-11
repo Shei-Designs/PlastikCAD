@@ -57,7 +57,9 @@ export interface Companion {
   bytes: Uint8Array;
 }
 
-export const IMPORT_EXTENSIONS = ['stl', 'obj', '3mf', 'glb', 'gltf', 'dae', 'svg', 'dxf'];
+export const IMPORT_EXTENSIONS = ['stl', 'obj', '3mf', 'glb', 'gltf', 'dae', 'step', 'stp', 'svg', 'dxf'];
+/** The formats read by OpenCascade, which is loaded for them and so cannot answer at once (see importStep.ts). */
+export const STEP_EXTENSIONS = ['step', 'stp'];
 /** Pictures, which come in as picture sheets rather than solids. */
 export const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg'];
 
@@ -89,6 +91,7 @@ function sniff(bytes: Uint8Array): string {
   }
   const head = new TextDecoder().decode(bytes.subarray(0, 2048)).replace(/^\ufeff/, '');
   if (/^\s*solid\b/.test(head)) return 'stl';
+  if (/^\s*ISO-10303-21\s*;/.test(head)) return 'step';
   if (/^\s*0\s*\r?\n\s*SECTION\b/.test(head) || /^\s*999\s*\r?\n/.test(head)) return 'dxf';
   if (/^\s*(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*(<!DOCTYPE[^>]*>\s*)?<svg\b/i.test(head)) return 'svg';
   if (/<COLLADA[\s>]/.test(head)) return 'dae';
@@ -114,6 +117,10 @@ export function importFile(fileName: string, bytes: Uint8Array, companions: Comp
       return guarded('glTF', () => checkedModel(parseGlb(bytes, name, companions)));
     case 'dae':
       return guarded('Collada', () => checkedModel(parseCollada(bytes, name, companions)));
+    case 'step':
+    case 'stp':
+      // Read by `parseStep`, which needs OpenCascade loaded first: whoever reads files in one go cannot have it.
+      throw new Error(tr('A STEP file cannot be read as part of another file.'));
     case 'svg':
       return guarded('SVG', () => drawing((warnings) => parseSvg(bytes, warnings)));
     case 'dxf':

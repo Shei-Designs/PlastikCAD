@@ -121,14 +121,14 @@ function asciiStl(facets: number[][], number = (v: number) => v.toExponential(6)
 
 describe('importFile', () => {
   it('dispatches on the extension, whatever its case', () => {
-    expect(IMPORT_EXTENSIONS).toEqual(['stl', 'obj', '3mf', 'glb', 'gltf', 'dae', 'svg', 'dxf']);
+    expect(IMPORT_EXTENSIONS).toEqual(['stl', 'obj', '3mf', 'glb', 'gltf', 'dae', 'step', 'stp', 'svg', 'dxf']);
     expect(importFile('Part.STL', binaryStl(cubeFacets())).kind).toBe('model');
     expect(importFile('C:\\models\\my.part.Obj', bytes('v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n')).kind).toBe('model');
     expect(importFile('a.SVG', bytes('<svg><rect width="1" height="1"/></svg>')).kind).toBe('outline');
   });
 
   it('names the formats it can read when given another', () => {
-    expect(() => importFile('part.step', new Uint8Array(4))).toThrow(/\.step files can't be imported.*STL, OBJ, 3MF, GLB, GLTF, DAE, SVG/);
+    expect(() => importFile('part.iges', new Uint8Array(4))).toThrow(/\.iges files can't be imported.*STL, OBJ, 3MF, GLB, GLTF, DAE, STEP, STP, SVG/);
     expect(() => importFile('README', new Uint8Array(4))).toThrow(/can't be imported/);
   });
 
@@ -156,7 +156,9 @@ describe('importFile', () => {
     expect(fileKind('msf:128', new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0]))).toBe('jpg');
     // A known extension wins over the bytes; an unknown one with unreadable bytes is still refused.
     expect(fileKind('part.stl', bytes('v 0 0 0\n'))).toBe('stl');
-    expect(() => importFile('part.step', bytes('ISO-10303-21;'))).toThrow(/\.step files can't be imported/);
+    // A STEP file is known by its first line; it is read elsewhere, with OpenCascade (see importStep.ts).
+    expect(fileKind('document', bytes('ISO-10303-21;\nHEADER;'))).toBe('step');
+    expect(() => importFile('part.step', bytes('ISO-10303-21;'))).toThrow('A STEP file cannot be read as part of another file.');
   });
 });
 
