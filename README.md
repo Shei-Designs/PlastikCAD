@@ -51,8 +51,8 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
   cone, pyramid, wedge, roof, round roof, polygon prism, torus and dome. Click
   one, then click on the plate (or on top of another object) to put it down.
 - **Parts** – a tile for each family (gears, pulleys and sprockets, screws
-  and threads, rails, pipes and ducts, dev boards, fans, panel cutouts, motor
-  mounts) places a parametric part. The panel shows what it is for, a picture
+  and threads, bearing seats, rails, pipes and ducts, dev boards, fans, panel
+  cutouts, motor mounts) places a parametric part. The panel shows what it is for, a picture
   menu of the kinds in that family, the parameters in tabs (gear, tooth form,
   hub, bore; thread, head; and so on), the dimensions that follow from them
   (pitch diameter, outside diameter, center distance...). A part is just an
@@ -149,20 +149,23 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
 
 ## Parts
 
-| Gears | Pulleys & sprockets | Screws & threads | Rails & frames | Pipes & ducts | Dev boards | Fans | Panel cutouts | Motor mounts |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Spur gear | GT2 timing pulley (2 / 3 / 5 mm) | Metric bolt / threaded rod (M3–M20) | Aluminum rail: 20, 30 and 40 mm series, V-slot or T-slot, one to four cells in one or two rows (2020, 2040, 4040, 3030, 3060, 6060, 4080...) | Straight pipe or duct | Raspberry Pi 5, 4, 3, Zero 2 W, Pico | Fan, 25–140 mm: the cutout (clear, or with a guard pattern of rings, slots, honeycomb or grid cut into the wall) | Panel connector: Neutrik D-series, IEC C14 / C13 / C8, D-sub 9 / 15 / 25, XT60, with their screw holes | Stepper: NEMA 8, 11, 14, 17, 23 and the 28BYJ-48 |
-| Helical gear | HTD timing pulley (3M / 5M / 8M) | Metric nut | | Elbow (any angle and bend radius, legs either side) | Arduino Uno R3/R4, Mega 2560, Nano | Screw holes only, for an opening of your own | | Gearmotor: N20, TT, 25 mm (JGA25), 37 mm (JGB37) |
-| Herringbone gear | T-series timing pulley (T2.5 / T5 / T10) | Trapezoidal lead screw (multi-start) | | Reducer (in line or eccentric) | ESP32-DevKitC V4, DevKit V1, NodeMCU-32S | Printed grill with the same patterns, to screw over the fan | | Servo: SG90, MG996R |
-| Internal ring gear | MXL / XL timing pulley | Lead screw nut (flanged) | | Tee / wye (branch at any angle) | NVIDIA Jetson Nano, Orin Nano / Orin NX and Xavier NX developer kits | The fan itself: frame, hub and blades of a typical fan, to check clearance | | DC motor: 775, 130 |
-| Gear rack (straight, helical, herringbone) | Chain sprocket (#25–#41, 05B–08B, bicycle) | Screw hole (M2–M20): clearance, threaded or for a heat-set insert, with a counterbore, countersink or nut trap | | | | | | |
-| Bevel gear (90° shafts) | | | | | | | | |
-| Worm | | | | | | | | |
+| Gears | Pulleys & sprockets | Screws & threads | Bearing seats | Rails & frames | Pipes & ducts | Dev boards | Fans | Panel cutouts | Motor mounts |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Spur gear | GT2 timing pulley (2 / 3 / 5 mm) | Metric bolt / threaded rod (M3–M20) | Bearing seat: 623–626, 608, 688, 698, 6000–6002, 6200–6202, 6800–6802, LM6UU–LM12UU, or any size | Aluminum rail: 20, 30 and 40 mm series, V-slot or T-slot, one to four cells in one or two rows (2020, 2040, 4040, 3030, 3060, 6060, 4080...) | Straight pipe or duct | Raspberry Pi 5, 4, 3, Zero 2 W, Pico | Fan, 25–140 mm: the cutout (clear, or with a guard pattern of rings, slots, honeycomb or grid cut into the wall) | Panel connector: Neutrik D-series, IEC C14 / C13 / C8, D-sub 9 / 15 / 25, XT60, with their screw holes | Stepper: NEMA 8, 11, 14, 17, 23 and the 28BYJ-48 |
+| Helical gear | HTD timing pulley (3M / 5M / 8M) | Metric nut |  | | Elbow (any angle and bend radius, legs either side) | Arduino Uno R3/R4, Mega 2560, Nano | Screw holes only, for an opening of your own | | Gearmotor: N20, TT, 25 mm (JGA25), 37 mm (JGB37) |
+| Herringbone gear | T-series timing pulley (T2.5 / T5 / T10) | Trapezoidal lead screw (multi-start) |  | | Reducer (in line or eccentric) | ESP32-DevKitC V4, DevKit V1, NodeMCU-32S | Printed grill with the same patterns, to screw over the fan | | Servo: SG90, MG996R |
+| Internal ring gear | MXL / XL timing pulley | Lead screw nut (flanged) |  | | Tee / wye (branch at any angle) | NVIDIA Jetson Nano, Orin Nano / Orin NX and Xavier NX developer kits | The fan itself: frame, hub and blades of a typical fan, to check clearance | | DC motor: 775, 130 |
+| Gear rack (straight, helical, herringbone) | Chain sprocket (#25–#41, 05B–08B, bicycle) | Screw hole (M2–M20): clearance, threaded or for a heat-set insert, with a counterbore, countersink or nut trap |  | | | | | | |
+| Bevel gear (90° shafts) | | | | |  | | | | |
+| Worm | | | | |  | | | | |
 
 Rotating parts share the same options for the shaft: round, D-shaft, hex or
 keyed bore with a fit clearance, plus an optional hub with set-screw holes.
 A screw hole comes in as a hole, standing on the plate with its mouth at the
-top: put it where the screw goes and group it with the object.
+top: put it where the screw goes and group it with the object. A bearing
+seat does the same for a ball bearing: a bore the outer ring sits in, as deep
+as the bearing is wide, over a narrower hole that the outer ring rests on and
+the inner ring turns clear of.
 Pipes and ducts are round or rectangular (with rounded corners), hollow with a
 wall or solid, and the bends are true arcs, the tapers true frustums; a solid
 elbow makes a good hole to cut a curved channel with.
@@ -655,6 +658,11 @@ left alone, since that is its shape.
   wider than the head or nut as the hole is than the screw. Heat-set insert
   bores (M2 to M6) are the drill sizes one insert maker lists; other makers
   differ by a few tenths, so check the sheet of the inserts in hand.
+- **Bearing seats** take the bore, outside diameter and width of each
+  bearing from the makers' tables (ISO 15 sizes), and the LM-UU linear
+  bearings from theirs. The seat is the outside diameter plus the clearance
+  all round; the hole under it is half way between the bore and the outside
+  diameter, which is a rule of this app, not a maker's abutment figure.
 - **Extrusions** follow one maker's section drawing per size, the others
   being within a few tenths of it: OpenBuilds V-Slot for 20 mm, Misumi HFS6
   for 30 mm and HFS8 for 40 mm. Lip thickness, slot opening, channel width,

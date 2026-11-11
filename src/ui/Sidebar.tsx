@@ -112,6 +112,7 @@ const FAMILY_NAMES: Record<string, string> = {
   gears: tr('Gear'),
   pulleys: tr('Pulley'),
   screws: tr('Screw'),
+  bearings: tr('Bearing'),
   frames: tr('Rail'),
   ducts: tr('Pipe'),
   boards: tr('Board'),

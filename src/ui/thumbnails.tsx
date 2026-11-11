@@ -147,6 +147,18 @@ export const PART_THUMBNAILS: Record<string, ReactNode> = {
       <circle cx="28.5" cy="28.5" r="1.2" />
     </>,
   ),
+  bearings: glyph(
+    <>
+      <circle cx="18" cy="18" r="14" />
+      <circle cx="18" cy="18" r="6" />
+      <circle cx="18" cy="8" r="2.2" />
+      <circle cx="26.7" cy="13" r="2.2" />
+      <circle cx="26.7" cy="23" r="2.2" />
+      <circle cx="18" cy="28" r="2.2" />
+      <circle cx="9.3" cy="23" r="2.2" />
+      <circle cx="9.3" cy="13" r="2.2" />
+    </>,
+  ),
   cutouts: glyph(
     <>
       <rect x="3" y="6" width="30" height="24" rx="2" />
