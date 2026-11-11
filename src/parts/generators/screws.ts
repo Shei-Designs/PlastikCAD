@@ -1,5 +1,5 @@
-// Printable fasteners: ISO metric bolts and nuts, trapezoidal lead screws and their nuts,
-// and the holes that take a metric screw with its head, nut or insert.
+// Printable fasteners: ISO metric and Unified inch bolts and nuts, trapezoidal lead screws
+// and their nuts, and the holes that take a metric screw with its head, nut or insert.
 import { tr, trx } from '../../i18n';
 import { handParam, isLeftHanded } from '../features';
 import { regularPolygon } from '../math2d';
@@ -15,21 +15,27 @@ import type { AxialProfile } from '../threads';
 import { cylinder, difference, extrude, intersection, revolve, rotate, translate, union } from '../types';
 import type { Polygon, Quality, Solid } from '../types';
 import { bool, mm, num, str } from './types';
-import type { GeneratorDef, ParamDef, Params } from './types';
+import type { BuildResult, GeneratorDef, InfoItem, ParamDef, Params } from './types';
 
-interface MetricSize {
+/** What a bolt and its nut are made from, whichever standard the figures are from: all in millimeters. */
+interface ThreadSize {
   d: number;
-  /** Coarse pitch (ISO 261). */
-  pitch: number;
-  /** Hex across flats (ISO 4017 / 4032). */
+  /** Hex across flats of the bolt's head. */
   af: number;
-  /** Hex head height (ISO 4017). */
+  /** Hex head height. */
   headHeight: number;
-  /** Nut height (ISO 4032). */
+  /** Hex across flats of the nut, where it is not the head's. */
+  nutAf?: number;
   nutHeight: number;
-  /** Socket cap head diameter and hex key size (ISO 4762). */
+  /** Socket cap head diameter and hex key size. */
   capDiameter: number;
   socket: number;
+}
+
+/** A metric size: hex head and nut of ISO 4017 / 4032, socket cap of ISO 4762. */
+interface MetricSize extends ThreadSize {
+  /** Coarse pitch (ISO 261). */
+  pitch: number;
   /** Clearance hole for the screw: close, normal and loose (ISO 273 fine, medium and coarse). */
   clearance: [number, number, number];
   /** Head diameter of a countersunk screw, to its sharp edge (ISO 10642; DIN 965 below M3). */
@@ -106,13 +112,13 @@ function metricPitch(p: Params, size: MetricSize, warnings: string[]): number {
  * Share of the basic thread depth that still overlaps when a screw and a nut are
  * both made with the given clearances.
  */
-function engagement(size: MetricSize, pitch: number, screwClearance: number, nutClearance: number): number {
+function engagement(size: ThreadSize, pitch: number, screwClearance: number, nutClearance: number): number {
   const crest = profileExtent(isoMetricProfile(size.d, pitch, -screwClearance)).rMax;
   const bore = profileExtent(isoMetricProfile(size.d, pitch, nutClearance)).rMin;
   return (crest - bore) / ((5 / 8) * (Math.sqrt(3) / 2) * pitch);
 }
 
-function checkEngagement(size: MetricSize, pitch: number, clearance: number, warnings: string[]) {
+function checkEngagement(size: ThreadSize, pitch: number, clearance: number, warnings: string[]) {
   const share = engagement(size, pitch, clearance, clearance);
   if (share < 0.4) {
     warnings.push(
@@ -199,7 +205,12 @@ export const metricBolt: GeneratorDef = {
   build(p, q) {
     const warnings: string[] = [];
     const size = METRIC[str(p, 'size')];
-    const pitch = metricPitch(p, size, warnings);
+    return buildBolt(size, metricPitch(p, size, warnings), p, q, warnings);
+  },
+};
+
+/** A bolt of the 60° thread form: the thread of `pitch` on a shank of the size's diameter, under the head asked for. */
+function buildBolt(size: ThreadSize, pitch: number, p: Params, q: Quality, warnings: string[], more: InfoItem[] = []): BuildResult {
     const length = num(p, 'length');
     const head = str(p, 'head');
     const chamfer = bool(p, 'chamfer');
@@ -242,10 +253,9 @@ export const metricBolt: GeneratorDef = {
       info.push({ label: tr('Hex key'), value: mm(size.socket, 1) });
     }
     if (headHeight > 0) info.push({ label: tr('Head height'), value: mm(headHeight, 1) });
-    info.push({ label: tr('Total length'), value: mm(headHeight + length, 1) });
+    info.push(...more, { label: tr('Total length'), value: mm(headHeight + length, 1) });
     return { solid, info, warnings };
-  },
-};
+}
 
 export const metricNut: GeneratorDef = {
   id: 'metric-nut',
@@ -284,7 +294,12 @@ export const metricNut: GeneratorDef = {
   build(p, q) {
     const warnings: string[] = [];
     const size = METRIC[str(p, 'size')];
-    const pitch = metricPitch(p, size, warnings);
+    return buildNut(size, metricPitch(p, size, warnings), p, q, warnings);
+  },
+};
+
+/** A hex nut of the 60° thread form, for a bolt of the same size and pitch. */
+function buildNut(size: ThreadSize, pitch: number, p: Params, q: Quality, warnings: string[], more: InfoItem[] = []): BuildResult {
     const custom = num(p, 'height');
     const height = custom > 0 ? custom : size.nutHeight;
     const chamfer = bool(p, 'chamfer');
@@ -302,7 +317,8 @@ export const metricNut: GeneratorDef = {
     });
     const cuts = [translate(cutter, [0, 0, -pitch])];
     if (chamfer) cuts.push(...countersinks(profile, height, q));
-    const solid = difference(hexBody(size.af, height, chamfer, q), ...cuts);
+    const af = size.nutAf ?? size.af;
+    const solid = difference(hexBody(af, height, chamfer, q), ...cuts);
 
     return {
       solid,
@@ -310,11 +326,112 @@ export const metricNut: GeneratorDef = {
         { label: tr('Thread major diameter'), value: mm(rMax * 2) },
         { label: tr('Thread minor diameter'), value: mm(rMin * 2) },
         { label: tr('Pitch'), value: mm(pitch) },
-        { label: tr('Across flats'), value: mm(size.af, 1) },
+        { label: tr('Across flats'), value: mm(af, 1) },
+        ...more,
         { label: tr('Height'), value: mm(height, 1) },
       ],
       warnings,
     };
+}
+
+// --- inch sizes ------------------------------------------------------------------------------------
+
+const INCH = 25.4;
+
+/**
+ * A Unified inch size (ASME B1.1), in inches as the standard writes it. The
+ * thread form is the metric one, 60° between its flanks, so the same profile
+ * cuts it; only the diameters and the pitches, given as threads to the inch,
+ * are its own.
+ */
+interface UnifiedSize {
+  d: number;
+  /** Threads to the inch: coarse (UNC) and fine (UNF). */
+  coarse: number;
+  fine: number;
+  /** Hex head across flats and height (hex cap screw, ASME B18.2.1; below 1/4" a hex head machine screw). */
+  af: number;
+  headHeight: number;
+  /** Hex nut across flats and thickness (ASME B18.2.2; below 1/4" a machine screw nut). */
+  nutAf: number;
+  nutHeight: number;
+  /** Socket cap head diameter and hex key (ASME B18.3). */
+  capDiameter: number;
+  socket: number;
+}
+
+const UNIFIED: Record<string, UnifiedSize> = {
+  '#6': { d: 0.138, coarse: 32, fine: 40, af: 1 / 4, headHeight: 0.093, nutAf: 5 / 16, nutHeight: 7 / 64, capDiameter: 0.226, socket: 7 / 64 },
+  '#8': { d: 0.164, coarse: 32, fine: 36, af: 1 / 4, headHeight: 0.11, nutAf: 11 / 32, nutHeight: 1 / 8, capDiameter: 0.27, socket: 9 / 64 },
+  '#10': { d: 0.19, coarse: 24, fine: 32, af: 5 / 16, headHeight: 0.12, nutAf: 3 / 8, nutHeight: 1 / 8, capDiameter: 0.312, socket: 5 / 32 },
+  '1/4"': { d: 1 / 4, coarse: 20, fine: 28, af: 7 / 16, headHeight: 5 / 32, nutAf: 7 / 16, nutHeight: 7 / 32, capDiameter: 3 / 8, socket: 3 / 16 },
+  '5/16"': { d: 5 / 16, coarse: 18, fine: 24, af: 1 / 2, headHeight: 13 / 64, nutAf: 1 / 2, nutHeight: 17 / 64, capDiameter: 15 / 32, socket: 1 / 4 },
+  '3/8"': { d: 3 / 8, coarse: 16, fine: 24, af: 9 / 16, headHeight: 15 / 64, nutAf: 9 / 16, nutHeight: 21 / 64, capDiameter: 9 / 16, socket: 5 / 16 },
+  '7/16"': { d: 7 / 16, coarse: 14, fine: 20, af: 5 / 8, headHeight: 9 / 32, nutAf: 11 / 16, nutHeight: 3 / 8, capDiameter: 21 / 32, socket: 3 / 8 },
+  '1/2"': { d: 1 / 2, coarse: 13, fine: 20, af: 3 / 4, headHeight: 5 / 16, nutAf: 3 / 4, nutHeight: 7 / 16, capDiameter: 3 / 4, socket: 3 / 8 },
+  '5/8"': { d: 5 / 8, coarse: 11, fine: 18, af: 15 / 16, headHeight: 25 / 64, nutAf: 15 / 16, nutHeight: 35 / 64, capDiameter: 15 / 16, socket: 1 / 2 },
+  '3/4"': { d: 3 / 4, coarse: 10, fine: 16, af: 9 / 8, headHeight: 15 / 32, nutAf: 9 / 8, nutHeight: 41 / 64, capDiameter: 9 / 8, socket: 5 / 8 },
+};
+
+/** The inch sizes offered as printed bolts and nuts. */
+export const UNIFIED_SIZES = Object.keys(UNIFIED);
+
+const unifiedSizeParam: ParamDef = { type: 'select', key: 'size', label: tr('Size'), default: '1/4"', options: UNIFIED_SIZES.map((value) => ({ value, label: value })) };
+
+const seriesParam: ParamDef = {
+  type: 'select',
+  key: 'series',
+  label: tr('Series'),
+  default: 'coarse',
+  options: [
+    { value: 'coarse', label: tr('Coarse (UNC)') },
+    { value: 'fine', label: tr('Fine (UNF)') },
+  ],
+};
+
+/** An inch size in millimeters, with the pitch of the series asked for and how the thread is called (1/4-20 UNC). */
+function unified(p: Params): { size: ThreadSize; pitch: number; info: InfoItem[] } {
+  const name = str(p, 'size');
+  const u = UNIFIED[name];
+  if (!u) throw new Error(`Unknown inch size "${name}"`);
+  const fine = str(p, 'series') === 'fine';
+  const tpi = fine ? u.fine : u.coarse;
+  const size: ThreadSize = { d: u.d * INCH, af: u.af * INCH, headHeight: u.headHeight * INCH, nutAf: u.nutAf * INCH, nutHeight: u.nutHeight * INCH, capDiameter: u.capDiameter * INCH, socket: u.socket * INCH };
+  return {
+    size,
+    pitch: INCH / tpi,
+    info: [{ label: tr('Thread'), value: `${name.replace('"', '')}-${tpi} ${fine ? 'UNF' : 'UNC'}` }],
+  };
+}
+
+export const inchBolt: GeneratorDef = {
+  id: 'inch-bolt',
+  name: tr('Inch bolt / threaded rod'),
+  category: 'screws',
+  summary: tr('Unified inch screw, coarse (UNC) or fine (UNF), with a hex or socket head, or a plain threaded rod.'),
+  groups: [{ title: tr('Thread'), params: [unifiedSizeParam, seriesParam, ...metricBolt.groups[0].params.slice(2)] }, metricBolt.groups[1]],
+  build(p, q) {
+    const warnings: string[] = [];
+    const { size, pitch, info } = unified(p);
+    return buildBolt(size, pitch, p, q, warnings, info);
+  },
+};
+
+export const inchNut: GeneratorDef = {
+  id: 'inch-nut',
+  name: tr('Inch nut'),
+  category: 'screws',
+  summary: tr('Unified inch hex nut, coarse (UNC) or fine (UNF), with a printable internal thread.'),
+  groups: [
+    {
+      title: tr('Nut'),
+      params: [unifiedSizeParam, seriesParam, ...metricNut.groups[0].params.slice(2).map((param) => (param.key === 'height' ? { ...param, help: tr('Leave at 0 for the standard nut height.') } : param))],
+    },
+  ],
+  build(p, q) {
+    const warnings: string[] = [];
+    const { size, pitch, info } = unified(p);
+    return buildNut(size, pitch, p, q, warnings, info);
   },
 };
 
