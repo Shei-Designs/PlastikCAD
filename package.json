@@ -22,6 +22,7 @@
     "smoke:ros": "ROBOT_FIXTURES_OUT=fixtures/out vitest run src/robot/robots.test.ts && tools/ros_smoke.sh fixtures/out",
     "smoke:isaac": "ROBOT_FIXTURES_OUT=fixtures/out vitest run src/robot/robots.test.ts && ${ISAACSIM_PYTHON:-$HOME/isaacsim-env/bin/python} tools/isaac_smoke.py fixtures/out",
     "smoke:usd": "ROBOT_FIXTURES_OUT=fixtures/out vitest run src/robot/robots.test.ts && tools/isaac_stage_smoke.sh fixtures/out/usd",
+    "check:apps": "tools/apps/run.sh",
     "tauri": "tauri"
   },
   "dependencies": {
