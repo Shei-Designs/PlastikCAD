@@ -43,33 +43,25 @@ release.
 
 By touch (review 3):
 
-- **The test drive needs a keyboard**: there are no pads on the screen to
-  drive with.
-- **A tablet held upright**: the open inspector covers the number boxes of
-  the Dimensions box and six toolbar buttons; a first start shows a bare
-  plate with the Library behind a small tab; the "Custom" tile opens the
-  parts bin in the inspector, which is hidden then.
-- **Held sideways**, the Dimensions box sits on handles and on what was
-  just placed.
-- **A slider takes a touch anywhere on its track at once**, so a swipe
-  meant to scroll the inspector sets a value.
-- **Icon buttons have no name a finger can see** (they are in tooltips).
-- **Number boxes have no stepper**: every change is the sheet and the
-  whole number typed again.
-- **Hints speak of clicks and Esc** on a tablet; upright with the Library
-  open, the hint bar is cut by the panel.
+- **What the app says by touch**, to be talked through as one question:
+  icon buttons have no name a finger can see (they are in tooltips; a long
+  press is not to be used for it), hints speak of clicks and Esc, and the
+  list of shortcuts is long and always in the side panel.
+- **The inspector by touch**: a part with many settings has to be scrolled;
+  whether its layout can ask for less of that is to be seen on the device.
 - Small targets outside what the tests measure (the view buttons, the
-  buttons of an Objects row, the panel tabs); long French names cut on the
-  part tiles; the help marks, to be tried on the device.
+  buttons of an Objects row, the panel tabs); the help marks, to be tried
+  on the device.
 
 Elsewhere:
 
-- **STEP for meshes as tessellated shapes**, which the format has and which
-  cost a fraction of a face to a triangle (research; #53 only limits).
-- **The signing key at hand during the build** of a release: signing in a
-  step of its own, after the build (#57 pins the actions only).
-- **Android's backup** is at the system's default: projects come back after
-  a restore, which is wanted; the hour-long Drive token is in it too.
+- **STEP for meshes as tessellated shapes**: tried on 2026-11-11 and advised
+  against. The file is 35 times smaller and written 100 times faster, but
+  FreeCAD draws nothing for such a body and fails when it is cut, the
+  slicers are built on a library too old to read it, and nothing says
+  Fusion takes it; today's facets open and cut everywhere. Left to decide:
+  whether an object over the triangle limit, which is left out of the file
+  today, should go out that way instead.
 - A Linux session with no keyring waits two minutes at start before the
   sign-in is known; an empty `History` folder and a hidden temporary file can be left
   behind; the package's short description reads "for 3D printing".
@@ -78,26 +70,8 @@ Elsewhere:
 
 What the reviews showed could be built, beyond mending. None is planned.
 
-- **Example projects** to start from, one for each kind of work (a part, a
-  robot, a model for Blender): the app has no way in for a newcomer, and
-  nothing shows what it can do.
 - **A section view**: the model cut by a plane, to look inside (a clipping
   plane in the viewer).
-- **A list of the standard parts in a design** (M3 × 10 screws, 608
-  bearings), to buy from: the app knows each one it placed.
-- **Pads on the screen for the test drive**: a robot built and driven on a
-  tablet with no keyboard.
-- **An enclosure from a board**: the board mounts and the connector
-  cut-outs already know where everything is; a box round them is one step.
-- **Inches as the working unit**, now that inch bolts and nuts exist.
-- **Volume and weight of the selection** outside robot mode, which already
-  works them out.
-- **A link to pass a design on**, with the phone viewer of phase 9 as what
-  opens it.
-- **The built apps tried by a script before each release.** The driver made
-  for review 1 (the real desktop and Android apps, their pickers answered
-  for them) found three faults no browser test could see. Kept in the
-  repository it is a check to run before publishing.
 - **The browser tests in WebKit as well as Chromium**: the desktop app on
   Linux and macOS is WebKit, and the fault of #45 only shows there.
 
@@ -106,10 +80,20 @@ What the reviews showed could be built, beyond mending. None is planned.
 Smaller pieces, each of which can be built without a session.
 
 - **STEP export**: true surfaces for helical and bevel gears and for
-  threads, which still go out as facets. A research piece: the library has
-  to sweep a tooth along a helix and the file has to keep the result. (Eggs,
+  threads, which still go out as facets. Tried on 2026-11-11: helical and
+  herringbone gears, screws, nuts, tapped holes, lead screws and worms can
+  be rebuilt as smooth solids that FreeCAD reads as valid, 5 to 50 times
+  smaller than their facets and quicker to write (a default helical gear
+  2.5 MB for 17.8, an M8 bolt 1.2 MB for 43). To build in that order: the
+  gears, then the threads, whose description has to carry the thread
+  itself. Bevel gears came out right for some settings only and come last,
+  if at all; a throated worm wheel stays facets. Not yet measured: the time
+  on a tablet. (Eggs,
   tall domes and oval cones cannot be done: a STEP file does not keep an
   oval turned round an axis.)
+
+- **Inches as the working unit**: an option for what is shown and typed.
+  Designs stay in millimeters, and metric stays what the app starts with.
 
 ## Phases that need a session first
 
@@ -118,9 +102,9 @@ agreed in a working session before anything is built.
 
 | Phase | What | What the session has to settle |
 |---|---|---|
-| 7 | **Robot mode**, made dependable | Found by building a real robot with it, start to finish, on the desktop and on the tablet. Open design questions: mecanum strafing, the kinds of joint that close a loop, the camera's optical frame, the base frame of a USD stage, the inspector's wording and touch sizes. Until then the mode is experimental: crashes and wrong output are fixed, behaviour is not polished. |
-| 8 | **Release** | The Play Console set-up and the Android signing key, the APK attached to releases, the store listing and screenshots, the color register, code signing for Windows and macOS. |
-| 9 | **Phone viewer** | The app on a phone as a viewer: which objects and projects it shows, what replaces the edit controls, how a design gets there. The editor itself stays for tablets and desktop. |
+| 7 | **Robot mode**, made dependable | Found by building a real robot with it, start to finish, on the desktop and on the tablet. Agreed: a control on the screen to drive with when no keyboard is attached. Open design questions: mecanum strafing, the kinds of joint that close a loop, the camera's optical frame, the base frame of a USD stage, the inspector's wording and touch sizes. Until then the mode is experimental: crashes and wrong output are fixed, behaviour is not polished. |
+| 8 | **Release** | The Play Console set-up and the Android signing key, the APK attached to releases, the store listing and screenshots, the color register, code signing for Windows and macOS. Signing the update files in a step of its own, after the build, so the key is not at hand while the build runs. The tablet held upright: the app is made to be held sideways, but from Android 17 an app on a large screen can no longer refuse to turn or to be resized, so upright and split-screen have to stay usable (there the open inspector covers the Dimensions box's number boxes and six toolbar buttons, a first start shows a bare plate, the "Custom" tile opens a hidden inspector, and the hint bar is cut by the Library); it is not what the app is made for and need not be as good, but it is not to be neglected. |
+| 9 | **Phone viewer** | The app on a phone as a viewer: which objects and projects it shows, what replaces the edit controls, how a design gets there. The starting point: the app as it is, linked to the user's Google Drive, showing the projects synced there, able to export a design and share the file, and little beyond that. The editor itself stays for tablets and desktop. |
 | 10 | **AI features** | Tests of whether it is viable and useful come before any integration: what it would do (the first idea is help with the constraints of a robot being prototyped), which service, what it costs, where a key is kept, and what "nothing leaves your machine" then means. |
 
 ## Waiting on a check
@@ -133,6 +117,9 @@ Things only the real devices and accounts can show.
 - A STEP file from Fusion 360: that it opens, with its names and colors.
 - On the tablet: PLY, zip and STEP import, STEP export, the licenses in the
   About box.
+- On the tablet held upright: that every flow can still be done.
+- On the tablet: a swipe that begins on a slider scrolls the inspector, and
+  a drag along it or a tap still sets it (#66).
 - On the desktop: saving a STEP export through the dialog; the Mac build.
 - A `.gltf` with its files apart, picked on Android.
 - The French glossary (`src/i18n/fr/glossary.md`).
@@ -155,6 +142,8 @@ Not dropped: taken up when asked for.
 - Numbers written the way the language writes them, W / D / H translated,
   the test-drive keys by position on other keyboards, the native side's
   error messages in the app's language.
+- French text that is cut (long names on the part tiles): the English
+  layout comes first.
 - Splitting large imports out of the project files on the device, as is done
   on the Drive: a project stays one whole file that can be copied out by
   hand, until a real large project shows the saving is worth that.
@@ -168,6 +157,18 @@ Decided against; not to be proposed again.
 - A preview of meshed gears turning together: it shows something and does
   nothing. The wizard already places a mate where it meshes, and a mate is a
   part of its own afterwards, with nothing to say it still meshes.
+- Example projects in the app: tutorials are published instead.
+- An enclosure made from a board: a box is built by hand, as any other.
+- Volume and weight of the selection outside robot mode: materials and
+  mass belong to robot mode, where the formats ask for them.
+- A list of the standard parts in a design.
+- A link to pass a design on, or anything else that needs a server kept
+  running: a feature works on the device or through the user's own Google
+  Drive.
+- A way to keep the Dimensions box off the handles: the view is moved.
+- Steppers on the number boxes.
+- A change to Android's backup: it stays at the system's default, which
+  brings the projects back after a restore.
 - In robot mode: a two-click joint tool, dragging to re-parent, axis
   defaults for round children, shaft-aware parts, an automatic base.
 
