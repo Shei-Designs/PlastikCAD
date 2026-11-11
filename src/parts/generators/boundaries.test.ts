@@ -28,14 +28,17 @@ function numbers(def: GeneratorDef, p: Params): NumberParam[] {
   return out;
 }
 
+// One test to a parameter, not one to a part: a part with many numbers and a slow build (the throated wheel, cut
+// by its worm) took fourteen seconds as one test here and thirty-one on a slow CI runner, a second past the limit.
+// Each of these builds two solids and is done in a second or two wherever it runs.
 describe('parameter boundaries', () => {
   for (const def of GENERATORS) {
-    it(`${def.id} builds at every visible number's min and max`, () => {
-      const failures: string[] = [];
-      for (const v of variants(def)) {
-        for (const d of numbers(def, v.params)) {
+    for (const v of variants(def)) {
+      for (const d of numbers(def, v.params)) {
+        it(`${def.id}${v.label ? ` (${v.label})` : ''} builds at the min and max of ${d.key}`, () => {
+          const failures: string[] = [];
           for (const end of ['min', 'max'] as const) {
-            const label = `${def.id} ${v.label} ${d.key}=${d[end]}`;
+            const label = `${d.key}=${d[end]}`;
             try {
               const r = def.build({ ...v.params, [d.key]: d[end] }, q);
               const s = evaluate(r.solid).stats;
@@ -46,9 +49,9 @@ describe('parameter boundaries', () => {
               failures.push(`${label}: ${(e as Error).message}`);
             }
           }
-        }
+          expect(failures).toEqual([]);
+        });
       }
-      expect(failures).toEqual([]);
-    });
+    }
   }
 });
