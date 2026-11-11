@@ -51,6 +51,8 @@ By touch (review 3):
   parts bin in the inspector, which is hidden then.
 - **Held sideways**, the Dimensions box sits on handles and on what was
   just placed.
+- **A slider takes a touch anywhere on its track at once**, so a swipe
+  meant to scroll the inspector sets a value.
 - **Icon buttons have no name a finger can see** (they are in tooltips).
 - **Number boxes have no stepper**: every change is the sheet and the
   whole number typed again.
