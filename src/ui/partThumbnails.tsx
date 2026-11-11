@@ -178,6 +178,11 @@ const GLYPHS: Record<string, ReactNode> = {
   ),
 };
 
+// The inch parts are drawn as their metric twins: they are the same things in other sizes.
+GLYPHS['inch-bolt'] = GLYPHS['metric-bolt'];
+GLYPHS['inch-nut'] = GLYPHS['metric-nut'];
+GLYPHS['inch-screw-hole'] = GLYPHS['screw-hole'];
+
 const cache = new Map<string, ReactNode>();
 
 export function partThumbnail(def: GeneratorDef): ReactNode {

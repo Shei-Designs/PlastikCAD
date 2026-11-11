@@ -165,7 +165,7 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
 | Gear rack (straight, helical, herringbone) | Chain sprocket (#25–#41, 05B–08B, bicycle) | Screw hole (M2–M20): clearance, threaded or for a heat-set insert, with a counterbore, countersink or nut trap |  | | | | | | |
 | Bevel gear (90° shafts) | V-belt pulley (Z, A, B, C, SPZ–SPC, one groove or several) | Inch bolt / threaded rod (#6–3/4", UNC or UNF) | | |  | | | | |
 | Worm | | Inch nut | | |  | | | | |
-| Throated worm wheel (its teeth wrap round the worm) | | | | |  | | | | |
+| Throated worm wheel (its teeth wrap round the worm) | | Inch screw hole (#6–3/4"): as the metric one, with an 82° countersink | | |  | | | | |
 
 Rotating parts share the same options for the shaft: round, D-shaft, hex or
 keyed bore with a fit clearance, plus an optional hub with set-screw holes.
@@ -757,6 +757,10 @@ left alone, since that is its shape.
   wider than the head or nut as the hole is than the screw. Heat-set insert
   bores (M2 to M6) are the drill sizes one insert maker lists; other makers
   differ by a few tenths, so check the sheet of the inserts in hand.
+  Inch holes take the drills ASME B18.2.8 names for a close, a normal and a
+  loose fit, the socket cap and nut of the inch bolts, and an 82° cone out
+  to the sharp edge of an ASME B18.6.3 flat head; the figures are from
+  memory and unverified, and no insert bore is offered for them.
 - **Bearing seats** take the bore, outside diameter and width of each
   bearing from the makers' tables (ISO 15 sizes), and the LM-UU linear
   bearings from theirs. The seat is the outside diameter plus the clearance
