@@ -306,3 +306,65 @@ projects (they answer 1 and show off the list above); a section view (a
 clipping plane in the viewer); a list of the standard parts in a design
 (M3 × 10 screws, 608 bearings) to buy from.
 
+### Review 5: security and privacy (2026-11-11)
+
+The native commands and what the page may ask of them, the page itself and
+its content security policy, every reader of a file from elsewhere, the
+sign-in and sync, what leaves the device, the names written into exports,
+and the release workflow. The details of the first finding are kept out of
+this public file until it is fixed.
+
+1. **The native side's check of the kind of file can be got round** by a
+   script running in the page, for reading and for writing. No way to run
+   such a script was found (nothing from a file reaches the page as HTML,
+   and the policy allows no evaluated code), so it is a second line of
+   defence that does not hold, not a way in. Shown by a script against the
+   same parsing the app uses.
+2. **A file of a few hundred bytes can freeze the app for good.** Two of
+   the patterns that tell what an unnamed file is (an OBJ, an SVG) take
+   twice as long for every blank line or empty comment at the top: some
+   forty and the window never answers again. Any file whose ending is not a
+   model, a picture or an archive is looked at this way, a `.mtl` or one
+   inside a zip included; an honest file with many blank lines at its top
+   does it by accident. Timed: 26 blank lines take a third of a second.
+3. **The release job gives the update-signing key to everything it runs**:
+   the actions are named by tags that can be moved, and the build itself
+   runs with the key at hand. One of them compromised at release time would
+   be a signed update. The release also runs no native tests.
+4. **Slow patterns of the second kind** (the time grows with the square of
+   the size): a design file padded with tens of thousands of blank lines
+   stalls the list of projects for up to a minute at each start; a crafted
+   SVG ties up the geometry worker.
+5. **The app asks github.com for a newer version at every start, unasked**
+   (desktop, installed builds), with no setting to turn it off; the
+   README's first lines say nothing leaves the machine unless a Drive is
+   linked. What goes is one request with no word of the user or the design.
+6. **The check is by kind of file, not by place**: a script in the page
+   could read any picture, model or archive on the disk, replace any file
+   of a kind the app writes, and delete or move any design, anywhere. As
+   designed, and only as strong as finding 1.
+7. Small: the page chooses the scope asked of Google on Android (the
+   consent sheet still has to be accepted) and two permissions of the
+   device plugin are granted and never used; Android's backup is left at
+   its default, so projects and the hour-long Drive token go into the
+   device's backup; a design passed on carries an id that is the same for
+   every design from one installation; "Copy diagnostics" holds the
+   projects folder (so the user's name) and recent error texts with paths;
+   unlinking says so even when Google could not be told; a design's name
+   goes unchanged into the name offered for an export; the policy lacks
+   `base-uri`, `form-action` and `object-src`.
+
+Found sound: the page is granted the dialogs, the updater and the app's own
+commands and nothing else (no file-system or opener permission, no global
+bridge); nothing from a file is ever set as HTML or evaluated; no
+analytics, no crash reports, no fonts or scripts fetched; the readers of
+XML, zip, 3MF, STL, PLY, glTF, Collada, DXF and SVG cap what they take and
+check counts against the bytes before making room, and names inside an
+archive are never used as paths; the design reader takes only the fields
+it knows; the sign-in uses PKCE with a checked state, a loopback on
+127.0.0.1 at a random port and a page that echoes nothing, asks for
+`drive.file` alone, and keeps tokens in the system keychain; every name
+that reaches a robot description, a launch file, a script or a path inside
+a package is reduced to letters, digits and underscores first; pull
+requests run without secrets.
+
