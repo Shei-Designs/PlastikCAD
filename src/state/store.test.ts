@@ -1239,6 +1239,46 @@ describe('importing', () => {
     expect(told).toEqual([]);
   });
 
+  describe('a .gltf with its data in a file beside it', () => {
+    const data = new Uint8Array(new Float32Array([0, 0, 0, 0.01, 0, 0, 0, 0.01, 0, 0, 0, 0.01]).buffer);
+    const index = new Uint8Array(new Uint16Array([0, 2, 1, 0, 1, 3, 1, 2, 3, 0, 3, 2]).buffer);
+    const bin = new Uint8Array(72);
+    bin.set(data);
+    bin.set(index, 48);
+    // A tetrahedron, 10 mm along each axis.
+    const gltf = new TextEncoder().encode(
+      JSON.stringify({
+        asset: { version: '2.0' },
+        meshes: [{ primitives: [{ attributes: { POSITION: 0 }, indices: 1 }] }],
+        accessors: [{ bufferView: 0, componentType: 5126, count: 4, type: 'VEC3' }, { bufferView: 1, componentType: 5123, count: 12, type: 'SCALAR' }],
+        bufferViews: [{ buffer: 0, byteLength: 48 }, { buffer: 0, byteOffset: 48, byteLength: 24 }],
+        buffers: [{ byteLength: 72, uri: 'tetra.bin' }],
+      }),
+    );
+
+    it('comes in with the file picked with it', async () => {
+      await store.receiveFiles([{ name: 'tetra.gltf', path: null, bytes: gltf }, { name: 'tetra.bin', path: null, bytes: bin }]);
+      expect(scene()).toHaveLength(1);
+      expect(scene()[0]).toMatchObject({ type: 'import', name: 'tetra', size: [10, 10, 10] });
+      // Nothing is said of it: whatever notice an earlier import left is not about this file.
+      expect(store.getState().notice?.text ?? '').not.toContain('tetra');
+    });
+
+    it('comes in with the file found beside it on disk', async () => {
+      shelf.clear();
+      shelf.set('/models/tetra.bin', bin);
+      await store.receiveFiles([{ name: 'tetra.gltf', path: '/models/tetra.gltf', bytes: gltf }]);
+      expect(scene()).toHaveLength(1);
+      shelf.clear();
+    });
+
+    it('says which file it needs when that is not to be had', async () => {
+      await store.receiveFiles([{ name: 'tetra.gltf', path: '/elsewhere/tetra.gltf', bytes: gltf }]);
+      expect(scene()).toEqual([]);
+      expect(store.getState().notice).toMatchObject({ kind: 'error', text: '"tetra.gltf" keeps its shapes in "tetra.bin", which did not come along. Pick it together with the file.' });
+    });
+  });
+
   it('reads a material library named after the OBJ beside it when the one it names is not there', async () => {
     const text = (s: string) => new TextEncoder().encode(s);
     const tetra = ['mtllib colors.mtl', 'v 0 0 0', 'v 10 0 0', 'v 0 10 0', 'v 0 0 10', 'usemtl red', 'f 1 2 3', 'f 1 2 4', 'f 2 3 4', 'f 1 4 3', ''].join('\n');
