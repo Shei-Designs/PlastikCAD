@@ -146,12 +146,14 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
 | Helical gear | HTD timing pulley (3M / 5M / 8M) | Metric nut | | Elbow (any angle and bend radius, legs either side) | Arduino Uno R3/R4, Mega 2560, Nano | Screw holes only, for an opening of your own | | Gearmotor: N20, TT, 25 mm (JGA25), 37 mm (JGB37) |
 | Herringbone gear | T-series timing pulley (T2.5 / T5 / T10) | Trapezoidal lead screw (multi-start) | | Reducer (in line or eccentric) | ESP32-DevKitC V4, DevKit V1, NodeMCU-32S | Printed grill with the same patterns, to screw over the fan | | Servo: SG90, MG996R |
 | Internal ring gear | MXL / XL timing pulley | Lead screw nut (flanged) | | Tee / wye (branch at any angle) | NVIDIA Jetson Nano, Orin Nano / Orin NX and Xavier NX developer kits | The fan itself: frame, hub and blades of a typical fan, to check clearance | | DC motor: 775, 130 |
-| Gear rack (straight, helical, herringbone) | Chain sprocket (#25–#41, 05B–08B, bicycle) | | | | | | | |
+| Gear rack (straight, helical, herringbone) | Chain sprocket (#25–#41, 05B–08B, bicycle) | Screw hole (M2–M20): clearance, threaded or for a heat-set insert, with a counterbore, countersink or nut trap | | | | | | |
 | Bevel gear (90° shafts) | | | | | | | | |
 | Worm | | | | | | | | |
 
 Rotating parts share the same options for the shaft: round, D-shaft, hex or
 keyed bore with a fit clearance, plus an optional hub with set-screw holes.
+A screw hole comes in as a hole, standing on the plate with its mouth at the
+top: put it where the screw goes and group it with the object.
 Pipes and ducts are round or rectangular (with rounded corners), hollow with a
 wall or solid, and the bends are true arcs, the tapers true frustums; a solid
 elbow makes a good hole to cut a curved channel with.
@@ -624,6 +626,14 @@ left alone, since that is its shape.
   ANSI B29.1 tooth form.
 - **Threads** follow the ISO metric and ISO trapezoidal basic profiles, with a
   clearance setting for printing.
+- **Screw holes**: clearance holes are those of ISO 273 (close, normal and
+  loose are its fine, medium and coarse series). A counterbore takes the head
+  of an ISO 4762 socket cap screw, a nut trap the nut of ISO 4032, and a
+  countersink is a 90° cone out to the sharp edge of an ISO 10642 head (DIN
+  965 for M2 and M2.5; the M14 figure is unverified); each recess is as much
+  wider than the head or nut as the hole is than the screw. Heat-set insert
+  bores (M2 to M6) are the drill sizes one insert maker lists; other makers
+  differ by a few tenths, so check the sheet of the inserts in hand.
 - **Extrusions** follow one maker's section drawing per size, the others
   being within a few tenths of it: OpenBuilds V-Slot for 20 mm, Misumi HFS6
   for 30 mm and HFS8 for 40 mm. Lip thickness, slot opening, channel width,

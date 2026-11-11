@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { evaluate, initKernel } from '../testing';
 import { cylinder, intersection, QUALITY, translate } from '../types';
 import type { Quality, Solid } from '../types';
-import { leadScrew, leadScrewNut, METRIC_SIZES, metricBolt, metricNut } from './screws';
+import { HOLE_SIZES, leadScrew, leadScrewNut, METRIC_SIZES, metricBolt, metricNut, screwHole } from './screws';
 import { defaultParams } from './types';
 import type { GeneratorDef, Params } from './types';
 
@@ -258,5 +258,115 @@ describe('lead screw nut', () => {
       const n = build(leadScrewNut, { ...p, bodyDiameter: diameter + 6, flange: false }).solid;
       expect(volume(intersection(n, screw(p)))).toBeLessThan(1e-6);
     }
+  });
+});
+
+describe('screw hole', () => {
+  /** The volume of a cylinder approximated by the facets of the given quality, near enough to the round one. */
+  const round = (d: number, h: number) => (Math.PI * d * d * h) / 4;
+  const figure = (overrides: Params, label: string) => info(screwHole, overrides, label);
+
+  it('is a cutter, and offers M2 and M2.5 beside the sizes of the bolts', () => {
+    expect(screwHole.cutter).toBe(true);
+    expect(HOLE_SIZES.slice(0, 3)).toEqual(['M2', 'M2.5', 'M3']);
+    expect(METRIC_SIZES[0]).toBe('M3');
+    expect(HOLE_SIZES.slice(2)).toEqual(METRIC_SIZES);
+  });
+
+  it('makes a clearance hole of the ISO 273 diameter for the fit, as deep as asked, in every size', () => {
+    expect(figure({ size: 'M3' }, 'Hole diameter')).toBe(3.4);
+    expect(figure({ size: 'M3', fit: 'close' }, 'Hole diameter')).toBe(3.2);
+    expect(figure({ size: 'M8', fit: 'loose' }, 'Hole diameter')).toBe(10);
+    expect(figure({ size: 'M2.5' }, 'Hole diameter')).toBe(2.9);
+    for (const size of HOLE_SIZES) {
+      const built = build(screwHole, { size, depth: 12 });
+      expect(built.warnings).toEqual([]);
+      const { stats } = evaluate(built.solid);
+      const d = parseFloat(built.info[0].value);
+      expect(stats.min[2]).toBeCloseTo(0, 6);
+      expect(stats.max[2]).toBeCloseTo(12, 6);
+      expect(stats.max[0]).toBeCloseTo(d / 2, 2);
+      // A faceted circle is a little smaller than the round one.
+      expect(stats.volume).toBeGreaterThan(round(d, 12) * 0.97);
+      expect(stats.volume).toBeLessThanOrEqual(round(d, 12));
+    }
+  });
+
+  it('seats a socket cap in a counterbore as wide as the head plus the play of the hole, a head deep', () => {
+    const built = build(screwHole, { size: 'M4', recess: 'counterbore', depth: 10 });
+    expect(built.info.map((i) => [i.label, i.value])).toEqual([
+      ['Hole diameter', '4.5 mm'],
+      ['Recess diameter', '7.5 mm'],
+      ['Recess depth', '4.0 mm'],
+    ]);
+    const { stats } = evaluate(built.solid);
+    expect(stats.max[0]).toBeCloseTo(3.75, 2);
+    expect(stats.volume).toBeGreaterThan((round(4.5, 6) + round(7.5, 4)) * 0.97);
+    expect(stats.volume).toBeLessThanOrEqual(round(4.5, 6) + round(7.5, 4));
+    // A depth of its own, and never deeper than the hole.
+    expect(figure({ size: 'M4', recess: 'counterbore', recessDepth: 6 }, 'Recess depth')).toBe(6);
+    const shallow = build(screwHole, { size: 'M4', recess: 'counterbore', depth: 3 });
+    expect(shallow.warnings).toEqual(['The recess was limited to the depth of the hole.']);
+    expect(evaluate(shallow.solid).stats.max[2]).toBeCloseTo(3, 6);
+  });
+
+  it('cuts a 90° countersink from the sharp edge of the head down to the hole', () => {
+    const built = build(screwHole, { size: 'M3', recess: 'countersink', depth: 8 });
+    // ISO 10642: 6.72 across, plus the 0.4 of play; the cone is as deep as it narrows on each side.
+    expect(built.info.map((i) => [i.label, i.value])).toEqual([
+      ['Hole diameter', '3.4 mm'],
+      ['Recess diameter', '7.1 mm'],
+      ['Recess depth', '1.9 mm'],
+    ]);
+    const { stats } = evaluate(built.solid);
+    expect(stats.max[0]).toBeCloseTo(3.56, 2);
+    expect(stats.max[2]).toBeCloseTo(8, 6);
+  });
+
+  it('traps a nut in a hexagon as wide across the flats as the nut plus the play, a nut deep', () => {
+    const built = build(screwHole, { size: 'M3', recess: 'nut', depth: 10 });
+    expect(built.info.map((i) => [i.label, i.value])).toEqual([
+      ['Hole diameter', '3.4 mm'],
+      ['Across flats', '5.9 mm'],
+      ['Recess depth', '2.4 mm'],
+    ]);
+    const { stats } = evaluate(built.solid);
+    // Across the flats along X, across the corners along Y.
+    expect(stats.max[0]).toBeCloseTo(2.95, 3);
+    expect(stats.max[1]).toBeCloseTo(2.95 / Math.cos(Math.PI / 6), 3);
+    const hexagon = 2 * Math.sqrt(3) * 2.95 * 2.95 * 2.4;
+    expect(stats.volume).toBeGreaterThan(hexagon + round(3.4, 7.6) * 0.97);
+    expect(stats.volume).toBeLessThanOrEqual(hexagon + round(3.4, 7.6));
+  });
+
+  it('cuts a thread that a bolt of the same size and clearance turns in', () => {
+    const hole = build(screwHole, { size: 'M8', kind: 'tapped', depth: 10 });
+    expect(hole.warnings).toEqual([]);
+    const nut = build(metricNut, { size: 'M8' });
+    // The same thread as the nut's: its figures are the nut's.
+    for (const label of ['Thread major diameter', 'Thread minor diameter', 'Pitch']) {
+      expect(hole.info.find((i) => i.label === label)?.value).toBe(nut.info.find((i) => i.label === label)?.value);
+    }
+    const { stats } = evaluate(hole.solid);
+    expect(stats.min[2]).toBeCloseTo(0, 6);
+    expect(stats.max[2]).toBeCloseTo(10, 6);
+    // More than its bore, less than a hole of its full width.
+    const major = parseFloat(hole.info[0].value);
+    const minor = parseFloat(hole.info[1].value);
+    expect(stats.volume).toBeGreaterThan(round(minor, 10) * 0.97);
+    expect(stats.volume).toBeLessThan(round(major + 1, 10));
+    // Too fine to print in M2: said, not refused.
+    expect(build(screwHole, { size: 'M2', kind: 'tapped' }).warnings[0]).toMatch(/of the thread depth engages/);
+  });
+
+  it('bores for a heat-set insert at the usual diameter, or the one given', () => {
+    expect(figure({ size: 'M3', kind: 'insert' }, 'Bore')).toBe(4);
+    expect(figure({ size: 'M2.5', kind: 'insert' }, 'Bore')).toBe(4);
+    expect(figure({ size: 'M5', kind: 'insert' }, 'Bore')).toBe(6.4);
+    expect(figure({ size: 'M5', kind: 'insert', bore: 7 }, 'Bore')).toBe(7);
+    // No usual bore above M6: said, and a clearance hole meanwhile.
+    const large = build(screwHole, { size: 'M10', kind: 'insert' });
+    expect(large.warnings).toEqual(['M10 inserts have no usual bore. Set the diameter.']);
+    expect(build(screwHole, { size: 'M10', kind: 'insert', bore: 12.5 }).warnings).toEqual([]);
   });
 });

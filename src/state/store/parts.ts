@@ -30,7 +30,8 @@ function makePart(generatorId: string, params?: Record<string, PartParamValue>):
     pos: [0, 0, -1e6],
     rot: [0, 0, 0],
     size: [1, 1, 1],
-    hole: false,
+    // A part made to be cut out of another (a screw hole) comes in as a hole.
+    hole: Boolean(def.cutter),
     color: '#8fa3bf',
   };
 }
@@ -272,7 +273,9 @@ async function applyPartChange(id: string, change: PartChange): Promise<void> {
   const name = change.part && change.part !== node.part && auto ? uniqueName(getState().doc.scene.filter((n) => n.id !== id), def.name) : node.name;
   const edit = ++partEdits;
   try {
-    const sized = await sizePart({ ...node, part: def.id, params, name }, node);
+    // A part that becomes a cutter (a nut made into a screw hole) becomes a hole, and the other way round.
+    const hole = Boolean(def.cutter) === Boolean(getGenerator(node.part).cutter) ? node.hole : Boolean(def.cutter);
+    const sized = await sizePart({ ...node, part: def.id, params, name, hole }, node);
     // The new shape is built before the node changes, so the old one is never shown at the new size.
     await geometry.ready(sized, getState().doc.assets);
     // A later edit has overtaken this one, or the part is gone.

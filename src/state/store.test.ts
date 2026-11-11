@@ -1085,6 +1085,23 @@ describe('mating gears', () => {
   });
 });
 
+describe('parts that cut', () => {
+  it('makes a screw into a hole when it becomes a screw hole, and solid again when it is a screw once more', async () => {
+    await store.addPart('screws');
+    const [bolt] = scene();
+    expect(bolt).toMatchObject({ type: 'part', part: 'metric-bolt', hole: false });
+    await store.editPart(bolt.id, { part: 'screw-hole' });
+    expect(scene()[0]).toMatchObject({ part: 'screw-hole', hole: true, name: 'Screw hole' });
+    // A change to its settings leaves it as the user has it: made solid by hand, it stays solid.
+    store.updateNode(bolt.id, { hole: false });
+    await store.editPart(bolt.id, { params: { recess: 'counterbore' } });
+    expect(scene()[0]).toMatchObject({ part: 'screw-hole', hole: false });
+    store.updateNode(bolt.id, { hole: true });
+    await store.editPart(bolt.id, { part: 'metric-nut' });
+    expect(scene()[0]).toMatchObject({ part: 'metric-nut', hole: false });
+  });
+});
+
 describe('importing', () => {
   const ascii = (facets: number[][]): PickedFile => {
     const lines = ['solid thin'];

@@ -64,6 +64,8 @@ export interface GeneratorDef {
   category: Category;
   summary: string;
   groups: ParamGroup[];
+  /** Made to be cut out of another object (a screw hole): the part comes in as a hole. */
+  cutter?: boolean;
   build(p: Params, q: Quality): BuildResult;
 }
 

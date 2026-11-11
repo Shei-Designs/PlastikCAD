@@ -7,7 +7,7 @@ import { DUCTS } from './ducts';
 import { extrusion } from './extrusion';
 import { FAN_PARTS } from './fans';
 import { helicalGear, herringboneGear, rack, ringGear, spurGear } from './gears';
-import { leadScrew, leadScrewNut, metricBolt, metricNut } from './screws';
+import { leadScrew, leadScrewNut, metricBolt, metricNut, screwHole } from './screws';
 import { sprocket } from './sprocket';
 import { gt2Pulley, htdPulley, mxlPulley, tPulley } from './timingPulley';
 import type { Category, GeneratorDef, Params } from './types';
@@ -28,6 +28,7 @@ export const GENERATORS: GeneratorDef[] = [
   sprocket,
   metricBolt,
   metricNut,
+  screwHole,
   leadScrew,
   leadScrewNut,
   extrusion,
