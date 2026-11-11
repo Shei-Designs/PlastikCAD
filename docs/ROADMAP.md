@@ -122,12 +122,6 @@ Smaller pieces, each of which can be built without a session.
 - **PLY**: colors blended across a face on import, where today each face
   has one.
 
-## Needs a word first
-
-- **A preview of meshed gears turning together.** It needs a place in the
-  interface and a way to start it (a "Turn" control on a gear that carries
-  the gears meshed with it along, most likely), which is yours to say.
-
 ## Phases that need a session first
 
 Each of these changes how the app is used, so its features and approach are
@@ -182,6 +176,9 @@ Decided against; not to be proposed again.
 
 - A gesture to select what is behind an object: Ghost is how it is reached.
 - Snapping while moving, and a work plane.
+- A preview of meshed gears turning together: it shows something and does
+  nothing. The wizard already places a mate where it meshes, and a mate is a
+  part of its own afterwards, with nothing to say it still meshes.
 - In robot mode: a two-click joint tool, dragging to re-parent, axis
   defaults for round children, shaft-aware parts, an automatic base.
 
