@@ -377,7 +377,7 @@ export const robot: Catalog = {
   'MJCF with actuators, loops as constraints': 'MJCF avec actionneurs, les boucles sous forme de contraintes',
   'Isaac Sim stage': 'Scène Isaac Sim',
   'USD with the articulation, drives, sensors and a ROS 2 graph; opens and runs as it is': 'USD avec l’articulation PhysX, ses moteurs, les capteurs et un graphe ROS 2\u00a0; s’ouvre et tourne tel quel',
-  'Writes "{name}" as a {format}: the base {base} and everything joined to it.': 'Écrit «\u00a0{name}\u00a0» au format {format}\u00a0: la base {base} et tout ce qui y est relié.',
+  'Writes "{name}" ({format}): the base {base} and everything joined to it.': 'Écrit «\u00a0{name}\u00a0» ({format})\u00a0: la base {base} et tout ce qui y est relié.',
   '{n} objects are not joined to the base and will be ignored.': { one: 'Un objet n’est pas relié à la base et sera ignoré.', other: '{n} objets ne sont pas reliés à la base et seront ignorés.' },
 
   // Materials; the filaments keep their names (robot/materials.ts)

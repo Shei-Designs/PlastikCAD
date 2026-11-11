@@ -10,8 +10,9 @@ export function LanguageBox({ open, onClose }: { open: boolean; onClose: () => v
   // The language is settled when the app starts (see i18n): the choice is kept, the design saved, and the app started again.
   const choose = async (next: Language | 'auto'): Promise<void> => {
     if (next === choice) return onClose();
+    // The app starts again in the new language: not before what is pending is written. A save that failed has said so.
+    if (!(await saveProject())) return onClose();
     chooseLanguage(next);
-    await saveProject();
     location.reload();
   };
   const row = (id: Language | 'auto', name: string) => (

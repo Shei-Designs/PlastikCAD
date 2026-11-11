@@ -931,6 +931,23 @@ describe('projects', () => {
     expect(await store.saveProject()).toBe(false);
     expect(store.getState().notice).toBeNull();
   });
+
+  it('tries a failed save again by itself, without waiting for another edit', async () => {
+    vi.useFakeTimers();
+    try {
+      const write = vi.spyOn(kept, 'write').mockRejectedValueOnce(new Error('disk full'));
+      store.addShape('box');
+      expect(await store.saveProject()).toBe(false);
+      expect(store.isDirty()).toBe(true);
+      // Half a minute on, with nothing more done: the disk has room again, and the edit is written.
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(write).toHaveBeenCalledTimes(2);
+      expect(store.isDirty()).toBe(false);
+      expect((await kept.list()).length).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('updating the app', () => {

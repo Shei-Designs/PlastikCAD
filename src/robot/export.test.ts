@@ -72,9 +72,9 @@ describe('spanningTree', () => {
 describe('exportSummary', () => {
   it('says what goes out and that the rest is ignored', () => {
     const d = doc();
-    expect(exportSummary(d, 'urdf')).toBe('Writes "Test Rover" as a ROS 2 package: the base Body and everything joined to it.');
+    expect(exportSummary(d, 'urdf')).toBe('Writes "Test Rover" (ROS 2 package): the base Body and everything joined to it.');
     d.scene.push(node('stray001', 'Spare bracket', [50, 50, 5], [10, 10, 10]));
-    expect(exportSummary(d, 'mjcf')).toBe('Writes "Test Rover" as a MuJoCo model: the base Body and everything joined to it. One object is not joined to the base and will be ignored.');
+    expect(exportSummary(d, 'mjcf')).toBe('Writes "Test Rover" (MuJoCo model): the base Body and everything joined to it. One object is not joined to the base and will be ignored.');
     d.scene.push(node('stray002', 'Other bracket', [70, 50, 5], [10, 10, 10]));
     expect(exportSummary(d, 'sdf')).toMatch(/2 objects are not joined to the base and will be ignored\.$/);
   });

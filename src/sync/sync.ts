@@ -148,8 +148,11 @@ export async function linkAccount(): Promise<void> {
 /** Gives up a sign-in under way; `linkAccount` then rejects with "cancelled". */
 export const cancelLink = (): void => cancelSignIn();
 
-/** Forgets the account, tells Google so, and drops what was agreed with it; the local projects stay. */
-export async function unlinkAccount(): Promise<void> {
+/**
+ * Forgets the account, tells Google so, and drops what was agreed with it; the local projects stay. Resolves false
+ * when Google could not be told: the app is unlinked all the same, and still listed in the account.
+ */
+export async function unlinkAccount(): Promise<boolean> {
   clearTimeout(timer);
   await running;
   const old = tokens;
@@ -159,7 +162,7 @@ export async function unlinkAccount(): Promise<void> {
   saveBinding(STORES.projects, null);
   saveBinding(STORES.parts, null);
   publish({ lastSync: null, error: null });
-  if (old) await revoke(old);
+  return old ? revoke(old) : true;
 }
 
 /** Syncs once the dust has settled; a pass already waiting is pushed back. */

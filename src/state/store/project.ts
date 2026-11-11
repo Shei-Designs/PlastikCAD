@@ -30,6 +30,9 @@ const DESIGN_FILTER = [{ name: tr('{app} design', { app: APP_NAME }), extensions
 /** How long after the last change the project is written. */
 const AUTOSAVE_MS = 1000;
 
+/** How long after a save that failed it is tried again. */
+const RETRY_MS = 30_000;
+
 let autosaveTimer: ReturnType<typeof setTimeout> | undefined;
 
 export function scheduleAutosave(): void {
@@ -146,6 +149,9 @@ async function write(fresh: boolean): Promise<boolean> {
     // The same failure on every keystroke is reported once.
     if (message !== lastSaveError) notify(tr('Could not save: {message}', { message }), 'error');
     lastSaveError = message;
+    // Tried again by itself after a while: left to the next edit, what is pending would wait for one that may not come.
+    clearTimeout(autosaveTimer);
+    autosaveTimer = setTimeout(() => void saveProject(), RETRY_MS);
     return false;
   }
 }

@@ -21,6 +21,7 @@ import {
   groupSelected,
   importModel,
   isDirty,
+  notify,
   mirrorSelected,
   newProject,
   nudgeSelected,
@@ -79,7 +80,8 @@ const typing = (target: EventTarget | null): boolean => {
  * whatever is still pending has been written, or save a copy of the design first.
  */
 export const crashActions = {
-  onReload: (): void => void saveProject().finally(() => window.location.reload()),
+  // Only once what is pending is written: a save that failed has said so, and loading again would drop the edits.
+  onReload: (): void => void saveProject().then((saved) => saved && window.location.reload()),
   onSaveCopy: (): void => void saveCopy(),
 };
 
@@ -260,8 +262,10 @@ export default function App() {
     void initInput();
     void restoreSession();
     window.addEventListener('keydown', onKeyDown);
-    const stopDrops = platform.onFilesDropped((files) => void receiveFiles(files));
-    const stopOpened = platform.onFilesOpened((paths) => void Promise.all(paths.map((p) => platform.readPath(p))).then(receiveFiles).catch(console.error));
+    // A file that cannot be read (gone since, not of a kind the app opens) is said, not passed over in silence.
+    const unread = (reasons: string[]): void => notify(reasons.join(' '), 'error');
+    const stopDrops = platform.onFilesDropped((files) => void receiveFiles(files), unread);
+    const stopOpened = platform.onFilesOpened((paths) => void Promise.all(paths.map((p) => platform.readPath(p))).then(receiveFiles).catch((e: unknown) => unread([e instanceof Error ? e.message : String(e)])));
     // Changes are written as they happen; closing or hiding the window writes whatever is still pending.
     const stopGuard = platform.guardClose(isDirty, () => saveProject(true));
     const stopHidden = platform.onHidden(() => void saveProject(true));

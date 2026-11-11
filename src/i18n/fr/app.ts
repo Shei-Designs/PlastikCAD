@@ -100,6 +100,8 @@ export const app: Catalog = {
 
   // Files and the window, on each platform (platform.ts)
   '{list} and {name}': '{list} et {name}',
+  '"{name}" is already there. Replace it?': '«\u00a0{name}\u00a0» existe déjà. Le remplacer\u00a0?',
+  Replace: 'Remplacer',
   'The latest changes could not be saved. Close anyway and lose them?': 'Les dernières modifications n’ont pas pu être enregistrées. Fermer quand même et les perdre\u00a0?',
   'Unsaved changes': 'Modifications non enregistrées',
   'Close anyway': 'Fermer quand même',
