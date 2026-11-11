@@ -3,14 +3,16 @@ PlastikCAD is a desktop app for fast solid modelling for 3D printing: drop shape
 ## What's in it
 
 - **Shapes and holes** – boxes, cylinders, wedges, domes and more; any object adds material or cuts it away, and groups never bake anything in.
-- **Parametric parts** – spur, helical, herringbone, ring, rack, bevel and worm gears, timing pulleys and sprockets, metric screws and nuts, aluminium rails, pipes and ducts, fan cutouts, panel connectors, motor mounts, and dev boards (Raspberry Pi, Arduino, ESP32, Jetson) with their holes and sockets.
-- **Mating gear wizard** – pick a gear and add its mate (gear, ring, rack, worm wheel or bevel pair) with a live preview, meshed and placed at the right centre distance.
+- **Parametric parts** – spur, helical, herringbone, ring, rack, bevel and worm gears, timing pulleys and sprockets, metric screws and nuts, screw holes and bearing seats that cut their own fit, aluminium rails, pipes and ducts, fan cutouts, panel connectors, motor mounts, and dev boards (Raspberry Pi, Arduino, ESP32, Jetson) with their holes and sockets.
+- **Mating wizard** – pick a gear and add its mate (gear, ring, rack, worm wheel or bevel pair), the other pulley or sprocket of a belt or chain drive, or the sun and planets of a ring gear, with a live preview, meshed and placed at the right centre distance.
+- **Array** – a panel that copies the selection in a row, a grid or a circle, and stays open while you turn the view.
 - **Text** – four print-friendly fonts, bent round a cylinder or laid along an arc.
 - **Pictures and textures** – wrap a picture round an object or tile it over every side; imported meshes keep their own UV layout. Pictures and textures travel in GLB exports.
 - **Robot mode** – make the design a robot: links, joints with real motor figures, sensors (camera, lidar, IMU, touch), drive setup, and a MuJoCo test drive right on the plate. Exports a ROS 2 package (RViz and Gazebo), an SDF model, a MuJoCo model with Python starters, or an Isaac Sim stage.
-- **Import and export** – STL, OBJ, 3MF, GLB and Collada meshes, SVG and DXF drawings, PNG/JPEG pictures and URDF robots in; STL, 3MF, OBJ, GLB, SVG and DXF out.
-- **Projects** – autosaved locally, with optional Google Drive sync. A design from an older version opens in a newer one as it is; one from a newer version is offered as a copy without what the older one does not know.
+- **Import and export** – STL, OBJ, PLY, 3MF, GLB/glTF and Collada meshes, STEP solids from a CAD program with their names and colors, SVG and DXF drawings, PNG/JPEG pictures, URDF robots, and zip archives of any of these in; STL, 3MF, OBJ, GLB, STEP, SVG and DXF out. A STEP file carries true surfaces (planes, cylinders, cones, spheres, tori) wherever an object can be rebuilt from what it is.
+- **Projects** – autosaved locally, with earlier saves to go back to and a trash, and optional Google Drive sync. A design from an older version opens in a newer one as it is; one from a newer version is offered as a copy without what the older one does not know.
 - **Updates** – the desktop app looks for a newer version when it starts and installs it when you say so. The AppImage updates itself; the `.deb` and `.rpm` are updated by installing the new package.
+- **Languages** – English and French (File → Language…).
 
 ## Download
 
