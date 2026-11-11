@@ -104,6 +104,57 @@ describe('text layout', () => {
     expect(layoutText(sans, 'é', 'left')!.shapes[0].contours.length).toBeGreaterThanOrEqual(3);
   });
 
+  it('sets Cyrillic, Greek and Vietnamese from the files that hold them', () => {
+    const files = ['latin', 'latin-ext', 'cyrillic', 'cyrillic-ext', 'greek', 'greek-ext', 'vietnamese'];
+    const all = files.map((f) => load(`inter/files/inter-${f}-700-normal.woff`));
+    for (const word of ['Привет', 'Ωμέγα', 'Việt', 'Ѣ', 'ἀ']) {
+      // Every letter is found in one of the files: none is drawn as the box that stands for a missing one.
+      for (const letter of word) expect(all.some((font) => font.charToGlyphIndex(letter) > 0), letter).toBe(true);
+      expect(Math.abs(area(layoutText(all, word, 'left')!))).toBeGreaterThan(1);
+      // Latin alone has none of them (the "V" and the "i" of the Vietnamese word apart).
+      if (word !== 'Việt') for (const letter of word) expect(sans.some((font) => font.charToGlyphIndex(letter) > 0), letter).toBe(false);
+    }
+  });
+
+  it('has every file the fonts are made of, each with the letters it is named for', () => {
+    // Where in Unicode each kind of file has its letters: it must hold some of them.
+    const ranges: Record<string, [number, number]> = { latin: [0x41, 0x5a], 'latin-ext': [0x100, 0x24f], cyrillic: [0x410, 0x44f], 'cyrillic-ext': [0x460, 0x52f], greek: [0x391, 0x3c9], 'greek-ext': [0x1f00, 0x1fff], vietnamese: [0x1ea0, 0x1ef9] };
+    const holds = (font: Font, [from, to]: [number, number]): boolean => {
+      for (let code = from; code <= to; code++) if (font.charToGlyphIndex(String.fromCodePoint(code)) > 0) return true;
+      return false;
+    };
+    const fonts: [string, string, string[]][] = [
+      ['inter', '700', ['latin', 'latin-ext', 'cyrillic', 'cyrillic-ext', 'greek', 'greek-ext', 'vietnamese']],
+      ['roboto-slab', '700', ['latin', 'latin-ext', 'cyrillic', 'cyrillic-ext', 'greek', 'greek-ext', 'vietnamese']],
+      ['jetbrains-mono', '700', ['latin', 'latin-ext', 'cyrillic', 'cyrillic-ext', 'greek', 'vietnamese']],
+      ['allerta-stencil', '400', ['latin']],
+      ['oswald', '700', ['latin', 'latin-ext', 'cyrillic', 'cyrillic-ext', 'vietnamese']],
+      ['nunito', '800', ['latin', 'latin-ext', 'cyrillic', 'cyrillic-ext', 'vietnamese']],
+      ['pacifico', '400', ['latin', 'latin-ext', 'cyrillic', 'cyrillic-ext', 'vietnamese']],
+    ];
+    // What fonts.ts loads, file for file.
+    const source = readFileSync(new URL('./fonts.ts', import.meta.url), 'utf8');
+    for (const [family, weight, subsets] of fonts) {
+      for (const subset of subsets) {
+        const file = `${family}/files/${family}-${subset}-${weight}-normal.woff`;
+        expect(source, file).toContain(`'@fontsource/${file}?url'`);
+        expect(holds(load(file), ranges[subset]), file).toBe(true);
+      }
+    }
+    expect(source.match(/\?url';/g)).toHaveLength(fonts.reduce((n, [, , subsets]) => n + subsets.length, 0));
+  });
+
+  it('sets a letter the font has not got in the font that follows it, not as an empty box', () => {
+    // The stencil has no Greek: with the sans behind it, as the app loads it, the omega is the sans's.
+    const behind = [...stencil, ...sans, load('inter/files/inter-greek-700-normal.woff')];
+    const omega = layoutText(behind, 'Ω', 'left')!;
+    const sansOmega = layoutText([load('inter/files/inter-greek-700-normal.woff')], 'Ω', 'left')!;
+    expect(omega.size[0]).toBeCloseTo(sansOmega.size[0], 6);
+    // Alone, the stencil has nothing to draw it with but the box that stands for a missing letter.
+    const alone = layoutText(stencil, 'Ω', 'left');
+    expect(alone === null || Math.abs(alone.size[0] - omega.size[0]) > 0.01).toBe(true);
+  });
+
   it('gives nothing for text that draws nothing', () => {
     expect(layoutText(sans, '', 'left')).toBeNull();
     expect(layoutText(sans, '  \n ', 'left')).toBeNull();

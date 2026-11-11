@@ -16,7 +16,6 @@ No decision is needed for these.
 
 - **Parts**: a throated worm wheel; screw holes in inch sizes.
 - **Gears**: a preview of meshed gears turning together.
-- **Lettering**: more fonts, and scripts beyond Latin.
 - **STEP export**: true surfaces for what still goes out as facets: helical
   and bevel gears, threads. (Eggs, tall domes and oval cones cannot be: a
   STEP file does not keep an oval turned round an axis.)
@@ -68,6 +67,9 @@ Things only the real devices and accounts can show.
 Not dropped: taken up when asked for.
 
 - Languages other than English and French.
+- Lettering in scripts that need shaping (Arabic, Hebrew, the Indic scripts)
+  or thousands of characters (Chinese, Japanese, Korean): each needs fonts of
+  megabytes fetched when asked for, and the first three a shaping engine.
 - Numbers written the way the language writes them, W / D / H translated,
   the test-drive keys by position on other keyboards, the native side's
   error messages in the app's language.

@@ -160,6 +160,9 @@ export const TEXT_FONTS: { id: string; name: string }[] = [
   { id: 'serif', name: tr('Slab serif') },
   { id: 'mono', name: tr('Monospace') },
   { id: 'stencil', name: tr('Stencil') },
+  { id: 'condensed', name: tr('Condensed') },
+  { id: 'rounded', name: tr('Rounded') },
+  { id: 'script', name: tr('Script') },
 ];
 export type Scene = SceneNode[];
 
