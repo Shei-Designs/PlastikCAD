@@ -270,6 +270,12 @@ export interface Fingers {
   end(down?: Finger[]): Promise<void>;
   /** One finger down and up again at a point. */
   tap(x: number, y: number): Promise<void>;
+  /**
+   * One finger goes down at `from`, moves to `to` in `steps` steps and lifts. For a gesture the browser may keep
+   * for itself (a scroll): it then tells the page the finger is gone and no more, so only the finger going down is
+   * waited for, and the test waits on what the gesture does.
+   */
+  swipe(from: [x: number, y: number], to: [x: number, y: number], steps?: number): Promise<void>;
 }
 
 /**
@@ -300,13 +306,16 @@ export async function fingers(page: Page): Promise<Fingers> {
   await stopClock(page);
   let seen = await page.evaluate(TOUCHES_HEARD);
   let last = '';
-  const send = async (type: 'touchStart' | 'touchMove' | 'touchEnd', down: Finger[]): Promise<void> => {
+  const send = async (type: 'touchStart' | 'touchMove' | 'touchEnd', down: Finger[], heard = true): Promise<void> => {
     // A move that moves no finger is not told to the page: there is nothing to wait for.
     const where = JSON.stringify(down);
-    const silent = type === 'touchMove' && where === last;
+    const silent = !heard || (type === 'touchMove' && where === last);
     last = where;
     await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: down.map(([x, y, id]) => ({ x, y, id, radiusX: 4, radiusY: 4, force: 1 })) });
-    if (silent) return;
+    if (silent) {
+      if (!heard) seen = await page.evaluate(TOUCHES_HEARD);
+      return;
+    }
     const until = Date.now() + 15_000;
     for (;;) {
       const heard = await page.evaluate(TOUCHES_HEARD);
@@ -325,6 +334,11 @@ export async function fingers(page: Page): Promise<Fingers> {
       await send('touchStart', [[x, y, 0]]);
       await pause(page, 40);
       await send('touchEnd', []);
+    },
+    swipe: async ([x0, y0], [x1, y1], steps = 12) => {
+      await send('touchStart', [[x0, y0, 0]]);
+      for (let i = 1; i <= steps; i++) await send('touchMove', [[x0 + ((x1 - x0) * i) / steps, y0 + ((y1 - y0) * i) / steps, 0]], false);
+      await send('touchEnd', [], false);
     },
   };
 }
