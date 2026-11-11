@@ -257,3 +257,52 @@ used in review 1 are not built for speed), memory on a real tablet, and a
 project of hundreds of megabytes saved to the tablet's storage on every
 edit, which is where keeping a project as one whole file will first cost.
 
+### Review 6: gaps and opportunities (2026-11-11)
+
+Not measured: a reading of what the app does against what someone arriving
+from Tinkercad, FreeCAD or Fusion 360 is used to. Nothing here repeats what
+was dropped on purpose (a work plane, snapping while moving, a gesture to
+select what is behind).
+
+What they would look for and not find:
+
+1. **A way in.** No first-run guide, no example projects, no starter for
+   each of the three kinds of work (a part to make, a robot, a model for
+   Blender). Tinkercad teaches by its starters.
+2. **A look inside.** No section view (the model cut by a plane, for
+   looking only). Ghost shows through an object, not into one.
+3. **Fillet or chamfer of a chosen edge.** Today an edge cutter is lined up
+   by hand; the others pick an edge and give a radius.
+4. **Hollowing a solid to a wall thickness** (shell).
+5. **Keeping only the overlap of two solids** (intersect): a group adds
+   solids and cuts holes, nothing more.
+6. **Drawing a profile in the app** and pushing it out or turning it round
+   an axis. Outlines come in as SVG or DXF only; there is no revolve.
+7. **Inches as the working unit.** Everything is millimeters; inch parts
+   exist, inch sizes cannot be typed.
+8. **Volume and weight of what is selected**, outside robot mode.
+9. **A drawing with dimensions** to print or hand over (FreeCAD, Fusion).
+10. **Passing a design to someone**: a file can be sent, but there is no
+    link and nothing to open one with (the phone viewer of phase 9 is the
+    natural place for it).
+
+What the app does that those do not, each a thing to lean on:
+
+- **Real machine parts with their mates**: gears cut as a cutter cuts
+  them, pulleys, sprockets, threads, and a wizard that makes the part that
+  meshes. FreeCAD and Fusion need add-ons; Tinkercad has shapes that look
+  the part.
+- **A robot from a design in one place**: joints, mass, sensors, a drive, a
+  test drive in the app, and packages that open as they are in ROS 2,
+  Gazebo, MuJoCo and Isaac Sim. None of the three does this unaided.
+- **Mounts and cut-outs for real boards, motors, fans and connectors.**
+- **A tablet, by touch, with no account and no network**: 12 MB to
+  download, files that stay on the device, free software.
+- **STEP in and out** beside the mesh formats, with true surfaces where
+  the shape allows; Tinkercad has no STEP at all.
+
+Three small things that follow from the above and cost little: example
+projects (they answer 1 and show off the list above); a section view (a
+clipping plane in the viewer); a list of the standard parts in a design
+(M3 × 10 screws, 608 bearings) to buy from.
+
