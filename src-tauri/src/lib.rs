@@ -116,10 +116,13 @@ fn file_path(path: &str) -> FilePath {
 /// The extension of a design file, and the one from before the app was PlastikCAD.
 const DESIGN_EXTENSION: &str = "plastikcad";
 const OLD_DESIGN_EXTENSION: &str = "bashcad";
-/// What the app opens: designs, the models, drawings and pictures it imports, and what those name beside them.
-const READABLE: &[&str] = &[DESIGN_EXTENSION, OLD_DESIGN_EXTENSION, "stl", "obj", "mtl", "3mf", "glb", "gltf", "dae", "svg", "dxf", "urdf", "xacro", "png", "jpg", "jpeg"];
+/// What the app opens: designs, the models, drawings and pictures it imports, and what those name beside them
+/// (a material library, the data of a glTF file). Kept in step with the app's own lists by `src/nativeKinds.test.ts`.
+const READABLE: &[&str] = &[
+    DESIGN_EXTENSION, OLD_DESIGN_EXTENSION, "stl", "obj", "mtl", "3mf", "glb", "gltf", "bin", "dae", "step", "stp", "svg", "dxf", "urdf", "xacro", "png", "jpg", "jpeg",
+];
 /// What the app saves: designs and exports.
-const WRITABLE: &[&str] = &[DESIGN_EXTENSION, "stl", "3mf", "obj", "mtl", "glb", "svg", "dxf", "zip"];
+const WRITABLE: &[&str] = &[DESIGN_EXTENSION, "stl", "3mf", "obj", "mtl", "glb", "step", "svg", "dxf", "zip"];
 const DESIGNS: &[&str] = &[DESIGN_EXTENSION, OLD_DESIGN_EXTENSION];
 
 /// Whether a path names a file of one of `kinds`, by its extension, whatever its case. A hidden file is none of them.
@@ -952,6 +955,11 @@ mod tests {
     fn only_the_kinds_of_file_the_app_handles_pass() {
         assert!(allowed("/home/me/Documents/part.STL", READABLE, "open").is_ok());
         assert!(allowed("C:\\Users\\me\\robot.urdf", READABLE, "open").is_ok());
+        // What came with the newer importers: a STEP file under either ending, and the data a glTF file names.
+        for path in ["/home/me/bracket.step", "/home/me/bracket.STP", "/home/me/scene.bin"] {
+            assert!(allowed(path, READABLE, "open").is_ok(), "{path}");
+        }
+        assert!(allowed("/home/me/bracket.step", WRITABLE, "save").is_ok());
         assert!(allowed("/home/me/Documents/PlastikCAD/Box.plastikcad", WRITABLE, "save").is_ok());
         assert!(allowed("/home/me/export.zip", WRITABLE, "save").is_ok());
         // Keys, profiles and start-up scripts are none of them, whatever they are dressed as.
