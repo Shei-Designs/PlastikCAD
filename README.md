@@ -459,6 +459,20 @@ is tried again after a wait, a few times. A design over 4 MB goes up through
 Drive's upload for large files, which goes on from where it stopped when the
 connection breaks.
 
+What a design imported, a scanned mesh or a large picture, can run to tens
+of megabytes that never change while the design around it changes with every
+edit. So that an edit does not send all of that again, the copy in the Drive
+keeps each imported mesh or picture of 100 kB or more apart from its design,
+in an `Assets` folder inside the app's folder, once, under a name made from
+its contents: a design that moves a box sends a few kilobytes. The same mesh
+in two designs is one file there. The projects on your devices stay whole,
+one self-contained file each; only the Drive's copy is in parts, so a design
+is taken out of the Drive by syncing or with **Save a copy…**, not by
+downloading its file from the Drive by hand. Files in `Assets` that no design
+uses any more are left there; they can be deleted from the Drive by hand,
+and one deleted while still in use is sent again by the next save of its
+design on a device that has it. Custom parts are kept whole.
+
 A design made in an older version of the app opens in a newer one as it is.
 The other way round, a design saved by a newer version than the one reading
 it is not opened as it is: the older version's next save would lose what it
@@ -852,7 +866,7 @@ src/
   io/                 STL, 3MF, OBJ, GLB, STEP, SVG, DXF, URDF, SDF, MJCF, USD writers; STL, OBJ, PLY, 3MF, GLB, Collada, STEP, SVG, DXF, URDF readers
   robot/              Robot mode: links and joints, materials and mass properties, checks, the export packages
   sim/                the test drive: MuJoCo (WebAssembly) in a worker
-  sync/               Google sign-in (PKCE, loopback), Drive remote, three-way merge, sync engine
+  sync/               Google sign-in (PKCE, loopback), Drive remote, three-way merge, sync engine, large imports kept apart on the Drive
   text/               fonts, and laying words out as outlines
   ui/                 React components
   platform.ts         desktop app, Android or plain browser: dialogs, files, drops
