@@ -78,6 +78,24 @@ describe('STEP import', () => {
     expect(volume(got.parts[1].mesh)).toBeLessThanOrEqual(Math.PI * 25 * 20);
   });
 
+  it('gives each solid the name a CAD program gave it, where the file placed it', () => {
+    // Written by FreeCAD: three shapes, each a product placed in the file's assembly.
+    const model = parseStep(oc, fixture('named.step'), 'kit');
+    expect(model.parts.map((p) => p.name)).toEqual(['Bracket', 'Shaft', 'Knob été']);
+    expect(bounds(model.parts[0].mesh)).toEqual({ min: [0, 0, 0], max: [40, 30, 10] });
+    // The shaft stands 60 along X and the knob 100, where the file places them: round, to within their flat sides.
+    const shaft = bounds(model.parts[1].mesh);
+    [55, -5, 0].forEach((v, i) => expect(Math.abs(shaft.min[i] - v)).toBeLessThanOrEqual(0.02));
+    [65, 5, 60].forEach((v, i) => expect(Math.abs(shaft.max[i] - v)).toBeLessThanOrEqual(0.02));
+    const knob = bounds(model.parts[2].mesh);
+    [92, -8, 12].forEach((v, i) => expect(Math.abs(knob.min[i] - v)).toBeLessThanOrEqual(0.05));
+    // A file whose writer named its solids after itself keeps the names the file's own name gives.
+    expect(parseStep(oc, fixture('plate-and-post.step'), 'kit').parts.map((p) => [p.name, p.color])).toEqual([
+      ['kit 1', undefined],
+      ['kit 2', undefined],
+    ]);
+  });
+
   it('refuses what is not a STEP file, and reads the next one all the same', () => {
     expect(() => parseStep(oc, new Uint8Array(0))).toThrow('This STEP file is empty.');
     expect(() => parseStep(oc, new TextEncoder().encode('ISO-10303-21;\nHEADER;\nnonsense'))).toThrow(/damaged or not supported|no shapes/);

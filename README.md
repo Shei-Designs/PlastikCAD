@@ -666,8 +666,12 @@ left alone, since that is its shape.
   put it and at its size (STEP says its unit), its curved faces cut into flat
   ones to within 0.02 mm; several solids come in as one group. The file is
   read by [OpenCascade](https://dev.opencascade.org/), which is loaded when
-  the first STEP file is read rather than with the app. Colors and names in
-  the file are not read.
+  the first STEP file is read rather than with the app. Each solid takes the
+  name the file gives it (its own, or its product's) and its color; these are
+  read from the file's text and given only when its solids are found, one for
+  one, among those read (as many of them, their corners as far apart), so a
+  file that places one shape several times keeps the names its own name
+  gives. A STEP file the app exported comes back with its names and colors.
 - An imported picture shows on the mesh in the **Imported** texture mode; the
   mesh can still be given any other texture, wrapped or tiled.
 - **SVG**: shapes are grouped by fill color, each group a part of its own.

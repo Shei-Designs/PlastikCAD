@@ -9,6 +9,8 @@
 import type { OpenCascadeInstance } from 'replicad-opencascadejs';
 import { tr, trx } from '../i18n';
 import type { ImportedModel, ImportedPart } from './import';
+import { sameSolids, stepSolids } from './stepText';
+import type { SolidMarks } from './stepText';
 import { MeshBuilder } from './weld';
 
 /** How far a flat triangle may stray from the true surface, mm, and how far it may turn from it, radians. */
@@ -17,6 +19,33 @@ const ANGLE = 0.25;
 const MAX_TRIANGLES = 5_000_000;
 
 type Deletable = { delete(): void };
+
+/**
+ * Gives the parts the names and colors the file's text has for its solids
+ * (see stepText.ts), when the two are the same solids one for one (see
+ * `sameSolids`). Otherwise the parts stay as they are.
+ */
+function nameParts(parts: ImportedPart[], marks: SolidMarks[], bytes: Uint8Array): void {
+  let said: ReturnType<typeof stepSolids>;
+  try {
+    said = stepSolids(bytes);
+  } catch {
+    return;
+  }
+  if (!said || !said.some((s) => s.name || s.color) || !sameSolids(said, marks)) return;
+  // A name several solids share (the bodies of one product) is numbered, as the file's own name is.
+  const shared = new Map<string, number>();
+  for (const solid of said) if (solid.name) shared.set(solid.name, (shared.get(solid.name) ?? 0) + 1);
+  const seen = new Map<string, number>();
+  said.forEach((solid, i) => {
+    if (solid.name) {
+      const n = (seen.get(solid.name) ?? 0) + 1;
+      seen.set(solid.name, n);
+      parts[i].name = (shared.get(solid.name) ?? 1) > 1 ? `${solid.name} ${n}` : solid.name;
+    }
+    if (solid.color) parts[i].color = solid.color;
+  });
+}
 
 /**
  * Reads a STEP file with `oc`. Every solid is a part; a file with surfaces
@@ -80,10 +109,30 @@ export function parseStep(oc: OpenCascadeInstance, bytes: Uint8Array, name = trx
       return builder.size ? builder.finish() : null;
     };
 
+    /** What tells a solid from the others, to hold against what the file's text says of it: its faces, and where its corners are. */
+    const marks: SolidMarks[] = [];
+    const count = (of: InstanceType<typeof oc.TopoDS_Shape>, what: (typeof oc.TopAbs_ShapeEnum)[keyof typeof oc.TopAbs_ShapeEnum], each?: (found: InstanceType<typeof oc.TopoDS_Shape>) => void): number => {
+      const all = keep(new oc.TopExp_Explorer(of, what, oc.TopAbs_ShapeEnum.TopAbs_SHAPE));
+      let n = 0;
+      for (; all.More(); all.Next(), n++) each?.(all.Current());
+      return n;
+    };
     const solids = keep(new oc.TopExp_Explorer(shape, oc.TopAbs_ShapeEnum.TopAbs_SOLID, oc.TopAbs_ShapeEnum.TopAbs_SHAPE));
     for (; solids.More(); solids.Next()) {
-      const mesh = meshOf(keep(solids.Current()));
-      if (mesh) parts.push({ name, mesh });
+      const solid = keep(solids.Current());
+      const mesh = meshOf(solid);
+      if (!mesh) continue;
+      parts.push({ name, mesh });
+      const corners: number[] = [];
+      count(solid, oc.TopAbs_ShapeEnum.TopAbs_VERTEX, (found) => {
+        const vertex = oc.TopoDS.Vertex(found);
+        const at = oc.BRep_Tool.Pnt(vertex);
+        corners.push(at.X(), at.Y(), at.Z());
+        at.delete();
+        vertex.delete();
+        found.delete();
+      });
+      marks.push({ faces: count(solid, oc.TopAbs_ShapeEnum.TopAbs_FACE, (found) => found.delete()), corners });
     }
     // No solids: surfaces on their own, taken together.
     if (parts.length === 0) {
@@ -92,6 +141,7 @@ export function parseStep(oc: OpenCascadeInstance, bytes: Uint8Array, name = trx
     }
     if (parts.length === 0) throw new Error(tr('This STEP file has no shapes.'));
     if (parts.length > 1) parts.forEach((part, i) => (part.name = `${name} ${i + 1}`));
+    if (marks.length === parts.length) nameParts(parts, marks, bytes);
     return { kind: 'model', parts, used: [] };
   } finally {
     for (const o of made.reverse()) {

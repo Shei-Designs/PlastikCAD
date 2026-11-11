@@ -225,6 +225,21 @@ describe('the design as a STEP file', () => {
     }, 120_000);
   });
 
+  it('writes names and colors that come back with the solids they are of', () => {
+    const named = (kind: ShapeNode['shape'], name: string, color: string, x: number): ShapeNode => ({ ...shapeNode(kind), id: name, name, color, pos: [x, 5, 20] });
+    // Two of one name, a name with a quote in it and one with letters outside ASCII; rebuilt solids and one of facets.
+    const nodes = [named('box', 'Base plate', '#11aa33', 0), named('cylinder', 'Shaft', '#cc2211', 40), named('sphere', 'Shaft', '#cc2211', 80), named('torus', "Ring 'o' été", '#2244ee', 120), named('pyramid', 'Roof', '#f0c000', 160)];
+    const colored = exportColored(nodes, true);
+    const { bytes } = writeStep(oc, colored.objects.flatMap((o, i) => o.parts.map((p) => ({ name: o.name, color: p.color, mesh: p.mesh, node: nodes[i] }))), { partBox });
+    expect(parseStep(oc, bytes, 'file').parts.map((p) => [p.name, p.color])).toEqual([
+      ['Base plate', '#11aa33'],
+      ['Shaft 1', '#cc2211'],
+      ['Shaft 2', '#cc2211'],
+      ["Ring 'o' été", '#2244ee'],
+      ['Roof', '#f0c000'],
+    ]);
+  });
+
   it('writes a plate with a hole through it as one solid, and a two-colored group as a solid per color', () => {
     const plate: ShapeNode = { ...base, id: 'p', name: 'Plate', type: 'shape', shape: 'box', params: defaultParams('box'), size: [40, 30, 4], pos: [0, 0, 2], rot: [0, 0, 0] };
     const hole: ShapeNode = { ...base, id: 'h', name: 'Hole', type: 'shape', shape: 'cylinder', params: defaultParams('cylinder'), size: [8, 8, 10], pos: [5, 3, 2], rot: [0, 0, 0], hole: true };
