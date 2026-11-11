@@ -1,6 +1,7 @@
 # Builds installers for Linux, Windows and macOS and attaches them to a draft
 # GitHub release. Runs when a version tag (v1.2.3) is pushed, or manually from
-# the Actions tab. Publish the draft on GitHub once the builds look right.
+# the Actions tab. Publish the draft on GitHub once the builds look right: the
+# last job says at the top of the draft's notes when a platform's files are missing.
 name: Release
 
 on:
@@ -141,3 +142,21 @@ jobs:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           # The update files are asked for here and not in tauri.conf.json, so that a build without the key still works.
           args: --config src-tauri/tauri.updater.conf.json ${{ matrix.args }}
+
+  # The last word on the draft: it holds every platform's files, or says at its top what is missing and fails.
+  # Version 0.2.0 was published without its Linux packages, whose build had failed.
+  check:
+    needs: [create-release, build]
+    # Whatever became of the builds, as long as there is a draft to look at.
+    if: ${{ always() && needs.create-release.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Look at what the release holds
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/check-release.sh "${{ needs.create-release.outputs.release_id }}"
+
