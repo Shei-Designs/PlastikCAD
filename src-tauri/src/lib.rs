@@ -340,6 +340,14 @@ async fn write_file(app: AppHandle, request: Request<'_>) -> Result<(), String> 
     write_bytes(&app, &path, &bytes).map_err(|err| format!("Could not write {path}: {err}"))
 }
 
+/// Whether a file of a kind the app saves is already at this path. The save dialog asks before it replaces a file,
+/// but of the name as it was typed; the app adds the ending a name lacks afterwards, and asks about that one itself.
+#[tauri::command]
+async fn is_there(path: String) -> Result<bool, String> {
+    allowed(&path, WRITABLE, "save")?;
+    Ok(Path::new(&path).is_file())
+}
+
 /// A design in the projects folder, as the projects browser lists it.
 #[derive(Serialize, Debug, PartialEq)]
 struct DesignEntry {
@@ -772,6 +780,7 @@ pub fn run() {
             delete_file,
             read_head,
             write_file,
+            is_there,
             list_designs,
             remove_file,
             move_file,

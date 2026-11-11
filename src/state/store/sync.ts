@@ -138,8 +138,9 @@ export async function unlinkGoogleDrive(): Promise<void> {
   const go = await platform.confirm(tr('Unlink Google Drive? Your projects stay here and in your Drive, but changes no longer sync.'), { title: APP_NAME, okLabel: tr('Unlink'), cancelLabel: tr('Keep linked') });
   if (!go) return;
   try {
-    await unlinkAccount();
-    notify(tr('Google Drive unlinked.'), 'ok');
+    const told = await unlinkAccount();
+    if (told) notify(tr('Google Drive unlinked.'), 'ok');
+    else notify(tr('Google Drive unlinked. Google could not be told, so {app} is still listed in your Google account.', { app: APP_NAME }));
   } catch (e) {
     fail(e);
   }

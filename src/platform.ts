@@ -103,9 +103,11 @@ async function readBrowserFile(file: File): Promise<PickedFile> {
   return { name: file.name, path: null, bytes: new Uint8Array(await file.arrayBuffer()) };
 }
 
-/** Keeps the files that could be read: one bad entry (a dropped folder, say) should not lose the rest. */
-async function readable(reads: Promise<PickedFile>[]): Promise<PickedFile[]> {
+/** Keeps the files that could be read: one bad entry (a dropped folder, say) should not lose the rest. `unread` hears why each of the others could not. */
+async function readable(reads: Promise<PickedFile>[], unread?: (reasons: string[]) => void): Promise<PickedFile[]> {
   const results = await Promise.allSettled(reads);
+  const reasons = results.flatMap((result) => (result.status === 'rejected' ? [asError(result.reason).message] : []));
+  if (reasons.length) unread?.(reasons);
   return results.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []));
 }
 
@@ -249,7 +251,14 @@ export async function chooseSave(suggestedName: string, filters: FileFilter[], m
   const picked = await save({ defaultPath: suggestedName, filters: isAndroid() ? [{ name: filters[0]?.name ?? mime, extensions: [await androidMime(suggestedName, mime)] }] : filters });
   if (!picked) return null;
   const path = isAndroid() ? picked : withExtension(picked, filters);
-  return { path, name: await nameOf(path) };
+  const name = await nameOf(path);
+  // The dialog asked before replacing a file of the name as it was typed. With its ending added the name is
+  // another, and a file may be there already that the dialog never looked at.
+  if (path !== picked && (await command<boolean>('is_there', { path }).catch(() => false))) {
+    const replace = await confirm(tr('"{name}" is already there. Replace it?', { name }), { okLabel: tr('Replace'), cancelLabel: tr('Cancel') });
+    if (!replace) return null;
+  }
+  return { path, name };
 }
 
 /**
@@ -481,8 +490,11 @@ export function setWindowTitle(title: string): void {
   import('@tauri-apps/api/window').then(({ getCurrentWindow }) => getCurrentWindow().setTitle(title)).catch(console.error);
 }
 
-/** Files dropped on the window (native drag-drop on desktop, HTML5 drop in the browser). Returns an unsubscribe function. */
-export function onFilesDropped(handler: (files: PickedFile[]) => void): () => void {
+/**
+ * Files dropped on the window (native drag-drop on desktop, HTML5 drop in the browser). `unread` is told of the
+ * ones that could not be read, and why. Returns an unsubscribe function.
+ */
+export function onFilesDropped(handler: (files: PickedFile[]) => void, unread?: (reasons: string[]) => void): () => void {
   const deliver = (files: PickedFile[]) => {
     if (files.length > 0) handler(files);
   };
@@ -492,7 +504,7 @@ export function onFilesDropped(handler: (files: PickedFile[]) => void): () => vo
     return listen(async () => {
       const { getCurrentWebview } = await import('@tauri-apps/api/webview');
       return getCurrentWebview().onDragDropEvent((event) => {
-        if (event.payload.type === 'drop') void readable(event.payload.paths.map(readPath)).then(deliver);
+        if (event.payload.type === 'drop') void readable(event.payload.paths.map(readPath), unread).then(deliver);
       });
     });
   }
@@ -500,7 +512,7 @@ export function onFilesDropped(handler: (files: PickedFile[]) => void): () => vo
   const allow = (event: DragEvent) => event.preventDefault();
   const drop = (event: DragEvent) => {
     event.preventDefault();
-    void readable(Array.from(event.dataTransfer?.files ?? [], readBrowserFile)).then(deliver);
+    void readable(Array.from(event.dataTransfer?.files ?? [], readBrowserFile), unread).then(deliver);
   };
   window.addEventListener('dragover', allow);
   window.addEventListener('drop', drop);

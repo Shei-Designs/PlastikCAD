@@ -523,7 +523,7 @@ export function exportSummary(doc: Doc, format: ExportFormat, robot: Robot = rob
   const base = nodes.find((n) => n.id === robot.root)?.name ?? 'the base';
   const label = EXPORT_FORMATS.find((f) => f.id === format)!.label;
   const strays = tree.unreached.length;
-  const holds = tr('Writes "{name}" as a {format}: the base {base} and everything joined to it.', { name: doc.name, format: label, base });
+  const holds = tr('Writes "{name}" ({format}): the base {base} and everything joined to it.', { name: doc.name, format: label, base });
   return strays ? `${holds} ${plural(strays, 'One object is not joined to the base and will be ignored.', '{n} objects are not joined to the base and will be ignored.')}` : holds;
 }
 

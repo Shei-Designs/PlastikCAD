@@ -1,6 +1,6 @@
 // The record of what went wrong, and the report made from it.
 import { beforeEach, describe, expect, it } from 'vitest';
-import { clearDiagnostics, diagnosticEntries, diagnosticsReport, noteDiagnostic, watchWindow } from './diagnostics';
+import { clearDiagnostics, diagnosticEntries, diagnosticsReport, noteDiagnostic, watchWindow, withoutNames } from './diagnostics';
 
 beforeEach(() => clearDiagnostics());
 
@@ -31,6 +31,17 @@ describe('diagnostics', () => {
     expect(report).toContain('2026-11-10T12:00:00.000Z [sync] Google Drive could not upload Plate: quota');
     clearDiagnostics();
     expect(diagnosticsReport()).toContain('Nothing has gone wrong this session.');
+  });
+
+  it('leaves out the name of whoever is signed in to the computer, which every path below a home folder carries', () => {
+    expect(withoutNames('Projects in /home/ann/Documents/PlastikCAD')).toBe('Projects in /home/…/Documents/PlastikCAD');
+    expect(withoutNames('Could not read /Users/Ann Lee/x.stl: gone')).toBe('Could not read /Users/…/x.stl: gone');
+    expect(withoutNames('Could not write C:\\Users\\ann\\Desktop\\part.step')).toBe('Could not write C:\\Users\\…\\Desktop\\part.step');
+    expect(withoutNames('Browser: Mozilla/5.0 (X11; Linux x86_64)')).toBe('Browser: Mozilla/5.0 (X11; Linux x86_64)');
+    noteDiagnostic('error', 'Could not save: /home/ann/Documents/PlastikCAD/Box.plastikcad: disk full');
+    const report = diagnosticsReport(['Projects in /home/ann/Documents/PlastikCAD']);
+    expect(report).not.toContain('ann');
+    expect(report).toContain('/home/…/Documents/PlastikCAD/Box.plastikcad: disk full');
   });
 
   it('notes an error nothing caught and a promise nobody handled', () => {

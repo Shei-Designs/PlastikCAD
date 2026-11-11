@@ -188,6 +188,7 @@ export const state: Catalog = {
   Unlink: 'Dissocier',
   'Keep linked': 'Rester associé',
   'Google Drive unlinked.': 'Google Drive dissocié.',
+  'Google Drive unlinked. Google could not be told, so {app} is still listed in your Google account.': 'Google Drive dissocié. Google n’a pas pu être prévenu\u00a0: {app} figure encore dans votre compte Google.',
 
   // Grouping, and editing inside a group (state/store/groups.ts)
   'Unlock the selected objects before grouping them.': 'Déverrouillez les objets sélectionnés avant de les grouper.',

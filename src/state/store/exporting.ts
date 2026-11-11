@@ -9,6 +9,7 @@ import { writePly } from '../../io/ply';
 import type { FormatId } from '../../io/export';
 import { exportGlb } from '../glbExport';
 import * as platform from '../../platform';
+import { fileNameFor } from '../projects';
 import { askName, tell } from '../../ui/ask';
 import { plural, tr } from '../../i18n';
 import { geometry } from '../geometry';
@@ -49,7 +50,8 @@ export async function exportName(suggested: string, extension: string): Promise<
 export async function exportDesign(formatId: FormatId, selectionOnly: boolean): Promise<boolean> {
   const format = FORMATS.find((f) => f.id === formatId)!;
   const nodes = selectionOnly ? selectedNodes() : getState().doc.scene;
-  const name = await exportName(getState().doc.name, format.extension);
+  // A file's name, not the design's as typed: one with a slash in it would name a folder in the save box.
+  const name = await exportName(fileNameFor(getState().doc.name).replace(/\.[^.]+$/, ''), format.extension);
   if (!name) return false;
   const filters = [{ name: format.label, extensions: [format.extension] }];
   // The geometry is made first, with word of it on the screen and a way to call it off; then the file is saved.

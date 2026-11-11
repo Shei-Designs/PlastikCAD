@@ -47,8 +47,14 @@ function surroundings(): string[] {
 export function diagnosticsReport(extra: string[] = [], now = Date.now()): string {
   const head = [`${APP_NAME} ${APP_VERSION}`, `Report made ${new Date(now).toISOString()}`, ...surroundings(), ...extra];
   const body = entries.length ? entries.map((e) => `${new Date(e.at).toISOString()} [${e.kind}] ${e.text}`) : ['Nothing has gone wrong this session.'];
-  return [...head, '', ...body].join('\n');
+  return withoutNames([...head, '', ...body].join('\n'));
 }
+
+/**
+ * The report without the name of whoever is signed in to the computer, which every path below a home folder
+ * carries (`/home/ann/…`, `C:\Users\ann\…`): the report is pasted where others read it.
+ */
+export const withoutNames = (text: string): string => text.replace(/(\/home\/|\/Users\/|[A-Za-z]:\\Users\\)(?:[^/\\\n"']+(?=[/\\])|[^/\\\s"']+)/g, '$1…');
 
 /** Notes what the page itself reports as going wrong: an error nothing caught, a promise nobody handled. */
 export function watchWindow(target: Pick<Window, 'addEventListener'> = window): void {
