@@ -18,6 +18,8 @@ export type WorkerRequest =
    * the files picked with it; `scale` the unit it was made in, in millimeters, when that is known.
    */
   | { type: 'import'; id: number; name: string; bytes: Uint8Array; companions: Companion[]; scale?: number }
+  /** Unpack a zip archive into the files of it the app could read (see io/zip.ts). */
+  | { type: 'unzip'; id: number; bytes: Uint8Array }
   /** The unit, in millimeters, of the file request `held` read and is holding (it answered `kind: 'units'`). */
   | { type: 'importHeld'; id: number; held: number; scale: number }
   /** Build the geometry of one node at its built size, centered on the origin (see `builtSize`, `geomKey`). */
@@ -128,6 +130,7 @@ export type WorkerResponse =
   | { type: 'exportedColored'; id: number; result: ColoredExport }
   | { type: 'exportedStep'; id: number; result: StepExport }
   | { type: 'imported'; id: number; result: ImportResult }
+  | { type: 'unzipped'; id: number; result: Companion[] }
   | { type: 'features'; id: number; result: FeatureIndex }
   | { type: 'massProperties'; id: number; result: LinkProperties[] }
   | { type: 'robotGeometry'; id: number; result: LinkGeometry[] }

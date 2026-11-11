@@ -107,6 +107,7 @@ export const state: Catalog = {
   'A .mtl file holds the colors of an OBJ and is read with it: pick the .obj, together with the .mtl for its colors.':
     'Un fichier .mtl contient les couleurs d’un OBJ et se lit avec lui\u00a0: choisissez le .obj, accompagné du .mtl pour ses couleurs.',
   'Cannot import that. Supported: {formats}.': 'Importation impossible. Formats pris en charge\u00a0: {formats}.',
+  'Nothing in "{name}" can be imported. Supported: {formats}.': 'Rien dans «\u00a0{name}\u00a0» ne peut être importé. Formats pris en charge\u00a0: {formats}.',
   'Importing…': 'Importation…',
   'Importing {n} of {total}…': 'Importation {n} sur {total}…',
   '"{file}" keeps its shapes and pictures in {list}. Pick them now?': {

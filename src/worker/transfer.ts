@@ -25,6 +25,8 @@ function viewsOf(msg: WorkerResponse): View[] {
     case 'imported':
       // The meshes travel as text; only the pictures that came with a model are arrays.
       return msg.result.kind === 'model' ? msg.result.parts.map((p) => p.image?.bytes) : [];
+    case 'unzipped':
+      return msg.result.map((f) => f.bytes);
     case 'features':
       return [msg.result.regionOf, msg.result.normals];
     case 'exported':

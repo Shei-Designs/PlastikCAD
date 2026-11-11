@@ -69,6 +69,9 @@ export const io: Catalog = {
   'This PLY file holds points with no faces between them, which cannot be made into a solid.': 'Ce fichier PLY contient des points sans faces entre eux, dont on ne peut pas faire un solide.',
   'This PLY file has no usable faces.': 'Ce fichier PLY n’a aucune face utilisable.',
 
+  // Zip archives (zip.ts)
+  'This zip file is too large to open.': 'Ce fichier zip est trop volumineux pour être ouvert.',
+
   // 3MF (import3mf.ts)
   'This 3MF file is too large to open.': 'Ce fichier 3MF est trop volumineux pour être ouvert.',
   'This 3MF file is empty.': 'Ce fichier 3MF est vide.',
