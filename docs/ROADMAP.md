@@ -43,33 +43,22 @@ release.
 
 By touch (review 3):
 
-- **The test drive needs a keyboard**: there are no pads on the screen to
-  drive with.
-- **A tablet held upright**: the open inspector covers the number boxes of
-  the Dimensions box and six toolbar buttons; a first start shows a bare
-  plate with the Library behind a small tab; the "Custom" tile opens the
-  parts bin in the inspector, which is hidden then.
 - **Held sideways**, the Dimensions box sits on handles and on what was
   just placed.
 - **A slider takes a touch anywhere on its track at once**, so a swipe
   meant to scroll the inspector sets a value.
 - **Icon buttons have no name a finger can see** (they are in tooltips).
-- **Number boxes have no stepper**: every change is the sheet and the
-  whole number typed again.
-- **Hints speak of clicks and Esc** on a tablet; upright with the Library
-  open, the hint bar is cut by the panel.
+- **Hints speak of clicks and Esc** on a tablet: their wording is to be
+  adjusted. The list of shortcuts is long and always in the side panel:
+  what becomes of it is to be talked through.
 - Small targets outside what the tests measure (the view buttons, the
-  buttons of an Objects row, the panel tabs); long French names cut on the
-  part tiles; the help marks, to be tried on the device.
+  buttons of an Objects row, the panel tabs); the help marks, to be tried
+  on the device.
 
 Elsewhere:
 
 - **STEP for meshes as tessellated shapes**, which the format has and which
   cost a fraction of a face to a triangle (research; #53 only limits).
-- **The signing key at hand during the build** of a release: signing in a
-  step of its own, after the build (#57 pins the actions only).
-- **Android's backup** is at the system's default: projects come back after
-  a restore, which is wanted; the hour-long Drive token is in it too.
 - A Linux session with no keyring waits two minutes at start before the
   sign-in is known; an empty `History` folder and a hidden temporary file can be left
   behind; the package's short description reads "for 3D printing".
@@ -78,22 +67,11 @@ Elsewhere:
 
 What the reviews showed could be built, beyond mending. None is planned.
 
-- **Example projects** to start from, one for each kind of work (a part, a
-  robot, a model for Blender): the app has no way in for a newcomer, and
-  nothing shows what it can do.
 - **A section view**: the model cut by a plane, to look inside (a clipping
   plane in the viewer).
 - **A list of the standard parts in a design** (M3 × 10 screws, 608
   bearings), to buy from: the app knows each one it placed.
-- **Pads on the screen for the test drive**: a robot built and driven on a
-  tablet with no keyboard.
-- **An enclosure from a board**: the board mounts and the connector
-  cut-outs already know where everything is; a box round them is one step.
 - **Inches as the working unit**, now that inch bolts and nuts exist.
-- **Volume and weight of the selection** outside robot mode, which already
-  works them out.
-- **A link to pass a design on**, with the phone viewer of phase 9 as what
-  opens it.
 - **The built apps tried by a script before each release.** The driver made
   for review 1 (the real desktop and Android apps, their pickers answered
   for them) found three faults no browser test could see. Kept in the
@@ -128,8 +106,8 @@ agreed in a working session before anything is built.
 
 | Phase | What | What the session has to settle |
 |---|---|---|
-| 7 | **Robot mode**, made dependable | Found by building a real robot with it, start to finish, on the desktop and on the tablet. Open design questions: mecanum strafing, the kinds of joint that close a loop, the camera's optical frame, the base frame of a USD stage, the inspector's wording and touch sizes. Until then the mode is experimental: crashes and wrong output are fixed, behaviour is not polished. |
-| 8 | **Release** | The Play Console set-up and the Android signing key, the APK attached to releases, the store listing and screenshots, the color register, code signing for Windows and macOS. |
+| 7 | **Robot mode**, made dependable | Found by building a real robot with it, start to finish, on the desktop and on the tablet. Agreed: a control on the screen to drive with when no keyboard is attached. Open design questions: mecanum strafing, the kinds of joint that close a loop, the camera's optical frame, the base frame of a USD stage, the inspector's wording and touch sizes. Until then the mode is experimental: crashes and wrong output are fixed, behaviour is not polished. |
+| 8 | **Release** | The Play Console set-up and the Android signing key, the APK attached to releases, the store listing and screenshots, the color register, code signing for Windows and macOS. Signing the update files in a step of its own, after the build, so the key is not at hand while the build runs. The tablet held upright: the app is made to be held sideways, but from Android 17 an app on a large screen can no longer refuse to turn or to be resized, so upright and split-screen have to stay usable (there the open inspector covers the Dimensions box's number boxes and six toolbar buttons, a first start shows a bare plate, the "Custom" tile opens a hidden inspector, and the hint bar is cut by the Library); how far to go is to be looked at. |
 | 9 | **Phone viewer** | The app on a phone as a viewer: which objects and projects it shows, what replaces the edit controls, how a design gets there. The editor itself stays for tablets and desktop. |
 | 10 | **AI features** | Tests of whether it is viable and useful come before any integration: what it would do (the first idea is help with the constraints of a robot being prototyped), which service, what it costs, where a key is kept, and what "nothing leaves your machine" then means. |
 
@@ -165,6 +143,10 @@ Not dropped: taken up when asked for.
 - Numbers written the way the language writes them, W / D / H translated,
   the test-drive keys by position on other keyboards, the native side's
   error messages in the app's language.
+- French text that is cut (long names on the part tiles): the English
+  layout comes first.
+- A link to pass a design on: it needs a server. Looked at again with the
+  phone viewer of phase 9, which would be what opens it.
 - Splitting large imports out of the project files on the device, as is done
   on the Drive: a project stays one whole file that can be copied out by
   hand, until a real large project shows the saving is worth that.
@@ -178,6 +160,12 @@ Decided against; not to be proposed again.
 - A preview of meshed gears turning together: it shows something and does
   nothing. The wizard already places a mate where it meshes, and a mate is a
   part of its own afterwards, with nothing to say it still meshes.
+- Example projects in the app: tutorials are published instead.
+- An enclosure made from a board: a box is built by hand, as any other.
+- Volume and weight of the selection outside robot mode.
+- Steppers on the number boxes.
+- A change to Android's backup: it stays at the system's default, which
+  brings the projects back after a restore.
 - In robot mode: a two-click joint tool, dragging to re-parent, axis
   defaults for round children, shaft-aware parts, an automatic base.
 
