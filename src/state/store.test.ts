@@ -533,6 +533,10 @@ describe('editing inside a group', () => {
     expect(saved[0].name).toBe('Untitled.plastikcad');
     const file = parseDoc(new TextDecoder().decode(saved[0].bytes));
     expect(file.scene.length).toBe(1);
+    // A copy is made to be passed on: the project's own file names the installation and the save before it, the copy neither.
+    expect(parseDoc(await kept.read(store.getState().projectKey!))).toMatchObject({ device: store.getState().prefs.device });
+    expect(file.device).toBeUndefined();
+    expect(file.parent).toBeUndefined();
     const written = file.scene[0] as GroupNode;
     expect(written).toMatchObject({ id: group.id, type: 'group', hole: true });
     expect(flags(written)).toEqual([[box, false], [bore, true]]);

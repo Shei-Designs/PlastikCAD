@@ -392,6 +392,14 @@ function readScene(raw: unknown, assets: Record<string, Asset>, depth = 0): Scen
   return out;
 }
 
+/** The fields this build writes for imported data, by its kind: more on one of a strict file is something a newer build wrote. */
+const ASSET_FIELDS = {
+  mesh: new Set(['kind', 'positions', 'triangles', 'uv']),
+  outline: new Set(['kind', 'shapes']),
+  shape: new Set(['contours', 'evenodd']),
+  image: new Set(['kind', 'name', 'mime', 'data', 'width', 'height']),
+};
+
 function readAssets(raw: unknown): Record<string, Asset> {
   const out: Record<string, Asset> = {};
   if (!isRecord(raw)) return out;
@@ -399,11 +407,14 @@ function readAssets(raw: unknown): Record<string, Asset> {
     // Assigning this key would swap the prototype of `out` rather than add an asset.
     if (key === '__proto__' || !isRecord(value)) continue;
     if (value.kind === 'mesh' && typeof value.positions === 'string' && typeof value.triangles === 'string') {
+      only(value, ASSET_FIELDS.mesh);
       out[key] = { kind: 'mesh', positions: value.positions, triangles: value.triangles, ...(typeof value.uv === 'string' && value.uv ? { uv: value.uv } : {}) };
     } else if (value.kind === 'outline' && Array.isArray(value.shapes)) {
+      only(value, ASSET_FIELDS.outline);
       const shapes: OutlineShape[] = [];
       for (const s of value.shapes) {
         if (!isRecord(s) || !Array.isArray(s.contours)) continue;
+        only(s, ASSET_FIELDS.shape);
         const contours = s.contours.filter(
           (c): c is [number, number][] =>
             Array.isArray(c) && c.length >= 3 && c.every((p) => Array.isArray(p) && p.length === 2 && p.every((x) => typeof x === 'number' && Number.isFinite(x))),
@@ -412,6 +423,7 @@ function readAssets(raw: unknown): Record<string, Asset> {
       }
       if (shapes.length) out[key] = { kind: 'outline', shapes };
     } else if (value.kind === 'image' && typeof value.data === 'string' && (value.mime === 'image/png' || value.mime === 'image/jpeg')) {
+      only(value, ASSET_FIELDS.image);
       const px = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 1 ? Math.round(v) : 0);
       if (px(value.width) && px(value.height)) out[key] = { kind: 'image', name: typeof value.name === 'string' ? value.name : tr('Picture'), mime: value.mime, data: value.data, width: px(value.width), height: px(value.height) };
     } else {

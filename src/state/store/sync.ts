@@ -183,7 +183,8 @@ export async function restoreSession(): Promise<void> {
     if (isDirty()) scheduleAutosave();
     void initSync({ device: getState().prefs.device, flush: () => saveProject(true), changed: applySyncReport, partsChanged: applyPartsSyncReport, notice: (text) => notify(text, 'error'), confirmDeletes: confirmSyncDeletes });
     // The desktop app as it is installed looks for a newer version of itself; one run from the source tree has none to find.
-    if (platform.updatesItself() && !import.meta.env.DEV) lookForUpdateQuietly();
+    // The one thing the app asks of the network unasked, and it can be told not to (the About box).
+    if (platform.updatesItself() && !import.meta.env.DEV && getState().prefs.updateCheck) lookForUpdateQuietly();
     const opened = await platform.startupFiles();
     if (opened.length > 0) return void (await receiveFiles(await Promise.all(opened.map((p) => platform.readPath(p)))));
     const last = getState().prefs.lastProject;

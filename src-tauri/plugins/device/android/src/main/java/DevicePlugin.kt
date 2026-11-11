@@ -116,6 +116,10 @@ internal class WriteDocumentArgs {
   lateinit var source: String
 }
 
+
+/** The one access the app asks of Google: the files it made itself in the user's Drive. */
+private const val DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file"
+
 @TauriPlugin
 class DevicePlugin(activity: Activity) : Plugin(activity), InputManager.InputDeviceListener {
   private var hardwareKeyboard = false
@@ -235,6 +239,12 @@ class DevicePlugin(activity: Activity) : Plugin(activity), InputManager.InputDev
   @Command
   fun authorize(invoke: Invoke) {
     val args = invoke.parseArgs(AuthorizeArgs::class.java)
+    // The page names the access it wants, and is taken at its word for one only: the files the app itself put in
+    // the user's Drive. Anything else it asked for would be put to the user under the app's name.
+    if (args.scope != DRIVE_FILE_SCOPE) {
+      invoke.reject("That access is not one the app asks for")
+      return
+    }
     val request = AuthorizationRequest.builder().setRequestedScopes(listOf(Scope(args.scope))).build()
     Identity.getAuthorizationClient(host)
       .authorize(request)

@@ -348,7 +348,8 @@ export async function openProjectFile(): Promise<void> {
 export async function saveCopy(): Promise<boolean> {
   try {
     await saveProject(true);
-    const bytes = new TextEncoder().encode(serializeDoc(docToSave()));
+    // A copy is made to be passed on: it says nothing of the installation it came from, nor of the saves before it.
+    const bytes = new TextEncoder().encode(serializeDoc({ ...docToSave(), device: undefined, parent: undefined }));
     const name = await exportName(fileNameFor(getState().doc.name).replace(/\.[^.]+$/, ''), FILE_EXTENSION);
     if (!name) return false;
     const where = await platform.saveAs(`${name}.${FILE_EXTENSION}`, DESIGN_FILTER, bytes, 'application/json');

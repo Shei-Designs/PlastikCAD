@@ -29,6 +29,8 @@ export interface Prefs {
   lastProject: string | null;
   /** This installation, stamped into saves so that sync can tell devices apart. */
   device: string;
+  /** Whether the desktop app asks the releases for a newer version when it starts; the About box asks whenever told to. */
+  updateCheck: boolean;
 }
 
 export const SNAP_STEPS = [0, 0.1, 0.25, 0.5, 1, 2, 5, 10];
@@ -64,6 +66,7 @@ export function loadPrefs(): Prefs {
     projectsDir: typeof saved.projectsDir === 'string' && saved.projectsDir ? saved.projectsDir : null,
     lastProject: typeof saved.lastProject === 'string' && saved.lastProject ? saved.lastProject : null,
     device,
+    updateCheck: saved.updateCheck !== false,
   };
   // A device id just made is kept at once, so that it never changes.
   if (device !== saved.device) savePrefs(prefs);

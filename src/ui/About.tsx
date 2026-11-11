@@ -6,7 +6,7 @@ import { diagnosticsReport } from '../diagnostics';
 import { tr } from '../i18n';
 import { rich } from '../i18n/rich';
 import { isAndroid, isDesktop, updatesItself } from '../platform';
-import { getState, lookForUpdate, updateApp, useEditor } from '../state/store';
+import { getState, lookForUpdate, setPrefs, updateApp, useEditor } from '../state/store';
 import { signInKeptIn } from '../sync/google';
 import { getSyncStatus } from '../sync/sync';
 import { Logo } from './icons';
@@ -25,6 +25,7 @@ function Link({ href, children }: { href: string; children: React.ReactNode }) {
 export function About({ open, onClose }: { open: boolean; onClose: () => void }) {
   // Whether the report reached the clipboard; where it cannot, it is shown to be copied by hand.
   const [copied, setCopied] = useState<'yes' | 'no' | null>(null);
+  const atStart = useEditor((state) => state.prefs.updateCheck);
   useEffect(() => {
     if (open) setCopied(null);
     if (open) setLooking(null);
@@ -98,6 +99,12 @@ export function About({ open, onClose }: { open: boolean; onClose: () => void })
             {!newer && looking === 'latest' && <span role="status">{tr('This is the latest version.')}</span>}
             {!newer && looking === 'failed' && <span role="status">{tr('The releases could not be reached.')}</span>}
           </p>
+        )}
+        {updatesItself() && (
+          <label className="about-auto">
+            <input type="checkbox" className="switch" role="switch" checked={atStart} onChange={(e) => setPrefs({ updateCheck: e.target.checked })} />
+            <span>{tr('Look for updates at start')}</span>
+          </label>
         )}
         <p className="about-by">
           {rich('A {publisher} project, designed and built by {author}.', { publisher: <Link href={PUBLISHER_URL}>{PUBLISHER}</Link>, author: <Link href={AUTHOR_URL}>{AUTHOR}</Link> })}

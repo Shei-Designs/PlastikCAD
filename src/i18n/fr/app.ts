@@ -25,6 +25,7 @@ export const app: Catalog = {
   'Looks among the releases for a newer version.': 'Cherche une version plus récente parmi les versions publiées.',
   'Checking…': 'Vérification…',
   'Check for updates': 'Rechercher les mises à jour',
+  'Look for updates at start': 'Rechercher les mises à jour au démarrage',
   'This is the latest version.': 'Cette version est la plus récente.',
   'The releases could not be reached.': 'Impossible de joindre la page des versions.',
 
