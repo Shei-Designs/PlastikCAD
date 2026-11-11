@@ -110,6 +110,11 @@ export const io: Catalog = {
     other: '{n} textes ont été ignorés. Convertissez le texte en tracés dans le logiciel de dessin.',
   },
   '{n} pictures were left out.': { one: '{n} image a été ignorée.', other: '{n} images ont été ignorées.' },
+  '{n} rules of its style sheet were not read: colors and hidden shapes set there are not applied.': {
+    one: '{n} règle de sa feuille de style n’a pas été lue\u00a0: les couleurs et les formes masquées qui y sont définies ne sont pas appliquées.',
+    other: '{n} règles de sa feuille de style n’ont pas été lues\u00a0: les couleurs et les formes masquées qui y sont définies ne sont pas appliquées.',
+  },
+  'This SVG has too many shapes to open.': 'Ce SVG contient trop de formes pour être ouvert.',
   'Its style sheet was not read: colors and hidden shapes set there are not applied.': 'Sa feuille de style n’a pas été lue\u00a0: les couleurs et les formes masquées qui y sont définies ne sont pas appliquées.',
 
   // URDF (importUrdf.ts)
