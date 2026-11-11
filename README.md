@@ -595,7 +595,9 @@ hole drilled through it seven faces, the hole's wall one of them. A dome is
 half a sphere while it is not stretched; a round roof is half a cylinder and
 a fillet a quarter of one, or of an oval bar when they are stretched. Gears, pulleys, sprockets, rails, boards,
 fans, motor mounts and cutouts go out as their profiles raised, with circles
-and arcs where they have them. Pipes and ducts go out as what they are: a
+and arcs where they have them. A helical or herringbone gear goes out with
+its teeth as smooth surfaces that wind up it, one to each side of a tooth's
+outline, a few megabytes where its facets were tens. Pipes and ducts go out as what they are: a
 straight run as cylinders (or flats with rounded corners), a bend as tori
 about its axis, a round reducer as cones, a tee as two pipes run together;
 only a reducer off its axis or between rectangles has no simple surface, and
@@ -606,8 +608,7 @@ a STEP file of its own and read back, before it goes into yours: a solid the
 file would not keep goes out as its facets instead.
 
 What cannot be rebuilt goes out as the kernel's facets, sewn into a solid
-with the facets that lie in one plane joined: threads and helical gears
-(twisted as they rise), bevel gears, lettering, imported meshes, shapes
+with the facets that lie in one plane joined: threads, bevel gears, lettering, imported meshes, shapes
 stretched out of round (an egg from a ball, a dome taller than half a ball,
 an oval cone), a rounded rim, and any group that holds one of these or parts in
 several colors. Flat sides are still true planes; a curve is as many flat strips as
@@ -1026,9 +1027,8 @@ The whole of what is planned, put off and dropped is in
 [docs/ROADMAP.md](docs/ROADMAP.md). Next in the app itself:
 
 - Lettering in scripts that need shaping or thousands of characters (Arabic, Hebrew, Indic, Chinese, Japanese, Korean).
-- Assembly preview of meshing gears.
-- True surfaces in STEP files for what still goes out as facets: threads
-  and helical gears, bevel gears and stretched shapes.
+- True surfaces in STEP files for what still goes out as facets: threads,
+  bevel gears and stretched shapes.
 
 ## License
 
