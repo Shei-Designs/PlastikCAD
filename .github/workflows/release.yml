@@ -86,12 +86,14 @@ jobs:
             args: '--target x86_64-apple-darwin'
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.platform }}
+    # A build takes some twenty minutes. One that has not ended by now is stuck.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
       - name: Install Linux dependencies
         if: startsWith(matrix.platform, 'ubuntu')
         run: |
-          sudo apt-get update
+          .github/scripts/apt-mirror.sh
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
       - uses: pnpm/action-setup@v6
         with:

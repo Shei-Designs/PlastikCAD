@@ -8,6 +8,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-22.04
+    # A run takes some ten minutes. One that has not ended by now is stuck, and is stopped rather than left to the six-hour limit.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -25,7 +27,7 @@ jobs:
       # The Rust side: the file commands, the sign-in listener, the projects folder.
       - name: Install Linux dependencies
         run: |
-          sudo apt-get update
+          .github/scripts/apt-mirror.sh
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -45,6 +47,7 @@ jobs:
       matrix:
         platform: [macos-latest, windows-latest]
     runs-on: ${{ matrix.platform }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -66,6 +69,7 @@ jobs:
   # The reference robots exported and run in MuJoCo: they load, stand, drive and reach.
   robots:
     runs-on: ubuntu-22.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -80,7 +84,7 @@ jobs:
           python-version: '3.12'
       - run: pip install mujoco gymnasium
       # The cameras' pictures are drawn without a display: Mesa's software renderer stands in for one.
-      - run: sudo apt-get update && sudo apt-get install -y libosmesa6
+      - run: .github/scripts/apt-mirror.sh && sudo apt-get install -y libosmesa6
       - run: pnpm install --frozen-lockfile
       - run: pnpm smoke:robots
         env:
@@ -108,6 +112,8 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # The browser's system libraries come from the package mirrors, which are looked at first.
+      - run: .github/scripts/apt-mirror.sh
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm e2e --project ${{ matrix.project }}
       # What went wrong, to open in a browser: the report, with the trace of each test that was tried again.
