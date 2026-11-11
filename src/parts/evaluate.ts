@@ -6,7 +6,16 @@ import type { Solid } from './types';
 
 /** Turns a Solid description into a Manifold. Every kernel object made along the way is handed to `keep`. */
 export function buildSolid(k: ManifoldToplevel, solid: Solid, keep: <T extends { delete(): void }>(o: T) => T): Manifold {
+  // A description may name one piece in several places (a tooth set round a wheel, a cutter at every
+  // step of its way): it is built once. What the kernel makes is never changed afterwards, only made
+  // anew from, so the one solid serves every place.
+  const built = new Map<Solid, Manifold>();
   const build = (s: Solid): Manifold => {
+    let made = built.get(s);
+    if (!made) built.set(s, (made = make(s)));
+    return made;
+  };
+  const make = (s: Solid): Manifold => {
     switch (s.op) {
       case 'extrude': {
         const cs = keep(new k.CrossSection(s.shape, 'EvenOdd'));
@@ -46,6 +55,9 @@ export function buildSolid(k: ManifoldToplevel, solid: Solid, keep: <T extends {
         if (cutters.length === 0) return base;
         return keep(base.subtract(cutters.length === 1 ? cutters[0] : keep(k.Manifold.union(cutters))));
       }
+      case 'tidy':
+        // Faces in one plane are made one face first, which is what lets the small ones between them go.
+        return keep(keep(build(s.child).asOriginal()).simplify(s.within));
       case 'transform': {
         let m = build(s.child);
         if (s.mirror) m = keep(m.mirror(s.mirror));

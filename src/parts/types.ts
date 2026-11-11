@@ -22,6 +22,8 @@ export type Solid =
   /** Closed, outward-facing (CCW) triangle mesh. `swept` says what it was lofted from, where it was. */
   | { op: 'mesh'; positions: number[]; triangles: number[]; swept?: Swept }
   | { op: 'union' | 'intersection'; children: Solid[] }
+  /** The child with its mesh tidied: faces in one plane made one, and what is smaller than `within` (mm) taken out. The solid is the same to that measure. */
+  | { op: 'tidy'; child: Solid; within: number }
   /** First child minus all the others. */
   | { op: 'difference'; children: Solid[] }
   /** Applied in the order mirror, rotate (degrees, XYZ), translate. */
@@ -62,6 +64,7 @@ export const union = (...children: Solid[]): Solid => (children.length === 1 ? c
 export const intersection = (...children: Solid[]): Solid => ({ op: 'intersection', children });
 export const difference = (base: Solid, ...cutters: Solid[]): Solid =>
   cutters.length === 0 ? base : { op: 'difference', children: [base, ...cutters] };
+export const tidy = (child: Solid, within: number): Solid => ({ op: 'tidy', child, within });
 export const translate = (child: Solid, v: Vec3): Solid => ({ op: 'transform', child, translate: v });
 export const rotate = (child: Solid, v: Vec3): Solid => ({ op: 'transform', child, rotate: v });
 export const mirror = (child: Solid, normal: Vec3): Solid => ({ op: 'transform', child, mirror: normal });

@@ -59,7 +59,8 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
   object: group it, cut it, scale it. See [Parts](#parts) for the list.
 - **Mating gears** – *Add mating gear…* on a gear, rack or worm opens a small
   wizard that makes the gear that runs with it: a gear, an internal ring, a
-  rack, a worm wheel (a helical gear cut to the worm's lead) or the second
+  rack, a worm wheel (a helical gear cut to the worm's lead, or a throated
+  wheel whose teeth wrap round the worm) or the second
   bevel of a pair, by tooth count or ratio,
   with backlash and extra center distance to suit the printer. The mate
   stands meshed beside its gear at the right center distance, on whichever
@@ -159,6 +160,7 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
 | Gear rack (straight, helical, herringbone) | Chain sprocket (#25–#41, 05B–08B, bicycle) | Screw hole (M2–M20): clearance, threaded or for a heat-set insert, with a counterbore, countersink or nut trap |  | | | | | | |
 | Bevel gear (90° shafts) | V-belt pulley (Z, A, B, C, SPZ–SPC, one groove or several) | Inch bolt / threaded rod (#6–3/4", UNC or UNF) | | |  | | | | |
 | Worm | | Inch nut | | |  | | | | |
+| Throated worm wheel (its teeth wrap round the worm) | | | | |  | | | | |
 
 Rotating parts share the same options for the shaft: round, D-shaft, hex or
 keyed bore with a fit clearance, plus an optional hub with set-screw holes.
@@ -714,6 +716,11 @@ left alone, since that is its shape.
   trochoids the cutter tip would leave, and small pinions get the same undercut
   a hobbed gear has (with a warning and the profile shift that removes it).
   Helical gears take the module and pressure angle in the normal plane.
+- **The throated worm wheel** is cut the way a hob cuts one: the worm, a
+  little fatter by the backlash and taller by the root clearance, is carried
+  through the blank as the two turn together, and what it leaves is the
+  wheel. Its teeth are exact for that worm (module, starts, pitch diameter,
+  pressure angle and hand must be the worm's) and no other.
 - **Bevel gears** use Tredgold's approximation (the usual construction for cut
   and printed straight bevels), not a spherical involute.
 - **Timing pulleys** use the standard pitch and outside diameters. The groove
@@ -1011,7 +1018,6 @@ The whole of what is planned, put off and dropped is in
 [docs/ROADMAP.md](docs/ROADMAP.md). Next in the app itself:
 
 - Lettering in scripts that need shaping or thousands of characters (Arabic, Hebrew, Indic, Chinese, Japanese, Korean).
-- More parts: throated worm wheel.
 - Assembly preview of meshing gears.
 - True surfaces in STEP files for what still goes out as facets: threads
   and helical gears, bevel gears and stretched shapes.
