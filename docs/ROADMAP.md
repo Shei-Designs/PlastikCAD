@@ -17,8 +17,9 @@ No decision is needed for these.
 - **Parts**: a throated worm wheel; screw holes in inch sizes.
 - **Gears**: a preview of meshed gears turning together.
 - **Lettering**: more fonts, and scripts beyond Latin.
-- **STEP export**: true surfaces for what still goes out as facets: shapes
-  stretched out of round, the servo mount, helical and bevel gears, threads.
+- **STEP export**: true surfaces for what still goes out as facets: helical
+  and bevel gears, threads. (Eggs, tall domes and oval cones cannot be: a
+  STEP file does not keep an oval turned round an axis.)
 - **PLY**: export; colors blended across a face on import.
 
 ## Phases that need a session first

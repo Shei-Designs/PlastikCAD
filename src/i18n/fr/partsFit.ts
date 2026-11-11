@@ -340,8 +340,8 @@ export const partsFit: Catalog = {
   'L-bracket': 'Équerre',
   'Added round the bore and any body that passes through. 0.3 mm suits most printers.': 'Ajouté autour de l’alésage et de tout corps traversant. 0.3 mm convient à la plupart des imprimantes.',
   'Plate [[mount]]': 'Plaque',
-  'From the bolt holes out to the edge of the plate, when the plate is bigger than the motor face.':
-    'Des perçages de vis au bord de la plaque, quand la plaque est plus grande que la face du moteur.',
+  'From the bolt holes, and from a body that passes through, out to the edge of the plate.':
+    'Des trous de fixation, et d’un corps qui traverse la plaque, jusqu’au bord de la plaque.',
   'Bolt holes': 'Perçages de vis',
   'Clearance lets the motor screws pass through the plate. Tap makes them cut their own thread, for a plate the motor screws into.':
     'Passage laisse les vis du moteur traverser la plaque. Taraudage leur fait tailler leur propre filet, pour une plaque dans laquelle elles se vissent.',

@@ -230,14 +230,19 @@ const faceOutline = (m: Motor, grow: number, q: Quality): Polygon => {
   return 'd' in m.face ? circle(m.face.d / 2 + grow, q.circle, cx, cy) : roundedRect(cx, cy, m.face.w + 2 * grow, m.face.h + 2 * grow, m.face.r + grow, q);
 };
 
-/** The plate's outline: round the face, the bolt pattern plus a margin, and any tabs, whichever reaches furthest each way. */
-function plateOutline(m: Motor, margin: number, corner: number, q: Quality): Polygon {
+/**
+ * The plate's outline: round the face, the bolt pattern plus a margin, any tabs, and a body that
+ * passes through plus the same margin, whichever reaches furthest each way. `grow` is the play
+ * round such a body: without the margin beyond it the opening would cut the plate in two.
+ */
+function plateOutline(m: Motor, margin: number, corner: number, grow: number, q: Quality): Polygon {
   const [fx, fy] = m.face.at ?? [0, 0];
   const fw = 'd' in m.face ? m.face.d : m.face.w;
   const fh = 'd' in m.face ? m.face.d : m.face.h;
   const [tx, ty] = m.tabs?.at ?? [0, 0];
-  const xs = [fx - fw / 2, fx + fw / 2, ...m.holes.flatMap((h) => [h[0] - margin, h[0] + margin]), ...(m.tabs ? [tx - m.tabs.w / 2, tx + m.tabs.w / 2] : [])];
-  const ys = [fy - fh / 2, fy + fh / 2, ...m.holes.flatMap((h) => [h[1] - margin, h[1] + margin]), ...(m.tabs ? [ty - m.tabs.h / 2, ty + m.tabs.h / 2] : [])];
+  const [bw, bh] = m.through ? [m.through.w / 2 + grow + margin, m.through.h / 2 + grow + margin] : [0, 0];
+  const xs = [fx - fw / 2, fx + fw / 2, -bw, bw, ...m.holes.flatMap((h) => [h[0] - margin, h[0] + margin]), ...(m.tabs ? [tx - m.tabs.w / 2, tx + m.tabs.w / 2] : [])];
+  const ys = [fy - fh / 2, fy + fh / 2, -bh, bh, ...m.holes.flatMap((h) => [h[1] - margin, h[1] + margin]), ...(m.tabs ? [ty - m.tabs.h / 2, ty + m.tabs.h / 2] : [])];
   const x0 = Math.min(...xs);
   const x1 = Math.max(...xs);
   const y0 = Math.min(...ys);
@@ -285,7 +290,7 @@ function groups(motors: Motor[]): ParamGroup[] {
       title: trx('mount', 'Plate'),
       params: [
         { key: 'thickness', label: tr('Thickness'), type: 'number', default: 4, min: 1, max: 30, step: 0.5, unit: 'mm', visible: is('plate', 'bracket') },
-        { key: 'margin', label: tr('Margin'), type: 'number', default: 6, min: 2, max: 40, step: 0.5, unit: 'mm', help: tr('From the bolt holes out to the edge of the plate, when the plate is bigger than the motor face.'), visible: is('plate', 'bracket') },
+        { key: 'margin', label: tr('Margin'), type: 'number', default: 6, min: 2, max: 40, step: 0.5, unit: 'mm', help: tr('From the bolt holes, and from a body that passes through, out to the edge of the plate.'), visible: is('plate', 'bracket') },
         { key: 'corner', label: tr('Corner radius'), type: 'number', default: 3, min: 0, max: 20, step: 0.5, unit: 'mm', visible: is('plate', 'bracket') },
         {
           key: 'boltFit',
@@ -373,7 +378,7 @@ function build(motors: Motor[], p: Params, q: Quality): BuildResult {
 
   if (make === 'plate' || make === 'bracket') {
     const t = num(p, 'thickness');
-    const plate = plateOutline(m, num(p, 'margin'), num(p, 'corner'), q);
+    const plate = plateOutline(m, num(p, 'margin'), num(p, 'corner'), grow, q);
     const shape: Shape2D = [plate, ...m.holes.map(([x, y]) => circle(boltD / 2, n, x, y)), bore(m, grow, q)];
     const { min, max } = extentOf(plate);
     info.push({ label: trx('mount', 'Plate'), value: `${(max[0] - min[0]).toFixed(1)} × ${(max[1] - min[1]).toFixed(1)} × ${t} mm` });
