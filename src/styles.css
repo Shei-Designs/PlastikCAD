@@ -1414,6 +1414,8 @@ input[type='range'] {
   appearance: none;
   -webkit-appearance: none;
   cursor: pointer;
+  /* A finger moving up or down over a slider scrolls the panel; only a sideways one is the slider's. */
+  touch-action: pan-y;
 }
 
 input[type='range']::-webkit-slider-runnable-track {

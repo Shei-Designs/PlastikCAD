@@ -215,6 +215,11 @@ interface SliderFieldProps {
 export function SliderField({ label, help, value, min, max, step, integer, unit, disabled, onChange }: SliderFieldProps) {
   const id = useId();
   const span = max - min || 1;
+  // A finger that lands on the slider may be on its way up or down the panel. The slider takes a touch anywhere on
+  // its track at once, so a swipe meant to scroll set a value (a gear grew fifteen times as wide). The value a finger
+  // gives is held back until the finger has moved sideways, or has left again without moving: a tap on the track. A
+  // finger that moves up or down is the panel's (the slider lets the browser have it: `touch-action: pan-y`).
+  const finger = useRef<{ x: number; y: number; slides: boolean; held: number | null } | null>(null);
   return (
     <div className="field">
       <label htmlFor={id}>
@@ -232,7 +237,31 @@ export function SliderField({ label, help, value, min, max, step, integer, unit,
           value={Math.min(max, value)}
           disabled={disabled}
           style={{ '--fill': `${(Math.min(1, Math.max(0, (value - min) / span)) * 100).toFixed(2)}%` } as CSSProperties}
-          onChange={(e) => onChange(Number(e.target.value))}
+          onPointerDown={(e) => {
+            finger.current = e.pointerType === 'touch' ? { x: e.clientX, y: e.clientY, slides: false, held: null } : null;
+          }}
+          onPointerMove={(e) => {
+            const f = finger.current;
+            if (!f || f.slides) return;
+            const across = Math.abs(e.clientX - f.x);
+            if (across < 6 || across <= Math.abs(e.clientY - f.y)) return;
+            f.slides = true;
+            if (f.held !== null) onChange(f.held);
+          }}
+          onPointerUp={() => {
+            const f = finger.current;
+            finger.current = null;
+            if (f && !f.slides && f.held !== null) onChange(f.held);
+          }}
+          onPointerCancel={() => {
+            finger.current = null;
+          }}
+          onChange={(e) => {
+            const next = Number(e.target.value);
+            const f = finger.current;
+            if (f && !f.slides) f.held = next;
+            else onChange(next);
+          }}
         />
         <NumberBox id={id} label={label} value={value} min={min} max={max} step={step} integer={integer} unit={unit} places={Math.min(4, decimals(step) + (integer ? 0 : 1))} disabled={disabled} onChange={onChange} />
       </div>
