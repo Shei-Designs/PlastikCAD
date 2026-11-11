@@ -2,16 +2,14 @@
 // and start-up, which opens the project store and sets sync going.
 import { APP_NAME } from '../../appInfo';
 import { mark, plural, tr } from '../../i18n';
-import { emptyDoc, parseDoc, serializeDoc } from '../../model/file';
-import { newId } from '../../model/ops';
+import { emptyDoc, parseDoc } from '../../model/file';
 import * as platform from '../../platform';
 import { openProjectStore, partStore, projectStore, TRASH_FOLDER } from '../projects';
 import { tell } from '../../ui/ask';
-import { cleanUpDrive, initSync, linkAccount, requestSync, unlinkAccount } from '../../sync/sync';
+import { cleanUpDrive, initSync, linkAccount, unlinkAccount } from '../../sync/sync';
 import type { DeletePlan, SyncReport } from '../../sync/engine';
-import { mergeDocs } from '../../sync/merge';
-import { fail, getState, isDirty, noteSync, notify, resetHistory, set, setPrefs } from './core';
-import { adopt, saveProject, scheduleAutosave } from './project';
+import { fail, getState, isDirty, noteSync, notify, set, setPrefs } from './core';
+import { adopt, reloadOpenProject, saveProject, scheduleAutosave } from './project';
 import { receiveFiles } from './importing';
 import { lookForUpdateQuietly } from './updating';
 
@@ -84,36 +82,6 @@ function confirmSyncDeletes(plan: DeletePlan, what: 'projects' | 'parts'): Promi
       : tr('This device no longer has {count} of your {total} parts in Google Drive: {names}. Delete them from Google Drive too?', put);
   }
   return platform.confirm(text, { title: tr('Google Drive sync'), okLabel: tr('Delete them'), cancelLabel: tr('Keep them') });
-}
-
-/**
- * The open project changed on disk under the editor: taken in whole, or merged
- * with edits not yet saved. Where both changed the same thing the edits here
- * win and what came in is kept as a project of its own, whose name is returned.
- */
-async function reloadOpenProject(key: string): Promise<string | null> {
-  try {
-    const incoming = parseDoc(await projectStore().read(key));
-    if (!isDirty()) {
-      const ids = new Set(incoming.scene.map((n) => n.id));
-      resetHistory();
-      set({ doc: incoming, saved: { scene: incoming.scene, name: incoming.name, robot: incoming.robot }, selection: getState().selection.filter((id) => ids.has(id)), editing: null, mating: null, placing: null, aligning: null });
-      return null;
-    }
-    // Edits since the last save are merged onto what came in; the next save writes the result.
-    const saved = getState().saved;
-    const base = saved ? { ...getState().doc, scene: saved.scene, name: saved.name, robot: saved.robot } : null;
-    const { doc, conflicts } = mergeDocs(base, getState().doc, incoming);
-    set({ doc: { ...doc, revision: incoming.revision }, saved: { scene: incoming.scene, name: incoming.name, robot: incoming.robot } });
-    if (conflicts === 0) return null;
-    const copy = { ...incoming, id: newId(), name: tr('{name} (other device)', { name: incoming.name }), revision: newId(), parent: incoming.revision, device: getState().prefs.device, saved: new Date().toISOString() };
-    await projectStore().write(null, copy.name, serializeDoc(copy));
-    requestSync();
-    return incoming.name;
-  } catch (e) {
-    fail(e);
-    return null;
-  }
 }
 
 /** Links a Google account, after saying what that means. */

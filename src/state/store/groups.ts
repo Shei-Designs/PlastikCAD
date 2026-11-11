@@ -89,6 +89,7 @@ export async function finishEditing(): Promise<void> {
   startWork(tr('Regrouping…'));
   try {
     let scene = getState().doc.scene;
+    const began = scene;
     let outermost: string | null = null;
     for (const layer of [...session.layers].reverse()) {
       // Undo may have put a layer back already; what was deleted meanwhile is simply left out.
@@ -109,6 +110,9 @@ export async function finishEditing(): Promise<void> {
       scene = [...scene.filter((n) => !found.includes(n)).slice(0, at), group, ...scene.filter((n) => !found.includes(n)).slice(at)];
       outermost = group.id;
     }
+    // The design moved on while the worker was measuring (another project opened, a sync taken in): what was put
+    // together belongs to the design as it was, and is left.
+    if (getState().doc.scene !== began || getState().editing !== session) return;
     replaceState({ ...getState(), editing: null });
     commit(scene, { selection: outermost ? [outermost] : [] });
   } catch (e) {

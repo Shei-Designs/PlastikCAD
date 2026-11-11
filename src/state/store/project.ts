@@ -12,6 +12,7 @@ import type { PickedFile } from '../../platform';
 import { geometry } from '../geometry';
 import { DiskProjects, fileNameFor, hasProjectStore, partStore, projectStore, setProjectStore } from '../projects';
 import type { ProjectInfo, VersionInfo } from '../projects';
+import { mergeDocs } from '../../sync/merge';
 import { requestSync, withSyncPaused } from '../../sync/sync';
 import { abortAlignPreview, fail, getState, isDirty, notify, resetHistory, set, setPrefs } from './core';
 import type { EditorState } from './core';
@@ -114,18 +115,26 @@ export function saveProject(fresh = false): Promise<boolean> {
 }
 
 async function write(fresh: boolean): Promise<boolean> {
-  // What is being written counts as saved once it is, even if more changed meanwhile.
-  const base = { scene: getState().doc.scene, name: getState().doc.name, robot: getState().doc.robot };
-  const doc = docToSave();
-  const thumb = thumbFor(doc, fresh);
-  // Every save is a revision following the one before it, so that sync can tell what changed where.
-  const stamp = { revision: newId(), parent: doc.revision, device: getState().prefs.device, saved: new Date().toISOString() };
   set({ saving: true });
   try {
-    // The save about to be replaced is kept, now and then, as one to go back to; failing to keep it never stops a save.
-    const before = getState().projectKey;
-    if (before) await projectStore().keep?.(before).catch(() => {});
-    const key = await projectStore().write(before, doc.name, serializeDoc({ ...doc, ...stamp, thumb }));
+    const store = projectStore();
+    // The look at what is stored and the write go as one turn of the store, so that a sync pass cannot write between them.
+    const replace = async () => {
+      // A file that is no longer the save the editor has is taken in first: this save is then made on top of it.
+      const held = getState().projectKey;
+      const before = held ? await caughtUp(held) : null;
+      // What is being written counts as saved once it is, even if more changed meanwhile.
+      const base = { scene: getState().doc.scene, name: getState().doc.name, robot: getState().doc.robot };
+      const doc = docToSave();
+      const thumb = thumbFor(doc, fresh);
+      // Every save is a revision following the one before it, so that sync can tell what changed where.
+      const stamp = { revision: newId(), parent: doc.revision, device: getState().prefs.device, saved: new Date().toISOString() };
+      // The save about to be replaced is kept, now and then, as one to go back to; failing to keep it never stops a save.
+      if (before) await store.keep?.(before).catch(() => {});
+      const key = await store.write(before, doc.name, serializeDoc({ ...doc, ...stamp, thumb }));
+      return { key, base, stamp, thumb };
+    };
+    const { key, base, stamp, thumb } = await (store.exclusive ? store.exclusive(replace) : replace());
     set({ projectKey: key, saved: base, saving: false, doc: { ...getState().doc, ...stamp, thumb } });
     if (getState().prefs.lastProject !== key) setPrefs({ lastProject: key });
     lastSaveError = null;
@@ -138,6 +147,69 @@ async function write(fresh: boolean): Promise<boolean> {
     if (message !== lastSaveError) notify(tr('Could not save: {message}', { message }), 'error');
     lastSaveError = message;
     return false;
+  }
+}
+
+/**
+ * Before a save: whether the project's file is still the save the editor has. A sync pass that wrote what another
+ * device saved, a file brought in step by the system, another copy of the app: any of them may have replaced it
+ * since, and a save made over it would put the old design back and lose what came in (the next pass would even
+ * carry the loss to the other devices). What is there is taken in first. Returns where the project's file is now.
+ */
+async function caughtUp(key: string): Promise<string> {
+  const all = await projectStore().list();
+  let there = all.find((p) => p.key === key);
+  if (!there) {
+    // Renamed on another device: the file went to the new name, with the project's id.
+    const id = getState().doc.id;
+    there = all.find((p) => p.id !== null && p.id === id);
+    if (!there) return key;
+    set({ projectKey: there.key });
+    setPrefs({ lastProject: there.key });
+  }
+  if (there.revision !== null && there.revision !== (getState().doc.revision ?? null)) await takeIn(there.key);
+  return there.key;
+}
+
+/**
+ * The open project changed in the store under the editor: taken in whole, or merged with edits not yet saved.
+ * Where both changed the same thing the edits here win and what came in is kept as a project of its own, whose
+ * name is returned. Rejects when what is there cannot be read (a design from a newer version, a damaged file).
+ */
+async function takeIn(key: string): Promise<string | null> {
+  const incoming = parseDoc(await projectStore().read(key));
+  // The editor's own save, read back: there is nothing to take in.
+  if (incoming.revision !== undefined && incoming.revision === getState().doc.revision) return null;
+  const aside = { editing: null, mating: null, placing: null, aligning: null };
+  // Undo holds whole designs as they were before this: a step back would take out what came in.
+  resetHistory();
+  if (!isDirty()) {
+    const ids = new Set(incoming.scene.map((n) => n.id));
+    set({ doc: incoming, saved: { scene: incoming.scene, name: incoming.name, robot: incoming.robot }, selection: getState().selection.filter((id) => ids.has(id)), ...aside });
+    return null;
+  }
+  // Edits since the last save are merged onto what came in; the next save writes the result. A group being edited
+  // inside is merged as it is saved, put together, and the edit of it ends: taken apart, its parts would come out twice.
+  const saved = getState().saved;
+  const mine = docToSave();
+  const base = saved ? { ...mine, scene: saved.scene, name: saved.name, robot: saved.robot } : null;
+  const { doc, conflicts } = mergeDocs(base, mine, incoming);
+  const ids = new Set(doc.scene.map((n) => n.id));
+  set({ doc: { ...doc, revision: incoming.revision }, saved: { scene: incoming.scene, name: incoming.name, robot: incoming.robot }, selection: getState().selection.filter((id) => ids.has(id)), ...aside });
+  if (conflicts === 0) return null;
+  const copy = { ...incoming, id: newId(), name: tr('{name} (other device)', { name: incoming.name }), revision: newId(), parent: incoming.revision, device: getState().prefs.device, saved: new Date().toISOString() };
+  await projectStore().write(null, copy.name, serializeDoc(copy));
+  requestSync();
+  return incoming.name;
+}
+
+/** The same for what a sync pass says it changed: a failure is said, and the editor left as it is. */
+export async function reloadOpenProject(key: string): Promise<string | null> {
+  try {
+    return await takeIn(key);
+  } catch (e) {
+    fail(e);
+    return null;
   }
 }
 
