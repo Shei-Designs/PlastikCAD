@@ -549,6 +549,7 @@ plus the thumbnail line at the top (and `Trash/` and `History/` belong in
 | STL | 3D mesh for any slicer |
 | 3MF | 3D mesh with units and colors, preferred by modern slicers; a part per color for multi-material printing |
 | OBJ | 3D mesh for modeling tools, with the colors in a material library beside it |
+| PLY | 3D mesh in one piece, each face in the color of its object, for mesh and scanning tools |
 | GLB | 3D scene with colors, textures and pictures, for Blender, Godot, Unity and renderers |
 | STEP | Solids for CAD programs: each object with its name and color, as planes, cylinders, cones, spheres and tori where it can be rebuilt |
 | SVG | Outline of the design seen from above, for laser cutters and vector editors |

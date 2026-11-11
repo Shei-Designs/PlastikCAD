@@ -122,7 +122,7 @@ const READABLE: &[&str] = &[
     DESIGN_EXTENSION, OLD_DESIGN_EXTENSION, "stl", "obj", "mtl", "3mf", "glb", "gltf", "bin", "dae", "ply", "step", "stp", "svg", "dxf", "urdf", "xacro", "png", "jpg", "jpeg", "zip",
 ];
 /// What the app saves: designs and exports.
-const WRITABLE: &[&str] = &[DESIGN_EXTENSION, "stl", "3mf", "obj", "mtl", "glb", "step", "svg", "dxf", "zip"];
+const WRITABLE: &[&str] = &[DESIGN_EXTENSION, "stl", "3mf", "obj", "mtl", "ply", "glb", "step", "svg", "dxf", "zip"];
 const DESIGNS: &[&str] = &[DESIGN_EXTENSION, OLD_DESIGN_EXTENSION];
 
 /// Whether a path names a file of one of `kinds`, by its extension, whatever its case. A hidden file is none of them.

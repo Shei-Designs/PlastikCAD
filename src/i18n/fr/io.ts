@@ -8,6 +8,7 @@ export const io: Catalog = {
   'Binary mesh for any slicer': 'Maillage binaire pour tout trancheur',
   'Mesh with colors and units for slicers': 'Maillage avec couleurs et unités pour trancheurs',
   'Text mesh with colors for modeling tools': 'Maillage texte avec couleurs pour logiciels de modélisation',
+  'Binary mesh with a color on every face': 'Maillage binaire avec une couleur par face',
   'Mesh with pictures for scenes': 'Maillage avec images pour scènes',
   'Solids with true surfaces for CAD programs': 'Solides à surfaces exactes pour logiciels de CAO',
   'Top-down outline for lasers': 'Contour vu de dessus pour découpe laser',

@@ -66,6 +66,7 @@ test.describe('menus and boxes', { tag: '@mouse' }, () => {
       'true STLBinary mesh for any slicer',
       'false 3MFMesh with colors and units for slicers',
       'false OBJText mesh with colors for modeling tools',
+      'false PLYBinary mesh with a color on every face',
       'false GLBMesh with pictures for scenes',
       'false STEPSolids with true surfaces for CAD programs',
       'false SVGTop-down outline for lasers',
