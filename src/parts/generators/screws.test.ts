@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { evaluate, initKernel } from '../testing';
 import { cylinder, intersection, QUALITY, translate } from '../types';
 import type { Quality, Solid } from '../types';
-import { HOLE_SIZES, leadScrew, leadScrewNut, METRIC_SIZES, metricBolt, metricNut, screwHole } from './screws';
+import { HOLE_SIZES, inchBolt, inchNut, leadScrew, leadScrewNut, METRIC_SIZES, metricBolt, metricNut, screwHole, UNIFIED_SIZES } from './screws';
 import { defaultParams } from './types';
 import type { GeneratorDef, Params } from './types';
 
@@ -370,3 +370,56 @@ describe('screw hole', () => {
     expect(build(screwHole, { size: 'M10', kind: 'insert', bore: 12.5 }).warnings).toEqual([]);
   });
 });
+
+describe('inch bolt and nut', () => {
+  const figure = (r: ReturnType<typeof build>, label: string): string => r.info.find((i) => i.label === label)?.value ?? '';
+
+  it('cuts a 1/4-20 thread under a 7/16 hex head', () => {
+    const r = build(inchBolt);
+    expect(r.warnings).toEqual([]);
+    expect(figure(r, 'Thread')).toBe('1/4-20 UNC');
+    // Twenty threads to the inch; a quarter inch less the clearance on either side.
+    expect(parseFloat(figure(r, 'Pitch'))).toBeCloseTo(25.4 / 20, 2);
+    expect(parseFloat(figure(r, 'Major diameter'))).toBeCloseTo(6.35 - 2 * 0.15, 2);
+    expect(parseFloat(figure(r, 'Across flats'))).toBeCloseTo(11.1, 1);
+    expect(parseFloat(figure(r, 'Head height'))).toBeCloseTo(4, 1);
+    const { stats } = evaluate(r.solid);
+    // Across the flats of the hexagon and across its corners, and from under the head to the tip.
+    expect(stats.max[0] - stats.min[0]).toBeCloseTo((7 / 16) * 25.4, 1);
+    expect(stats.max[1] - stats.min[1]).toBeCloseTo(((7 / 16) * 25.4) / Math.cos(Math.PI / 6), 1);
+    expect(stats.max[2] - stats.min[2]).toBeCloseTo((5 / 32) * 25.4 + 30, 1);
+  });
+
+  it('takes the fine series, and the numbered sizes', () => {
+    expect(figure(build(inchBolt, { series: 'fine' }), 'Thread')).toBe('1/4-28 UNF');
+    const small = build(inchNut, { size: '#10', series: 'fine' });
+    expect(figure(small, 'Thread')).toBe('#10-32 UNF');
+    expect(parseFloat(figure(small, 'Pitch'))).toBeCloseTo(25.4 / 32, 2);
+    // A machine screw nut: 3/8 across the flats, 1/8 thick.
+    expect(parseFloat(figure(small, 'Across flats'))).toBeCloseTo(9.5, 1);
+    expect(parseFloat(figure(small, 'Height'))).toBeCloseTo(3.2, 1);
+    // From 7/16 the nut is wider across the flats than the bolt's head.
+    expect(parseFloat(figure(build(inchNut, { size: '7/16"' }), 'Across flats'))).toBeCloseTo(17.5, 1);
+    expect(parseFloat(figure(build(inchBolt, { size: '7/16"' }), 'Across flats'))).toBeCloseTo(15.9, 1);
+  });
+
+  it('builds every size in both series, with either head or none', () => {
+    for (const size of UNIFIED_SIZES) {
+      for (const series of ['coarse', 'fine']) {
+        expect(volume(build(inchNut, { size, series }, draft).solid), `${size} ${series} nut`).toBeGreaterThan(0);
+        expect(volume(build(inchBolt, { size, series, length: 12 }, draft).solid), `${size} ${series} bolt`).toBeGreaterThan(0);
+      }
+    }
+    for (const head of ['hex', 'socket', 'none']) expect(volume(build(inchBolt, { head, length: 12 }, draft).solid), head).toBeGreaterThan(0);
+  });
+
+  it('mates with a bolt of the same size and series only', () => {
+    const nut = build(inchNut, {}, draft).solid;
+    const through = (overrides: Params) => volume(intersection(nut, translate(build(inchBolt, { head: 'none', length: 20, chamfer: false, ...overrides }, draft).solid, [0, 0, -5])));
+    // The same thread turns in with nothing in the way; the fine one, and a left-handed one, cut into it.
+    expect(through({})).toBeLessThan(0.5);
+    expect(through({ series: 'fine' })).toBeGreaterThan(2);
+    expect(through({ hand: 'left' })).toBeGreaterThan(2);
+  });
+});
+
