@@ -555,6 +555,14 @@ The other formats
 carry the shapes alone and say so before exporting a design that has pictures
 on it.
 
+In an SVG or DXF, round things are round. A hole or a disc goes out as a
+circle (in a DXF, a `CIRCLE`), and a rounded corner as an arc (a bulge on the
+DXF's polyline, an arc of the SVG's path), found again from the many short
+sides the shapes are built with: fifteen sides or more to the turn, with every
+corner within two microns of the arc. A cylinder goes out at the size it
+measures across. Anything else stays the polygon it is: a hexagon, a hole of
+twelve sides. A gear's flanks come out as short arcs through their corners.
+
 The file is made at a finer detail than the screen: round shapes, gear teeth
 and threads get twice the facets they are drawn with, so prints come out
 smooth while the editor stays quick. A cylinder set to a handful of sides is

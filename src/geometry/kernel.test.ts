@@ -5,6 +5,7 @@ import { add, apply, emptyBounds, expandBounds, nodeMatrix } from '../model/math
 import type { Bounds } from '../model/math';
 import { alignNodes, cloneNode, makeGroup, sourceColor } from '../model/ops';
 import type { Asset, GroupNode, ImportNode, PictureNode, Polygon, SceneNode, ShapeKind, ShapeNode, TextNode, Vec3 } from '../model/types';
+import { traceArcs } from '../io/arcs';
 import { getGenerator } from '../parts/generators';
 import { castRay } from './bvh';
 import { build, cacheSize, clearCache, decodeBase64, exportColored, exportNodes, forgetAssets, initKernel, measure, partBox, rawManifold, SHEET, setAssets } from './kernel';
@@ -917,6 +918,40 @@ describe('cache', () => {
     const g = group([20, 20, 10], [{ ...cyl, pos: [0, 0, 0] }]);
     expect(exportNodes([g], false, true).volume).toBeCloseTo(fine.volume, 3);
     expect(exportNodes([g], false).volume).toBeCloseTo(shown.volume, 3);
+  });
+});
+
+describe('the outline of round things', () => {
+  it('is read back as a circle for a cylinder, and as arcs for the corners of a rounded box', () => {
+    const cyl = shape('cylinder', { size: [20, 20, 10], pos: [30, -5, 5] });
+    const [round] = exportNodes([cyl], true, true).outline!;
+    const circle = traceArcs(round);
+    if (!('circle' in circle)) throw new Error('the outline of a cylinder is a circle');
+    expect(circle.circle.radius).toBeCloseTo(10, 4);
+    expect(circle.circle.center[0]).toBeCloseTo(30, 4);
+    expect(circle.circle.center[1]).toBeCloseTo(-5, 4);
+
+    const box = shape('box', { size: [40, 30, 10], params: { ...defaultParams('box'), radius: 5 } });
+    const [rounded] = exportNodes([box], true, true).outline!;
+    const traced = traceArcs(rounded);
+    if ('circle' in traced) throw new Error('a rounded box is no circle');
+    const arcs = traced.sides.filter((s) => s.arc);
+    expect(arcs).toHaveLength(4);
+    for (const s of arcs) {
+      expect(s.arc!.radius).toBeCloseTo(5, 4);
+      expect(Math.abs(s.arc!.sweep)).toBeCloseTo(Math.PI / 2, 6);
+    }
+    expect(traced.sides.filter((s) => !s.arc)).toHaveLength(4);
+  });
+
+  it('is a circle for a hole drilled through a plate, too', () => {
+    const plate = shape('box', { size: [40, 30, 4], pos: [0, 0, 2] });
+    const hole = shape('cylinder', { size: [8, 8, 10], pos: [5, 3, 2], hole: true });
+    const outline = exportNodes([group([40, 30, 4], [plate, hole])], true, true).outline!;
+    const traced = outline.map(traceArcs);
+    const circles = traced.filter((t) => 'circle' in t);
+    expect(circles).toHaveLength(1);
+    expect('circle' in circles[0] && circles[0].circle.radius).toBeCloseTo(4, 4);
   });
 });
 
