@@ -536,6 +536,7 @@ plus the thumbnail line at the top (and `Trash/` and `History/` belong in
 | 3MF | 3D mesh with units and colors, preferred by modern slicers; a part per color for multi-material printing |
 | OBJ | 3D mesh for modeling tools, with the colors in a material library beside it |
 | GLB | 3D scene with colors, textures and pictures, for Blender, Godot, Unity and renderers |
+| STEP | Solids for CAD programs: each object with its name and color, as planes, cylinders, cones, spheres and tori where it can be rebuilt |
 | SVG | Outline of the design seen from above, for laser cutters and vector editors |
 | DXF | The same outline, to extrude in CAD or cut on a laser / CNC |
 
@@ -557,6 +558,29 @@ carries its colors in a material library named after it, written beside it.
 The other formats
 carry the shapes alone and say so before exporting a design that has pictures
 on it.
+
+A STEP file keeps every object apart, as a solid with its name and its
+color (a group whose parts have colors of their own as a solid per color),
+written by [OpenCascade](https://dev.opencascade.org/), which is loaded for
+the first one. An object is rebuilt there from what it is, so that a CAD
+program gets surfaces it can pick, measure and build on: a box is six
+planes, a cylinder a cylinder, a ball a sphere, a rounded box its flats with
+cylinders along the edges and spheres at the corners, and a plate with a
+hole drilled through it seven faces, the hole's wall one of them. Gears,
+pulleys, sprockets, rails, boards, fans, motor mounts and cutouts go out as
+their profiles raised, with circles and arcs where they have them. Whatever
+is rebuilt is held against the kernel's own solid (its volume to half a
+percent, its box to 0.05 mm) before it is written.
+
+What cannot be rebuilt goes out as the kernel's facets, sewn into a solid
+with the facets that lie in one plane joined: threads and helical gears
+(twisted as they rise), bevel gears and pipes, lettering, imported meshes,
+shapes stretched out of round (an egg from a ball), a rounded rim, a dome, a
+round roof, and any group that holds one of these or parts in several
+colors. Flat sides are still true planes; a curve is as many flat strips as
+it has on screen, which makes a large file (some 1.6 kB a triangle). Such an
+object of more than 60,000 triangles is left out, and one that is not
+watertight goes out as a surface; both are said.
 
 In an SVG or DXF, round things are round. A hole or a disc goes out as a
 circle (in a DXF, a `CIRCLE`), and a rounded corner as an arc (a bulge on the
@@ -809,7 +833,7 @@ src/
   state/              the editor: selection, undo, projects, preferences, the test drive (store.ts is the one door to it, over the modules in store/)
   viewer/             three.js view: Viewer.ts and its parts (drawing, picking, handles, pointer input, measuring, the robot overlay)
   parts/              the part generators (gears, pulleys, threads, rails, ducts, boards, fans, cutouts, motors) and the mating-gear maths
-  io/                 STL, 3MF, OBJ, GLB, SVG, DXF, URDF, SDF, MJCF, USD writers; STL, OBJ, 3MF, GLB, Collada, STEP, SVG, DXF, URDF readers
+  io/                 STL, 3MF, OBJ, GLB, STEP, SVG, DXF, URDF, SDF, MJCF, USD writers; STL, OBJ, 3MF, GLB, Collada, STEP, SVG, DXF, URDF readers
   robot/              Robot mode: links and joints, materials and mass properties, checks, the export packages
   sim/                the test drive: MuJoCo (WebAssembly) in a worker
   sync/               Google sign-in (PKCE, loopback), Drive remote, three-way merge, sync engine
@@ -925,10 +949,8 @@ waits until someone needs it:
 - More scripts and fonts for lettering.
 - More parts: throated worm wheel, V-belt pulleys, imperial threads.
 - Assembly preview of meshing gears.
-- STEP export. Shapes and parts are already described as profiles and
-  operations rather than triangles, so OpenCascade, which already reads STEP
-  files here, can evaluate the same descriptions into true planes and
-  cylinders.
+- True surfaces in STEP files for what still goes out as facets: threads
+  and helical gears, pipes, domes and stretched shapes.
 
 ## License
 

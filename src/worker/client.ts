@@ -6,7 +6,7 @@ import type { Bounds } from '../model/math';
 import type { Asset, PartNode, SceneNode } from '../model/types';
 import type { CollisionKind } from '../robot/types';
 import type { ImportResult } from './importing';
-import type { BuildResult, ColoredExport, ExportResult, LinkGeometry, LinkProperties, WorkerRequest, WorkerResponse } from './protocol';
+import type { BuildResult, ColoredExport, ExportResult, LinkGeometry, LinkProperties, StepExport, WorkerRequest, WorkerResponse } from './protocol';
 
 interface Waiting {
   resolve: (value: never) => void;
@@ -197,6 +197,11 @@ export class GeometryClient {
    */
   features(positions: Float32Array, matrix: number[]): Promise<FeatureIndex> {
     return this.send({ type: 'features', positions, matrix }, [positions.buffer]);
+  }
+
+  /** Every node placed, as a STEP file with a solid per object and color. OpenCascade is loaded for the first one. */
+  exportStep(nodes: SceneNode[]): Promise<StepExport> {
+    return this.send({ type: 'exportStep', nodes });
   }
 
   /** Volume, area, centroid and inertia of each node as placed in the design. */

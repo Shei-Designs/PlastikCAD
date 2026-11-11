@@ -41,4 +41,36 @@ test.describe('STEP import', { tag: '@mouse' }, () => {
     expect(fetched).toHaveLength(1);
     expect(errors).toEqual([]);
   });
+
+  test('a plate with a hole drilled through it goes out as a STEP solid whose hole is a cylinder, and comes back the same size', async ({ page, errors }) => {
+    await openApp(page);
+    await store(page, async (m) => {
+      m.addShape('box');
+      m.updateNode(m.getState().doc.scene[0].id, { size: [40, 30, 4], pos: [0, 0, 2] });
+      m.addShape('cylinder');
+      m.updateNode(m.getState().doc.scene[1].id, { size: [8, 8, 10], pos: [5, 3, 2], hole: true });
+      m.selectAll();
+      await m.groupSelected();
+      m.setPrefs({ format: 'step' });
+    });
+    await settled(page);
+    expect(await sceneCount(page)).toBe(1);
+    const download = page.waitForEvent('download');
+    expect(await store(page, (m) => m.exportDesign('step', false))).toBe(true);
+    const saved = await download;
+    expect(saved.suggestedFilename()).toMatch(/\.step$/);
+    const step = readFileSync(await saved.path(), 'utf8');
+    const count = (entity: string): number => (step.match(new RegExp(`\\b${entity}\\(`, 'g')) ?? []).length;
+    // The plate's six sides and the wall of the hole.
+    expect(count('MANIFOLD_SOLID_BREP')).toBe(1);
+    expect(count('ADVANCED_FACE')).toBe(7);
+    expect(count('CYLINDRICAL_SURFACE')).toBe(1);
+    expect(count('PLANE')).toBe(6);
+    expect((await notices(page)).filter((n) => n.kind === 'error')).toEqual([]);
+    // And back in: a second object, the size of the first.
+    await dropFiles(page, [{ name: 'back.step', bytes: [...Buffer.from(step)] }]);
+    await expect.poll(() => sceneCount(page), { timeout: 30_000 }).toBe(2);
+    expect(await store(page, (m) => m.getState().doc.scene[1].size.map((v) => Math.round(v * 100) / 100))).toEqual([40, 30, 4]);
+    expect(errors).toEqual([]);
+  });
 });

@@ -9,6 +9,7 @@ export const io: Catalog = {
   'Mesh with colors and units for slicers': 'Maillage avec couleurs et unités pour trancheurs',
   'Text mesh with colors for modeling tools': 'Maillage texte avec couleurs pour logiciels de modélisation',
   'Mesh with pictures for scenes': 'Maillage avec images pour scènes',
+  'Solids with true surfaces for CAD programs': 'Solides à surfaces exactes pour logiciels de CAO',
   'Top-down outline for lasers': 'Contour vu de dessus pour découpe laser',
   'Top-down outline for CAD': 'Contour vu de dessus pour CAO',
 
@@ -30,6 +31,14 @@ export const io: Catalog = {
   'This STEP file is too detailed to open.': 'Ce fichier STEP est trop détaillé pour être ouvert.',
   'STEP files cannot be read here.': 'Les fichiers STEP ne peuvent pas être lus ici.',
   'The STEP reader could not be loaded.': 'Le lecteur STEP n’a pas pu être chargé.',
+
+  // STEP out (stepExport.ts, worker/serve.ts)
+  'STEP files cannot be written here.': 'Les fichiers STEP ne peuvent pas être écrits ici.',
+  'The STEP writer could not be loaded.': 'Le module d’écriture STEP n’a pas pu être chargé.',
+  '"{name}" is too detailed for a STEP file and was left out.': '«\u00a0{name}\u00a0» est trop détaillé pour un fichier STEP et a été ignoré.',
+  '"{name}" is not watertight and was exported as a surface.': '«\u00a0{name}\u00a0» n’est pas étanche et a été exporté comme surface.',
+  'The STEP file could not be written.': 'Le fichier STEP n’a pas pu être écrit.',
+  '"{name}" may not be whole in the STEP file: check it where it is opened.': '«\u00a0{name}\u00a0» n’est peut-être pas complet dans le fichier STEP\u00a0: vérifiez-le là où il est ouvert.',
 
   // XML (xml.ts)
   'This file is nested too deeply to read.': 'Ce fichier est imbriqué trop profondément pour être lu.',

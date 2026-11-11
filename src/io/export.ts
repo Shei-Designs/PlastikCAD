@@ -6,7 +6,7 @@ import { writeObj } from './obj';
 import { writeStl } from './stl';
 import { writeSvg } from './svg';
 
-export type FormatId = 'stl' | '3mf' | 'obj' | 'glb' | 'svg' | 'dxf';
+export type FormatId = 'stl' | '3mf' | 'obj' | 'glb' | 'step' | 'svg' | 'dxf';
 
 export interface ExportFormat {
   id: FormatId;
@@ -49,6 +49,14 @@ export const FORMATS: ExportFormat[] = [
     description: tr('Mesh with pictures for scenes'),
     kind: '3d',
     mime: 'model/gltf-binary',
+  },
+  {
+    id: 'step',
+    label: 'STEP',
+    extension: 'step',
+    description: tr('Solids with true surfaces for CAD programs'),
+    kind: '3d',
+    mime: 'model/step',
   },
   {
     id: 'svg',

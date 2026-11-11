@@ -30,7 +30,7 @@ export function ExportPanel() {
       if (!ok) return;
     }
     // Nothing selected: everything goes out as one part, which is worth a moment's pause (a GLB or 3MF keeps the objects apart).
-    if (!partial && count > 1 && format !== 'glb' && format !== '3mf') {
+    if (!partial && count > 1 && format !== 'glb' && format !== '3mf' && format !== 'step') {
       const ok = await confirm(plural(count, 'Export {n} object as one {format}?', 'Export all {n} objects together as one {format}?', { format: active.label }), { title: APP_NAME, okLabel: tr('Export') });
       if (!ok) return;
     }
@@ -47,7 +47,7 @@ export function ExportPanel() {
   };
 
   // What goes out, and whether as one part: said of several objects only, as one alone is neither merged nor kept apart.
-  const apart = format === 'glb';
+  const apart = format === 'glb' || format === 'step';
   const note =
     count === 0
       ? tr('Nothing to export yet')

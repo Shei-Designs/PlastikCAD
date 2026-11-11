@@ -58,6 +58,7 @@ test.describe('menus and boxes', { tag: '@mouse' }, () => {
       'false 3MFMesh with colors and units for slicers',
       'false OBJText mesh with colors for modeling tools',
       'false GLBMesh with pictures for scenes',
+      'false STEPSolids with true surfaces for CAD programs',
       'false SVGTop-down outline for lasers',
       'false DXFTop-down outline for CAD',
     ]);

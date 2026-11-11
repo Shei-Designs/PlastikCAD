@@ -588,7 +588,7 @@ function fit(m: Manifold, size: Vec3, keep: Keep): Manifold {
  * pyramid is its number of sides; these are round, and a cylinder with fewer
  * than this many sides was meant to be faceted too.
  */
-const ROUND: Partial<Record<ShapeKind, number>> = { cylinder: 16, cone: 16, sphere: 8, dome: 8, torus: 8, roundroof: 8, fillet: 4 };
+export const ROUND: Partial<Record<ShapeKind, number>> = { cylinder: 16, cone: 16, sphere: 8, dome: 8, torus: 8, roundroof: 8, fillet: 4 };
 
 /** The parameters with twice the facets on every curve (up to 256), for an export at fine detail. */
 export function refineParams(kind: ShapeKind, p: Record<string, number>): Record<string, number> {
