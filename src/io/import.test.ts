@@ -727,9 +727,47 @@ describe('glTF import', () => {
     expect(meshBounds(got.parts[0].mesh)).toEqual({ min: [0, 0, 2], max: [20, 20, 2] });
   });
 
+  it('reads a .gltf whose buffer and picture are files beside it, and names the ones that did not come', () => {
+    // The triangle of the first test with texture coordinates, its numbers in scene.bin and its picture in textures/wood.png.
+    const data = new Uint8Array(new Float32Array([0, 0, 0, 0.01, 0, 0, 0, 0, -0.01, 0, 0, 1, 0, 0, 1]).buffer);
+    const gltf = JSON.stringify({
+      asset: { version: '2.0' },
+      meshes: [{ name: 'Tri', primitives: [{ attributes: { POSITION: 0, TEXCOORD_0: 1 }, material: 0 }] }],
+      materials: [{ pbrMetallicRoughness: { baseColorTexture: { index: 0 } } }],
+      textures: [{ source: 0 }],
+      images: [{ uri: 'textures/wood%20grain.png' }, { uri: 'unused.png' }],
+      accessors: [{ bufferView: 0, componentType: 5126, count: 3, type: 'VEC3' }, { bufferView: 1, componentType: 5126, count: 3, type: 'VEC2' }],
+      bufferViews: [{ buffer: 0, byteLength: 36 }, { buffer: 0, byteOffset: 36, byteLength: 24 }],
+      buffers: [{ byteLength: 60, uri: 'scene.bin' }],
+    });
+    const read = (companions: { name: string; bytes: Uint8Array }[]) => {
+      const got = importFile('scene.gltf', bytes(gltf), companions);
+      if (got.kind !== 'model') throw new Error('expected a model');
+      return got;
+    };
+    // Alone: no shapes, and everything it names beside it is asked for in one go.
+    expect(read([])).toEqual({ kind: 'model', parts: [], used: [], missing: ['scene.bin', 'textures/wood grain.png', 'unused.png'] });
+    // With its buffer: the shapes, and the one picture a material uses still wanted.
+    const plain = read([{ name: 'scene.bin', bytes: data }]);
+    expect(plain.parts).toHaveLength(1);
+    expect(plain.parts[0].image).toBeUndefined();
+    expect(plain.used).toEqual(['scene.bin']);
+    expect(plain.missing).toEqual(['textures/wood grain.png']);
+    // With both, the picture found by its name alone, whatever folder it was picked from.
+    const whole = read([{ name: 'SCENE.BIN', bytes: data }, { name: 'Wood Grain.png', bytes: png }]);
+    expect(meshBounds(whole.parts[0].mesh)).toEqual({ min: [0, 0, 0], max: [10, 10, 0] });
+    expect(whole.parts[0].image).toEqual({ name: 'scene.png', mime: 'image/png', bytes: png });
+    expect(whole.used).toEqual(['SCENE.BIN', 'Wood Grain.png']);
+    expect(whole.missing).toEqual([]);
+    // A buffer anywhere but beside the file is never fetched.
+    for (const uri of ['../secret.bin', '/etc/passwd', 'file:///etc/passwd', 'C:\\\\data.bin']) {
+      expect(() => importFile('scene.gltf', bytes(gltf.replace('scene.bin', uri)))).toThrow(/separate files/);
+    }
+  });
+
   it('rejects what it cannot read', () => {
     expect(() => modelOf('x.glb', new Uint8Array(0))).toThrow('empty');
-    expect(() => modelOf('x.gltf', '{"asset":{"version":"2.0"},"buffers":[{"byteLength":4,"uri":"data.bin"}],"meshes":[{"primitives":[{"attributes":{"POSITION":0}}]}],"accessors":[{"bufferView":0,"componentType":5126,"count":1,"type":"VEC3"}],"bufferViews":[{"buffer":0,"byteLength":12}]}')).toThrow(/separate files/);
+    expect(() => modelOf('x.gltf', '{"asset":{"version":"2.0"},"buffers":[{"byteLength":4,"uri":"https://example.com/data.bin"}],"meshes":[{"primitives":[{"attributes":{"POSITION":0}}]}],"accessors":[{"bufferView":0,"componentType":5126,"count":1,"type":"VEC3"}],"bufferViews":[{"buffer":0,"byteLength":12}]}')).toThrow(/separate files/);
     expect(() => modelOf('x.gltf', 'nope')).toThrow(/JSON/);
     expect(() => modelOf('x.gltf', '{"asset":{"version":"2.0"},"extensionsRequired":["KHR_draco_mesh_compression"],"meshes":[{"primitives":[{"attributes":{"POSITION":0}}]}]}')).toThrow(/compressed/);
     expect(() => modelOf('x.gltf', '{"asset":{"version":"2.0"}}')).toThrow(/no meshes/);

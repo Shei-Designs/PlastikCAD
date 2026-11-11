@@ -1,4 +1,5 @@
-// glTF 2.0, binary (.glb) or JSON with its buffers embedded (.gltf): every
+// glTF 2.0, binary (.glb) or JSON (.gltf) with its buffers and pictures
+// embedded or in the files beside it that were picked with it: every
 // mesh of the scene, placed by its nodes, one part per primitive with the
 // color and picture of its material and the texture coordinates it carries.
 // glTF is Y up in meters; parts come out Z up in millimeters.
@@ -7,7 +8,7 @@ import { tr } from '../i18n';
 import { apply, determinant, IDENTITY, multiply } from '../model/math';
 import type { Mat } from '../model/math';
 import { base64ToBytes } from './base64';
-import type { ImportedImage, ImportedModel, ImportedPart } from './import';
+import type { Companion, ImportedImage, ImportedModel, ImportedPart } from './import';
 import { hex, imageMime, srgb } from './material';
 import { MeshBuilder } from './weld';
 
@@ -111,21 +112,60 @@ function dataBytes(uri: string): Uint8Array {
   }
 }
 
-export function parseGlb(bytes: Uint8Array, name = 'Model'): ImportedModel {
+/**
+ * Where a file a glTF names is, as a path below the glTF's own folder; null for anything else (another
+ * site, an absolute path, a path that climbs out of the folder), which is never fetched.
+ */
+function besidePath(uri: string): string | null {
+  let path: string;
+  try {
+    path = decodeURIComponent(uri);
+  } catch {
+    return null;
+  }
+  if (/^[a-z][a-z0-9+.-]*:/i.test(path) || /^[\\/]/.test(path) || path.split(/[\\/]/).includes('..')) return null;
+  return path.replace(/^\.\//, '');
+}
+
+const tail = (path: string): string => path.split(/[\\/]/).pop()!.toLowerCase();
+
+/**
+ * `companions` are the files picked with a .gltf: the buffers and pictures it keeps beside it. The
+ * ones it names that did not come are listed in `missing`; without a buffer there are no shapes to
+ * read, and the model comes back with no parts, for the caller to fetch the files and ask again.
+ */
+export function parseGlb(bytes: Uint8Array, name = 'Model', companions: Companion[] = []): ImportedModel {
   if (bytes.length === 0) throw new Error(tr('This glTF file is empty.'));
   const { json, bin } = unpack(bytes);
   const gltf = checkedShape(json);
   const required = gltf.extensionsRequired ?? [];
   if (required.includes('KHR_draco_mesh_compression') || required.includes('EXT_meshopt_compression'))
     throw new Error(tr('This glTF file is compressed. Export it again without mesh compression and import that.'));
+  const used = new Set<string>();
+  const missing = new Set<string>();
+  /** The file beside the glTF that `uri` names, if it came along; noted as used, or as missing. */
+  const beside = (uri: string): Uint8Array | undefined => {
+    const path = besidePath(uri);
+    if (path === null) return undefined;
+    const file = companions.find((c) => c.name === path) ?? companions.find((c) => tail(c.name) === tail(path));
+    if (file) used.add(file.name);
+    else missing.add(path);
+    return file?.bytes;
+  };
   const buffers = (gltf.buffers ?? []).map((b, i) => {
     if (b.uri === undefined) {
       if (i === 0 && bin) return bin;
       throw bad(tr('This glTF file is damaged: a buffer is missing.'));
     }
-    if (!b.uri.startsWith('data:')) throw new Error(tr('This glTF file keeps its data in separate files. Save it as a single .glb and import that.'));
-    return dataBytes(b.uri);
+    if (b.uri.startsWith('data:')) return dataBytes(b.uri);
+    if (besidePath(b.uri) === null) throw new Error(tr('This glTF file keeps its data in separate files. Save it as a single .glb and import that.'));
+    return beside(b.uri);
   });
+  if (buffers.includes(undefined)) {
+    // The pictures it names are asked for in the same breath as the buffers.
+    for (const image of gltf.images ?? []) if (image.uri && !image.uri.startsWith('data:')) beside(image.uri);
+    return { kind: 'model', parts: [], used: [...used], missing: [...missing] };
+  }
   const viewOf = (index: number): Uint8Array => {
     const view = gltf.bufferViews?.[index];
     const buffer = view && buffers[view.buffer];
@@ -146,7 +186,7 @@ export function parseGlb(bytes: Uint8Array, name = 'Model'): ImportedModel {
       else if (image.uri?.startsWith('data:')) {
         data = dataBytes(image.uri);
         mime ??= image.uri.slice(5, image.uri.indexOf(';'));
-      }
+      } else if (image.uri) data = beside(image.uri);
       const kind = mime === 'image/png' || mime === 'image/jpeg' ? mime : image.uri && !image.uri.startsWith('data:') ? imageMime(image.uri) : undefined;
       if (data && kind) out = { name: image.name ?? `${name}.${kind === 'image/png' ? 'png' : 'jpg'}`, mime: kind, bytes: data };
     }
@@ -295,7 +335,8 @@ export function parseGlb(bytes: Uint8Array, name = 'Model'): ImportedModel {
   // Meshes no node places still count, at the origin.
   if (parts.length === 0 && !gltf.nodes?.length) for (const [i] of (gltf.meshes ?? []).entries()) emitMesh(i, undefined, IDENTITY);
   if (parts.length === 0) throw new Error(tr('This glTF file has no meshes.'));
-  return { kind: 'model', parts, used: [] };
+  // Only the pictures a material in use asked for are counted, came or not.
+  return { kind: 'model', parts, used: [...used], missing: [...missing] };
 }
 
 /** The JSON of a .glb or a .gltf, and the binary chunk of a .glb. */

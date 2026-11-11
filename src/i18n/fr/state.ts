@@ -109,6 +109,15 @@ export const state: Catalog = {
   'Cannot import that. Supported: {formats}.': 'Importation impossible. Formats pris en charge\u00a0: {formats}.',
   'Importing…': 'Importation…',
   'Importing {n} of {total}…': 'Importation {n} sur {total}…',
+  '"{file}" keeps its shapes and pictures in {list}. Pick them now?': {
+    one: '«\u00a0{file}\u00a0» conserve ses formes et ses images dans {list}. Le choisir maintenant\u00a0?',
+    other: '«\u00a0{file}\u00a0» conserve ses formes et ses images dans {list}. Les choisir maintenant\u00a0?',
+  },
+  'Model data and pictures': 'Données de modèle et images',
+  '"{file}" keeps its shapes in {list}, which did not come along. Pick them together with the file.': {
+    one: '«\u00a0{file}\u00a0» conserve ses formes dans {list}, qui n’a pas été fourni. Choisissez-le en même temps que le fichier.',
+    other: '«\u00a0{file}\u00a0» conserve ses formes dans {list}, qui n’ont pas été fournis. Choisissez-les en même temps que le fichier.',
+  },
   '"{name}" does not say which unit it was made in. As millimeters it is {size} mm. Which unit is it in?':
     '«\u00a0{name}\u00a0» n’indique pas dans quelle unité il a été créé. En millimètres, il mesure {size}\u00a0mm. Dans quelle unité est-il\u00a0?',
   Meters: 'Mètres',

@@ -111,7 +111,7 @@ export function importFile(fileName: string, bytes: Uint8Array, companions: Comp
       return guarded('3MF', () => checkedModel(parse3mf(bytes, name)));
     case 'glb':
     case 'gltf':
-      return guarded('glTF', () => checkedModel(parseGlb(bytes, name)));
+      return guarded('glTF', () => checkedModel(parseGlb(bytes, name, companions)));
     case 'dae':
       return guarded('Collada', () => checkedModel(parseCollada(bytes, name, companions)));
     case 'svg':

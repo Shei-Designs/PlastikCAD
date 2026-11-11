@@ -58,8 +58,9 @@ async function askUnit(name: string, extent: Vec3): Promise<number> {
  * companions as they stand, for the files that follow.
  */
 async function readModel(file: PickedFile, companions: PickedFile[]): Promise<{ data: Read; companions: PickedFile[] }> {
-  // Only an OBJ is read a second time, with the files it turned out to name; anything else hands its bytes over.
-  const obj = fileKind(file.name, file.bytes) === 'obj';
+  // Only an OBJ or a .gltf is read a second time, with the files it turned out to name; anything else hands its bytes over.
+  const kind = fileKind(file.name, file.bytes);
+  const obj = kind === 'obj' || kind === 'gltf';
   let scale: number | undefined;
   const read = async (found: PickedFile[]): Promise<Read> => {
     const worker = geometry.worker();
@@ -73,7 +74,8 @@ async function readModel(file: PickedFile, companions: PickedFile[]): Promise<{ 
   for (let round = 0; obj && round < 2; round++) {
     const missing = data.kind === 'model' ? data.missing : [];
     if (missing.length === 0) break;
-    const more = await findCompanions(file, missing);
+    // A .gltf with its buffers elsewhere has no shapes until they come: there is no importing it without.
+    const more = await findCompanions(file, missing, data.kind === 'model' && data.parts.length === 0);
     if (more.length === 0) break;
     found = [...found, ...more];
     data = await read(found);
@@ -81,8 +83,11 @@ async function readModel(file: PickedFile, companions: PickedFile[]): Promise<{ 
   return { data, companions: found };
 }
 
-/** The files a model names that did not come with it: from beside it on disk, or picked by the user; none if they are not to be had. */
-async function findCompanions(file: PickedFile, missing: string[]): Promise<PickedFile[]> {
+/**
+ * The files a model names that did not come with it: from beside it on disk, or picked by the user;
+ * none if they are not to be had. `needed` when the model has no shapes without them.
+ */
+async function findCompanions(file: PickedFile, missing: string[], needed: boolean): Promise<PickedFile[]> {
   const more: PickedFile[] = [];
   // Beside the file on disk, where the file's place is known (a path; on Android, a document of the
   // app's own, such as its exports, which the app may read by path).
@@ -104,7 +109,9 @@ async function findCompanions(file: PickedFile, missing: string[]): Promise<Pick
   }
   if (more.length === 0 && (!file.path || file.path.includes('://'))) {
     const named = { file: file.name, list: missing.map((n) => tr('"{name}"', { name: n })).join(', ') };
-    const question = missing.some((n) => extension(n) !== 'mtl')
+    const question = needed
+      ? plural(missing.length, '"{file}" keeps its shapes and pictures in {list}. Pick it now?', '"{file}" keeps its shapes and pictures in {list}. Pick them now?', named)
+      : missing.some((n) => extension(n) !== 'mtl')
       ? plural(
           missing.length,
           '"{file}" names {list} for its colors and pictures. Pick it now, or import the shapes without?',
@@ -115,10 +122,13 @@ async function findCompanions(file: PickedFile, missing: string[]): Promise<Pick
     const ok = await platform.confirm(question, {
       title: tr('Import'),
       okLabel: tr('Pick'),
-      cancelLabel: tr('Without'),
+      cancelLabel: needed ? tr('Cancel') : tr('Without'),
     });
     if (!ok) return [];
-    const picked = await platform.pickFiles({ filters: [{ name: tr('Material libraries and pictures'), extensions: ['mtl', ...IMAGE_EXTENSIONS] }], multiple: true });
+    const picked = await platform.pickFiles({
+      filters: [needed ? { name: tr('Model data and pictures'), extensions: ['bin', ...IMAGE_EXTENSIONS] } : { name: tr('Material libraries and pictures'), extensions: ['mtl', ...IMAGE_EXTENSIONS] }],
+      multiple: true,
+    });
     more.push(...picked);
   }
   return more;
@@ -195,6 +205,10 @@ async function importModels(files: PickedFile[], companions: PickedFile[]): Prom
         node.pos = tidyVec([part.center[0], part.center[1], 1.5]);
         members.push(node);
       }
+    }
+    if (data.kind === 'model' && data.parts.length === 0 && data.missing.length) {
+      const list = data.missing.map((n) => tr('"{name}"', { name: n })).join(', ');
+      throw new Error(plural(data.missing.length, '"{file}" keeps its shapes in {list}, which did not come along. Pick it together with the file.', '"{file}" keeps its shapes in {list}, which did not come along. Pick them together with the file.', { file: file.name, list }));
     }
     if (members.length === 0) throw new Error(tr('"{name}" is flat or empty, so it cannot be made into a solid.', { name: file.name }));
     for (const warning of data.warnings) failed.push(named(file, warning));
