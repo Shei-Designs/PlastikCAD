@@ -53,10 +53,12 @@ const count = (step: string, entity: string): number => (step.match(new RegExp(`
  * Writes the node as the app does, reads the file back, and holds the two against each other.
  * Answers whether the node went out as true surfaces, and how many faces of each kind the file has.
  */
-function roundTrip(node: SceneNode): { exact: boolean; faces: number; planes: number; cylinders: number; cones: number; spheres: number; tori: number } {
+function roundTrip(node: SceneNode, asShown = false): { exact: boolean; faces: number; planes: number; cylinders: number; cones: number; spheres: number; tori: number } {
   const colored = exportColored([node], true);
-  const objects = colored.objects.flatMap((o) => o.parts.map((p) => ({ name: o.name, color: p.color, mesh: p.mesh, ...(o.parts.length === 1 ? { node } : {}) })));
-  const want = exportNodes([node], false, true);
+  // As the app writes it: what cannot be rebuilt goes out with the facets the screen has, not the finest.
+  const shown = asShown ? exportColored([node], false) : null;
+  const objects = colored.objects.flatMap((o, i) => o.parts.map((p, k) => ({ name: o.name, color: p.color, mesh: p.mesh, ...(shown ? { facets: shown.objects[i].parts[k].mesh } : {}), ...(o.parts.length === 1 ? { node } : {}) })));
+  const want = exportNodes([node], false, !asShown);
   const { bytes, warnings, exact } = writeStep(oc, objects, { partBox });
   expect(warnings, node.name).toEqual([]);
   const back = parseStep(oc, bytes, node.name);
@@ -151,6 +153,16 @@ describe('the design as a STEP file', () => {
     // An outline that crosses itself (the servo's body cut through the edge of its plate) is left to the facets.
     expect(roundTrip(partNode('servo-mount')).exact).toBe(false);
   }, 120_000);
+
+  // A thread is a twisted extrusion cut to length: its mesh has corners that are one place under two numbers by
+  // the thousand, triangles of no area between them, and a few whose corners lie in a line.
+  for (const id of ['metric-bolt', 'lead-screw', 'lead-screw-nut', 'worm']) {
+    it(`writes a ${id} as one closed solid of its facets, as the app exports it`, () => {
+      const written = roundTrip(partNode(id), true);
+      expect(written.exact).toBe(false);
+      expect(written.faces).toBeGreaterThan(1000);
+    }, 120_000);
+  }
 
   it('writes a plate with a hole through it as one solid, and a two-colored group as a solid per color', () => {
     const plate: ShapeNode = { ...base, id: 'p', name: 'Plate', type: 'shape', shape: 'box', params: defaultParams('box'), size: [40, 30, 4], pos: [0, 0, 2], rot: [0, 0, 0] };

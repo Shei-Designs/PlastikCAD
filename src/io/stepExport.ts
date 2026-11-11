@@ -37,8 +37,10 @@ export const STEP_TRIANGLES = 60_000;
 
 type Deletable = { delete(): void };
 
-/** Corners are taken for one place when they agree to this many parts of a millimeter. */
-const WELD = 1e5;
+/** Corners are taken for one place when they agree to this many parts of a millimeter: a tenth of a micron. */
+const WELD = 1e4;
+/** A triangle lower than this over its longest side, in millimeters, is a line: no face can be made of it. */
+const SLIVER = 1e-6;
 
 const linear = (c: number): number => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
 
@@ -71,7 +73,14 @@ export function writeStep(oc: OpenCascadeInstance, objects: StepObject[], tools:
         warnings.push(tr('"{name}" is too detailed for a STEP file and was left out.', { name: object.name }));
         continue;
       }
-      const solid = rebuilt ? { shape: rebuilt, closed: true } : facetedSolid(oc, facets, keep);
+      let solid: { shape: InstanceType<typeof oc.TopoDS_Shape>; closed: boolean };
+      try {
+        solid = rebuilt ? { shape: rebuilt, closed: true } : facetedSolid(oc, facets, keep);
+      } catch {
+        // The library gave up on it (it says so by an exception of its own): the others still go out.
+        warnings.push(tr('"{name}" could not be written to the STEP file and was left out.', { name: object.name }));
+        continue;
+      }
       if (!solid.closed) warnings.push(tr('"{name}" is not watertight and was exported as a surface.', { name: object.name }));
       else if (!rebuilt) {
         // Nothing goes out on trust: the sewn solid has to enclose what its triangles do.
@@ -127,6 +136,57 @@ function measure(mesh: MeshData): { volume: number; bounds: Bounds } {
 }
 
 /**
+ * The triangles of a mesh that a face can be made of, as corners named by the
+ * first vertex at their place.
+ *
+ * The kernel's meshes hold corners that are one place under two numbers, and
+ * triangles of no area between them: a thread has them by the thousand. An
+ * edge from a point to itself cannot be made, and such a triangle adds
+ * nothing, so corners that agree to a tenth of a micron count as one and the
+ * triangles that lose a corner to that are left out: what remains is as
+ * closed as the mesh was. A few triangles are then still lines, their corners
+ * a hair apart on either side of that measure; the two nearest corners of
+ * each are made one as well, for as long as that finds any.
+ */
+function tidied(mesh: MeshData): number[] {
+  const { positions, triangles } = mesh;
+  const first = samePlace(Float32Array.from(positions, (v) => Math.round(v * WELD) / WELD));
+  const at = (v: number): number => {
+    while (first[v] !== v) v = first[v] = first[first[v]];
+    return v;
+  };
+  const distance = (a: number, b: number): number => Math.hypot(positions[a * 3] - positions[b * 3], positions[a * 3 + 1] - positions[b * 3 + 1], positions[a * 3 + 2] - positions[b * 3 + 2]);
+  for (let round = 0; round < 8; round++) {
+    let joined = 0;
+    for (let t = 0; t < triangles.length; t += 3) {
+      const [a, b, c] = [at(triangles[t]), at(triangles[t + 1]), at(triangles[t + 2])];
+      if (a === b || b === c || c === a) continue;
+      const sides: [number, number, number][] = [
+        [distance(a, b), a, b],
+        [distance(b, c), b, c],
+        [distance(c, a), c, a],
+      ];
+      sides.sort((p, q) => p[0] - q[0]);
+      // Its height over its longest side, from its sides (Heron's rule, in the form that holds for a needle).
+      const [x, y, z] = [sides[2][0], sides[1][0], sides[0][0]];
+      const sixteen = (x + (y + z)) * (z - (x - y)) * (z + (x - y)) * (x + (y - z));
+      const height = sixteen > 0 ? Math.sqrt(sixteen) / (2 * x) : 0;
+      // Only where two of its corners are all but one place: a corner that sits on the middle of a long side is left as it is.
+      if (height >= SLIVER || sides[0][0] > 10 / WELD) continue;
+      first[Math.max(sides[0][1], sides[0][2])] = Math.min(sides[0][1], sides[0][2]);
+      joined++;
+    }
+    if (joined === 0) break;
+  }
+  const corners: number[] = [];
+  for (let t = 0; t < triangles.length; t += 3) {
+    const [a, b, c] = [at(triangles[t]), at(triangles[t + 1]), at(triangles[t + 2])];
+    if (a !== b && b !== c && c !== a) corners.push(a, b, c);
+  }
+  return corners;
+}
+
+/**
  * A mesh as a B-rep: a face per triangle, sewn along the edges they share,
  * made a solid when the shell closes, and its faces joined wherever they lie
  * in one plane.
@@ -137,20 +197,11 @@ function measure(mesh: MeshData): { volume: number; bounds: Bounds } {
  * two) is sewn on its own, and the object is the lumps together.
  */
 function facetedSolid(oc: OpenCascadeInstance, mesh: MeshData, keep: <T extends Deletable>(o: T) => T): { shape: InstanceType<typeof oc.TopoDS_Shape>; closed: boolean } {
-  const { positions, triangles } = mesh;
+  const { positions } = mesh;
   const points: InstanceType<typeof oc.gp_Pnt>[] = [];
   for (let i = 0; i < positions.length; i += 3) points.push(keep(new oc.gp_Pnt(positions[i], positions[i + 1], positions[i + 2])));
-  // The kernel's meshes hold corners that are one place under two numbers, and slivers between them
-  // with no area: an edge from a point to itself cannot be made, and the sliver adds nothing. Corners
-  // within a hundredth of a micron count as one: the library takes points nearer than that for the
-  // same point, and refuses the edge between them.
-  const same = samePlace(Float32Array.from(positions, (v) => Math.round(v * WELD) / WELD));
   const count = points.length;
-  const corners: number[] = [];
-  for (let t = 0; t < triangles.length; t += 3) {
-    const [a, b, c] = [same[triangles[t]], same[triangles[t + 1]], same[triangles[t + 2]]];
-    if (a !== b && b !== c && c !== a) corners.push(a, b, c);
-  }
+  const corners = tidied(mesh);
   // The lumps: triangles joined through every edge that exactly two of them share.
   const lump = Array.from({ length: corners.length / 3 }, (_, i) => i);
   const find = (i: number): number => {
@@ -185,15 +236,19 @@ function facetedSolid(oc: OpenCascadeInstance, mesh: MeshData, keep: <T extends 
       // Built and let go triangle by triangle: a large mesh would otherwise hold four objects a face until the end.
       const sides = [new oc.BRepBuilderAPI_MakeEdge(a, b), new oc.BRepBuilderAPI_MakeEdge(b, c), new oc.BRepBuilderAPI_MakeEdge(c, a)];
       const parts: Deletable[] = [...sides];
-      // A triangle the library can make nothing of (its corners in a line) is a sliver like the others.
-      if (sides.every((e) => e.IsDone())) {
-        const wire = new oc.BRepBuilderAPI_MakeWire(sides[0].Edge(), sides[1].Edge(), sides[2].Edge());
-        parts.push(wire);
-        if (wire.IsDone()) {
-          const face = new oc.BRepBuilderAPI_MakeFace(wire.Wire(), true);
-          parts.push(face);
-          if (face.IsDone()) sewing.Add(face.Face());
+      // A triangle the library can make nothing of (its corners in a line) is left out: it says so by not being done, or by throwing.
+      try {
+        if (sides.every((e) => e.IsDone())) {
+          const wire = new oc.BRepBuilderAPI_MakeWire(sides[0].Edge(), sides[1].Edge(), sides[2].Edge());
+          parts.push(wire);
+          if (wire.IsDone()) {
+            const face = new oc.BRepBuilderAPI_MakeFace(wire.Wire(), true);
+            parts.push(face);
+            if (face.IsDone()) sewing.Add(face.Face());
+          }
         }
+      } catch {
+        // Left out.
       }
       for (const o of parts) o.delete();
     }
