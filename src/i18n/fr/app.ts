@@ -174,6 +174,7 @@ export const app: Catalog = {
 
   // The box of questions (AskDialog.tsx)
   Cancel: 'Annuler',
+  Skip: 'Ignorer',
 
   // The Structure tab (Structure.tsx). A "part" here is a piece of the object, not a part of the library: élément.
   Name: 'Nom',

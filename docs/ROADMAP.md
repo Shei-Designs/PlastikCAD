@@ -50,17 +50,11 @@ Things only the real devices and accounts can show.
   M14 to M20 clearance holes, the heat-set insert bores, the M2 and M2.5
   head sizes, the motor presets.
 
-## Waiting on a decision
+## Decided, to build
 
-- **Large imports on the device.** On the Drive they are kept apart from
-  their designs; on a device a project is still one whole file. Splitting
-  those too would make autosave and the earlier saves small, at the price
-  of a project file that is no longer complete when copied out by hand.
-- **Unused files in the Drive's `Assets` folder.** Nothing removes them
-  today. The proposal is a "Clean up Drive" command that moves to the
-  Drive's trash what no design names and is older than a week.
-- **Pictures in a zip archive that its model does not use.** They are left
-  out without a word. The proposal is to leave them out and say so.
+- **"Clean up Drive"**: a command that moves to the Drive's trash the files in
+  its `Assets` folder that no design names any more and that are older than
+  a week. Drive space is not free.
 
 ## Put off
 
@@ -73,7 +67,9 @@ Not dropped: taken up when asked for.
 - Numbers written the way the language writes them, W / D / H translated,
   the test-drive keys by position on other keyboards, the native side's
   error messages in the app's language.
-- Splitting large imports out of the project files on the device (see above).
+- Splitting large imports out of the project files on the device, as is done
+  on the Drive: a project stays one whole file that can be copied out by
+  hand, until a real large project shows the saving is worth that.
 
 ## Dropped
 

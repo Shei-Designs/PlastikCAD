@@ -27,7 +27,7 @@ const plate = (page: Page): Promise<{ type: string; name: string; picture: strin
   );
 
 test.describe('zip archives', { tag: '@mouse' }, () => {
-  test('a model comes in with the material library and the picture packed beside it, and nothing else of the archive', async ({ page, errors }) => {
+  test('a model comes in with the material library and the picture packed beside it, and its other pictures only when asked for', async ({ page, errors }) => {
     await openApp(page);
     const picture = Uint8Array.from(await pngBytes(page));
     await dropFiles(page, [
@@ -46,9 +46,61 @@ test.describe('zip archives', { tag: '@mouse' }, () => {
       },
     ]);
     await expect.poll(() => sceneCount(page), { timeout: 30_000 }).toBe(1);
+    // The pictures the model does not use are offered, none ticked; skipped, they stay in the archive.
+    const offer = page.getByRole('dialog', { name: 'Import' });
+    await expect(offer).toContainText('"crate.zip" also holds 2 pictures its model does not use. Tick those to put on the plate.');
+    await expect(offer.getByRole('checkbox')).toHaveCount(2);
+    await expect(offer.getByRole('checkbox', { name: 'crate/textures/wood_normal.png' })).not.toBeChecked();
+    await expect(offer.getByRole('button', { name: 'Add' })).toBeDisabled();
+    await offer.getByRole('button', { name: 'Skip' }).click();
+    await expect(offer).toHaveCount(0);
     await settled(page);
     expect(await plate(page)).toEqual([{ type: 'import', name: 'crate', picture: 'crate/textures/wood.png' }]);
     await expect.poll(() => skins(page)).toMatchObject({ images: ['ready'], worn: 1 });
+    expect((await notices(page)).filter((n) => n.kind === 'error')).toEqual([]);
+    expect(errors).toEqual([]);
+  });
+
+  test('a picture of the archive that its model does not use goes on the plate when it is ticked', async ({ page, errors }) => {
+    await openApp(page);
+    const picture = Uint8Array.from(await pngBytes(page));
+    // A picture of its own: the same one twice would be kept once, under the first of its names.
+    const label = Uint8Array.from(
+      await page.evaluate(async () => {
+        const c = document.createElement('canvas');
+        c.width = 40;
+        c.height = 20;
+        const g = c.getContext('2d')!;
+        g.fillStyle = '#26a';
+        g.fillRect(0, 0, 40, 20);
+        const blob = await new Promise<Blob>((done) => c.toBlob((b) => done(b!), 'image/png'));
+        return [...new Uint8Array(await blob.arrayBuffer())];
+      }),
+    );
+    await dropFiles(page, [
+      {
+        name: 'crate.zip',
+        bytes: zipped({
+          'crate/crate.obj': strToU8(CRATE),
+          'crate/crate.mtl': strToU8('newmtl wood\nKd 1 1 1\nmap_Kd textures/wood.png\n'),
+          'crate/textures/wood.png': picture,
+          'crate/label.png': label,
+          'crate/preview.jpg': picture,
+        }),
+      },
+    ]);
+    const offer = page.getByRole('dialog', { name: 'Import' });
+    await expect(offer.getByRole('checkbox')).toHaveCount(2);
+    await offer.getByRole('checkbox', { name: 'crate/label.png' }).check();
+    await offer.getByRole('button', { name: 'Add' }).click();
+    await expect(offer).toHaveCount(0);
+    await expect.poll(() => sceneCount(page), { timeout: 30_000 }).toBe(2);
+    await settled(page);
+    // The crate wearing its texture, and the one picture that was ticked on a sheet of its own; the preview stays out.
+    expect(await plate(page)).toEqual([
+      { type: 'import', name: 'crate', picture: 'crate/textures/wood.png' },
+      { type: 'picture', name: 'label', picture: 'crate/label.png' },
+    ]);
     expect((await notices(page)).filter((n) => n.kind === 'error')).toEqual([]);
     expect(errors).toEqual([]);
   });

@@ -14,7 +14,7 @@ import * as platform from '../../platform';
 import type { PickedFile } from '../../platform';
 import { robotOf } from '../../robot/model';
 import type { Robot } from '../../robot/types';
-import { tell } from '../../ui/ask';
+import { askPick, tell } from '../../ui/ask';
 import { Cancelled } from '../../worker/client';
 import type { ImportResult } from '../../worker/importing';
 import { geometry } from '../geometry';
@@ -362,8 +362,8 @@ export async function pickImage(): Promise<string | null> {
 
 const IMPORTABLE = [...IMPORT_EXTENSIONS, ...IMAGE_EXTENSIONS, ZIP_EXTENSION];
 
-/** A file handed to the app; `companion` when it came in an archive beside what it is for, and is nothing by itself. */
-type Received = PickedFile & { companion?: boolean };
+/** A file handed to the app; `from` names the archive it came in beside a model, when it is a picture that may be that model's and is no picture sheet by itself. */
+type Received = PickedFile & { from?: string };
 
 const isModel = (f: PickedFile): boolean => IMPORT_EXTENSIONS.includes(fileKind(f.name, f.bytes));
 const isPicture = (f: PickedFile): boolean => IMAGE_EXTENSIONS.includes(fileKind(f.name, f.bytes));
@@ -372,7 +372,8 @@ const isZip = (f: PickedFile): boolean => fileKind(f.name, f.bytes) === ZIP_EXTE
 /**
  * The files with every zip archive among them replaced by what it holds, unpacked in the geometry
  * worker. The pictures of an archive that holds a model, a robot or a design are there for those
- * (a texture, its other maps, a preview), so they do not also become picture sheets.
+ * (a texture, its other maps, a preview): they are marked with the archive's name, and those a model
+ * turns out not to use are offered afterwards (see `offerPictures`) rather than put on the plate.
  */
 async function unpacked(files: PickedFile[]): Promise<Received[]> {
   const out: Received[] = [];
@@ -386,11 +387,31 @@ async function unpacked(files: PickedFile[]): Promise<Received[]> {
     for (const f of inside) {
       // A design is named after its file, wherever in the archive that is.
       if (isDesignName(f.name)) out.push({ ...f, name: f.name.slice(f.name.lastIndexOf('/') + 1) });
-      else out.push(bundle && isPicture(f) ? { ...f, companion: true } : f);
+      else out.push(bundle && isPicture(f) ? { ...f, from: file.name } : f);
     }
     if (inside.length === 0) throw new Error(tr('Nothing in "{name}" can be imported. Supported: {formats}.', { name: file.name, formats: [...IMPORT_EXTENSIONS, ...IMAGE_EXTENSIONS].map((e) => e.toUpperCase()).join(', ') }));
   }
   return out;
+}
+
+/**
+ * Asks which of the pictures an archive holds beside its model, and the model did not use, are to
+ * come in as picture sheets: archive by archive, each with its pictures listed to tick. Resolves
+ * with those ticked; none are, to begin with, and skipping takes none.
+ */
+async function offerPictures(spare: Received[]): Promise<Received[]> {
+  const wanted: Received[] = [];
+  for (const archive of new Set(spare.map((f) => f.from!))) {
+    const pictures = spare.filter((f) => f.from === archive);
+    const picked = await askPick({
+      title: tr('Import'),
+      text: plural(pictures.length, '"{file}" also holds a picture its model does not use. Tick it to put it on the plate.', '"{file}" also holds {n} pictures its model does not use. Tick those to put on the plate.', { file: archive }),
+      items: pictures.map((f) => f.name),
+      okLabel: tr('Add'),
+    });
+    wanted.push(...picked.map((i) => pictures[i]));
+  }
+  return wanted;
 }
 
 /** Files picked or dropped: designs are opened, a URDF brings its robot in, models, drawings and pictures are imported into the current design. */
@@ -406,7 +427,7 @@ export async function receiveFiles(given: PickedFile[]): Promise<void> {
     const urdf = files.find((f) => extension(f.name) === 'urdf');
     if (urdf) return await importRobot(urdf, files.filter((f) => f !== urdf));
     const models = files.filter(isModel);
-    const pictures = files.filter((f) => isPicture(f) && !f.companion);
+    const pictures = files.filter((f) => isPicture(f) && !f.from);
     if (models.length === 0 && pictures.length === 0) {
       if (files.some((f) => extension(f.name) === 'mtl')) notify(tr('A .mtl file holds the colors of an OBJ and is read with it: pick the .obj, together with the .mtl for its colors.'), 'error');
       else if (files.length) notify(tr('Cannot import that. Supported: {formats}.', { formats: IMPORTABLE.map((e) => e.toUpperCase()).join(', ') }), 'error');
@@ -417,7 +438,14 @@ export async function receiveFiles(given: PickedFile[]): Promise<void> {
     const used = models.length ? await importModels(models, files.filter((f) => !models.includes(f))) : new Set<string>();
     // A picture a model used for its texture is not also a picture sheet.
     const sheets = pictures.filter((f) => !used.has(f.name));
-    if (sheets.length) await importPictures(sheets);
+    // Those an archive holds beside its model and the model did not use are the user's to pick from.
+    const spare = files.filter((f) => f.from && isPicture(f) && !used.has(f.name));
+    endWork();
+    sheets.push(...(await offerPictures(spare)));
+    if (sheets.length) {
+      startWork(tr('Importing…'));
+      await importPictures(sheets);
+    }
   } catch (e) {
     fail(e);
   } finally {

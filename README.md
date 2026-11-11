@@ -657,9 +657,10 @@ left alone, since that is its shape.
 - **Zip archives**: an archive is unpacked and what it holds taken as if
   those files had been dropped together, so a model comes in with the
   material library and pictures packed beside it, and a robot package the
-  app exported comes back as its robot. Every model in it is imported; its
-  pictures become picture sheets only when it holds nothing else to import
-  (a bundle's other maps and previews stay out). Only what the app reads is
+  app exported comes back as its robot. Every model in it is imported. The
+  pictures its models do not use (a bundle's other maps, a preview) are
+  listed afterwards to tick from: those ticked go on the plate, and Skip
+  leaves them all out. An archive of pictures alone puts each on the plate. Only what the app reads is
   unpacked, up to 512 MB.
 - **PLY**: text or binary, as scanners and mesh tools write it; the points
   and faces make one part. The colors a PLY file gives its points or its

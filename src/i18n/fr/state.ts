@@ -93,6 +93,10 @@ export const state: Catalog = {
     one: '«\u00a0{file}\u00a0» renvoie à {list} pour ses couleurs et ses images. Choisir ce fichier maintenant, ou importer les formes sans lui\u00a0?',
     other: '«\u00a0{file}\u00a0» renvoie à {list} pour ses couleurs et ses images. Choisir ces fichiers maintenant, ou importer les formes sans eux\u00a0?',
   },
+  '"{file}" also holds {n} pictures its model does not use. Tick those to put on the plate.': {
+    one: '«\u00a0{file}\u00a0» contient aussi une image que son modèle n’utilise pas. Cochez-la pour la poser sur le plateau.',
+    other: '«\u00a0{file}\u00a0» contient aussi {n} images que son modèle n’utilise pas. Cochez celles à poser sur le plateau.',
+  },
   '"{file}" names {list} for its colors. Pick them now, or import the shapes without?': {
     one: '«\u00a0{file}\u00a0» renvoie à {list} pour ses couleurs. Choisir ce fichier maintenant, ou importer les formes sans lui\u00a0?',
     other: '«\u00a0{file}\u00a0» renvoie à {list} pour ses couleurs. Choisir ces fichiers maintenant, ou importer les formes sans eux\u00a0?',

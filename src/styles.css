@@ -617,6 +617,32 @@ ul {
   margin-top: 4px;
 }
 
+.ask-picks {
+  margin: -4px 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 40vh;
+  overflow-y: auto;
+  font-size: 13px;
+}
+
+.ask-picks label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.ask-picks input {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
 .ask-field {
   display: flex;
   flex-direction: column;
@@ -667,6 +693,16 @@ ul {
   .ask-buttons .primary {
     height: 42px;
     padding: 0 22px;
+  }
+
+  .ask-picks label {
+    min-height: 44px;
+    font-size: 15px;
+  }
+
+  .ask-picks input {
+    width: 22px;
+    height: 22px;
   }
 }
 
