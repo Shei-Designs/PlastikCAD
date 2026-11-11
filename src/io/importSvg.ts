@@ -2,7 +2,8 @@ import { plural, tr } from '../i18n';
 import type { OutlineShape, Polygon } from '../model/types';
 import { applyTo, maxStretch, mul, signedArea, TOLERANCE, turnSegments } from './outline';
 import type { Matrix } from './outline';
-import { XmlScanner } from './xml';
+import { XmlScanner, xmlTree } from './xml';
+import type { XmlElement } from './xml';
 
 /** Segments per curve that is not straight, however small: imports are often scaled up afterwards. */
 const MIN_CURVE = 4;
@@ -46,9 +47,13 @@ const ROOT: Frame = { transform: [PX, 0, 0, -PX, 0, 0], evenodd: false, visible:
  * laser cutter are hairline strokes with no fill, and they are the ones worth
  * extruding.
  *
- * Not supported: <use>, <text>, <image>, CSS in <style> blocks (only
- * presentation attributes and `style="..."`), and stroke widths. What a
- * drawing holds of the first four is said in `warnings`, a sentence each.
+ * A <use> draws the element it names again where it says (see `Copies`), and
+ * the rules of a <style> block are applied where their selectors are plain:
+ * a tag, classes, an id (see `styleRules`).
+ *
+ * Not supported: <text>, <image>, selectors that reach across elements, and
+ * stroke widths. What a drawing holds of these is said in `warnings`, a
+ * sentence each.
  */
 export function parseSvg(bytes: Uint8Array, warnings: string[] = []): { shapes: OutlineShape[]; color?: string }[] {
   const scan = new XmlScanner(toUtf8(bytes));
@@ -60,8 +65,56 @@ export function parseSvg(bytes: Uint8Array, warnings: string[] = []): { shapes: 
   const parts = new Map<string | undefined, OutlineShape[]>();
   let count = 0;
   let sawRoot = false;
-  // What is there to be seen but is not read: copies of other shapes, lettering, pictures, and a style sheet.
-  const left = { use: 0, text: 0, image: 0, style: false };
+  // What is there to be seen but is not read: copies of what cannot be found, lettering, pictures, and style rules.
+  const left = { use: 0, text: 0, image: 0, style: false, rules: 0 };
+  // The copies and the style sheet need the document whole, which is read only when it has either.
+  const whole = wholeOf(toUtf8(bytes));
+  const sheet: Rule[] = [];
+  if (whole.failed) left.style = whole.styled;
+  else for (const text of whole.styles) left.rules += styleRules(text, sheet);
+
+  /** One element that may have an outline: what it adds to the drawing, and what it leaves out. Returns the frame its children are under. */
+  const draw = (name: string, attrs: Record<string, string>, frame: Frame, depth: number): Frame => {
+    if (name === 'use') {
+      const target = whole.failed ? undefined : whole.ids.get((attrs.href ?? attrs['xlink:href'] ?? '').replace(/^#/, ''));
+      if (!target || depth >= MAX_USE_DEPTH) left.use++;
+      else {
+        // The copy stands where the <use> says, under whatever the <use> itself was given.
+        const placed = { ...frame, transform: mul(frame.transform, [1, 0, 0, 1, lengthOr(attrs.x, 0), lengthOr(attrs.y, 0)]) };
+        drawTree(target, placed, depth + 1, true);
+      }
+      return frame;
+    }
+    if (name === 'image') left.image++;
+    else if (name === 'text') {
+      left.text++;
+      // Its lines and spans are part of it, not lettering of their own.
+      return { ...frame, skip: true };
+    }
+    const contours = outline(name, attrs, frame.transform);
+    if (contours.length) {
+      if (++count > MAX_SHAPES) throw new Error(tr('This SVG has too many shapes to open.'));
+      const color = cssColor(frame.fill);
+      const list = parts.get(color) ?? [];
+      list.push({ contours, evenodd: frame.evenodd });
+      parts.set(color, list);
+    }
+    return frame;
+  };
+
+  /** An element a <use> names, and everything in it, drawn under `parent`. A <symbol> is drawn only as the thing named. */
+  let copied = 0;
+  const drawTree = (element: XmlElement, parent: Frame, depth: number, named: boolean): void => {
+    // Counted whether or not it draws anything: a <use> of a <use> of nothing costs as much to go through.
+    if (++copied > MAX_SHAPES) throw new Error(tr('This SVG has too many shapes to open.'));
+    const name = element.name.replace(/^svg:/, '');
+    if (SKIPPED.has(name) && !(named && name === 'symbol')) return;
+    let frame = inherit(parent, name, element.attrs, sheet);
+    if (frame.skip) return;
+    if (frame.visible) frame = draw(name, element.attrs, frame, depth);
+    if (frame.skip) return;
+    for (const child of element.children) drawTree(child, frame, depth, false);
+  };
 
   while (scan.next()) {
     const name = scan.name().replace(/^svg:/, '');
@@ -76,33 +129,15 @@ export function parseSvg(bytes: Uint8Array, warnings: string[] = []): { shapes: 
     }
     const parent = stack[stack.length - 1] ?? ROOT;
     let frame = parent;
-    // A style sheet counts wherever it is, <defs> included: that is where drawing programs put it.
-    if (name === 'style') left.style = true;
     if (!parent.skip) {
       if (SKIPPED.has(name)) frame = { ...parent, skip: true };
       else {
         const attrs = scan.attrs();
-        frame = inherit(parent, attrs);
+        frame = inherit(parent, name, attrs, sheet);
         if (name === 'svg') {
           frame.transform = mul(frame.transform, sawRoot ? innerViewport(attrs) : rootViewport(attrs));
           sawRoot = true;
-        } else if (sawRoot && frame.visible && !frame.skip) {
-          if (name === 'use') left.use++;
-          else if (name === 'image') left.image++;
-          else if (name === 'text') {
-            left.text++;
-            // Its lines and spans are part of it, not lettering of their own.
-            frame = { ...frame, skip: true };
-          }
-          const contours = outline(name, attrs, frame.transform);
-          if (contours.length) {
-            const color = cssColor(frame.fill);
-            const list = parts.get(color) ?? [];
-            list.push({ contours, evenodd: frame.evenodd });
-            parts.set(color, list);
-            count++;
-          }
-        }
+        } else if (sawRoot && frame.visible && !frame.skip) frame = draw(name, attrs, frame, 0);
       }
     }
     if (scan.selfClosing) continue;
@@ -117,6 +152,7 @@ export function parseSvg(bytes: Uint8Array, warnings: string[] = []): { shapes: 
   if (left.text) warnings.push(plural(left.text, '{n} piece of text was left out. Turn text into paths in the drawing program.', '{n} pieces of text were left out. Turn text into paths in the drawing program.'));
   if (left.image) warnings.push(plural(left.image, '{n} picture was left out.', '{n} pictures were left out.'));
   if (left.style) warnings.push(tr('Its style sheet was not read: colors and hidden shapes set there are not applied.'));
+  else if (left.rules) warnings.push(plural(left.rules, '{n} rule of its style sheet was not read: colors and hidden shapes set there are not applied.', '{n} rules of its style sheet were not read: colors and hidden shapes set there are not applied.'));
   return [...parts].map(([color, shapes]) => (color ? { shapes, color } : { shapes }));
 }
 
@@ -171,6 +207,115 @@ function toUtf8(bytes: Uint8Array): Uint8Array {
 }
 
 // ---------------------------------------------------------------------------
+// Copies and style sheets
+
+/** A <use> inside what a <use> draws, this deep at most: a drawing that names itself would otherwise never end. */
+const MAX_USE_DEPTH = 8;
+/** Shapes in one drawing, and elements gone through for its copies: a few lines of <use> upon <use> can ask for millions. */
+const MAX_SHAPES = 100_000;
+
+/** What reading a drawing whole gives: the elements that carry an id, for <use>, and the text of its style sheets. */
+interface Whole {
+  ids: Map<string, XmlElement>;
+  styles: string[];
+  /** The drawing could not be read whole; `styled` then says whether it has a style sheet that goes unread. */
+  failed: boolean;
+  styled: boolean;
+}
+
+const has = (bytes: Uint8Array, word: string): boolean => {
+  const code = [...word].map((c) => c.charCodeAt(0));
+  outer: for (let i = bytes.indexOf(code[0]); i >= 0; i = bytes.indexOf(code[0], i + 1)) {
+    for (let k = 1; k < code.length; k++) if (bytes[i + k] !== code[k]) continue outer;
+    return true;
+  }
+  return false;
+};
+
+/** The drawing read whole, if it has a <use> or a <style> to need it: most have neither, and are read in one pass without. */
+function wholeOf(bytes: Uint8Array): Whole {
+  const out: Whole = { ids: new Map(), styles: [], failed: false, styled: has(bytes, '<style') || has(bytes, ':style') };
+  if (!out.styled && !has(bytes, '<use') && !has(bytes, ':use')) return out;
+  let root: XmlElement | null;
+  try {
+    root = xmlTree(bytes);
+  } catch {
+    return { ...out, failed: true };
+  }
+  const walk = (element: XmlElement): void => {
+    // The first of an id is the one meant, as in a browser.
+    if (element.attrs.id && !out.ids.has(element.attrs.id)) out.ids.set(element.attrs.id, element);
+    if (element.name.replace(/^svg:/, '') === 'style') out.styles.push(element.text);
+    for (const child of element.children) walk(child);
+  };
+  if (root) walk(root);
+  return out;
+}
+
+/** A rule of a style sheet whose selector is plain: a tag, classes and an id, any of them, on the one element. */
+interface Rule {
+  tag?: string;
+  id?: string;
+  classes: string[];
+  /** An id outweighs any number of classes, a class any tag; of equals the later rule wins, so rules are kept in order. */
+  weight: number;
+  values: Record<string, string>;
+}
+
+const SELECTOR = /^([a-zA-Z][\w-]*|\*)?((?:[.#][\w-]+)*)$/;
+
+/**
+ * Adds the rules of a style sheet to `sheet`, in order. Returns how many
+ * rules it could not read: at-rules, and selectors that say more than what
+ * one element is (descendants, attributes, states).
+ */
+function styleRules(text: string, sheet: Rule[]): number {
+  let unread = 0;
+  const css = text.replace(/\/\*[\s\S]*?\*\//g, '');
+  for (const block of css.split('}')) {
+    const brace = block.indexOf('{');
+    if (brace < 0) continue;
+    const values: Record<string, string> = {};
+    for (const declaration of block.slice(brace + 1).split(';')) {
+      const colon = declaration.indexOf(':');
+      if (colon > 0) values[declaration.slice(0, colon).trim().toLowerCase()] = declaration.slice(colon + 1);
+    }
+    for (const selector of block.slice(0, brace).split(',')) {
+      const match = SELECTOR.exec(selector.trim());
+      if (!match || (!match[1] && !match[2])) {
+        unread++;
+        continue;
+      }
+      const rule: Rule = { classes: [], weight: 0, values };
+      if (match[1] && match[1] !== '*') {
+        rule.tag = match[1];
+        rule.weight += 1;
+      }
+      for (const part of match[2].match(/[.#][\w-]+/g) ?? []) {
+        if (part[0] === '#') {
+          rule.id = part.slice(1);
+          rule.weight += 100;
+        } else {
+          rule.classes.push(part.slice(1));
+          rule.weight += 10;
+        }
+      }
+      sheet.push(rule);
+    }
+  }
+  return unread;
+}
+
+/** Whether a rule's selector takes this element. */
+function takes(rule: Rule, element: string, attrs: Record<string, string>): boolean {
+  if (rule.tag && rule.tag !== element) return false;
+  if (rule.id && rule.id !== attrs.id) return false;
+  if (rule.classes.length === 0) return true;
+  const classes = (attrs.class ?? '').split(/\s+/);
+  return rule.classes.every((c) => classes.includes(c));
+}
+
+// ---------------------------------------------------------------------------
 // Attributes
 
 // Written so that a run of digits can be read one way only: a number of thousands of digits followed by something
@@ -192,9 +337,16 @@ const lengthOr = (s: string | undefined, fallback: number): number => {
   return Number.isFinite(v) ? v : fallback;
 };
 
-/** A property set by `style="..."` or, failing that, by the attribute of the same name. */
-function property(attrs: Record<string, string>, name: string): string | undefined {
+/** A property set by `style="..."` or, failing that, by the rules of the style sheet that take the element, or by the attribute of the same name. */
+function property(element: string, attrs: Record<string, string>, name: string, sheet: Rule[]): string | undefined {
   let value = attrs[name];
+  // Of the rules that take the element, the weightiest says; of two as weighty, the later.
+  let weight = -1;
+  for (const rule of sheet) {
+    if (rule.weight < weight || rule.values[name] === undefined || !takes(rule, element, attrs)) continue;
+    value = rule.values[name];
+    weight = rule.weight;
+  }
   if (attrs.style) {
     for (const declaration of attrs.style.split(';')) {
       const colon = declaration.indexOf(':');
@@ -204,17 +356,17 @@ function property(attrs: Record<string, string>, name: string): string | undefin
   return value?.replace(/!\s*important/i, '').trim().toLowerCase();
 }
 
-function inherit(parent: Frame, attrs: Record<string, string>): Frame {
+function inherit(parent: Frame, element: string, attrs: Record<string, string>, sheet: Rule[]): Frame {
   const frame = { ...parent };
   if (attrs.transform) frame.transform = mul(parent.transform, parseTransform(attrs.transform));
-  const rule = property(attrs, 'fill-rule');
+  const rule = property(element, attrs, 'fill-rule', sheet);
   if (rule === 'evenodd') frame.evenodd = true;
   else if (rule === 'nonzero') frame.evenodd = false;
-  const visibility = property(attrs, 'visibility');
+  const visibility = property(element, attrs, 'visibility', sheet);
   if (visibility === 'hidden' || visibility === 'collapse') frame.visible = false;
   else if (visibility === 'visible') frame.visible = true;
-  if (property(attrs, 'display') === 'none') frame.skip = true;
-  const fill = property(attrs, 'fill');
+  if (property(element, attrs, 'display', sheet) === 'none') frame.skip = true;
+  const fill = property(element, attrs, 'fill', sheet);
   if (fill !== undefined && fill !== 'inherit') frame.fill = fill;
   return frame;
 }

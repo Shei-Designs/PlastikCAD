@@ -1023,25 +1023,98 @@ describe('SVG import', () => {
 
   const shapesOf = (svg: string) => outlineOf(svg).shapes;
 
+  /** The box of each shape of a drawing, as [left, bottom, right, top] in whole millimeters (Y up: the drawing's Y, negated), with its color. */
+  const boxes = (svg: string): { box: number[]; color?: string }[] => {
+    const got = importFile('d.svg', bytes(svg));
+    if (got.kind !== 'outline') throw new Error('expected an outline');
+    return got.parts.flatMap((part) =>
+      part.shapes.map((shape) => {
+        const xs = shape.contours.flat().map((p) => p[0]);
+        const ys = shape.contours.flat().map((p) => p[1]);
+        return { box: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)].map((v) => Math.round(v) + 0), ...(part.color ? { color: part.color } : {}) };
+      }),
+    );
+  };
+  const warningsOf = (svg: string): string[] => {
+    const got = importFile('d.svg', bytes(svg));
+    return got.warnings ?? [];
+  };
+
+  it('draws what a <use> names again where it says, in the colors the <use> gives it', () => {
+    const svg = mm(
+      '<defs><rect id="r" width="5" height="5"/><g id="pair"><use href="#r"/><use href="#r" x="10"/></g><symbol id="s"><circle cx="2" cy="2" r="2"/></symbol></defs>' +
+        '<use href="#r" x="20" y="10"/><use xlink:href="#r" transform="translate(40 0) scale(2)" fill="#00ff00"/>' +
+        '<use href="#pair" y="30" fill="red"/><use href="#s" x="60" y="60"/>',
+    );
+    expect(boxes(svg)).toEqual([
+      { box: [20, -15, 25, -10] },
+      { box: [60, -64, 64, -60] },
+      { box: [40, -10, 50, 0], color: '#00ff00' },
+      { box: [0, -35, 5, -30], color: '#ff0000' },
+      { box: [10, -35, 15, -30], color: '#ff0000' },
+    ]);
+    expect(warningsOf(svg)).toEqual([]);
+  });
+
+  it('counts a <use> of nothing, of another file, or of itself as left out, and ends', () => {
+    const svg = mm(
+      '<rect width="5" height="5"/><use href="#gone"/><use href="other.svg#r"/>' +
+        '<g id="a"><rect x="10" width="5" height="5"/><use href="#b"/></g><g id="b"><use href="#a"/></g>',
+    );
+    // The loop is followed eight deep and then left, once from each of the two groups that are in it.
+    expect(boxes(svg).length).toBeGreaterThan(2);
+    expect(warningsOf(svg)).toEqual(['4 copies of other shapes (<use>) were left out.']);
+    // A few lines that ask for a hundred million shapes are refused.
+    const bomb = mm(
+      '<defs><rect id="l0" width="1" height="1"/>' +
+        Array.from({ length: 8 }, (_, i) => `<g id="l${i + 1}">${`<use href="#l${i}"/>`.repeat(10)}</g>`).join('') +
+        '</defs><use href="#l8"/>',
+    );
+    expect(() => importFile('d.svg', bytes(bomb))).toThrow('This SVG has too many shapes to open.');
+  });
+
+  it('applies the rules of a style sheet whose selectors say what one element is', () => {
+    const svg = mm(
+      '<defs><style>/* colors */ .a { fill: #f00 } rect.b, .c { fill: rgb(0,0,255); } #one { fill: lime } circle { display: none } .hidden { visibility: hidden }</style></defs>' +
+        '<rect class="a" width="5" height="5"/>' +
+        '<rect class="b extra" x="10" width="5" height="5"/>' +
+        // The id outweighs the class, and the style attribute outweighs both; the attribute gives way to any rule.
+        '<rect id="one" class="a" x="20" width="5" height="5"/>' +
+        '<rect class="a" style="fill: #ffd700" x="30" width="5" height="5"/>' +
+        '<rect class="c" fill="#000" x="40" width="5" height="5"/>' +
+        '<circle cx="60" cy="60" r="5"/><rect class="hidden" x="70" width="5" height="5"/>' +
+        '<g class="c"><rect x="80" width="5" height="5"/></g>',
+    );
+    expect(boxes(svg).map((b) => [b.box[0], b.color])).toEqual([
+      [0, '#ff0000'],
+      [10, '#0000ff'],
+      [40, '#0000ff'],
+      [80, '#0000ff'],
+      [20, '#00ff00'],
+      [30, '#ffd700'],
+    ]);
+    expect(warningsOf(svg)).toEqual([]);
+  });
+
   it('says what a drawing holds that it leaves out', () => {
     const got = importFile(
       'd.svg',
       bytes(
         mm(
-          '<defs><style>.a{fill:#f00}</style><rect id="r" width="5" height="5"/><text>not counted: nothing in here is drawn</text></defs>' +
-            '<rect class="a" width="10" height="10"/><use href="#r" x="20"/><use href="#r" x="30"/>' +
+          '<defs><style>.a{fill:#f00} g > rect { fill: blue } rect:hover{fill:red} @media print { .a { display: none } }</style><text>not counted: nothing in here is drawn</text></defs>' +
+            '<rect class="a" width="10" height="10"/><use href="#nowhere" x="20"/>' +
             '<text x="5" y="50">Label <tspan>one</tspan></text><image href="photo.png" width="10" height="10"/>' +
-            '<g display="none"><use href="#r"/><text>hidden</text></g>',
+            '<g display="none"><use href="#nowhere"/><text>hidden</text></g>',
         ),
       ),
     );
     if (got.kind !== 'outline') throw new Error('expected an outline');
-    expect(got.parts).toHaveLength(1);
+    expect(got.parts).toEqual([expect.objectContaining({ color: '#ff0000' })]);
     expect(got.warnings).toEqual([
-      '2 copies of other shapes (<use>) were left out.',
+      '1 copy of another shape (<use>) was left out.',
       '1 piece of text was left out. Turn text into paths in the drawing program.',
       '1 picture was left out.',
-      'Its style sheet was not read: colors and hidden shapes set there are not applied.',
+      '3 rules of its style sheet were not read: colors and hidden shapes set there are not applied.',
     ]);
     // A drawing of plain shapes has nothing to say.
     const plain = importFile('d.svg', bytes(mm('<rect width="10" height="10"/>')));

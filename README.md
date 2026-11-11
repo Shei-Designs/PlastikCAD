@@ -576,8 +576,9 @@ left alone, since that is its shape.
   unit: the app asks whether it is in meters, inches, centimeters or
   millimeters after all, and brings it in at that.
 - Whatever a drawing holds that is not read is said after the import, by the
-  name of the file: an SVG's `<use>` copies, text, pictures and style sheet,
-  a DXF's outlines that do not close and its text.
+  name of the file: an SVG's text, pictures, copies of what cannot be found
+  and style rules it could not read, a DXF's outlines that do not close and
+  its text.
 - Large files are read away from the screen, which stays live meanwhile. The
   badge over the plate says what is going on (the file of several being
   read, the objects still being built) and its **Cancel** calls an import, an
@@ -616,8 +617,10 @@ left alone, since that is its shape.
 - **SVG**: shapes are grouped by fill color, each group a part of its own.
   Every closed outline is filled and extruded, whatever its stroke or fill, so
   laser-cutter drawings work (including a gear profile exported from PlastikCAD
-  as SVG). Convert text to paths first; `<use>`, images and CSS classes are
-  not read.
+  as SVG). A `<use>` draws what it names again where it says, and a style
+  sheet's rules apply where their selectors are plain (a tag, classes, an
+  id). Convert text to paths first; images, and style rules that reach
+  across elements, are not read.
 - **URDF** is imported from Robot mode (*Import URDF…* under the robot
   tree), with its meshes; see there.
 - **DXF**: lines, polylines, circles, arcs, ellipses and splines are chained

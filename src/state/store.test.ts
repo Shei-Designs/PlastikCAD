@@ -1206,7 +1206,7 @@ describe('importing', () => {
   });
 
   it('says what a drawing held that was left out, by the name of its file', async () => {
-    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="20mm" height="20mm" viewBox="0 0 20 20"><rect id="r" width="10" height="10"/><use href="#r" x="10"/></svg>';
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="20mm" height="20mm" viewBox="0 0 20 20"><rect id="r" width="10" height="10"/><use href="#gone" x="10"/></svg>';
     await store.receiveFiles([{ name: 'plate.svg', path: null, bytes: new TextEncoder().encode(svg) }]);
     expect(scene()).toHaveLength(1);
     expect(store.getState().notice).toEqual({ kind: 'error', text: 'plate.svg: 1 copy of another shape (<use>) was left out.', action: undefined });
