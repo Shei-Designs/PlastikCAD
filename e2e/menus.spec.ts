@@ -33,6 +33,15 @@ test.describe('menus and boxes', { tag: '@mouse' }, () => {
     await expect(about(page)).toHaveAttribute('aria-label', 'About PlastikCAD');
   });
 
+  test('the About box shows the licenses of the libraries inside the app', async ({ page }) => {
+    await openAbout(page);
+    await about(page).getByRole('button', { name: 'Licenses' }).click();
+    const licenses = about(page).getByRole('textbox', { name: 'Licenses' });
+    await expect(licenses).toHaveValue(/PlastikCAD includes the following libraries/);
+    await expect(licenses).toHaveValue(/\nthree\nLicense: MIT\n/);
+    await expect(licenses).toHaveValue(/\nreplicad-opencascadejs\nLicense: /);
+  });
+
   test('a click beside the About box closes it', async ({ page }) => {
     await openAbout(page);
     await page.mouse.click(20, 20);

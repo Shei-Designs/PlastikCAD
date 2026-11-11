@@ -43,6 +43,9 @@ export const app: Catalog = {
   Copied: 'Copié',
   'Copy diagnostics': 'Copier le diagnostic',
   Diagnostics: 'Diagnostic',
+  Licenses: 'Licences',
+  'Shows the licenses of the libraries inside the app.': 'Affiche les licences des bibliothèques incluses dans l’application.',
+  'The licenses could not be read.': 'Les licences n’ont pas pu être lues.',
 
   // The rest of the sidebar: the library, the objects and the tabs (Sidebar.tsx)
   Gear: 'Engrenage',

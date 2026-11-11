@@ -28,7 +28,26 @@ export function About({ open, onClose }: { open: boolean; onClose: () => void })
   useEffect(() => {
     if (open) setCopied(null);
     if (open) setLooking(null);
+    if (open) setLicenses(null);
   }, [open]);
+  // The licenses of the libraries inside the app, once asked for: those of the page, and in the apps those of the native side.
+  const [licenses, setLicenses] = useState<string | null>(null);
+  const showLicenses = async () => {
+    // In a browser only the page runs; the desktop and Android apps have their native side as well.
+    const files = ['THIRD-PARTY-NOTICES.txt', ...(isDesktop() ? ['THIRD-PARTY-NOTICES-NATIVE.txt'] : [])];
+    try {
+      const texts = await Promise.all(
+        files.map(async (file) => {
+          const response = await fetch(`${import.meta.env.BASE_URL}${file}`);
+          if (!response.ok) throw new Error(file);
+          return response.text();
+        }),
+      );
+      setLicenses(texts.join(`\n${'='.repeat(72)}\n\n`));
+    } catch {
+      setLicenses(tr('The licenses could not be read.'));
+    }
+  };
   // A newer version of the app, and how the look for one from here is going: under way, done with none found, or failed.
   const newer = useEditor((s) => s.update);
   const [looking, setLooking] = useState<'now' | 'latest' | 'failed' | null>(null);
@@ -91,10 +110,14 @@ export function About({ open, onClose }: { open: boolean; onClose: () => void })
           <button type="button" className="chip" title={tr('Copies a report of the app, the device and recent errors, to send with a problem.')} onClick={() => void copy()}>
             {copied === 'yes' ? tr('Copied') : tr('Copy diagnostics')}
           </button>
+          <button type="button" className="chip" title={tr('Shows the licenses of the libraries inside the app.')} onClick={() => void showLicenses()}>
+            {tr('Licenses')}
+          </button>
           <button type="button" className="primary" onClick={onClose}>
             {tr('Close')}
           </button>
         </div>
+        {licenses !== null && <textarea className="about-report about-licenses" readOnly aria-label={tr('Licenses')} value={licenses} />}
         {copied === 'no' && <textarea className="about-report" readOnly aria-label={tr('Diagnostics')} value={report()} onFocus={(e) => e.currentTarget.select()} />}
       </div>
     </Modal>
