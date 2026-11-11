@@ -3009,6 +3009,11 @@ kbd {
   resize: vertical;
 }
 
+/* The licenses are long: more of them at once than of a report. */
+.about-licenses {
+  height: 16em;
+}
+
 /* Word from sync that stays until dismissed: above the projects, where it is about them. */
 .sync-notes {
   display: flex;

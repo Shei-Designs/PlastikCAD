@@ -740,9 +740,11 @@ is under the Apache License 2.0. The app's own lettering is Inter, with the
 product name in [Space Grotesk](https://floriankarsten.github.io/space-grotesk/)
 (SIL Open Font License 1.1). The license texts are in `public/font-licenses/`
 and ship with the app, beside `THIRD-PARTY-NOTICES.txt` with the licenses of
-the libraries it is built on (Manifold, MuJoCo, three.js, React, opentype.js,
-fflate, earcut and the Tauri API). A design stores only the words, not their
-outlines.
+the libraries it is built on (Manifold, MuJoCo, OpenCascade, three.js, React,
+opentype.js, fflate, earcut and the Tauri API) and
+`THIRD-PARTY-NOTICES-NATIVE.txt` with those of the Rust crates the desktop
+and Android apps are built with. **Licenses** in the About box shows them. A
+design stores only the words, not their outlines.
 
 ## Development
 
@@ -763,7 +765,7 @@ pnpm smoke:isaac    # the same in Isaac Sim through its URDF importer (ISAACSIM_
 pnpm smoke:usd      # the exported Isaac Sim stages opened, played and driven over ROS 2 in Isaac Sim
 pnpm typecheck
 pnpm lint           # React hooks used wrongly, and a few plain mistakes the type checker does not see
-pnpm notices        # after adding or removing a dependency: writes public/THIRD-PARTY-NOTICES.txt again
+pnpm notices        # after adding, removing or updating a dependency (npm or cargo): writes the notices in public/ again
 pnpm tauri build    # build installers into src-tauri/target/release/bundle
 pnpm tauri android build --apk   # the Android app, with the Tauri Android prerequisites installed
 ```

@@ -23,4 +23,31 @@ describe('the third-party notices', () => {
     const fonts = readdirSync(new URL('../public/font-licenses/', import.meta.url)).map((f) => f.toLowerCase().replace('.txt', ''));
     for (const name of libraries.filter((n) => n.startsWith('@fontsource/'))) expect(fonts, name).toContain(name.slice('@fontsource/'.length));
   });
+
+  it('name every Rust crate the native side is built with, at the version it is built with', () => {
+    const notices = read('../public/THIRD-PARTY-NOTICES-NATIVE.txt');
+    // The crates the app names itself, on every platform, at the versions the lock file pins.
+    const manifest = read('../src-tauri/Cargo.toml');
+    const direct = new Set<string>();
+    let listing = false;
+    for (const line of manifest.split('\n')) {
+      if (line.startsWith('[')) listing = /^\[(target\..+\.)?dependencies\]$/.test(line.trim());
+      else if (listing) {
+        const name = /^([A-Za-z0-9_-]+)\s*=/.exec(line)?.[1];
+        // Its own plugin is the app's own code.
+        if (name && !/path\s*=/.test(line)) direct.add(name);
+      }
+    }
+    expect(direct.size).toBeGreaterThan(5);
+    const lock = read('../src-tauri/Cargo.lock');
+    for (const name of direct) {
+      const versions = [...lock.matchAll(new RegExp(`name = "${name}"\\nversion = "([^"]+)"`, 'g'))].map((m) => m[1]);
+      expect(versions.length, name).toBeGreaterThan(0);
+      expect(versions.some((version) => notices.includes(`\n${name} ${version}  (`)), `run pnpm notices: ${name} ${versions.join(', ')} is missing`).toBe(true);
+    }
+    // And every crate listed is one the lock file has, at that version: nothing left over from an older build.
+    const listed = [...notices.split('-'.repeat(72))[1].matchAll(/^(\S+) (\S+) {2}\(/gm)];
+    expect(listed.length).toBeGreaterThan(100);
+    for (const [, name, version] of listed) expect(lock, `run pnpm notices: ${name} ${version} is no longer built in`).toContain(`name = "${name}"\nversion = "${version}"`);
+  });
 });
