@@ -1085,6 +1085,37 @@ describe('mating gears', () => {
   });
 });
 
+describe('a planetary set', () => {
+  it('previews the sun and its planets together, drops them together, and keeps them as one step', async () => {
+    await store.addPart('gears');
+    const [gear] = scene();
+    await store.editPart(gear.id, { part: 'ring' });
+    const ring = scene()[0];
+    store.startMate(ring.id);
+    await store.previewMate({ kind: 'planetary', teeth: 12, planets: 3, backlash: 0.1, extra: 0, angle: 0 });
+    expect(scene().map((n) => n.name)).toEqual(['Internal ring gear', 'Sun gear', 'Planet gear', 'Planet gear 2', 'Planet gear 3']);
+    const first = scene().map((n) => n.id);
+    // Another count: the parts that stay keep their ids, and one more is added.
+    await store.previewMate({ kind: 'planetary', teeth: 12, planets: 4, backlash: 0.1, extra: 0, angle: 0 });
+    expect(scene()).toHaveLength(6);
+    expect(scene().slice(0, 5).map((n) => n.id)).toEqual(first);
+    // Fewer again: the ones over are gone.
+    await store.previewMate({ kind: 'planetary', teeth: 12, planets: 2, backlash: 0.1, extra: 0, angle: 0 });
+    expect(scene().map((n) => n.name)).toEqual(['Internal ring gear', 'Sun gear', 'Planet gear', 'Planet gear 2']);
+    store.cancelMate();
+    expect(scene().map((n) => n.id)).toEqual([ring.id]);
+
+    store.startMate(ring.id);
+    await store.previewMate({ kind: 'planetary', teeth: 12, planets: 3, backlash: 0.1, extra: 0, angle: 0 });
+    await store.commitMate();
+    expect(scene()).toHaveLength(5);
+    // The sun and the planets are what is selected, and one Undo takes them all back.
+    expect(store.getState().selection).toEqual(scene().slice(1).map((n) => n.id));
+    store.undo();
+    expect(scene().map((n) => n.id)).toEqual([ring.id]);
+  });
+});
+
 describe('the Array panel', () => {
   it('opens on a selection, shows a pattern that Apply keeps as one step, and drops it when closed any other way', async () => {
     store.startArray();

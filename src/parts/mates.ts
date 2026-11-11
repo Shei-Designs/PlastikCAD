@@ -19,7 +19,7 @@ import { chainPitch } from './generators/sprocket';
 import { beltPitch } from './generators/timingPulley';
 import type { Params } from './generators/types';
 
-export type MateKind = 'gear' | 'ring' | 'rack' | 'wheel' | 'bevel' | 'pulley' | 'sprocket';
+export type MateKind = 'gear' | 'ring' | 'rack' | 'wheel' | 'bevel' | 'pulley' | 'sprocket' | 'planetary';
 
 export interface MateRequest {
   kind: MateKind;
@@ -33,6 +33,17 @@ export interface MateRequest {
   angle: number;
   /** For a pulley or sprocket: the teeth of the belt or the links of the chain that joins the two. Left out, a usual length is taken (see `usualSpan`). */
   span?: number;
+  /** For a planetary set: how many planets go round the sun (`teeth` is then the sun's). Three when left out. */
+  planets?: number;
+}
+
+/** A part that comes with a mate: where it goes and how it is turned, as for the mate itself. */
+export interface MatePart {
+  part: string;
+  params: Params;
+  offset: Vec3;
+  rotation: Vec3;
+  name?: string;
 }
 
 export interface Mate {
@@ -51,6 +62,8 @@ export interface Mate {
   note?: string;
   /** What to call the part when its kind's own name would mislead (a helical gear used as a worm wheel). */
   name?: string;
+  /** The parts that come with it: the planets round the sun of a planetary set. */
+  more?: MatePart[];
 }
 
 /** What can mate with a gear of this kind. */
@@ -61,10 +74,11 @@ export function mateKinds(part: string): MateKind[] {
   if (part === 'bevel') return ['bevel'];
   if (beltPitch(part, {}) !== undefined) return ['pulley'];
   if (part === 'sprocket') return ['sprocket'];
+  if (part === 'ring') return ['planetary'];
   return [];
 }
 
-export const MATE_KIND_LABELS: Record<MateKind, string> = { gear: tr('Gear'), ring: tr('Ring'), rack: tr('Rack'), wheel: tr('Worm wheel'), bevel: tr('Bevel gear'), pulley: tr('Pulley'), sprocket: tr('Sprocket') };
+export const MATE_KIND_LABELS: Record<MateKind, string> = { gear: tr('Gear'), ring: tr('Ring'), rack: tr('Rack'), wheel: tr('Worm wheel'), bevel: tr('Bevel gear'), pulley: tr('Pulley'), sprocket: tr('Sprocket'), planetary: tr('Planetary set') };
 
 /** A bevel gear's cone angle already names its mate's tooth count; the wizard cannot change it. */
 export function fixedMateTeeth(source: PartNode): number | null {
@@ -179,9 +193,83 @@ function driveMate(source: PartNode, req: MateRequest, warnings: string[]): Mate
   return mate;
 }
 
+/**
+ * How many planets a set is offered with until a number is typed: three if they can be spaced evenly
+ * round a sun of `sun` teeth and fit side by side, else the nearest number that can; three if none can.
+ */
+export function usualPlanets(source: PartNode, sun: number): number {
+  const zr = Math.max(1, Math.round(num(source.params, 'teeth', 40)));
+  const zs = Math.max(1, Math.round(sun));
+  const zp = (zr - zs) / 2;
+  return [3, 4, 2, 5, 6].find((k) => (zr + zs) % k === 0 && (zs + zp) * Math.sin(Math.PI / k) > zp + 2) ?? 3;
+}
+
+/**
+ * The sun and planets that run inside a ring gear: spur gears of the ring's module, the planets with
+ * half the teeth the ring has more than the sun, set evenly round the ring's axis and turned to mesh
+ * with the ring; the sun on the axis, turned to mesh with the first planet (and so with them all, when
+ * ring plus sun teeth divide by the number of planets). The mate is the sun; the planets come with it.
+ */
+function planetarySet(source: PartNode, req: MateRequest, warnings: string[]): Mate {
+  const p = source.params;
+  const zr = Math.max(1, Math.round(num(p, 'teeth', 40)));
+  const zs = Math.max(1, Math.round(req.teeth));
+  const count = Math.max(1, Math.round(req.planets ?? 3));
+  const m = num(p, 'module', 2);
+  if ((zr - zs) % 2 !== 0) warnings.push(tr('Ring teeth minus sun teeth must be even for the planets to fit.'));
+  const zp = Math.max(1, Math.floor((zr - zs) / 2));
+  if (zp < 5) warnings.push(tr('The sun is too large for this ring: the planets come out with fewer than 5 teeth.'));
+  if ((zr + zs) % count !== 0) warnings.push(tr('{n} planets cannot be spaced evenly: ring teeth plus sun teeth must divide by their number.', { n: count }));
+  else if (count > 1 && (zs + zp) * Math.sin(Math.PI / count) <= zp + 2) warnings.push(tr('{n} planets do not fit side by side.', { n: count }));
+  const gear = (teeth: number): Params => ({
+    module: m,
+    teeth,
+    pressureAngle: num(p, 'pressureAngle', 20),
+    backlash: req.backlash,
+    clearance: num(p, 'clearance', 0.25),
+    faceWidth: num(p, 'faceWidth', 10),
+    profileShift: 0,
+  });
+  const center = (m * (zs + zp)) / 2;
+  const turn = source.rot[2];
+  // A planet at `phi` round the axis: the ring's tooth spaces are centered on its own +X, and planet and
+  // ring turn the same way, so the planet is turned back from `phi` by the ring's share of the angle.
+  const planetTurn = (phi: number): number => phi - (phi - turn) * (zr / zp);
+  const more: MatePart[] = [];
+  for (let i = 0; i < count; i++) {
+    const phi = req.angle + (360 * i) / count;
+    const at = (phi * Math.PI) / 180;
+    more.push({ part: 'spur', params: gear(zp), offset: [center * Math.cos(at), center * Math.sin(at), 0], rotation: [0, 0, planetTurn(phi)], name: tr('Planet gear') });
+  }
+  // The sun is the first planet's mate, as one spur gear is another's, on the side of the axis.
+  const towards = req.angle + 180;
+  const back = wrap(towards - planetTurn(req.angle), 360 / zp);
+  const sunTurn = towards + 180 - 360 / zs / 2 + back * (zp / zs);
+  return {
+    part: 'spur',
+    params: gear(zs),
+    offset: [0, 0, 0],
+    rotation: [0, 0, sunTurn],
+    center,
+    ratio: 1 + zr / zs,
+    warnings,
+    name: tr('Sun gear'),
+    more,
+    note: tr('Planets of {teeth} teeth. With the ring held, the carrier turns once for {ratio} turns of the sun.', { teeth: zp, ratio: Number((1 + zr / zs).toFixed(3)) }),
+  };
+}
+
 export function mateOf(source: PartNode, req: MateRequest): Mate {
   const p = source.params;
   const warnings: string[] = [];
+  if (req.kind === 'planetary') {
+    if (Math.abs(source.rot[0]) > 1e-9 || Math.abs(source.rot[1]) > 1e-9) warnings.push(tr('The gear is tilted; the mate is placed as if it stood upright.'));
+    if (source.flip?.some(Boolean)) warnings.push(tr('The gear is mirrored; the mate is placed as if it were not.'));
+    if (source.size.some((s, i) => Math.abs(s - source.natural[i]) > 1e-6 * Math.max(1, source.natural[i]))) {
+      warnings.push(tr('The gear has been resized, so its teeth no longer match its module; the mate fits the unresized gear.'));
+    }
+    return planetarySet(source, req, warnings);
+  }
   if (req.kind === 'pulley' || req.kind === 'sprocket') {
     if (Math.abs(source.rot[0]) > 1e-9 || Math.abs(source.rot[1]) > 1e-9) warnings.push(tr('The part is tilted; the mate is placed as if it stood upright.'));
     if (source.size.some((s, i) => Math.abs(s - source.natural[i]) > 1e-6 * Math.max(1, source.natural[i]))) {

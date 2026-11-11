@@ -81,6 +81,33 @@ test.describe('core flows', { tag: '@mouse' }, () => {
     await noErrorNotice(page);
   });
 
+  test('a ring gear gets its sun and planets through the wizard', async ({ page }) => {
+    await store(page, async (m) => {
+      await m.addPart('gears');
+      await m.editPart(m.getState().doc.scene[0].id, { part: 'ring', params: { teeth: 48 } });
+    });
+    await settled(page);
+    await page.getByRole('button', { name: 'Add planetary set…' }).click();
+    const panel = page.getByRole('dialog', { name: 'Planetary set' });
+    await expect(panel).toBeVisible();
+    await panel.getByRole('textbox', { name: 'Sun teeth' }).fill('12');
+    await page.keyboard.press('Enter');
+    await panel.getByRole('textbox', { name: 'Planets' }).fill('3');
+    await page.keyboard.press('Enter');
+    await expect(panel).toContainText('Planets of 18 teeth. With the ring held, the carrier turns once for 5 turns of the sun.');
+    await expect.poll(() => sceneCount(page), 'the ring, the sun and three planets').toBe(5);
+    await expect.poll(() => store(page, (m) => m.getState().mating?.building)).toBe(false);
+    await panel.getByRole('button', { name: 'Accept' }).click();
+    await expect(panel).toHaveCount(0);
+    await settled(page);
+    expect(await store(page, (m) => m.getState().doc.scene.map((n) => (n.type === 'part' ? `${n.part} ${n.params.teeth}` : n.type)))).toEqual(['ring 48', 'spur 12', 'spur 18', 'spur 18', 'spur 18']);
+    expect(await drawnCount(page)).toBe(5);
+    await noErrorNotice(page);
+    // One step back takes the whole set away.
+    await store(page, (m) => m.undo());
+    expect(await sceneCount(page)).toBe(1);
+  });
+
   test('a torus resized to an oval builds and is drawn', async ({ page }) => {
     await store(page, (m) => {
       m.addShape('torus');

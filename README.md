@@ -67,7 +67,11 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
   keeps it as a part of its own. A timing pulley or a chain sprocket has the
   same wizard for the other wheel of its drive: give the teeth (or the ratio)
   and the belt's teeth or the chain's links, and the mate stands exactly that
-  belt or chain away, with the center distance and belt length shown.
+  belt or chain away, with the center distance and belt length shown. On an
+  internal ring gear the wizard makes the planetary set: the sun, by its
+  tooth count, and the planets round it, meshed with both; it starts on a
+  number of planets that can be spaced evenly, and says when the teeth do
+  not allow the set asked for.
 - **Text** – lettering in four print-friendly fonts (sans, slab serif,
   monospace, stencil), on one line or several. Put it on a face and group it
   to emboss; make it a hole and sink it in a little (Ctrl+Down) to engrave.
@@ -893,8 +897,7 @@ waits until someone needs it:
 ## Roadmap
 
 - More scripts and fonts for lettering.
-- More parts: throated worm wheel, planetary set helper, V-belt pulleys,
-  imperial threads.
+- More parts: throated worm wheel, V-belt pulleys, imperial threads.
 - Assembly preview of meshing gears.
 - STEP export. Shapes and parts are already described as profiles and
   operations rather than triangles, so a B-rep backend can evaluate the same

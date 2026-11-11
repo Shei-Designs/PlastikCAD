@@ -90,6 +90,7 @@ export const editor: Catalog = {
   // The settings of a part (PartFields.tsx)
   'Add mating gear…': 'Ajouter un engrenage conjugué…',
   'Add mating pulley…': 'Ajouter une poulie conjuguée…',
+  'Add planetary set…': 'Ajouter un train épicycloïdal…',
   'Add mating sprocket…': 'Ajouter un pignon conjugué…',
   'Reset to defaults': 'Rétablir les valeurs par défaut',
   'Kind of part': 'Type de pièce',
@@ -136,6 +137,11 @@ export const editor: Catalog = {
   // The mating gear wizard (MatePanel.tsx)
   'Mating gear': 'Engrenage conjugué',
   'Mating gear for {name}': 'Engrenage conjugué pour {name}',
+  'Planetary set': 'Train épicycloïdal',
+  'Planetary set for {name}': 'Train épicycloïdal pour {name}',
+  'Sun teeth': 'Dents du solaire',
+  Planets: 'Satellites',
+  'Sets the angle around the ring where the first planet goes. 0° is +X, 90° is +Y.': 'Définit l’angle autour de la couronne où se place le premier satellite. 0° correspond à +X, 90° à +Y.',
   'Mating pulley': 'Poulie conjuguée',
   'Mating sprocket': 'Pignon conjugué',
   'Mating pulley for {name}': 'Poulie conjuguée pour {name}',

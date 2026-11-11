@@ -94,6 +94,13 @@ export const partsDrive: Catalog = {
   'Ring teeth minus sun teeth must be even for the planets to fit.':
     'Le nombre de dents de la couronne moins celui du pignon solaire doit être pair pour que les satellites se montent.',
   'Evenly spaced planets': 'Satellites équidistants',
+  'The sun is too large for this ring: the planets come out with fewer than 5 teeth.': 'Le pignon solaire est trop grand pour cette couronne\u00a0: les satellites auraient moins de 5 dents.',
+  '{n} planets cannot be spaced evenly: ring teeth plus sun teeth must divide by their number.':
+    '{n} satellites ne peuvent pas être répartis régulièrement\u00a0: la somme des dents de la couronne et du solaire doit être divisible par leur nombre.',
+  '{n} planets do not fit side by side.': '{n} satellites ne tiennent pas côte à côte.',
+  'Planet gear': 'Satellite',
+  'Sun gear': 'Pignon solaire',
+  'Planets of {teeth} teeth. With the ring held, the carrier turns once for {ratio} turns of the sun.': 'Satellites de {teeth} dents. Couronne fixe, le porte-satellites fait un tour pour {ratio} tours du solaire.',
   none: 'aucun',
   'Ratio, sun to carrier': 'Rapport, solaire vers porte-satellites',
   'Gear rack': 'Crémaillère',

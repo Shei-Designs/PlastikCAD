@@ -7,7 +7,7 @@ import type { PartNode, PartParamValue, Vec3 } from '../../model/types';
 import { GENERATORS, getGenerator } from '../../parts/generators';
 import { sanitizeParams } from '../../parts/generators/types';
 import { mateOf } from '../../parts/mates';
-import type { MateRequest } from '../../parts/mates';
+import type { MatePart, MateRequest } from '../../parts/mates';
 import { geometry } from '../geometry';
 import { tr } from '../../i18n';
 import { abortAlignPreview, commit, endWork, fail, getState, notify, pushStep, replaceState, rewriteHistory, set, startWork } from './core';
@@ -99,26 +99,40 @@ export async function addPart(category: string): Promise<void> {
 
 // --- mating gears -------------------------------------------------------------
 
-/** A mate laid out next to its gear: standing on the same base, meshed, and measured (not yet in the scene). */
-async function placeMate(source: PartNode, request: MateRequest): Promise<{ node: PartNode; warnings: string[] }> {
+/**
+ * A mate laid out next to its gear: standing on the same base, meshed, and measured (not yet in the
+ * scene). The mate itself comes first; the parts that come with it (the planets of a planetary set) follow.
+ */
+async function placeMate(source: PartNode, request: MateRequest): Promise<{ nodes: PartNode[]; warnings: string[] }> {
   const mate = mateOf(source, request);
-  const node = makePart(mate.part, mate.params);
-  if (mate.name) node.name = mate.name;
-  const [box, sourceBox] = await Promise.all([partBox(node), partBox(source)]);
-  node.natural = boundsSize(box);
-  node.size = [...node.natural];
-  node.rot = mate.rotation;
-  // Both parts are placed by their box centers, which sit off their generators' origins (the gear's
-  // axis, the rack's corner); the mate is laid out between origins and then moved by its own box.
+  const sourceBox = await partBox(source);
+  // Every part is placed by its box center, which sits off its generator's origin (the gear's axis,
+  // the rack's corner); the mate is laid out between origins and then moved by its own box.
   const c1 = boundsCenter(sourceBox).map((c, i) => (c * source.size[i]) / source.natural[i]) as Vec3;
-  const c2 = boundsCenter(box);
   const [ax, ay, az] = apply(rotation(source.rot), c1);
   const origin: Vec3 = [source.pos[0] - ax, source.pos[1] - ay, source.pos[2] - az];
-  const [bx, by, bz] = apply(rotation(mate.rotation), c2);
-  node.pos = tidyVec([origin[0] + mate.offset[0] + bx, origin[1] + mate.offset[1] + by, origin[2] + mate.offset[2] + bz]);
-  node.color = source.color;
-  return { node, warnings: mate.warnings };
+  const place = async (part: MatePart): Promise<PartNode> => {
+    const node = makePart(part.part, part.params);
+    if (part.name) node.name = part.name;
+    const box = await partBox(node);
+    node.natural = boundsSize(box);
+    node.size = [...node.natural];
+    node.rot = part.rotation;
+    const [bx, by, bz] = apply(rotation(part.rotation), boundsCenter(box));
+    node.pos = tidyVec([origin[0] + part.offset[0] + bx, origin[1] + part.offset[1] + by, origin[2] + part.offset[2] + bz]);
+    node.color = source.color;
+    return node;
+  };
+  return { nodes: await Promise.all([mate, ...(mate.more ?? [])].map(place)), warnings: mate.warnings };
 }
+
+/** The ids of the parts that came with the previewed mate (see `placeMate`), in order; kept from one preview to the next. */
+let mateMore: string[] = [];
+/** Every node of the preview: the mate, under the wizard's id, and the parts that came with it. */
+const inPreview = (id: string): ((n: { id: string }) => boolean) => {
+  const ids = new Set([id, ...mateMore]);
+  return (n) => ids.has(n.id);
+};
 
 /** The request waiting while a preview is being built, and a count that tells a stale build from the latest. */
 let mateNext: MateRequest | null = null;
@@ -138,6 +152,7 @@ export function startMate(sourceId: string): void {
   cancelMate();
   cancelArray();
   if (getState().aligning) stopAligning();
+  mateMore = [];
   set({ mating: { source: sourceId, id: newId(), building: false }, selection: [sourceId], placing: null });
 }
 
@@ -183,14 +198,20 @@ async function buildMatePreview(request: MateRequest): Promise<void> {
   if (source?.type !== 'part') return cancelMate();
   const build = ++mateBuilds;
   try {
-    const { node, warnings } = await placeMate(source, request);
-    node.id = mating.id;
-    const others = getState().doc.scene.filter((n) => n.id !== mating.id);
-    node.name = uniqueName(others, node.name);
-    await geometry.ready(node, getState().doc.assets);
+    const { nodes, warnings } = await placeMate(source, request);
+    // The same ids from one preview to the next, so that what is drawn is changed rather than made anew.
+    while (mateMore.length < nodes.length - 1) mateMore.push(newId());
+    const was = inPreview(mating.id);
+    let named = getState().doc.scene.filter((n) => !was(n));
+    nodes.forEach((node, i) => {
+      node.id = i === 0 ? mating.id : mateMore[i - 1];
+      node.name = uniqueName(named, node.name);
+      named = [...named, node];
+    });
+    await Promise.all(nodes.map((node) => geometry.ready(node, getState().doc.assets)));
     if (build !== mateBuilds || getState().mating?.id !== mating.id) return;
     // The preview is no step of its own: the whole wizard becomes one on Accept.
-    set({ doc: { ...getState().doc, scene: [...getState().doc.scene.filter((n) => n.id !== mating.id), node] } });
+    set({ doc: { ...getState().doc, scene: [...getState().doc.scene.filter((n) => !was(n)), ...nodes] } });
     if (warnings.length) notify(warnings[0]);
   } catch (e) {
     fail(e);
@@ -207,11 +228,13 @@ export async function commitMate(): Promise<void> {
   if (!mating || mating.id !== opened.id) return;
   mateNext = null;
   mateBuilds++;
-  const node = getState().doc.scene.find((n) => n.id === mating.id);
-  const before = getState().doc.scene.filter((n) => n.id !== mating.id);
-  scrubMate(mating.id);
-  if (node) pushStep({ scene: before, selection: getState().selection, robot: getState().doc.robot });
-  set({ mating: null, selection: node ? [node.id] : getState().selection });
+  const preview = inPreview(mating.id);
+  const kept = getState().doc.scene.filter(preview);
+  const before = getState().doc.scene.filter((n) => !preview(n));
+  scrubMate(preview);
+  mateMore = [];
+  if (kept.length) pushStep({ scene: before, selection: getState().selection, robot: getState().doc.robot });
+  set({ mating: null, selection: kept.length ? kept.map((n) => n.id) : getState().selection });
 }
 
 export function cancelMate(): void {
@@ -219,13 +242,15 @@ export function cancelMate(): void {
   if (!mating) return;
   mateNext = null;
   mateBuilds++;
-  scrubMate(mating.id);
-  set({ mating: null, doc: { ...getState().doc, scene: getState().doc.scene.filter((n) => n.id !== mating.id) } });
+  const preview = inPreview(mating.id);
+  scrubMate(preview);
+  mateMore = [];
+  set({ mating: null, doc: { ...getState().doc, scene: getState().doc.scene.filter((n) => !preview(n)) } });
 }
 
 /** Steps recorded while the wizard was open (edits to the gear itself) hold the preview too; it does not belong in them. */
-function scrubMate(id: string): void {
-  const clean = (s: Step): Step => (s.scene.some((n) => n.id === id) ? { ...s, scene: s.scene.filter((n) => n.id !== id), selection: s.selection.filter((x) => x !== id) } : s);
+function scrubMate(preview: (n: { id: string }) => boolean): void {
+  const clean = (s: Step): Step => (s.scene.some(preview) ? { ...s, scene: s.scene.filter((n) => !preview(n)), selection: s.selection.filter((id) => !preview({ id })) } : s);
   rewriteHistory(clean);
 }
 
