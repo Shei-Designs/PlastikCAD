@@ -19,14 +19,15 @@ import { chainPitch } from './generators/sprocket';
 import { beltPitch } from './generators/timingPulley';
 import { getGenerator } from './generators';
 import { sanitizeParams } from './generators/types';
+import { V_BELT_DIAMETERS, vBeltRim } from './generators/vbelt';
 import { wormPair } from './generators/worm';
 import type { Params } from './generators/types';
 
-export type MateKind = 'gear' | 'ring' | 'rack' | 'wheel' | 'throated' | 'bevel' | 'pulley' | 'sprocket' | 'planetary';
+export type MateKind = 'gear' | 'ring' | 'rack' | 'wheel' | 'throated' | 'bevel' | 'pulley' | 'vbelt' | 'sprocket' | 'planetary';
 
 export interface MateRequest {
   kind: MateKind;
-  /** Teeth on the mate (for a rack, the number of teeth along it). */
+  /** Teeth on the mate (for a rack, the number of teeth along it; for a V-belt pulley, which has none, its datum diameter in mm). */
   teeth: number;
   /** Tooth thinning on the mate, mm. */
   backlash: number;
@@ -34,7 +35,7 @@ export interface MateRequest {
   extra: number;
   /** Which side of the gear the mate goes, degrees anticlockwise from +X. */
   angle: number;
-  /** For a pulley or sprocket: the teeth of the belt or the links of the chain that joins the two. Left out, a usual length is taken (see `usualSpan`). */
+  /** For a pulley or sprocket: the teeth of the belt or the links of the chain that joins the two; for a V-belt pulley, the belt's datum length in mm. Left out, a usual length is taken (see `usualSpan`). */
   span?: number;
   /** For a planetary set: how many planets go round the sun (`teeth` is then the sun's). Three when left out. */
   planets?: number;
@@ -76,21 +77,23 @@ export function mateKinds(part: string): MateKind[] {
   if (part === 'worm') return ['wheel', 'throated'];
   if (part === 'bevel') return ['bevel'];
   if (beltPitch(part, {}) !== undefined) return ['pulley'];
+  if (part === 'v-belt-pulley') return ['vbelt'];
   if (part === 'sprocket') return ['sprocket'];
   if (part === 'ring') return ['planetary'];
   return [];
 }
 
-export const MATE_KIND_LABELS: Record<MateKind, string> = { gear: tr('Gear'), ring: tr('Ring'), rack: tr('Rack'), wheel: tr('Worm wheel'), throated: tr('Throated wheel'), bevel: tr('Bevel gear'), pulley: tr('Pulley'), sprocket: tr('Sprocket'), planetary: tr('Planetary set') };
+export const MATE_KIND_LABELS: Record<MateKind, string> = { gear: tr('Gear'), ring: tr('Ring'), rack: tr('Rack'), wheel: tr('Worm wheel'), throated: tr('Throated wheel'), bevel: tr('Bevel gear'), pulley: tr('Pulley'), vbelt: tr('Pulley'), sprocket: tr('Sprocket'), planetary: tr('Planetary set') };
 
 /** A bevel gear's cone angle already names its mate's tooth count; the wizard cannot change it. */
 export function fixedMateTeeth(source: PartNode): number | null {
   return source.part === 'bevel' ? Math.max(1, Math.round(num(source.params, 'mateTeeth', 20))) : null;
 }
 
-/** What a ratio is counted against: a gear's teeth, a worm's starts. */
+/** What a ratio is counted against: a gear's teeth, a worm's starts, the datum diameter of a V-belt pulley. */
 export function sourceTeeth(source: PartNode): number {
   const p = source.params;
+  if (source.part === 'v-belt-pulley') return num(p, 'diameter', 60);
   return Math.max(1, Math.round(num(p, source.part === 'worm' ? 'starts' : 'teeth', source.part === 'worm' ? 1 : 20)));
 }
 
@@ -140,6 +143,11 @@ const drivePitch = (source: PartNode): number => beltPitch(source.part, source.p
  * stand about their two diameters apart, and for a chain an even number (an odd one needs an offset link).
  */
 export function usualSpan(source: PartNode, kind: MateKind, teeth: number): number {
+  if (kind === 'vbelt') {
+    // A V-belt has no teeth to count: its length is given in millimeters, and offered here to the next ten.
+    const d1 = sourceTeeth(source);
+    return Math.ceil(wrapLength(d1, teeth, d1 + teeth) / 10) * 10;
+  }
   const pitch = drivePitch(source);
   const d1 = wrapDiameter(pitch, sourceTeeth(source));
   const d2 = wrapDiameter(pitch, Math.max(1, Math.round(teeth)));
@@ -193,6 +201,45 @@ function driveMate(source: PartNode, req: MateRequest, warnings: string[]): Mate
   };
   if (kind === 'pulley') mate.note = tr('Belt length {length} mm', { length: Number(length.toFixed(2)) });
   return mate;
+}
+
+/**
+ * The second pulley of a V-belt drive: the same pulley with the datum diameter asked for, as far away as a belt of
+ * the datum length asked for is long. A V-belt has no teeth, so where a toothed belt is counted in teeth this one is
+ * measured: `req.teeth` is the mate's datum diameter and `req.span` the belt's datum length, both in millimeters.
+ */
+function vBeltMate(source: PartNode, req: MateRequest, warnings: string[]): Mate {
+  const d1 = sourceTeeth(source);
+  const d2 = Math.min(V_BELT_DIAMETERS.max, Math.max(V_BELT_DIAMETERS.min, req.teeth));
+  const params = { ...source.params, diameter: d2 };
+  // Closer than this the two rims would touch.
+  const least = vBeltRim(source.params) + vBeltRim(params) + 2;
+  const shortest = Math.ceil(wrapLength(d1, d2, least));
+  let length = req.span ?? usualSpan(source, 'vbelt', d2);
+  if (length < shortest) {
+    warnings.push(tr('The belt is too short for these pulleys; the shortest that fits is {n} mm long.', { n: shortest }));
+    length = shortest;
+  }
+  // The length grows with the distance, so the distance for a length is found by halving.
+  let lo = Math.abs(d2 - d1) / 2;
+  let hi = length / 2;
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2;
+    if (wrapLength(d1, d2, mid) < length) lo = mid;
+    else hi = mid;
+  }
+  const center = (lo + hi) / 2;
+  const theta = (req.angle * Math.PI) / 180;
+  return {
+    part: source.part,
+    params,
+    offset: [center * Math.cos(theta), center * Math.sin(theta), 0],
+    rotation: [0, 0, source.rot[2]],
+    center,
+    ratio: d2 / d1,
+    warnings,
+    note: tr('Belt length {length} mm', { length: Number(length.toFixed(2)) }),
+  };
 }
 
 /**
@@ -271,6 +318,13 @@ export function mateOf(source: PartNode, req: MateRequest): Mate {
       warnings.push(tr('The gear has been resized, so its teeth no longer match its module; the mate fits the unresized gear.'));
     }
     return planetarySet(source, req, warnings);
+  }
+  if (req.kind === 'vbelt') {
+    if (Math.abs(source.rot[0]) > 1e-9 || Math.abs(source.rot[1]) > 1e-9) warnings.push(tr('The part is tilted; the mate is placed as if it stood upright.'));
+    if (source.size.some((s, i) => Math.abs(s - source.natural[i]) > 1e-6 * Math.max(1, source.natural[i]))) {
+      warnings.push(tr('The part has been resized, so its grooves no longer fit its belt; the mate fits the unresized part.'));
+    }
+    return vBeltMate(source, req, warnings);
   }
   if (req.kind === 'pulley' || req.kind === 'sprocket') {
     if (Math.abs(source.rot[0]) > 1e-9 || Math.abs(source.rot[1]) > 1e-9) warnings.push(tr('The part is tilted; the mate is placed as if it stood upright.'));

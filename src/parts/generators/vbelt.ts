@@ -44,6 +44,14 @@ function grooveAngle(p: Params, s: Section): number {
   return asked === 'auto' ? (num(p, 'diameter') <= s.narrowUpTo ? 34 : 38) : Number(asked);
 }
 
+/** How far a pulley's rim stands from its axis: the datum radius and what the section adds above it. */
+export function vBeltRim(p: Params): number {
+  return num(p, 'diameter') / 2 + (SECTIONS[str(p, 'section')]?.above ?? 0);
+}
+
+/** The datum diameters a pulley can be given. */
+export const V_BELT_DIAMETERS = { min: 20, max: 500 };
+
 function build(p: Params, q: Quality): BuildResult {
   const s = SECTIONS[str(p, 'section')];
   if (!s) throw new Error(`Unknown belt section "${str(p, 'section')}"`);
@@ -94,7 +102,7 @@ export const vBeltPulley: GeneratorDef = {
       title: tr('Belt'),
       params: [
         { type: 'select', key: 'section', label: tr('Section'), default: 'Z', options: Object.entries(SECTIONS).map(([value, s]) => ({ value, label: s.label })) },
-        { type: 'number', key: 'diameter', label: tr('Datum diameter'), help: tr('Sets the diameter the belt runs at, a little below the rim.'), default: 60, min: 20, max: 500, step: 1, unit: 'mm' },
+        { type: 'number', key: 'diameter', label: tr('Datum diameter'), help: tr('Sets the diameter the belt runs at, a little below the rim.'), default: 60, min: V_BELT_DIAMETERS.min, max: V_BELT_DIAMETERS.max, step: 1, unit: 'mm' },
         { type: 'number', key: 'grooves', label: tr('Grooves'), default: 1, min: 1, max: 8, step: 1, integer: true },
         {
           type: 'select',

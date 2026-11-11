@@ -92,7 +92,7 @@ export function PartFields({ node }: { node: PartNode }) {
   if (canMate && sections.length) {
     sections[0].after = (
       <button type="button" className="primary mate-button" disabled={mating || locked} onClick={() => startMate(node.id)}>
-        {mateKinds(def.id)[0] === 'pulley' ? tr('Add mating pulley…') : mateKinds(def.id)[0] === 'sprocket' ? tr('Add mating sprocket…') : mateKinds(def.id)[0] === 'planetary' ? tr('Add planetary set…') : tr('Add mating gear…')}
+        {mateKinds(def.id)[0] === 'pulley' || mateKinds(def.id)[0] === 'vbelt' ? tr('Add mating pulley…') : mateKinds(def.id)[0] === 'sprocket' ? tr('Add mating sprocket…') : mateKinds(def.id)[0] === 'planetary' ? tr('Add planetary set…') : tr('Add mating gear…')}
       </button>
     );
   }

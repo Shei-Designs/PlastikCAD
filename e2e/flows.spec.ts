@@ -81,6 +81,40 @@ test.describe('core flows', { tag: '@mouse' }, () => {
     await noErrorNotice(page);
   });
 
+  test('a V-belt pulley gets its mate through the wizard, by its diameter and the length of the belt', async ({ page }) => {
+    await store(page, async (m) => {
+      await m.addPart('pulleys');
+      await m.editPart(m.getState().doc.scene[0].id, { part: 'v-belt-pulley' });
+    });
+    await settled(page);
+    await page.getByRole('button', { name: 'Add mating pulley…' }).click();
+    const panel = page.getByRole('dialog', { name: 'Mating pulley' });
+    await expect(panel).toBeVisible();
+    // No teeth to count: the mate is asked for by its diameter, the belt by its length.
+    await expect(panel.getByRole('textbox', { name: 'Teeth' })).toHaveCount(0);
+    await expect(panel.getByRole('textbox', { name: 'Datum diameter' })).toHaveValue('60');
+    // Two pulleys of 60 mm and a belt of 500: half of what the belt has left after going half round each.
+    await panel.getByRole('textbox', { name: 'Belt length' }).fill('500');
+    await page.keyboard.press('Enter');
+    await expect(panel).toContainText('Center distance 155.752 mm');
+    await expect(panel).toContainText('Belt length 500 mm');
+    // Twice the diameter by the ratio: the pulleys draw closer on the same belt.
+    await panel.getByRole('textbox', { name: 'Ratio' }).fill('2');
+    await page.keyboard.press('Enter');
+    await expect(panel.getByRole('textbox', { name: 'Datum diameter' })).toHaveValue('120');
+    await expect(panel).not.toContainText('Center distance 155.752 mm');
+    await expect.poll(() => store(page, (m) => m.getState().mating?.building)).toBe(false);
+    await panel.getByRole('button', { name: 'Accept' }).click();
+    await expect(panel).toHaveCount(0);
+    await settled(page);
+    const parts = await store(page, (m) => m.getState().doc.scene.map((n) => (n.type === 'part' ? { part: n.part, diameter: n.params.diameter, pos: n.pos } : null)));
+    expect(parts.map((p) => [p?.part, p?.diameter])).toEqual([['v-belt-pulley', 60], ['v-belt-pulley', 120]]);
+    expect(parts[1]!.pos[0] - parts[0]!.pos[0]).toBeGreaterThan(90 + 4);
+    expect(parts[1]!.pos[0] - parts[0]!.pos[0]).toBeLessThan(155);
+    expect(await drawnCount(page)).toBe(2);
+    await noErrorNotice(page);
+  });
+
   test('a worm gets a throated wheel through the wizard, standing meshed beside it', async ({ page }) => {
     await store(page, async (m) => {
       await m.addPart('gears');
