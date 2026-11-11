@@ -563,6 +563,32 @@ export function guardClose(isDirty: () => boolean, flush: () => Promise<boolean>
   return () => window.removeEventListener('beforeunload', warn);
 }
 
+/**
+ * Android's Back. `handler` closes whatever is open or under way, one thing at a press, and says whether there was
+ * anything; when there was not, the app goes behind the others, as an app does from its first screen. Without this
+ * the system took every Back for that, a box or a menu being open or not. Returns an unsubscribe function.
+ */
+export function onBack(handler: () => boolean): () => void {
+  if (!isAndroid()) return () => {};
+  let stop: (() => void) | undefined;
+  let stopped = false;
+  void import('@tauri-apps/api/app')
+    .then(({ onBackButtonPress }) =>
+      onBackButtonPress(() => {
+        if (!handler()) void device('leave').catch(() => undefined);
+      }),
+    )
+    .then((listener) => {
+      stop = () => void listener.unregister();
+      if (stopped) stop();
+    })
+    .catch(() => undefined);
+  return () => {
+    stopped = true;
+    stop?.();
+  };
+}
+
 /** Runs `handler` when the page is hidden (another app in front, the tab switched), the moment to write out what is pending. Returns an unsubscribe function. */
 export function onHidden(handler: () => void): () => void {
   const check = () => {
