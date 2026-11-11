@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { MeshData } from '../geometry/mesh';
 import { fileKind, importFile } from './import';
 import type { Companion, ImportedModel, ImportedPart } from './import';
+import { paint } from './importPly';
 import { writePng } from './png';
 
 const bytes = (s: string) => new TextEncoder().encode(s);
@@ -60,27 +61,69 @@ function pixels(png: Uint8Array): { width: number; height: number; at(x: number,
   };
 }
 
-/** The color the picture of a part holds for each of its triangles, read at the triangle's corners. */
-function faceColors(p: ImportedPart): string[] {
+/** What these read of a part: its picture, and where its triangles' corners are on it. */
+interface Worn {
+  image?: { bytes: Uint8Array };
+  mesh: { uv?: Float32Array };
+}
+
+/** The color the picture of a part holds at each corner of each of its triangles. */
+function cornerColors(p: Worn): string[][] {
   const picture = pixels(p.image!.bytes);
   const uv = p.mesh.uv!;
-  expect(uv.length).toBe(p.mesh.triangles.length * 2);
-  const out: string[] = [];
+  const out: string[][] = [];
   for (let t = 0; t < uv.length / 6; t++) {
-    const corner = (c: number): string => {
-      const x = uv[t * 6 + c * 2] * picture.width - 0.5;
-      const y = (1 - uv[t * 6 + c * 2 + 1]) * picture.height - 0.5;
-      // The middle of a pixel, where every way of drawing the picture gives the pixel's own color.
-      expect(Math.abs(x - Math.round(x))).toBeLessThan(1e-3);
-      expect(Math.abs(y - Math.round(y))).toBeLessThan(1e-3);
-      return picture.at(Math.round(x), Math.round(y));
-    };
-    expect(corner(1)).toBe(corner(0));
-    expect(corner(2)).toBe(corner(0));
-    out.push(corner(0));
+    out.push(
+      [0, 1, 2].map((c) => {
+        const x = uv[t * 6 + c * 2] * picture.width - 0.5;
+        const y = (1 - uv[t * 6 + c * 2 + 1]) * picture.height - 0.5;
+        // The middle of a pixel, where every way of drawing the picture gives the pixel's own color.
+        expect(Math.abs(x - Math.round(x))).toBeLessThan(1e-3);
+        expect(Math.abs(y - Math.round(y))).toBeLessThan(1e-3);
+        return picture.at(Math.round(x), Math.round(y));
+      }),
+    );
   }
   return out;
 }
+
+/** The one color of each triangle of a part whose triangles are each one color all over. */
+function faceColors(p: ImportedPart): string[] {
+  expect(p.mesh.uv!.length).toBe(p.mesh.triangles.length * 2);
+  return cornerColors(p).map(([a, b, c]) => {
+    expect(b).toBe(a);
+    expect(c).toBe(a);
+    return a;
+  });
+}
+
+/** How bright a stored value of a channel is, 0 to 1: pictures are blended in light. */
+const light = (v: number): number => (v <= 10 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4);
+const lights = (hex: string): number[] => [1, 3, 5].map((i) => light(parseInt(hex.slice(i, i + 2), 16)));
+
+/**
+ * What a triangle shows at a point given by its weights on the three corners, drawn the way pictures are: the
+ * blend, in light, of the four pixels around the point.
+ */
+function shown(p: Worn, t: number, weights: [number, number, number]): number[] {
+  const picture = pixels(p.image!.bytes);
+  const uv = p.mesh.uv!;
+  let [u, v] = [0, 0];
+  for (let c = 0; c < 3; c++) {
+    u += weights[c] * uv[t * 6 + c * 2];
+    v += weights[c] * uv[t * 6 + c * 2 + 1];
+  }
+  const x = u * picture.width - 0.5;
+  const y = (1 - v) * picture.height - 0.5;
+  const [x0, y0] = [Math.floor(x + 1e-9), Math.floor(y + 1e-9)];
+  const [fx, fy] = [x - x0, y - y0];
+  const at = (i: number, j: number): number[] => lights(picture.at(Math.min(picture.width - 1, x0 + i), Math.min(picture.height - 1, y0 + j)));
+  const [a, b, c, d] = [at(0, 0), at(1, 0), at(0, 1), at(1, 1)];
+  return [0, 1, 2].map((k) => a[k] * (1 - fx) * (1 - fy) + b[k] * fx * (1 - fy) + c[k] * (1 - fx) * fy + d[k] * fx * fy);
+}
+
+/** The nine bytes `paint` takes for each triangle, from the colors of its corners. */
+const corners = (...triangles: [string, string, string][]): Uint8Array => Uint8Array.from(triangles.flatMap((t) => t.flatMap((hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)))));
 
 const CUBE = [
   [0, 0, 0],
@@ -168,22 +211,48 @@ describe('PLY import', () => {
     expect(importFile('msf:31', bytes(cubeText())).kind).toBe('model');
   });
 
-  it('paints the colors of the points onto a picture, each face the mean of its corners', () => {
+  it('paints the colors of the points onto a picture, each face going from the color of one corner to the next', () => {
     const p = part(tetra(RGB, ['255 0 0', '0 255 0', '0 0 255', '255 255 255']));
     expect(p.image?.mime).toBe('image/png');
     expect(p.image?.name).toBe('scan.png');
-    // Faces 0 2 1, 0 1 3, 1 2 3 and 0 3 2.
-    expect(faceColors(p)).toEqual(['#555555', '#aaaa55', '#55aaaa', '#aa55aa']);
+    // Faces 0 2 1, 0 1 3, 1 2 3 and 0 3 2, corner by corner.
+    const [red, green, blue, white] = ['#ff0000', '#00ff00', '#0000ff', '#ffffff'];
+    expect(cornerColors(p)).toEqual([
+      [red, blue, green],
+      [red, green, white],
+      [green, blue, white],
+      [red, white, blue],
+    ]);
+    // Four faces, a block of two pixels by two for each.
+    const picture = pixels(p.image!.bytes);
+    expect([picture.width, picture.height]).toEqual([4, 4]);
     // The part's own color, for where a picture does not go, is the mean of them all.
     expect(p.color).toBe('#808080');
     expect(isClosed(p.mesh)).toBe(true);
   });
 
   it('takes colors written as fractions or as sixteen bits', () => {
+    const [red, blue] = ['#ff0000', '#0000ff'];
+    const expected = [
+      [red, red, red],
+      [red, red, blue],
+      [red, red, blue],
+      [red, blue, red],
+    ];
     const fractions = part(tetra(['property float red', 'property float green', 'property float blue'], ['1 0 0', '1 0 0', '1 0 0', '0 0 1']));
-    expect(faceColors(fractions)).toEqual(['#ff0000', '#aa0055', '#aa0055', '#aa0055']);
+    expect(cornerColors(fractions)).toEqual(expected);
     const wide = part(tetra(['property ushort red', 'property ushort green', 'property ushort blue'], ['65535 0 0', '65535 0 0', '65535 0 0', '0 0 65535']));
-    expect(faceColors(wide)).toEqual(['#ff0000', '#aa0055', '#aa0055', '#aa0055']);
+    expect(cornerColors(wide)).toEqual(expected);
+  });
+
+  it('keeps one pixel a color when every face is one color all over, though the points carry them', () => {
+    // Two triangles with points of their own, as a tool writes faces that each have a color.
+    const lines = ['ply', 'format ascii 1.0', 'element vertex 6', 'property float x', 'property float y', 'property float z', ...RGB, 'element face 2', 'property list uchar int vertex_indices', 'end_header'];
+    lines.push('0 0 0 255 0 0', '10 0 0 255 0 0', '0 10 0 255 0 0', '0 0 5 0 0 255', '10 0 5 0 0 255', '0 10 5 0 0 255', '3 0 1 2', '3 3 4 5');
+    const p = part(lines.join('\n'));
+    expect(faceColors(p)).toEqual(['#ff0000', '#0000ff']);
+    const picture = pixels(p.image!.bytes);
+    expect([picture.width, picture.height]).toEqual([2, 1]);
   });
 
   it('gives a part of one color that color and no picture', () => {
@@ -236,7 +305,7 @@ describe('PLY import', () => {
     const bare = model(text);
     expect(bare.missing).toEqual(['My Skin.PNG']);
     expect(bare.parts[0].image?.name).toBe('scan.png');
-    expect(faceColors(bare.parts[0])).toHaveLength(4);
+    expect(cornerColors(bare.parts[0])).toHaveLength(4);
   });
 
   it('wears the picture by the coordinates of its faces, which may come before their corners', () => {
@@ -324,6 +393,96 @@ describe('PLY import', () => {
     expect(() => model(cubeText().replace('element vertex 8', 'element vertex 4000000000'))).toThrow('This PLY file is incomplete: it ends before its last point or face.');
     const flat = cubeText().replace(/\n4 [^]*$/, '\n') + '3 0 0 1\n3 1 1 1\n3 2 2 0\n3 0 9 1\n3 1 2\n1 0\n';
     expect(() => model(flat)).toThrow('This PLY file has no usable faces.');
+  });
+});
+
+describe('the colors of triangles as a picture', () => {
+  const worn = (painted: ReturnType<typeof paint>): Worn => ({ image: { bytes: painted.picture!.png }, mesh: { uv: painted.picture!.uv } });
+  const close = (got: number[], want: number[], within: number): void => got.forEach((v, k) => expect(Math.abs(v - want[k])).toBeLessThan(within));
+  const mix = (colors: string[], weights: number[]): number[] => [0, 1, 2].map((k) => colors.reduce((sum, hex, c) => sum + weights[c] * lights(hex)[k], 0));
+  const POINTS: [number, number, number][] = [
+    [1, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1],
+    [0.5, 0.5, 0],
+    [0, 0.5, 0.5],
+    [0.5, 0, 0.5],
+    [1 / 3, 1 / 3, 1 / 3],
+    [0.1, 0.2, 0.7],
+  ];
+
+  it('goes evenly from each corner to the next, drawn the way pictures are', () => {
+    const triangles: [string, string, string][] = [
+      ['#804020', '#c0a060', '#406080'],
+      ['#ffffff', '#000000', '#000000'],
+      ['#000000', '#ffffff', '#000000'],
+      ['#101010', '#f0f0f0', '#808080'],
+      ['#ff0000', '#ffff00', '#00ff00'],
+    ];
+    const painted = paint(corners(...triangles), triangles.length);
+    const p = worn(painted);
+    expect(cornerColors(p)).toEqual(triangles);
+    // A stored value is a whole number: the fourth pixel of a block is out by half a step at most.
+    triangles.forEach((colors, t) => POINTS.forEach((weights) => close(shown(p, t, weights), mix(colors, weights), 0.004)));
+  });
+
+  it('shows the same along a side two triangles share', () => {
+    const [a, b, c, d] = ['#c02040', '#20c060', '#4060e0', '#e0e020'];
+    // The side from b to c, which the first triangle has second and third and the other first and third.
+    const painted = paint(corners([a, b, c], [c, d, b]), 2);
+    const p = worn(painted);
+    for (const along of [0, 0.25, 0.5, 0.75, 1]) close(shown(p, 0, [0, 1 - along, along]), shown(p, 1, [along, 0, 1 - along]), 0.004);
+  });
+
+  it('stays near what the corners say where no pixel can hold what an even blend needs', () => {
+    // Each corner the only one bright in its channel: whichever comes first, the fourth pixel is cut off at black.
+    const colors: [string, string, string] = ['#ff0000', '#00ff00', '#0000ff'];
+    const painted = paint(corners(colors), 1);
+    const p = worn(painted);
+    expect(cornerColors(p)).toEqual([colors]);
+    // The two sides at the corner that comes first are exact; the third is off by a quarter of a channel at its middle.
+    for (const weights of POINTS) close(shown(p, 0, weights), mix(colors, weights), 0.2501);
+    const off = POINTS.slice(3, 6).map((weights) => Math.max(...shown(p, 0, weights).map((v, k) => Math.abs(v - mix(colors, weights)[k]))));
+    expect(off.filter((d) => d < 0.004)).toHaveLength(2);
+  });
+
+  it('gives triangles of the same three colors one block, whichever corner they begin with', () => {
+    const [a, b, c] = ['#102030', '#405060', '#708090'];
+    const painted = paint(corners([a, b, c], [b, c, a], [c, a, b], [a, a, c]), 4);
+    const picture = pixels(painted.picture!.png);
+    // Two blocks, side by side.
+    expect([picture.width, picture.height]).toEqual([4, 2]);
+    const p = worn(painted);
+    expect(cornerColors(p)).toEqual([
+      [a, b, c],
+      [b, c, a],
+      [c, a, b],
+      [a, a, c],
+    ]);
+  });
+
+  it('keeps no more blocks than the picture holds, colors in coarser steps standing in', () => {
+    // 6,000 triangles, each with three colors of its own, in a picture with room for 1,024.
+    const count = 6000;
+    const own = new Uint8Array(count * 9);
+    for (let t = 0; t < count; t++) for (let i = 0; i < 9; i++) own[t * 9 + i] = (t * (7 + 2 * i) + i * 37) & 255;
+    const painted = paint(own, count, 1024);
+    const picture = pixels(painted.picture!.png);
+    expect(picture.width).toBeLessThanOrEqual(64);
+    expect(picture.height).toBeLessThanOrEqual(64);
+    const p = worn(painted);
+    const drawn = cornerColors(p);
+    expect(drawn).toHaveLength(count);
+    // Four steps a channel at the least: every corner within half a step of its own color.
+    for (const t of [0, 1, 255, 2048, 5999]) {
+      drawn[t].forEach((hex, c) => {
+        for (let k = 0; k < 3; k++) expect(Math.abs(parseInt(hex.slice(1 + k * 2, 3 + k * 2), 16) - own[t * 9 + c * 3 + k])).toBeLessThanOrEqual(64);
+      });
+    }
+  });
+
+  it('gives one color and no picture when there is only one', () => {
+    expect(paint(corners(['#c86432', '#c86432', '#c86432'], ['#c86432', '#c86432', '#c86432']), 2)).toEqual({ color: '#c86432' });
   });
 });
 

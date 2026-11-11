@@ -673,9 +673,10 @@ left alone, since that is its shape.
   unpacked, up to 512 MB.
 - **PLY**: text or binary, as scanners and mesh tools write it; the points
   and faces make one part. The colors a PLY file gives its points or its
-  faces come in as a picture the part wears, each face in one color (its
-  own, or the mean of its corners'), so a colored scan stays one solid and
-  goes out again with its colors as a GLB. A file that names a picture for
+  faces come in as a picture the part wears: a face with a color of its own
+  is that color all over, and one whose points have colors goes from each
+  corner's color to the next. A colored scan so stays one solid and goes
+  out again with its colors as a GLB. A file that names a picture for
   its texture coordinates (`comment TextureFile`) wears that picture
   instead, read from beside it like an OBJ's. A file of points with no
   faces (a point cloud, a splat) is refused.

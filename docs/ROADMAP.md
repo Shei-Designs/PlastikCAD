@@ -110,8 +110,6 @@ Smaller pieces, each of which can be built without a session.
   to sweep a tooth along a helix and the file has to keep the result. (Eggs,
   tall domes and oval cones cannot be done: a STEP file does not keep an
   oval turned round an axis.)
-- **PLY**: colors blended across a face on import, where today each face
-  has one.
 
 ## Phases that need a session first
 

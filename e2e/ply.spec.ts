@@ -1,13 +1,21 @@
 // A PLY file with colors, in the built app: the colors come in as a picture the reader writes
 // itself, which the browser has to be able to decode and the viewer to draw.
 import type { Page } from '@playwright/test';
-import { dropFiles, expect, notices, openApp, pngBytes, sceneCount, settled, skinColors, skins, store, test } from './helpers';
+import { brightness, dropFiles, expect, notices, openApp, pngBytes, sceneCount, screenPoint, settled, skinColors, skins, store, test } from './helpers';
 
 /** A cube of 20 mm whose six sides each name a color. */
 function coloredCube(): number[] {
   const points = ['0 0 0', '20 0 0', '20 20 0', '0 20 0', '0 0 20', '20 0 20', '20 20 20', '0 20 20'];
   const sides = ['4 0 3 2 1 255 0 0', '4 4 5 6 7 0 255 0', '4 0 1 5 4 0 0 255', '4 1 2 6 5 255 255 0', '4 2 3 7 6 0 255 255', '4 3 0 4 7 255 0 255'];
   const head = ['ply', 'format ascii 1.0', 'element vertex 8', 'property float x', 'property float y', 'property float z', 'element face 6', 'property list uchar int vertex_indices', 'property uchar red', 'property uchar green', 'property uchar blue', 'end_header'];
+  return [...new TextEncoder().encode([...head, ...points, ...sides, ''].join('\n'))];
+}
+
+/** A cube of 20 mm whose points have colors: black at the bottom, white at the top. */
+function shadedCube(): number[] {
+  const points = ['0 0 0 0 0 0', '20 0 0 0 0 0', '20 20 0 0 0 0', '0 20 0 0 0 0', '0 0 20 255 255 255', '20 0 20 255 255 255', '20 20 20 255 255 255', '0 20 20 255 255 255'];
+  const sides = ['4 0 3 2 1', '4 4 5 6 7', '4 0 1 5 4', '4 1 2 6 5', '4 2 3 7 6', '4 3 0 4 7'];
+  const head = ['ply', 'format ascii 1.0', 'element vertex 8', 'property float x', 'property float y', 'property float z', 'property uchar red', 'property uchar green', 'property uchar blue', 'element face 6', 'property list uchar int vertex_indices', 'end_header'];
   return [...new TextEncoder().encode([...head, ...points, ...sides, ''].join('\n'))];
 }
 
@@ -85,6 +93,28 @@ test.describe('PLY files', { tag: '@mouse' }, () => {
     // The picture the reader wrote is one the browser reads, and the cube is drawn with it.
     await expect.poll(() => skins(page)).toMatchObject({ images: ['ready'], worn: 1 });
     expect(await skinColors(page, die.id)).toEqual(['#0000ff', '#00ff00', '#00ffff', '#ff0000', '#ff00ff', '#ffff00']);
+    expect((await notices(page)).filter((n) => n.kind === 'error')).toEqual([]);
+    expect(errors).toEqual([]);
+  });
+
+  test('a cube whose points have colors goes from one color to the next across each face', async ({ page, errors }) => {
+    await openApp(page);
+    await dropFiles(page, [{ name: 'shade.ply', bytes: shadedCube() }]);
+    await expect.poll(() => sceneCount(page), { timeout: 30_000 }).toBe(1);
+    await settled(page);
+    await expect.poll(() => skins(page)).toMatchObject({ images: ['ready'], worn: 1 });
+    // Nothing selected: no handles over the cube.
+    await store(page, (m) => m.select([]));
+    await settled(page);
+    // Three heights on the side that faces the view, all within one of its two triangles (the one under the
+    // diagonal from the bottom left to the top right): one color all over would show the same at each.
+    const shades: number[] = [];
+    for (const z of [2, 8, 14]) {
+      const [x, y] = await screenPoint(page, [6, -10, z]);
+      shades.push(await brightness(page, x, y, 2));
+    }
+    expect(shades[1] - shades[0]).toBeGreaterThan(20);
+    expect(shades[2] - shades[1]).toBeGreaterThan(20);
     expect((await notices(page)).filter((n) => n.kind === 'error')).toEqual([]);
     expect(errors).toEqual([]);
   });
