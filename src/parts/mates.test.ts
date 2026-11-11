@@ -444,3 +444,63 @@ describe('a planetary set', () => {
   });
 });
 
+describe('the second pulley of a V-belt drive', () => {
+  const pulley = (params: P = {}) => part('v-belt-pulley', { section: 'A', diameter: 80, ...params });
+  /** The mate asked for by its datum diameter and, where given, the belt's datum length, both in millimeters. */
+  const asked = (diameter: number, length?: number, angle = 0): MateRequest => ({ kind: 'vbelt', teeth: diameter, backlash: 0, extra: 0, angle, ...(length === undefined ? {} : { span: length }) });
+  /** The datum length of a belt round two pulleys, by the textbook formula: straight runs and the two arcs. */
+  const beltLength = (d1: number, d2: number, c: number): number => {
+    const lean = Math.asin(Math.abs(d2 - d1) / 2 / c);
+    return 2 * c * Math.cos(lean) + (Math.PI * (d1 + d2)) / 2 + lean * Math.abs(d2 - d1);
+  };
+
+  it('is offered for a V-belt pulley and no other mate is', () => {
+    expect(mateKinds('v-belt-pulley')).toEqual(['vbelt']);
+    expect(sourceTeeth(pulley())).toBe(80);
+  });
+
+  it('is the same pulley with the diameter asked for, as far away as the belt is long', () => {
+    const mate = mateOf(pulley(), asked(160, 1000));
+    expect(mate.part).toBe('v-belt-pulley');
+    expect(mate.params).toMatchObject({ section: 'A', diameter: 160 });
+    expect(mate.ratio).toBe(2);
+    expect(mate.note).toBe('Belt length 1000 mm');
+    expect(mate.warnings).toEqual([]);
+    // A belt of that length goes round the two at that distance and no other.
+    expect(beltLength(80, 160, mate.center)).toBeCloseTo(1000, 6);
+    expect(mate.offset[0]).toBeCloseTo(mate.center, 9);
+    // On the side asked for.
+    const up = mateOf(pulley(), asked(160, 1000, 90));
+    expect(up.offset[0]).toBeCloseTo(0, 9);
+    expect(up.offset[1]).toBeCloseTo(mate.center, 9);
+  });
+
+  it('offers a usual length until one is typed: the pulleys about their two diameters apart, to the next ten millimeters', () => {
+    const length = usualSpan(pulley(), 'vbelt', 160);
+    expect(length % 10).toBe(0);
+    const mate = mateOf(pulley(), asked(160));
+    expect(mate.note).toBe(`Belt length ${length} mm`);
+    expect(mate.center).toBeGreaterThanOrEqual(240 - 1e-9);
+    expect(mate.center).toBeLessThan(246);
+  });
+
+  it('says so when the belt is too short for the rims to clear, and takes the shortest that fits', () => {
+    const mate = mateOf(pulley(), asked(160, 300));
+    expect(mate.warnings).toHaveLength(1);
+    expect(mate.warnings[0]).toMatch(/^The belt is too short for these pulleys; the shortest that fits is \d+ mm long\.$/);
+    const { a, b } = check('v-belt-pulley', { section: 'A', diameter: 80 }, 0, asked(160, 300));
+    expect(overlap(a, b)).toBeCloseTo(0, 6);
+    // The rims are a hair apart: datum radii, what the A section stands above them, and two millimeters.
+    expect(mate.center).toBeGreaterThan(40 + 80 + 2 * 2.75);
+  });
+
+  it('keeps the diameter within what a pulley can be given, and says when the pulley is tilted or resized', () => {
+    expect(mateOf(pulley(), asked(5, 1000)).params).toMatchObject({ diameter: 20 });
+    expect(mateOf(pulley(), asked(5000, 4000)).params).toMatchObject({ diameter: 500 });
+    const tilted = { ...pulley(), rot: [30, 0, 0] as Vec3 };
+    expect(mateOf(tilted, asked(160, 1000)).warnings).toEqual(['The part is tilted; the mate is placed as if it stood upright.']);
+    const resized = { ...pulley(), size: [2, 1, 1] as Vec3 };
+    expect(mateOf(resized, asked(160, 1000)).warnings).toEqual(['The part has been resized, so its grooves no longer fit its belt; the mate fits the unresized part.']);
+  });
+});
+

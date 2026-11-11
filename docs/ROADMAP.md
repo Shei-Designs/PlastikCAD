@@ -109,8 +109,6 @@ What the reviews showed could be built, beyond mending. None is planned.
 
 Smaller pieces, each of which can be built without a session.
 
-- **A V-belt pulley's mate** in the mating wizard: a V-belt's length is not
-  a tooth count, so it needs its own rule.
 - **STEP export**: true surfaces for helical and bevel gears and for
   threads, which still go out as facets. A research piece: the library has
   to sweep a tooth along a helix and the file has to keep the result. (Eggs,

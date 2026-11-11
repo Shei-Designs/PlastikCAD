@@ -71,7 +71,9 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
   keeps it as a part of its own. A timing pulley or a chain sprocket has the
   same wizard for the other wheel of its drive: give the teeth (or the ratio)
   and the belt's teeth or the chain's links, and the mate stands exactly that
-  belt or chain away, with the center distance and belt length shown. On an
+  belt or chain away, with the center distance and belt length shown. A
+  V-belt pulley has it too, by the mate's diameter (or the ratio) and the
+  belt's length in millimeters, since a V-belt has no teeth to count. On an
   internal ring gear the wizard makes the planetary set: the sun, by its
   tooth count, and the planets round it, meshed with both; it starts on a
   number of planets that can be spaced evenly, and says when the teeth do

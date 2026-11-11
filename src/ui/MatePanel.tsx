@@ -8,6 +8,7 @@ import { tr } from '../i18n';
 import { fixedMateTeeth, MATE_KIND_LABELS, mateKinds, mateOf, sourceTeeth, usualPlanets, usualSpan } from '../parts/mates';
 import type { MateKind, MateRequest } from '../parts/mates';
 import type { Params } from '../parts/generators/types';
+import { V_BELT_DIAMETERS } from '../parts/generators/vbelt';
 import { cancelMate, commitMate, previewMate, useEditor } from '../state/store';
 import { formatNumber, NumberBox } from './Fields';
 import { Hint } from './Hint';
@@ -52,7 +53,9 @@ export function MatePanel() {
   const current = kinds.includes(kind) ? kind : kinds[0];
   const fixed = source?.type === 'part' ? fixedMateTeeth(source) : null;
   // A belt or chain joins two wheels at a distance: no teeth mesh, so there is no backlash to set.
-  const drive = current === 'pulley' || current === 'sprocket';
+  const drive = current === 'pulley' || current === 'sprocket' || current === 'vbelt';
+  // A V-belt pulley has no teeth: its mate is asked for by its diameter, and its belt by its length.
+  const vbelt = current === 'vbelt';
   // A ring gear's set: the teeth are the sun's, which the ring already carries a figure for.
   const planetary = current === 'planetary';
   const teeth =
@@ -85,9 +88,9 @@ export function MatePanel() {
   const setCount = (v: number) => setTyped({ ...typed, [current]: v });
   const finish = (keep: boolean) => (keep ? void commitMate() : cancelMate());
   return (
-    <div className="mate-panel" role="dialog" aria-label={current === 'pulley' ? tr('Mating pulley') : current === 'sprocket' ? tr('Mating sprocket') : planetary ? tr('Planetary set') : tr('Mating gear')}>
+    <div className="mate-panel" role="dialog" aria-label={current === 'pulley' || vbelt ? tr('Mating pulley') : current === 'sprocket' ? tr('Mating sprocket') : planetary ? tr('Planetary set') : tr('Mating gear')}>
       <div className="array-title">
-        {current === 'pulley'
+        {current === 'pulley' || vbelt
           ? tr('Mating pulley for {name}', { name: source.name })
           : current === 'sprocket'
             ? tr('Mating sprocket for {name}', { name: source.name })
@@ -105,23 +108,32 @@ export function MatePanel() {
         </div>
       )}
       <div className="mate-pair">
-        <Figure label={planetary ? tr('Sun teeth') : tr('Teeth')} help={fixed !== null ? tr('Taken from the bevel gear’s mating tooth count.') : undefined} value={teeth} min={current === 'rack' ? 2 : current === 'pulley' ? 10 : current === 'sprocket' ? 8 : 5} max={current === 'pulley' ? 200 : current === 'sprocket' ? 120 : 400} integer disabled={fixed !== null} onChange={setCount} />
+        {vbelt ? (
+          <Figure label={tr('Datum diameter')} value={teeth} unit="mm" min={V_BELT_DIAMETERS.min} max={V_BELT_DIAMETERS.max} step={1} onChange={setCount} />
+        ) : (
+          <Figure label={planetary ? tr('Sun teeth') : tr('Teeth')} help={fixed !== null ? tr('Taken from the bevel gear’s mating tooth count.') : undefined} value={teeth} min={current === 'rack' ? 2 : current === 'pulley' ? 10 : current === 'sprocket' ? 8 : 5} max={current === 'pulley' ? 200 : current === 'sprocket' ? 120 : 400} integer disabled={fixed !== null} onChange={setCount} />
+        )}
         {planetary && <Figure label={tr('Planets')} value={planets} min={1} max={12} integer onChange={setTypedPlanets} />}
         {current !== 'rack' && !planetary && (
           <Figure
             label={tr('Ratio')}
-            help={worm ? tr('Sets the ratio of wheel teeth to worm starts.') : drive ? tr("Sets the ratio of mate teeth to this part's teeth.") : tr("Sets the ratio of mate teeth to this gear's teeth.")}
+            help={worm ? tr('Sets the ratio of wheel teeth to worm starts.') : vbelt ? tr("Sets the ratio of the mate's diameter to this part's diameter.") : drive ? tr("Sets the ratio of mate teeth to this part's teeth.") : tr("Sets the ratio of mate teeth to this gear's teeth.")}
             value={Number(formatNumber(mate.ratio, 3))}
             min={0.05}
             max={100}
             step={0.1}
             places={3}
             disabled={fixed !== null}
-            onChange={(v) => setCount(Math.min(current === 'pulley' ? 200 : current === 'sprocket' ? 120 : 400, Math.max(current === 'pulley' ? 10 : current === 'sprocket' ? 8 : 5, Math.round(v * teeth1))))}
+            onChange={(v) =>
+              vbelt
+                ? setCount(Math.min(V_BELT_DIAMETERS.max, Math.max(V_BELT_DIAMETERS.min, Math.round(v * teeth1 * 10) / 10)))
+                : setCount(Math.min(current === 'pulley' ? 200 : current === 'sprocket' ? 120 : 400, Math.max(current === 'pulley' ? 10 : current === 'sprocket' ? 8 : 5, Math.round(v * teeth1))))
+            }
           />
         )}
       </div>
-      {drive && (
+      {vbelt && <Figure label={tr('Belt length')} help={tr('Sets the length of the belt, and with it how far apart the pulleys stand.')} value={span ?? 0} unit="mm" min={50} max={20000} step={10} onChange={setTypedSpan} />}
+      {drive && !vbelt && (
         <Figure
           label={current === 'pulley' ? tr('Belt teeth') : tr('Chain links')}
           help={current === 'pulley' ? tr('Sets the length of the belt, and with it how far apart the pulleys stand.') : tr('Sets the length of the chain, and with it how far apart the sprockets stand.')}

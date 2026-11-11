@@ -148,6 +148,8 @@ export const editor: Catalog = {
   'Mating sprocket for {name}': 'Pignon conjugué pour {name}',
   "Sets the ratio of mate teeth to this part's teeth.": 'Définit le rapport entre les dents de la pièce conjuguée et celles de cette pièce.',
   'Belt teeth': 'Dents de la courroie',
+  'Belt length': 'Longueur de la courroie',
+  "Sets the ratio of the mate's diameter to this part's diameter.": 'Définit le rapport entre le diamètre du conjugué et celui de cette pièce.',
   'Chain links': 'Maillons de la chaîne',
   'Sets the length of the belt, and with it how far apart the pulleys stand.': 'Définit la longueur de la courroie, et avec elle l’entraxe des poulies.',
   'Sets the length of the chain, and with it how far apart the sprockets stand.': 'Définit la longueur de la chaîne, et avec elle l’entraxe des pignons.',
