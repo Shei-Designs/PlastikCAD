@@ -7,6 +7,7 @@ import { noteDiagnostic } from '../diagnostics';
 import { asError } from '../errors';
 import { tr } from '../i18n';
 import { hasPartStore, hasProjectStore, partStore, projectStore } from '../state/projects';
+import type { ProjectStore } from '../state/projects';
 import { apartRemote, unusedParts } from './apart';
 import type { ApartRemote } from './apart';
 import { DriveRemote } from './drive';
@@ -165,6 +166,16 @@ export async function unlinkAccount(): Promise<boolean> {
   return old ? revoke(old) : true;
 }
 
+/**
+ * A store whose deletions are final: a custom part deleted on another device is removed here, not moved to a
+ * trash. Parts have no trash to look into and put back from, so one kept there would only lie about unseen.
+ */
+const forGood = (store: ProjectStore): ProjectStore =>
+  new Proxy(store, {
+    get: (target, key) => (key === 'discard' ? undefined : (Reflect.get(target, key, target) as unknown)),
+    set: (target, key, value) => Reflect.set(target, key, value, target),
+  });
+
 /** Syncs once the dust has settled; a pass already waiting is pushed back. */
 export function requestSync(delay = AFTER_SAVE_MS): void {
   if (!tokens) return;
@@ -262,7 +273,7 @@ async function pass(): Promise<SyncReport | null> {
     let busy = report.busy.length > 0;
     // The parts after the projects, so that trouble with them never holds a project back.
     if (partsRemote && partsState && hasPartStore() && !(failure instanceof NeedsSignIn)) {
-      const parts = await syncSet(STORES.parts, 'parts', partStore(), partsRemote, partsRemote, partsState);
+      const parts = await syncSet(STORES.parts, 'parts', forGood(partStore()), partsRemote, partsRemote, partsState);
       if (touched(parts)) await onPartsChanged?.(parts);
       failure ??= parts.errors[0];
       busy ||= parts.busy.length > 0;

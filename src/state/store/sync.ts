@@ -4,7 +4,7 @@ import { APP_NAME } from '../../appInfo';
 import { mark, plural, tr } from '../../i18n';
 import { emptyDoc, parseDoc } from '../../model/file';
 import * as platform from '../../platform';
-import { openProjectStore, partStore, projectStore, TRASH_FOLDER } from '../projects';
+import { openProjectStore, projectStore, TRASH_FOLDER } from '../projects';
 import { tell } from '../../ui/ask';
 import { cleanUpDrive, initSync, linkAccount, unlinkAccount } from '../../sync/sync';
 import type { DeletePlan, SyncReport } from '../../sync/engine';
@@ -53,7 +53,7 @@ function quoted(names: string[]): string {
 function applyPartsSyncReport(report: SyncReport): void {
   set({ partsEpoch: getState().partsEpoch + 1 });
   const said = report.kept.map((name) => tr('The part "{name}" was changed on two devices at once; both versions were kept.', { name }));
-  if (report.deletedLocally.length) said.push(`${tr('Parts deleted on another device: {names}.', { names: quoted(report.deletedLocally) })}${partStore().discard ? ` ${tr('Moved to the {folder} folder.', { folder: TRASH_FOLDER })}` : ''}`);
+  if (report.deletedLocally.length) said.push(tr('Parts deleted on another device: {names}.', { names: quoted(report.deletedLocally) }));
   noteSync(said);
   if (said.length) notify(said.join(' '));
 }

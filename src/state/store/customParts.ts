@@ -133,7 +133,7 @@ export async function renamePartAt(key: string, name: string): Promise<void> {
 
 export async function deletePart(key: string, name: string): Promise<boolean> {
   try {
-    const sure = await platform.confirm(tr('Delete the part "{name}"? Objects already placed from it stay in their designs.', { name }), { title: APP_NAME, okLabel: tr('Delete'), cancelLabel: tr('Keep') });
+    const sure = await platform.confirm(tr('Delete the part "{name}" for good? This cannot be undone. Objects already placed from it stay in their designs.', { name }), { title: APP_NAME, okLabel: tr('Delete'), cancelLabel: tr('Keep') });
     if (!sure) return false;
     await partStore().remove(key);
     set({ partsEpoch: getState().partsEpoch + 1 });

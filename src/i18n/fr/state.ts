@@ -208,7 +208,8 @@ export const state: Catalog = {
   Cancel: 'Annuler',
   '"{name}" is in your custom parts.': '«\u00a0{name}\u00a0» fait partie de vos pièces personnalisées.',
   'This part is empty.': 'Cette pièce est vide.',
-  'Delete the part "{name}"? Objects already placed from it stay in their designs.': 'Supprimer la pièce «\u00a0{name}\u00a0»\u00a0? Les objets déjà placés à partir d’elle restent dans leurs conceptions.',
+  'Delete the part "{name}" for good? This cannot be undone. Objects already placed from it stay in their designs.':
+    'Supprimer définitivement la pièce «\u00a0{name}\u00a0»\u00a0? Cette action est irréversible. Les objets déjà placés à partir d’elle restent dans leurs conceptions.',
 
   // New lettering (state/store/placing.ts)
   Text: 'Texte',

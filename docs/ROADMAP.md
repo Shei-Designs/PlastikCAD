@@ -70,9 +70,8 @@ Elsewhere:
   step of its own, after the build (#57 pins the actions only).
 - **Android's backup** is at the system's default: projects come back after
   a restore, which is wanted; the hour-long Drive token is in it too.
-- Custom parts that a sync deletes go to a trash no screen lists; a Linux
-  session with no keyring waits two minutes at start before the sign-in is
-  known; an empty `History` folder and a hidden temporary file can be left
+- A Linux session with no keyring waits two minutes at start before the
+  sign-in is known; an empty `History` folder and a hidden temporary file can be left
   behind; the package's short description reads "for 3D printing".
 
 ### Opportunities
