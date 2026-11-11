@@ -2,6 +2,7 @@
 // groups as tabs. The figures it works out go to the transform box, its
 // warnings to the foot of the inspector.
 import { useId } from 'react';
+import { tr } from '../i18n';
 import { CATEGORIES, GENERATORS, getGenerator } from '../parts/generators';
 import { defaultParams } from '../parts/generators/types';
 import type { BooleanParam, ParamDef, Params, SelectParam } from '../parts/generators/types';
@@ -91,12 +92,12 @@ export function PartFields({ node }: { node: PartNode }) {
   if (canMate && sections.length) {
     sections[0].after = (
       <button type="button" className="primary mate-button" disabled={mating || locked} onClick={() => startMate(node.id)}>
-        Add mating gear…
+        {mateKinds(def.id)[0] === 'pulley' ? tr('Add mating pulley…') : mateKinds(def.id)[0] === 'sprocket' ? tr('Add mating sprocket…') : mateKinds(def.id)[0] === 'planetary' ? tr('Add planetary set…') : tr('Add mating gear…')}
       </button>
     );
   }
   const reset = (
-    <button type="button" className="legend-button" title="Reset to defaults" aria-label="Reset to defaults" disabled={locked} onClick={() => void editPart(node.id, { part: def.id, params: defaultParams(def) })}>
+    <button type="button" className="legend-button" title={tr('Reset to defaults')} aria-label={tr('Reset to defaults')} disabled={locked} onClick={() => void editPart(node.id, { part: def.id, params: defaultParams(def) })}>
       <ResetIcon />
     </button>
   );
@@ -105,7 +106,7 @@ export function PartFields({ node }: { node: PartNode }) {
       {kin.length > 1 && (
         <fieldset className="group">
           <legend>{family.label}</legend>
-          <ul className="shape-grid part-types" role="radiogroup" aria-label="Kind of part">
+          <ul className="shape-grid part-types" role="radiogroup" aria-label={tr('Kind of part')}>
             {kin.map((g) => (
               <li key={g.id}>
                 <button
@@ -128,7 +129,7 @@ export function PartFields({ node }: { node: PartNode }) {
         </fieldset>
       )}
 
-      <Sections legend="Settings" extra={reset} reset={`${node.id}:${def.id}`} sections={sections} />
+      <Sections legend={tr('Settings')} extra={reset} reset={`${node.id}:${def.id}`} sections={sections} />
     </>
   );
 }

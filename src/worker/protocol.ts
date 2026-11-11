@@ -1,14 +1,25 @@
+import type { Bvh } from '../geometry/bvh';
+import type { FeatureIndex } from '../geometry/features';
 import type { Faces, MeshData, RenderMesh } from '../geometry/mesh';
+import type { Companion } from '../io/import';
 import type { Bounds } from '../model/math';
 import type { Asset, PartNode, Polygon, SceneNode } from '../model/types';
 import type { MeshProperties } from '../robot/inertia';
 import type { CollisionKind } from '../robot/types';
+import type { ImportResult } from './importing';
 
 export type WorkerRequest =
   /** Imported data that later requests may refer to. Sent before any node that uses it. */
   | { type: 'assets'; assets: Record<string, Asset> }
   /** Drop every asset not named in `keep` (a design was closed, lettering went out of use); what was built from imported data goes too. */
   | { type: 'forgetAssets'; keep: string[] }
+  /**
+   * Read a model or drawing file into what a design keeps (see worker/importing.ts). `companions` are
+   * the files picked with it; `scale` the unit it was made in, in millimeters, when that is known.
+   */
+  | { type: 'import'; id: number; name: string; bytes: Uint8Array; companions: Companion[]; scale?: number }
+  /** The unit, in millimeters, of the file request `held` read and is holding (it answered `kind: 'units'`). */
+  | { type: 'importHeld'; id: number; held: number; scale: number }
   /** Build the geometry of one node at its built size, centered on the origin (see `builtSize`, `geomKey`). */
   | { type: 'build'; id: number; key: string; node: SceneNode }
   /** Bounds of what the nodes would produce as a group (solids merged, holes cut), in the nodes' own coordinates. */
@@ -25,6 +36,11 @@ export type WorkerRequest =
    * colored export. With `local` the parts stay in the nodes' own built frames, unplaced (one node at a time).
    */
   | { type: 'exportColored'; id: number; nodes: SceneNode[]; fine: boolean; local?: boolean }
+  /**
+   * What the Measure tool can take hold of on a mesh: loose triangles (nine numbers each), which are
+   * first placed by `matrix` (sixteen numbers, column by column). A large mesh takes seconds to read.
+   */
+  | { type: 'features'; id: number; positions: Float32Array; matrix: number[] }
   /** Volume, area, centroid and inertia of each node as placed in the design, for the robot's links. */
   | { type: 'massProperties'; id: number; nodes: SceneNode[] }
   /** Each node placed, as the visual parts, collision shape and mass properties of a robot link. */
@@ -35,6 +51,10 @@ export interface BuildResult {
   render: RenderMesh;
   /** For a group: which child each triangle came from, so its parts can be shown in their own colors. */
   faces?: Faces;
+  /** The tree a pointer ray goes down to find the triangle of `render` it hits. */
+  bvh: Bvh;
+  /** The edge lines of `render` (six numbers each); none for a mesh with more of them than are worth drawing. */
+  edges?: Float32Array;
   /** Bounds of the built geometry (at built size, centered on the origin). */
   bounds: Bounds;
   triangles: number;
@@ -98,6 +118,8 @@ export type WorkerResponse =
   | { type: 'partBoxed'; id: number; bounds: Bounds | null }
   | { type: 'exported'; id: number; result: ExportResult }
   | { type: 'exportedColored'; id: number; result: ColoredExport }
+  | { type: 'imported'; id: number; result: ImportResult }
+  | { type: 'features'; id: number; result: FeatureIndex }
   | { type: 'massProperties'; id: number; result: LinkProperties[] }
   | { type: 'robotGeometry'; id: number; result: LinkGeometry[] }
   | { type: 'error'; id: number; message: string };

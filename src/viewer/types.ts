@@ -1,7 +1,7 @@
 // What the viewer is given and what it reports: the options, the items to
 // draw, the callbacks an edit goes out through, and the shapes of the things
 // it points out (markers, snap points, the boxes to type a value in).
-import type { Feature, FeatureKind } from '../geometry/features';
+import type { Feature, FeatureIndex, FeatureKind } from '../geometry/features';
 import type { Measurement } from '../geometry/measure';
 import type { Bounds, Mat } from '../model/math';
 import type { SceneNode, Vec3 } from '../model/types';
@@ -44,6 +44,8 @@ export interface ViewerOptions {
   measure: { kinds: FeatureKind[]; picks: Feature[]; result: Measurement | null } | null;
   /** The handles of one selected object follow its own axes instead of the design's. */
   objectAxes: boolean;
+  /** A panel is laying the selection out (the Array panel): the view turns and zooms, but nothing in it is picked or moved. */
+  frozen: boolean;
 }
 
 /**
@@ -108,6 +110,15 @@ export interface ViewerEvents {
   onMarkerPick(id: string): void;
   /** Measure mode: a feature clicked on the plate. */
   onMeasurePick(feature: Feature): void;
+  /**
+   * Measure mode: reads what the tool can take hold of on a large mesh, away from the pointer's
+   * thread. The triangles (nine numbers each) are placed by `matrix`, sixteen numbers column by
+   * column; the array is handed over and is empty afterwards. Without this the viewer reads every
+   * mesh itself, on the spot.
+   */
+  featuresOf?(positions: Float32Array, matrix: number[]): Promise<FeatureIndex>;
+  /** Two fingers tapped on the plate (`undo`) or three (`redo`). Returns whether there was a step to take. */
+  onHistory(step: 'undo' | 'redo'): boolean;
 }
 
 export type HandleKind =

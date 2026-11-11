@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { APP_NAME } from '../appInfo';
+import { tr, trx } from '../i18n';
 import { SHAPES } from '../geometry/shapes';
 import { HOLE_COLOR } from '../model/ops';
 import {
@@ -27,6 +28,7 @@ import {
   toggleHidden,
   toggleLocked,
   toggleRobotMode,
+  updateApp,
   toggleSelected,
   useEditor,
 } from '../state/store';
@@ -36,7 +38,9 @@ import { EyeIcon, EyeOffIcon, GhostIcon, ImportIcon, LockIcon, Logo, MenuIcon, M
 import { LONG_PRESS_MS } from '../viewer/gesture';
 import { RobotExport, RobotModeBar, RobotPanel } from './RobotPanel';
 import { CommitInput } from './Fields';
-import { MOD } from './keys';
+import { useSyncStatus } from '../sync/sync';
+import { shortcut, tip } from './keymap';
+import { LanguageBox } from './Language';
 import { MenuItem } from './Menu';
 import { kindOf } from './nodeKind';
 import { Popover } from './Popover';
@@ -60,38 +64,61 @@ function FileBar() {
   const dirty = useEditor(isDirty);
   const saving = useEditor((s) => s.saving);
   const [about, setAbout] = useState(false);
+  const [languages, setLanguages] = useState(false);
+  // A newer version of the app, found among the releases.
+  const update = useEditor((s) => s.update);
   const robot = useEditor((s) => s.robot);
-  const status = saving ? 'Saving…' : dirty ? 'Changes not saved yet' : 'All changes saved';
+  const status = saving ? tr('Saving…') : dirty ? tr('Changes not saved yet') : tr('All changes saved');
+  // Sync's word shows on the way into the projects browser, where it is spelled out: a conflict or a deletion kept
+  // to be read, or sync itself in trouble.
+  const notes = useEditor((s) => s.syncNotes.length);
+  const sync = useSyncStatus();
+  const trouble = Boolean(sync.error) && !sync.busy;
+  const news = notes > 0 || trouble;
 
   return (
     <div className="file-bar">
       <span className={dirty || saving ? 'dirty-dot on' : 'dirty-dot'} title={status} role="status" aria-label={status} />
-      <CommitInput className="doc-name" label="Project name" title="Project name" value={name} onCommit={renameProject} />
-      <button type="button" className="icon-button" title={`Projects (${MOD}O)`} aria-label="Projects" onClick={openProjects}>
+      <CommitInput className="doc-name" label={tr('Project name')} title={tr('Project name')} value={name} onCommit={renameProject} />
+      <button type="button" className="icon-button" title={tip('projects')} aria-label={news ? tr('Projects: sync has something to say') : tr('Projects')} onClick={openProjects}>
         <ProjectsIcon />
+        {news && <span className={trouble ? 'news-dot trouble' : 'news-dot'} />}
       </button>
-      <button type="button" className={robot ? 'icon-button on' : 'icon-button'} title="Robot mode" aria-label="Robot mode" aria-pressed={robot} onClick={toggleRobotMode}>
+      <button type="button" className={robot ? 'icon-button on' : 'icon-button'} title={tr('Robot mode')} aria-label={tr('Robot mode')} aria-pressed={robot} onClick={toggleRobotMode}>
         <RobotIcon />
       </button>
-      <Popover className="icon-button" title="File" button={<MenuIcon />} align="right">
+      <Popover className="icon-button" title={tr('File')} button={<MenuIcon />} align="right">
         {(close) => (
           <div className="menu" role="menu">
-            <MenuItem label="New project" keys={`${MOD}N`} run={() => void newProject()} close={close} />
-            <MenuItem label="Projects…" keys={`${MOD}O`} run={openProjects} close={close} />
-            <MenuItem label="Open project file…" keys={`${MOD}Shift+O`} run={() => void openProjectFile()} close={close} />
-            <MenuItem label="Save a copy…" keys={`${MOD}Shift+S`} run={() => void saveCopy()} close={close} />
+            <MenuItem label={tr('New project')} keys={shortcut('newProject')} run={() => void newProject()} close={close} />
+            <MenuItem label={tr('Projects…')} keys={shortcut('projects')} run={openProjects} close={close} />
+            <MenuItem label={tr('Open project file…')} keys={shortcut('openFile')} run={() => void openProjectFile()} close={close} />
+            <MenuItem label={tr('Save a copy…')} keys={shortcut('saveCopy')} run={() => void saveCopy()} close={close} />
             <hr />
-            <MenuItem label={`About ${APP_NAME}…`} run={() => setAbout(true)} close={close} />
+            {update && <MenuItem label={tr('Update to version {version}…', { version: update })} run={() => void updateApp()} close={close} />}
+            <MenuItem label={tr('Language…')} run={() => setLanguages(true)} close={close} />
+            <MenuItem label={tr('About {app}…', { app: APP_NAME })} run={() => setAbout(true)} close={close} />
           </div>
         )}
       </Popover>
       <About open={about} onClose={() => setAbout(false)} />
+      <LanguageBox open={languages} onClose={() => setLanguages(false)} />
     </div>
   );
 }
 
 /** Short tile names for the part families. */
-const FAMILY_NAMES: Record<string, string> = { gears: 'Gear', pulleys: 'Pulley', screws: 'Screw', frames: 'Rail', ducts: 'Pipe', boards: 'Board', fans: 'Fan', cutouts: 'Cutout', motors: 'Motor' };
+const FAMILY_NAMES: Record<string, string> = {
+  gears: tr('Gear'),
+  pulleys: tr('Pulley'),
+  screws: tr('Screw'),
+  frames: tr('Rail'),
+  ducts: tr('Pipe'),
+  boards: tr('Board'),
+  fans: tr('Fan'),
+  cutouts: tr('Cutout'),
+  motors: tr('Motor'),
+};
 
 function Shapes() {
   const placing = useEditor((s) => s.placing);
@@ -100,7 +127,7 @@ function Shapes() {
   const placingFamily = placing?.type === 'part' ? getGenerator(placing.part).category : null;
   return (
     <section>
-      <h2>Shapes</h2>
+      <h2>{tr('Shapes')}</h2>
       <ul className="shape-grid">
         {SHAPES.map((def) => (
           <li key={def.kind}>
@@ -129,7 +156,7 @@ function Shapes() {
           <button
             type="button"
             className={placing?.type === 'text' ? 'shape selected' : 'shape'}
-            title="Places lettering to emboss, or engrave as a hole."
+            title={tr('Places lettering to emboss, or engrave as a hole.')}
             onPointerDown={(e) => {
               if (e.button !== 0) return;
               letGo(e);
@@ -141,14 +168,14 @@ function Shapes() {
             }}
           >
             <span className="thumb">{textThumbnail}</span>
-            <span className="shape-name">Text</span>
+            <span className="shape-name">{tr('Text')}</span>
           </button>
         </li>
         <li>
           <button
             type="button"
             className={placing?.type === 'picture' ? 'shape selected' : 'shape'}
-            title="Places a picture that prints onto the object it is grouped with."
+            title={tr('Places a picture that prints onto the object it is grouped with.')}
             onPointerDown={(e) => {
               if (e.button !== 0) return;
               letGo(e);
@@ -160,11 +187,11 @@ function Shapes() {
             }}
           >
             <span className="thumb">{pictureThumbnail}</span>
-            <span className="shape-name">Picture</span>
+            <span className="shape-name">{tr('Picture')}</span>
           </button>
         </li>
       </ul>
-      <h2>Parts</h2>
+      <h2>{tr('Parts')}</h2>
       <ul className="shape-grid">
         {CATEGORIES.map((c) => (
           <li key={c.id}>
@@ -188,9 +215,9 @@ function Shapes() {
           </li>
         ))}
         <li>
-          <button type="button" className={bin ? 'shape selected' : 'shape'} title="Parts you saved from your designs, to place again." aria-pressed={bin} onClick={openPartsBin}>
+          <button type="button" className={bin ? 'shape selected' : 'shape'} title={tr('Parts you saved from your designs, to place again.')} aria-pressed={bin} onClick={openPartsBin}>
             <span className="thumb">{partsBinThumbnail}</span>
-            <span className="shape-name">Custom</span>
+            <span className="shape-name">{trx('parts', 'Custom')}</span>
           </button>
         </li>
       </ul>
@@ -201,9 +228,9 @@ function Shapes() {
 function ImportRow() {
   return (
     <div className="import-row">
-      <button type="button" className="import-button" title={`Import a model, drawing or picture (${MOD}I)`} onClick={() => void importModel()}>
+      <button type="button" className="import-button" title={tip('import', tr('Import a model, drawing or picture'))} onClick={() => void importModel()}>
         <ImportIcon />
-        Import model or picture…
+        {tr('Import model or picture…')}
       </button>
     </div>
   );
@@ -234,10 +261,10 @@ function Objects() {
   return (
     <section className="objects">
       <h2>
-        Objects <span className="count">{scene.length || ''}</span>
+        {tr('Objects')} <span className="count">{scene.length || ''}</span>
       </h2>
       {scene.length === 0 ? (
-        <p className="empty">Nothing yet. Pick a shape from the library and click on the plate to place it.</p>
+        <p className="empty">{tr('Nothing yet. Pick a shape from the library and click on the plate to place it.')}</p>
       ) : (
         <ul>
           {scene.map((node) => {
@@ -249,7 +276,7 @@ function Objects() {
                 <button
                   type="button"
                   className="object-main"
-                  title={node.ghost ? `${kindOf(node)} (ghost)` : kindOf(node)}
+                  title={node.ghost ? tr('{kind} (ghost)', { kind: kindOf(node) }) : kindOf(node)}
                   onPointerDown={(e) => {
                     if (!away) startHold(e, node.id);
                   }}
@@ -274,13 +301,13 @@ function Objects() {
                 >
                   <span className={node.hole ? 'dot hole' : 'dot'} style={{ background: node.hole ? undefined : node.color, borderColor: node.hole ? HOLE_COLOR : undefined }} />
                   <span className="clip">{node.name}</span>
-                  {node.note && <span className="note-mark" title="Has notes" />}
+                  {node.note && <span className="note-mark" title={tr('Has notes')} />}
                 </button>
                 <button
                   type="button"
                   className={node.ghost ? 'mini on' : 'mini'}
-                  title={node.ghost ? 'Un-ghost' : 'Ghost'}
-                  aria-label={node.ghost ? 'Un-ghost' : 'Ghost'}
+                  title={node.ghost ? tr('Un-ghost') : trx('verb', 'Ghost')}
+                  aria-label={node.ghost ? tr('Un-ghost') : trx('verb', 'Ghost')}
                   aria-pressed={Boolean(node.ghost)}
                   onClick={() => toggleGhost(node.id)}
                 >
@@ -289,8 +316,8 @@ function Objects() {
                 <button
                   type="button"
                   className={node.locked ? 'mini on' : 'mini'}
-                  title={node.locked ? 'Unlock' : 'Lock'}
-                  aria-label={node.locked ? 'Unlock' : 'Lock'}
+                  title={node.locked ? tr('Unlock') : tr('Lock')}
+                  aria-label={node.locked ? tr('Unlock') : tr('Lock')}
                   aria-pressed={Boolean(node.locked)}
                   onClick={() => toggleLocked(node.id)}
                 >
@@ -299,8 +326,8 @@ function Objects() {
                 <button
                   type="button"
                   className={node.hidden ? 'mini on' : 'mini'}
-                  title={node.hidden ? 'Show' : 'Hide'}
-                  aria-label={node.hidden ? 'Show' : 'Hide'}
+                  title={node.hidden ? tr('Show') : tr('Hide')}
+                  aria-label={node.hidden ? tr('Show') : tr('Hide')}
                   aria-pressed={Boolean(node.hidden)}
                   onClick={() => toggleHidden(node.id)}
                 >
@@ -323,8 +350,8 @@ function StructureTab() {
   if (nodes.length === 1) return <Structure root={nodes[0]} />;
   return (
     <section className="structure-empty">
-      <h2>Structure</h2>
-      <p className="empty">{nodes.length === 0 ? 'Select an object to see how it was put together and keep notes on it.' : 'Select one object at a time to see its structure.'}</p>
+      <h2>{tr('Structure')}</h2>
+      <p className="empty">{nodes.length === 0 ? tr('Select an object to see how it was put together and keep notes on it.') : tr('Select one object at a time to see its structure.')}</p>
     </section>
   );
 }
@@ -343,8 +370,8 @@ function Brand({ theme }: { theme: 'dark' | 'light' }) {
       <button
         type="button"
         className="icon-button"
-        title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-        aria-label="Toggle theme"
+        title={theme === 'dark' ? tr('Switch to light theme') : tr('Switch to dark theme')}
+        aria-label={tr('Toggle theme')}
         onClick={() => setPrefs({ theme: theme === 'dark' ? 'light' : 'dark' })}
       >
         {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
@@ -363,7 +390,7 @@ export function Sidebar() {
         <Brand theme={theme} />
         <FileBar />
         <RobotModeBar />
-        <nav className="catalog structure-pane" aria-label="Robot">
+        <nav className="catalog structure-pane" aria-label={tr('Robot')}>
           <RobotPanel />
         </nav>
         <RobotExport />
@@ -377,27 +404,27 @@ export function Sidebar() {
       <div className="tabs">
         <div className="page-tabs" role="tablist">
           <button type="button" role="tab" aria-selected={tab === 'library'} className={tab === 'library' ? 'on' : ''} onClick={() => showTab('library')}>
-            Library
+            {tr('Library')}
           </button>
           <button type="button" role="tab" aria-selected={tab === 'objects'} className={tab === 'objects' ? 'on' : ''} onClick={() => showTab('objects')}>
-            Objects
+            {tr('Objects')}
           </button>
           <button type="button" role="tab" aria-selected={tab === 'structure'} className={tab === 'structure' ? 'on' : ''} onClick={() => showTab('structure')}>
-            Structure
+            {tr('Structure')}
           </button>
         </div>
       </div>
       {tab === 'library' ? (
-        <nav className="catalog library" aria-label="Shapes and parts">
+        <nav className="catalog library" aria-label={tr('Shapes and parts')}>
           <Shapes />
           <ImportRow />
         </nav>
       ) : tab === 'objects' ? (
-        <nav className="catalog objects-tab" aria-label="Objects">
+        <nav className="catalog objects-tab" aria-label={tr('Objects')}>
           <Objects />
         </nav>
       ) : (
-        <nav className="catalog structure-pane" aria-label="Structure">
+        <nav className="catalog structure-pane" aria-label={tr('Structure')}>
           <StructureTab />
         </nav>
       )}

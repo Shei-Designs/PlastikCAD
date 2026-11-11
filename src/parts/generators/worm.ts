@@ -1,4 +1,5 @@
 // Cylindrical worm with straight flanks in the axial section (ZA form).
+import { tr } from '../../i18n';
 import { boreGroup, boreRadius, boreShape, handParam, isLeftHanded } from '../features';
 import { toDeg } from '../math2d';
 import { pressureAngleProfile, profileExtent, threadedRod } from '../threads';
@@ -8,18 +9,18 @@ import type { GeneratorDef } from './types';
 
 export const worm: GeneratorDef = {
   id: 'worm',
-  name: 'Worm',
+  name: tr('Worm'),
   category: 'gears',
-  summary: 'Worm screw for high-ratio drives. Pair it with a helical gear cut at the lead angle.',
+  summary: tr('Worm screw for high-ratio drives. Pair it with a helical gear cut at the lead angle.'),
   groups: [
     {
-      title: 'Worm',
+      title: tr('Worm'),
       params: [
         {
           type: 'number',
           key: 'module',
-          label: 'Module',
-          help: 'Axial module: the thread pitch is π × module. Must match the transverse module of the mating gear.',
+          label: tr('Module'),
+          help: tr('Axial module: the thread pitch is π × module. Must match the transverse module of the mating gear.'),
           default: 1,
           min: 0.3,
           max: 10,
@@ -29,8 +30,8 @@ export const worm: GeneratorDef = {
         {
           type: 'number',
           key: 'starts',
-          label: 'Starts',
-          help: 'Number of threads. The ratio is gear teeth ÷ starts.',
+          label: tr('Starts'),
+          help: tr('Number of threads. The ratio is gear teeth ÷ starts.'),
           default: 1,
           min: 1,
           max: 6,
@@ -40,7 +41,7 @@ export const worm: GeneratorDef = {
         {
           type: 'number',
           key: 'pressureAngle',
-          label: 'Pressure angle',
+          label: tr('Pressure angle'),
           default: 20,
           min: 14.5,
           max: 30,
@@ -50,27 +51,27 @@ export const worm: GeneratorDef = {
         {
           type: 'number',
           key: 'pitchDiameter',
-          label: 'Pitch diameter',
-          help: 'A larger diameter gives a smaller lead angle (more self-locking) and room for a bigger bore.',
+          label: tr('Pitch diameter'),
+          help: tr('A larger diameter gives a smaller lead angle (more self-locking) and room for a bigger bore.'),
           default: 12,
           min: 3,
           max: 200,
           step: 0.5,
           unit: 'mm',
         },
-        { type: 'number', key: 'length', label: 'Length', default: 20, min: 2, max: 300, step: 1, unit: 'mm' },
+        { type: 'number', key: 'length', label: tr('Length'), default: 20, min: 2, max: 300, step: 1, unit: 'mm' },
         {
           type: 'number',
           key: 'backlash',
-          label: 'Backlash',
-          help: 'The thread is thinned by this amount (measured along the axis).',
+          label: tr('Backlash'),
+          help: tr('The thread is thinned by this amount (measured along the axis).'),
           default: 0.1,
           min: 0,
           max: 1,
           step: 0.01,
           unit: 'mm',
         },
-        { type: 'boolean', key: 'chamfer', label: 'Chamfered ends', default: true },
+        { type: 'boolean', key: 'chamfer', label: tr('Chamfered ends'), default: true },
         handParam,
       ],
     },
@@ -90,8 +91,8 @@ export const worm: GeneratorDef = {
     const leadAngle = Math.atan(lead / (Math.PI * d));
 
     const rootRadius = d / 2 - 1.25 * m;
-    if (rootRadius < 0.25 * m) warnings.push('The pitch diameter is too small for this module.');
-    else if (rootRadius < boreRadius(p) + 1) warnings.push('The wall between the bore and the thread root is very thin.');
+    if (rootRadius < 0.25 * m) warnings.push(tr('The pitch diameter is too small for this module.'));
+    else if (rootRadius < boreRadius(p) + 1) warnings.push(tr('The wall between the bore and the thread root is very thin.'));
 
     const profile = pressureAngleProfile({
       pitch,
@@ -113,23 +114,23 @@ export const worm: GeneratorDef = {
       chamferTop: chamfer,
     });
     const bore = boreShape(p, q);
-    if (bore && boreRadius(p) >= rMax) warnings.push('The bore is wider than the worm, so it was left out.');
+    if (bore && boreRadius(p) >= rMax) warnings.push(tr('The bore is wider than the worm, so it was left out.'));
     else if (bore) solid = difference(solid, translate(extrude(bore, length + 2), [0, 0, -1]));
 
     return {
       solid,
       info: [
-        { label: 'Pitch diameter', value: mm(d) },
-        { label: 'Outside diameter', value: mm(rMax * 2) },
-        { label: 'Root diameter', value: mm(rMin * 2) },
-        { label: 'Axial pitch', value: mm(pitch, 3) },
-        { label: 'Lead', value: `${mm(lead, 3)} per turn` },
-        { label: 'Lead angle', value: degrees(toDeg(leadAngle)) },
+        { label: tr('Pitch diameter'), value: mm(d) },
+        { label: tr('Outside diameter'), value: mm(rMax * 2) },
+        { label: tr('Root diameter'), value: mm(rMin * 2) },
+        { label: tr('Axial pitch'), value: mm(pitch, 3) },
+        { label: tr('Lead'), value: tr('{length} per turn', { length: mm(lead, 3) }) },
+        { label: tr('Lead angle'), value: degrees(toDeg(leadAngle)) },
         {
-          label: 'Mating gear',
-          value:
-            `Helical, ${degrees(toDeg(leadAngle))} helix, ${leftHanded ? 'left' : 'right'}-handed, ` +
-            `normal module ${(m * Math.cos(leadAngle)).toFixed(3)}`,
+          label: tr('Mating gear'),
+          value: leftHanded
+            ? tr('Helical, {angle} helix, left-handed, normal module {module}', { angle: degrees(toDeg(leadAngle)), module: (m * Math.cos(leadAngle)).toFixed(3) })
+            : tr('Helical, {angle} helix, right-handed, normal module {module}', { angle: degrees(toDeg(leadAngle)), module: (m * Math.cos(leadAngle)).toFixed(3) }),
         },
       ],
       warnings,

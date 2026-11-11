@@ -64,6 +64,12 @@ const GLYPHS: Record<string, ReactNode> = {
       <circle cx="18" cy="18" r="5.5" />
     </>,
   ),
+  'screw-hole': glyph(
+    <>
+      <path d="M4 8h9v7h3.5v15M32 8h-9v7h-3.5v15" />
+      <path d="M4 30h28M16.5 20h3M16.5 25h3" />
+    </>,
+  ),
   'lead-screw': glyph(
     <>
       <path d="M13 3v30h10V3z" />

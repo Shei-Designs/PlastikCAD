@@ -9,6 +9,7 @@ const encoder = new TextEncoder();
 let clock = 1000;
 
 vi.mock('../platform', () => ({
+  hasKeychain: () => false,
   isDesktop: () => true,
   listDesigns: async (dir: string): Promise<DesignEntry[]> =>
     Array.from(files, ([path, bytes]) => ({ path, name: path.slice(dir.length + 1), size: bytes.length, modified: clock }))
@@ -41,7 +42,7 @@ vi.mock('../platform', () => ({
   },
 }));
 
-const { DiskProjects, fileNameFor, partStore, partsDirOf, uniqueFileName, useProjectStore } = await import('./projects');
+const { DiskProjects, fileNameFor, KEEP_LATEST, KEEP_VERSIONS, partStore, versionsToDrop, partsDirOf, uniqueFileName, setProjectStore } = await import('./projects');
 
 const DIR = '/home/me/Documents/PlastikCAD';
 const design = (id: string, name: string) => serializeDoc({ ...emptyDoc(), id, name, scene: [makeShape('box')] });
@@ -84,7 +85,7 @@ describe('file names', () => {
 describe('the parts folder', () => {
   it('sits inside the projects folder and follows it', async () => {
     expect(partsDirOf(DIR)).toBe(`${DIR}/Parts`);
-    useProjectStore(new DiskProjects(DIR));
+    setProjectStore(new DiskProjects(DIR));
     expect(partStore().location).toBe(`${DIR}/Parts`);
     // Parts written there are not among the projects.
     const key = await partStore().write(null, 'Post', design('part0001', 'Post'));
@@ -171,6 +172,71 @@ describe('the projects folder', () => {
     const listed = await new DiskProjects(DIR).list();
     expect(listed.find((p) => p.name === 'Dated')!.modified).toBe(Date.parse(saved));
     expect(listed.find((p) => p.name === 'Plain')!.modified).toBe(1_794_310);
+  });
+
+  it('lists the trash, puts a project back under a free name and destroys what it is told to', async () => {
+    const store = new DiskProjects(DIR);
+    await store.discard(await store.write(null, 'Box', design('p0000001', 'Box')));
+    await store.discard(await store.write(null, 'Lid', design('p0000002', 'Lid')));
+    expect((await store.discarded()).map((p) => p.name).sort()).toEqual(['Box', 'Lid']);
+    // A project of the same name was made meanwhile: the one put back takes a number.
+    await store.write(null, 'Box', design('p0000003', 'Box'));
+    const trashed = (await store.discarded()).find((p) => p.name === 'Box')!;
+    expect(await store.restore(trashed.key)).toBe(`${DIR}/Box (2).plastikcad`);
+    expect((await store.list()).map((p) => p.id).sort()).toEqual(['p0000001', 'p0000003']);
+    await store.purge();
+    expect(await store.discarded()).toEqual([]);
+    expect((await store.list()).length).toBe(2);
+  });
+
+  it('keeps earlier saves of a project now and then, always when told to, and no more than it should', async () => {
+    const store = new DiskProjects(DIR);
+    const at = (minute: number) => `2026-11-10T12:${String(minute).padStart(2, '0')}:00.000Z`;
+    const save = (key: string | null, minute: number) => store.write(key, 'Box', serializeDoc({ ...emptyDoc(), id: 'p0000001', name: 'Box', scene: [makeShape('box')], saved: at(minute) }));
+    const key = await save(null, 0);
+    // The first save of a session keeps what was there; saves soon after it do not.
+    await store.keep(key);
+    await save(key, 1);
+    await store.keep(key);
+    await save(key, 2);
+    expect((await store.versions('p0000001')).map((v) => new Date(v.saved).toISOString())).toEqual([at(0)]);
+    // A replacement nobody here made keeps what it replaces whenever it comes; the same save is not kept twice.
+    await store.keep(key, true);
+    await store.keep(key, true);
+    expect((await store.versions('p0000001')).map((v) => new Date(v.saved).toISOString())).toEqual([at(2), at(0)]);
+    // A version reads like a project.
+    expect(await store.read((await store.versions('p0000001'))[0].key)).toContain(at(2));
+    for (let minute = 3; minute < 30; minute++) {
+      await save(key, minute);
+      await store.keep(key, true);
+    }
+    // All of one sitting: the latest are kept, and one more for the day they share is not needed.
+    const versions = await store.versions('p0000001');
+    expect(versions.length).toBe(KEEP_LATEST);
+    expect(new Date(versions[0].saved).toISOString()).toBe(at(29));
+    // None of this shows among the projects.
+    expect((await store.list()).map((p) => p.name)).toEqual(['Box']);
+    // Deleted for good, the project takes its earlier saves with it.
+    await store.discard(key);
+    await store.purge();
+    expect(await store.versions('p0000001')).toEqual([]);
+    expect([...files.keys()]).toEqual([]);
+  });
+
+  it('lets go of earlier saves by age: the latest all kept, one a day further back, never more than the limit', () => {
+    const day = 86_400_000;
+    const noon = Date.UTC(2026, 10, 10, 12);
+    // Thirty saves ten minutes apart today, then three a day for the ten days before.
+    const today = Array.from({ length: 30 }, (_, i) => noon - i * 600_000);
+    const before = Array.from({ length: 10 }, (_, d) => [0, 1, 2].map((h) => noon - (d + 1) * day - h * 3_600_000)).flat();
+    const dropped = new Set(versionsToDrop([...today, ...before]));
+    const kept = [...today, ...before].filter((t) => !dropped.has(t)).sort((a, b) => b - a);
+    expect(kept.length).toBe(KEEP_VERSIONS);
+    // The latest twelve of today, then the last save of each of the eight days before.
+    expect(kept.slice(0, KEEP_LATEST)).toEqual(today.slice(0, KEEP_LATEST));
+    expect(kept.slice(KEEP_LATEST)).toEqual(Array.from({ length: KEEP_VERSIONS - KEEP_LATEST }, (_, d) => noon - (d + 1) * day));
+    // Few enough, and nothing goes.
+    expect(versionsToDrop(today.slice(0, 5))).toEqual([]);
   });
 
   it('remembers headers until a file changes', async () => {

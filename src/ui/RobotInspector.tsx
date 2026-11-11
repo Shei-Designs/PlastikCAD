@@ -3,6 +3,8 @@
 // settings, or a joint's kind, place, axis and limits.
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
+import { marked, plural, tr, trx } from '../i18n';
+import { rich } from '../i18n/rich';
 import { eulerOf } from '../model/math';
 import type { Mat } from '../model/math';
 import type { SceneNode, Vec3 } from '../model/types';
@@ -72,7 +74,7 @@ function Select<T extends string>({ value, options, label, onChange, placeholder
 }
 
 function Problems({ problems }: { problems: Problem[] }) {
-  if (problems.length === 0) return <p className="empty">Nothing stands in the way of an export.</p>;
+  if (problems.length === 0) return <p className="empty">{tr('Nothing stands in the way of an export.')}</p>;
   return (
     <ul className="problems">
       {problems.map((p, i) => (
@@ -81,7 +83,7 @@ function Problems({ problems }: { problems: Problem[] }) {
           <span>{p.text}</span>
           {(p.link || p.joint || p.sensor) && (
             <button type="button" className="chip" onClick={() => (p.joint ? selectJoint(p.joint) : p.sensor ? selectSensor(p.sensor) : select([p.link!]))}>
-              Show
+              {tr('Show')}
             </button>
           )}
         </li>
@@ -104,42 +106,42 @@ function Overview() {
       <header className="params-head">
         <div className="grow">
           <h1>{doc.name}</h1>
-          <p>{nodes.length ? 'Pick a link or a joint on the left to set it up.' : 'Every object in the design is a link.'}</p>
+          <p>{nodes.length ? tr('Pick a link or a joint on the left to set it up.') : tr('Every object in the design is a link.')}</p>
         </div>
       </header>
       <fieldset className="group">
-        <legend>Robot</legend>
+        <legend>{tr('Robot')}</legend>
         <div className="field">
           <label>
-            Base link
-            <Hint text="The link the rest hangs from: a body, a chassis, a mounting plate." />
+            {tr('Base link')}
+            <Hint text={tr('The link the rest hangs from: a body, a chassis, a mounting plate.')} />
           </label>
-          <Select value={robot.root ?? ''} label="Base link" placeholder="Choose an object…" options={nodes.map((n) => ({ value: n.id, label: n.name }))} onChange={(id) => setRobotRoot(id)} />
+          <Select value={robot.root ?? ''} label={tr('Base link')} placeholder={tr('Choose an object…')} options={nodes.map((n) => ({ value: n.id, label: n.name }))} onChange={(id) => setRobotRoot(id)} />
         </div>
         <div className="field inline">
           <label>
-            Base
-            <Hint text="Free: the robot stands on the floor and can drive or walk. Fixed: the base is bolted to the world, as an arm on a bench." />
+            {tr('Base')}
+            <Hint text={tr('Free: the robot stands on the floor and can drive or walk. Fixed: the base is bolted to the world, as an arm on a bench.')} />
           </label>
-          <div className="segmented small" role="radiogroup" aria-label="Base">
+          <div className="segmented small" role="radiogroup" aria-label={tr('Base')}>
             {(['free', 'fixed'] as const).map((b) => (
               <button key={b} type="button" role="radio" aria-checked={robot.base === b} className={robot.base === b ? 'on' : ''} onClick={() => setBase(b)}>
-                {b === 'free' ? 'Free' : 'Fixed'}
+                {b === 'free' ? tr('Free') : tr('Fixed')}
               </button>
             ))}
           </div>
         </div>
         <dl className="facts">
           <div>
-            <dt>Links</dt>
+            <dt>{tr('Links')}</dt>
             <dd>{attached.length}</dd>
           </div>
           <div>
-            <dt>Joints</dt>
+            <dt>{tr('Joints')}</dt>
             <dd>{robot.joints.length}</dd>
           </div>
           <div>
-            <dt>Mass</dt>
+            <dt>{tr('Mass')}</dt>
             <dd>{nodes.length === 0 ? '–' : `${weighed ? '' : '≥ '}${grams(total)}`}</dd>
           </div>
         </dl>
@@ -148,7 +150,7 @@ function Overview() {
       <Controllers />
       <Test />
       <fieldset className="group">
-        <legend>Checks</legend>
+        <legend>{tr('Checks')}</legend>
         <Problems problems={problems} />
       </fieldset>
     </>
@@ -165,32 +167,32 @@ function Drive() {
   const roleOf = (id: string): DriveRole | 'none' => robot.drive?.roles[id] ?? 'none';
   return (
     <fieldset className="group">
-      <legend>Drive</legend>
+      <legend>{trx('robot', 'Drive')}</legend>
       <div className="field inline">
         <label>
-          Kind
-          <Hint text={`${kind?.help ?? 'How the robot moves on its wheels; the exports write the matching plugin and motors.'} The wheel labels set which way is forward${facing ? `: this robot faces ${facing}` : ''}.`} />
+          {tr('Kind')}
+          <Hint text={`${kind?.help ?? tr('How the robot moves on its wheels; the exports write the matching plugin and motors.')} ${facing ? tr('The wheel labels set which way is forward: this robot faces {direction}.', { direction: facing }) : tr('The wheel labels set which way is forward.')}`} />
         </label>
-        <Select value={robot.drive?.kind ?? 'none'} label="Drive kind" options={[{ value: 'none', label: 'None' }, ...DRIVE_KINDS.map((k) => ({ value: k.id, label: k.name }))]} onChange={(v) => setDriveKind(v === 'none' ? null : (v as DriveKind))} />
+        <Select value={robot.drive?.kind ?? 'none'} label={tr('Drive kind')} options={[{ value: 'none', label: trx('drive', 'None') }, ...DRIVE_KINDS.map((k) => ({ value: k.id, label: k.name }))]} onChange={(v) => setDriveKind(v === 'none' ? null : (v as DriveKind))} />
       </div>
       {kind &&
         (wheels.length === 0 ? (
-          <p className="empty">Add a turning joint for each wheel first.</p>
+          <p className="empty">{tr('Add a turning joint for each wheel first.')}</p>
         ) : (
           <ul className="drive-list">
             {wheels.map((j) => (
               <li key={j.id}>
                 <span className="clip">{j.name}</span>
                 {kind.roles.length <= 2 ? (
-                  <div className="segmented small" role="radiogroup" aria-label={`${j.name} drives`}>
+                  <div className="segmented small" role="radiogroup" aria-label={tr('{name} drives', { name: j.name })}>
                     {(['none', ...kind.roles.map((r) => r.id)] as const).map((to) => (
                       <button key={to} type="button" role="radio" aria-checked={roleOf(j.id) === to} className={roleOf(j.id) === to ? 'on' : ''} onClick={() => setDriveRole(j.id, to === 'none' ? null : to)}>
-                        {to === 'none' ? 'No' : kind.roles.find((r) => r.id === to)!.name}
+                        {to === 'none' ? tr('No') : kind.roles.find((r) => r.id === to)!.name}
                       </button>
                     ))}
                   </div>
                 ) : (
-                  <Select value={roleOf(j.id)} label={`${j.name} drives`} options={[{ value: 'none', label: 'No' }, ...kind.roles.map((r) => ({ value: r.id, label: r.name }))]} onChange={(v) => setDriveRole(j.id, v === 'none' ? null : (v as DriveRole))} />
+                  <Select value={roleOf(j.id)} label={tr('{name} drives', { name: j.name })} options={[{ value: 'none', label: tr('No') }, ...kind.roles.map((r) => ({ value: r.id, label: r.name }))]} onChange={(v) => setDriveRole(j.id, v === 'none' ? null : (v as DriveRole))} />
                 )}
               </li>
             ))}
@@ -207,19 +209,19 @@ function Controllers() {
   const rest = robot.joints.filter((j) => j.type !== 'fixed' && !j.mimic && !driven.has(j.id));
   return (
     <fieldset className="group">
-      <legend>Controllers</legend>
+      <legend>{tr('Controllers')}</legend>
       <label className="field inline">
         <span className="switch-label">
-          Controllers for the other joints
-          <Hint text="Writes ros2_control over every actuated joint that is not in the drive, with a joint trajectory controller (arm_controller) and a joint state broadcaster." />
+          {tr('Controllers for the other joints')}
+          <Hint text={tr('Writes ros2_control over every actuated joint that is not in the drive, with a joint trajectory controller (arm_controller) and a joint state broadcaster.')} />
         </span>
         <input type="checkbox" className="switch" checked={robot.control} onChange={(e) => setControl(e.target.checked)} />
       </label>
       {robot.control && rest.length > 0 && <p className="export-note">{rest.map((j) => j.name).join(', ')}</p>}
       <label className="field inline">
         <span className="switch-label">
-          Starter scripts
-          <Hint text="Writes drive.py, a Gymnasium env.py and train.py beside the MuJoCo model." />
+          {tr('Starter scripts')}
+          <Hint text={tr('Writes drive.py, a Gymnasium env.py and train.py beside the MuJoCo model.')} />
         </span>
         <input type="checkbox" className="switch" checked={robot.scripts !== false} onChange={(e) => setScripts(e.target.checked)} />
       </label>
@@ -237,25 +239,25 @@ function Test() {
   const jointOf = (id: string | null) => robot.joints.find((j) => j.id === id);
   return (
     <fieldset className="group">
-      <legend>Test</legend>
+      <legend>{tr('Test')}</legend>
       {s.status === 'off' && (
         <>
           <div className="field inline">
             <label>
-              Floor
-              <Hint text={`${WORLDS.find((w) => w.id === (robot.world ?? 'flat'))?.help ?? ''} Only under the test drive: every export stands the robot on a flat floor.`} />
+              {tr('Floor')}
+              <Hint text={`${WORLDS.find((w) => w.id === (robot.world ?? 'flat'))?.help ?? ''} ${tr('Only under the test drive: every export stands the robot on a flat floor.')}`} />
             </label>
-            <Select value={robot.world ?? 'flat'} label="Floor" options={WORLDS.map((w) => ({ value: w.id, label: w.name }))} onChange={(w) => setWorld(w as World)} />
+            <Select value={robot.world ?? 'flat'} label={tr('Floor')} options={WORLDS.map((w) => ({ value: w.id, label: w.name }))} onChange={(w) => setWorld(w as World)} />
           </div>
           <div className="field">
-            <button type="button" className="chip" disabled={stopped || !robot.root} title="Builds the robot's MuJoCo model and runs it on the plate" onClick={() => void sim.start(doc)}>
-              Test drive
+            <button type="button" className="chip" disabled={stopped || !robot.root} title={tr("Builds the robot's MuJoCo model and runs it on the plate")} onClick={() => void sim.start(doc)}>
+              {tr('Test drive')}
             </button>
-            {stopped && <p className="export-note">The problems below stop the test drive, as they do the export.</p>}
+            {stopped && <p className="export-note">{tr('The problems below stop the test drive, as they do the export.')}</p>}
           </div>
         </>
       )}
-      {s.status === 'loading' && <p className="empty">Building the model…</p>}
+      {s.status === 'loading' && <p className="empty">{tr('Building the model…')}</p>}
       {s.status === 'error' && (
         <>
           <p className="export-note problems error">
@@ -264,10 +266,10 @@ function Test() {
           </p>
           <div className="chip-row">
             <button type="button" className="chip" onClick={() => void sim.start(doc)}>
-              Try again
+              {tr('Try again')}
             </button>
             <button type="button" className="chip" onClick={() => sim.stop()}>
-              Stop
+              {tr('Stop')}
             </button>
           </div>
         </>
@@ -275,26 +277,21 @@ function Test() {
       {s.status === 'ready' && (
         <>
           <div className="chip-row">
-            <button type="button" className="chip" title={s.running ? 'Holds time still' : 'Lets time run'} onClick={() => sim.setRunning(!s.running)}>
-              {s.running ? 'Pause' : 'Run'}
+            <button type="button" className="chip" title={s.running ? tr('Holds time still') : tr('Lets time run')} onClick={() => sim.setRunning(!s.running)}>
+              {s.running ? tr('Pause') : tr('Run')}
             </button>
-            <button type="button" className="chip" title="Puts the robot back at its start, standing still" onClick={() => sim.reset()}>
-              Reset
+            <button type="button" className="chip" title={tr('Puts the robot back at its start, standing still')} onClick={() => sim.reset()}>
+              {tr('Reset')}
             </button>
-            <button type="button" className="chip" title="Ends the test drive; the plate shows the design again" onClick={() => sim.stop()}>
-              Stop
+            <button type="button" className="chip" title={tr('Ends the test drive; the plate shows the design again')} onClick={() => sim.stop()}>
+              {tr('Stop')}
             </button>
           </div>
           {s.drive && (
             <p className="export-note">
-              Drive with <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> or the arrow keys{s.drive.kind === 'mecanum' ? (
-                <>
-                  ; <kbd>Q</kbd> and <kbd>E</kbd> slide sideways
-                </>
-              ) : (
-                ''
-              )}
-              .
+              {s.drive.kind === 'mecanum'
+                ? rich('Drive with {w} {a} {s} {d} or the arrow keys; {q} and {e} slide sideways.', { w: <kbd>W</kbd>, a: <kbd>A</kbd>, s: <kbd>S</kbd>, d: <kbd>D</kbd>, q: <kbd>Q</kbd>, e: <kbd>E</kbd> })
+                : rich('Drive with {w} {a} {s} {d} or the arrow keys.', { w: <kbd>W</kbd>, a: <kbd>A</kbd>, s: <kbd>S</kbd>, d: <kbd>D</kbd> })}
             </p>
           )}
           {servos.map((a) => {
@@ -305,17 +302,17 @@ function Test() {
           })}
           <dl className="facts">
             <div>
-              <dt>Time</dt>
+              <dt>{tr('Time')}</dt>
               <dd>{formatNumber(s.time, 1)} s</dd>
             </div>
             {robot.base === 'free' && s.base && (
               <>
                 <div>
-                  <dt>Moved</dt>
+                  <dt>{tr('Moved')}</dt>
                   <dd>{mm(Math.hypot(s.base.pos[0], s.base.pos[1]))}</dd>
                 </div>
                 <div>
-                  <dt>Heading</dt>
+                  <dt>{tr('Heading')}</dt>
                   <dd>{formatNumber(s.base.yaw, 0)}°</dd>
                 </div>
               </>
@@ -351,46 +348,46 @@ function LinkPanel({ node }: { node: SceneNode }) {
       <header className="params-head">
         <div className="grow">
           <NameField node={node} />
-          <p>{node.id === robot.root ? 'Base link' : `Link${link.name ? ` · ${link.name}` : ''}`}</p>
+          <p>{node.id === robot.root ? tr('Base link') : link.name ? tr('Link · {name}', { name: link.name }) : tr('Link')}</p>
         </div>
         {node.id !== robot.root && (
-          <button type="button" className="chip" title="Makes this the link the rest of the robot hangs from" onClick={() => setRobotRoot(node.id)}>
-            Make base
+          <button type="button" className="chip" title={tr('Makes this the link the rest of the robot hangs from')} onClick={() => setRobotRoot(node.id)}>
+            {tr('Make base')}
           </button>
         )}
       </header>
       <fieldset className="group">
-        <legend>Mass</legend>
+        <legend>{tr('Mass')}</legend>
         <div className="field">
-          <div className="segmented" role="radiogroup" aria-label="How the mass is known">
-            <button type="button" role="radio" aria-checked={link.mass.kind === 'material'} className={link.mass.kind === 'material' ? 'on' : ''} title="Figures the mass from the shape and what it is made of" onClick={() => link.mass.kind !== 'material' && set({ mass: { kind: 'material', material: 'pla', infill: 20, shell: 1.2 } })}>
-              From material
+          <div className="segmented" role="radiogroup" aria-label={tr('How the mass is known')}>
+            <button type="button" role="radio" aria-checked={link.mass.kind === 'material'} className={link.mass.kind === 'material' ? 'on' : ''} title={tr('Figures the mass from the shape and what it is made of')} onClick={() => link.mass.kind !== 'material' && set({ mass: { kind: 'material', material: 'pla', infill: 20, shell: 1.2 } })}>
+              {tr('From material')}
             </button>
-            <button type="button" role="radio" aria-checked={link.mass.kind === 'measured'} className={link.mass.kind === 'measured' ? 'on' : ''} title="A mass you weighed or read off a datasheet" onClick={() => link.mass.kind !== 'measured' && set({ mass: { kind: 'measured', grams: mass && mass > 0 ? Number(mass.toFixed(1)) : 10 } })}>
-              Weighed
+            <button type="button" role="radio" aria-checked={link.mass.kind === 'measured'} className={link.mass.kind === 'measured' ? 'on' : ''} title={tr('A mass you weighed or read off a datasheet')} onClick={() => link.mass.kind !== 'measured' && set({ mass: { kind: 'measured', grams: mass && mass > 0 ? Number(mass.toFixed(1)) : 10 } })}>
+              {tr('Weighed')}
             </button>
           </div>
         </div>
         {link.mass.kind === 'measured' ? (
           <div className="field inline">
-            <label>Mass</label>
-            <NumberBox label="Mass" value={link.mass.grams} unit="g" min={0} step={1} places={2} onChange={(v) => setMass({ grams: v }, 'link-mass')} />
+            <label>{tr('Mass')}</label>
+            <NumberBox label={tr('Mass')} value={link.mass.grams} unit="g" min={0} step={1} places={2} onChange={(v) => setMass({ grams: v }, 'link-mass')} />
           </div>
         ) : (
           <>
             <div className="field inline">
-              <label>Material</label>
-              <Select value={link.mass.material} label="Material" options={MATERIALS.map((m) => ({ value: m.id, label: m.name }))} onChange={(id) => setMass({ material: id })} />
+              <label>{trx('made of', 'Material')}</label>
+              <Select value={link.mass.material} label={trx('made of', 'Material')} options={MATERIALS.map((m) => ({ value: m.id, label: m.name }))} onChange={(id) => setMass({ material: id })} />
             </div>
             {material?.printed && (
               <>
-                <SliderField label="Infill" help="How full the inside is printed; the shell stays solid." value={link.mass.infill} min={0} max={100} step={5} unit="%" onChange={(v) => setMass({ infill: v }, 'link-infill')} />
+                <SliderField label={tr('Infill')} help={tr('How full the inside is printed; the shell stays solid.')} value={link.mass.infill} min={0} max={100} step={5} unit="%" onChange={(v) => setMass({ infill: v }, 'link-infill')} />
                 <div className="field inline">
                   <label>
-                    Shell
-                    <Hint text="Walls plus top and bottom layers, as one thickness." />
+                    {tr('Shell')}
+                    <Hint text={tr('Walls plus top and bottom layers, as one thickness.')} />
                   </label>
-                  <NumberBox label="Shell thickness" value={link.mass.shell} unit="mm" min={0} max={20} step={0.4} places={2} onChange={(v) => setMass({ shell: v }, 'link-shell')} />
+                  <NumberBox label={tr('Shell thickness')} value={link.mass.shell} unit="mm" min={0} max={20} step={0.4} places={2} onChange={(v) => setMass({ shell: v }, 'link-shell')} />
                 </div>
               </>
             )}
@@ -398,23 +395,23 @@ function LinkPanel({ node }: { node: SceneNode }) {
         )}
         <dl className="facts">
           <div>
-            <dt>Volume</dt>
+            <dt>{tr('Volume')}</dt>
             <dd>{p ? cm3(p.volume) : '…'}</dd>
           </div>
           <div>
-            <dt>Surface</dt>
+            <dt>{tr('Surface')}</dt>
             <dd>{p ? `${formatNumber(p.area / 100, 1)} cm²` : '…'}</dd>
           </div>
           <div>
-            <dt>Mass</dt>
+            <dt>{tr('Mass')}</dt>
             <dd>{mass === null ? '…' : grams(mass)}</dd>
           </div>
           <div>
-            <dt>Center of mass</dt>
+            <dt>{tr('Center of mass')}</dt>
             <dd>{p ? p.centroid.map((v) => formatNumber(v, 1)).join(', ') : '…'}</dd>
           </div>
           <div>
-            <dt title="Principal moments of inertia, g·cm²">Inertia</dt>
+            <dt title={tr('Principal moments of inertia, g·cm²')}>{tr('Inertia')}</dt>
             <dd>
               {p && mass
                 ? principalMoments(tensorOf(mass, p.unit))
@@ -427,24 +424,24 @@ function LinkPanel({ node }: { node: SceneNode }) {
         </dl>
       </fieldset>
       <fieldset className="group">
-        <legend>Collision</legend>
+        <legend>{tr('Collision')}</legend>
         <div className="field inline">
           <label>
-            Shape
+            {tr('Shape')}
             <Hint text={COLLISION_KINDS.find((k) => k.id === link.collision)?.help ?? ''} />
           </label>
-          <Select value={link.collision} label="Collision shape" options={COLLISION_KINDS.map((k) => ({ value: k.id, label: k.name }))} onChange={(id) => set({ collision: id })} />
+          <Select value={link.collision} label={tr('Collision shape')} options={COLLISION_KINDS.map((k) => ({ value: k.id, label: k.name }))} onChange={(id) => set({ collision: id })} />
         </div>
         <div className="field inline">
           <label>
-            Friction
-            <Hint text="Coefficient of friction against what it touches; rubber on floor is about 1, plastic on plastic 0.3." />
+            {tr('Friction')}
+            <Hint text={tr('Coefficient of friction against what it touches; rubber on floor is about 1, plastic on plastic 0.3.')} />
           </label>
-          <NumberBox label="Friction" value={link.friction} min={0} max={5} step={0.1} places={2} onChange={(v) => set({ friction: v }, 'link-friction')} />
+          <NumberBox label={tr('Friction')} value={link.friction} min={0} max={5} step={0.1} places={2} onChange={(v) => set({ friction: v }, 'link-friction')} />
         </div>
       </fieldset>
       <fieldset className="group">
-        <legend>Joints</legend>
+        <legend>{tr('Joints')}</legend>
         {joints.length > 0 && (
           <ul className="joint-list">
             {joints.map((j) => (
@@ -452,7 +449,7 @@ function LinkPanel({ node }: { node: SceneNode }) {
                 <button type="button" className="outline-row joint" onClick={() => selectJoint(j.id)}>
                   <JointIcon />
                   <span className="clip">{j.name}</span>
-                  <span className="outline-kind">{j.child === node.id ? `from ${nameOf(j.parent)}` : `to ${nameOf(j.child)}`}</span>
+                  <span className="outline-kind">{j.child === node.id ? tr('from {name}', { name: nameOf(j.parent) }) : tr('to {name}', { name: nameOf(j.child) })}</span>
                 </button>
               </li>
             ))}
@@ -461,17 +458,17 @@ function LinkPanel({ node }: { node: SceneNode }) {
         {others.length > 0 ? (
           <div className="field inline">
             <label>
-              Attach to
-              <Hint text="Hangs this link from another by a new joint." />
+              {tr('Attach to')}
+              <Hint text={tr('Hangs this link from another by a new joint.')} />
             </label>
-            <Select value="" label="Attach to" placeholder="Choose a link…" options={others.map((n) => ({ value: n.id, label: n.name }))} onChange={(parent) => addJoint(parent, node.id)} />
+            <Select value="" label={tr('Attach to')} placeholder={tr('Choose a link…')} options={others.map((n) => ({ value: n.id, label: n.name }))} onChange={(parent) => addJoint(parent, node.id)} />
           </div>
         ) : (
-          <p className="empty">Add another object to have something to attach to.</p>
+          <p className="empty">{tr('Add another object to have something to attach to.')}</p>
         )}
       </fieldset>
       <fieldset className="group">
-        <legend>Sensors</legend>
+        <legend>{tr('Sensors')}</legend>
         {sensors.length > 0 && (
           <ul className="joint-list">
             {sensors.map((x) => (
@@ -479,7 +476,7 @@ function LinkPanel({ node }: { node: SceneNode }) {
                 <button type="button" className="outline-row joint" onClick={() => selectSensor(x.id)}>
                   <SensorIcon />
                   <span className="clip">{x.name}</span>
-                  <span className="outline-kind">{x.kind === 'imu' ? 'IMU' : x.kind}</span>
+                  <span className="outline-kind">{x.kind === 'imu' ? 'IMU' : marked(x.kind)}</span>
                 </button>
               </li>
             ))}
@@ -487,15 +484,15 @@ function LinkPanel({ node }: { node: SceneNode }) {
         )}
         <div className="field inline">
           <label>
-            Add
-            <Hint text="Fixes a sensor to this link: a frame of its own, with a Gazebo sensor in it and its topics bridged to ROS 2." />
+            {tr('Add')}
+            <Hint text={tr('Fixes a sensor to this link: a frame of its own, with a Gazebo sensor in it and its topics bridged to ROS 2.')} />
           </label>
-          <Select value="" label="Add a sensor" placeholder="Choose a sensor…" options={SENSOR_KINDS.map((k) => ({ value: k.id, label: k.name }))} onChange={(kind) => addSensor(node.id, kind as SensorKind)} />
+          <Select value="" label={tr('Add a sensor')} placeholder={tr('Choose a sensor…')} options={SENSOR_KINDS.map((k) => ({ value: k.id, label: marked(k.name) }))} onChange={(kind) => addSensor(node.id, kind as SensorKind)} />
         </div>
       </fieldset>
       {own.length > 0 && (
         <fieldset className="group">
-          <legend>Checks</legend>
+          <legend>{tr('Checks')}</legend>
           <Problems problems={own} />
         </fieldset>
       )}
@@ -538,19 +535,19 @@ function JointPanel({ joint }: { joint: RobotJoint }) {
     <>
       <header className="params-head">
         <div className="grow">
-          <TextField className="name-input" value={joint.name} label="Joint name" onCommit={(name) => updateJoint(joint.id, { name })} />
+          <TextField className="name-input" value={joint.name} label={tr('Joint name')} onCommit={(name) => updateJoint(joint.id, { name })} />
           <p>
             {parent?.name ?? '?'} → {child?.name ?? '?'}
           </p>
         </div>
-        <button type="button" className="icon-button" title="Delete this joint (Delete)" aria-label="Delete joint" onClick={() => deleteJoint(joint.id)}>
+        <button type="button" className="icon-button" title={tr('Delete this joint ({key})', { key: 'Delete' })} aria-label={tr('Delete joint')} onClick={() => deleteJoint(joint.id)}>
           <TrashIcon />
         </button>
       </header>
       <fieldset className="group">
-        <legend>Joint</legend>
+        <legend>{tr('Joint')}</legend>
         <div className="field">
-          <div className="segmented small" role="radiogroup" aria-label="Joint type">
+          <div className="segmented small" role="radiogroup" aria-label={tr('Joint type')}>
             {JOINT_TYPES.map((t) => (
               <button key={t.id} type="button" role="radio" aria-checked={joint.type === t.id} className={joint.type === t.id ? 'on' : ''} title={t.help} onClick={() => updateJoint(joint.id, { type: t.id })}>
                 {t.name}
@@ -558,74 +555,74 @@ function JointPanel({ joint }: { joint: RobotJoint }) {
             ))}
           </div>
         </div>
-        {row('Parent', <Select value={joint.parent} label="Parent link" options={nodes.filter((n) => n.id !== joint.child).map((n) => ({ value: n.id, label: n.name }))} onChange={(id) => updateJoint(joint.id, { parent: id })} />)}
-        {row('Child', <Select value={joint.child} label="Child link" options={nodes.filter((n) => n.id !== joint.parent).map((n) => ({ value: n.id, label: n.name }))} onChange={(id) => updateJoint(joint.id, { child: id })} />, 'The link that moves. The joint is kept with it: move the child and the joint comes along.')}
+        {row(tr('Parent'), <Select value={joint.parent} label={tr('Parent link')} options={nodes.filter((n) => n.id !== joint.child).map((n) => ({ value: n.id, label: n.name }))} onChange={(id) => updateJoint(joint.id, { parent: id })} />)}
+        {row(tr('Child'), <Select value={joint.child} label={tr('Child link')} options={nodes.filter((n) => n.id !== joint.parent).map((n) => ({ value: n.id, label: n.name }))} onChange={(id) => updateJoint(joint.id, { child: id })} />, tr('The link that moves. The joint is kept with it: move the child and the joint comes along.'))}
       </fieldset>
       <fieldset className="group">
-        <legend>Place</legend>
+        <legend>{trx('where it sits', 'Place')}</legend>
         <div className="field">
           <label>
-            Pick a point
-            <Hint text="Shows the corners, edge middles, face centers and axis ends of one link; click one to put the joint there. The end of a round shape gives its axis too." />
+            {tr('Pick a point')}
+            <Hint text={tr('Shows the corners, edge middles, face centers and axis ends of one link; click one to put the joint there. The end of a round shape gives its axis too.')} />
           </label>
           <div className="chip-row">
             {(['child', 'parent'] as const).map((side) => (
-              <button key={side} type="button" className={picking === side ? 'chip pick on' : 'chip pick'} aria-pressed={picking === side} title={side === 'child' ? 'Points on the child, the link that moves' : 'Points on the parent, the link it hangs from'} onClick={() => (picking === side ? stopJointPick() : startJointPick(side))}>
+              <button key={side} type="button" className={picking === side ? 'chip pick on' : 'chip pick'} aria-pressed={picking === side} title={side === 'child' ? tr('Points on the child, the link that moves') : tr('Points on the parent, the link it hangs from')} onClick={() => (picking === side ? stopJointPick() : startJointPick(side))}>
                 <PinIcon />
-                {picking === side ? `Click a point on the ${side}…` : `On the ${side}`}
+                {picking === side ? (side === 'child' ? tr('Click a point on the child…') : tr('Click a point on the parent…')) : side === 'child' ? tr('On the child') : tr('On the parent')}
               </button>
             ))}
           </div>
         </div>
         <div className="field">
           <label>
-            Origin
-            <Hint text="Where the joint sits, in the design's coordinates (mm)." />
+            {tr('Origin')}
+            <Hint text={tr("Where the joint sits, in the design's coordinates (mm).")} />
           </label>
           <div className="number-row spread">
             {(['X', 'Y', 'Z'] as const).map((tag, i) => (
-              <NumberBox key={tag} label={`Origin ${tag}`} tag={tag} value={Number(placed.origin[i].toFixed(3))} step={1} places={2} onChange={(v) => put(placed.origin.map((x, k) => (k === i ? v : x)) as Vec3, placed.axis, 'joint-origin')} />
+              <NumberBox key={tag} label={tr('Origin {axis}', { axis: tag })} tag={tag} value={Number(placed.origin[i].toFixed(3))} step={1} places={2} onChange={(v) => put(placed.origin.map((x, k) => (k === i ? v : x)) as Vec3, placed.axis, 'joint-origin')} />
             ))}
           </div>
         </div>
         {joint.type !== 'fixed' && (
           <div className="field">
             <label>
-              Axis
-              <Hint text="The line it turns about or slides along, in the design's coordinates." />
+              {tr('Axis')}
+              <Hint text={tr("The line it turns about or slides along, in the design's coordinates.")} />
             </label>
             <div className="axis-row">
-              <div className="segmented small" role="radiogroup" aria-label="Axis">
+              <div className="segmented small" role="radiogroup" aria-label={tr('Axis')}>
                 {AXES.map((a, i) => (
                   <button key={a.label} type="button" role="radio" aria-checked={along === i} className={along === i ? 'on' : ''} onClick={() => put(placed.origin, flipped ? (a.vector.map((x) => -x) as Vec3) : a.vector)}>
                     {a.label}
                   </button>
                 ))}
               </div>
-              <button type="button" className={flipped ? 'chip on' : 'chip'} aria-pressed={flipped} title="Turns the axis the other way, so positive motion goes the other way" onClick={() => put(placed.origin, placed.axis.map((x) => -x) as Vec3)}>
-                Flip
+              <button type="button" className={flipped ? 'chip on' : 'chip'} aria-pressed={flipped} title={tr('Turns the axis the other way, so positive motion goes the other way')} onClick={() => put(placed.origin, placed.axis.map((x) => -x) as Vec3)}>
+                {trx('axis', 'Flip')}
               </button>
             </div>
-            {along < 0 && <p className="export-note">{placed.axis.map((v) => formatNumber(v, 3)).join(', ')} (set by the child's turn)</p>}
+            {along < 0 && <p className="export-note">{tr("{axis} (set by the child's turn)", { axis: placed.axis.map((v) => formatNumber(v, 3)).join(', ') })}</p>}
           </div>
         )}
       </fieldset>
       {joint.type !== 'fixed' && (
         <fieldset className="group">
           <legend>
-            Try it
+            {tr('Try it')}
             {pose?.joint === joint.id && (
-              <button type="button" className="chip" title="Puts the robot back" onClick={() => setPose(null)}>
-                Reset
+              <button type="button" className="chip" title={tr('Puts the robot back')} onClick={() => setPose(null)}>
+                {tr('Reset')}
               </button>
             )}
           </legend>
-          <SliderField label={angular ? 'Angle' : 'Travel'} help="Moves the joint on the plate to see the robot move; the design stays as it is." value={posed} min={lo} max={hi} step={angular ? 1 : 0.5} unit={unit} onChange={(v) => setPose(v)} />
-          {pose?.joint === joint.id && !pose.solved.closed && <p className="export-note problems warn">The linkage cannot close here: a loop joint is {formatNumber(pose.solved.error, 1)} mm apart.</p>}
+          <SliderField label={angular ? tr('Angle') : tr('Travel')} help={tr('Moves the joint on the plate to see the robot move; the design stays as it is.')} value={posed} min={lo} max={hi} step={angular ? 1 : 0.5} unit={unit} onChange={(v) => setPose(v)} />
+          {pose?.joint === joint.id && !pose.solved.closed && <p className="export-note problems warn">{tr('The linkage cannot close here: a loop joint is {gap} mm apart.', { gap: formatNumber(pose.solved.error, 1) })}</p>}
           {inLoop && (
             <div className="field">
-              <button type="button" className="chip" title="Sweeps this joint over its range with the loops closed and sets the passive joints to follow it (mimic), as URDF needs" onClick={() => fitJointFollowers(joint.id)}>
-                Set the others to follow this joint
+              <button type="button" className="chip" title={tr('Sweeps this joint over its range with the loops closed and sets the passive joints to follow it (mimic), as URDF needs')} onClick={() => fitJointFollowers(joint.id)}>
+                {tr('Set the others to follow this joint')}
               </button>
             </div>
           )}
@@ -633,41 +630,41 @@ function JointPanel({ joint }: { joint: RobotJoint }) {
       )}
       {joint.type !== 'fixed' && (
         <fieldset className="group motion">
-          <legend>Motion</legend>
+          <legend>{tr('Motion')}</legend>
           {angular &&
             row(
-              'Motor',
-              <Select value={joint.motor ?? ''} label="Motor" placeholder="Custom" options={MOTORS.map((m) => ({ value: m.id, label: `${m.name} · ${m.torque} N·m, ${m.speed}°/s` }))} onChange={(id) => setJointMotor(joint.id, id)} />,
-              "Sets the effort, speed and damping to the motor's figures; typing any of them makes it custom again.",
+              tr('Motor'),
+              <Select value={joint.motor ?? ''} label={tr('Motor')} placeholder={trx('motor', 'Custom')} options={MOTORS.map((m) => ({ value: m.id, label: `${m.name} · ${m.torque} N·m, ${m.speed}°/s` }))} onChange={(id) => setJointMotor(joint.id, id)} />,
+              tr("Sets the effort, speed and damping to the motor's figures; typing any of them makes it custom again."),
             )}
           {joint.type !== 'continuous' && (
             <>
-              {row('Lower limit', <NumberBox label="Lower limit" value={joint.lower} unit={unit} step={angular ? 5 : 1} places={2} onChange={(v) => updateJoint(joint.id, { lower: v }, 'joint-lower')} />)}
-              {row('Upper limit', <NumberBox label="Upper limit" value={joint.upper} unit={unit} step={angular ? 5 : 1} places={2} onChange={(v) => updateJoint(joint.id, { upper: v }, 'joint-upper')} />)}
+              {row(tr('Lower limit'), <NumberBox label={tr('Lower limit')} value={joint.lower} unit={unit} step={angular ? 5 : 1} places={2} onChange={(v) => updateJoint(joint.id, { lower: v }, 'joint-lower')} />)}
+              {row(tr('Upper limit'), <NumberBox label={tr('Upper limit')} value={joint.upper} unit={unit} step={angular ? 5 : 1} places={2} onChange={(v) => updateJoint(joint.id, { upper: v }, 'joint-upper')} />)}
             </>
           )}
-          {row('Effort', <NumberBox label="Effort" value={joint.effort} unit={angular ? 'N·m' : 'N'} min={0} step={angular ? 0.5 : 5} places={6} onChange={(v) => updateJoint(joint.id, { effort: v }, 'joint-effort')} />, 'The most the actuator can push with: a servo\'s torque, a linear actuator\'s force.')}
-          {row('Velocity', <NumberBox label="Velocity" value={joint.velocity} unit={angular ? '°/s' : 'mm/s'} min={0} step={angular ? 10 : 5} places={2} onChange={(v) => updateJoint(joint.id, { velocity: v }, 'joint-velocity')} />, 'The fastest it moves under no load.')}
-          {row('Damping', <NumberBox label="Damping" value={joint.damping} unit={angular ? 'N·m·s' : 'N·s/m'} min={0} step={0.1} places={6} onChange={(v) => updateJoint(joint.id, { damping: v }, 'joint-damping')} />, 'Resistance that grows with speed; a little keeps a simulation calm.')}
-          {row('Friction', <NumberBox label="Joint friction" value={joint.friction} unit={angular ? 'N·m' : 'N'} min={0} step={0.1} places={6} onChange={(v) => updateJoint(joint.id, { friction: v }, 'joint-friction')} />, 'Resistance that is there at any speed: gearbox drag, seals.')}
+          {row(tr('Effort'), <NumberBox label={tr('Effort')} value={joint.effort} unit={angular ? 'N·m' : 'N'} min={0} step={angular ? 0.5 : 5} places={6} onChange={(v) => updateJoint(joint.id, { effort: v }, 'joint-effort')} />, tr("The most the actuator can push with: a servo's torque, a linear actuator's force."))}
+          {row(tr('Velocity'), <NumberBox label={tr('Velocity')} value={joint.velocity} unit={angular ? '°/s' : 'mm/s'} min={0} step={angular ? 10 : 5} places={2} onChange={(v) => updateJoint(joint.id, { velocity: v }, 'joint-velocity')} />, tr('The fastest it moves under no load.'))}
+          {row(tr('Damping'), <NumberBox label={tr('Damping')} value={joint.damping} unit={angular ? 'N·m·s' : 'N·s/m'} min={0} step={0.1} places={6} onChange={(v) => updateJoint(joint.id, { damping: v }, 'joint-damping')} />, tr('Resistance that grows with speed; a little keeps a simulation calm.'))}
+          {row(tr('Friction'), <NumberBox label={tr('Joint friction')} value={joint.friction} unit={angular ? 'N·m' : 'N'} min={0} step={0.1} places={6} onChange={(v) => updateJoint(joint.id, { friction: v }, 'joint-friction')} />, tr('Resistance that is there at any speed: gearbox drag, seals.'))}
           {row(
-            'Follows',
+            tr('Follows'),
             <Select
               value={joint.mimic?.joint ?? ''}
-              label="Follows"
-              placeholder="Nothing"
+              label={tr('Follows')}
+              placeholder={tr('Nothing')}
               options={robot.joints.filter((j) => j.id !== joint.id && (j.id === joint.mimic?.joint || !followFault(robot, tree, joint, j))).map((j) => ({ value: j.id, label: j.name }))}
               onChange={(id) => updateJoint(joint.id, { mimic: { joint: id, multiplier: joint.mimic?.multiplier ?? 1, offset: joint.mimic?.offset ?? 0 } })}
             />,
-            'A passive joint moved by another, as in a linkage: it goes as far as that one times the multiplier, plus the offset.',
+            tr('A passive joint moved by another, as in a linkage: it goes as far as that one times the multiplier, plus the offset.'),
           )}
           {joint.mimic && (
             <div className="field">
               <div className="number-row spread">
-                <NumberBox label="Multiplier" tag="×" value={joint.mimic.multiplier} step={0.1} places={3} onChange={(v) => updateJoint(joint.id, { mimic: { ...joint.mimic!, multiplier: v } }, 'joint-mimic')} />
-                <NumberBox label="Offset" tag="+" value={joint.mimic.offset} unit={unit} step={angular ? 5 : 1} places={2} onChange={(v) => updateJoint(joint.id, { mimic: { ...joint.mimic!, offset: v } }, 'joint-mimic')} />
-                <button type="button" className="chip" title="Follows nothing" onClick={() => updateJoint(joint.id, { mimic: undefined })}>
-                  Clear
+                <NumberBox label={tr('Multiplier')} tag="×" value={joint.mimic.multiplier} step={0.1} places={3} onChange={(v) => updateJoint(joint.id, { mimic: { ...joint.mimic!, multiplier: v } }, 'joint-mimic')} />
+                <NumberBox label={tr('Offset')} tag="+" value={joint.mimic.offset} unit={unit} step={angular ? 5 : 1} places={2} onChange={(v) => updateJoint(joint.id, { mimic: { ...joint.mimic!, offset: v } }, 'joint-mimic')} />
+                <button type="button" className="chip" title={tr('Follows nothing')} onClick={() => updateJoint(joint.id, { mimic: undefined })}>
+                  {tr('Clear')}
                 </button>
               </div>
             </div>
@@ -676,7 +673,7 @@ function JointPanel({ joint }: { joint: RobotJoint }) {
       )}
       {own.length > 0 && (
         <fieldset className="group">
-          <legend>Checks</legend>
+          <legend>{tr('Checks')}</legend>
           <Problems problems={own} />
         </fieldset>
       )}
@@ -787,93 +784,91 @@ function SensorPanel({ sensor }: { sensor: RobotSensor }) {
     <>
       <header className="params-head">
         <div className="grow">
-          <TextField className="name-input" value={sensor.name} label="Sensor name" onCommit={(name) => updateSensor(sensor.id, { name })} />
-          <p>
-            {kind.name} on {link?.name ?? '?'}
-          </p>
+          <TextField className="name-input" value={sensor.name} label={tr('Sensor name')} onCommit={(name) => updateSensor(sensor.id, { name })} />
+          <p>{tr('{kind} on {link}', { kind: marked(kind.name), link: link?.name ?? '?' })}</p>
         </div>
-        <button type="button" className="icon-button" title="Delete this sensor (Delete)" aria-label="Delete sensor" onClick={() => deleteSensor(sensor.id)}>
+        <button type="button" className="icon-button" title={tr('Delete this sensor ({key})', { key: 'Delete' })} aria-label={tr('Delete sensor')} onClick={() => deleteSensor(sensor.id)}>
           <TrashIcon />
         </button>
       </header>
       <fieldset className="group">
-        <legend>Sensor</legend>
-        {row('Kind', <Select value={sensor.kind} label="Kind" options={SENSOR_KINDS.map((k) => ({ value: k.id, label: k.name }))} onChange={(id) => updateSensor(sensor.id, { kind: id })} />, kind.help)}
-        {row('On link', <Select value={sensor.link} label="Link" options={nodes.map((n) => ({ value: n.id, label: n.name }))} onChange={(id) => updateSensor(sensor.id, { link: id })} />)}
-        {row('Rate', <NumberBox label="Rate" value={sensor.rate} unit="Hz" min={0.1} max={1000} step={5} places={1} onChange={(v) => updateSensor(sensor.id, { rate: v }, 'sensor-rate')} />, 'How many readings a second.')}
+        <legend>{tr('Sensor')}</legend>
+        {row(tr('Kind'), <Select value={sensor.kind} label={tr('Kind')} options={SENSOR_KINDS.map((k) => ({ value: k.id, label: marked(k.name) }))} onChange={(id) => updateSensor(sensor.id, { kind: id })} />, kind.help)}
+        {row(tr('On link'), <Select value={sensor.link} label={tr('Link')} options={nodes.map((n) => ({ value: n.id, label: n.name }))} onChange={(id) => updateSensor(sensor.id, { link: id })} />)}
+        {row(tr('Rate'), <NumberBox label={tr('Rate')} value={sensor.rate} unit="Hz" min={0.1} max={1000} step={5} places={1} onChange={(v) => updateSensor(sensor.id, { rate: v }, 'sensor-rate')} />, tr('How many readings a second.'))}
       </fieldset>
       <fieldset className="group">
-        <legend>Place</legend>
+        <legend>{trx('where it sits', 'Place')}</legend>
         <div className="field">
-          <button type="button" className={picking ? 'chip pick on' : 'chip pick'} aria-pressed={Boolean(picking)} title="Shows points on the link; click one to put the sensor there." onClick={() => (picking ? stopJointPick() : startJointPick())}>
+          <button type="button" className={picking ? 'chip pick on' : 'chip pick'} aria-pressed={Boolean(picking)} title={tr('Shows points on the link; click one to put the sensor there.')} onClick={() => (picking ? stopJointPick() : startJointPick())}>
             <PinIcon />
-            {picking ? 'Click a point on the plate…' : 'Pick a point on the plate'}
+            {picking ? tr('Click a point on the plate…') : tr('Pick a point on the plate')}
           </button>
         </div>
         {placed && (
           <>
             <div className="field">
               <label>
-                Origin
-                <Hint text="Where the sensor sits, in the design's coordinates (mm)." />
+                {tr('Origin')}
+                <Hint text={tr("Where the sensor sits, in the design's coordinates (mm).")} />
               </label>
               <div className="number-row spread">
                 {(['X', 'Y', 'Z'] as const).map((tag, i) => (
-                  <NumberBox key={tag} label={`Origin ${tag}`} tag={tag} value={Number(placed.origin[i].toFixed(3))} step={1} places={2} onChange={(v) => put(placed.origin.map((x, k) => (k === i ? v : x)) as Vec3, placed.matrix, 'sensor-origin')} />
+                  <NumberBox key={tag} label={tr('Origin {axis}', { axis: tag })} tag={tag} value={Number(placed.origin[i].toFixed(3))} step={1} places={2} onChange={(v) => put(placed.origin.map((x, k) => (k === i ? v : x)) as Vec3, placed.matrix, 'sensor-origin')} />
                 ))}
               </div>
             </div>
             {turned && (
               <div className="field">
                 <label>
-                  {camera ? 'Looks along' : sensor.kind === 'lidar' ? 'Sweeps about' : 'Up axis'}
-                  <Hint text={camera ? "The camera's line of sight, in the design's axes." : sensor.kind === 'lidar' ? 'The axis the scan turns about: up, for a scan of the floor plan.' : "The IMU's Z, in the design's axes."} />
+                  {camera ? tr('Looks along') : sensor.kind === 'lidar' ? tr('Sweeps about') : tr('Up axis')}
+                  <Hint text={camera ? tr("The camera's line of sight, in the design's axes.") : sensor.kind === 'lidar' ? tr('The axis the scan turns about: up, for a scan of the floor plan.') : tr("The IMU's Z, in the design's axes.")} />
                 </label>
-                <div className="segmented small" role="radiogroup" aria-label="Direction">
+                <div className="segmented small" role="radiogroup" aria-label={tr('Direction')}>
                   {DIRECTIONS.map((d, i) => (
                     <button key={d.label} type="button" role="radio" aria-checked={faces === i} className={faces === i ? 'on' : ''} onClick={() => put(placed.origin, turn(d.vector, tilt, roll))}>
                       {d.label}
                     </button>
                   ))}
                 </div>
-                {faces < 0 && <p className="export-note">{eulerOf(placed.matrix).map((v) => formatNumber(v, 1)).join(', ')}° (set by the link's turn)</p>}
+                {faces < 0 && <p className="export-note">{tr("{angles}° (set by the link's turn)", { angles: eulerOf(placed.matrix).map((v) => formatNumber(v, 1)).join(', ') })}</p>}
               </div>
             )}
             {faces >= 0 &&
               tiltable(DIRECTIONS[faces].vector) &&
               row(
-                'Tilt',
-                <NumberBox label="Tilt" value={Number(tilt.toFixed(3))} unit="°" min={-90} max={90} step={5} places={1} onChange={(v) => put(placed.origin, turn(DIRECTIONS[faces].vector, v, roll), 'sensor-tilt')} />,
-                camera ? 'Tips the view down from level; negative looks up.' : 'Tips the front of the sweep down; negative tips it up.',
+                tr('Tilt'),
+                <NumberBox label={tr('Tilt')} value={Number(tilt.toFixed(3))} unit="°" min={-90} max={90} step={5} places={1} onChange={(v) => put(placed.origin, turn(DIRECTIONS[faces].vector, v, roll), 'sensor-tilt')} />,
+                camera ? tr('Tips the view down from level; negative looks up.') : tr('Tips the front of the sweep down; negative tips it up.'),
               )}
             {faces >= 0 &&
               camera &&
-              row('Roll', <NumberBox label="Roll" value={Number(roll.toFixed(3))} unit="°" min={-180} max={180} step={5} places={1} onChange={(v) => put(placed.origin, turn(DIRECTIONS[faces].vector, tilt, v), 'sensor-roll')} />, 'Turns the camera about its line of sight, clockwise seen from behind; 180 for one mounted upside down.')}
+              row(tr('Roll'), <NumberBox label={tr('Roll')} value={Number(roll.toFixed(3))} unit="°" min={-180} max={180} step={5} places={1} onChange={(v) => put(placed.origin, turn(DIRECTIONS[faces].vector, tilt, v), 'sensor-roll')} />, tr('Turns the camera about its line of sight, clockwise seen from behind; 180 for one mounted upside down.'))}
           </>
         )}
       </fieldset>
       {camera && (
         <fieldset className="group">
-          <legend>Picture</legend>
-          {row('Field of view', <NumberBox label="Field of view" value={sensor.camera.hfov} unit="°" min={1} max={179} step={5} places={1} onChange={(v) => setCamera({ hfov: v }, 'cam-fov')} />, 'Horizontal, in degrees.')}
-          {row('Width', <NumberBox label="Width" value={sensor.camera.width} unit="px" min={1} max={8192} step={16} integer onChange={(v) => setCamera({ width: v }, 'cam-w')} />)}
-          {row('Height', <NumberBox label="Height" value={sensor.camera.height} unit="px" min={1} max={8192} step={16} integer onChange={(v) => setCamera({ height: v }, 'cam-h')} />)}
-          {row('Nearest', <NumberBox label="Nearest" value={sensor.camera.near} unit="mm" min={1} step={10} places={0} onChange={(v) => setCamera({ near: v }, 'cam-near')} />, 'Closer than this is not seen.')}
-          {row('Farthest', <NumberBox label="Farthest" value={sensor.camera.far} unit="mm" min={2} step={1000} places={0} onChange={(v) => setCamera({ far: v }, 'cam-far')} />, 'Farther than this is not seen.')}
+          <legend>{tr('Picture')}</legend>
+          {row(tr('Field of view'), <NumberBox label={tr('Field of view')} value={sensor.camera.hfov} unit="°" min={1} max={179} step={5} places={1} onChange={(v) => setCamera({ hfov: v }, 'cam-fov')} />, tr('Horizontal, in degrees.'))}
+          {row(tr('Width'), <NumberBox label={tr('Width')} value={sensor.camera.width} unit="px" min={1} max={8192} step={16} integer onChange={(v) => setCamera({ width: v }, 'cam-w')} />)}
+          {row(tr('Height'), <NumberBox label={tr('Height')} value={sensor.camera.height} unit="px" min={1} max={8192} step={16} integer onChange={(v) => setCamera({ height: v }, 'cam-h')} />)}
+          {row(tr('Nearest'), <NumberBox label={tr('Nearest')} value={sensor.camera.near} unit="mm" min={1} step={10} places={0} onChange={(v) => setCamera({ near: v }, 'cam-near')} />, tr('Closer than this is not seen.'))}
+          {row(tr('Farthest'), <NumberBox label={tr('Farthest')} value={sensor.camera.far} unit="mm" min={2} step={1000} places={0} onChange={(v) => setCamera({ far: v }, 'cam-far')} />, tr('Farther than this is not seen.'))}
         </fieldset>
       )}
       {sensor.kind === 'lidar' && (
         <fieldset className="group">
-          <legend>Scan</legend>
-          {row('Rays', <NumberBox label="Rays" value={sensor.lidar.samples} min={2} max={7200} step={10} integer onChange={(v) => setLidar({ samples: v }, 'lidar-n')} />, 'Readings per sweep.')}
-          {row('Sweep', <NumberBox label="Sweep" value={sensor.lidar.hfov} unit="°" min={1} max={360} step={10} places={1} onChange={(v) => setLidar({ hfov: v }, 'lidar-fov')} />, 'How wide the sweep is, centered on the X axis.')}
-          {row('Nearest', <NumberBox label="Nearest range" value={sensor.lidar.min} unit="mm" min={1} step={10} places={0} onChange={(v) => setLidar({ min: v }, 'lidar-min')} />)}
-          {row('Farthest', <NumberBox label="Farthest range" value={sensor.lidar.max} unit="mm" min={2} step={1000} places={0} onChange={(v) => setLidar({ max: v }, 'lidar-max')} />)}
+          <legend>{tr('Scan')}</legend>
+          {row(tr('Rays'), <NumberBox label={tr('Rays')} value={sensor.lidar.samples} min={2} max={7200} step={10} integer onChange={(v) => setLidar({ samples: v }, 'lidar-n')} />, tr('Readings per sweep.'))}
+          {row(trx('lidar', 'Sweep'), <NumberBox label={trx('lidar', 'Sweep')} value={sensor.lidar.hfov} unit="°" min={1} max={360} step={10} places={1} onChange={(v) => setLidar({ hfov: v }, 'lidar-fov')} />, tr('How wide the sweep is, centered on the X axis.'))}
+          {row(tr('Nearest'), <NumberBox label={tr('Nearest range')} value={sensor.lidar.min} unit="mm" min={1} step={10} places={0} onChange={(v) => setLidar({ min: v }, 'lidar-min')} />)}
+          {row(tr('Farthest'), <NumberBox label={tr('Farthest range')} value={sensor.lidar.max} unit="mm" min={2} step={1000} places={0} onChange={(v) => setLidar({ max: v }, 'lidar-max')} />)}
         </fieldset>
       )}
       {own.length > 0 && (
         <fieldset className="group">
-          <legend>Checks</legend>
+          <legend>{tr('Checks')}</legend>
           <Problems problems={own} />
         </fieldset>
       )}
@@ -898,7 +893,7 @@ export function RobotInspector() {
         <header className="params-head">
           <div className="grow">
             <NameField node={node} />
-            <p>{node.hidden ? 'Hidden objects are not links.' : node.hole ? 'A hole at the top level cuts nothing, so it is not a link.' : 'A picture is not a link.'}</p>
+            <p>{node.hidden ? tr('Hidden objects are not links.') : node.hole ? tr('A hole at the top level cuts nothing, so it is not a link.') : tr('A picture is not a link.')}</p>
           </div>
         </header>
       );
@@ -909,8 +904,8 @@ export function RobotInspector() {
     return (
       <header className="params-head">
         <div className="grow">
-          <h1>{nodes.length} objects</h1>
-          <p>Select one link at a time to set it up.</p>
+          <h1>{plural(nodes.length, '{n} object', '{n} objects')}</h1>
+          <p>{tr('Select one link at a time to set it up.')}</p>
         </div>
       </header>
     );

@@ -7,10 +7,13 @@
 export type { Notice, EditorState } from './store/core';
 export {
   getState,
+  subscribe,
   useEditor,
   isDirty,
   notify,
   dismissNotice,
+  dismissSyncNotes,
+  stopWork,
   setPrefs,
   beginGesture,
   endGesture,
@@ -88,6 +91,7 @@ export {
   commitAlign,
   ARRAY_LIMIT,
   arrayFrame,
+  startArray,
   previewArray,
   commitArray,
   cancelArray,
@@ -115,6 +119,13 @@ export {
   renameProject,
   listProjects,
   deleteProject,
+  keepsTrash,
+  keepsVersions,
+  listTrash,
+  restoreProject,
+  emptyTrash,
+  listVersions,
+  openVersion,
   duplicateProject,
   renameProjectAt,
   chooseProjectsFolder,
@@ -169,6 +180,7 @@ export {
   unlinkGoogleDrive,
   restoreSession,
 } from './store/sync';
+export { lookForUpdate, updateApp } from './store/updating';
 export {
   startPlacingPicture,
   addPicture,

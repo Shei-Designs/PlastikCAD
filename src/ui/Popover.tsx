@@ -21,12 +21,26 @@ interface Props {
 
 /** Room a panel is assumed to need below its button before it opens upward instead. */
 const PANEL_ROOM = 220;
+/** The least a panel keeps between itself and the sides of the window. */
+const WINDOW_EDGE = 6;
 
 /** Button with a small panel that drops down below it (or up from it); closes on Escape or a click elsewhere. */
 export function Popover({ button, title, className = 'chip', disabled, align = 'left', side = 'down', fill = false, fixed = false, children }: Props) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
   const [place, setPlace] = useState<CSSProperties | null>(null);
+
+  // A panel lines up with one side of its button and grows away from it. Where it is wider than the room on that
+  // side (its words are longer in some languages than in others), it is moved back inside the window.
+  useLayoutEffect(() => {
+    const el = panel.current;
+    if (!open || !el) return;
+    el.style.transform = '';
+    const box = el.getBoundingClientRect();
+    const shift = box.left < WINDOW_EDGE ? WINDOW_EDGE - box.left : Math.min(0, window.innerWidth - WINDOW_EDGE - box.right);
+    if (shift) el.style.transform = `translateX(${Math.round(shift)}px)`;
+  });
 
   // A fixed panel is measured from the button when it opens, and closed by any scrolling, which would leave it behind.
   useLayoutEffect(() => {
@@ -75,7 +89,7 @@ export function Popover({ button, title, className = 'chip', disabled, align = '
         {button}
       </button>
       {open && (
-        <div className={`popover-panel ${align} ${side}`} style={place ?? undefined}>
+        <div ref={panel} className={`popover-panel ${align} ${side}`} style={place ?? undefined}>
           {children(() => setOpen(false))}
         </div>
       )}

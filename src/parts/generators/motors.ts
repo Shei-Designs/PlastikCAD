@@ -8,6 +8,7 @@
 //
 // Everything is built round the mounting face, which lies in the XY plane
 // with the shaft pointing up +Z; the body form hangs the motor below it.
+import { plural, tr, trx } from '../../i18n';
 import { arc, circle, roundedRect } from '../math2d';
 import { cylinder, extrude, rotate, translate, union } from '../types';
 import type { Polygon, Quality, Shape2D, Solid, Vec2 } from '../types';
@@ -65,14 +66,14 @@ const corners = (s: number): Vec2[] => [
 const ring = (n: number, d: number): Vec2[] => Array.from({ length: n }, (_, i) => [(d / 2) * Math.cos((2 * Math.PI * i) / n), (d / 2) * Math.sin((2 * Math.PI * i) / n)]);
 
 export const STEPPERS: Motor[] = [
-  { id: 'nema17', label: 'NEMA 17 (42 mm)', face: square(42.3, 5), holes: corners(31), screw: 'M3', pilot: { d: 22, h: 2 }, shaft: { d: 5, len: 24, flat: 4.5 }, body: { w: 42.3, h: 42.3, r: 5, below: 40 }, lengths: '34, 40 or 48', bracket: true, note: 'The usual printer stepper. Four M3 holes on a 31 mm square, 22 mm pilot boss.' },
-  { id: 'nema23', label: 'NEMA 23 (57 mm)', face: square(57.3, 5), holes: corners(47.14), screw: 'M5', pilot: { d: 38.1, h: 1.6 }, shaft: { d: 6.35, len: 21, flat: 5.85 }, body: { w: 57.3, h: 57.3, r: 5, below: 56 }, lengths: '42, 56 or 76', bracket: true, note: 'Four M5 holes on a 47.1 mm square, 38.1 mm boss. Holes go right through: use long screws.' },
-  { id: 'nema14', label: 'NEMA 14 (35 mm)', face: square(35.2, 4), holes: corners(26), screw: 'M3', pilot: { d: 22, h: 2 }, shaft: { d: 5, len: 24, flat: 4.5 }, body: { w: 35.2, h: 35.2, r: 4, below: 34 }, lengths: '28 or 34', bracket: true, note: 'Four M3 holes on a 26 mm square, 22 mm pilot boss.' },
-  { id: 'nema11', label: 'NEMA 11 (28 mm)', face: square(28.2, 3), holes: corners(23), screw: 'M2.5', pilot: { d: 22, h: 2 }, shaft: { d: 5, len: 20 }, body: { w: 28.2, h: 28.2, r: 3, below: 33 }, lengths: '33, 45 or 51', bracket: true, note: 'Four M2.5 holes on a 23 mm square, 22 mm pilot boss.' },
-  { id: 'nema8', label: 'NEMA 8 (20 mm)', face: square(20.3, 2), holes: corners(15.4), screw: 'M2', pilot: { d: 16, h: 1.5 }, shaft: { d: 4, len: 10, flat: 3.5 }, body: { w: 20.3, h: 20.3, r: 2, below: 27.3 }, lengths: '27 to 38', bracket: true, note: 'Four M2 holes on a 15.4 mm square, 16 mm pilot boss.' },
+  { id: 'nema17', label: 'NEMA 17 (42 mm)', face: square(42.3, 5), holes: corners(31), screw: 'M3', pilot: { d: 22, h: 2 }, shaft: { d: 5, len: 24, flat: 4.5 }, body: { w: 42.3, h: 42.3, r: 5, below: 40 }, lengths: '34, 40 or 48', bracket: true, note: tr('The usual printer stepper. Four M3 holes on a 31 mm square, 22 mm pilot boss.') },
+  { id: 'nema23', label: 'NEMA 23 (57 mm)', face: square(57.3, 5), holes: corners(47.14), screw: 'M5', pilot: { d: 38.1, h: 1.6 }, shaft: { d: 6.35, len: 21, flat: 5.85 }, body: { w: 57.3, h: 57.3, r: 5, below: 56 }, lengths: '42, 56 or 76', bracket: true, note: tr('Four M5 holes on a 47.1 mm square, 38.1 mm boss. Holes go right through: use long screws.') },
+  { id: 'nema14', label: 'NEMA 14 (35 mm)', face: square(35.2, 4), holes: corners(26), screw: 'M3', pilot: { d: 22, h: 2 }, shaft: { d: 5, len: 24, flat: 4.5 }, body: { w: 35.2, h: 35.2, r: 4, below: 34 }, lengths: '28 or 34', bracket: true, note: tr('Four M3 holes on a 26 mm square, 22 mm pilot boss.') },
+  { id: 'nema11', label: 'NEMA 11 (28 mm)', face: square(28.2, 3), holes: corners(23), screw: 'M2.5', pilot: { d: 22, h: 2 }, shaft: { d: 5, len: 20 }, body: { w: 28.2, h: 28.2, r: 3, below: 33 }, lengths: '33, 45 or 51', bracket: true, note: tr('Four M2.5 holes on a 23 mm square, 22 mm pilot boss.') },
+  { id: 'nema8', label: 'NEMA 8 (20 mm)', face: square(20.3, 2), holes: corners(15.4), screw: 'M2', pilot: { d: 16, h: 1.5 }, shaft: { d: 4, len: 10, flat: 3.5 }, body: { w: 20.3, h: 20.3, r: 2, below: 27.3 }, lengths: '27 to 38', bracket: true, note: tr('Four M2 holes on a 15.4 mm square, 16 mm pilot boss.') },
   {
     id: '28byj48',
-    label: '28BYJ-48 geared stepper',
+    label: tr('28BYJ-48 geared stepper'),
     // The ears run across the middle of the can; the shaft comes out 8 mm above it, away from the wires.
     face: { d: 28, at: [0, -8] },
     holes: [
@@ -84,14 +85,14 @@ export const STEPPERS: Motor[] = [
     shaft: { d: 5, len: 10, flat: 3 },
     body: { w: 28, h: 28, round: true, below: 19 },
     tabs: { w: 42, h: 7, t: 1, at: [0, -8] },
-    note: 'Ears 35 mm apart across the middle of the body; the shaft is 8 mm off center, away from the wires.',
+    note: tr('Ears 35 mm apart across the middle of the body; the shaft is 8 mm off center, away from the wires.'),
   },
 ];
 
 export const GEARMOTORS: Motor[] = [
   {
     id: 'n20',
-    label: 'N20 micro gearmotor (12 × 10)',
+    label: tr('N20 micro gearmotor (12 × 10)'),
     face: { w: 12, h: 10, r: 0.5 },
     holes: [
       [-4.5, 0],
@@ -102,11 +103,11 @@ export const GEARMOTORS: Motor[] = [
     body: { w: 12, h: 10, r: 0.5, below: 32.5 },
     lengths: '32.5 with a 9 mm gearbox, 36 with 12.5',
     bracket: true,
-    note: 'Screws reach only 1.3 mm into the gearbox: keep the plate thin or counterbore it.',
+    note: tr('Screws reach only 1.3 mm into the gearbox: keep the plate thin or counterbore it.'),
   },
   {
     id: 'tt',
-    label: 'TT yellow gearmotor (3 to 6 V)',
+    label: tr('TT yellow gearmotor (3 to 6 V)'),
     face: { w: 22.4, h: 37, r: 1, at: [0, -9.25] },
     holes: [
       [-8.8, -14.4],
@@ -116,11 +117,11 @@ export const GEARMOTORS: Motor[] = [
     screw: 'M3',
     shaft: { d: 5.4, len: 9, flat: 3.7 },
     body: { w: 22.4, h: 37, r: 1, below: 18.6 },
-    note: 'Gearbox block only; the can runs 33 mm past it. Shaft out both sides, holes go right through.',
+    note: tr('Gearbox block only; the can runs 33 mm past it. Shaft out both sides, holes go right through.'),
   },
   {
     id: '25d',
-    label: '25 mm gearmotor (JGA25-370, Pololu 25D)',
+    label: tr('25 mm gearmotor (JGA25-370, Pololu 25D)'),
     face: { d: 25 },
     holes: [
       [-8.5, 0],
@@ -132,11 +133,11 @@ export const GEARMOTORS: Motor[] = [
     body: { w: 25, h: 25, round: true, below: 52 },
     lengths: '48 to 58 by gear ratio',
     bracket: true,
-    note: 'Two M3 holes 17 mm apart either side of a 7 mm boss. Length runs 48 to 58 mm by gear ratio.',
+    note: tr('Two M3 holes 17 mm apart either side of a 7 mm boss. Length runs 48 to 58 mm by gear ratio.'),
   },
   {
     id: '37d',
-    label: '37 mm gearmotor (JGB37-520, Pololu 37D)',
+    label: tr('37 mm gearmotor (JGB37-520, Pololu 37D)'),
     face: { d: 36.8 },
     holes: ring(6, 31),
     screw: 'M3',
@@ -145,14 +146,14 @@ export const GEARMOTORS: Motor[] = [
     body: { w: 36.8, h: 36.8, round: true, below: 55 },
     lengths: '52 to 62 by gear ratio',
     bracket: true,
-    note: 'Six M3 holes on a 31 mm circle. JGB37 shaft on the gearbox axis; Pololu 37D 7 mm off it.',
+    note: tr('Six M3 holes on a 31 mm circle. JGB37 shaft on the gearbox axis; Pololu 37D 7 mm off it.'),
   },
 ];
 
 export const SERVOS: Motor[] = [
   {
     id: 'sg90',
-    label: 'SG90 micro servo',
+    label: tr('SG90 micro servo'),
     face: { w: 32.2, h: 11.8, r: 1 },
     holes: [
       [-14, 0],
@@ -163,11 +164,11 @@ export const SERVOS: Motor[] = [
     shaft: { d: 4.7, len: 8, at: [-5.25, 0] },
     body: { w: 22.5, h: 11.8, r: 1, below: 16, above: 6.7 },
     tabs: { w: 32.2, h: 11.8, t: 2.5 },
-    note: 'Body drops through the plate, tabs sit on it; output 6 mm in from one end. Tab holes vary.',
+    note: tr('Body drops through the plate, tabs sit on it; output 6 mm in from one end. Tab holes vary.'),
   },
   {
     id: 'mg996r',
-    label: 'MG996R / MG995 standard servo',
+    label: tr('MG996R / MG995 standard servo'),
     face: { w: 54, h: 19.7, r: 1 },
     holes: [
       [-24.75, -5],
@@ -180,14 +181,14 @@ export const SERVOS: Motor[] = [
     shaft: { d: 5.9, len: 5.7, at: [-9.95, 0] },
     body: { w: 40.7, h: 19.7, r: 1, below: 26.8, above: 10.2 },
     tabs: { w: 54, h: 19.7, t: 2.5 },
-    note: 'Body drops through the plate, tabs sit on it; output 10 mm in from one end. Tab holes vary.',
+    note: tr('Body drops through the plate, tabs sit on it; output 10 mm in from one end. Tab holes vary.'),
   },
 ];
 
 export const DC_MOTORS: Motor[] = [
   {
     id: '775',
-    label: '775 brushed motor (Ø42)',
+    label: tr('775 brushed motor (Ø42)'),
     face: { d: 42 },
     holes: [
       [-14.5, 0],
@@ -198,18 +199,18 @@ export const DC_MOTORS: Motor[] = [
     shaft: { d: 5, len: 17 },
     body: { w: 42, h: 42, round: true, below: 66.7 },
     bracket: true,
-    note: 'No maker\'s drawing; the figures are the sellers\' usual ones. Check a motor before printing.',
+    note: tr('No maker\'s drawing; the figures are the sellers\' usual ones. Check a motor before printing.'),
   },
   {
     id: '130',
-    label: '130 brushed motor (Mabuchi FA-130)',
+    label: tr('130 brushed motor (Mabuchi FA-130)'),
     face: { w: 20.1, h: 15.1, r: 7.5 },
     holes: [],
     screw: 'M2',
     pilot: { d: 6.15, h: 1.7 },
     shaft: { d: 2, len: 9.4 },
     body: { w: 20.1, h: 15.1, r: 7.5, below: 25 },
-    note: 'No screw holes: the plate carries only the bearing-boss bore; strap or clip the can.',
+    note: tr('No screw holes: the plate carries only the bearing-boss bore; strap or clip the can.'),
   },
 ];
 
@@ -261,67 +262,67 @@ function groups(motors: Motor[]): ParamGroup[] {
   const anyBracket = motors.some((m) => m.bracket);
   return [
     {
-      title: 'Motor',
+      title: tr('Motor'),
       params: [
-        { key: 'motor', label: 'Motor', type: 'select', default: motors[0].id, options: motors.map((m) => ({ value: m.id, label: m.label, note: m.note })) },
+        { key: 'motor', label: tr('Motor'), type: 'select', default: motors[0].id, options: motors.map((m) => ({ value: m.id, label: m.label, note: m.note })) },
         {
           key: 'form',
-          label: 'Make',
+          label: tr('Make'),
           type: 'select',
           default: 'plate',
-          help: 'Selects the build target for the chosen motor.',
+          help: tr('Selects the build target for the chosen motor.'),
           options: [
-            { value: 'plate', label: 'Mounting plate' },
-            { value: 'holes', label: 'Mounting holes' },
-            { value: 'body', label: 'The motor itself' },
-            ...(anyBracket ? [{ value: 'bracket', label: 'L-bracket' }] : []),
+            { value: 'plate', label: tr('Mounting plate') },
+            { value: 'holes', label: tr('Mounting holes') },
+            { value: 'body', label: tr('The motor itself') },
+            ...(anyBracket ? [{ value: 'bracket', label: tr('L-bracket') }] : []),
           ],
         },
-        { key: 'clearance', label: 'Clearance', type: 'number', default: 0.3, min: 0, max: 2, step: 0.05, unit: 'mm', help: 'Added round the bore and any body that passes through. 0.3 mm suits most printers.' },
+        { key: 'clearance', label: tr('Clearance'), type: 'number', default: 0.3, min: 0, max: 2, step: 0.05, unit: 'mm', help: tr('Added round the bore and any body that passes through. 0.3 mm suits most printers.') },
       ],
     },
     {
-      title: 'Plate',
+      title: trx('mount', 'Plate'),
       params: [
-        { key: 'thickness', label: 'Thickness', type: 'number', default: 4, min: 1, max: 30, step: 0.5, unit: 'mm', visible: is('plate', 'bracket') },
-        { key: 'margin', label: 'Margin', type: 'number', default: 6, min: 2, max: 40, step: 0.5, unit: 'mm', help: 'From the bolt holes out to the edge of the plate, when the plate is bigger than the motor face.', visible: is('plate', 'bracket') },
-        { key: 'corner', label: 'Corner radius', type: 'number', default: 3, min: 0, max: 20, step: 0.5, unit: 'mm', visible: is('plate', 'bracket') },
+        { key: 'thickness', label: tr('Thickness'), type: 'number', default: 4, min: 1, max: 30, step: 0.5, unit: 'mm', visible: is('plate', 'bracket') },
+        { key: 'margin', label: tr('Margin'), type: 'number', default: 6, min: 2, max: 40, step: 0.5, unit: 'mm', help: tr('From the bolt holes out to the edge of the plate, when the plate is bigger than the motor face.'), visible: is('plate', 'bracket') },
+        { key: 'corner', label: tr('Corner radius'), type: 'number', default: 3, min: 0, max: 20, step: 0.5, unit: 'mm', visible: is('plate', 'bracket') },
         {
           key: 'boltFit',
-          label: 'Bolt holes',
+          label: tr('Bolt holes'),
           type: 'select',
           default: 'clearance',
-          help: 'Clearance lets the motor screws pass through the plate. Tap makes them cut their own thread, for a plate the motor screws into.',
+          help: tr('Clearance lets the motor screws pass through the plate. Tap makes them cut their own thread, for a plate the motor screws into.'),
           options: [
-            { value: 'clearance', label: 'Clearance' },
-            { value: 'tap', label: 'Tapped' },
+            { value: 'clearance', label: trx('hole', 'Clearance') },
+            { value: 'tap', label: tr('Tapped') },
           ],
           visible: is('plate', 'holes', 'bracket'),
         },
-        { key: 'holeLength', label: 'Length', type: 'number', default: 20, min: 1, max: 100, step: 0.5, unit: 'mm', help: 'Sets the length of the hole cutters.', visible: is('holes') },
+        { key: 'holeLength', label: tr('Length'), type: 'number', default: 20, min: 1, max: 100, step: 0.5, unit: 'mm', help: tr('Sets the length of the hole cutters.'), visible: is('holes') },
       ],
     },
     {
-      title: 'Body',
+      title: tr('Body'),
       params: [
-        { key: 'length', label: 'Body length', type: 'number', default: 0, min: 0, max: 200, step: 0.5, unit: 'mm', help: 'Behind the mounting face. 0 uses the usual length for the motor.', visible: is('body') },
-        { key: 'shaftLength', label: 'Shaft length', type: 'number', default: 0, min: 0, max: 100, step: 0.5, unit: 'mm', help: '0 uses the usual length.', visible: is('body') },
+        { key: 'length', label: tr('Body length'), type: 'number', default: 0, min: 0, max: 200, step: 0.5, unit: 'mm', help: tr('Behind the mounting face. 0 uses the usual length for the motor.'), visible: is('body') },
+        { key: 'shaftLength', label: tr('Shaft length'), type: 'number', default: 0, min: 0, max: 100, step: 0.5, unit: 'mm', help: tr('0 uses the usual length.'), visible: is('body') },
       ],
     },
     {
-      title: 'Foot',
+      title: tr('Foot'),
       params: [
-        { key: 'footLength', label: 'Foot length', type: 'number', default: 30, min: 5, max: 150, step: 1, unit: 'mm', help: 'How far the foot runs back from the upright.', visible: is('bracket') },
+        { key: 'footLength', label: tr('Foot length'), type: 'number', default: 30, min: 5, max: 150, step: 1, unit: 'mm', help: tr('How far the foot runs back from the upright.'), visible: is('bracket') },
         {
           key: 'footScrew',
-          label: 'Foot screws',
+          label: tr('Foot screws'),
           type: 'select',
           default: 'M4',
           options: ['M3', 'M4', 'M5'].map((s) => ({ value: s, label: s })),
           visible: is('bracket'),
         },
-        { key: 'slotLength', label: 'Slot length', type: 'number', default: 10, min: 0, max: 60, step: 1, unit: 'mm', help: 'Slots in the foot let the bracket slide for belt tension; 0 for round holes.', visible: is('bracket') },
-        { key: 'gusset', label: 'Gusset', type: 'boolean', default: true, help: 'A triangular web either side, bracing the upright to the foot.', visible: is('bracket') },
+        { key: 'slotLength', label: tr('Slot length'), type: 'number', default: 10, min: 0, max: 60, step: 1, unit: 'mm', help: tr('Slots in the foot let the bracket slide for belt tension; 0 for round holes.'), visible: is('bracket') },
+        { key: 'gusset', label: tr('Gusset'), type: 'boolean', default: true, help: tr('A triangular web either side, bracing the upright to the foot.'), visible: is('bracket') },
       ],
     },
   ];
@@ -329,12 +330,21 @@ function groups(motors: Motor[]): ParamGroup[] {
 
 // --- build --------------------------------------------------------------------------------
 
+/** The shaft as the inspector describes it: its size, the width across its flat and how far off the middle of the face it is, where it has either. */
+function shaftText(shaft: Motor['shaft']): string {
+  const { d, len, flat, at } = shaft;
+  if (flat && at) return tr('Ø{d} × {len} mm, {flat} mm across the flat, {off} mm off center', { d, len, flat, off: at[0] });
+  if (flat) return tr('Ø{d} × {len} mm, {flat} mm across the flat', { d, len, flat });
+  if (at) return tr('Ø{d} × {len} mm, {off} mm off center', { d, len, off: at[0] });
+  return `Ø${d} × ${len} mm`;
+}
+
 function build(motors: Motor[], p: Params, q: Quality): BuildResult {
   const warnings: string[] = [];
   const m = motors.find((x) => x.id === str(p, 'motor')) ?? motors[0];
   let make = form(p);
   if (make === 'bracket' && !m.bracket) {
-    warnings.push(`An L-bracket does not suit the ${m.label}; a plate is made instead.`);
+    warnings.push(tr('An L-bracket does not suit the {motor}; a plate is made instead.', { motor: m.label }));
     make = 'plate';
   }
   const grow = num(p, 'clearance');
@@ -347,13 +357,16 @@ function build(motors: Motor[], p: Params, q: Quality): BuildResult {
     // Six holes all as far from the shaft as each other lie on a circle of twice that.
     const reach = m.holes.map(([x, y]) => Math.hypot(x, y));
     const ringed = m.holes.length === 6 && reach.every((r) => Math.abs(r - reach[0]) < 1e-6);
-    const span = m.holes.length === 4 && xs.length === 2 && ys.length === 2 ? `${Math.abs(xs[1] - xs[0]).toFixed(2)} × ${Math.abs(ys[1] - ys[0]).toFixed(2)} mm` : m.holes.length === 2 && ys.length === 1 ? `${Math.abs(xs[1] - xs[0]).toFixed(2)} mm apart` : ringed ? `on a ${Number((2 * reach[0]).toFixed(2))} mm circle` : `${m.holes.length} holes`;
-    return `${m.holes.length} × ${m.screw}, ${span}`;
+    const count = m.holes.length;
+    if (count === 4 && xs.length === 2 && ys.length === 2) return `${count} × ${m.screw}, ${Math.abs(xs[1] - xs[0]).toFixed(2)} × ${Math.abs(ys[1] - ys[0]).toFixed(2)} mm`;
+    if (count === 2 && ys.length === 1) return tr('{n} × {screw}, {distance} mm apart', { n: count, screw: m.screw, distance: Math.abs(xs[1] - xs[0]).toFixed(2) });
+    if (ringed) return tr('{n} × {screw}, on a {diameter} mm circle', { n: count, screw: m.screw, diameter: Number((2 * reach[0]).toFixed(2)) });
+    return plural(count, '{n} × {screw}, {n} hole', '{n} × {screw}, {n} holes', { screw: m.screw });
   };
-  if (m.holes.length) info.push({ label: 'Bolt pattern', value: holesText() });
-  if (m.pilot) info.push({ label: 'Pilot', value: `Ø${m.pilot.d} × ${m.pilot.h} mm` });
-  if (m.through) info.push({ label: 'Body through', value: `${m.through.w} × ${m.through.h} mm` });
-  info.push({ label: 'Shaft', value: `Ø${m.shaft.d} × ${m.shaft.len} mm${m.shaft.flat ? `, ${m.shaft.flat} mm across the flat` : ''}${m.shaft.at ? `, ${m.shaft.at[0]} mm off center` : ''}` });
+  if (m.holes.length) info.push({ label: tr('Bolt pattern'), value: holesText() });
+  if (m.pilot) info.push({ label: tr('Pilot'), value: `Ø${m.pilot.d} × ${m.pilot.h} mm` });
+  if (m.through) info.push({ label: tr('Body through'), value: `${m.through.w} × ${m.through.h} mm` });
+  info.push({ label: tr('Shaft'), value: shaftText(m.shaft) });
   const outline: Shape2D = [faceOutline(m, 0, q), ...m.holes.map(([x, y]) => circle(screw.clearance / 2, 24, x, y)), bore(m, 0, q)];
 
   const boltD = str(p, 'boltFit') === 'tap' ? screw.tap : screw.clearance;
@@ -363,7 +376,7 @@ function build(motors: Motor[], p: Params, q: Quality): BuildResult {
     const plate = plateOutline(m, num(p, 'margin'), num(p, 'corner'), q);
     const shape: Shape2D = [plate, ...m.holes.map(([x, y]) => circle(boltD / 2, n, x, y)), bore(m, grow, q)];
     const { min, max } = extentOf(plate);
-    info.push({ label: 'Plate', value: `${(max[0] - min[0]).toFixed(1)} × ${(max[1] - min[1]).toFixed(1)} × ${t} mm` });
+    info.push({ label: trx('mount', 'Plate'), value: `${(max[0] - min[0]).toFixed(1)} × ${(max[1] - min[1]).toFixed(1)} × ${t} mm` });
     if (make === 'plate') return { solid: extrude(shape, t), outline, info, warnings };
 
     // The bracket: the plate stood up on its lower edge, the motor on its -Y side, a slotted foot behind.
@@ -375,7 +388,7 @@ function build(motors: Motor[], p: Params, q: Quality): BuildResult {
     let slotLen = num(p, 'slotLength');
     if (slotLen > footLen - foot) {
       slotLen = Math.max(0, footLen - foot);
-      warnings.push(`The slots were shortened to ${slotLen.toFixed(1)} mm to stay inside the foot.`);
+      warnings.push(tr('The slots were shortened to {length} mm to stay inside the foot.', { length: slotLen.toFixed(1) }));
     }
     const footShape: Shape2D = [roundedRect(0, footLen / 2, W, footLen, Math.min(num(p, 'corner'), footLen / 2 - 0.1), q)];
     const sx = W / 2 - num(p, 'margin');
@@ -397,7 +410,7 @@ function build(motors: Motor[], p: Params, q: Quality): BuildResult {
         pieces.push(translate(rotate(slab, [90, 0, 90]), [s * (W / 2) - (s > 0 ? t : 0), 0, 0]));
       }
     }
-    info.push({ label: 'Foot', value: `${W.toFixed(1)} × ${footLen} mm, ${str(p, 'footScrew')} ${slotLen > 0 ? 'slots' : 'holes'}` });
+    info.push({ label: tr('Foot'), value: slotLen > 0 ? tr('{width} × {length} mm, {screw} slots', { width: W.toFixed(1), length: footLen, screw: str(p, 'footScrew') }) : tr('{width} × {length} mm, {screw} holes', { width: W.toFixed(1), length: footLen, screw: str(p, 'footScrew') }) });
     return { solid: union(...pieces), outline, info, warnings };
   }
 
@@ -405,7 +418,7 @@ function build(motors: Motor[], p: Params, q: Quality): BuildResult {
     const len = num(p, 'holeLength');
     const pins: Solid[] = m.holes.map(([x, y]) => translate(cylinder(boltD / 2, len, n), [x, y, -len / 2]));
     pins.push(translate(extrude([bore(m, grow, q)], len), [0, 0, -len / 2]));
-    info.push({ label: 'Bolt holes', value: `Ø${boltD.toFixed(2)} mm` });
+    info.push({ label: tr('Bolt holes'), value: `Ø${boltD.toFixed(2)} mm` });
     return { solid: union(...pins), outline, info, warnings };
   }
 
@@ -420,8 +433,8 @@ function build(motors: Motor[], p: Params, q: Quality): BuildResult {
   if (m.pilot) pieces.push(translate(cylinder(m.pilot.d / 2, m.pilot.h, n), [...(m.pilot.at ?? [0, 0]), top]));
   const pilotH = m.pilot?.h ?? 0;
   if (shaftLen > pilotH) pieces.push(translate(extrude([shaftSection(m.shaft.d, m.shaft.flat, q)], shaftLen - pilotH), [...(m.shaft.at ?? [0, 0]), top + pilotH]));
-  else warnings.push('The shaft is shorter than the pilot boss, so no shaft is shown.');
-  info.push({ label: 'Body', value: `${m.body.round ? `Ø${m.body.w}` : `${m.body.w} × ${m.body.h}`} × ${below} mm behind the face` });
+  else warnings.push(tr('The shaft is shorter than the pilot boss, so no shaft is shown.'));
+  info.push({ label: tr('Body'), value: tr('{size} × {length} mm behind the face', { size: m.body.round ? `Ø${m.body.w}` : `${m.body.w} × ${m.body.h}`, length: below }) });
   return { solid: union(...pieces), outline, info, warnings };
 }
 
@@ -442,10 +455,10 @@ function family(id: string, name: string, summary: string, motors: Motor[]): Gen
   return { id, name, category: 'motors', summary, groups: groups(motors), build: (p, q) => build(motors, p, q) };
 }
 
-export const stepper = family('stepper-mount', 'Stepper', 'Mounting plate, holes or bracket for a stepper motor.', STEPPERS);
-export const gearmotor = family('gearmotor-mount', 'Gearmotor', 'Mounting plate, holes or bracket for a gearmotor.', GEARMOTORS);
-export const servo = family('servo-mount', 'Servo', 'Mounting plate, holes or bracket for a servo.', SERVOS);
-export const dcMotor = family('dc-motor-mount', 'DC motor', 'Mounting plate, holes or bracket for a DC motor.', DC_MOTORS);
+export const stepper = family('stepper-mount', tr('Stepper'), tr('Mounting plate, holes or bracket for a stepper motor.'), STEPPERS);
+export const gearmotor = family('gearmotor-mount', tr('Gearmotor'), tr('Mounting plate, holes or bracket for a gearmotor.'), GEARMOTORS);
+export const servo = family('servo-mount', tr('Servo'), tr('Mounting plate, holes or bracket for a servo.'), SERVOS);
+export const dcMotor = family('dc-motor-mount', tr('DC motor'), tr('Mounting plate, holes or bracket for a DC motor.'), DC_MOTORS);
 
 export const MOTORS: GeneratorDef[] = [stepper, gearmotor, servo, dcMotor];
 export const ALL_MOTORS: Motor[] = [...STEPPERS, ...GEARMOTORS, ...SERVOS, ...DC_MOTORS];

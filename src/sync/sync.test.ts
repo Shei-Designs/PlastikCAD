@@ -5,14 +5,14 @@ import { emptyDoc, parseDoc, serializeDoc } from '../model/file';
 import { makeShape, newId } from '../model/ops';
 import type { Doc, SceneNode } from '../model/types';
 import { MemoryProjects } from '../state/projects';
-import { DriveRemote } from './drive';
+import { DriveRemote, LARGE_UPLOAD } from './drive';
 import { emptyRobot } from '../robot/types';
 import { bindRecords, MemorySyncState, synchronize } from './engine';
 import type { DeletePlan, Remote, RemoteFile, SyncReport } from './engine';
 import { authUrl, challengeOf, revoke } from './google';
 import { mergeDocs } from './merge';
 
-vi.mock('../platform', () => ({ isDesktop: () => false, isAndroid: () => false, oauthStart: async () => ({ redirect: 'http://127.0.0.1:0/', port: 0 }), oauthWait: async () => '', oauthCancel: async () => {} }));
+vi.mock('../platform', () => ({ isDesktop: () => false, isAndroid: () => false, hasKeychain: () => false, oauthStart: async () => ({ redirect: 'http://127.0.0.1:0/', port: 0 }), oauthWait: async () => '', oauthCancel: async () => {} }));
 
 /** A remote that keeps files in memory and counts what it was asked to do. */
 class FakeRemote implements Remote {
@@ -427,6 +427,23 @@ describe('what a pass must not destroy', () => {
     expect(state.records.get('project1')!.revision).toBe(v2.revision);
   });
 
+  it('keeps what a download or a merge replaces here as an earlier save of the project', async () => {
+    const v1 = design('project1', 'Plate', [box('a')]);
+    const key = await local.write(null, v1.name, serializeDoc(v1));
+    await sync();
+    expect(await local.versions('project1')).toEqual([]);
+    // Changed on the other device only: what was here is kept before the download takes its place.
+    remote.replace(edited(v1, [box('a', -5)]));
+    await sync();
+    const [kept] = await local.versions('project1');
+    expect(parseDoc(await local.read(kept.key)).revision).toBe(v1.revision);
+    expect(parseDoc(await local.read(key)).scene[0].pos[0]).toBe(-5);
+    // An upload replaces nothing here, and keeps nothing.
+    await local.write(key, 'Plate', serializeDoc(edited(parseDoc(await local.read(key)), [box('a', 2)])));
+    await sync();
+    expect((await local.versions('project1')).length).toBe(1);
+  });
+
   it('puts what was deleted elsewhere in the store\'s trash where it has one', async () => {
     const discarded: string[] = [];
     const withTrash = Object.assign(local, { discard: async (k: string) => void (discarded.push(k), await local.remove(k)) });
@@ -568,6 +585,115 @@ describe('Google Drive remote', () => {
     answers.push(() => ({ files: [] }));
     await drive.list();
     expect(calls.length).toBe(5);
+  });
+
+  /** A remote that does not really wait before trying again, and says how long it would have. */
+  const waits: number[] = [];
+  const patient = (): DriveRemote => {
+    waits.length = 0;
+    return new DriveRemote(fetch, undefined, null, async (ms) => void waits.push(ms));
+  };
+  const refusal = (status: number, reason?: string, headers: Record<string, string> = {}): Response =>
+    new Response(JSON.stringify({ error: { message: `no (${status})`, errors: reason ? [{ reason }] : [] } }), { status, headers: { 'content-type': 'application/json', ...headers } });
+  const folder = () => ({ files: [{ id: 'folder1', name: 'PlastikCAD' }] });
+
+  it('tries again after a wait when Google puts a request off, for as long as it asks', async () => {
+    const drive = patient();
+    // Too many requests, with a time to come back at; too fast, said the other way; and a failure on Google's side.
+    answers.push(() => refusal(429, undefined, { 'retry-after': '2' }), () => refusal(403, 'userRateLimitExceeded'), () => refusal(503), folder, () => ({ files: [] }));
+    expect(await drive.list()).toEqual([]);
+    expect(waits.length).toBe(3);
+    expect(waits[0]).toBeGreaterThanOrEqual(2000);
+    expect(waits[0]).toBeLessThan(2300);
+    // With no time asked for: a second, then two, each with a little added.
+    expect(Math.floor(waits[1] / 1000)).toBe(2);
+    expect(Math.floor(waits[2] / 1000)).toBe(4);
+  });
+
+  it('gives up after a few tries, and does not try a real refusal again at all', async () => {
+    const down = patient();
+    for (let i = 0; i < 5; i++) answers.push(() => refusal(503));
+    await expect(down.list()).rejects.toThrow('no (503)');
+    expect(waits.length).toBe(4);
+    const refused = patient();
+    answers.push(() => refusal(403, 'insufficientPermissions'));
+    await expect(refused.list()).rejects.toThrow('no (403)');
+    expect(waits.length).toBe(0);
+  });
+
+  it('tries a request that did not get through again, unless it makes something', async () => {
+    const lost = () => {
+      throw new TypeError('Failed to fetch');
+    };
+    const drive = patient();
+    answers.push(lost, folder, lost, () => ({ files: [] }));
+    expect(await drive.list()).toEqual([]);
+    expect(waits.length).toBe(2);
+    // A new file may have been made although no answer came back: it is left to the next sync, not made twice.
+    answers.push(lost);
+    await expect(drive.upload(null, 'Lid', '{}', { projectId: 'project1', revision: 'r1' })).rejects.toThrow('Failed to fetch');
+    expect(waits.length).toBe(2);
+    // What changes a file that is there can be sent again.
+    answers.push(lost, () => ({ id: 'f1', name: 'Lid.plastikcad', appProperties: { projectId: 'project1', revision: 'r2' } }));
+    const existing = { id: 'f1', name: 'Lid.plastikcad', projectId: 'project1', revision: 'r1', modified: 0 };
+    expect((await drive.upload(existing, 'Lid', '{}', { projectId: 'project1', revision: 'r2' })).revision).toBe('r2');
+  });
+
+  const big = 'x'.repeat(LARGE_UPLOAD + 1000);
+  const session = (): Response => new Response(null, { status: 200, headers: { location: 'https://upload.example/session1' } });
+  const done = () => ({ id: 'f9', name: 'Big.plastikcad', appProperties: { projectId: 'project9', revision: 'r1' } });
+  const lengthOf = (body: unknown): number => (body as Uint8Array).length;
+
+  it('sends a large design through the upload that can be gone on with: what is coming first, then the design', async () => {
+    const drive = patient();
+    answers.push(folder, session, done);
+    const file = await drive.upload(null, 'Big', big, { projectId: 'project9', revision: 'r1' });
+    expect(file).toMatchObject({ id: 'f9', projectId: 'project9', revision: 'r1' });
+    expect(calls[1].url).toContain('/upload/drive/v3/files?uploadType=resumable');
+    expect(calls[1].init?.method).toBe('POST');
+    expect(calls[1].init?.headers).toMatchObject({ 'x-upload-content-length': String(big.length) });
+    expect(JSON.parse(calls[1].init!.body as string)).toMatchObject({ name: 'Big.plastikcad', parents: ['folder1'], appProperties: { projectId: 'project9', revision: 'r1' } });
+    expect(calls[2]).toMatchObject({ url: 'https://upload.example/session1', init: { method: 'PUT' } });
+    expect(lengthOf(calls[2].init?.body)).toBe(big.length);
+    // Over a file that is there: the same, and it stays where it is.
+    answers.push(session, done);
+    await drive.upload(file, 'Big', big, { projectId: 'project9', revision: 'r2' });
+    expect(calls[3].url).toContain('/upload/drive/v3/files/f9?uploadType=resumable');
+    expect(calls[3].init?.method).toBe('PATCH');
+    expect(JSON.parse(calls[3].init!.body as string).parents).toBeUndefined();
+    // A small design goes up in one request, as it always has.
+    answers.push(done);
+    await drive.upload(file, 'Big', '{}', { projectId: 'project9', revision: 'r3' });
+    expect(calls[5].url).toContain('uploadType=multipart');
+    expect(calls.length).toBe(6);
+  });
+
+  it('goes on with a large upload from where it broke off', async () => {
+    const drive = patient();
+    const lost = () => {
+      throw new TypeError('Failed to fetch');
+    };
+    // The connection drops with the first megabyte across; Drive says so when asked, and takes the rest.
+    answers.push(folder, session, lost, () => new Response(null, { status: 308, headers: { range: 'bytes=0-1048575' } }), done);
+    expect((await drive.upload(null, 'Big', big, { projectId: 'project9', revision: 'r1' })).id).toBe('f9');
+    expect(waits.length).toBe(1);
+    expect(calls[3].init?.headers).toMatchObject({ 'content-range': `bytes */${big.length}` });
+    expect(calls[4].init?.headers).toMatchObject({ 'content-range': `bytes 1048576-${big.length - 1}/${big.length}` });
+    expect(lengthOf(calls[4].init?.body)).toBe(big.length - 1048576);
+    // All of it had arrived when the answer was lost: asking is enough.
+    answers.push(session, lost, done);
+    expect((await drive.upload({ id: 'f9', name: 'Big.plastikcad', projectId: 'project9', revision: 'r1', modified: 0 }, 'Big', big, { projectId: 'project9', revision: 'r2' })).id).toBe('f9');
+    // Drive no longer knows the upload: said as it is, for the next sync to start afresh.
+    answers.push(session, () => refusal(503), () => refusal(404));
+    await expect(drive.upload({ id: 'f9', name: 'Big.plastikcad', projectId: 'project9', revision: 'r1', modified: 0 }, 'Big', big, { projectId: 'project9', revision: 'r3' })).rejects.toThrow('Google Drive could not upload Big: no (404)');
+  });
+
+  it('sends a large design in one piece where Drive gives no address to go on with', async () => {
+    const drive = patient();
+    answers.push(folder, () => new Response(null, { status: 200 }), done);
+    expect((await drive.upload(null, 'Big', big, { projectId: 'project9', revision: 'r1' })).id).toBe('f9');
+    expect(calls[2].url).toContain('uploadType=multipart');
+    expect((calls[2].init?.body as string).length).toBeGreaterThan(big.length);
   });
 
   it('keeps the parts in a folder inside the app folder', async () => {

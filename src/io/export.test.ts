@@ -7,6 +7,7 @@ import { exportMesh, exportOutline, FORMATS } from './export';
 import { importFile } from './import';
 import { writeObj } from './obj';
 import { zipTime } from './format';
+import { signedArea } from './outline';
 import { write3mf } from './threemf';
 
 const text = (b: Uint8Array) => new TextDecoder().decode(b);
@@ -75,6 +76,19 @@ const circle = (r: number, n: number): Polygon =>
 
 // Outer contour with one hole.
 const outline: Polygon[] = [circle(10, 24), circle(3, 12).reverse()];
+
+/** Corners on a circle round `c`, from `from` degrees through a quarter turn, in eight sides. */
+const corner = (c: [number, number], from: number): Polygon =>
+  Array.from({ length: 9 }, (_, i): [number, number] => {
+    const a = ((from + (90 * i) / 8) * Math.PI) / 180;
+    return [c[0] + 5 * Math.cos(a), c[1] + 5 * Math.sin(a)];
+  });
+// A plate of 40 by 30 with corners of radius 5 and a hole of radius 4, as the kernel hands it over: all straight sides.
+const plate: Polygon[] = [
+  [...corner([15, -10], -90), ...corner([15, 10], 0), ...corner([-15, 10], 90), ...corner([-15, -10], 180)],
+  Array.from({ length: 48 }, (_, i): [number, number] => [3 + 4 * Math.cos((i * Math.PI) / 24), 2 - 4 * Math.sin((i * Math.PI) / 24)]),
+];
+const PLATE_AREA = 40 * 30 - (4 - Math.PI) * 25;
 
 describe('formats', () => {
   it('lists STL first and has unique ids', () => {
@@ -266,15 +280,19 @@ describe('open meshes', () => {
 });
 
 describe('DXF', () => {
-  it('writes one closed polyline per contour', () => {
+  it('writes a round contour as a circle and any other as one closed polyline', () => {
     const lines = text(exportOutline('dxf', outline, 'ring')).split('\r\n');
     expect(lines[1]).toContain(APP_NAME);
     expect(lines[lines.length - 1]).toBe('');
     expect(lines.slice(-3, -1)).toEqual(['0', 'EOF']);
     const count = (s: string) => lines.filter((l) => l === s).length;
-    expect(count('POLYLINE')).toBe(2);
-    expect(count('SEQEND')).toBe(2);
-    expect(count('VERTEX')).toBe(24 + 12);
+    // The outside, of 24 sides, is a circle; the hole of 12 is a polygon (see arcs.ts).
+    expect(count('CIRCLE')).toBe(1);
+    const circleAt = lines.indexOf('CIRCLE');
+    expect(lines.slice(circleAt + 1, circleAt + 11)).toEqual(['8', 'OUTLINE', '10', '0', '20', '0', '30', '0', '40', '10']);
+    expect(count('POLYLINE')).toBe(1);
+    expect(count('SEQEND')).toBe(1);
+    expect(count('VERTEX')).toBe(12);
     expect(count('$INSUNITS')).toBe(1);
     // Group codes and values strictly alternate.
     expect((lines.length - 1) % 2).toBe(0);
@@ -288,8 +306,26 @@ describe('DXF', () => {
         expect(header.slice(header.indexOf('70'), header.indexOf('70') + 2)).toEqual(['70', '1']);
       } else if (lines[i + 1] === 'VERTEX') sizes[sizes.length - 1]++;
     }
-    expect(sizes).toEqual([24, 12]);
+    expect(sizes).toEqual([12]);
     expect(lines).toContain('10');
+  });
+
+  it('writes the rounded corners of a plate as bulges, which read back as the plate', () => {
+    const lines = text(exportOutline('dxf', plate, 'plate')).split('\r\n');
+    // Four corners of a quarter turn each, counterclockwise: tan(90° / 4).
+    const bulges = lines.flatMap((l, i) => (l === '42' && i % 2 === 0 ? [Number(lines[i + 1])] : []));
+    expect(bulges).toHaveLength(4);
+    for (const b of bulges) expect(b).toBeCloseTo(Math.tan(Math.PI / 8), 8);
+    // Eight vertices: where each straight side and each corner begins.
+    expect(lines.filter((l) => l === 'VERTEX')).toHaveLength(8);
+    expect(lines.filter((l) => l === 'CIRCLE')).toHaveLength(1);
+    const back = importFile('plate.dxf', exportOutline('dxf', plate, 'plate'));
+    if (back.kind !== 'outline') throw new Error('expected an outline');
+    const area = back.parts.flatMap((p) => p.shapes.flatMap((s) => s.contours)).map((c) => Math.abs(signedArea(c)));
+    // The true areas, which the corners cut into 8 and 48 sides fall short of: a reader that draws the arcs comes closer.
+    expect(area.sort((a, b) => a - b)[0]).toBeCloseTo(Math.PI * 16, 0);
+    expect(area.sort((a, b) => a - b)[1]).toBeCloseTo(PLATE_AREA, 0);
+    expect(Math.abs(area[1] - PLATE_AREA)).toBeLessThan(Math.abs(Math.abs(signedArea(plate[0])) - PLATE_AREA));
   });
 
   it('copes with an empty outline', () => {
@@ -300,6 +336,22 @@ describe('DXF', () => {
 });
 
 describe('SVG', () => {
+  it('writes the rounded corners of a plate as arcs, which read back as the plate', () => {
+    const svg = text(exportOutline('svg', plate, 'plate'));
+    const d = /<path d="([^"]+)"/.exec(svg)![1];
+    // Four corners and the two halves of the hole.
+    expect(d.match(/A/g)?.length).toBe(6);
+    expect(d).toContain('A5 5 0 0 0 ');
+    expect(d).toContain('A4 4 0 1 0 ');
+    const back = importFile('plate.svg', exportOutline('svg', plate, 'plate'));
+    if (back.kind !== 'outline') throw new Error('expected an outline');
+    const area = back.parts.flatMap((p) => p.shapes.flatMap((s) => s.contours)).map((c) => Math.abs(signedArea(c))).sort((a, b) => a - b);
+    expect(area[0]).toBeCloseTo(Math.PI * 16, 0);
+    expect(area[1]).toBeCloseTo(PLATE_AREA, 0);
+    // Bulging outwards, as the corners do: an arc drawn the wrong way round would cut them off.
+    expect(area[1]).toBeGreaterThan(Math.abs(signedArea(plate[0])));
+  });
+
   it('fits the viewBox and writes one subpath per contour', () => {
     const svg = text(exportOutline('svg', outline, 'ring'));
     expect(svg).toContain('viewBox="-11 -11 22 22"');
@@ -309,7 +361,10 @@ describe('SVG', () => {
     const d = /<path d="([^"]+)"/.exec(svg)![1];
     expect(d.match(/M/g)?.length).toBe(2);
     expect(d.match(/Z/g)?.length).toBe(2);
-    expect(d.match(/L/g)?.length).toBe(24 + 12 - 2);
+    // The outside is a circle, as two half circles; the hole of 12 sides is drawn side by side, the last by Z.
+    expect(d.match(/A/g)?.length).toBe(2);
+    expect(d).toContain('M10 0 A10 10 0 1 0 -10 0 A10 10 0 1 0 10 0 Z');
+    expect(d.match(/L/g)?.length).toBe(12 - 1);
     // Y is flipped: the outline point (0, 10) lands at y = -10.
     const asym: Polygon[] = [[[0, 0], [4, 0], [0, 10]]];
     const flipped = text(exportOutline('svg', asym, 'tri'));

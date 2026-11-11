@@ -3,6 +3,7 @@
 // and says when it changes (a keyboard docked or undocked, the keypad coming
 // up); everywhere else there is a keyboard. Boxes tapped with a finger type
 // in place when there is a keyboard and open the entry sheet when there is not.
+import { useSyncExternalStore } from 'react';
 import { addPluginListener, invoke } from '@tauri-apps/api/core';
 import { isAndroid } from '../platform';
 
@@ -56,3 +57,21 @@ export function onInputChange(listener: (state: InputState) => void): () => void
 
 /** For tests and the browser: pretends the plugin said so. */
 export const setInputState = (next: InputState): void => take(next);
+
+/** For React: whether there is a keyboard, kept up to date as one is docked or taken away. */
+export const useKeyboardAttached = (): boolean => useSyncExternalStore(onInputChange, keyboardAttached);
+
+const COARSE = '(pointer: coarse)';
+
+/** Whether the pointer is a finger rather than a mouse. */
+const coarsePointer = (): boolean => typeof matchMedia === 'function' && matchMedia(COARSE).matches;
+
+function onPointerChange(listener: () => void): () => void {
+  if (typeof matchMedia !== 'function') return () => {};
+  const query = matchMedia(COARSE);
+  query.addEventListener('change', listener);
+  return () => query.removeEventListener('change', listener);
+}
+
+/** For React: whether the pointer is a finger, kept up to date as a mouse or trackpad comes and goes. */
+export const useCoarsePointer = (): boolean => useSyncExternalStore(onPointerChange, coarsePointer);

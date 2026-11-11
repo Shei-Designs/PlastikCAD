@@ -15,6 +15,7 @@ vi.mock('./geometry', () => ({
 }));
 vi.mock('../ui/ask', () => ({ askName: async (o: { value: string }) => o.value, tell: async (o: { actions: string[] }) => o.actions[0] }));
 vi.mock('../platform', () => ({
+  hasKeychain: () => false,
   isDesktop: () => true,
   isAndroid: () => false,
   confirm: async () => moveThem,
@@ -39,7 +40,8 @@ vi.mock('../platform', () => ({
 }));
 
 const store = await import('./store');
-const names = (dir: string): string[] => [...files.keys()].filter((p) => p.startsWith(`${dir}/`)).map((p) => p.slice(dir.length + 1)).sort();
+/** The projects directly in a folder; `inside` for everything below it, the earlier saves and the trash too. */
+const names = (dir: string, inside = false): string[] => [...files.keys()].filter((p) => p.startsWith(`${dir}/`)).map((p) => p.slice(dir.length + 1)).filter((n) => inside || !n.includes('/')).sort();
 
 beforeEach(async () => {
   files.clear();
@@ -65,6 +67,9 @@ describe('changing the projects folder', () => {
     await store.saveProject();
     expect(names(HOME)).toEqual([]);
     expect(names('/mnt/usb')).toEqual(['Kept.plastikcad', 'Open.plastikcad']);
+    // The earlier saves kept of them came along: nothing is left in the old folder at all.
+    expect(names(HOME, true)).toEqual([]);
+    expect(names('/mnt/usb', true).filter((n) => n.startsWith('History/')).length).toBeGreaterThan(0);
   });
 
   it('leaves the projects where they are when asked to, the open one too, and starts afresh in the new folder', async () => {

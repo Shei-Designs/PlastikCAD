@@ -1,11 +1,11 @@
 // Files brought into the design: models, drawings and pictures as objects on
 // the plate, and a URDF as a robot.
 import { isDesignName } from '../../appInfo';
-import { encodeFloat32, encodeUint32 } from '../../io/base64';
-import { centerMesh, centerOutline, fileKind, IMAGE_EXTENSIONS, IMPORT_EXTENSIONS, importFile } from '../../io/import';
+import { plural, tr } from '../../i18n';
+import { fileKind, IMAGE_EXTENSIONS, IMPORT_EXTENSIONS } from '../../io/import';
 import { meshPath, parseUrdf, urdfMeshFiles } from '../../io/importUrdf';
 import { bytesToBase64 } from '../../io/base64';
-import { emptyDoc } from '../../model/file';
+import { isUntitled } from '../../model/file';
 import { hashString } from '../../model/geomKey';
 import { tidyVec } from '../../model/math';
 import { newId, uniqueName } from '../../model/ops';
@@ -14,7 +14,11 @@ import * as platform from '../../platform';
 import type { PickedFile } from '../../platform';
 import { robotOf } from '../../robot/model';
 import type { Robot } from '../../robot/types';
-import { abortAlignPreview, commit, fail, getState, notify, record, replaceState, set } from './core';
+import { tell } from '../../ui/ask';
+import { Cancelled } from '../../worker/client';
+import type { ImportResult } from '../../worker/importing';
+import { geometry } from '../geometry';
+import { abortAlignPreview, commit, endWork, fail, getState, notify, record, replaceState, set, startWork } from './core';
 import { stopAligning } from './tools';
 import { buildGroup } from './groups';
 import { baseName, extension, folderOf, importProjectFile } from './project';
@@ -23,66 +27,120 @@ import { enterRobotMode } from './robot';
 /** The default color of an imported object that brought none. */
 const IMPORT_COLOR = '#8fa3bf';
 
+/** What a file comes to once it has been read: never the question about its unit, which `readModel` settles. */
+type Read = Exclude<ImportResult, { kind: 'units' }>;
+
+/** A size for a sentence: three figures at most, written the one way every language here writes numbers. */
+const figure = (v: number): string => String(Number(v.toPrecision(3)));
+
+/**
+ * Asks which unit a file was made in that names none and comes out tiny as
+ * millimeters. Resolves with the unit in millimeters; backing out keeps millimeters.
+ */
+async function askUnit(name: string, extent: Vec3): Promise<number> {
+  const meters = tr('Meters');
+  const inches = tr('Inches');
+  const centimeters = tr('Centimeters');
+  const chosen = await tell({
+    title: tr('Import'),
+    text: tr('"{name}" does not say which unit it was made in. As millimeters it is {size} mm. Which unit is it in?', { name, size: extent.map(figure).join(' × ') }),
+    actions: [meters, inches, centimeters, tr('Millimeters')],
+  });
+  return chosen === meters ? 1000 : chosen === inches ? 25.4 : chosen === centimeters ? 10 : 1;
+}
+
+/**
+ * Reads a model or drawing in the geometry worker, with the files it names
+ * (an OBJ's material library, its pictures). Those not picked with it are
+ * read from beside it on disk; on Android or in the browser, where the picker
+ * grants one file at a time, the user is asked to pick them. Two rounds at
+ * most: the library, then what it names. Resolves with what was read and the
+ * companions as they stand, for the files that follow.
+ */
+async function readModel(file: PickedFile, companions: PickedFile[]): Promise<{ data: Read; companions: PickedFile[] }> {
+  // Only an OBJ or a .gltf is read a second time, with the files it turned out to name; anything else hands its bytes over.
+  const kind = fileKind(file.name, file.bytes);
+  const obj = kind === 'obj' || kind === 'gltf';
+  let scale: number | undefined;
+  const read = async (found: PickedFile[]): Promise<Read> => {
+    const worker = geometry.worker();
+    const result = await worker.import(file, found, { scale, handOver: !obj });
+    if (result.kind !== 'units') return result;
+    scale = await askUnit(file.name, result.extent);
+    return (await worker.importHeld(result.held, scale)) as Read;
+  };
+  let found = companions;
+  let data = await read(found);
+  for (let round = 0; obj && round < 2; round++) {
+    const missing = data.kind === 'model' ? data.missing : [];
+    if (missing.length === 0) break;
+    // A .gltf with its buffers elsewhere has no shapes until they come: there is no importing it without.
+    const more = await findCompanions(file, missing, data.kind === 'model' && data.parts.length === 0);
+    if (more.length === 0) break;
+    found = [...found, ...more];
+    data = await read(found);
+  }
+  return { data, companions: found };
+}
+
+/**
+ * The files a model names that did not come with it: from beside it on disk, or picked by the user;
+ * none if they are not to be had. `needed` when the model has no shapes without them.
+ */
+async function findCompanions(file: PickedFile, missing: string[], needed: boolean): Promise<PickedFile[]> {
+  const more: PickedFile[] = [];
+  // Beside the file on disk, where the file's place is known (a path; on Android, a document of the
+  // app's own, such as its exports, which the app may read by path).
+  const real = file.path ? await platform.realPath(file.path) : null;
+  if (real) {
+    const dir = real.slice(0, Math.max(real.lastIndexOf('/'), real.lastIndexOf('\\')) + 1);
+    for (const name of missing) {
+      // A library the file names, or failing that one named after the file, as the exporters write them.
+      const candidates = extension(name) === 'mtl' ? [name, `${baseName(file.name)}.mtl`] : [name];
+      for (const candidate of new Set(candidates)) {
+        const read = await platform.readPath(dir + candidate).catch(() => null);
+        if (read) {
+          // Under the name the file asked for, so the import finds it.
+          more.push(candidate === name ? read : { ...read, name });
+          break;
+        }
+      }
+    }
+  }
+  if (more.length === 0 && (!file.path || file.path.includes('://'))) {
+    const named = { file: file.name, list: missing.map((n) => tr('"{name}"', { name: n })).join(', ') };
+    const question = needed
+      ? plural(missing.length, '"{file}" keeps its shapes and pictures in {list}. Pick it now?', '"{file}" keeps its shapes and pictures in {list}. Pick them now?', named)
+      : missing.some((n) => extension(n) !== 'mtl')
+      ? plural(
+          missing.length,
+          '"{file}" names {list} for its colors and pictures. Pick it now, or import the shapes without?',
+          '"{file}" names {list} for its colors and pictures. Pick them now, or import the shapes without?',
+          named,
+        )
+      : plural(missing.length, '"{file}" names {list} for its colors. Pick it now, or import the shapes without?', '"{file}" names {list} for its colors. Pick them now, or import the shapes without?', named);
+    const ok = await platform.confirm(question, {
+      title: tr('Import'),
+      okLabel: tr('Pick'),
+      cancelLabel: needed ? tr('Cancel') : tr('Without'),
+    });
+    if (!ok) return [];
+    const picked = await platform.pickFiles({
+      filters: [needed ? { name: tr('Model data and pictures'), extensions: ['bin', ...IMAGE_EXTENSIONS] } : { name: tr('Material libraries and pictures'), extensions: ['mtl', ...IMAGE_EXTENSIONS] }],
+      multiple: true,
+    });
+    more.push(...picked);
+  }
+  return more;
+}
+
 /**
  * Turn imported files into objects standing on the plate, side by side. A
  * file of several parts (the objects of a 3MF, the materials of an OBJ or
  * GLB) becomes one group, its parts where the file put them, each in its own
- * color. Returns the names of the companion files the models used up.
+ * color. The files are read in the geometry worker, one after the other.
+ * Returns the names of the companion files the models used up.
  */
-/**
- * The files a model names (an OBJ's material library, its pictures) that were
- * not picked with it. Beside a file on disk they are read from there; on
- * Android or in the browser, where the picker grants one file at a time, the
- * user is asked to pick them. Two rounds at most: the library, then what it names.
- */
-async function withCompanions(file: PickedFile, companions: PickedFile[]): Promise<PickedFile[]> {
-  if (fileKind(file.name, file.bytes) !== 'obj') return companions;
-  let found = companions;
-  for (let round = 0; round < 2; round++) {
-    let missing: string[];
-    try {
-      const data = importFile(file.name, file.bytes, found);
-      missing = data.kind === 'model' ? (data.missing ?? []) : [];
-    } catch {
-      return found;
-    }
-    if (missing.length === 0) return found;
-    const more: PickedFile[] = [];
-    // Beside the file on disk, where the file's place is known (a path; on Android, a document of the
-    // app's own, such as its exports, which the app may read by path).
-    const real = file.path ? await platform.realPath(file.path) : null;
-    if (real) {
-      const dir = real.slice(0, Math.max(real.lastIndexOf('/'), real.lastIndexOf('\\')) + 1);
-      for (const name of missing) {
-        // A library the file names, or failing that one named after the file, as the exporters write them.
-        const candidates = extension(name) === 'mtl' ? [name, `${baseName(file.name)}.mtl`] : [name];
-        for (const candidate of new Set(candidates)) {
-          const read = await platform.readPath(dir + candidate).catch(() => null);
-          if (read) {
-            // Under the name the file asked for, so the import finds it.
-            more.push(candidate === name ? read : { ...read, name });
-            break;
-          }
-        }
-      }
-    }
-    if (more.length === 0 && (!file.path || file.path.includes('://'))) {
-      const list = missing.map((n) => `"${n}"`).join(', ');
-      const ok = await platform.confirm(`"${file.name}" names ${list} for its colors${missing.some((n) => extension(n) !== 'mtl') ? ' and pictures' : ''}. Pick ${missing.length === 1 ? 'it' : 'them'} now, or import the shapes without?`, {
-        title: 'Import',
-        okLabel: 'Pick',
-        cancelLabel: 'Without',
-      });
-      if (!ok) return found;
-      const picked = await platform.pickFiles({ filters: [{ name: 'Material libraries and pictures', extensions: ['mtl', ...IMAGE_EXTENSIONS] }], multiple: true });
-      more.push(...picked);
-    }
-    if (more.length === 0) return found;
-    found = [...found, ...more];
-  }
-  return found;
-}
-
 async function importModels(files: PickedFile[], companions: PickedFile[]): Promise<Set<string>> {
   const used = new Set<string>();
   const assets = { ...getState().doc.assets };
@@ -95,14 +153,18 @@ async function importModels(files: PickedFile[], companions: PickedFile[]): Prom
     placed.push(node);
     scene = [...scene, node];
   };
-  // One file that cannot be read does not take the others with it; it is named in what is said afterwards.
+  // One file that cannot be read does not take the others with it; it is named in what is said afterwards,
+  // as is whatever a file holds that was left out.
   const failed: string[] = [];
-  for (const file of files) {
+  const named = (file: PickedFile, message: string): string => (message.includes(file.name) ? message : tr('{name}: {message}', { name: file.name, message }));
+  for (const [i, file] of files.entries()) {
+    if (files.length > 1) startWork(tr('Importing {n} of {total}…', { n: i + 1, total: files.length }));
     try {
       await bring(file);
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      failed.push(message.includes(file.name) ? message : `${file.name}: ${message}`);
+      // Called off: nothing of this import is kept.
+      if (e instanceof Cancelled) throw e;
+      failed.push(named(file, e instanceof Error ? e.message : String(e)));
     }
   }
   if (placed.length === 0 && failed.length) throw new Error(failed.join(' '));
@@ -115,23 +177,21 @@ async function importModels(files: PickedFile[], companions: PickedFile[]): Prom
   return used;
 
   async function bring(file: PickedFile): Promise<void> {
-    companions = await withCompanions(file, companions);
-    const data = importFile(file.name, file.bytes, companions);
     const name = uniqueName(scene, baseName(file.name));
+    const read = await readModel(file, companions);
+    companions = read.companions;
+    const { data } = read;
     const members: ImportNode[] = [];
     if (data.kind === 'model') {
       for (const n of data.used) used.add(n);
       for (const part of data.parts) {
-        const { size, center } = centerMesh(part.mesh);
-        const asset: Asset = { kind: 'mesh', positions: encodeFloat32(part.mesh.positions), triangles: encodeUint32(part.mesh.triangles) };
-        if (part.mesh.uv) asset.uv = encodeFloat32(part.mesh.uv);
-        const node = importNode(assets, asset, part.name, tidyVec(size), tidyVec(size), part.color);
+        const node = importNode(assets, part.key, part.asset, part.name, tidyVec(part.size), tidyVec(part.size), part.color);
         if (!node) continue;
-        node.pos = tidyVec(center);
+        node.pos = tidyVec(part.center);
         if (part.image) {
           const key = await addImage({ name: part.image.name, path: null, bytes: part.image.bytes }, part.image.mime);
           assets[key] = getState().doc.assets[key];
-          node.texture = { asset: key, mode: part.mesh.uv ? 'own' : 'wrap', scale: 50, turn: 0 };
+          node.texture = { asset: key, mode: part.asset.uv ? 'own' : 'wrap', scale: 50, turn: 0 };
           // A textured part with no color of its own shows its picture's fill, which is what its corner holds.
           if (!part.color) node.color = (await cornerColor(part.image.bytes, part.image.mime)) ?? node.color;
         }
@@ -139,15 +199,19 @@ async function importModels(files: PickedFile[], companions: PickedFile[]): Prom
       }
     } else {
       for (const part of data.parts) {
-        const { size, center } = centerOutline(part);
         // Flat artwork comes in as a plate a few millimeters thick.
-        const node = importNode(assets, { kind: 'outline', shapes: part.shapes }, name, tidyVec([size[0], size[1], 1]), tidyVec([size[0], size[1], 3]), part.color);
+        const node = importNode(assets, part.key, part.asset, name, tidyVec([part.size[0], part.size[1], 1]), tidyVec([part.size[0], part.size[1], 3]), part.color);
         if (!node) continue;
-        node.pos = tidyVec([center[0], center[1], 1.5]);
+        node.pos = tidyVec([part.center[0], part.center[1], 1.5]);
         members.push(node);
       }
     }
-    if (members.length === 0) throw new Error(`"${file.name}" is flat or empty, so it cannot be made into a solid.`);
+    if (data.kind === 'model' && data.parts.length === 0 && data.missing.length) {
+      const list = data.missing.map((n) => tr('"{name}"', { name: n })).join(', ');
+      throw new Error(plural(data.missing.length, '"{file}" keeps its shapes in {list}, which did not come along. Pick it together with the file.', '"{file}" keeps its shapes in {list}, which did not come along. Pick them together with the file.', { file: file.name, list }));
+    }
+    if (members.length === 0) throw new Error(tr('"{name}" is flat or empty, so it cannot be made into a solid.', { name: file.name }));
+    for (const warning of data.warnings) failed.push(named(file, warning));
     if (members.length === 1) {
       members[0].name = name;
       put(members[0]);
@@ -155,19 +219,20 @@ async function importModels(files: PickedFile[], companions: PickedFile[]): Prom
     }
     // The assets must be in the design before the kernel can measure the parts.
     replaceState({ ...getState(), doc: { ...getState().doc, assets } });
-    const group = await buildGroup(members, false, name).catch(() => null);
+    const group = await buildGroup(members, false, name).catch((e: unknown) => {
+      if (e instanceof Cancelled) throw e;
+      return null;
+    });
     // Parts that cannot be combined (an open mesh among them) stand on their own.
     if (group) put(group);
     else for (const node of members) put(node);
   }
 }
 
-/** An imported object over an asset, which is kept in `assets` under a key made from its contents; null if it has no extent. */
-function importNode(assets: Record<string, Asset>, asset: Asset, name: string, natural: Vec3, size: Vec3, color: string | undefined): ImportNode | null {
+/** An imported object over an asset, which is kept in `assets` under `key` (made from its contents, so the same thing twice is kept once); null if it has no extent. */
+function importNode(assets: Record<string, Asset>, key: string, asset: Asset, name: string, natural: Vec3, size: Vec3, color: string | undefined): ImportNode | null {
   // Checked as stored: a hair of an extent rounds away to nothing.
   if (!natural.every((v) => v > 0)) return null;
-  const text = asset.kind === 'mesh' ? asset.positions + asset.triangles + (asset.uv ?? '') : JSON.stringify(asset);
-  const key = `${asset.kind}-${hashString(text)}-${text.length.toString(36)}`;
   assets[key] = asset;
   return {
     id: newId(),
@@ -281,7 +346,7 @@ async function importPictures(files: PickedFile[]): Promise<void> {
 /** Pick a picture file for a texture and keep it in the design. Returns its key, or null if canceled. */
 export async function pickImage(): Promise<string | null> {
   try {
-    const files = await platform.pickFiles({ filters: [{ name: 'Pictures', extensions: IMAGE_EXTENSIONS }] });
+    const files = await platform.pickFiles({ filters: [{ name: tr('Pictures'), extensions: IMAGE_EXTENSIONS }] });
     if (!files.length) return null;
     const key = await addImage(files[0]);
     set({});
@@ -304,25 +369,24 @@ export async function receiveFiles(files: PickedFile[]): Promise<void> {
     const models = files.filter((f) => IMPORT_EXTENSIONS.includes(fileKind(f.name, f.bytes)));
     const pictures = files.filter((f) => IMAGE_EXTENSIONS.includes(fileKind(f.name, f.bytes)));
     if (models.length === 0 && pictures.length === 0) {
-      if (files.some((f) => extension(f.name) === 'mtl')) notify('A .mtl file holds the colors of an OBJ and is read with it: pick the .obj, together with the .mtl for its colors.', 'error');
-      else if (files.length) notify(`Cannot import that. Supported: ${IMPORTABLE.map((e) => e.toUpperCase()).join(', ')}.`, 'error');
+      if (files.some((f) => extension(f.name) === 'mtl')) notify(tr('A .mtl file holds the colors of an OBJ and is read with it: pick the .obj, together with the .mtl for its colors.'), 'error');
+      else if (files.length) notify(tr('Cannot import that. Supported: {formats}.', { formats: IMPORTABLE.map((e) => e.toUpperCase()).join(', ') }), 'error');
       return;
     }
-    set({ busy: 'Importing…' });
-    // Let the "Importing…" badge paint before the parser blocks the thread.
-    await new Promise((r) => setTimeout(r, 30));
+    startWork(tr('Importing…'));
+    // A model is read with the files beside it (a material library, its pictures), never with the other models.
+    const used = models.length ? await importModels(models, files.filter((f) => !models.includes(f))) : new Set<string>();
     // A picture a model used for its texture is not also a picture sheet.
-    const used = models.length ? await importModels(models, files) : new Set<string>();
     const sheets = pictures.filter((f) => !used.has(f.name));
     if (sheets.length) await importPictures(sheets);
   } catch (e) {
     fail(e);
   } finally {
-    set({ busy: null });
+    endWork();
   }
 }
 
-const URDF_FILTER = [{ name: 'URDF robot', extensions: ['urdf'] }];
+const URDF_FILTER = [{ name: tr('URDF robot'), extensions: ['urdf'] }];
 
 /** "Import URDF…" in Robot mode: brings a robot's links, joints, sensors and meshes into the design. */
 export async function importRobotFile(): Promise<void> {
@@ -373,17 +437,25 @@ async function urdfCompanions(file: PickedFile, companions: PickedFile[]): Promi
  * takes the robot's name when it was empty and unnamed.
  */
 async function importRobot(file: PickedFile, companions: PickedFile[]): Promise<void> {
-  set({ busy: 'Importing…' });
+  set({ busy: tr('Importing…') });
   await new Promise((r) => setTimeout(r, 30));
   try {
     let found = await urdfCompanions(file, companions);
     let imported = parseUrdf(file.bytes, found);
     if (imported.missing.length) {
-      const names = imported.missing.map((m) => `"${meshPath(m).split('/').pop()}"`);
-      const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
-      const ok = await platform.confirm(`"${file.name}" draws its links with ${list}, which did not come along. Pick ${names.length === 1 ? 'it' : 'them'} now, or import without?`, { title: 'Import', okLabel: 'Pick', cancelLabel: 'Without' });
+      const names = imported.missing.map((m) => tr('"{name}"', { name: String(meshPath(m).split('/').pop()) }));
+      const list = names.length === 1 ? names[0] : tr('{names} and {last}', { names: names.slice(0, -1).join(', '), last: names[names.length - 1] });
+      const ok = await platform.confirm(
+        plural(
+          names.length,
+          '"{file}" draws its links with {list}, which did not come along. Pick it now, or import without?',
+          '"{file}" draws its links with {list}, which did not come along. Pick them now, or import without?',
+          { file: file.name, list },
+        ),
+        { title: tr('Import'), okLabel: tr('Pick'), cancelLabel: tr('Without') },
+      );
       if (ok) {
-        const picked = await platform.pickFiles({ filters: [{ name: 'Meshes', extensions: [...IMPORT_EXTENSIONS, 'mtl'] }], multiple: true });
+        const picked = await platform.pickFiles({ filters: [{ name: tr('Meshes'), extensions: [...IMPORT_EXTENSIONS, 'mtl'] }], multiple: true });
         if (picked.length) {
           found = [...found, ...picked];
           imported = parseUrdf(file.bytes, found);
@@ -403,12 +475,17 @@ async function importRobot(file: PickedFile, companions: PickedFile[]): Promise<
     };
     const drive = robot.drive ?? imported.robot.drive;
     if (drive) merged.drive = drive;
-    const name = getState().doc.scene.length === 0 && getState().doc.name === emptyDoc().name ? imported.name : getState().doc.name;
+    const name = getState().doc.scene.length === 0 && isUntitled(getState().doc.name) ? imported.name : getState().doc.name;
     record();
     set({ doc: { ...getState().doc, name, scene: [...getState().doc.scene, ...imported.scene], assets: { ...getState().doc.assets, ...imported.assets }, robot: merged }, selection: [], joint: null, sensor: null, jointPick: null, pose: null, placing: null });
     if (!getState().robot) enterRobotMode();
     const links = imported.scene.length;
-    const summary = `Imported ${links} link${links === 1 ? '' : 's'} and ${imported.robot.joints.length} joint${imported.robot.joints.length === 1 ? '' : 's'} from ${file.name}.`;
+    // Two counts in one sentence: each is worded with its noun, and the sentence takes the two.
+    const summary = tr('Imported {links} and {joints} from {file}.', {
+      links: plural(links, '{n} link', '{n} links'),
+      joints: plural(imported.robot.joints.length, '{n} joint', '{n} joints'),
+      file: file.name,
+    });
     if (imported.warnings.length) notify(`${summary} ${imported.warnings.join(' ')}`, 'error');
     else notify(summary, 'ok');
   } finally {
@@ -419,7 +496,7 @@ async function importRobot(file: PickedFile, companions: PickedFile[]): Promise<
 export async function importModel(): Promise<void> {
   try {
     const files = await platform.pickFiles({
-      filters: [{ name: 'Models, drawings and pictures', extensions: IMPORTABLE }],
+      filters: [{ name: tr('Models, drawings and pictures'), extensions: IMPORTABLE }],
       multiple: true,
     });
     if (files.length) await receiveFiles(files);

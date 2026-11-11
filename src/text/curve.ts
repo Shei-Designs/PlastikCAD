@@ -4,6 +4,7 @@
 // extruded along Z with the reading face toward +Z) and move every point of
 // it; the kernel does this to the mesh, and the editor uses the same sums to
 // know the bent box before the mesh is back.
+import { tr, trx } from '../i18n';
 import type { Vec2, Vec3 } from '../model/types';
 
 /**
@@ -22,9 +23,9 @@ export interface TextCurve {
 }
 
 export const CURVE_KINDS: { id: TextCurve['kind'] | 'none'; label: string; title: string }[] = [
-  { id: 'none', label: 'Straight', title: 'Lays the letters in a line.' },
-  { id: 'bend', label: 'Round', title: 'Bends the letters round a cylinder.' },
-  { id: 'arc', label: 'Arc', title: 'Lays the letters along an arc in their own plane.' },
+  { id: 'none', label: trx('lettering', 'Straight'), title: tr('Lays the letters in a line.') },
+  { id: 'bend', label: trx('lettering', 'Round'), title: tr('Bends the letters round a cylinder.') },
+  { id: 'arc', label: tr('Arc'), title: tr('Lays the letters along an arc in their own plane.') },
 ];
 
 /** Angles the curve can take: short of a full circle, where the ends would meet. */

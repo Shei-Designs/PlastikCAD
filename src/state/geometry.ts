@@ -6,7 +6,7 @@ import { apply, boxBounds, emptyBounds, expandBounds, nodeMatrix, squareTurn } f
 import type { Bounds } from '../model/math';
 import type { Asset, Scene, SceneNode, TextNode } from '../model/types';
 import { fontReady, loadFont, outlineOf } from '../text/fonts';
-import { GeometryClient } from '../worker/client';
+import { Cancelled, GeometryClient } from '../worker/client';
 import type { BuildResult } from '../worker/protocol';
 
 export type GeomEntry = { state: 'pending' } | { state: 'ready'; result: BuildResult } | { state: 'error'; message: string };
@@ -38,6 +38,10 @@ class GeometryStore {
   /** Whether outlines of lettering have gone to the worker since the ones out of use were last let go. */
   private lettered = false;
 
+  /** Who is told when the number of builds under way changes (see `getBuilding`). */
+  private buildingListeners = new Set<() => void>();
+  private building = 0;
+
   /** The worker is started on first use. */
   worker(): GeometryClient {
     this.client ??= new GeometryClient();
@@ -51,6 +55,29 @@ class GeometryStore {
 
   /** Changes whenever an entry does; lets React re-render on arrival of geometry. */
   readonly getRevision = (): number => this.revision;
+
+  readonly subscribeBuilding = (listener: () => void): (() => void) => {
+    this.buildingListeners.add(listener);
+    return () => this.buildingListeners.delete(listener);
+  };
+
+  /** How many objects are being built or waiting their turn: what the screen says while a large design comes up. */
+  readonly getBuilding = (): number => this.building;
+
+  private countBuilding(): void {
+    const count = this.inFlight.size + this.deferred.size;
+    if (count === this.building) return;
+    this.building = count;
+    for (const l of this.buildingListeners) l();
+  }
+
+  /**
+   * Calls off the work the worker is doing for someone who is waiting on it (an import, an export,
+   * a group being made). The objects on the plate that were being built are simply built again.
+   */
+  cancel(): void {
+    this.client?.cancel();
+  }
 
   get(node: SceneNode): GeomEntry | undefined {
     return this.entries.get(geomKey(node));
@@ -91,6 +118,7 @@ class GeometryStore {
       }
       this.start(node.id, key, node);
     }
+    this.countBuilding();
     if (this.lettered) {
       // Every change to a label's words leaves its outlines with the worker; the ones no longer shown are let go.
       this.lettered = false;
@@ -117,6 +145,7 @@ class GeometryStore {
       this.worker().syncAssets(assets);
       this.entries.set(key, { state: 'pending' });
       this.start(node.id, key, node);
+      this.countBuilding();
     }
     if (this.entries.get(key)?.state !== 'pending') return Promise.resolve();
     return new Promise((resolve) => {
@@ -213,21 +242,36 @@ class GeometryStore {
 
   private start(id: string, key: string, node: SceneNode): void {
     this.inFlight.set(id, key);
+    let calledOff = false;
     this.worker()
       .build(key, node)
       .then(
         (result) => this.settle(key, { state: 'ready', result }),
-        (e: Error) => this.settle(key, { state: 'error', message: e.message }),
+        (e: Error) => {
+          // Called off along with something else the worker was doing: no failure, and asked for again below.
+          calledOff = e instanceof Cancelled;
+          if (calledOff) this.forget(key);
+          else this.settle(key, { state: 'error', message: e.message });
+        },
       )
       .finally(() => {
         if (this.inFlight.get(id) === key) this.inFlight.delete(id);
         const next = this.deferred.get(id);
-        if (next === undefined) return;
-        this.deferred.delete(id);
-        // Whatever the node's key is by now is what gets built; a waiting key it has moved on from is dropped.
-        if (this.entries.get(next)?.state === 'pending') this.entries.delete(next);
-        if (this.wanted) this.ensure(this.wanted.nodes, this.wanted.assets);
+        if (next !== undefined) {
+          this.deferred.delete(id);
+          // Whatever the node's key is by now is what gets built; a waiting key it has moved on from is dropped.
+          if (this.entries.get(next)?.state === 'pending') this.entries.delete(next);
+        }
+        if ((next !== undefined || calledOff) && this.wanted) this.ensure(this.wanted.nodes, this.wanted.assets);
+        this.countBuilding();
       });
+  }
+
+  /** Lets go of an entry that was never filled, and tells whoever waits on it (see `ready`). */
+  private forget(key: string): void {
+    if (!this.entries.delete(key)) return;
+    this.revision++;
+    for (const l of this.listeners) l();
   }
 
   private settle(key: string, entry: GeomEntry): void {

@@ -1,6 +1,7 @@
 // The editor driven without a browser: the geometry kernel is stood in for by
 // box bounds, and the platform by stubs that hand back what each test wants.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { APP_VERSION } from '../appInfo';
 import { parseDoc, serializeDoc } from '../model/file';
 import { boxBounds, unionBounds } from '../model/math';
 import { jointInDesign } from '../robot/model';
@@ -13,11 +14,20 @@ import type { SyncReport } from '../sync/engine';
 let gate: Promise<void> = Promise.resolve();
 const PART_BOX: Bounds = { min: [-10, -10, 0], max: [10, 10, 5] };
 
-vi.mock('./geometry', () => ({
+vi.mock('./geometry', async () => {
+  // Files are read by the worker's own code, here on the spot.
+  const { readFile, readHeld } = await import('../worker/importing');
+  let request = 0;
+  return {
   geometry: {
     bounds: (node: SceneNode) => boxBounds(node),
     ready: async () => {},
     forgetAssets: () => {},
+    cancel: () => {},
+    worker: () => ({
+      import: async (file: PickedFile, companions: PickedFile[], options: { scale?: number } = {}) => readFile(++request, file.name, file.bytes, companions, options.scale),
+      importHeld: async (held: number, scale: number) => readHeld(held, scale),
+    }),
     prepare: async () => ({
       measure: async (nodes: SceneNode[]) => {
         const solids = nodes.filter((n) => !n.hole && n.type !== 'picture');
@@ -29,7 +39,8 @@ vi.mock('./geometry', () => ({
       },
     }),
   },
-}));
+  };
+});
 
 const saved: { name: string; bytes: Uint8Array }[] = [];
 /** Whether the pretend platform can delete picked files, and which it was asked to. */
@@ -74,7 +85,24 @@ vi.mock('../platform', () => ({
   shareBytes: async () => {},
   realPath: async (path: string) => path,
   isAndroid: () => false,
+  hasKeychain: () => false,
+  updatesItself: () => true,
+  findAppUpdate: async () => {
+    if (release === 'unreachable') throw new Error('no network');
+    return release && { version: release, install: async (progress: (fraction: number | null) => void) => void (progress(0.5), updating.push(installs ? 'installed' : 'failed'), installs || fail('signature mismatch')) };
+  },
+  canSelfUpdate: async () => selfUpdating,
+  relaunch: async () => void updating.push('relaunched'),
+  openReleases: async () => void updating.push('releases page'),
 }));
+/** The newer version the pretend releases hold, whether this copy of the app can install it, whether the install works, and what was done about it. */
+let release: string | null = null;
+let selfUpdating = true;
+let installs = true;
+const updating: string[] = [];
+const fail = (message: string): never => {
+  throw new Error(message);
+};
 
 
 const store = await import('./store');
@@ -111,7 +139,7 @@ beforeEach(async () => {
   // Leaving the previous test's project writes it to that test's store, not this one's.
   await store.startProject();
   kept = new projects.MemoryProjects();
-  projects.useProjectStore(kept);
+  projects.setProjectStore(kept);
 });
 
 afterEach(() => {
@@ -665,6 +693,44 @@ describe('projects', () => {
     expect(deleted).toEqual([]);
   });
 
+  it('offers a copy of a project a newer build saved, without what it does not know, and leaves the project as it is', async () => {
+    store.addShape('box');
+    store.addShape('cylinder');
+    await store.renameProject('Lid');
+    await store.saveProject();
+    // The project as a newer build might have left it: a shape this one has not got, and a robot that hovers.
+    const newer = (await kept.read('mem:1')).replace('"shape": "cylinder"', '"shape": "hypercylinder"').replace(/\n}\n$/, ',\n  "robot": {\n    "base": "hovering"\n  }\n}\n');
+    const key = await kept.write(null, 'Lid', newer);
+    // Not taken: the open project stays, and nothing is made.
+    choose = (actions) => actions[1];
+    await store.openProject(key);
+    expect(told.pop()).toMatchObject({
+      title: 'Made with a newer version',
+      text: '"Lid" was saved by a newer version of PlastikCAD. Update the app to open it as it is. This version can open a copy of it without 2 things it does not know. The project itself stays as it is.',
+      actions: ['Open a copy', 'Cancel'],
+    });
+    expect(store.getState().projectKey).toBe('mem:1');
+    expect(kept.records.size).toBe(2);
+    // Taken: a project of its own, with what this build knows of the other.
+    choose = (actions) => actions[0];
+    await store.openProject(key);
+    expect(store.getState().projectKey).toBe('mem:3');
+    expect(store.getState().doc.name).toBe('Lid copy');
+    expect(store.getState().doc.scene.map((n) => n.type === 'shape' && n.shape)).toEqual(['box']);
+    expect(store.getState().doc.robot).toMatchObject({ base: 'fixed' });
+    expect(store.getState().notice).toMatchObject({ kind: 'ok', text: 'Opened "Lid copy".' });
+    const copy = parseDoc(await kept.read('mem:3'));
+    expect(copy.id).not.toBe(parseDoc(await kept.read('mem:1')).id);
+    expect(copy.revision).toBeUndefined();
+    // The newer build's project is as it was, to the letter.
+    expect(await kept.read(key)).toBe(newer);
+    // The same for a design file from outside, named after the file when it has no name of its own.
+    await store.receiveFiles([{ name: 'Bracket.plastikcad', path: '/elsewhere/Bracket.plastikcad', bytes: new TextEncoder().encode(newer.replace('"name": "Lid"', '"name": "Untitled"')) }]);
+    expect(told.pop()?.text).toMatch(/^"Bracket" was saved by a newer version/);
+    expect(store.getState().doc.name).toBe('Bracket copy');
+    expect(kept.records.size).toBe(4);
+  });
+
   it('opens a design file by its old extension too', async () => {
     store.addShape('box');
     await store.saveProject();
@@ -768,12 +834,19 @@ describe('projects', () => {
   });
 
   it('says everything a sync pass did in one notice', async () => {
+    store.dismissSyncNotes();
     store.addShape('box');
     await store.saveProject();
     await store.applySyncReport(synced({ kept: ['Plate', 'Lid'], deletedLocally: ['A', 'B', 'C', 'D'], downloaded: ['Lid'] }));
-    expect(store.getState().notice?.text).toBe('"Plate" was changed on two devices at once; both versions were kept. "Lid" was changed on two devices at once; both versions were kept. Deleted on another device: "A", "B", "C" and 1 more.');
+    expect(store.getState().notice?.text).toBe('"Plate" was changed on two devices at once; both versions were kept. "Lid" was changed on two devices at once; both versions were kept. Deleted on another device: "A", "B", "C" and 1 more. Moved to the Trash folder.');
     await store.applySyncReport(synced({ downloaded: ['Lid'] }));
     expect(store.getState().notice).toMatchObject({ kind: 'ok', text: 'Synced "Lid" from Google Drive.' });
+    // What mattered is kept for the projects browser after the toast has gone, each thing once, until dismissed.
+    expect(store.getState().syncNotes.length).toBe(3);
+    await store.applySyncReport(synced({ kept: ['Plate'] }));
+    expect(store.getState().syncNotes.length).toBe(3);
+    store.dismissSyncNotes();
+    expect(store.getState().syncNotes).toEqual([]);
   });
 
   it('stamps a rename of a project that is not open as a save, so that sync carries it', async () => {
@@ -790,6 +863,48 @@ describe('projects', () => {
     expect(after.parent).toBe(before.revision);
   });
 
+  it('deletes into the trash, puts a project back from it, and destroys only what is in it', async () => {
+    store.addShape('box');
+    store.renameProject('Plate');
+    await store.saveProject();
+    const key = store.getState().projectKey!;
+    expect(store.keepsTrash()).toBe(true);
+    expect(await store.deleteProject(key, 'Plate')).toBe(true);
+    // The open project went: the editor starts afresh, and the project waits in the trash.
+    expect(store.getState().projectKey).toBeNull();
+    expect(await store.listProjects()).toEqual([]);
+    const [trashed] = await store.listTrash();
+    expect(trashed.name).toBe('Plate');
+    await store.restoreProject(trashed.key);
+    expect((await store.listProjects()).map((p) => p.name)).toEqual(['Plate']);
+    expect(await store.listTrash()).toEqual([]);
+    // Emptying the trash leaves the projects alone.
+    expect(await store.emptyTrash()).toBe(true);
+    expect((await store.listProjects()).length).toBe(1);
+  });
+
+  it('keeps an earlier save when a project is saved again, and opens it as a project of its own', async () => {
+    store.addShape('box');
+    store.renameProject('Plate');
+    await store.saveProject();
+    const key = store.getState().projectKey!;
+    const id = store.getState().doc.id;
+    expect(await store.listVersions(id)).toEqual([]);
+    // The second save replaces the first, which is kept.
+    store.addShape('sphere');
+    await store.saveProject();
+    const [version] = await store.listVersions(id);
+    expect(version).toBeDefined();
+    await store.openVersion(version, 'Plate');
+    // The earlier save, with its one object, as another project; the project itself still has two.
+    expect(scene().length).toBe(1);
+    expect(store.getState().projectKey).not.toBe(key);
+    expect(store.getState().doc.id).not.toBe(id);
+    expect(store.getState().doc.name).toMatch(/^Plate \(.+\)$/);
+    expect(parseDoc(await kept.read(key)).scene.length).toBe(2);
+    expect((await store.listProjects()).length).toBe(2);
+  });
+
   it('reports a failed save once and keeps the changes pending', async () => {
     vi.spyOn(kept, 'write').mockRejectedValue(new Error('disk full'));
     store.addShape('box');
@@ -800,6 +915,65 @@ describe('projects', () => {
     store.nudgeSelected([1, 0, 0]);
     expect(await store.saveProject()).toBe(false);
     expect(store.getState().notice).toBeNull();
+  });
+});
+
+describe('updating the app', () => {
+  beforeEach(() => {
+    release = null;
+    selfUpdating = true;
+    installs = true;
+    updating.length = 0;
+    told.length = 0;
+  });
+  const available = `Version 9.9.0 is available; this is version ${APP_VERSION}.`;
+
+  it('finds nothing to offer when this is the latest version, or the releases cannot be reached', async () => {
+    expect(await store.lookForUpdate()).toBeNull();
+    expect(store.getState().update).toBeNull();
+    release = 'unreachable';
+    await expect(store.lookForUpdate()).rejects.toThrow('no network');
+    // Nothing found, nothing to install.
+    await store.updateApp();
+    expect(told).toEqual([]);
+    expect(updating).toEqual([]);
+  });
+
+  it('installs a newer version once the user agrees: the design saved first, the app started again after', async () => {
+    release = '9.9.0';
+    expect(await store.lookForUpdate()).toBe('9.9.0');
+    expect(store.getState().update).toBe('9.9.0');
+    store.addShape('box');
+    // Put off: nothing happens.
+    choose = (actions) => actions[1];
+    await store.updateApp();
+    expect(told.pop()).toMatchObject({ title: 'Update PlastikCAD', text: `${available} The design is saved, the update installed, and PlastikCAD started again.`, actions: ['Update', 'Later'] });
+    expect(updating).toEqual([]);
+    expect(kept.records.size).toBe(0);
+    choose = (actions) => actions[0];
+    await store.updateApp();
+    expect(kept.records.size).toBe(1);
+    expect(updating).toEqual(['installed', 'relaunched']);
+    expect(store.getState().busy).toBeNull();
+  });
+
+  it('says what went wrong when the update cannot be installed, and does not start the app again', async () => {
+    release = '9.9.0';
+    installs = false;
+    await store.lookForUpdate();
+    await store.updateApp();
+    expect(updating).toEqual(['failed']);
+    expect(store.getState().notice).toMatchObject({ kind: 'error', text: 'The update could not be installed: signature mismatch' });
+    expect(store.getState().busy).toBeNull();
+  });
+
+  it('shows a copy the system installed as a package the way to the releases instead', async () => {
+    release = '9.9.0';
+    selfUpdating = false;
+    await store.lookForUpdate();
+    await store.updateApp();
+    expect(told.pop()).toMatchObject({ text: `${available} This copy of PlastikCAD was installed as a system package, which the app cannot update itself: the new version is on the releases page.`, actions: ['Open the releases page', 'Later'] });
+    expect(updating).toEqual(['releases page']);
   });
 });
 
@@ -911,6 +1085,87 @@ describe('mating gears', () => {
   });
 });
 
+describe('a planetary set', () => {
+  it('previews the sun and its planets together, drops them together, and keeps them as one step', async () => {
+    await store.addPart('gears');
+    const [gear] = scene();
+    await store.editPart(gear.id, { part: 'ring' });
+    const ring = scene()[0];
+    store.startMate(ring.id);
+    await store.previewMate({ kind: 'planetary', teeth: 12, planets: 3, backlash: 0.1, extra: 0, angle: 0 });
+    expect(scene().map((n) => n.name)).toEqual(['Internal ring gear', 'Sun gear', 'Planet gear', 'Planet gear 2', 'Planet gear 3']);
+    const first = scene().map((n) => n.id);
+    // Another count: the parts that stay keep their ids, and one more is added.
+    await store.previewMate({ kind: 'planetary', teeth: 12, planets: 4, backlash: 0.1, extra: 0, angle: 0 });
+    expect(scene()).toHaveLength(6);
+    expect(scene().slice(0, 5).map((n) => n.id)).toEqual(first);
+    // Fewer again: the ones over are gone.
+    await store.previewMate({ kind: 'planetary', teeth: 12, planets: 2, backlash: 0.1, extra: 0, angle: 0 });
+    expect(scene().map((n) => n.name)).toEqual(['Internal ring gear', 'Sun gear', 'Planet gear', 'Planet gear 2']);
+    store.cancelMate();
+    expect(scene().map((n) => n.id)).toEqual([ring.id]);
+
+    store.startMate(ring.id);
+    await store.previewMate({ kind: 'planetary', teeth: 12, planets: 3, backlash: 0.1, extra: 0, angle: 0 });
+    await store.commitMate();
+    expect(scene()).toHaveLength(5);
+    // The sun and the planets are what is selected, and one Undo takes them all back.
+    expect(store.getState().selection).toEqual(scene().slice(1).map((n) => n.id));
+    store.undo();
+    expect(scene().map((n) => n.id)).toEqual([ring.id]);
+  });
+});
+
+describe('the Array panel', () => {
+  it('opens on a selection, shows a pattern that Apply keeps as one step, and drops it when closed any other way', async () => {
+    store.startArray();
+    expect(store.getState().arraying, 'nothing is selected, so there is nothing to lay out').toBe(false);
+    store.addShape('box');
+    store.startArray();
+    expect(store.getState().arraying).toBe(true);
+    store.previewArray({ kind: 'grid', count: [3, 1, 1], pitch: [30, 30, 30] });
+    expect(scene()).toHaveLength(3);
+    // The button again closes the panel and drops the pattern.
+    store.startArray();
+    expect(store.getState().arraying).toBe(false);
+    expect(scene()).toHaveLength(1);
+    store.startArray();
+    store.previewArray({ kind: 'grid', count: [2, 2, 1], pitch: [30, 30, 30] });
+    store.commitArray();
+    expect(store.getState().arraying).toBe(false);
+    expect(scene()).toHaveLength(4);
+    store.undo();
+    expect(scene()).toHaveLength(1);
+  });
+
+  it('closes when a mating gear is asked for', async () => {
+    await store.addPart('gears');
+    store.startArray();
+    expect(store.getState().arraying).toBe(true);
+    store.startMate(scene()[0].id);
+    expect(store.getState().arraying).toBe(false);
+    expect(store.getState().mating).not.toBeNull();
+    store.cancelMate();
+  });
+});
+
+describe('parts that cut', () => {
+  it('makes a screw into a hole when it becomes a screw hole, and solid again when it is a screw once more', async () => {
+    await store.addPart('screws');
+    const [bolt] = scene();
+    expect(bolt).toMatchObject({ type: 'part', part: 'metric-bolt', hole: false });
+    await store.editPart(bolt.id, { part: 'screw-hole' });
+    expect(scene()[0]).toMatchObject({ part: 'screw-hole', hole: true, name: 'Screw hole' });
+    // A change to its settings leaves it as the user has it: made solid by hand, it stays solid.
+    store.updateNode(bolt.id, { hole: false });
+    await store.editPart(bolt.id, { params: { recess: 'counterbore' } });
+    expect(scene()[0]).toMatchObject({ part: 'screw-hole', hole: false });
+    store.updateNode(bolt.id, { hole: true });
+    await store.editPart(bolt.id, { part: 'metric-nut' });
+    expect(scene()[0]).toMatchObject({ part: 'metric-nut', hole: false });
+  });
+});
+
 describe('importing', () => {
   const ascii = (facets: number[][]): PickedFile => {
     const lines = ['solid thin'];
@@ -948,6 +1203,80 @@ describe('importing', () => {
     await store.receiveFiles([empty]);
     expect(scene()).toEqual([]);
     expect(store.getState().notice?.text).toMatch(/^broken\.stl: /);
+  });
+
+  it('says what a drawing held that was left out, by the name of its file', async () => {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="20mm" height="20mm" viewBox="0 0 20 20"><rect id="r" width="10" height="10"/><use href="#gone" x="10"/></svg>';
+    await store.receiveFiles([{ name: 'plate.svg', path: null, bytes: new TextEncoder().encode(svg) }]);
+    expect(scene()).toHaveLength(1);
+    expect(store.getState().notice).toEqual({ kind: 'error', text: 'plate.svg: 1 copy of another shape (<use>) was left out.', action: undefined });
+  });
+
+  it('asks which unit a tiny model without one was made in, and takes it at that', async () => {
+    // A wedge 0.2 by 0.1 by 0.05: a part written in meters.
+    const tiny = ascii([[0, 0, 0, 0.2, 0, 0, 0, 0.1, 0.05], [0, 0, 0, 0, 0.1, 0.05, 0.2, 0, 0]]);
+    told.length = 0;
+    await store.receiveFiles([tiny]);
+    expect(told).toHaveLength(1);
+    expect(told[0].text).toBe('"thin.stl" does not say which unit it was made in. As millimeters it is 0.2 × 0.1 × 0.05 mm. Which unit is it in?');
+    expect(told[0].actions).toEqual(['Meters', 'Inches', 'Centimeters', 'Millimeters']);
+    // The first answer, meters: a thousand times the numbers.
+    expect(scene()[0]).toMatchObject({ type: 'import', size: [200, 100, 50], natural: [200, 100, 50] });
+    // Inches, and backing out, which keeps millimeters.
+    await store.startProject();
+    choose = (actions) => actions[1];
+    await store.receiveFiles([tiny]);
+    expect(scene()[0]).toMatchObject({ size: [5.08, 2.54, 1.27] });
+    await store.startProject();
+    choose = (actions) => actions[actions.length - 1];
+    await store.receiveFiles([tiny]);
+    expect(scene()[0]).toMatchObject({ size: [0.2, 0.1, 0.05] });
+    choose = (actions) => actions[0];
+    // A model of an ordinary size is not asked about.
+    told.length = 0;
+    await store.startProject();
+    await store.receiveFiles([ascii([[0, 0, 0, 10, 0, 0, 0, 10, 2], [0, 0, 0, 0, 10, 2, 10, 0, 0]])]);
+    expect(told).toEqual([]);
+  });
+
+  describe('a .gltf with its data in a file beside it', () => {
+    const data = new Uint8Array(new Float32Array([0, 0, 0, 0.01, 0, 0, 0, 0.01, 0, 0, 0, 0.01]).buffer);
+    const index = new Uint8Array(new Uint16Array([0, 2, 1, 0, 1, 3, 1, 2, 3, 0, 3, 2]).buffer);
+    const bin = new Uint8Array(72);
+    bin.set(data);
+    bin.set(index, 48);
+    // A tetrahedron, 10 mm along each axis.
+    const gltf = new TextEncoder().encode(
+      JSON.stringify({
+        asset: { version: '2.0' },
+        meshes: [{ primitives: [{ attributes: { POSITION: 0 }, indices: 1 }] }],
+        accessors: [{ bufferView: 0, componentType: 5126, count: 4, type: 'VEC3' }, { bufferView: 1, componentType: 5123, count: 12, type: 'SCALAR' }],
+        bufferViews: [{ buffer: 0, byteLength: 48 }, { buffer: 0, byteOffset: 48, byteLength: 24 }],
+        buffers: [{ byteLength: 72, uri: 'tetra.bin' }],
+      }),
+    );
+
+    it('comes in with the file picked with it', async () => {
+      await store.receiveFiles([{ name: 'tetra.gltf', path: null, bytes: gltf }, { name: 'tetra.bin', path: null, bytes: bin }]);
+      expect(scene()).toHaveLength(1);
+      expect(scene()[0]).toMatchObject({ type: 'import', name: 'tetra', size: [10, 10, 10] });
+      // Nothing is said of it: whatever notice an earlier import left is not about this file.
+      expect(store.getState().notice?.text ?? '').not.toContain('tetra');
+    });
+
+    it('comes in with the file found beside it on disk', async () => {
+      shelf.clear();
+      shelf.set('/models/tetra.bin', bin);
+      await store.receiveFiles([{ name: 'tetra.gltf', path: '/models/tetra.gltf', bytes: gltf }]);
+      expect(scene()).toHaveLength(1);
+      shelf.clear();
+    });
+
+    it('says which file it needs when that is not to be had', async () => {
+      await store.receiveFiles([{ name: 'tetra.gltf', path: '/elsewhere/tetra.gltf', bytes: gltf }]);
+      expect(scene()).toEqual([]);
+      expect(store.getState().notice).toMatchObject({ kind: 'error', text: '"tetra.gltf" keeps its shapes in "tetra.bin", which did not come along. Pick it together with the file.' });
+    });
   });
 
   it('reads a material library named after the OBJ beside it when the one it names is not there', async () => {

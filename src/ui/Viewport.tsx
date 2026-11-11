@@ -1,5 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { CSSProperties, JSX } from 'react';
+import { plural, tr, trx } from '../i18n';
+import { rich } from '../i18n/rich';
 import { geometry } from '../state/geometry';
 import { SNAP_STEPS } from '../state/persist';
 import {
@@ -31,6 +33,8 @@ import {
   select,
   setAlignAnchor,
   setPrefs,
+  startArray,
+  stopWork,
   toggleAligning,
   toggleMeasuring,
   toggleObjectAxes,
@@ -85,7 +89,8 @@ import {
 import { ArrayPanel } from './ArrayPanel';
 import { pressedByTouch, recentTouch, selectOnFocus } from './Fields';
 import { enterByTouch, keyboardAttached, openTouchEntry } from './TouchEntry';
-import { MOD } from './keys';
+import { groupKeys, tip } from './keymap';
+import type { CommandId } from './keymap';
 import { Popover } from './Popover';
 import { MatePanel } from './MatePanel';
 import { placeReadout } from './readout';
@@ -94,11 +99,14 @@ import { commitTyping } from './typing';
 
 const VIEWS: { id: ViewPreset; label: string }[] = [
   { id: 'iso', label: '3D' },
-  { id: 'top', label: 'Top' },
-  { id: 'front', label: 'Front' },
-  { id: 'side', label: 'Side' },
+  { id: 'top', label: trx('view', 'Top') },
+  { id: 'front', label: trx('view', 'Front') },
+  { id: 'side', label: trx('view', 'Side') },
 ];
 
+
+/** The keymap's command behind each button of the Mirror panel, by axis. */
+const MIRRORS: CommandId[] = ['mirrorX', 'mirrorY', 'mirrorZ'];
 
 /** The viewer other parts of the app may talk to (fit to view from a shortcut, cancel a drag). */
 export const viewerRef: { current: Viewer | null } = { current: null };
@@ -111,6 +119,7 @@ function Actions() {
   const aligning = useEditor((s) => Boolean(s.aligning));
   const measuring = useEditor((s) => Boolean(s.measuring));
   const objectAxes = useEditor((s) => s.objectAxes);
+  const arraying = useEditor((s) => s.arraying);
   /** A picked joint or sensor lines up with an object's box, on its own. */
   const marker = useEditor((s) => Boolean(s.joint || s.sensor));
   const ghosts = useEditor(hasGhosts);
@@ -119,10 +128,10 @@ function Actions() {
   return (
     <>
       <div className="tool-group">
-        <button type="button" className="chip icon" title={`Group (${MOD}G)`} aria-label="Group" disabled={count < 2} onClick={() => void groupSelected()}>
+        <button type="button" className="chip icon" title={tip('group')} aria-label={trx('verb', 'Group')} disabled={count < 2} onClick={() => void groupSelected()}>
           <GroupIcon />
         </button>
-        <button type="button" className="chip icon" title={`Ungroup (${MOD}Shift+G)`} aria-label="Ungroup" disabled={!hasGroup} onClick={ungroupSelected}>
+        <button type="button" className="chip icon" title={tip('ungroup')} aria-label={tr('Ungroup')} disabled={!hasGroup} onClick={ungroupSelected}>
           <UngroupIcon />
         </button>
       </div>
@@ -130,54 +139,54 @@ function Actions() {
         <button
           type="button"
           className={aligning ? 'chip icon on' : 'chip icon'}
-          title="Align (L)"
-          aria-label="Align"
+          title={tip('align')}
+          aria-label={tr('Align')}
           aria-pressed={aligning}
           disabled={count < 2 && !aligning && !marker}
           onClick={toggleAligning}
         >
           <AlignIcon />
         </button>
-        <button type="button" className={measuring ? 'chip icon on' : 'chip icon'} title="Measure (M)" aria-label="Measure" aria-pressed={measuring} onClick={toggleMeasuring}>
+        <button type="button" className={measuring ? 'chip icon on' : 'chip icon'} title={tip('measure')} aria-label={tr('Measure')} aria-pressed={measuring} onClick={toggleMeasuring}>
           <RulerIcon />
         </button>
-        <button type="button" className={objectAxes ? 'chip icon on' : 'chip icon'} title="Object axes (O)" aria-label="Object axes" aria-pressed={objectAxes} onClick={toggleObjectAxes}>
+        <button type="button" className={objectAxes ? 'chip icon on' : 'chip icon'} title={tip('objectAxes')} aria-label={tr('Object axes')} aria-pressed={objectAxes} onClick={toggleObjectAxes}>
           <ObjectAxesIcon />
         </button>
-        <Popover className="chip icon" title="Mirror (X / Y / Z)" button={<MirrorIcon />} disabled={none} align="right">
+        <Popover className="chip icon" title={tr('Mirror ({keys})', { keys: groupKeys('Mirror') })} button={<MirrorIcon />} disabled={none} align="right">
           {() => (
             <div className="align-panel">
-              <p>Mirrors the selection across the chosen axis.</p>
+              <p>{tr('Mirrors the selection across the chosen axis.')}</p>
               <div className="segmented">
                 {(['X', 'Y', 'Z'] as const).map((label, axis) => (
-                  <button key={label} type="button" title={`Flip ${label} (${label})`} onClick={() => mirrorSelected(axis as 0 | 1 | 2)}>
-                    Flip {label}
+                  <button key={label} type="button" title={tip(MIRRORS[axis])} onClick={() => mirrorSelected(axis as 0 | 1 | 2)}>
+                    {tr('Flip {axis}', { axis: label })}
                   </button>
                 ))}
               </div>
             </div>
           )}
         </Popover>
-        <button type="button" className="chip icon" title="Drop onto the plate (D)" aria-label="Drop onto the plate" disabled={none} onClick={dropSelected}>
+        <button type="button" className="chip icon" title={tip('drop')} aria-label={tr('Drop onto the plate')} disabled={none} onClick={dropSelected}>
           <DropIcon />
         </button>
       </div>
       <div className="tool-group">
-        <button type="button" className="chip icon" title="Ghost (G)" aria-label="Ghost" disabled={none} onClick={ghostSelected}>
+        <button type="button" className="chip icon" title={tip('ghost')} aria-label={trx('verb', 'Ghost')} disabled={none} onClick={ghostSelected}>
           <GhostIcon />
         </button>
-        <button type="button" className="chip icon" title="Un-ghost all (Shift+G)" aria-label="Un-ghost all" disabled={!ghosts} onClick={unghostAll}>
+        <button type="button" className="chip icon" title={tip('unghostAll')} aria-label={tr('Un-ghost all')} disabled={!ghosts} onClick={unghostAll}>
           <UnghostIcon />
         </button>
       </div>
       <div className="tool-group">
-        <button type="button" className="chip icon" title={`Duplicate in place (${MOD}D)`} aria-label="Duplicate" disabled={none} onClick={duplicateSelected}>
+        <button type="button" className="chip icon" title={tip('duplicate', tr('Duplicate in place'))} aria-label={tr('Duplicate')} disabled={none} onClick={duplicateSelected}>
           <DuplicateIcon />
         </button>
-        <Popover className="chip icon" title="Array" button={<ArrayIcon />} disabled={none} align="right">
-          {(close) => <ArrayPanel close={close} />}
-        </Popover>
-        <button type="button" className="chip icon" title="Delete (Delete)" aria-label="Delete" disabled={none} onClick={deleteSelected}>
+        <button type="button" className={arraying ? 'chip icon on' : 'chip icon'} title={tr('Array')} aria-label={tr('Array')} aria-pressed={arraying} data-array-button disabled={none} onClick={startArray}>
+          <ArrayIcon />
+        </button>
+        <button type="button" className="chip icon" title={tip('delete')} aria-label={tr('Delete')} disabled={none} onClick={deleteSelected}>
           <TrashIcon />
         </button>
       </div>
@@ -190,17 +199,17 @@ function MeasureBar({ kinds, picks, result }: { kinds: FeatureKind[]; picks: num
   const toggle = (id: FeatureKind) => setMeasureKinds(kinds.includes(id) ? kinds.filter((k) => k !== id) : [...kinds, id]);
   return (
     <div className="hint-bar measure" role="status">
-      <div className="measure-kinds" role="group" aria-label="Snaps">
+      <div className="measure-kinds" role="group" aria-label={tr('Snaps')}>
         {FEATURE_KINDS.map((k) => {
           const Snap = SNAP_ICONS[k.id];
           return (
-            <button key={k.id} type="button" className={kinds.includes(k.id) ? 'chip icon on' : 'chip icon'} aria-pressed={kinds.includes(k.id)} aria-label={k.label} title={`${k.label}: ${k.help}`} onClick={() => toggle(k.id)}>
+            <button key={k.id} type="button" className={kinds.includes(k.id) ? 'chip icon on' : 'chip icon'} aria-pressed={kinds.includes(k.id)} aria-label={k.label} title={tr('{label}: {help}', { label: k.label, help: k.help })} onClick={() => toggle(k.id)}>
               <Snap />
             </button>
           );
         })}
       </div>
-      <span className="measure-result">{result ? result.join(' · ') : picks === 0 ? 'Click a point, edge, face or circle, then another · Esc to finish' : 'Click another feature to measure to it'}</span>
+      <span className="measure-result">{result ? result.join(' · ') : picks === 0 ? tr('Click a point, edge, face or circle, then another · Esc to finish') : tr('Click another feature to measure to it')}</span>
     </div>
   );
 }
@@ -223,10 +232,10 @@ function History() {
   const canRedo = useEditor((s) => s.canRedo);
   return (
     <div className="tool-group">
-      <button type="button" className="chip icon" title={`Undo (${MOD}Z)`} aria-label="Undo" disabled={!canUndo} onClick={undo}>
+      <button type="button" className="chip icon" title={tip('undo')} aria-label={tr('Undo')} disabled={!canUndo} onClick={undo}>
         <UndoIcon />
       </button>
-      <button type="button" className="chip icon" title={`Redo (${MOD}Y)`} aria-label="Redo" disabled={!canRedo} onClick={redo}>
+      <button type="button" className="chip icon" title={tip('redo')} aria-label={tr('Redo')} disabled={!canRedo} onClick={redo}>
         <RedoIcon />
       </button>
     </div>
@@ -260,14 +269,14 @@ const ViewWidget = memo(function ViewWidget({ viewer }: { viewer: React.RefObjec
     <div className="view-widget">
       <div className="triad-space" ref={space} style={{ width: GIZMO_SIZE, height: GIZMO_SIZE }} />
       <div className="view-row">
-        <div className="segmented small" role="group" aria-label="Camera view">
+        <div className="segmented small" role="group" aria-label={tr('Camera view')}>
           {VIEWS.map((v) => (
             <button key={v.id} type="button" onClick={() => viewer.current?.setView(v.id)}>
               {v.label}
             </button>
           ))}
         </div>
-        <button type="button" className="chip icon" title="Fit to view (F)" aria-label="Fit to view" onClick={() => viewer.current?.fit()}>
+        <button type="button" className="chip icon" title={tip('fit')} aria-label={tr('Fit to view')} onClick={() => viewer.current?.fit()}>
           <FitIcon />
         </button>
       </div>
@@ -300,7 +309,7 @@ function HandleInput({ prompt, onClose }: { prompt: HandlePrompt; onClose: () =>
   const entryOf = (i: number): Parameters<typeof openTouchEntry>[0] => {
     const f = prompt.fields[i];
     return {
-      label: `${f.name}${prompt.fields.length > 1 ? ` (${i + 1} of ${prompt.fields.length})` : ''}`,
+      label: prompt.fields.length > 1 ? tr('{name} ({index} of {count})', { name: f.name, index: i + 1, count: prompt.fields.length }) : f.name,
       value: texts[i],
       unit: prompt.unit,
       inputMode: 'decimal',
@@ -519,21 +528,21 @@ const Toolbar = memo(function Toolbar() {
   }, []);
   return (
     <div className="view-toolbar">
-      <div className="toolbar" role="toolbar" aria-label="Tools" ref={bar}>
+      <div className="toolbar" role="toolbar" aria-label={tr('Tools')} ref={bar}>
         <History />
         <div className="tool-group">
           <button type="button" className={edges ? 'chip on' : 'chip'} aria-pressed={edges} onClick={() => setPrefs({ edges: !edges })}>
-            Edges
+            {tr('Edges')}
           </button>
           <button type="button" className={grid ? 'chip on' : 'chip'} aria-pressed={grid} onClick={() => setPrefs({ grid: !grid })}>
-            Grid
+            {tr('Grid')}
           </button>
-          <label className="chip select" title="Sets the step that moves and sizes snap to.">
-            Snap
+          <label className="chip select" title={tr('Sets the step that moves and sizes snap to.')}>
+            {tr('Snap')}
             <select value={snap} onChange={(e) => setPrefs({ snap: Number(e.target.value) })}>
               {SNAP_STEPS.map((s) => (
                 <option key={s} value={s}>
-                  {s === 0 ? 'Off' : `${s} mm`}
+                  {s === 0 ? trx('snap', 'Off') : `${s} mm`}
                 </option>
               ))}
             </select>
@@ -542,6 +551,37 @@ const Toolbar = memo(function Toolbar() {
         </div>
         <Actions />
       </div>
+    </div>
+  );
+});
+
+/**
+ * Word of slow work, over the stage: what the editor is waiting on (an import, an export, a group
+ * being made), with a way to call it off; or else the objects still being built, which shows only
+ * when that takes a while (a large design coming up, a group of imported meshes).
+ */
+const Busy = memo(function Busy() {
+  const busy = useEditor((s) => s.busy);
+  const stoppable = useEditor((s) => s.stoppable);
+  const building = useSyncExternalStore(geometry.subscribeBuilding, geometry.getBuilding);
+  if (busy) {
+    return (
+      <div className="busy" role="status">
+        <span className="spinner" />
+        {busy}
+        {stoppable && (
+          <button type="button" className="chip busy-stop" onClick={stopWork}>
+            {tr('Cancel')}
+          </button>
+        )}
+      </div>
+    );
+  }
+  if (building === 0) return null;
+  return (
+    <div className="busy building" role="status">
+      <span className="spinner" />
+      {plural(building, 'Building {n} object…', 'Building {n} objects…')}
     </div>
   );
 });
@@ -571,12 +611,13 @@ export function Viewport() {
   useSyncExternalStore(sim.subscribe, sim.getRevision);
   const driven = sim.get();
   const simFrames = driven.status === 'ready' && driven.frames.size > 0 ? driven.frames : null;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the objects and the robot are what the drive depends on; a new name or thumbnail must not look it over again
   useEffect(() => sim.check(doc, robot), [doc.scene, doc.robot, robot]);
   const highlight = useEditor((s) => s.highlight);
   // The joint markers sit where the design has the joints; while the simulation moves the links they would mislead, so they rest.
   // The sensors ride their links instead, a lidar's rays reaching to what they read, so a tilt or a range can be judged on the move.
-  const marker = useMemo(() => (simFrames ? null : robotMarker(state)), [state.joint, state.sensor, state.doc, simFrames]);
-  const markers = useMemo(() => (simFrames ? drivenMarkers(state, simFrames, driven.readings) : robotMarkers(state)), [state.robot, state.joint, state.sensor, state.doc, state.prefs.robotMarkers, simFrames, driven.readings]);
+  const marker = useMemo(() => (simFrames ? null : robotMarker(state)), [state, simFrames]);
+  const markers = useMemo(() => (simFrames ? drivenMarkers(state, simFrames, driven.readings) : robotMarkers(state)), [state, simFrames, driven.readings]);
   // The picked camera's picture, from where the design has it or, while the test drive runs, from where the simulation carries it.
   const preview = useMemo(() => {
     if (!state.robot || !state.sensor) return null;
@@ -594,6 +635,7 @@ export function Viewport() {
     followed.current = at;
   }, [driven.base, simFrames]);
   // The store's own state is the one these were read from: the snap points follow the same four things.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- joint, sensor and doc are not read here but say when the store's state, which is, has changed
   const snaps = useMemo(() => (jointPick ? jointSnaps(getState()) : null), [jointPick, joint, sensor, doc]);
   // Measure mode: the picks and what they say, for the plate to draw and the bar to show.
   const measuring = useEditor((s) => s.measuring);
@@ -604,6 +646,7 @@ export function Viewport() {
   }, [measuring]);
   const measure = useMemo(() => (measuring ? { kinds: measuring.kinds, picks: measuring.picks, result: measureResult } : null), [measuring, measureResult]);
   const objectAxes = useEditor((s) => s.objectAxes);
+  const arraying = useEditor((s) => s.arraying);
   // Another selection, or an edit from elsewhere, and the typing boxes no longer belong to anything.
   useEffect(() => {
     viewer.current?.dismissPrompt();
@@ -649,6 +692,13 @@ export function Viewport() {
         onMarkerMove: dragMarker,
         onMarkerDrop: endMarkerDrag,
         onMeasurePick: pickMeasure,
+        featuresOf: (positions, matrix) => geometry.worker().features(positions, matrix),
+        // Two fingers tapped on the plate undo and three redo; the viewer is told whether there was a step to take.
+        onHistory: (step) => {
+          const can = step === 'undo' ? getState().canUndo : getState().canRedo;
+          if (can) (step === 'undo' ? undo : redo)();
+          return can;
+        },
         onMarkerPick: (id) => {
           const robot = getState().doc.robot;
           if (robot?.joints.some((j) => j.id === id)) selectJoint(id);
@@ -665,15 +715,17 @@ export function Viewport() {
       viewer.current = viewerRef.current = null;
     };
     // The viewer is created once; later option changes go through setOptions.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- made once, with the options as they stand then
   }, []);
 
   useEffect(() => {
-    viewer.current?.setOptions({ theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap, align: aligning, highlight, snaps, marker, markers, ground, preview, measure, objectAxes });
-  }, [prefs.theme, prefs.edges, prefs.grid, prefs.snap, aligning, highlight, snaps, marker, markers, ground, preview, measure, objectAxes]);
+    viewer.current?.setOptions({ theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap, align: aligning, highlight, snaps, marker, markers, ground, preview, measure, objectAxes, frozen: arraying });
+  }, [prefs.theme, prefs.edges, prefs.grid, prefs.snap, aligning, highlight, snaps, marker, markers, ground, preview, measure, objectAxes, arraying]);
 
+  const carrying = Boolean(placing);
   useEffect(() => {
-    viewer.current?.setPlacing(Boolean(placing));
-  }, [Boolean(placing)]);
+    viewer.current?.setPlacing(carrying);
+  }, [carrying]);
 
   useEffect(() => {
     geometry.ensure(placing ? [...scene, placing] : scene, assets);
@@ -691,7 +743,7 @@ export function Viewport() {
     const list: ViewItem[] = shown.map((node) => ({ node, result: ready(node), selected: picked.has(node.id), ...(node.ghost ? { ghost: true } : {}) }));
     if (placing) list.push({ node: placing, result: ready(placing), selected: false, ghost: true });
     return list;
-    // `revision` changes when geometry arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `revision` is not read here: it changes when geometry arrives, which `ready` then finds
   }, [scene, selection, placing, revision, pose, simFrames]);
 
   useEffect(() => {
@@ -711,9 +763,10 @@ export function Viewport() {
     const out: string[] = [];
     for (const node of scene) {
       const entry = geometry.get(node);
-      if (entry?.state === 'error') out.push(`${node.name}: ${entry.message}`);
+      if (entry?.state === 'error') out.push(tr('{name}: {message}', { name: node.name, message: entry.message }));
     }
     return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `revision` changes when a build ends, well or badly
   }, [scene, revision]);
 
   return (
@@ -733,26 +786,25 @@ export function Viewport() {
 
       {editing && (
         <div className="mode-banner" role="status">
-          <span>
-            Editing inside <strong>{editing.layers[0]?.name}</strong>
-          </span>
+          <span>{rich('Editing inside {name}', { name: <strong>{editing.layers[0]?.name}</strong> })}</span>
           <button type="button" className="chip on" disabled={Boolean(busy)} onClick={() => void finishEditing()}>
-            Done
+            {tr('Done')}
           </button>
           <button type="button" className="chip" disabled={Boolean(busy)} onClick={cancelEditing}>
-            Cancel
+            {tr('Cancel')}
           </button>
         </div>
       )}
-      {placing && <div className="hint-bar">Click on the plate to place the {placing.name.toLowerCase()} · Esc to cancel</div>}
+      {placing && <div className="hint-bar">{tr('Click on the plate to place the {name} · Esc to cancel', { name: placing.name.toLowerCase() })}</div>}
       {aligning && !placing && (
         <div className="hint-bar">
-          {aligning.anchor ? 'Aligning to the anchor' : 'Click a dot to align'} · click an object to set the anchor · Esc to finish
+          {aligning.anchor ? tr('Aligning to the anchor · click an object to set the anchor · Esc to finish') : tr('Click a dot to align · click an object to set the anchor · Esc to finish')}
         </div>
       )}
       {measuring && !placing && <MeasureBar kinds={measuring.kinds} picks={measuring.picks.length} result={measureResult?.lines ?? null} />}
 
       {mating && <MatePanel key={mating.id} />}
+      {arraying && <ArrayPanel />}
 
       <div className="corner">
         <div className="overlay">
@@ -766,12 +818,7 @@ export function Viewport() {
         <TransformBox />
       </div>
 
-      {busy && (
-        <div className="busy" role="status">
-          <span className="spinner" />
-          {busy}
-        </div>
-      )}
+      <Busy />
     </div>
   );
 }

@@ -10,7 +10,21 @@ const meshViews = (mesh: MeshData | null): View[] => (mesh ? [mesh.positions, me
 function viewsOf(msg: WorkerResponse): View[] {
   switch (msg.type) {
     case 'built':
-      return [msg.result.render.positions, msg.result.render.normals, msg.result.render.uv, msg.result.faces?.source];
+      return [
+        msg.result.render.positions,
+        msg.result.render.normals,
+        msg.result.render.uv,
+        msg.result.faces?.source,
+        msg.result.bvh.boxes,
+        msg.result.bvh.nodes,
+        msg.result.bvh.order,
+        msg.result.edges,
+      ];
+    case 'imported':
+      // The meshes travel as text; only the pictures that came with a model are arrays.
+      return msg.result.kind === 'model' ? msg.result.parts.map((p) => p.image?.bytes) : [];
+    case 'features':
+      return [msg.result.regionOf, msg.result.normals];
     case 'exported':
       return [...meshViews(msg.result.mesh), msg.result.faces?.source, msg.result.uv];
     case 'exportedColored':

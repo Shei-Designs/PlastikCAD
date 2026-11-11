@@ -1,4 +1,5 @@
 import { useMemo, useState, useSyncExternalStore } from 'react';
+import { plural, tr, trx } from '../i18n';
 import { boundsSize, tidy, tidyAngle, unionBounds } from '../model/math';
 import type { SceneNode, Vec3 } from '../model/types';
 import { geometry } from '../state/geometry';
@@ -11,7 +12,7 @@ import { ChevronIcon, LinkIcon } from './icons';
 let dimsOpen = false;
 
 const AXES = ['X', 'Y', 'Z'] as const;
-const SIZE_TAGS = ['W', 'D', 'H'] as const;
+const SIZE_TAGS = [trx('size', 'W'), trx('size', 'D'), trx('size', 'H')] as const;
 
 /**
  * The size, position and rotation of the selection, in the corner of the
@@ -28,9 +29,9 @@ export function TransformBox() {
   if (nodes.length > 1) {
     const size = boundsSize(unionBounds(nodes.map((n) => geometry.bounds(n))));
     return (
-      <div className="transform-box" role="group" aria-label="Selection">
+      <div className="transform-box" role="group" aria-label={tr('Selection')}>
         <div className="transform-row">
-          <span className="transform-label">{nodes.length} objects</span>
+          <span className="transform-label">{plural(nodes.length, '{n} object', '{n} objects')}</span>
           <span className="transform-facts">{size.map((v) => formatNumber(v, 2)).join(' × ')} mm</span>
         </div>
       </div>
@@ -55,7 +56,7 @@ function Dimensions({ node }: { node: SceneNode }) {
     <div className={open ? 'transform-dims open' : 'transform-dims'}>
       <button type="button" className="transform-dims-toggle" aria-expanded={open} onClick={toggle}>
         <ChevronIcon />
-        Dimensions
+        {tr('Dimensions')}
       </button>
       {open && (
         <dl className="facts">
@@ -87,29 +88,29 @@ function Single({ node }: { node: SceneNode }) {
     updateNode(node.id, { rot }, `rot:${node.id}:${axis}`);
   };
   return (
-    <div className="transform-box" role="group" aria-label="Size, position and rotation">
+    <div className="transform-box" role="group" aria-label={tr('Size, position and rotation')}>
       <Dimensions node={node} />
       <div className="transform-row">
         <span className="transform-label">
-          Size
-          <button type="button" className={linked ? 'legend-button on' : 'legend-button'} title="Keep proportions" aria-label="Keep proportions" aria-pressed={linked} onClick={() => setLinked(!linked)}>
+          {tr('Size')}
+          <button type="button" className={linked ? 'legend-button on' : 'legend-button'} title={tr('Keep proportions')} aria-label={tr('Keep proportions')} aria-pressed={linked} onClick={() => setLinked(!linked)}>
             <LinkIcon />
           </button>
         </span>
         {SIZE_TAGS.map((tag, axis) => (
-          <NumberBox key={tag} tag={tag} label={['Width (X)', 'Depth (Y)', 'Height (Z)'][axis]} value={node.size[axis]} min={0.01} max={100000} disabled={locked} onChange={(v) => resizeNode(node, axis as 0 | 1 | 2, v, linked)} />
+          <NumberBox key={tag} tag={tag} label={[tr('Width (X)'), tr('Depth (Y)'), tr('Height (Z)')][axis]} value={node.size[axis]} min={0.01} max={100000} disabled={locked} onChange={(v) => resizeNode(node, axis as 0 | 1 | 2, v, linked)} />
         ))}
       </div>
       <div className="transform-row">
-        <span className="transform-label">Position</span>
+        <span className="transform-label">{tr('Position')}</span>
         {AXES.map((tag, axis) => (
-          <NumberBox key={tag} tag={tag} label={axis === 2 ? 'Height above the plate' : `${tag} of the center`} value={axis === 2 ? low : node.pos[axis]} min={-100000} max={100000} disabled={locked} onChange={(v) => setPos(axis, v)} />
+          <NumberBox key={tag} tag={tag} label={axis === 2 ? tr('Height above the plate') : tr('{axis} of the center', { axis: tag })} value={axis === 2 ? low : node.pos[axis]} min={-100000} max={100000} disabled={locked} onChange={(v) => setPos(axis, v)} />
         ))}
       </div>
       <div className="transform-row">
-        <span className="transform-label">Rotation</span>
+        <span className="transform-label">{tr('Rotation')}</span>
         {AXES.map((tag, axis) => (
-          <NumberBox key={tag} tag={tag} unit="°" label={`Rotation about ${tag}`} value={node.rot[axis]} step={15} min={-360} max={360} disabled={locked} onChange={(v) => setRot(axis, v)} />
+          <NumberBox key={tag} tag={tag} unit="°" label={tr('Rotation about {axis}', { axis: tag })} value={node.rot[axis]} step={15} min={-360} max={360} disabled={locked} onChange={(v) => setRot(axis, v)} />
         ))}
       </div>
     </div>

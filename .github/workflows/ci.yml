@@ -19,6 +19,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
+      - run: pnpm lint
       - run: pnpm test
       - run: pnpm build
       # The Rust side: the file commands, the sign-in listener, the projects folder.
@@ -84,3 +85,37 @@ jobs:
       - run: pnpm smoke:robots
         env:
           MUJOCO_GL: osmesa
+
+  # The app in a browser: fingers and the mouse on the plate, the panels and menus, and the core flows.
+  e2e:
+    # The tests with a mouse and keyboard and the tests with fingers run side by side, each on a runner of its own:
+    # together on one they came to take 15 to 23 minutes as the suite grew, too near the limit below for a slow runner.
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [desktop, tablet]
+    name: e2e (${{ matrix.project }})
+    runs-on: ubuntu-22.04
+    # A run takes several minutes. One that has not ended by now is stuck, and is stopped rather than left to the six-hour limit.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm e2e --project ${{ matrix.project }}
+      # What went wrong, to open in a browser: the report, with the trace of each test that was tried again.
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: e2e-report-${{ matrix.project }}
+          path: |
+            e2e-report/
+            e2e-results/
+          retention-days: 14

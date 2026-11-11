@@ -3,6 +3,7 @@
 // operations. Runs inside the geometry worker (and directly under vitest).
 import { curveStep, textWarp } from '../text/curve';
 import type { TextCurve } from '../text/curve';
+import { tr } from '../i18n';
 import Module from 'manifold-3d';
 import type { CrossSection, Manifold, ManifoldToplevel, Mat4, Mesh } from 'manifold-3d';
 import { geomKey, isTextAsset, textAssetKey, textThickness } from '../model/geomKey';
@@ -13,7 +14,8 @@ import type { Asset, GroupNode, ImportNode, MeshAsset, OutlineAsset, PartNode, P
 import type { BuildResult, ColoredExport, ColoredObject, ColoredPart, ExportResult, LinkGeometry, LinkProperties } from '../worker/protocol';
 import { meshProperties } from '../robot/inertia';
 import type { CollisionKind } from '../robot/types';
-import { CREASE_ANGLE, creasedNormals, NO_SOURCE } from './mesh';
+import { buildBvh } from './bvh';
+import { CREASE_ANGLE, creaseEdges, creasedNormals, NO_SOURCE, samePlace } from './mesh';
 import type { Faces, MeshData, MeshWithUV } from './mesh';
 import { buildSolid } from '../parts/evaluate';
 import { getGenerator } from '../parts/generators';
@@ -266,8 +268,11 @@ interface Source {
 
 /** The geometry of a node as built: at its built size, centered on the origin. */
 type Built =
-  /** `sources` for a group: the parts its faces came from, so each can be shown in its own color. */
-  | { solid: Manifold; triangles: number; sources?: Source[] }
+  /**
+   * `sources` for a group: the parts its faces came from, so each can be shown in its own color.
+   * `box` for a part: its bounds as its generator made it, before it was centered.
+   */
+  | { solid: Manifold; triangles: number; sources?: Source[]; box?: Bounds }
   /** An imported mesh that is not watertight. It can be shown and exported as it is, but not combined. */
   | { solid: null; open: MeshWithUV; triangles: number };
 
@@ -344,7 +349,7 @@ const mat4 = (m: Mat): Mat4 => [m[0], m[1], m[2], 0, m[3], m[4], m[5], 0, m[6], 
 /** Forces evaluation (the kernel is lazy) and makes sure the result is usable. */
 function checked(m: Manifold): Manifold {
   const status = m.status();
-  if (status !== 'NoError') throw new Error(`Geometry kernel error: ${status}`);
+  if (status !== 'NoError') throw new Error(tr('Geometry kernel error: {status}', { status }));
   return m;
 }
 
@@ -374,15 +379,21 @@ function construct(k: ManifoldToplevel, node: SceneNode, fine: boolean): Built {
     }
     case 'import': {
       const asset = assets.get(node.asset);
-      if (!asset || asset.kind === 'image') throw new Error(`The imported data of "${node.name}" is missing from this design.`);
+      if (!asset || asset.kind === 'image') throw new Error(tr('The imported data of "{name}" is missing from this design.', { name: node.name }));
       return asset.kind === 'mesh' ? meshEntry(k, node, asset) : solidEntry(outlineSolid(k, node, asset));
     }
     case 'part':
-      return solidEntry(scoped((keep) => partSolid(k, node, keep, fine)));
+      return scoped((keep) => {
+        const made = partAsBuilt(k, node, keep, fine);
+        const box = toBounds(made.boundingBox());
+        // Moved from standing on the plate to being centered on its box, like every other node.
+        const solid = made.translate([-(box.min[0] + box.max[0]) / 2, -(box.min[1] + box.max[1]) / 2, -(box.min[2] + box.max[2]) / 2]);
+        return { ...solidEntry(solid), box };
+      });
     case 'text': {
       // The outlines of lettering are sent along like imported drawings (see `textAssetKey`).
       const asset = assets.get(textAssetKey(node));
-      if (asset?.kind !== 'outline') throw new Error(`"${node.name}" has no letters that can be drawn.`);
+      if (asset?.kind !== 'outline') throw new Error(tr('"{name}" has no letters that can be drawn.', { name: node.name }));
       if (!node.curve) return solidEntry(outlineSolid(k, node, asset));
       return solidEntry(curvedText(k, node, asset, node.curve));
     }
@@ -421,7 +432,7 @@ const solidEntry = (solid: Manifold): Built => ({ solid, triangles: solid.numTri
 function placed(k: ManifoldToplevel, node: SceneNode, keep: Keep, fine: boolean): Manifold {
   const { solid } = builtOf(k, node, fine);
   if (!solid) {
-    throw new Error(`"${node.name}" is not a watertight mesh, so it cannot be combined with other shapes.`);
+    throw new Error(tr('"{name}" is not a watertight mesh, so it cannot be combined with other shapes.', { name: node.name }));
   }
   // A mirrored (negative determinant) matrix is fine: the kernel turns the triangles back outwards.
   return keep(solid.transform(mat4(nodeMatrix(node))));
@@ -473,8 +484,8 @@ function combine(k: ManifoldToplevel, nodes: SceneNode[], keep: Keep, fine: bool
 
 function groupSolid(k: ManifoldToplevel, node: GroupNode, keep: Keep, fine: boolean, sources?: Source[], used?: Set<number>): Manifold {
   const result = combine(k, node.children, keep, fine, sources, used);
-  if (!result) throw new Error('This group has nothing left: it only contains holes.');
-  if (checked(result).isEmpty()) throw new Error('This group has nothing left: its holes remove everything.');
+  if (!result) throw new Error(tr('This group has nothing left: it only contains holes.'));
+  if (checked(result).isEmpty()) throw new Error(tr('This group has nothing left: its holes remove everything.'));
   return result;
 }
 
@@ -484,20 +495,20 @@ function partAsBuilt(k: ManifoldToplevel, node: PartNode, keep: Keep, fine: bool
   const def = getGenerator(node.part);
   const built = def.build(sanitizeParams(def, node.params), fine ? QUALITY.fine : QUALITY.normal);
   const solid = checked(buildSolid(k, built.solid, keep));
-  if (solid.isEmpty()) throw new Error(`"${node.name}" came out empty with these settings.`);
+  if (solid.isEmpty()) throw new Error(tr('"{name}" came out empty with these settings.', { name: node.name }));
   return solid;
 }
 
-/** A parametric part, moved from standing on the plate to being centered on its box like every other node. */
-function partSolid(k: ManifoldToplevel, node: PartNode, keep: Keep, fine: boolean): Manifold {
-  const solid = partAsBuilt(k, node, keep, fine);
-  const { min, max } = solid.boundingBox();
-  return keep(solid.translate([-(min[0] + max[0]) / 2, -(min[1] + max[1]) / 2, -(min[2] + max[2]) / 2]));
-}
-
-/** A part's box in its generator's frame, which says where the generator's origin sits in the box. */
+/**
+ * A part's box in its generator's frame, which says where the generator's
+ * origin sits in the box. The part is built for it and kept, so that showing
+ * it afterwards does not build it a second time.
+ */
 export function partBox(node: PartNode): Bounds | null {
-  return operation((k) => scoped((keep) => toBounds(partAsBuilt(k, node, keep, false).boundingBox())));
+  return operation((k) => {
+    const entry = builtOf(k, node, false);
+    return (entry.solid && entry.box) ?? null;
+  });
 }
 
 function outlineSolid(k: ManifoldToplevel, node: SceneNode, asset: OutlineAsset, thickness = 1): Manifold {
@@ -509,7 +520,7 @@ function outlineSolid(k: ManifoldToplevel, node: SceneNode, asset: OutlineAsset,
       if (contours.length > 0) parts.push(keep(new k.CrossSection(contours, shape.evenodd ? 'EvenOdd' : 'NonZero')));
     }
     const section = parts.length === 1 ? parts[0] : keep(k.CrossSection.union(parts));
-    if (section.isEmpty()) throw new Error(`"${node.name}" has no filled areas to extrude.`);
+    if (section.isEmpty()) throw new Error(tr('"{name}" has no filled areas to extrude.', { name: node.name }));
     // 1 mm thick (or as asked), centered like the artwork itself already is.
     return checked(keep(keep(section.extrude(thickness, 0, 0, [1, 1])).translate([0, 0, -thickness / 2])));
   });
@@ -552,10 +563,10 @@ function curvedText(k: ManifoldToplevel, node: TextNode, asset: OutlineAsset, cu
 function meshEntry(k: ManifoldToplevel, node: ImportNode, asset: MeshAsset): Built {
   const data = decodeMesh(asset);
   const count = data.positions.length / 3;
-  if (data.triangles.length === 0) throw new Error(`"${node.name}" contains no triangles.`);
-  if (data.triangles.some((v) => v >= count)) throw new Error(`The mesh of "${node.name}" is damaged.`);
+  if (data.triangles.length === 0) throw new Error(tr('"{name}" contains no triangles.', { name: node.name }));
+  if (data.triangles.some((v) => v >= count)) throw new Error(tr('The mesh of "{name}" is damaged.', { name: node.name }));
   // NaN or infinite coordinates would get through the kernel and poison every normal around them.
-  if (!data.positions.every(Number.isFinite)) throw new Error(`The mesh of "${node.name}" is damaged: some points have no position.`);
+  if (!data.positions.every(Number.isFinite)) throw new Error(tr('The mesh of "{name}" is damaged: some points have no position.', { name: node.name }));
   const solid = meshSolid(k, data.positions, data.triangles, data.uv);
   if (!solid) return { solid: null, open: data, triangles: data.triangles.length / 3 };
   if (solid.volume() >= 0) return solidEntry(solid);
@@ -698,6 +709,12 @@ function concatenate(parts: MeshData[]): MeshData {
 // ---------------------------------------------------------------------------
 // Requests
 
+/**
+ * More edge lines than this are not drawn: a rough scan creases at every
+ * triangle, and that many lines cost more to draw than they tell.
+ */
+const EDGE_LIMIT = 250_000;
+
 /** Geometry of one node at its built size, centered on the origin (see `builtSize`); `key` is its `geomKey`. */
 export function build(key: string, node: SceneNode): BuildResult {
   return operation((k) => {
@@ -706,14 +723,18 @@ export function build(key: string, node: SceneNode): BuildResult {
       const { positions, triangles, uv } = entry.open;
       const render = creasedNormals(positions, triangles, CREASE_ANGLE);
       if (uv) render.uv = uv.slice();
-      return {
+      const result: BuildResult = {
         key,
         render,
+        bvh: buildBvh(render.positions),
         bounds: boundsOfPositions(positions),
         triangles: entry.triangles,
         volume: 0,
         watertight: false,
       };
+      const edges = creaseEdges(positions, triangles, CREASE_ANGLE, EDGE_LIMIT);
+      if (edges) result.edges = edges;
+      return result;
     }
     const mesh = meshOf(entry.solid);
     const render = creasedNormals(mesh.positions, mesh.triangles, CREASE_ANGLE);
@@ -722,11 +743,15 @@ export function build(key: string, node: SceneNode): BuildResult {
     const result: BuildResult = {
       key,
       render,
+      bvh: buildBvh(render.positions),
       bounds: toBounds(entry.solid.boundingBox()),
       triangles: entry.triangles,
       volume: entry.solid.volume(),
       watertight: true,
     };
+    // A mesh that carries texture coordinates has its seams as vertices of their own, which are no edges.
+    const edges = creaseEdges(mesh.positions, mesh.triangles, CREASE_ANGLE, EDGE_LIMIT, mesh.uv ? samePlace(mesh.positions) : undefined);
+    if (edges) result.edges = edges;
     const faces = entry.sources && facesOf(mesh, entry.sources);
     if (faces) result.faces = faces;
     return result;
@@ -782,14 +807,14 @@ export function exportColored(nodes: SceneNode[], fine = false, local = false): 
         if (!entry.solid) {
           const mesh = local ? { positions: entry.open.positions.slice(), triangles: entry.open.triangles.slice() } : transformed(entry.open, nodeMatrix(node));
           objects.push({ name: node.name, parts: [{ color: node.color, mesh }] });
-          warnings.push(`"${node.name}" is not watertight and was exported as-is.`);
+          warnings.push(tr('"{name}" is not watertight and was exported as-is.', { name: node.name }));
           continue;
         }
         const matrix = mat4(nodeMatrix(node));
         const parts: ColoredPart[] = coloredParts(k, node, keep, fine).map((p) => ({ color: p.color, mesh: meshOf(local ? p.solid : keep(p.solid.transform(matrix))) }));
         if (parts.length) objects.push({ name: node.name, parts });
       }
-      if (objects.length === 0) throw new Error('There is nothing to export.');
+      if (objects.length === 0) throw new Error(tr('There is nothing to export.'));
       return { objects, warnings };
     }),
   );
@@ -842,7 +867,7 @@ export function robotGeometry(nodes: SceneNode[], collisions: Record<string, Col
 function coloredParts(k: ManifoldToplevel, node: SceneNode, keep: Keep, fine: boolean): { color: string; solid: Manifold }[] {
   if (node.type !== 'group' || !node.mixed) {
     const { solid } = builtOf(k, node, fine);
-    if (!solid) throw new Error(`"${node.name}" is not a watertight mesh, so it cannot be combined with other shapes.`);
+    if (!solid) throw new Error(tr('"{name}" is not a watertight mesh, so it cannot be combined with other shapes.', { name: node.name }));
     return [{ color: paintOf(node), solid }];
   }
   // In the order their colors first appear: the first solid's color wins where parts overlap.
@@ -899,11 +924,11 @@ function exportAt(nodes: SceneNode[], outline: boolean, fine: boolean, local: bo
         if (local && nodes.length === 1 && entry.open.uv) uv = entry.open.uv.slice();
         warnings.push(
           outline
-            ? `"${node.name}" is not watertight: it was exported as-is and is missing from the outline.`
-            : `"${node.name}" is not watertight and was exported as-is.`,
+            ? tr('"{name}" is not watertight: it was exported as-is and is missing from the outline.', { name: node.name })
+            : tr('"{name}" is not watertight and was exported as-is.', { name: node.name }),
         );
       }
-      if (solids.length + parts.length === 0) throw new Error('There is nothing to export.');
+      if (solids.length + parts.length === 0) throw new Error(tr('There is nothing to export.'));
 
       const boxes = parts.map((p) => boundsOfPositions(p.positions));
       let volume = 0;

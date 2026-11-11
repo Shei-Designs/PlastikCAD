@@ -1,4 +1,5 @@
 // Features shared by most rotating parts: shaft bore, hub and set screws.
+import { tr } from '../i18n';
 import { arc, arcSegments, circle, regularPolygon, TAU } from './math2d';
 import { cylinder, difference, extrude, rotate, translate, union } from './types';
 import type { Quality, Shape2D, Solid, Vec2 } from './types';
@@ -9,12 +10,12 @@ import type { ParamDef, ParamGroup, Params } from './generators/types';
 export const handParam: ParamDef = {
   type: 'select',
   key: 'hand',
-  label: 'Hand',
+  label: tr('Hand'),
   default: 'right',
-  help: 'Which way the helix winds. Right-handed is the usual thread; a helical gear and its mate have opposite hands.',
+  help: tr('Which way the helix winds. Right-handed is the usual thread; a helical gear and its mate have opposite hands.'),
   options: [
-    { value: 'right', label: 'Right-handed' },
-    { value: 'left', label: 'Left-handed' },
+    { value: 'right', label: tr('Right-handed') },
+    { value: 'left', label: tr('Left-handed') },
   ],
 };
 export const isLeftHanded = (p: Params): boolean => str(p, 'hand') === 'left';
@@ -28,26 +29,26 @@ export interface BoreDefaults {
 export function boreGroup(d: BoreDefaults = {}): ParamGroup {
   const has = (p: Params) => p.boreType !== 'none';
   return {
-    title: 'Bore',
+    title: tr('Bore'),
     params: [
       {
         type: 'select',
         key: 'boreType',
-        label: 'Shape',
+        label: tr('Shape'),
         default: d.type ?? 'round',
         options: [
-          { value: 'none', label: 'None' },
-          { value: 'round', label: 'Round' },
-          { value: 'd', label: 'D-shaft' },
-          { value: 'hex', label: 'Hex' },
-          { value: 'keyway', label: 'Round + keyway' },
+          { value: 'none', label: tr('None') },
+          { value: 'round', label: tr('Round') },
+          { value: 'd', label: tr('D-shaft') },
+          { value: 'hex', label: tr('Hex') },
+          { value: 'keyway', label: tr('Round + keyway') },
         ],
       },
       {
         type: 'number',
         key: 'boreDiameter',
-        label: 'Diameter',
-        help: 'Shaft diameter. For a hex bore this is the distance across flats.',
+        label: tr('Diameter'),
+        help: tr('Shaft diameter. For a hex bore this is the distance across flats.'),
         default: d.diameter ?? 5,
         min: 1,
         max: 100,
@@ -58,8 +59,8 @@ export function boreGroup(d: BoreDefaults = {}): ParamGroup {
       {
         type: 'number',
         key: 'boreFlat',
-        label: 'D-flat thickness',
-        help: 'Shaft thickness measured from the flat to the opposite side (4.5 mm on a NEMA 17 shaft).',
+        label: tr('D-flat thickness'),
+        help: tr('Shaft thickness measured from the flat to the opposite side (4.5 mm on a NEMA 17 shaft).'),
         default: d.flat ?? 4.5,
         min: 0.5,
         max: 100,
@@ -70,7 +71,7 @@ export function boreGroup(d: BoreDefaults = {}): ParamGroup {
       {
         type: 'number',
         key: 'keyWidth',
-        label: 'Key width',
+        label: tr('Key width'),
         default: 2,
         min: 0.5,
         max: 30,
@@ -81,8 +82,8 @@ export function boreGroup(d: BoreDefaults = {}): ParamGroup {
       {
         type: 'number',
         key: 'keyDepth',
-        label: 'Key depth',
-        help: 'Depth of the keyway measured from the bore surface.',
+        label: tr('Key depth'),
+        help: tr('Depth of the keyway measured from the bore surface.'),
         default: 1,
         min: 0.2,
         max: 20,
@@ -93,8 +94,8 @@ export function boreGroup(d: BoreDefaults = {}): ParamGroup {
       {
         type: 'number',
         key: 'boreClearance',
-        label: 'Fit clearance',
-        help: 'Added to the bore size to compensate for printer shrinkage. 0.1–0.3 mm is typical for FDM.',
+        label: tr('Fit clearance'),
+        help: tr('Added to the bore size to compensate for printer shrinkage. 0.1–0.3 mm is typical for FDM.'),
         default: 0.2,
         min: 0,
         max: 1,
@@ -116,13 +117,13 @@ export interface HubDefaults {
 export function hubGroup(d: HubDefaults = {}): ParamGroup {
   const has = (p: Params) => num(p, 'hubHeight') > 0;
   return {
-    title: 'Hub',
+    title: tr('Hub'),
     params: [
       {
         type: 'number',
         key: 'hubHeight',
-        label: 'Height',
-        help: 'Set to 0 for no hub.',
+        label: tr('Height'),
+        help: tr('Set to 0 for no hub.'),
         default: d.height ?? 0,
         min: 0,
         max: 100,
@@ -132,7 +133,7 @@ export function hubGroup(d: HubDefaults = {}): ParamGroup {
       {
         type: 'number',
         key: 'hubDiameter',
-        label: 'Diameter',
+        label: tr('Diameter'),
         default: d.diameter ?? 12,
         min: 2,
         max: 200,
@@ -143,8 +144,8 @@ export function hubGroup(d: HubDefaults = {}): ParamGroup {
       {
         type: 'number',
         key: 'setScrews',
-        label: 'Set screws',
-        help: 'Radial holes through the hub. The first lines up with the D-flat / keyway; a second one sits 90° from it.',
+        label: tr('Set screws'),
+        help: tr('Radial holes through the hub. The first lines up with the D-flat / keyway; a second one sits 90° from it.'),
         default: d.setScrews ?? 0,
         min: 0,
         max: 4,
@@ -155,8 +156,8 @@ export function hubGroup(d: HubDefaults = {}): ParamGroup {
       {
         type: 'number',
         key: 'setScrewDiameter',
-        label: 'Set screw hole',
-        help: 'Hole diameter: use the tap-drill size (2.5 mm for M3) to cut threads directly into the plastic.',
+        label: tr('Set screw hole'),
+        help: tr('Hole diameter: use the tap-drill size (2.5 mm for M3) to cut threads directly into the plastic.'),
         default: d.setScrewDiameter ?? 2.8,
         min: 1,
         max: 12,
@@ -223,7 +224,7 @@ export function addHubAndBore(
   let top = zTop;
   const cuts: Solid[] = [];
   if (boreRadius(p) >= Math.max(outerRadius, hubH > 0 ? hubR : 0)) {
-    warnings.push('The bore is wider than the part, so it was left out.');
+    warnings.push(tr('The bore is wider than the part, so it was left out.'));
     p = { ...p, boreType: 'none' };
   }
 
@@ -232,13 +233,13 @@ export function addHubAndBore(
     const segs = Math.max(32, arcSegments(q, TAU));
     solid = union(solid, translate(cylinder(hubR, hubH + embed, segs), [0, 0, zTop - embed]));
     top = zTop + hubH;
-    if (boreRadius(p) >= hubR - 0.4) warnings.push('The hub wall around the bore is very thin.');
+    if (boreRadius(p) >= hubR - 0.4) warnings.push(tr('The hub wall around the bore is very thin.'));
 
     const count = Math.round(num(p, 'setScrews'));
     const sd = num(p, 'setScrewDiameter');
     if (count > 0) {
       if (hubH < sd + 1) {
-        warnings.push('The hub is too short for the set screw holes; they were skipped.');
+        warnings.push(tr('The hub is too short for the set screw holes; they were skipped.'));
       } else {
         // Two set screws sit 90° apart (the usual pulley arrangement); more are spaced evenly.
         const step = count === 2 ? 90 : 360 / count;

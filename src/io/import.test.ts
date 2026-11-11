@@ -727,9 +727,47 @@ describe('glTF import', () => {
     expect(meshBounds(got.parts[0].mesh)).toEqual({ min: [0, 0, 2], max: [20, 20, 2] });
   });
 
+  it('reads a .gltf whose buffer and picture are files beside it, and names the ones that did not come', () => {
+    // The triangle of the first test with texture coordinates, its numbers in scene.bin and its picture in textures/wood.png.
+    const data = new Uint8Array(new Float32Array([0, 0, 0, 0.01, 0, 0, 0, 0, -0.01, 0, 0, 1, 0, 0, 1]).buffer);
+    const gltf = JSON.stringify({
+      asset: { version: '2.0' },
+      meshes: [{ name: 'Tri', primitives: [{ attributes: { POSITION: 0, TEXCOORD_0: 1 }, material: 0 }] }],
+      materials: [{ pbrMetallicRoughness: { baseColorTexture: { index: 0 } } }],
+      textures: [{ source: 0 }],
+      images: [{ uri: 'textures/wood%20grain.png' }, { uri: 'unused.png' }],
+      accessors: [{ bufferView: 0, componentType: 5126, count: 3, type: 'VEC3' }, { bufferView: 1, componentType: 5126, count: 3, type: 'VEC2' }],
+      bufferViews: [{ buffer: 0, byteLength: 36 }, { buffer: 0, byteOffset: 36, byteLength: 24 }],
+      buffers: [{ byteLength: 60, uri: 'scene.bin' }],
+    });
+    const read = (companions: { name: string; bytes: Uint8Array }[]) => {
+      const got = importFile('scene.gltf', bytes(gltf), companions);
+      if (got.kind !== 'model') throw new Error('expected a model');
+      return got;
+    };
+    // Alone: no shapes, and everything it names beside it is asked for in one go.
+    expect(read([])).toEqual({ kind: 'model', parts: [], used: [], missing: ['scene.bin', 'textures/wood grain.png', 'unused.png'] });
+    // With its buffer: the shapes, and the one picture a material uses still wanted.
+    const plain = read([{ name: 'scene.bin', bytes: data }]);
+    expect(plain.parts).toHaveLength(1);
+    expect(plain.parts[0].image).toBeUndefined();
+    expect(plain.used).toEqual(['scene.bin']);
+    expect(plain.missing).toEqual(['textures/wood grain.png']);
+    // With both, the picture found by its name alone, whatever folder it was picked from.
+    const whole = read([{ name: 'SCENE.BIN', bytes: data }, { name: 'Wood Grain.png', bytes: png }]);
+    expect(meshBounds(whole.parts[0].mesh)).toEqual({ min: [0, 0, 0], max: [10, 10, 0] });
+    expect(whole.parts[0].image).toEqual({ name: 'scene.png', mime: 'image/png', bytes: png });
+    expect(whole.used).toEqual(['SCENE.BIN', 'Wood Grain.png']);
+    expect(whole.missing).toEqual([]);
+    // A buffer anywhere but beside the file is never fetched.
+    for (const uri of ['../secret.bin', '/etc/passwd', 'file:///etc/passwd', 'C:\\\\data.bin']) {
+      expect(() => importFile('scene.gltf', bytes(gltf.replace('scene.bin', uri)))).toThrow(/separate files/);
+    }
+  });
+
   it('rejects what it cannot read', () => {
     expect(() => modelOf('x.glb', new Uint8Array(0))).toThrow('empty');
-    expect(() => modelOf('x.gltf', '{"asset":{"version":"2.0"},"buffers":[{"byteLength":4,"uri":"data.bin"}],"meshes":[{"primitives":[{"attributes":{"POSITION":0}}]}],"accessors":[{"bufferView":0,"componentType":5126,"count":1,"type":"VEC3"}],"bufferViews":[{"buffer":0,"byteLength":12}]}')).toThrow(/separate files/);
+    expect(() => modelOf('x.gltf', '{"asset":{"version":"2.0"},"buffers":[{"byteLength":4,"uri":"https://example.com/data.bin"}],"meshes":[{"primitives":[{"attributes":{"POSITION":0}}]}],"accessors":[{"bufferView":0,"componentType":5126,"count":1,"type":"VEC3"}],"bufferViews":[{"buffer":0,"byteLength":12}]}')).toThrow(/separate files/);
     expect(() => modelOf('x.gltf', 'nope')).toThrow(/JSON/);
     expect(() => modelOf('x.gltf', '{"asset":{"version":"2.0"},"extensionsRequired":["KHR_draco_mesh_compression"],"meshes":[{"primitives":[{"attributes":{"POSITION":0}}]}]}')).toThrow(/compressed/);
     expect(() => modelOf('x.gltf', '{"asset":{"version":"2.0"}}')).toThrow(/no meshes/);
@@ -790,6 +828,17 @@ describe('DXF import', () => {
   /** Four lines of a square, in no particular order or direction. */
   const square = (x: number, y: number, size: number, extra = '') =>
     [line(x + size, y, x + size, y + size, extra), line(x, y, x + size, y, extra), line(x, y + size, x, y, extra), line(x, y + size, x + size, y + size, extra)].join('\n');
+  it('says what a drawing holds that it leaves out', () => {
+    const text = (x: number) => `0\nTEXT\n8\n0\n10\n${x}\n20\n0\n40\n3\n1\nPart`;
+    // A square, a center line that meets nothing, a corner of two lines that never closes, and two labels.
+    const got = importFile('d.dxf', bytes(dxf([square(0, 0, 10), line(-5, 5, 15, 5), line(30, 0, 40, 0), line(40, 0, 40, 10), text(0), `0\nMTEXT\n8\n0\n10\n20\n20\n0\n1\nNote`].join('\n'))));
+    if (got.kind !== 'outline') throw new Error('expected an outline');
+    expect(got.parts).toHaveLength(1);
+    expect(got.warnings).toEqual(['2 outlines do not close and were left out.', '2 pieces of text were left out.']);
+    const plain = importFile('d.dxf', bytes(dxf(square(0, 0, 10))));
+    expect('warnings' in plain).toBe(false);
+  });
+
   const partsOf = (text: string | Uint8Array) => {
     const got = importFile('d.dxf', typeof text === 'string' ? bytes(text) : text);
     if (got.kind !== 'outline') throw new Error('expected an outline');
@@ -1011,6 +1060,104 @@ describe('SVG import', () => {
     `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" viewBox="0 0 100 100">${body}</svg>`;
 
   const shapesOf = (svg: string) => outlineOf(svg).shapes;
+
+  /** The box of each shape of a drawing, as [left, bottom, right, top] in whole millimeters (Y up: the drawing's Y, negated), with its color. */
+  const boxes = (svg: string): { box: number[]; color?: string }[] => {
+    const got = importFile('d.svg', bytes(svg));
+    if (got.kind !== 'outline') throw new Error('expected an outline');
+    return got.parts.flatMap((part) =>
+      part.shapes.map((shape) => {
+        const xs = shape.contours.flat().map((p) => p[0]);
+        const ys = shape.contours.flat().map((p) => p[1]);
+        return { box: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)].map((v) => Math.round(v) + 0), ...(part.color ? { color: part.color } : {}) };
+      }),
+    );
+  };
+  const warningsOf = (svg: string): string[] => {
+    const got = importFile('d.svg', bytes(svg));
+    return got.warnings ?? [];
+  };
+
+  it('draws what a <use> names again where it says, in the colors the <use> gives it', () => {
+    const svg = mm(
+      '<defs><rect id="r" width="5" height="5"/><g id="pair"><use href="#r"/><use href="#r" x="10"/></g><symbol id="s"><circle cx="2" cy="2" r="2"/></symbol></defs>' +
+        '<use href="#r" x="20" y="10"/><use xlink:href="#r" transform="translate(40 0) scale(2)" fill="#00ff00"/>' +
+        '<use href="#pair" y="30" fill="red"/><use href="#s" x="60" y="60"/>',
+    );
+    expect(boxes(svg)).toEqual([
+      { box: [20, -15, 25, -10] },
+      { box: [60, -64, 64, -60] },
+      { box: [40, -10, 50, 0], color: '#00ff00' },
+      { box: [0, -35, 5, -30], color: '#ff0000' },
+      { box: [10, -35, 15, -30], color: '#ff0000' },
+    ]);
+    expect(warningsOf(svg)).toEqual([]);
+  });
+
+  it('counts a <use> of nothing, of another file, or of itself as left out, and ends', () => {
+    const svg = mm(
+      '<rect width="5" height="5"/><use href="#gone"/><use href="other.svg#r"/>' +
+        '<g id="a"><rect x="10" width="5" height="5"/><use href="#b"/></g><g id="b"><use href="#a"/></g>',
+    );
+    // The loop is followed eight deep and then left, once from each of the two groups that are in it.
+    expect(boxes(svg).length).toBeGreaterThan(2);
+    expect(warningsOf(svg)).toEqual(['4 copies of other shapes (<use>) were left out.']);
+    // A few lines that ask for a hundred million shapes are refused.
+    const bomb = mm(
+      '<defs><rect id="l0" width="1" height="1"/>' +
+        Array.from({ length: 8 }, (_, i) => `<g id="l${i + 1}">${`<use href="#l${i}"/>`.repeat(10)}</g>`).join('') +
+        '</defs><use href="#l8"/>',
+    );
+    expect(() => importFile('d.svg', bytes(bomb))).toThrow('This SVG has too many shapes to open.');
+  });
+
+  it('applies the rules of a style sheet whose selectors say what one element is', () => {
+    const svg = mm(
+      '<defs><style>/* colors */ .a { fill: #f00 } rect.b, .c { fill: rgb(0,0,255); } #one { fill: lime } circle { display: none } .hidden { visibility: hidden }</style></defs>' +
+        '<rect class="a" width="5" height="5"/>' +
+        '<rect class="b extra" x="10" width="5" height="5"/>' +
+        // The id outweighs the class, and the style attribute outweighs both; the attribute gives way to any rule.
+        '<rect id="one" class="a" x="20" width="5" height="5"/>' +
+        '<rect class="a" style="fill: #ffd700" x="30" width="5" height="5"/>' +
+        '<rect class="c" fill="#000" x="40" width="5" height="5"/>' +
+        '<circle cx="60" cy="60" r="5"/><rect class="hidden" x="70" width="5" height="5"/>' +
+        '<g class="c"><rect x="80" width="5" height="5"/></g>',
+    );
+    expect(boxes(svg).map((b) => [b.box[0], b.color])).toEqual([
+      [0, '#ff0000'],
+      [10, '#0000ff'],
+      [40, '#0000ff'],
+      [80, '#0000ff'],
+      [20, '#00ff00'],
+      [30, '#ffd700'],
+    ]);
+    expect(warningsOf(svg)).toEqual([]);
+  });
+
+  it('says what a drawing holds that it leaves out', () => {
+    const got = importFile(
+      'd.svg',
+      bytes(
+        mm(
+          '<defs><style>.a{fill:#f00} g > rect { fill: blue } rect:hover{fill:red} @media print { .a { display: none } }</style><text>not counted: nothing in here is drawn</text></defs>' +
+            '<rect class="a" width="10" height="10"/><use href="#nowhere" x="20"/>' +
+            '<text x="5" y="50">Label <tspan>one</tspan></text><image href="photo.png" width="10" height="10"/>' +
+            '<g display="none"><use href="#nowhere"/><text>hidden</text></g>',
+        ),
+      ),
+    );
+    if (got.kind !== 'outline') throw new Error('expected an outline');
+    expect(got.parts).toEqual([expect.objectContaining({ color: '#ff0000' })]);
+    expect(got.warnings).toEqual([
+      '1 copy of another shape (<use>) was left out.',
+      '1 piece of text was left out. Turn text into paths in the drawing program.',
+      '1 picture was left out.',
+      '3 rules of its style sheet were not read: colors and hidden shapes set there are not applied.',
+    ]);
+    // A drawing of plain shapes has nothing to say.
+    const plain = importFile('d.svg', bytes(mm('<rect width="10" height="10"/>')));
+    expect('warnings' in plain).toBe(false);
+  });
 
   it('groups shapes by fill color, inherited and in any CSS form', () => {
     const got = importFile('d.svg', bytes(mm('<g fill="#F00"><rect width="10" height="10"/><rect x="20" width="10" height="10" style="fill: rgb(0, 0, 255)"/></g><circle cx="50" cy="50" r="5" fill="none"/><rect x="40" width="4" height="4" fill="GOLD"/><rect x="60" width="4" height="4" fill="#ff0000"/>')));

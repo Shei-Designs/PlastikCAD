@@ -3,6 +3,7 @@
 // how the boxes follow the camera or go away when the view turns.
 import { Vector3 } from 'three';
 import type { Quaternion } from 'three';
+import { tr, trx } from '../i18n';
 import { boundsCenter } from '../model/math';
 import type { Vec3 } from '../model/types';
 import { MOVE_ARROW_PIXELS } from './handles';
@@ -199,8 +200,8 @@ export class HandlePrompts {
           center,
           fields: [
             {
-              tag: 'H',
-              name: 'Height',
+              tag: trx('size', 'H'),
+              name: tr('Height'),
               color: AXIS_COLORS[2],
               value: hz * 2,
               span: { from: this.handles.framePoint([0, 0, -hz]).toArray() as Vec3, to: this.handles.framePoint([0, 0, hz]).toArray() as Vec3 },
@@ -217,11 +218,11 @@ export class HandlePrompts {
         if (k.sx !== 0) {
           // Width goes on a bottom edge running along X: at the grip's side, else the side facing the camera.
           const side = k.sy !== 0 ? k.sy : this.nearest([{ at: [0, -hy, -hz] as Vec3, s: -1 }, { at: [0, hy, -hz] as Vec3, s: 1 }]).s;
-          fields.push(edge('W', 'Width', 0, hx * 2, [0, side * hy, -hz], [1, 0, 0], [0, 0, -hz]));
+          fields.push(edge(trx('size', 'W'), tr('Width'), 0, hx * 2, [0, side * hy, -hz], [1, 0, 0], [0, 0, -hz]));
         }
         if (k.sy !== 0) {
           const side = k.sx !== 0 ? k.sx : this.nearest([{ at: [-hx, 0, -hz] as Vec3, s: -1 }, { at: [hx, 0, -hz] as Vec3, s: 1 }]).s;
-          fields.push(edge('D', 'Depth', 1, hy * 2, [side * hx, 0, -hz], [0, 1, 0], [0, 0, -hz]));
+          fields.push(edge(trx('size', 'D'), tr('Depth'), 1, hy * 2, [side * hx, 0, -hz], [0, 1, 0], [0, 0, -hz]));
         }
         made = { kind: k, unit: 'mm', center, fields };
         break;
@@ -240,7 +241,7 @@ export class HandlePrompts {
             fields: [
               {
                 tag: 'Z',
-                name: 'Base height',
+                name: trx('above the plate', 'Base height'),
                 color: AXIS_COLORS[2],
                 value: z,
                 ...(Math.abs(z) > 1e-6 ? { span: { from: [cx, cy, 0] as Vec3, to: [cx, cy, z] as Vec3 } } : {}),
@@ -272,7 +273,7 @@ export class HandlePrompts {
           fields: [
             {
               tag: 'XYZ'[k.axis],
-              name: `Turn about ${'XYZ'[k.axis]}`,
+              name: tr('Turn about {axis}', { axis: 'XYZ'[k.axis] }),
               color: AXIS_COLORS[k.axis],
               value: 0,
               span: { from, to, axis: true },

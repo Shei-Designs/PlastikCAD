@@ -1,4 +1,5 @@
 import type { MeshData } from '../geometry/mesh';
+import { tr } from '../i18n';
 import { ByteReader, isSpace } from './scan';
 import { MeshBuilder } from './weld';
 
@@ -7,7 +8,7 @@ const FACET = 50;
 
 /** Binary or ASCII STL. STL has no units; millimeters are assumed, as every slicer does. */
 export function parseStl(bytes: Uint8Array): MeshData {
-  if (bytes.length === 0) throw new Error('This STL file is empty.');
+  if (bytes.length === 0) throw new Error(tr('This STL file is empty.'));
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const count = bytes.length >= HEADER ? view.getUint32(80, true) : 0;
 
@@ -17,15 +18,15 @@ export function parseStl(bytes: Uint8Array): MeshData {
   let mesh: MeshData;
   if (bytes.length >= HEADER && HEADER + count * FACET === bytes.length) mesh = parseBinary(view, count);
   else if (looksAscii(bytes)) mesh = parseAscii(bytes);
-  else if (bytes.length < HEADER) throw new Error('This is not an STL file, or it is incomplete.');
+  else if (bytes.length < HEADER) throw new Error(tr('This is not an STL file, or it is incomplete.'));
   else if (HEADER + count * FACET > bytes.length) {
     const present = Math.floor((bytes.length - HEADER) / FACET);
-    throw new Error(`This STL file is incomplete: it should hold ${count} triangles but ends after ${present}.`);
+    throw new Error(tr('This STL file is incomplete: it should hold {count} triangles but ends after {present}.', { count, present }));
   }
   // Longer than it needs to be: some writers pad the file or append their own data.
   else mesh = parseBinary(view, count);
 
-  if (mesh.triangles.length === 0) throw new Error('This STL file has no triangles.');
+  if (mesh.triangles.length === 0) throw new Error(tr('This STL file has no triangles.'));
   return mesh;
 }
 

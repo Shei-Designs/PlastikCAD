@@ -165,9 +165,10 @@ export function CommitInput({ value, onCommit, label, className, title, sheet }:
 /**
  * Text box to rename a card in place: it takes the focus with the name selected. `onDone` is told
  * the new name when the box is left (Enter leaves it), or null when there is nothing to change:
- * the box is empty, the name is the same, or Escape put it back.
+ * the box is empty, the name is the same, or Escape put it back. `onEscape` hears of that Escape
+ * first, for a dialog round the box that would otherwise take the key for its own.
  */
-export function RenameInput({ name, label, onDone }: { name: string; label: string; onDone: (value: string | null) => void }) {
+export function RenameInput({ name, label, onDone, onEscape }: { name: string; label: string; onDone: (value: string | null) => void; onEscape?: () => void }) {
   return (
     <input
       className="text-input"
@@ -182,6 +183,9 @@ export function RenameInput({ name, label, onDone }: { name: string; label: stri
       onKeyDown={(e) => {
         if (e.key === 'Enter') e.currentTarget.blur();
         if (e.key === 'Escape') {
+          // The key is the box's: it must not also close whatever the box is in.
+          e.stopPropagation();
+          onEscape?.();
           e.currentTarget.value = name;
           e.currentTarget.blur();
         }

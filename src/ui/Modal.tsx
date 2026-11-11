@@ -7,6 +7,8 @@ import type { KeyboardEvent, ReactNode } from 'react';
 interface ModalProps {
   open: boolean;
   onClose: () => void;
+  /** What Escape does, for a box that has somewhere to go back to first; closing it when left out. */
+  onEscape?: () => void;
   className: string;
   /** What a screen reader calls the box. */
   label?: string;
@@ -15,7 +17,7 @@ interface ModalProps {
   children: ReactNode;
 }
 
-export function Modal({ open, onClose, className, label, onKeyDown, children }: ModalProps) {
+export function Modal({ open, onClose, onEscape, className, label, onKeyDown, children }: ModalProps) {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const d = dialog.current;
@@ -32,7 +34,7 @@ export function Modal({ open, onClose, className, label, onKeyDown, children }: 
         // Escape closes the box and nothing else (it would otherwise also clear the selection).
         e.preventDefault();
         e.stopPropagation();
-        onClose();
+        (onEscape ?? onClose)();
       }}
       onKeyDown={(e) => {
         e.stopPropagation();

@@ -3,7 +3,7 @@ import type { PartNode, Vec3 } from '../model/types';
 import { evaluate, initKernel } from './testing';
 import { getGenerator } from './generators';
 import { defaultParams, sanitizeParams } from './generators/types';
-import { fixedMateTeeth, mateKinds, mateOf, sourceTeeth } from './mates';
+import { fixedMateTeeth, mateKinds, mateOf, sourceTeeth, usualPlanets, usualSpan } from './mates';
 import type { MateRequest } from './mates';
 import { QUALITY, rotate, translate } from './types';
 import type { Solid } from './types';
@@ -261,3 +261,159 @@ describe('mate edge cases', () => {
     expect(mild.center).toBeGreaterThan(39);
   });
 });
+
+describe('belt and chain mates', () => {
+  const drive = (kind: 'pulley' | 'sprocket', teeth: number, span?: number, angle = 0): MateRequest => ({ kind, teeth, backlash: 0, extra: 0, angle, ...(span === undefined ? {} : { span }) });
+  /** The length of an open belt round two circles, worked out the long way: the two straight runs and the two arcs. */
+  const beltLength = (d1: number, d2: number, c: number): number => {
+    const lean = Math.asin((d2 - d1) / 2 / c);
+    return 2 * c * Math.cos(lean) + (d1 * (Math.PI - 2 * lean)) / 2 + (d2 * (Math.PI + 2 * lean)) / 2;
+  };
+
+  it('offers a pulley to a pulley of any family and a sprocket to a sprocket', () => {
+    for (const id of ['gt2-pulley', 'htd-pulley', 't-pulley', 'mxl-pulley']) expect(mateKinds(id)).toEqual(['pulley']);
+    expect(mateKinds('sprocket')).toEqual(['sprocket']);
+  });
+
+  it('stands an equal pulley half the free belt away: 100 teeth of GT2 round two of 20 leaves 80 mm', () => {
+    const source = part('gt2-pulley', { profile: '2', teeth: 20 }, 15);
+    const mate = mateOf(source, drive('pulley', 20, 100, 90));
+    expect(mate.part).toBe('gt2-pulley');
+    expect(mate.params).toMatchObject({ profile: '2', teeth: 20 });
+    expect(mate.center).toBeCloseTo(80, 6);
+    expect(mate.ratio).toBe(1);
+    // On the side asked for, turned as its partner is, at the same height.
+    expect(mate.offset[0]).toBeCloseTo(0, 6);
+    expect(mate.offset[1]).toBeCloseTo(80, 6);
+    expect(mate.offset[2]).toBe(0);
+    expect(mate.rotation).toEqual([0, 0, 15]);
+    expect(mate.note).toBe('Belt length 200 mm');
+    expect(mate.warnings).toEqual([]);
+  });
+
+  it('sets unequal pulleys so that the belt asked for is exactly taut', () => {
+    const source = part('htd-pulley', { profile: '5M', teeth: 16 });
+    const mate = mateOf(source, drive('pulley', 48, 120));
+    const d1 = (16 * 5) / Math.PI;
+    const d2 = (48 * 5) / Math.PI;
+    expect(beltLength(d1, d2, mate.center)).toBeCloseTo(600, 6);
+    expect(mate.ratio).toBe(3);
+    // The two stand clear of each other.
+    const { a, b } = check('htd-pulley', { profile: '5M', teeth: 16 }, 0, drive('pulley', 48, 120));
+    expect(overlap(a, b)).toBeCloseTo(0, 6);
+  });
+
+  it('counts a chain in whole pitches round each sprocket: 40 links of #25 round two of 16 leaves 12 pitches', () => {
+    const source = part('sprocket', { chain: '25', teeth: 16 });
+    const mate = mateOf(source, drive('sprocket', 16, 40));
+    expect(mate.center).toBeCloseTo(12 * 6.35, 6);
+    expect(mate.note).toBeUndefined();
+    expect(mateOf(source, drive('sprocket', 16, 41)).note).toBe('A chain of an odd number of links needs an offset link.');
+    const { a, b } = check('sprocket', { chain: '25', teeth: 16 }, 0, drive('sprocket', 16, 40));
+    expect(overlap(a, b)).toBeCloseTo(0, 6);
+  });
+
+  it('offers a usual length until one is typed: the wheels about their two diameters apart, a chain in even links', () => {
+    const pulley = part('gt2-pulley', { profile: '2', teeth: 20 });
+    const span = usualSpan(pulley, 'pulley', 40);
+    const mate = mateOf(pulley, drive('pulley', 40));
+    expect(mate.note).toBe(`Belt length ${span * 2} mm`);
+    const sum = (60 * 2) / Math.PI;
+    expect(mate.center).toBeGreaterThanOrEqual(sum - 1e-9);
+    expect(mate.center).toBeLessThan(sum + 2);
+    const sprocket = part('sprocket', { chain: '06B', teeth: 15 });
+    expect(usualSpan(sprocket, 'sprocket', 30) % 2).toBe(0);
+  });
+
+  it('says when a belt or chain is too short, and stands the mate as near as it can go', () => {
+    const source = part('gt2-pulley', { profile: '2', teeth: 20 });
+    const mate = mateOf(source, drive('pulley', 20, 22));
+    expect(mate.warnings).toHaveLength(1);
+    const shortest = Number(/has (\d+) teeth/.exec(mate.warnings[0])?.[1]);
+    expect(mate.warnings[0]).toBe(`The belt is too short for these pulleys; the shortest that fits has ${shortest} teeth.`);
+    // One tooth fewer would bring the pitch circles within a pitch of each other.
+    const d = 40 / Math.PI;
+    expect(mate.center).toBeGreaterThanOrEqual(d + 2 - 1e-9);
+    expect(beltLength(d, d, mate.center)).toBeCloseTo(shortest * 2, 6);
+    expect((shortest - 1) * 2).toBeLessThan(beltLength(d, d, d + 2));
+    const chain = mateOf(part('sprocket', { chain: '25', teeth: 16 }), drive('sprocket', 16, 10));
+    expect(chain.warnings[0]).toMatch(/^The chain is too short for these sprockets; the shortest that fits has \d+ links\.$/);
+  });
+
+  it('warns about a wheel it cannot fully honor', () => {
+    const tilted = { ...part('gt2-pulley', { teeth: 20 }), rot: [30, 0, 0] as Vec3 };
+    expect(mateOf(tilted, drive('pulley', 20)).warnings).toEqual(['The part is tilted; the mate is placed as if it stood upright.']);
+    const resized = { ...part('gt2-pulley', { teeth: 20 }), natural: [10, 10, 10] as Vec3, size: [20, 20, 10] as Vec3 };
+    expect(mateOf(resized, drive('pulley', 20)).warnings).toEqual(['The part has been resized, so its teeth no longer match its pitch; the mate fits the unresized part.']);
+  });
+});
+
+describe('a planetary set', () => {
+  const ring = { module: 2, teeth: 48 };
+  const set = (sun: number, planets: number, angle = 0, rz = 0) => {
+    const source = part('ring', ring, rz);
+    const mate = mateOf(source, { kind: 'planetary', teeth: sun, planets, backlash: 0.1, extra: 0, angle });
+    return { mate, ringSolid: placed('ring', ring, rz) };
+  };
+
+  it('is what a ring gear is offered', () => {
+    expect(mateKinds('ring')).toEqual(['planetary']);
+  });
+
+  it('gives the planets half the teeth the ring has more than the sun, evenly round the axis, the sun in the middle', () => {
+    const { mate } = set(12, 3, 30);
+    expect(mate.part).toBe('spur');
+    expect(mate.name).toBe('Sun gear');
+    expect(mate.params).toMatchObject({ module: 2, teeth: 12, backlash: 0.1 });
+    expect(mate.offset).toEqual([0, 0, 0]);
+    expect(mate.more).toHaveLength(3);
+    // (48 - 12) / 2 = 18 teeth, on a circle of radius m (12 + 18) / 2 = 30.
+    expect(mate.center).toBe(30);
+    mate.more!.forEach((planet, i) => {
+      expect(planet).toMatchObject({ part: 'spur', name: 'Planet gear' });
+      expect(planet.params.teeth).toBe(18);
+      const at = ((30 + 120 * i) * Math.PI) / 180;
+      expect(planet.offset[0]).toBeCloseTo(30 * Math.cos(at), 9);
+      expect(planet.offset[1]).toBeCloseTo(30 * Math.sin(at), 9);
+    });
+    // Ring held: 1 + 48 / 12.
+    expect(mate.ratio).toBe(5);
+    expect(mate.note).toBe('Planets of 18 teeth. With the ring held, the carrier turns once for 5 turns of the sun.');
+    expect(mate.warnings).toEqual([]);
+  });
+
+  it('meshes every planet with the ring and with the sun, whichever way the ring is turned', () => {
+    for (const [angle, rz] of [[0, 0], [17, 4.5]]) {
+      const { mate, ringSolid } = set(12, 3, angle, rz);
+      const sun = placed(mate.part, mate.params as P, mate.rotation, mate.offset);
+      for (const planet of mate.more!) {
+        const solid = placed(planet.part, planet.params as P, planet.rotation, planet.offset);
+        expect(overlap(ringSolid, solid)).toBeCloseTo(0, 6);
+        expect(overlap(solid, sun)).toBeCloseTo(0, 6);
+        // Half a tooth round, the same planet runs into both: the turn it was given is the one that meshes.
+        const off = placed(planet.part, planet.params as P, [0, 0, planet.rotation[2] + 10], planet.offset);
+        expect(overlap(ringSolid, off)).toBeGreaterThan(1);
+        expect(overlap(off, sun)).toBeGreaterThan(1);
+      }
+    }
+  });
+
+  it('offers three planets where three can go evenly, else the nearest number that can', () => {
+    const source = part('ring', ring);
+    // 48 + 12 = 60 divides by 3; 48 + 16 = 64 does not, but by 4; 48 + 14 = 62 only by 2.
+    expect(usualPlanets(source, 12)).toBe(3);
+    expect(usualPlanets(source, 16)).toBe(4);
+    expect(usualPlanets(source, 14)).toBe(2);
+    for (const sun of [12, 16, 14]) expect(mateOf(source, { kind: 'planetary', teeth: sun, planets: usualPlanets(source, sun), backlash: 0.1, extra: 0, angle: 0 }).warnings).toEqual([]);
+  });
+
+  it('says when the teeth do not allow the set asked for', () => {
+    expect(set(13, 3).mate.warnings).toContain('Ring teeth minus sun teeth must be even for the planets to fit.');
+    // 48 + 12 = 60 does not divide by 7.
+    expect(set(12, 7).mate.warnings).toEqual(['7 planets cannot be spaced evenly: ring teeth plus sun teeth must divide by their number.']);
+    // Six planets of 18 teeth on a circle of 30 mm: 60 does divide by 6, but they would overlap.
+    expect(set(12, 6).mate.warnings).toEqual(['6 planets do not fit side by side.']);
+    expect(set(42, 3).mate.warnings).toContain('The sun is too large for this ring: the planets come out with fewer than 5 teeth.');
+  });
+});
+

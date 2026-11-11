@@ -1,4 +1,5 @@
 import type { MeshData, MeshWithUV } from '../geometry/mesh';
+import { tr, trx } from '../i18n';
 import type { OutlineShape, Vec2, Vec3 } from '../model/types';
 import { parse3mf } from './import3mf';
 import { parseCollada } from './importCollada';
@@ -36,12 +37,16 @@ export interface ImportedModel {
   used: string[];
   /** Files the model names (a material library, its pictures) that did not come along. */
   missing?: string[];
+  /** What the file holds that was left out, each in a sentence fit to show the user. */
+  warnings?: string[];
 }
 
 /** Filled 2D shapes in millimeters, Y up, in groups of one fill color. */
 export interface ImportedOutline {
   kind: 'outline';
   parts: { shapes: OutlineShape[]; color?: string }[];
+  /** What the drawing holds that was left out, each in a sentence fit to show the user. */
+  warnings?: string[];
 }
 
 export type Imported = ImportedModel | ImportedOutline;
@@ -96,7 +101,7 @@ function sniff(bytes: Uint8Array): string {
 export function importFile(fileName: string, bytes: Uint8Array, companions: Companion[] = []): Imported {
   const extension = fileKind(fileName, bytes);
   const base = fileName.slice(Math.max(fileName.lastIndexOf('/'), fileName.lastIndexOf('\\')) + 1);
-  const name = extensionOf(base) ? base.replace(/\.[^.]+$/, '') : base || 'Import';
+  const name = extensionOf(base) ? base.replace(/\.[^.]+$/, '') : base || trx('object name', 'Import');
   switch (extension) {
     case 'stl':
       return guarded('STL', () => ({ kind: 'model', parts: [{ name, mesh: checkedMesh(parseStl(bytes)) }], used: [] }));
@@ -106,20 +111,26 @@ export function importFile(fileName: string, bytes: Uint8Array, companions: Comp
       return guarded('3MF', () => checkedModel(parse3mf(bytes, name)));
     case 'glb':
     case 'gltf':
-      return guarded('glTF', () => checkedModel(parseGlb(bytes, name)));
+      return guarded('glTF', () => checkedModel(parseGlb(bytes, name, companions)));
     case 'dae':
       return guarded('Collada', () => checkedModel(parseCollada(bytes, name, companions)));
     case 'svg':
-      return guarded('SVG', () => ({ kind: 'outline', parts: parseSvg(bytes).map((part) => ({ ...part, shapes: checkedOutline(part.shapes) })) }));
+      return guarded('SVG', () => drawing((warnings) => parseSvg(bytes, warnings)));
     case 'dxf':
-      return guarded('DXF', () => ({ kind: 'outline', parts: parseDxf(bytes).map((part) => ({ ...part, shapes: checkedOutline(part.shapes) })) }));
+      return guarded('DXF', () => drawing((warnings) => parseDxf(bytes, warnings)));
     default: {
       const given = extensionOf(fileName);
-      const what = given ? `.${given} files` : 'Files of this type';
       const supported = IMPORT_EXTENSIONS.map((e) => e.toUpperCase()).join(', ');
-      throw new Error(`${what} can't be imported. Use one of: ${supported}.`);
+      throw new Error(given ? tr(".{extension} files can't be imported. Use one of: {supported}.", { extension: given, supported }) : tr("Files of this type can't be imported. Use one of: {supported}.", { supported }));
     }
   }
+}
+
+/** A drawing as read, with what the reader says it left out. */
+function drawing(read: (warnings: string[]) => ImportedOutline['parts']): ImportedOutline {
+  const warnings: string[] = [];
+  const parts = read(warnings).map((part) => ({ ...part, shapes: checkedOutline(part.shapes) }));
+  return warnings.length ? { kind: 'outline', parts, warnings } : { kind: 'outline', parts };
 }
 
 /**
@@ -132,7 +143,7 @@ export function guarded<T>(format: string, read: () => T): T {
     return read();
   } catch (e) {
     if (e instanceof Error && e.constructor === Error) throw e;
-    throw new Error(`This ${format} file is damaged or not supported.`);
+    throw new Error(tr('This {format} file is damaged or not supported.', { format }));
   }
 }
 
@@ -146,12 +157,12 @@ export function guarded<T>(format: string, read: () => T): T {
 export function checkedMesh<T extends { positions: Float32Array; triangles: Uint32Array; uv?: Float32Array }>(mesh: T): T {
   const p = mesh.positions;
   for (let i = 0; i < p.length; i++) {
-    if (!Number.isFinite(p[i])) throw new Error('This file holds coordinates that are not numbers, and cannot be imported.');
+    if (!Number.isFinite(p[i])) throw new Error(tr('This file holds coordinates that are not numbers, and cannot be imported.'));
   }
   const t = mesh.triangles;
   const count = p.length / 3;
   for (let i = 0; i < t.length; i++) {
-    if (!(t[i] < count)) throw new Error('This file is damaged: its triangles point at corners it does not have.');
+    if (!(t[i] < count)) throw new Error(tr('This file is damaged: its triangles point at corners it does not have.'));
   }
   const uv = mesh.uv;
   if (uv) for (let i = 0; i < uv.length; i++) if (!Number.isFinite(uv[i])) uv[i] = 0;
@@ -168,7 +179,7 @@ export function checkedOutline(shapes: OutlineShape[]): OutlineShape[] {
   for (const shape of shapes)
     for (const contour of shape.contours)
       for (const [x, y] of contour) {
-        if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('This file holds coordinates that are not numbers, and cannot be imported.');
+        if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error(tr('This file holds coordinates that are not numbers, and cannot be imported.'));
       }
   return shapes;
 }

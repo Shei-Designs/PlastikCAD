@@ -1,6 +1,7 @@
 // The custom parts bin: saving an object as a part, and listing, placing,
 // renaming and deleting the parts kept there.
 import { APP_NAME } from '../../appInfo';
+import { tr } from '../../i18n';
 import { parseDoc, serializeDoc } from '../../model/file';
 import { boundsCenter, tidyVec } from '../../model/math';
 import { cloneNode, newId, uniqueName, usedAssets } from '../../model/ops';
@@ -51,12 +52,13 @@ function partOf(node: SceneNode): SceneNode {
 export async function saveAsPart(id: string): Promise<boolean> {
   const node = getState().doc.scene.find((n) => n.id === id);
   if (!node) return false;
+  const save = tr('Save part');
   const chosen = await tell({
-    title: 'Save as a part',
-    text: `Save "${node.name}" as a custom part? It goes in the library under Custom, on all your devices, to place in any design.`,
-    actions: ['Save part', 'Cancel'],
+    title: tr('Save as a part'),
+    text: tr('Save "{name}" as a custom part? It goes in the library under Custom, on all your devices, to place in any design.', { name: node.name }),
+    actions: [save, tr('Cancel')],
   });
-  if (chosen !== 'Save part') return false;
+  if (chosen !== save) return false;
   try {
     const part = partOf(node);
     const assets = Object.fromEntries([...usedAssets([part])].filter((key) => getState().doc.assets[key]).map((key) => [key, getState().doc.assets[key]]));
@@ -72,7 +74,7 @@ export async function saveAsPart(id: string): Promise<boolean> {
     };
     await partStore().write(null, doc.name, serializeDoc(doc));
     set({ partsEpoch: getState().partsEpoch + 1 });
-    notify(`"${node.name}" is in your custom parts.`, 'ok');
+    notify(tr('"{name}" is in your custom parts.', { name: node.name }), 'ok');
     requestSync();
     return true;
   } catch (e) {
@@ -85,7 +87,7 @@ export async function saveAsPart(id: string): Promise<boolean> {
 async function loadPart(key: string): Promise<SceneNode> {
   const doc = parseDoc(await partStore().read(key));
   const node = doc.scene[0];
-  if (!node) throw new Error('This part is empty.');
+  if (!node) throw new Error(tr('This part is empty.'));
   const missing = Object.fromEntries(Object.entries(doc.assets).filter(([k]) => !getState().doc.assets[k]));
   if (Object.keys(missing).length) replaceState({ ...getState(), doc: { ...getState().doc, assets: { ...getState().doc.assets, ...missing } } });
   return { ...cloneNode(node), name: doc.name };
@@ -131,7 +133,7 @@ export async function renamePartAt(key: string, name: string): Promise<void> {
 
 export async function deletePart(key: string, name: string): Promise<boolean> {
   try {
-    const sure = await platform.confirm(`Delete the part "${name}"? Objects already placed from it stay in their designs.`, { title: APP_NAME, okLabel: 'Delete', cancelLabel: 'Keep' });
+    const sure = await platform.confirm(tr('Delete the part "{name}"? Objects already placed from it stay in their designs.', { name }), { title: APP_NAME, okLabel: tr('Delete'), cancelLabel: tr('Keep') });
     if (!sure) return false;
     await partStore().remove(key);
     set({ partsEpoch: getState().partsEpoch + 1 });

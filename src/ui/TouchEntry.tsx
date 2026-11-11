@@ -5,6 +5,7 @@
 // value. Opened from anywhere through `openTouchEntry`, shown once in App.
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { flushSync } from 'react-dom';
+import { tr } from '../i18n';
 import { inputState, keyboardAttached, onInputChange, refreshInput } from './inputMode';
 
 export { keyboardAttached } from './inputMode';
@@ -172,10 +173,7 @@ export function TouchEntrySheet() {
         <div className="touch-entry-head">
           <span className="touch-entry-label clip">{entry.label}</span>
           {!entry.multiline && (
-            <span className="touch-entry-now">
-              now {entry.value}
-              {entry.unit ? ` ${entry.unit}` : ''}
-            </span>
+            <span className="touch-entry-now">{tr('now {value}', { value: entry.unit ? `${entry.value} ${entry.unit}` : entry.value })}</span>
           )}
         </div>
         <div className="touch-entry-row">
@@ -203,10 +201,10 @@ export function TouchEntrySheet() {
         </div>
         <div className="touch-entry-buttons">
           <button type="button" className="chip" onClick={cancel}>
-            Cancel
+            {tr('Cancel')}
           </button>
           <button type="button" className="primary" onClick={done}>
-            Done
+            {tr('Done')}
           </button>
         </div>
       </div>

@@ -21,6 +21,7 @@
 //
 // Every figure in the table below is read off a drawing; the sectional areas
 // come out within a few percent of the catalog values.
+import { tr } from '../../i18n';
 import { arcSegments, circle, ensureCCW, polar, signedArea } from '../math2d';
 import { difference, extrude, translate } from '../types';
 import type { Polygon, Quality, Shape2D, Solid, Vec2 } from '../types';
@@ -348,35 +349,35 @@ export function profile(p: Params, q: Quality): Profile {
 
 export const extrusion: GeneratorDef = {
   id: 'extrusion',
-  name: 'Aluminum rail',
+  name: tr('Aluminum rail'),
   category: 'frames',
-  summary: 'Slotted aluminum extrusion in standard profile sizes.',
+  summary: tr('Slotted aluminum extrusion in standard profile sizes.'),
   groups: [
     {
-      title: 'Profile',
+      title: tr('Profile'),
       params: [
         {
           key: 'size',
-          label: 'Series',
+          label: tr('Series'),
           type: 'select',
           default: '20',
           options: Object.entries(SIZES).map(([value, s]) => ({ value, label: s.label })),
-          help: 'The size of one cell: 2020 is one 20 mm cell, 4040 is two by two of them or one 40 mm cell.',
+          help: tr('The size of one cell: 2020 is one 20 mm cell, 4040 is two by two of them or one 40 mm cell.'),
         },
         {
           key: 'style',
-          label: 'Slot',
+          label: tr('Slot'),
           type: 'select',
           default: 'v',
           options: [
             { value: 'v', label: 'V-slot' },
             { value: 't', label: 'T-slot' },
           ],
-          help: 'V-slot has 45° lips for wheels to run on; T-slot has square lips.',
+          help: tr('V-slot has 45° lips for wheels to run on; T-slot has square lips.'),
         },
-        { key: 'cells', label: 'Cells', type: 'number', default: 1, min: 1, max: 4, step: 1, integer: true, help: 'Cells in a row: 2020 is one, 2040 two, 2060 three.' },
-        { key: 'double', label: 'Two rows', type: 'boolean', default: false, help: 'Two rows of cells: 4040 is two cells with two rows, 4080 four cells with two rows.' },
-        { key: 'bores', label: 'Center bores', type: 'boolean', default: true, help: 'The hole down the middle of each cell.' },
+        { key: 'cells', label: tr('Cells'), type: 'number', default: 1, min: 1, max: 4, step: 1, integer: true, help: tr('Cells in a row: 2020 is one, 2040 two, 2060 three.') },
+        { key: 'double', label: tr('Two rows'), type: 'boolean', default: false, help: tr('Two rows of cells: 4040 is two cells with two rows, 4080 four cells with two rows.') },
+        { key: 'bores', label: tr('Center bores'), type: 'boolean', default: true, help: tr('The hole down the middle of each cell.') },
       ],
     },
   ],
@@ -390,7 +391,7 @@ export const extrusion: GeneratorDef = {
     if (cavities.length) cutters.push(cut(cavities));
     const solid = difference(extrude([plain], STUB), ...cutters);
     const warnings: string[] = [];
-    if (signedArea(outline) <= 0) warnings.push('The profile came out inside out; check the settings.');
+    if (signedArea(outline) <= 0) warnings.push(tr('The profile came out inside out; check the settings.'));
     const cd = (size.cell - size.core) / 2;
     const name = `${up * size.cell}${across * size.cell}`;
     return {
@@ -399,12 +400,12 @@ export const extrusion: GeneratorDef = {
       // and corner hole sits in solid metal, so the parity works out.
       outline: [outline, ...voids, ...bores, ...cavities],
       info: [
-        { label: 'Profile', value: `${name}: ${Math.round(width)} × ${Math.round(height)} mm` },
-        { label: 'Slot', value: `${str(p, 'style') === 't' ? 'T' : 'V'}, ${mm(size.opening, 1)} opening` },
-        { label: 'Slots', value: String(2 * (across + up)) },
-        { label: 'Slot depth', value: mm(cd) },
-        { label: 'Center bore', value: bool(p, 'bores') ? mm(size.bore, 1) : 'none' },
-        { label: 'Section', value: `${Math.round(area)} mm²` },
+        { label: tr('Profile'), value: `${name}: ${Math.round(width)} × ${Math.round(height)} mm` },
+        { label: tr('Slot'), value: tr('{kind}, {width} opening', { kind: str(p, 'style') === 't' ? 'T' : 'V', width: mm(size.opening, 1) }) },
+        { label: tr('Slots'), value: String(2 * (across + up)) },
+        { label: tr('Slot depth'), value: mm(cd) },
+        { label: tr('Center bore'), value: bool(p, 'bores') ? mm(size.bore, 1) : tr('none') },
+        { label: tr('Section'), value: `${Math.round(area)} mm²` },
       ],
       warnings,
     };

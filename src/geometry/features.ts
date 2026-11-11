@@ -10,6 +10,7 @@
 // Everything is in the coordinates the positions are given in: the caller
 // passes the mesh as placed in the design.
 import { CREASE_ANGLE } from './mesh';
+import { tr } from '../i18n';
 import { add, cross, dot, length, normalize, scale, sub } from '../model/math';
 import type { Vec3 } from '../model/types';
 
@@ -17,14 +18,14 @@ export type FeatureKind = 'point' | 'middle' | 'edge' | 'circle' | 'quadrant' | 
 
 /** The snaps in the order the tool offers them: the name on the chip's tooltip and what it takes hold of. */
 export const FEATURE_KINDS: { id: FeatureKind; label: string; help: string }[] = [
-  { id: 'point', label: 'Points', help: 'Snaps to corners, where edges meet.' },
-  { id: 'middle', label: 'Edge middles', help: 'Snaps to the middle of a straight edge.' },
-  { id: 'edge', label: 'Edges', help: 'Takes a straight edge: its length, and angles between edges.' },
-  { id: 'circle', label: 'Circles', help: 'Takes a round edge or arc: its diameter, and distances from its center.' },
-  { id: 'quadrant', label: 'Quadrants', help: 'Snaps to the four quadrant points of a circle.' },
-  { id: 'facecenter', label: 'Face centers', help: 'Snaps to the center of a flat face.' },
-  { id: 'face', label: 'Faces', help: 'Takes a flat face or curved surface: its area, and angles between faces.' },
-  { id: 'center', label: 'Object centers', help: 'Snaps to the center of each object.' },
+  { id: 'point', label: tr('Points'), help: tr('Snaps to corners, where edges meet.') },
+  { id: 'middle', label: tr('Edge middles'), help: tr('Snaps to the middle of a straight edge.') },
+  { id: 'edge', label: tr('Edges'), help: tr('Takes a straight edge: its length, and angles between edges.') },
+  { id: 'circle', label: tr('Circles'), help: tr('Takes a round edge or arc: its diameter, and distances from its center.') },
+  { id: 'quadrant', label: tr('Quadrants'), help: tr('Snaps to the four quadrant points of a circle.') },
+  { id: 'facecenter', label: tr('Face centers'), help: tr('Snaps to the center of a flat face.') },
+  { id: 'face', label: tr('Faces'), help: tr('Takes a flat face or curved surface: its area, and angles between faces.') },
+  { id: 'center', label: tr('Object centers'), help: tr('Snaps to the center of each object.') },
 ];
 
 /** The snaps that land on a single point. */

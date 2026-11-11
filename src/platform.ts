@@ -5,6 +5,7 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { APP_NAME } from './appInfo';
 import { asError } from './errors';
+import { tr } from './i18n';
 
 export interface FileFilter {
   name: string;
@@ -21,6 +22,54 @@ export interface PickedFile {
 export function isDesktop(): boolean {
   return isTauri();
 }
+
+/** Whether there may be a system keychain to keep a secret in: the desktop app only (see `secret_read` in lib.rs). */
+export const hasKeychain = (): boolean => isTauri() && !isAndroid();
+/** The secret the app keeps in the system's keychain, or null when it keeps none. Rejects where there is no keychain to ask. */
+export const secretRead = (): Promise<string | null> => command<string | null>('secret_read');
+export const secretWrite = (secret: string): Promise<void> => command('secret_write', { secret });
+export const secretRemove = (): Promise<void> => command('secret_remove');
+
+/** A newer version of the app, found among the releases. */
+export interface AppUpdate {
+  version: string;
+  /** Fetches it, checks it against the app's key and puts it in place. `progress` hears how far the download is, from 0 to 1, or null when its size is not known. */
+  install(progress: (fraction: number | null) => void): Promise<void>;
+}
+
+/**
+ * Asks the releases for a version newer than this one: null when there is none, and anywhere but
+ * in the desktop app, which is the only one that updates itself.
+ */
+export async function findAppUpdate(): Promise<AppUpdate | null> {
+  if (!isTauri() || isAndroid()) return null;
+  const { check } = await import('@tauri-apps/plugin-updater');
+  const update = await check({ timeout: 20_000 });
+  if (!update) return null;
+  return {
+    version: update.version,
+    install: async (progress) => {
+      let size = 0;
+      let got = 0;
+      await update.downloadAndInstall((event) => {
+        if (event.event === 'Started') size = event.data.contentLength ?? 0;
+        else if (event.event === 'Progress') {
+          got += event.data.chunkLength;
+          progress(size > 0 ? Math.min(1, got / size) : null);
+        }
+      });
+    },
+  };
+}
+
+/** Whether this copy of the app can put a newer version in its own place (see `can_self_update` in lib.rs). */
+export const canSelfUpdate = (): Promise<boolean> => (isTauri() && !isAndroid() ? command<boolean>('can_self_update') : Promise.resolve(false));
+/** Starts the app again, once an update is in place. */
+export const relaunch = (): Promise<void> => command('relaunch');
+/** Opens the page the releases are on, in the browser. */
+export const openReleases = (): Promise<void> => command('open_releases');
+/** The desktop app proper, which updates itself: not the Android app, not a browser. */
+export const updatesItself = (): boolean => isTauri() && !isAndroid();
 
 /** The Android app: the Tauri shell in an Android webview. */
 export function isAndroid(): boolean {
@@ -251,7 +300,7 @@ export async function saveBundle(suggestedName: string, filters: FileFilter[], m
   if (!isTauri()) {
     const files = make(base(suggestedName));
     for (const file of files) await writeTarget({ path: null, name: file.name }, file.bytes, file.mime);
-    return { where: files.map((f) => f.name).join(' and '), uris: [] };
+    return { where: files.map((f) => f.name).reduce((list, name) => tr('{list} and {name}', { list, name })), uris: [] };
   }
   if (isAndroid()) {
     // A folder of the bundle's name keeps its files together among the other exports.
@@ -494,10 +543,10 @@ export function guardClose(isDirty: () => boolean, flush: () => Promise<boolean>
           const saved = await flush();
           const close =
             saved ||
-            (await confirm('The latest changes could not be saved. Close anyway and lose them?', {
-              title: 'Unsaved changes',
-              okLabel: 'Close anyway',
-              cancelLabel: 'Keep editing',
+            (await confirm(tr('The latest changes could not be saved. Close anyway and lose them?'), {
+              title: tr('Unsaved changes'),
+              okLabel: tr('Close anyway'),
+              cancelLabel: tr('Keep editing'),
             }));
           if (close) await window.destroy();
         } finally {

@@ -1,3 +1,4 @@
+import { tr } from '../../i18n';
 import { bevelGear } from './bevel';
 import { BOARDS } from './boards';
 import { CUTOUTS } from './cutouts';
@@ -6,7 +7,7 @@ import { DUCTS } from './ducts';
 import { extrusion } from './extrusion';
 import { FAN_PARTS } from './fans';
 import { helicalGear, herringboneGear, rack, ringGear, spurGear } from './gears';
-import { leadScrew, leadScrewNut, metricBolt, metricNut } from './screws';
+import { leadScrew, leadScrewNut, metricBolt, metricNut, screwHole } from './screws';
 import { sprocket } from './sprocket';
 import { gt2Pulley, htdPulley, mxlPulley, tPulley } from './timingPulley';
 import type { Category, GeneratorDef, Params } from './types';
@@ -27,6 +28,7 @@ export const GENERATORS: GeneratorDef[] = [
   sprocket,
   metricBolt,
   metricNut,
+  screwHole,
   leadScrew,
   leadScrewNut,
   extrusion,
@@ -38,15 +40,15 @@ export const GENERATORS: GeneratorDef[] = [
 ];
 
 export const CATEGORIES: { id: Category; label: string; summary: string }[] = [
-  { id: 'gears', label: 'Gears', summary: 'Spur, helical, bevel, worm and other common gear types.' },
-  { id: 'pulleys', label: 'Pulleys & sprockets', summary: 'Pulleys & sprockets used for belt and chain driven systems.' },
-  { id: 'screws', label: 'Screws & threads', summary: 'Screws, bolts, nuts and threaded parts.' },
-  { id: 'frames', label: 'Rails & frames', summary: 'Aluminum extrusion rails for frames and structures.' },
-  { id: 'ducts', label: 'Pipes & ducts', summary: 'Pipe and duct sections for routing air or cables.' },
-  { id: 'boards', label: 'Dev boards', summary: 'Mounts and cutouts for common dev boards.' },
-  { id: 'fans', label: 'Fans', summary: 'Cutouts, grills and mounting holes for axial fans.' },
-  { id: 'cutouts', label: 'Panel cutouts', summary: 'Panel cutouts for common connectors and switches.' },
-  { id: 'motors', label: 'Motor mounts', summary: 'Mounting plates and brackets for steppers, gearmotors, servos and DC motors.' },
+  { id: 'gears', label: tr('Gears'), summary: tr('Spur, helical, bevel, worm and other common gear types.') },
+  { id: 'pulleys', label: tr('Pulleys & sprockets'), summary: tr('Pulleys & sprockets used for belt and chain driven systems.') },
+  { id: 'screws', label: tr('Screws & threads'), summary: tr('Screws, bolts, nuts and threaded parts.') },
+  { id: 'frames', label: tr('Rails & frames'), summary: tr('Aluminum extrusion rails for frames and structures.') },
+  { id: 'ducts', label: tr('Pipes & ducts'), summary: tr('Pipe and duct sections for routing air or cables.') },
+  { id: 'boards', label: tr('Dev boards'), summary: tr('Mounts and cutouts for common dev boards.') },
+  { id: 'fans', label: tr('Fans'), summary: tr('Cutouts, grills and mounting holes for axial fans.') },
+  { id: 'cutouts', label: tr('Panel cutouts'), summary: tr('Panel cutouts for common connectors and switches.') },
+  { id: 'motors', label: tr('Motor mounts'), summary: tr('Mounting plates and brackets for steppers, gearmotors, servos and DC motors.') },
 ];
 
 /**

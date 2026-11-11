@@ -24,10 +24,24 @@ Installers for Windows, macOS (Apple Silicon and Intel) and Linux (AppImage,
 `.deb`, `.rpm`) are on the
 [releases page](https://github.com/Shei-Designs/PlastikCAD/releases/latest),
 which also says which file to pick and how to get past the first-launch
-warning: the builds are not code-signed yet. There is no update check; a new
-version is installed over the old one, and devices that sync through Google
-Drive should be updated together (see [Google Drive](#google-drive)). The
+warning: the builds are not code-signed yet. The desktop app looks for a
+newer version when it starts and from **File → About**, and installs it when
+you say so: it saves the design, fetches the update, checks it against the
+app's own key, and starts again. A copy installed as a Linux package (`.deb`,
+`.rpm`) is shown the way to the releases instead, since only the system can
+replace it; the AppImage updates itself. The
 Android app is built from source for now (see [Development](#development)).
+
+## Languages
+
+The app is in English and French. It starts in the language of the device, and
+**File → Language…** sets another; the app then starts again in it, with the
+design saved first. Names the app gives to new objects are in the language in
+use and stay as they are in the design. What is translated is the words:
+labels, descriptions, messages. Numbers are written the same way in every
+language, with a decimal point and no thousands separator, and a comma typed
+in a number box is read as the decimal point. What is written into exported
+files (a URDF, a ROS package, a script) is in English whatever the language.
 
 ## How it works
 
@@ -50,7 +64,14 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
   with backlash and extra center distance to suit the printer. The mate
   stands meshed beside its gear at the right center distance, on whichever
   side you turn it to, and follows the numbers as they are typed; *Accept*
-  keeps it as a part of its own.
+  keeps it as a part of its own. A timing pulley or a chain sprocket has the
+  same wizard for the other wheel of its drive: give the teeth (or the ratio)
+  and the belt's teeth or the chain's links, and the mate stands exactly that
+  belt or chain away, with the center distance and belt length shown. On an
+  internal ring gear the wizard makes the planetary set: the sun, by its
+  tooth count, and the planets round it, meshed with both; it starts on a
+  number of planets that can be spaced evenly, and says when the teeth do
+  not allow the set asked for.
 - **Text** – lettering in four print-friendly fonts (sans, slab serif,
   monospace, stencil), on one line or several. Put it on a face and group it
   to emboss; make it a hole and sink it in a little (Ctrl+Down) to engrave.
@@ -74,7 +95,9 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
   four corner holes in one go. For a ring, put the hole where the middle of
   the bolt circle goes and type its radius or diameter; or leave the hole where
   it is and ring it around the middle of the plate, or around any point. The
-  pattern shows live while the numbers are typed.
+  pattern shows live while the numbers are typed, and the panel stays while
+  the view is turned and zoomed for a look at it; *Apply* keeps the pattern,
+  and *Cancel*, Escape or a press on another tool drops it.
 - **Structure** – a grouped object shows its history as a tree in the panel:
   primitives on the left, each grouping a node further right, branches merging
   where things were grouped together. Hover a node to see that part on the
@@ -93,6 +116,11 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
   whichever way an object is turned; *Object axes* (O) puts a single object's
   handles on its own axes instead, to size and move a turned part along
   itself.
+- **Panels** – a tab on each edge of the plate hides the panel on that side
+  and brings it back, to give the plate the whole window; the app remembers
+  which are hidden. On a window too narrow for them beside the plate (a
+  tablet held upright) the panels start hidden and lie over the plate, one at
+  a time, when called for.
 - **Ghosts** – the ghost button (or G) fades the selected objects to faint
   shadows that nothing picks: a click or a drag goes through them to whatever
   is around or inside, so a part nested in another can be adjusted without
@@ -127,12 +155,14 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
 | Helical gear | HTD timing pulley (3M / 5M / 8M) | Metric nut | | Elbow (any angle and bend radius, legs either side) | Arduino Uno R3/R4, Mega 2560, Nano | Screw holes only, for an opening of your own | | Gearmotor: N20, TT, 25 mm (JGA25), 37 mm (JGB37) |
 | Herringbone gear | T-series timing pulley (T2.5 / T5 / T10) | Trapezoidal lead screw (multi-start) | | Reducer (in line or eccentric) | ESP32-DevKitC V4, DevKit V1, NodeMCU-32S | Printed grill with the same patterns, to screw over the fan | | Servo: SG90, MG996R |
 | Internal ring gear | MXL / XL timing pulley | Lead screw nut (flanged) | | Tee / wye (branch at any angle) | NVIDIA Jetson Nano, Orin Nano / Orin NX and Xavier NX developer kits | The fan itself: frame, hub and blades of a typical fan, to check clearance | | DC motor: 775, 130 |
-| Gear rack (straight, helical, herringbone) | Chain sprocket (#25–#41, 05B–08B, bicycle) | | | | | | | |
+| Gear rack (straight, helical, herringbone) | Chain sprocket (#25–#41, 05B–08B, bicycle) | Screw hole (M2–M20): clearance, threaded or for a heat-set insert, with a counterbore, countersink or nut trap | | | | | | |
 | Bevel gear (90° shafts) | | | | | | | | |
 | Worm | | | | | | | | |
 
 Rotating parts share the same options for the shaft: round, D-shaft, hex or
 keyed bore with a fit clearance, plus an optional hub with set-screw holes.
+A screw hole comes in as a hole, standing on the plate with its mouth at the
+top: put it where the screw goes and group it with the object.
 Pipes and ducts are round or rectangular (with rounded corners), hollow with a
 wall or solid, and the bends are true arcs, the tapers true frustums; a solid
 elbow makes a good hole to cut a curved channel with.
@@ -356,6 +386,26 @@ Android, projects live in the app's own storage, and a copy saved for sharing
 goes to `Download/PlastikCAD`. In a plain browser they are kept by the browser
 itself, per profile.
 
+On desktop and Android nothing is lost by a slip. A deleted project goes to
+the **Trash** (a `Trash` folder inside the projects folder), shown from the
+projects browser, to be put back or deleted for good; a project sync deletes
+because another device did goes there too. And a project keeps up to 20
+**versions**: the save about to be replaced is set aside every ten minutes
+of work, and always before a sync replaces a project with another device's.
+The latest twelve are all kept, and one a day further back, so a long
+sitting does not push out the days before it.
+*Versions…* on a project's card lists them, and *Open as a copy* brings one
+back as a project of its own, leaving the project as it is. Versions live in
+a `History` folder beside the projects and are not synced. A plain browser
+has neither.
+
+The projects button carries a dot when sync has left word (two versions kept
+after a conflict, a project deleted from another device) or is in trouble;
+the word itself is at the top of the projects browser until dismissed. *About*
+in the File menu has **Copy diagnostics**: the app's version, the device and
+the errors of the session, to paste into a bug report. Nothing is ever sent
+by the app itself.
+
 The app runs once: double-clicking a design while it is open hands the file
 to the window that is already there rather than start a second one on the
 same projects folder.
@@ -392,9 +442,8 @@ same way. A project deleted on one device is deleted on the others, unless it
 was changed there since, in which case it comes back.
 
 Sync is careful about what it removes. A project deleted on another device
-is not destroyed here: on desktop and Android it moves to a `Trash` folder
-inside the projects folder, which is yours to empty (bring one back with
-**Open project file…**); what is deleted from the Drive goes to the Drive's
+is not destroyed here: on desktop and Android it moves to the Trash (see
+[Projects](#projects)); what is deleted from the Drive goes to the Drive's
 own trash. A sync that would delete more than half of the projects at once,
 on either side, asks first and offers to keep them instead: that is what an
 emptied Drive folder or a projects folder gone missing looks like, far more
@@ -402,21 +451,37 @@ often than a wish. What two places agreed on is remembered for that pair of
 places only, so linking another Google account, or choosing another projects
 folder, starts over by copying what each side has to the other and deletes
 nothing. A project saved while a sync is running is left for the next one.
+A request that Google puts off (too many at once, or a failure on its side)
+is tried again after a wait, a few times. A design over 4 MB goes up through
+Drive's upload for large files, which goes on from where it stopped when the
+connection breaks.
 
-Devices that sync should run the same version of the app. A design saved by
-a newer version than the one reading it is refused with a word to update,
-never opened with the parts the older version does not know left out, since
-its next save would lose them on every device.
+A design made in an older version of the app opens in a newer one as it is.
+The other way round, a design saved by a newer version than the one reading
+it is not opened as it is: the older version's next save would lose what it
+does not know (a new kind of part, a new setting) on every device. It says
+the design needs a newer version, and offers to open a copy instead, a
+project of its own, without those things; it says how many there are first,
+and the design itself is left untouched. Sync leaves such a design alone on
+the older device and names it, until the app there is updated. So devices
+that sync are best kept on the same version, and nothing is lost when they
+are not.
 
 Unlinking stops the syncing, tells Google the app no longer has access, and
 leaves the projects where they are, here and in the Drive. While linked, the
-sign-in tokens are kept in the app's own browser storage on the device, in
-plain text like most desktop apps keep them; do not link on a shared account.
+desktop app keeps the sign-in in the system's keychain (the Keychain on
+macOS, the Credential Manager on Windows, GNOME Keyring or KWallet on Linux),
+where the system guards it; one kept by an earlier version in the app's own
+storage is moved there at the next start. On a Linux session with no keychain
+running it stays in the app's own storage, in plain text, and so it does in
+the Android app, whose sign-in lasts an hour at a time: do not link on a
+shared account there. The About box's report says which it is.
 
 A `.plastikcad` file is plain JSON, written to diff well: keys in a fixed order,
 one property per line, vectors on a single line. If you keep the projects
 folder in git, a change to one object shows up as a change to a few lines,
-plus the thumbnail line at the top (and `Trash/` belongs in `.gitignore`).
+plus the thumbnail line at the top (and `Trash/` and `History/` belong in
+`.gitignore`).
 
 ```json
 {
@@ -437,9 +502,9 @@ plus the thumbnail line at the top (and `Trash/` belongs in `.gitignore`).
 | --- | --- |
 | Orbit / pan / zoom | Right drag / middle drag (or Shift + right drag) / wheel |
 | Select | Click; Shift-click adds; drag on the plate for a box selection |
-| Touch | One finger orbits, two pan and zoom, wherever they land (on an object too); tap an object to select it, tap the plate to clear; hold an object (on the plate or in the Objects list) to add it to the selection; hold the plate and drag for a box selection |
+| Touch | One finger orbits, two pan and zoom, wherever they land (on an object too); tap an object to select it, tap the plate to clear; hold an object (on the plate or in the Objects list) to add it to the selection; hold the plate and drag for a box selection; tap with two fingers to undo, with three to redo; a ring fills round a finger held still, to show the hold taking; while the pen is near, a resting hand is ignored |
 | Move | Drag (Shift keeps to one axis); arrow keys nudge by the snap step, Shift ×10 |
-| Raise or lower | Arrow handle; Ctrl+Up / Ctrl+Down |
+| Raise or lower | Arrow handle; Ctrl+↑ / Ctrl+↓ |
 | Resize | Corner and edge grips; the top grip pulls the height up, the bottom grip pulls it down; Shift scales evenly. With several objects selected the grips sit on the box round them all and stretch them together |
 | Type a value | Click any grip instead of dragging it, type the value (two for a corner grip, e.g. `20 x 15`), Enter |
 | Turn | Colored arcs, in 15° steps; Shift 45°, Alt 1° |
@@ -453,7 +518,7 @@ plus the thumbnail line at the top (and `Trash/` belongs in `.gitignore`).
 | Turn 90° about an axis | Shift+X / Shift+Y / Shift+Z; add Alt to turn the other way |
 | Align | L shows anchor dots on the selection: hover one to preview, click to apply; click one of the objects to make it the anchor, Esc to finish |
 | Measure | M: click a feature, then another, for the distance (with its X, Y and Z parts), the angle between edges or faces, or a circle's diameter; the snap symbols on the bar choose what the pointer takes hold of (points, edge middles, edges, circles, quadrants, face centers, faces, object centers), mixed as in a drafting program; Esc clears, then finishes |
-| Align by key | Alt+← / → / ↓ / ↑ (left / right / front / back), Alt+PgDn / PgUp (bottom / top); add Shift to center on that axis; Alt+C centers on X and Y, Alt+Shift+C on Z as well |
+| Align by key | Alt+← / Alt+→ / Alt+↓ / Alt+↑ (left / right / front / back), Alt+PgDn / Alt+PgUp (bottom / top); add Shift to center on that axis; Alt+C centers on X and Y, Alt+Shift+C on Z as well |
 | Object axes | O puts a single object's handles on its own axes; again for the plate's |
 | Fit to view | F |
 | Undo / redo | Ctrl+Z / Ctrl+Y or Ctrl+Shift+Z |
@@ -490,6 +555,14 @@ The other formats
 carry the shapes alone and say so before exporting a design that has pictures
 on it.
 
+In an SVG or DXF, round things are round. A hole or a disc goes out as a
+circle (in a DXF, a `CIRCLE`), and a rounded corner as an arc (a bulge on the
+DXF's polyline, an arc of the SVG's path), found again from the many short
+sides the shapes are built with: fifteen sides or more to the turn, with every
+corner within two microns of the arc. A cylinder goes out at the size it
+measures across. Anything else stays the polygon it is: a hexagon, a hole of
+twelve sides. A gear's flanks come out as short arcs through their corners.
+
 The file is made at a finer detail than the screen: round shapes, gear teeth
 and threads get twice the facets they are drawn with, so prints come out
 smooth while the editor stays quick. A cylinder set to a handful of sides is
@@ -498,7 +571,18 @@ left alone, since that is its shape.
 ## Import notes
 
 - **STL / OBJ** carry no units; coordinates are taken as millimeters (a URDF
-  says its meshes are in meters, and the robot importer scales them so).
+  says its meshes are in meters, and the robot importer scales them so). A
+  model that comes out under 5 mm across was most likely made in another
+  unit: the app asks whether it is in meters, inches, centimeters or
+  millimeters after all, and brings it in at that.
+- Whatever a drawing holds that is not read is said after the import, by the
+  name of the file: an SVG's text, pictures, copies of what cannot be found
+  and style rules it could not read, a DXF's outlines that do not close and
+  its text.
+- Large files are read away from the screen, which stays live meanwhile. The
+  badge over the plate says what is going on (the file of several being
+  read, the objects still being built) and its **Cancel** calls an import, an
+  export or a group being made off, leaving the design as it was.
 - A mesh that is not watertight can be placed, scaled and exported as it is,
   but cannot be grouped: there is no telling its inside from its outside.
 - A file of several parts (the objects of a 3MF, the materials of an OBJ, the
@@ -519,10 +603,11 @@ left alone, since that is its shape.
   them, an OBJ comes in plain.
 - **GLB / glTF**: meshes are placed by the scene's nodes and turned from Y up
   in meters to Z up in millimeters; each material brings its base color and
-  picture, laid out by the file's texture coordinates. A `.gltf` must embed
-  its buffers; one that keeps them in separate files should be saved as a
-  `.glb` first. Files with Draco or meshopt compression are refused; export
-  them again without compression.
+  picture, laid out by the file's texture coordinates. A `.gltf` that keeps
+  its buffers and pictures in separate files reads them from beside it, as
+  an OBJ does its `.mtl`; where the picker grants one file at a time, pick
+  them together with it or when asked. Files with Draco or meshopt
+  compression are refused; export them again without compression.
 - **Collada (.dae)**: the meshes of the visual scene, placed by its nodes,
   one part per material with its diffuse color and, when the picture it names
   came along, its texture; the file's own unit and up axis are honored, so a
@@ -533,8 +618,10 @@ left alone, since that is its shape.
 - **SVG**: shapes are grouped by fill color, each group a part of its own.
   Every closed outline is filled and extruded, whatever its stroke or fill, so
   laser-cutter drawings work (including a gear profile exported from PlastikCAD
-  as SVG). Convert text to paths first; `<use>`, images and CSS classes are
-  not read.
+  as SVG). A `<use>` draws what it names again where it says, and a style
+  sheet's rules apply where their selectors are plain (a tag, classes, an
+  id). Convert text to paths first; images, and style rules that reach
+  across elements, are not read.
 - **URDF** is imported from Robot mode (*Import URDF…* under the robot
   tree), with its meshes; see there.
 - **DXF**: lines, polylines, circles, arcs, ellipses and splines are chained
@@ -560,6 +647,14 @@ left alone, since that is its shape.
   ANSI B29.1 tooth form.
 - **Threads** follow the ISO metric and ISO trapezoidal basic profiles, with a
   clearance setting for printing.
+- **Screw holes**: clearance holes are those of ISO 273 (close, normal and
+  loose are its fine, medium and coarse series). A counterbore takes the head
+  of an ISO 4762 socket cap screw, a nut trap the nut of ISO 4032, and a
+  countersink is a 90° cone out to the sharp edge of an ISO 10642 head (DIN
+  965 for M2 and M2.5; the M14 figure is unverified); each recess is as much
+  wider than the head or nut as the hole is than the screw. Heat-set insert
+  bores (M2 to M6) are the drill sizes one insert maker lists; other makers
+  differ by a few tenths, so check the sheet of the inserts in hand.
 - **Extrusions** follow one maker's section drawing per size, the others
   being within a few tenths of it: OpenBuilds V-Slot for 20 mm, Misumi HFS6
   for 30 mm and HFS8 for 40 mm. Lip thickness, slot opening, channel width,
@@ -607,11 +702,13 @@ pnpm install
 pnpm tauri dev      # run the desktop app with hot reload
 pnpm dev            # or just the UI, in a browser at http://localhost:1430
 pnpm test           # model, geometry, part, file-format, sync and robot export tests (cargo test in src-tauri for the Rust side)
+pnpm e2e            # builds the app and drives it in a headless browser, with a mouse and with fingers (once: pnpm exec playwright install chromium)
 pnpm smoke:robots   # exports the reference robots and runs them in MuJoCo (pip install mujoco)
 pnpm smoke:ros      # the same in ROS 2 Jazzy, RViz (screenshots) and Gazebo, in Docker
 pnpm smoke:isaac    # the same in Isaac Sim through its URDF importer (ISAACSIM_PYTHON=~/isaacsim-env/bin/python)
 pnpm smoke:usd      # the exported Isaac Sim stages opened, played and driven over ROS 2 in Isaac Sim
 pnpm typecheck
+pnpm lint           # React hooks used wrongly, and a few plain mistakes the type checker does not see
 pnpm notices        # after adding or removing a dependency: writes public/THIRD-PARTY-NOTICES.txt again
 pnpm tauri build    # build installers into src-tauri/target/release/bundle
 pnpm tauri android build --apk   # the Android app, with the Tauri Android prerequisites installed
@@ -626,13 +723,38 @@ and `docs/banner.svg`; after a change, rasterize the tile at 1024 px
 included, with `pnpm tauri icon docs/brand/icon.json` — see
 [the Tauri docs](https://tauri.app/develop/icons/).
 
-Every push runs `.github/workflows/ci.yml`: the type check, the tests and the
+Every push runs `.github/workflows/ci.yml`: the type check, lint, the tests and the
 build, the Rust lints and tests, a compile of the native side on macOS and
-Windows, and the reference robots in MuJoCo. Pushing a `v*` tag runs
+Windows, the reference robots in MuJoCo, and the browser tests in `e2e/`
+(the report of a failed run is kept as an artifact). Pushing a `v*` tag runs
 `.github/workflows/release.yml`, which runs the tests again, then builds
 installers for all three platforms and attaches them to a draft GitHub
 release. The version number is set in `package.json`, `src-tauri/tauri.conf.json`
 and `src-tauri/Cargo.toml`; a test fails when they differ.
+
+### Updates
+
+The desktop app updates itself with Tauri's updater. A release build signs
+each installer with a key of the project's own (not the operating systems'
+code signing, which is still to come) and publishes an index of them,
+`latest.json`, with the release; an installed app reads that index from the
+latest published release and takes nothing that is not signed with the key
+whose public half is in `src-tauri/tauri.conf.json`.
+
+- The private half and its password are the repository secrets
+  `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, which
+  the release workflow hands to the build. **Keep a copy of both somewhere
+  safe.** A release signed with any other key is refused by every copy of
+  the app already installed, and there is no way to give those a new key
+  but a fresh install by hand.
+- The update files are made only when a build is told to
+  (`--config src-tauri/tauri.updater.conf.json`, as the release workflow
+  does), so an ordinary `pnpm tauri build` needs no key.
+- A release is a draft until it is published on GitHub, and an installed app
+  sees it only then.
+- In your own fork, make a key of your own with
+  `pnpm tauri signer generate`, put its public half and your releases'
+  address in `tauri.conf.json`, and its private half in the secrets.
 
 ### Google Drive sync in your own build
 
@@ -700,6 +822,17 @@ Moving, turning and resizing therefore only change a matrix on the graphics
 card; the kernel runs when a shape's form changes or a group is made, and then
 only for that node. Undo and redo reuse the same cache.
 
+What keeps large models from holding up the screen: everything that grows
+with the number of triangles is done in the geometry worker. A model file is
+read there (`worker/importing.ts`: parsed, its corners joined, centered and
+put in the form the design keeps). A build comes back with its edge lines and
+with a tree of boxes over its triangles (`geometry/bvh.ts`), through which
+the pointer finds the triangle it is on in a few steps rather than by trying
+them all. The Measure tool reads a mesh of more than 50,000 triangles there
+too, and says so while it waits. The worker cannot be interrupted in the
+middle of a solid, so calling work off stops it and starts another when next
+needed; the objects that were being built are simply asked for again.
+
 ### Adding a shape
 
 1. Add its kind to `ShapeKind` in `src/model/types.ts`.
@@ -722,11 +855,61 @@ The palette, inspector, file format and export pick it up from there.
 Generators are plain functions from parameters to a shape description; they
 never touch the mesh kernel, which keeps them easy to test.
 
+### Words and languages
+
+Every text a user reads is written in English where it is used, inside a call
+that looks it up (`src/i18n/index.ts`):
+
+```ts
+tr('Save a copy…')                               // the English text is the key
+tr('Deleted {name}.', { name })                  // with something put in
+trx('verb', 'Open')                              // one English text, two meanings
+plural(n, '{n} object', '{n} objects')           // a count
+mark('Move') … marked(group)                     // written in one place, shown in another
+rich('Made by {author}.', { author: <a>…</a> })  // with elements put in
+```
+
+The text must be written out at the call, whole sentences at a time: a test
+(`src/i18n/catalog.test.ts`) reads the source for these calls and holds every
+catalog to them. It fails when a catalog lacks a text, holds one the source no
+longer uses, or puts other things in than the English does.
+
+To add a language:
+
+1. Copy `src/i18n/fr.ts` and the folder `src/i18n/fr/` under the new
+   language's code, and translate the right-hand side of every entry. A text
+   about a count takes one form per plural category of the language
+   (`{ one: '…', other: '…' }`). `glossary.md` there lists the word chosen for
+   each of the app's terms: start a new one, so that a term is translated the
+   same way everywhere.
+2. Add the language to `Language`, `LANGUAGES` and `CATALOGS` in
+   `src/i18n/index.ts`, and to `CATALOGS` in the catalog test.
+3. `pnpm test` then lists what is missing, and `pnpm e2e` runs the layout
+   checks: text runs longer in some languages than in English.
+
+The language is settled once, when the app starts, so a text can be looked up
+anywhere, in a table at the top of a module as well as in a component, and the
+geometry worker speaks the language of the page that started it.
+
+Left as they are on purpose, to keep this to words. None is ruled out; each
+waits until someone needs it:
+
+- Numbers in the language's own form (a decimal comma, a space between
+  thousands). A typed comma is already read as the decimal point.
+- The W, D and H tags of the size boxes, which stay as in English.
+- The text inside exported files.
+- Errors from the native side when the system refuses to read, write, move or
+  delete a file. They are shown as they come, in English, with the path and
+  the system's own reason.
+- The keys of the test drive, which go by letter (W, A, S, D) and so sit
+  elsewhere on a keyboard that is not QWERTY. The arrow keys work on all.
+- A part that still has the name the app gave it is recognised as such only
+  in the language it was named in.
+
 ## Roadmap
 
 - More scripts and fonts for lettering.
-- More parts: throated worm wheel, planetary set helper, V-belt pulleys,
-  imperial threads.
+- More parts: throated worm wheel, V-belt pulleys, imperial threads.
 - Assembly preview of meshing gears.
 - STEP export. Shapes and parts are already described as profiles and
   operations rather than triangles, so a B-rep backend can evaluate the same

@@ -2,15 +2,16 @@
 // say how the links move against each other. Nothing here changes the design;
 // a design without a robot is just a design. Everything is in the design's
 // units (mm, degrees, grams); the exporters turn them into SI.
+import { mark, tr, trx } from '../i18n';
 import type { Vec3 } from '../model/types';
 
 export type JointType = 'fixed' | 'revolute' | 'continuous' | 'prismatic';
 
 export const JOINT_TYPES: { id: JointType; name: string; help: string }[] = [
-  { id: 'revolute', name: 'Revolute', help: 'Turns about the axis between two limits.' },
-  { id: 'continuous', name: 'Continuous', help: 'Turns about the axis without limits, like a wheel.' },
-  { id: 'prismatic', name: 'Prismatic', help: 'Slides along the axis between two limits.' },
-  { id: 'fixed', name: 'Fixed', help: 'Holds the child still against its parent.' },
+  { id: mark('revolute'), name: tr('Revolute'), help: tr('Turns about the axis between two limits.') },
+  { id: mark('continuous'), name: tr('Continuous'), help: tr('Turns about the axis without limits, like a wheel.') },
+  { id: mark('prismatic'), name: tr('Prismatic'), help: tr('Slides along the axis between two limits.') },
+  { id: mark('fixed'), name: tr('Fixed'), help: tr('Holds the child still against its parent.') },
 ];
 
 /** How a link's mass is known: weighed, or figured from its material and how it is printed. */
@@ -29,12 +30,12 @@ export type MassSpec =
 export type CollisionKind = 'hull' | 'box' | 'cylinder' | 'sphere' | 'mesh' | 'none';
 
 export const COLLISION_KINDS: { id: CollisionKind; name: string; help: string }[] = [
-  { id: 'hull', name: 'Convex hull', help: 'The shape wrapped tight, with no hollows: fast and close.' },
-  { id: 'box', name: 'Box', help: "The object's box, turned as it is: fastest, roomier." },
-  { id: 'cylinder', name: 'Cylinder', help: "A cylinder filling the object's box along its own Z: wheels, rollers, shafts." },
-  { id: 'sphere', name: 'Sphere', help: "A ball filling the object's box: balls and casters." },
-  { id: 'mesh', name: 'Exact mesh', help: 'The visual shape itself: slow, and most simulators approximate it anyway.' },
-  { id: 'none', name: 'None', help: 'Passes through everything.' },
+  { id: 'hull', name: tr('Convex hull'), help: tr('The shape wrapped tight, with no hollows: fast and close.') },
+  { id: 'box', name: tr('Box'), help: tr("The object's box, turned as it is: fastest, roomier.") },
+  { id: 'cylinder', name: tr('Cylinder'), help: tr("A cylinder filling the object's box along its own Z: wheels, rollers, shafts.") },
+  { id: 'sphere', name: tr('Sphere'), help: tr("A ball filling the object's box: balls and casters.") },
+  { id: 'mesh', name: tr('Exact mesh'), help: tr('The visual shape itself: slow, and most simulators approximate it anyway.') },
+  { id: 'none', name: trx('collision', 'None'), help: tr('Passes through everything.') },
 ];
 
 /** The robot's settings for one top-level object. An object with none is a link with the defaults. */
@@ -80,11 +81,11 @@ export interface RobotJoint {
 export type SensorKind = 'camera' | 'depth' | 'lidar' | 'imu' | 'touch';
 
 export const SENSOR_KINDS: { id: SensorKind; name: string; help: string }[] = [
-  { id: 'camera', name: 'Camera', help: 'A color camera looking along its X axis.' },
-  { id: 'depth', name: 'Depth camera', help: 'A camera that also gives the distance to everything it sees, as a point cloud.' },
-  { id: 'lidar', name: 'Lidar', help: 'A laser scanner sweeping a plane about its Z axis.' },
-  { id: 'imu', name: 'IMU', help: 'Measures turn rate and acceleration, for odometry.' },
-  { id: 'touch', name: 'Touch', help: 'Feels the force of whatever the link presses on: a foot on the floor.' },
+  { id: mark('camera'), name: mark('Camera'), help: tr('A color camera looking along its X axis.') },
+  { id: mark('depth'), name: mark('Depth camera'), help: tr('A camera that also gives the distance to everything it sees, as a point cloud.') },
+  { id: mark('lidar'), name: mark('Lidar'), help: tr('A laser scanner sweeping a plane about its Z axis.') },
+  { id: 'imu', name: mark('IMU'), help: tr('Measures turn rate and acceleration, for odometry.') },
+  { id: mark('touch'), name: mark('Touch'), help: tr('Feels the force of whatever the link presses on: a foot on the floor.') },
 ];
 
 /** A sensor fixed to a link, as a frame of its own with a Gazebo sensor in it. */
@@ -125,33 +126,33 @@ export type DriveRole = 'left' | 'right' | 'steer-left' | 'steer-right' | 'front
 export const DRIVE_KINDS: { id: DriveKind; name: string; help: string; roles: { id: DriveRole; name: string }[] }[] = [
   {
     id: 'differential',
-    name: 'Differential',
-    help: 'Turns the left and right wheels together from velocity commands (cmd_vel) and reports odometry. A track is all of its wheels on one side.',
+    name: tr('Differential'),
+    help: tr('Turns the left and right wheels together from velocity commands (cmd_vel) and reports odometry. A track is all of its wheels on one side.'),
     roles: [
-      { id: 'left', name: 'Left' },
-      { id: 'right', name: 'Right' },
+      { id: 'left', name: tr('Left') },
+      { id: 'right', name: tr('Right') },
     ],
   },
   {
     id: 'ackermann',
     name: 'Ackermann',
-    help: 'Drives the wheels on each side and steers like a car: one steering joint each side turns a front wheel mount.',
+    help: tr('Drives the wheels on each side and steers like a car: one steering joint each side turns a front wheel mount.'),
     roles: [
-      { id: 'left', name: 'Drive left' },
-      { id: 'right', name: 'Drive right' },
-      { id: 'steer-left', name: 'Steer left' },
-      { id: 'steer-right', name: 'Steer right' },
+      { id: 'left', name: tr('Drive left') },
+      { id: 'right', name: tr('Drive right') },
+      { id: 'steer-left', name: tr('Steer left') },
+      { id: 'steer-right', name: tr('Steer right') },
     ],
   },
   {
     id: 'mecanum',
     name: 'Mecanum',
-    help: 'Four rollered wheels, one at each corner, that move the robot any way.',
+    help: tr('Four rollered wheels, one at each corner, that move the robot any way.'),
     roles: [
-      { id: 'front-left', name: 'Front left' },
-      { id: 'front-right', name: 'Front right' },
-      { id: 'rear-left', name: 'Rear left' },
-      { id: 'rear-right', name: 'Rear right' },
+      { id: 'front-left', name: tr('Front left') },
+      { id: 'front-right', name: tr('Front right') },
+      { id: 'rear-left', name: tr('Rear left') },
+      { id: 'rear-right', name: tr('Rear right') },
     ],
   },
 ];
@@ -198,11 +199,11 @@ export function lidarAngles(rays: number, hfov: number): number[] {
 }
 
 export const WORLDS: { id: World; name: string; help: string }[] = [
-  { id: 'flat', name: 'Flat', help: 'A level floor.' },
-  { id: 'rough', name: 'Rough', help: 'Gentle bumps a few centimeters high around a flat start; for walkers and rovers.' },
-  { id: 'slope', name: 'Slope', help: 'A floor tilted eight degrees.' },
-  { id: 'steps', name: 'Steps', help: 'Three 10 mm steps, 120 mm deep, starting 300 mm ahead of the robot.' },
-  { id: 'ramp', name: 'Ramp', help: 'A 10° ramp 600 mm long starting 300 mm ahead, onto a flat top.' },
+  { id: 'flat', name: trx('floor', 'Flat'), help: tr('A level floor.') },
+  { id: 'rough', name: tr('Rough'), help: tr('Gentle bumps a few centimeters high around a flat start; for walkers and rovers.') },
+  { id: 'slope', name: tr('Slope'), help: tr('A floor tilted eight degrees.') },
+  { id: 'steps', name: tr('Steps'), help: tr('Three 10 mm steps, 120 mm deep, starting 300 mm ahead of the robot.') },
+  { id: 'ramp', name: tr('Ramp'), help: tr('A 10° ramp 600 mm long starting 300 mm ahead, onto a flat top.') },
 ];
 
 export const emptyRobot = (): Robot => ({ root: null, base: 'free', links: [], joints: [], sensors: [], control: true });

@@ -39,6 +39,7 @@ import {
   WebGLRenderer,
 } from 'three';
 import type { CanvasTexture, Object3D, WebGLRenderTarget } from 'three';
+import { tr } from '../i18n';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import type { Mat } from '../model/math';
@@ -62,7 +63,7 @@ import type { HandleKind, ViewItem, ViewPreset, ViewerEvents, ViewerOptions } fr
 
 export type { AlignMode, HandleKind, HandlePrompt, Marker, SnapPoint, ViewItem, ViewPreset, ViewerEvents, ViewerOptions } from './types';
 
-const DEFAULTS: ViewerOptions = { theme: 'dark', edges: true, grid: true, snap: 1, align: null, highlight: null, snaps: null, marker: null, markers: null, ground: null, preview: null, measure: null, objectAxes: false };
+const DEFAULTS: ViewerOptions = { theme: 'dark', edges: true, grid: true, snap: 1, align: null, highlight: null, snaps: null, marker: null, markers: null, ground: null, preview: null, measure: null, objectAxes: false, frozen: false };
 export const GIZMO_SIZE = 92;
 const GIZMO_MARGIN = 8;
 const PLATE_HALF = 100;
@@ -300,7 +301,7 @@ export class Viewer {
     this.disposed = true;
     this.fallback?.remove();
     if (!this.ok) return;
-    this.input.removeMarquee();
+    this.input.removeOverlays();
     if (this.raf) cancelAnimationFrame(this.raf);
     this.input.endHold();
     if (this.ground) {
@@ -346,7 +347,7 @@ export class Viewer {
     Object.assign(canvas.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', display: 'block', touchAction: 'none' });
     // A picture, as far as a screen reader can tell; without a name it is announced as nothing at all.
     canvas.setAttribute('role', 'img');
-    canvas.setAttribute('aria-label', '3D view of the design');
+    canvas.setAttribute('aria-label', tr('3D view of the design'));
     if (getComputedStyle(this.container).position === 'static') this.container.style.position = 'relative';
     this.container.appendChild(canvas);
     canvas.addEventListener('webglcontextlost', this.onContextLost);
@@ -566,7 +567,7 @@ export class Viewer {
 
   private showFallback(): void {
     const el = document.createElement('div');
-    el.textContent = '3D view unavailable: WebGL could not be initialized.';
+    el.textContent = tr('3D view unavailable: WebGL could not be initialized.');
     Object.assign(el.style, {
       position: 'absolute',
       inset: '0',

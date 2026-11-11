@@ -5,6 +5,7 @@
 import { clampAngle } from '../text/curve';
 import type { TextCurve } from '../text/curve';
 import { FILE_FORMAT, FILE_VERSION, LEGACY_FORMAT } from '../appInfo';
+import { inEveryLanguage, tr } from '../i18n';
 import { SHAPES, clampParams, defaultParams } from '../geometry/shapes';
 import { GENERATORS, RENAMED_PARTS, getGenerator } from '../parts/generators';
 import { sanitizeParams } from '../parts/generators/types';
@@ -15,8 +16,11 @@ import { COLLISION_KINDS, DRIVE_KINDS, JOINT_TYPES, SENSOR_KINDS, WORLDS, defaul
 import type { CollisionKind, Drive, DriveRole, JointType, MassSpec, Robot, RobotJoint, RobotLink, RobotSensor, SensorKind } from '../robot/types';
 
 export function emptyDoc(): Doc {
-  return { id: newId(), name: 'Untitled', scene: [], assets: {} };
+  return { id: newId(), name: tr('Untitled'), scene: [], assets: {} };
 }
+
+/** Whether a design still has the name a new one is given, in whichever language it was given. */
+export const isUntitled = (name: string): boolean => inEveryLanguage('Untitled').includes(name);
 
 /** Longest note kept on an object. */
 export const MAX_NOTE = 2000;
@@ -170,30 +174,80 @@ const KINDS = new Set<string>(SHAPES.map((s) => s.kind));
 /** Groups within groups, past which a design is refused rather than read recursively. */
 const MAX_NESTING = 64;
 
-const NEWER = 'This design was saved by a newer version of the app. Update to open it.';
+const NEWER = tr('This design was saved by a newer version of the app. Update to open it.');
+
+/**
+ * What reading a design a newer version of the app saved ends in. The file is in a later version
+ * of the format, or names something this build does not know. It is not opened as it is: its next
+ * save would lose that for good, here and on every device the save syncs to. `parseDocWithout`
+ * reads such a file all the same, leaving out what is not known, for a copy to be made of.
+ */
+export class NewerVersion extends Error {
+  constructor() {
+    super(NEWER);
+  }
+}
+
 /**
  * From this version of the format on, a file is read strictly: a kind of
- * object, part, option or sensor this build does not know can only have come
- * from a newer build, and dropping it or putting a default in its place would
- * lose it for good at the next save and on every device that save syncs to.
- * Such a file is refused instead. Older files are read as they always were,
- * what they name that the app no longer has left out.
+ * object, part, option or sensor this build does not know, or a field it has
+ * no name for, can only have come from a newer build, and dropping it or
+ * putting a default in its place would lose it at the next save. Such a file
+ * is refused (`NewerVersion`). Older files are read as they always were, what
+ * they name that the app no longer has left out.
  */
 const STRICT_FROM = 3;
 /** Whether the file being read is one to be strict with; set by `parseFile` for the reading that follows it. */
 let strict = false;
-/** A value that names one of a fixed set: itself when it is one, else undefined, or the file refused when that can only mean a newer build wrote it. */
+/** Set while a file is read for a copy without what this build does not know (`parseDocWithout`): each such thing is counted in `left` and passed over. */
+let stripping = false;
+let left = 0;
+
+/** Something in a strict file that this build does not know: the file is refused, or, read for a copy, the thing counted and left out. */
+function notKnown(): void {
+  if (!strict) return;
+  if (!stripping) throw new NewerVersion();
+  left++;
+}
+
+/** A value that names one of a fixed set: itself when it is one, else undefined, which in a strict file can only mean a newer build wrote it. */
 function oneOf<T extends string>(value: unknown, known: (v: string) => boolean): T | undefined {
   if (typeof value !== 'string') return undefined;
   if (known(value)) return value as T;
-  if (strict) throw new Error(NEWER);
+  notKnown();
   return undefined;
 }
+
+/** A record of a strict file has these fields and no others: any more is something a newer build wrote. */
+function only(record: Record<string, unknown>, known: ReadonlySet<string>): void {
+  if (strict && Object.keys(record).some((key) => !known.has(key))) notKnown();
+}
+
+/** The fields this build writes for an object: those of `canonical`, whatever the object. */
+const NODE_FIELDS: ReadonlySet<string> = new Set(Object.keys(canonical({ id: '', name: '', pos: [0, 0, 0], rot: [0, 0, 0], size: [1, 1, 1], hole: false, color: '', type: 'shape', shape: 'box', params: {} })));
+const TEXTURE_FIELDS = new Set(['asset', 'mode', 'scale', 'turn']);
+const CURVE_FIELDS = new Set(['kind', 'angle', 'flip', 'thickness']);
+/** The fields this build writes for a robot and what is in it (see `canonicalRobot`; a test holds the two together). */
+export const ROBOT_FIELDS = {
+  robot: new Set(['root', 'base', 'links', 'joints', 'sensors', 'drive', 'control', 'world', 'scripts']),
+  link: new Set(['node', 'name', 'mass', 'collision', 'friction']),
+  mass: new Set(['kind', 'grams', 'material', 'infill', 'shell']),
+  joint: new Set(['id', 'name', 'type', 'parent', 'child', 'origin', 'axis', 'lower', 'upper', 'effort', 'velocity', 'damping', 'friction', 'mimic', 'motor']),
+  mimic: new Set(['joint', 'multiplier', 'offset']),
+  sensor: new Set(['id', 'name', 'kind', 'link', 'origin', 'rot', 'rate', 'camera', 'lidar']),
+  camera: new Set(['hfov', 'width', 'height', 'near', 'far']),
+  lidar: new Set(['samples', 'hfov', 'min', 'max']),
+  // `left` and `right` are how files once held the two sides of a differential drive.
+  drive: new Set(['kind', 'roles', 'left', 'right']),
+} as const;
+/** The fields of a design file itself (`versions` is what files of the first version of the format carried). */
+const FILE_FIELDS = new Set(['format', 'version', 'units', 'id', 'name', 'revision', 'parent', 'device', 'saved', 'thumb', 'scene', 'assets', 'robot', 'versions']);
 
 /** A text curve as saved, if it is one: a kind, an angle in range, a side and a thickness. */
 function curveOf(raw: unknown): TextCurve | null {
   if (!raw || typeof raw !== 'object') return null;
   const c = raw as Record<string, unknown>;
+  only(c, CURVE_FIELDS);
   const kind = oneOf<'bend' | 'arc'>(c.kind, (k) => k === 'bend' || k === 'arc');
   if (!kind) return null;
   const angle = typeof c.angle === 'number' && Number.isFinite(c.angle) ? clampAngle(c.angle) : null;
@@ -210,10 +264,11 @@ function vec3(v: unknown, fallback: Vec3, positive = false): Vec3 {
 
 function readNode(raw: unknown, assets: Record<string, Asset>, depth: number): SceneNode | null {
   if (!isRecord(raw) || typeof raw.id !== 'string') return null;
-  if (depth > MAX_NESTING) throw new Error('This design is nested too deeply.');
+  if (depth > MAX_NESTING) throw new Error(tr('This design is nested too deeply.'));
+  only(raw, NODE_FIELDS);
   const base = {
     id: raw.id,
-    name: typeof raw.name === 'string' ? raw.name : 'Object',
+    name: typeof raw.name === 'string' ? raw.name : tr('Object'),
     pos: vec3(raw.pos, [0, 0, 0]),
     rot: vec3(raw.rot, [0, 0, 0]),
     size: vec3(raw.size, [20, 20, 20], true),
@@ -237,8 +292,8 @@ function readNode(raw: unknown, assets: Record<string, Asset>, depth: number): S
     const { flip: _flip, hidden: _hidden, locked: _locked, ghost: _ghost, texture: _texture, ...plain } = base;
     const cylinder = (size: Vec3) => clampParams({ shape: 'cylinder', params: { sides, radius: 0 }, size });
     const bore: Vec3 = [Math.max(w - 2 * wall, 0.1), Math.max(d - 2 * wall, 0.1), h * 2];
-    const outer: SceneNode = { ...plain, id: `${base.id}o`, name: 'Outer', pos: [0, 0, 0], rot: [0, 0, 0], hole: false, type: 'shape', shape: 'cylinder', params: cylinder(base.size) };
-    const inner: SceneNode = { ...outer, id: `${base.id}i`, name: 'Bore', hole: true, size: bore, params: cylinder(bore) };
+    const outer: SceneNode = { ...plain, id: `${base.id}o`, name: tr('Outer'), pos: [0, 0, 0], rot: [0, 0, 0], hole: false, type: 'shape', shape: 'cylinder', params: cylinder(base.size) };
+    const inner: SceneNode = { ...outer, id: `${base.id}i`, name: tr('Bore'), hole: true, size: bore, params: cylinder(bore) };
     return { ...base, type: 'group', natural: base.size, children: [outer, inner] };
   }
   if (raw.type === 'shape') {
@@ -246,6 +301,8 @@ function readNode(raw: unknown, assets: Record<string, Asset>, depth: number): S
     if (!shape) return null;
     const params = { ...defaultParams(shape) };
     if (isRecord(raw.params)) {
+      // A setting this build's shape does not have.
+      only(raw.params, new Set(Object.keys(params)));
       for (const key of Object.keys(params)) {
         const v = raw.params[key];
         if (typeof v === 'number' && Number.isFinite(v)) params[key] = v;
@@ -276,7 +333,8 @@ function readNode(raw: unknown, assets: Record<string, Asset>, depth: number): S
     }
     if (!oneOf(part, (id) => GENERATORS.some((g) => g.id === id))) return null;
     const def = getGenerator(part);
-    // A choice this build does not offer would come back as the first one that it does.
+    // A setting this build's part does not have would be dropped, and a choice it does not offer would come back as the first one that it does.
+    if (rawParams) only(rawParams, new Set(def.groups.flatMap((g) => g.params.map((d) => d.key))));
     for (const g of def.groups) for (const d of g.params) if (d.type === 'select') oneOf(rawParams?.[d.key], (v) => d.options.some((o) => o.value === v));
     return {
       ...base,
@@ -312,6 +370,7 @@ function readNode(raw: unknown, assets: Record<string, Asset>, depth: number): S
 /** A texture whose image is in the design; anything else is left off. */
 function readTexture(raw: unknown, assets: Record<string, Asset>): { texture: Texture } | null {
   if (!isRecord(raw) || typeof raw.asset !== 'string' || assets[raw.asset]?.kind !== 'image') return null;
+  only(raw, TEXTURE_FIELDS);
   const scale = typeof raw.scale === 'number' && Number.isFinite(raw.scale) && raw.scale > 0 ? raw.scale : 50;
   const turn = typeof raw.turn === 'number' && Number.isFinite(raw.turn) ? raw.turn : 0;
   return { texture: { asset: raw.asset, mode: oneOf<Texture['mode']>(raw.mode, (m) => m === 'tile' || m === 'own' || m === 'wrap') ?? 'wrap', scale, turn } };
@@ -351,9 +410,10 @@ function readAssets(raw: unknown): Record<string, Asset> {
       if (shapes.length) out[key] = { kind: 'outline', shapes };
     } else if (value.kind === 'image' && typeof value.data === 'string' && (value.mime === 'image/png' || value.mime === 'image/jpeg')) {
       const px = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 1 ? Math.round(v) : 0);
-      if (px(value.width) && px(value.height)) out[key] = { kind: 'image', name: typeof value.name === 'string' ? value.name : 'Picture', mime: value.mime, data: value.data, width: px(value.width), height: px(value.height) };
+      if (px(value.width) && px(value.height)) out[key] = { kind: 'image', name: typeof value.name === 'string' ? value.name : tr('Picture'), mime: value.mime, data: value.data, width: px(value.width), height: px(value.height) };
     } else {
-      oneOf(value.kind, (k) => k === 'mesh' || k === 'outline' || k === 'image');
+      // The three kinds read above are all there are.
+      oneOf(value.kind, () => false);
     }
   }
   return out;
@@ -370,6 +430,9 @@ function readSensors(raw: unknown, ids: Set<string>): RobotSensor[] {
   if (!Array.isArray(raw)) return out;
   for (const x of raw) {
     if (!isRecord(x) || typeof x.id !== 'string' || seen.has(x.id) || typeof x.link !== 'string' || !ids.has(x.link)) continue;
+    only(x, ROBOT_FIELDS.sensor);
+    if (isRecord(x.camera)) only(x.camera, ROBOT_FIELDS.camera);
+    if (isRecord(x.lidar)) only(x.lidar, ROBOT_FIELDS.lidar);
     const kind = oneOf<SensorKind>(x.kind, (k) => SENSORS.has(k));
     if (!kind) continue;
     seen.add(x.id);
@@ -399,6 +462,7 @@ function readSensors(raw: unknown, ids: Set<string>): RobotSensor[] {
 }
 
 function readMass(raw: unknown): MassSpec {
+  if (isRecord(raw)) only(raw, ROBOT_FIELDS.mass);
   if (isRecord(raw) && raw.kind === 'measured') return { kind: 'measured', grams: Math.max(0, finite(raw.grams, 0)) };
   const r = isRecord(raw) ? raw : {};
   oneOf(r.kind, (k) => k === 'material');
@@ -408,6 +472,7 @@ function readMass(raw: unknown): MassSpec {
 /** The drive of a file: its kind and each joint's role, or the two sides of the differential drive files once held. Undefined without a kind or a joint. */
 function readDrive(raw: unknown, joints: Set<string>): Drive | undefined {
   if (!isRecord(raw)) return undefined;
+  only(raw, ROBOT_FIELDS.drive);
   const roles: Record<string, DriveRole> = {};
   const kinds = DRIVE_KINDS.find((k) => k.id === oneOf(raw.kind, (id) => DRIVE_KINDS.some((d) => d.id === id)));
   if (kinds && isRecord(raw.roles)) {
@@ -425,12 +490,14 @@ function readDrive(raw: unknown, joints: Set<string>): Drive | undefined {
 /** The robot of a file, with anything that names an object the scene no longer has left off. Undefined when there is none. */
 function readRobot(raw: unknown, scene: Scene): Robot | undefined {
   if (!isRecord(raw)) return undefined;
+  only(raw, ROBOT_FIELDS.robot);
   const ids = new Set(scene.map((n) => n.id));
   const links: RobotLink[] = [];
   const seenLinks = new Set<string>();
   if (Array.isArray(raw.links)) {
     for (const l of raw.links) {
       if (!isRecord(l) || typeof l.node !== 'string' || !ids.has(l.node) || seenLinks.has(l.node)) continue;
+      only(l, ROBOT_FIELDS.link);
       seenLinks.add(l.node);
       links.push({
         node: l.node,
@@ -447,6 +514,8 @@ function readRobot(raw: unknown, scene: Scene): Robot | undefined {
     for (const j of raw.joints) {
       if (!isRecord(j) || typeof j.id !== 'string' || seenJoints.has(j.id)) continue;
       if (typeof j.parent !== 'string' || typeof j.child !== 'string' || !ids.has(j.parent) || !ids.has(j.child)) continue;
+      only(j, ROBOT_FIELDS.joint);
+      if (isRecord(j.mimic)) only(j.mimic, ROBOT_FIELDS.mimic);
       seenJoints.add(j.id);
       const axis = vec3(j.axis, [0, 0, 1]);
       joints.push({
@@ -491,11 +560,12 @@ function parseFile(text: string): Record<string, unknown> {
   try {
     raw = JSON.parse(text);
   } catch {
-    throw new Error('This file is not a design: it could not be read as JSON.');
+    throw new Error(tr('This file is not a design: it could not be read as JSON.'));
   }
-  if (!isRecord(raw) || (raw.format !== FILE_FORMAT && raw.format !== LEGACY_FORMAT)) throw new Error('This file is not a design made with this app.');
-  if (typeof raw.version !== 'number') throw new Error('This file is not a design made with this app: it does not say which version of the format it is in.');
-  if (raw.version > FILE_VERSION) throw new Error(NEWER);
+  if (!isRecord(raw) || (raw.format !== FILE_FORMAT && raw.format !== LEGACY_FORMAT)) throw new Error(tr('This file is not a design made with this app.'));
+  if (typeof raw.version !== 'number') throw new Error(tr('This file is not a design made with this app: it does not say which version of the format it is in.'));
+  // A later version of the format may be laid out in another way: for a copy it is read as far as it can be.
+  if (raw.version > FILE_VERSION && !stripping) throw new NewerVersion();
   strict = raw.version >= STRICT_FROM;
   return raw;
 }
@@ -509,9 +579,11 @@ const readThumb = (raw: unknown): string | undefined =>
 /** Throws an Error fit to show the user when the text is not a design file. */
 export function parseDoc(text: string): Doc {
   const raw = parseFile(text);
+  // Something of the design itself that a newer build wrote.
+  only(raw, FILE_FIELDS);
   const assets = readAssets(raw.assets);
   const thumb = readThumb(raw.thumb);
-  const doc: Doc = { id: readId(raw.id), name: readName(raw.name, 'Untitled'), scene: readScene(raw.scene, assets), assets };
+  const doc: Doc = { id: readId(raw.id), name: readName(raw.name, tr('Untitled')), scene: readScene(raw.scene, assets), assets };
   if (thumb) doc.thumb = thumb;
   const robot = readRobot(raw.robot, doc.scene);
   if (robot) doc.robot = robot;
@@ -525,6 +597,22 @@ export function parseDoc(text: string): Doc {
   const saved = savedTime(raw.saved);
   if (saved !== null) doc.saved = new Date(saved).toISOString();
   return doc;
+}
+
+/**
+ * A design a newer version of the app saved, read for a copy of it: what this build does not know
+ * is left out (an object of a kind it has not got) or set to what it does know (a choice it does
+ * not offer), and `left` says how many such things there were. The copy is this build's own from
+ * then on; the file it was read from is not for writing back to.
+ */
+export function parseDocWithout(text: string): { doc: Doc; left: number } {
+  stripping = true;
+  left = 0;
+  try {
+    return { doc: parseDoc(text), left };
+  } finally {
+    stripping = false;
+  }
 }
 
 const readRevision = (raw: unknown): string | null => (typeof raw === 'string' && /^[a-z0-9]{8,32}$/.test(raw) ? raw : null);
@@ -587,7 +675,7 @@ export function readHeader(head: string): DocHeader | null {
   const id = field('id');
   const name = field('name');
   if (name === null && sceneAt < 0) return null;
-  return { id: readRevision(id), name: readName(name, 'Untitled'), revision: readRevision(field('revision')), saved: savedTime(field('saved')), thumb: readThumb(field('thumb') ?? undefined) ?? null };
+  return { id: readRevision(id), name: readName(name, tr('Untitled')), revision: readRevision(field('revision')), saved: savedTime(field('saved')), thumb: readThumb(field('thumb') ?? undefined) ?? null };
 }
 
 /**
@@ -599,13 +687,13 @@ export function legacyVersions(text: string): Doc[] {
   const raw = parseFile(text);
   if (raw.version !== 1 || !Array.isArray(raw.versions)) return [];
   const assets = readAssets(raw.assets);
-  const name = readName(raw.name, 'Untitled');
+  const name = readName(raw.name, tr('Untitled'));
   const out: Doc[] = [];
   for (const v of raw.versions) {
     if (!isRecord(v)) continue;
     const scene = readScene(v.scene, assets);
     if (scene.length === 0) continue;
-    const label = readName(v.label, `Version ${out.length + 1}`);
+    const label = readName(v.label, tr('Version {n}', { n: out.length + 1 }));
     out.push({ id: newId(), name: `${name} - ${label}`, scene, assets });
   }
   return out;

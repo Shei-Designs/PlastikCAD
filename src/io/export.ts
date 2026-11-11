@@ -1,4 +1,5 @@
 import type { MeshData } from '../geometry/mesh';
+import { tr } from '../i18n';
 import type { Polygon } from '../model/types';
 import { writeDxf } from './dxf';
 import { writeObj } from './obj';
@@ -21,7 +22,7 @@ export const FORMATS: ExportFormat[] = [
     id: 'stl',
     label: 'STL',
     extension: 'stl',
-    description: 'Binary mesh for any slicer',
+    description: tr('Binary mesh for any slicer'),
     kind: '3d',
     mime: 'model/stl',
   },
@@ -29,7 +30,7 @@ export const FORMATS: ExportFormat[] = [
     id: '3mf',
     label: '3MF',
     extension: '3mf',
-    description: 'Mesh with colors and units for slicers',
+    description: tr('Mesh with colors and units for slicers'),
     kind: '3d',
     mime: 'model/3mf',
   },
@@ -37,7 +38,7 @@ export const FORMATS: ExportFormat[] = [
     id: 'obj',
     label: 'OBJ',
     extension: 'obj',
-    description: 'Text mesh with colors for modeling tools',
+    description: tr('Text mesh with colors for modeling tools'),
     kind: '3d',
     mime: 'model/obj',
   },
@@ -45,7 +46,7 @@ export const FORMATS: ExportFormat[] = [
     id: 'glb',
     label: 'GLB',
     extension: 'glb',
-    description: 'Mesh with pictures for scenes',
+    description: tr('Mesh with pictures for scenes'),
     kind: '3d',
     mime: 'model/gltf-binary',
   },
@@ -53,7 +54,7 @@ export const FORMATS: ExportFormat[] = [
     id: 'svg',
     label: 'SVG',
     extension: 'svg',
-    description: 'Top-down outline for lasers',
+    description: tr('Top-down outline for lasers'),
     kind: '2d',
     mime: 'image/svg+xml',
   },
@@ -61,7 +62,7 @@ export const FORMATS: ExportFormat[] = [
     id: 'dxf',
     label: 'DXF',
     extension: 'dxf',
-    description: 'Top-down outline for CAD',
+    description: tr('Top-down outline for CAD'),
     kind: '2d',
     mime: 'image/vnd.dxf',
   },

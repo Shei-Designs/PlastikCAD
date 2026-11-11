@@ -4,6 +4,7 @@
 import { geomKey } from '../model/geomKey';
 import type { Asset, SceneNode } from '../model/types';
 import type { LinkProperties } from '../worker/protocol';
+import { Cancelled } from '../worker/client';
 import { geometry } from './geometry';
 
 const KEEP = 300;
@@ -75,7 +76,13 @@ class MassPropsStore {
       this.revision++;
       for (const l of this.listeners) l();
     } catch (e) {
-      console.error(e);
+      if (!(e instanceof Cancelled)) console.error(e);
+      // Called off along with something else the worker was doing: asked for again.
+      else if (!this.waiting) {
+        this.waiting = { nodes, assets: batch.assets };
+        clearTimeout(this.timer);
+        this.timer = setTimeout(() => void this.fetch(), SETTLE_MS);
+      }
     } finally {
       for (const key of keys) this.pending.delete(key);
     }

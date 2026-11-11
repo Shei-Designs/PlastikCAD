@@ -7,6 +7,7 @@ import { CREASE_ANGLE, creasedNormals } from '../geometry/mesh';
 import type { RenderMesh } from '../geometry/mesh';
 import { skinMesh, skinOf, skinRepeats } from '../geometry/skin';
 import type { Skin } from '../geometry/skin';
+import { tr } from '../i18n';
 import { writeGlb } from '../io/glb';
 import type { GlbObject } from '../io/glb';
 import { emptyBounds, expandBounds, nodeMatrix } from '../model/math';
@@ -69,7 +70,7 @@ export async function exportGlb(nodes: SceneNode[], assets: Record<string, Asset
       if (result.uv) render.uv = result.uv;
       objects.push(await object(node, render, result.bounds, node.color, skin));
     }
-    if (objects.length === 0) throw new Error('There is nothing to export.');
+    if (objects.length === 0) throw new Error(tr('There is nothing to export.'));
     return writeGlb(objects, name);
   } finally {
     painter.dispose();

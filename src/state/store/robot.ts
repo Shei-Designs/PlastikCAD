@@ -1,6 +1,7 @@
 // Robot mode: links, joints and sensors over the design's objects, the
 // drive, trying a pose, and the export of the robot description.
 import { zipSync } from 'fflate';
+import { mark, plural, tr } from '../../i18n';
 import { zipTime } from '../../io/format';
 import { eulerOf, tidyVec } from '../../model/math';
 import type { Mat } from '../../model/math';
@@ -22,7 +23,7 @@ import { massOf } from '../../robot/inertia';
 import { DRIVE_KINDS, defaultJoint, defaultSensor, SENSOR_KINDS } from '../../robot/types';
 import type { DriveKind, DriveRole, Robot, RobotJoint, RobotLink, RobotSensor, SensorKind, World } from '../../robot/types';
 import { massProps } from '../massProps';
-import { endMerge, fail, getState, notify, previewingAlign, record, set } from './core';
+import { endMerge, endWork, fail, getState, notify, previewingAlign, record, set, startWork } from './core';
 import type { EditorState } from './core';
 import { cancelPlacing } from './placing';
 import { cancelMate } from './parts';
@@ -191,13 +192,18 @@ export function fitJointFollowers(id: string): void {
   const fits = fitFollowers(robot, getState().doc.scene, id);
   const fitted = [...fits].filter(([, fit]) => fit.closed);
   if (fitted.length === 0) {
-    notify(fits.size ? 'The linkage does not close over the whole range of this joint; narrow its limits and try again.' : 'No other joint moves with this one.', 'error');
+    notify(fits.size ? tr('The linkage does not close over the whole range of this joint; narrow its limits and try again.') : tr('No other joint moves with this one.'), 'error');
     return;
   }
   editRobot((r) => ({ ...r, joints: r.joints.map((j) => (fits.has(j.id) && fits.get(j.id)!.closed ? { ...j, mimic: { joint: id, multiplier: fits.get(j.id)!.multiplier, offset: fits.get(j.id)!.offset } } : j)) }));
   const worst = Math.max(...fitted.map(([, fit]) => fit.error));
   const names = fitted.map(([jid]) => robot.joints.find((j) => j.id === jid)?.name ?? jid).join(', ');
-  notify(worst < 0.05 ? `${names} now follow${fitted.length === 1 ? 's' : ''} this joint exactly.` : `${names} now follow${fitted.length === 1 ? 's' : ''} this joint, off by up to ${worst.toFixed(1)} over the range (a line cannot do better).`, 'ok');
+  notify(
+    worst < 0.05
+      ? plural(fitted.length, '{names} now follows this joint exactly.', '{names} now follow this joint exactly.', { names })
+      : plural(fitted.length, '{names} now follows this joint, off by up to {error} over the range (a line cannot do better).', '{names} now follow this joint, off by up to {error} over the range (a line cannot do better).', { names, error: worst.toFixed(1) }),
+    'ok',
+  );
 }
 
 const editRobot = (change: (robot: Robot) => Robot, merge?: string): void => commitRobot(change(robotOf(getState().doc)), merge);
@@ -361,7 +367,7 @@ async function writeRobot(format: ExportFormat): Promise<boolean> {
     const errors = problems.filter((p) => p.level === 'error');
     if (errors.length === 0) return false;
     set({ selection: [], joint: null, sensor: null });
-    await tell({ title: 'Robot', text: `${errors.length === 1 ? 'One problem stops' : `${errors.length} problems stop`} the export. ${errors[0].text}`, actions: ['OK'] });
+    await tell({ title: tr('Robot'), text: `${plural(errors.length, 'One problem stops the export.', '{n} problems stop the export.')} ${errors[0].text}`, actions: [mark('OK')] });
     return true;
   };
   const problems = checkRobot(doc, massProps.known(nodes), robot);
@@ -371,10 +377,10 @@ async function writeRobot(format: ExportFormat): Promise<boolean> {
   const lines = problems.filter((p) => !(p.link && unreached.has(p.link))).map((p) => p.text);
   const label = EXPORT_FORMATS.find((f) => f.id === format)!.label;
   set({ selection: [], joint: null, sensor: null });
-  if ((await tell({ title: `Export ${label}`, text: exportSummary(doc, format, robot), lines, actions: ['Export', 'Cancel'] })) !== 'Export') return false;
+  if ((await tell({ title: tr('Export {format}', { format: label }), text: exportSummary(doc, format, robot), lines, actions: [mark('Export'), mark('Cancel')] })) !== 'Export') return false;
   const name = await exportName(packageName(doc.name), 'zip');
   if (!name) return false;
-  set({ busy: 'Exporting the robot…' });
+  startWork(tr('Exporting the robot…'));
   try {
     const worker = await geometry.prepare(nodes, doc.assets);
     const collisions = Object.fromEntries(nodes.map((n) => [n.id, linkOf(robot, n.id).collision]));
@@ -383,16 +389,16 @@ async function writeRobot(format: ExportFormat): Promise<boolean> {
     if (await stop(checkRobot(doc, new Map(geo.map((g) => [g.id, g.props])), robot))) return false;
     const build = format === 'sdf' ? buildSdfModel : format === 'mjcf' ? buildMjcfModel : format === 'usd' ? buildIsaacStage : buildRobotPackage;
     const pkg = build(doc, new Map(geo.map((g) => [g.id, g])), robot);
-    for (const w of pkg.warnings.filter((text) => text.includes('left out'))) notify(w, 'error');
+    for (const w of pkg.leftOut) notify(w, 'error');
     const bytes = zipSync(Object.fromEntries(pkg.files.map((f) => [`${pkg.name}/${f.name}`, f.bytes])), { level: 6, mtime: zipTime() });
-    const where = await platform.saveAs(`${name}.zip`, [{ name: 'Zip archive', extensions: ['zip'] }], bytes, 'application/zip');
+    const where = await platform.saveAs(`${name}.zip`, [{ name: tr('Zip archive'), extensions: ['zip'] }], bytes, 'application/zip');
     if (!where) return false;
-    await reportSaved([where.name], where.path ? where.path.slice(0, where.path.length - where.name.length).replace(/[\\/]$/, '') || where.path : 'your downloads', where.uri ? [where.uri] : [], 'application/zip');
+    await reportSaved([where.name], where.path ? where.path.slice(0, where.path.length - where.name.length).replace(/[\\/]$/, '') || where.path : tr('your downloads'), where.uri ? [where.uri] : [], 'application/zip');
     return true;
   } catch (e) {
     fail(e);
     return false;
   } finally {
-    set({ busy: null });
+    endWork();
   }
 }

@@ -1,4 +1,5 @@
 // Reading what went wrong, wherever it came from.
+import { tr } from './i18n';
 
 /**
  * What went wrong, as an Error with words in it. The native side rejects with
@@ -16,5 +17,5 @@ export function asError(reason: unknown): Error {
   } catch {
     // Not something that can be written out.
   }
-  return new Error(text && text !== '{}' && text !== 'null' ? text : 'Something went wrong, and the system did not say what.');
+  return new Error(text && text !== '{}' && text !== 'null' ? text : tr('Something went wrong, and the system did not say what.'));
 }

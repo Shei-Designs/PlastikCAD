@@ -2,6 +2,7 @@
 // through: `set`, the undo history, gestures and notices. The state and the
 // history are private to this file; the other store modules read and change
 // them through what is exported here.
+import { noteDiagnostic } from '../../diagnostics';
 import { asError } from '../../errors';
 import { useSyncExternalStore } from 'react';
 import { emptyDoc } from '../../model/file';
@@ -15,6 +16,8 @@ import { pruned } from '../../robot/model';
 import type { Feature, FeatureKind } from '../../geometry/features';
 import { picksStand } from '../../viewer/picks';
 import type { Robot } from '../../robot/types';
+import { Cancelled } from '../../worker/client';
+import { geometry } from '../geometry';
 import { cancelMate } from './parts';
 import { refreshAlignBounds } from './tools';
 import { scheduleAutosave } from './project';
@@ -72,6 +75,8 @@ export interface EditorState {
    * the anchor object, which a click on any object changes.
    */
   aligning: { anchor: string | null; bounds: Bounds; done: boolean[]; marker?: boolean } | null;
+  /** The Array panel is open: the selection is laid out in a pattern for a look, until it is applied or dropped. */
+  arraying: boolean;
   /** Measure mode: the kinds of feature the pointer takes hold of, and the one or two picked so far. */
   measuring: { kinds: FeatureKind[]; picks: Feature[] } | null;
   /** The handles of one selected object follow its own axes instead of the design's; not saved. */
@@ -85,8 +90,14 @@ export interface EditorState {
   highlight: { matrix: Mat; size: Vec3 } | null;
   prefs: Prefs;
   notice: Notice | null;
+  /** What sync did that should not go by unseen (a conflict kept as two projects, a deletion from another device): kept until dismissed in the projects browser. */
+  syncNotes: string[];
   /** Something slow is going on ("Grouping…"). */
   busy: string | null;
+  /** Whether that is work of the geometry worker, which `stopWork` can call off. */
+  stoppable: boolean;
+  /** The newer version of the app that was found among the releases (see store/updating.ts); null when there is none, or none was looked for. */
+  update: string | null;
   canUndo: boolean;
   canRedo: boolean;
   /** Counts up whenever a different design is loaded, so views can reframe. */
@@ -120,13 +131,17 @@ let state: EditorState = {
   pose: null,
   mating: null,
   aligning: null,
+  arraying: false,
   measuring: null,
   objectAxes: false,
   editing: null,
   highlight: null,
   prefs: loadPrefs(),
   notice: null,
+  syncNotes: [],
   busy: null,
+  stoppable: false,
+  update: null,
   canUndo: false,
   canRedo: false,
   epoch: 0,
@@ -157,7 +172,8 @@ export function set(patch: Partial<EditorState>): void {
 
 const sameIds = (a: string[], b: string[]): boolean => a.length === b.length && a.every((id, i) => id === b[i]);
 
-const subscribe = (listener: () => void) => {
+/** Calls `listener` after every change of the state; the function returned stops it. */
+export const subscribe = (listener: () => void) => {
   listeners.add(listener);
   return () => listeners.delete(listener);
 };
@@ -182,6 +198,7 @@ export const isDirty = (s: EditorState = state): boolean =>
 
 export function notify(text: string, kind: Notice['kind'] = 'info', action?: Notice['action']): void {
   clearTimeout(noticeTimer);
+  if (kind === 'error') noteDiagnostic('error', text);
   set({ notice: { kind, text, action } });
   // Longer with something to read twice or a button to reach.
   noticeTimer = setTimeout(() => set({ notice: null }), kind === 'error' || action ? 8000 : 3500);
@@ -189,7 +206,30 @@ export function notify(text: string, kind: Notice['kind'] = 'info', action?: Not
 
 export const dismissNotice = (): void => set({ notice: null });
 
-export const fail = (e: unknown): void => notify(asError(e).message, 'error');
+/** Keeps word from sync for the projects browser, the latest last, each said once. */
+export function noteSync(texts: string[]): void {
+  const notes = [...state.syncNotes.filter((t) => !texts.includes(t)), ...texts].slice(-20);
+  if (texts.length) set({ syncNotes: notes });
+}
+
+export const dismissSyncNotes = (): void => set({ syncNotes: [] });
+
+/** Says what went wrong. Work that the user called off (see `stopWork`) went as asked, and is not said. */
+export const fail = (e: unknown): void => {
+  if (!(e instanceof Cancelled)) notify(asError(e).message, 'error');
+};
+
+/** Word on the screen that the geometry worker is at something slow, with a way to call it off. */
+export const startWork = (label: string): void => set({ busy: label, stoppable: true });
+export const endWork = (): void => set({ busy: null, stoppable: false });
+
+/**
+ * Calls off the slow work under way (an import, an export, a group being made): whoever waits on it
+ * is refused with `Cancelled` and leaves things as they were.
+ */
+export function stopWork(): void {
+  if (state.stoppable) geometry.cancel();
+}
 
 export function setPrefs(patch: Partial<Prefs>): void {
   set({ prefs: { ...state.prefs, ...patch } });

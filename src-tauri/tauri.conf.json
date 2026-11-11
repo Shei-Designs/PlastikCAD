@@ -56,5 +56,11 @@
     "macOS": {
       "signingIdentity": "-"
     }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJGODQ2NkRCOEVCMTM0MEIKUldRTE5MR08yMmFFdnh0UXBZTG5INjl3RDFsdTJuNHdSZWZlMWxmS25ENmtOMEhoc3hKNzBUZ2gK",
+      "endpoints": ["https://github.com/Shei-Designs/PlastikCAD/releases/latest/download/latest.json"]
+    }
   }
 }

@@ -1,0 +1,10 @@
+{
+  // The browser tests are checked apart from the app (`pnpm typecheck` runs both): they run in
+  // Node and need its types, and they borrow the app's types for the store they call.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node"]
+  },
+  "include": ["**/*.ts", "../playwright.config.ts", "../src/vite-env.d.ts"]
+}

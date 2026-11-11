@@ -49,6 +49,14 @@ The Apache License 2.0 is printed at the end of this file.
 
 ------------------------------------------------------------------------
 
+@tauri-apps/plugin-updater
+License: MIT OR Apache-2.0
+https://github.com/tauri-apps/plugins-workspace
+
+The Apache License 2.0 is printed at the end of this file.
+
+------------------------------------------------------------------------
+
 earcut
 License: ISC
 git://github.com/mapbox/earcut

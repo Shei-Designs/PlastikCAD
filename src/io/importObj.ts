@@ -1,4 +1,5 @@
 import type { MeshWithUV } from '../geometry/mesh';
+import { tr } from '../i18n';
 import type { Companion, ImportedImage, ImportedModel, ImportedPart } from './import';
 import { hex, imageMime } from './material';
 import { ByteReader } from './scan';
@@ -35,7 +36,7 @@ interface Bucket {
  */
 export function parseObj(bytes: Uint8Array, name = 'Model', companions: Companion[] = []): ImportedModel {
   const n = bytes.length;
-  if (n === 0) throw new Error('This OBJ file is empty.');
+  if (n === 0) throw new Error(tr('This OBJ file is empty.'));
   const reader = new ByteReader(bytes);
   // UTF-8 byte order mark
   if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) reader.pos = 3;
@@ -201,7 +202,7 @@ export function parseObj(bytes: Uint8Array, name = 'Model', companions: Companio
     parts.push(part);
   }
   if (parts.length === 0) {
-    throw new Error(faceCount ? 'This OBJ file has no usable faces.' : 'This OBJ file has no faces.');
+    throw new Error(faceCount ? tr('This OBJ file has no usable faces.') : tr('This OBJ file has no faces.'));
   }
   const used = new Set<string>();
   const missing = new Set<string>();

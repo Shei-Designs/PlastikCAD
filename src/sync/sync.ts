@@ -3,7 +3,9 @@
 // every few minutes. Status is published for the UI; the editor is told what
 // changed under it. Nothing here knows about the editor's state.
 import { useSyncExternalStore } from 'react';
+import { noteDiagnostic } from '../diagnostics';
 import { asError } from '../errors';
+import { tr } from '../i18n';
 import { hasPartStore, hasProjectStore, partStore, projectStore } from '../state/projects';
 import { DriveRemote } from './drive';
 import { bindRecords, synchronize } from './engine';
@@ -65,11 +67,12 @@ const subscribe = (l: () => void) => {
 export const getSyncStatus = (): SyncStatus => status;
 export const useSyncStatus = (): SyncStatus => useSyncExternalStore(subscribe, () => status);
 
-function useTokens(next: Tokens | null): void {
+/** `keep` is false for the sign-in as it was just read from where it is kept. */
+function setTokens(next: Tokens | null, keep = true): void {
   tokens = next;
-  saveTokens(next);
-  remote = next ? new DriveRemote(authorizedFetch(() => tokens, useTokens)) : null;
-  partsRemote = remote ? new DriveRemote(authorizedFetch(() => tokens, useTokens), PARTS_FOLDER, remote) : null;
+  if (keep) void saveTokens(next);
+  remote = next ? new DriveRemote(authorizedFetch(() => tokens, setTokens)) : null;
+  partsRemote = remote ? new DriveRemote(authorizedFetch(() => tokens, setTokens), PARTS_FOLDER, remote) : null;
   publish({ linked: next !== null, email: next?.email ?? null });
 }
 
@@ -87,32 +90,37 @@ export function initSync(options: {
   notice: (text: string) => void;
   flush: () => Promise<unknown>;
   confirmDeletes?: (plan: DeletePlan, what: 'projects' | 'parts') => Promise<boolean>;
-}): void {
+}): Promise<void> {
   device = options.device;
   onChanged = options.changed;
   onPartsChanged = options.partsChanged;
   onNotice = options.notice;
   beforeSync = options.flush;
   confirmDeletes = options.confirmDeletes ?? null;
-  useTokens(loadTokens());
   clearInterval(interval);
   interval = setInterval(() => void syncNow(), EVERY_MS);
   if (typeof window !== 'undefined') {
     window.addEventListener('online', () => void syncNow());
     window.addEventListener('focus', () => requestSync(1000));
   }
-  if (tokens) requestSync(2000);
+  // The sign-in is read from where it is kept, which on desktop is the system's keychain and takes a moment: the
+  // promise is for that. One made meanwhile (the user linking straight away) stands.
+  return loadTokens().then((kept) => {
+    if (tokens) return;
+    setTokens(kept, false);
+    if (tokens) requestSync(2000);
+  });
 }
 
 /** Signs in and runs a first pass. Rejects with a message fit to show. */
 export async function linkAccount(): Promise<void> {
-  if (!status.configured) throw new Error('Google Drive sync is not set up in this build.');
+  if (!status.configured) throw new Error(tr('Google Drive sync is not set up in this build.'));
   publish({ busy: true, error: null });
   try {
     const fresh = await signIn();
-    useTokens(fresh);
+    setTokens(fresh);
     const who = await remote!.account().catch(() => null);
-    if (who?.email) useTokens({ ...fresh, email: who.email });
+    if (who?.email) setTokens({ ...fresh, email: who.email });
   } finally {
     publish({ busy: false });
   }
@@ -127,7 +135,7 @@ export async function unlinkAccount(): Promise<void> {
   clearTimeout(timer);
   await running;
   const old = tokens;
-  useTokens(null);
+  setTokens(null);
   await state?.clear();
   await partsState?.clear();
   saveBinding(STORES.projects, null);
@@ -218,14 +226,16 @@ async function pass(): Promise<SyncReport | null> {
   } catch (e) {
     if (e instanceof NeedsSignIn) {
       // The grant is gone (revoked from the Google account, say): said once, here and in the projects browser.
-      useTokens(null);
+      setTokens(null);
+      noteDiagnostic('sync', `Sign-in needed: ${e.message}`);
       publish({ busy: false, error: e.message });
-      onNotice?.(`Google Drive sync stopped: ${e.message}`);
+      onNotice?.(tr('Google Drive sync stopped: {reason}', { reason: e.message }));
       return null;
     }
     const message = asError(e).message;
     // Network trouble is not an error worth a red line; it will be tried again.
     const offline = /Failed to fetch|NetworkError|Load failed|network/i.test(message);
+    noteDiagnostic('sync', offline ? `Offline: ${message}` : message);
     publish({ busy: false, error: offline ? null : message, offline });
     return null;
   }

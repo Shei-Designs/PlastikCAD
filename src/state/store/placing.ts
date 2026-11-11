@@ -6,6 +6,7 @@ import { tidyVec } from '../../model/math';
 import { makeShape, newId, uniqueName } from '../../model/ops';
 import type { SceneNode, ShapeKind, TextNode, Vec3 } from '../../model/types';
 import { DEFAULT_FONT, loadFont, outlineOf } from '../../text/fonts';
+import { tr } from '../../i18n';
 import { geometry } from '../geometry';
 import { abortAlignPreview, commit, fail, getState, replaceState, set } from './core';
 import { updateNode } from './editing';
@@ -19,7 +20,7 @@ export function startPlacing(kind: ShapeKind): void {
 
 const TEXT_THICKNESS = 2;
 /** Lettering is listed under its own words until it is given another name. */
-const textLabel = (text: string): string => text.trim().split('\n')[0].slice(0, 24) || 'Text';
+const textLabel = (text: string): string => text.trim().split('\n')[0].slice(0, 24) || tr('Text');
 
 /** New lettering parked below the plate, or null if the words draw nothing. Its font must be loaded. */
 function makeText(text: string, font: string): TextNode | null {
@@ -45,7 +46,7 @@ function makeText(text: string, font: string): TextNode | null {
 export async function startPlacingText(): Promise<void> {
   try {
     await loadFont(DEFAULT_FONT);
-    const node = makeText('Text', DEFAULT_FONT);
+    const node = makeText(tr('Text'), DEFAULT_FONT);
     if (!node) return;
     abortAlignPreview();
     set({ placing: node, selection: [], bin: false });
@@ -58,7 +59,7 @@ export async function startPlacingText(): Promise<void> {
 export async function addText(): Promise<void> {
   try {
     await loadFont(DEFAULT_FONT);
-    const node = makeText('Text', DEFAULT_FONT);
+    const node = makeText(tr('Text'), DEFAULT_FONT);
     if (!node) return;
     node.pos = [0, 0, node.size[2] / 2];
     node.name = uniqueName(getState().doc.scene, node.name);

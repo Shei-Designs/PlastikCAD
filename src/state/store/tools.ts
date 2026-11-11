@@ -6,11 +6,13 @@ import { ALIGN_MODES, alignAt, alignDot } from '../../model/ops';
 import type { AlignMode, ArraySpec, GridArray, RingArray } from '../../model/ops';
 import type { SceneNode, Vec2, Vec3 } from '../../model/types';
 import { geometry } from '../geometry';
+import { tr } from '../../i18n';
 import { FEATURE_KINDS } from '../../geometry/features';
 import type { Feature, FeatureKind } from '../../geometry/features';
 import { abortAlignPreview, beginGesture, commit, endGesture, gestureBase, getState, holdAlignPreview, notify, set, step } from './core';
 import type { EditorState } from './core';
 import { replaceNodes, selectedNodes, selectionBounds } from './editing';
+import { cancelMate } from './parts';
 import { markerLink, markerOriginIn, placeMarker } from './robot';
 
 // --- align mode ---------------------------------------------------------------
@@ -56,7 +58,7 @@ export function startAligning(): void {
     if (aligning) set({ aligning, placing: null, measuring: null });
     return;
   }
-  if (getState().selection.length < 2) return notify('Select two or more objects to line them up.');
+  if (getState().selection.length < 2) return notify(tr('Select two or more objects to line them up.'));
   const aligning = alignState(null);
   if (aligning) set({ aligning, placing: null, measuring: null });
 }
@@ -184,7 +186,20 @@ export type ArrayRequest = (Omit<RingArray, 'center'> & { center: Vec2 | 'frame'
 /** Patterns stop here: every place is another object for the kernel to merge. */
 export const ARRAY_LIMIT = 400;
 /** Ids of the pattern being previewed, the originals first. */
-let arraying: string[] | null = null;
+let pattern: string[] | null = null;
+
+/**
+ * Open the Array panel on the selection (or close it, dropping the pattern, if it is open). The
+ * panel then shows the pattern it asks for, live, with `previewArray`; `commitArray` keeps it and
+ * `cancelArray` drops it.
+ */
+export function startArray(): void {
+  if (getState().arraying) return cancelArray();
+  if (selectedNodes().length === 0) return;
+  cancelMate();
+  if (getState().aligning) stopAligning();
+  set({ arraying: true });
+}
 
 const volumeOf = (node: SceneNode): number => {
   const s = boundsSize(geometry.bounds(node));
@@ -211,7 +226,7 @@ export function previewArray(request: ArrayRequest): void {
   const frame = framed ? arrayFrame(picked) : null;
   const seeds = picked.filter((n) => !n.locked && n !== frame);
   if (seeds.length === 0) return;
-  if (arrayPlaces(request) > ARRAY_LIMIT) return notify(`A pattern can have up to ${ARRAY_LIMIT} places.`);
+  if (arrayPlaces(request) > ARRAY_LIMIT) return notify(tr('A pattern can have up to {limit} places.', { limit: ARRAY_LIMIT }));
   let spec: ArraySpec;
   if (request.kind === 'grid') spec = request.fit && frame ? { ...request, fit: { inset: request.fit.inset, bounds: geometry.bounds(frame) } } : { ...request, fit: undefined };
   else if (request.center === 'frame') {
@@ -226,19 +241,21 @@ export function previewArray(request: ArrayRequest): void {
     scene = [...scene, copy];
   }
   beginGesture();
-  arraying = [...originals.map((n) => n.id), ...copies.map((n) => n.id)];
-  commit(scene, { selection: arraying });
+  pattern = [...originals.map((n) => n.id), ...copies.map((n) => n.id)];
+  commit(scene, { selection: pattern });
 }
 
 /** Keep the previewed pattern, selected, as one undo step. */
 export function commitArray(): void {
-  if (!arraying) return;
-  arraying = null;
+  if (getState().arraying) set({ arraying: false });
+  if (!pattern) return;
+  pattern = null;
   endGesture(false);
 }
 
 export function cancelArray(): void {
-  if (!arraying) return;
-  arraying = null;
+  if (getState().arraying) set({ arraying: false });
+  if (!pattern) return;
+  pattern = null;
   endGesture(true);
 }

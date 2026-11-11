@@ -178,6 +178,125 @@ ul {
   border-left: 1px solid var(--border);
 }
 
+/* Each panel keeps its own column, so that one hidden leaves the others where they are. */
+.sidebar {
+  grid-column: 1;
+}
+
+.stage {
+  grid-column: 2;
+}
+
+.inspector {
+  grid-column: 3;
+}
+
+/* A hidden panel gives its room to the plate. It stays in the page, so what is being typed in it is not lost. */
+.app.no-left .sidebar,
+.app.no-right .inspector {
+  display: none;
+}
+
+.app.no-left {
+  grid-template-columns: 0 minmax(0, 1fr) minmax(292px, 360px);
+}
+
+.app.no-right {
+  grid-template-columns: minmax(236px, 280px) minmax(0, 1fr) 0;
+}
+
+.app.no-left.no-right {
+  grid-template-columns: 0 minmax(0, 1fr) 0;
+}
+
+/* The tab that hides a panel or brings it back: on the plate's edge, half way down, out of the way of the bars. */
+.panel-tab {
+  position: absolute;
+  top: 50%;
+  z-index: 6;
+  width: 16px;
+  height: 56px;
+  margin-top: -28px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.panel-tab.left {
+  left: 0;
+  border-left: 0;
+  border-radius: 0 8px 8px 0;
+}
+
+.panel-tab.right {
+  right: 0;
+  border-right: 0;
+  border-radius: 8px 0 0 8px;
+}
+
+.panel-tab:hover {
+  color: var(--text);
+  background: var(--panel-raised);
+}
+
+.panel-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+@media (pointer: coarse) {
+  .panel-tab {
+    width: 28px;
+    height: 72px;
+    margin-top: -36px;
+  }
+}
+
+/* A narrow window (a tablet held upright) has no room for the panels beside the plate: they lie over it, one at a
+   time, and the plate keeps the whole width. The tab of a panel on show sits on its outer edge. */
+@media (max-width: 900px) {
+  .app,
+  .app.no-left,
+  .app.no-right,
+  .app.no-left.no-right {
+    grid-template-columns: 0 minmax(0, 1fr) 0;
+  }
+
+  .sidebar,
+  .inspector {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    z-index: 20;
+    width: min(300px, 86vw);
+    box-shadow: var(--shadow);
+  }
+
+  .sidebar {
+    left: 0;
+  }
+
+  .inspector {
+    right: 0;
+  }
+
+  .panel-tab {
+    z-index: 21;
+  }
+
+  .app:not(.no-left) .panel-tab.left {
+    left: min(300px, 86vw);
+  }
+
+  .app:not(.no-right) .panel-tab.right {
+    right: min(300px, 86vw);
+  }
+}
+
 .stage {
   position: relative;
   min-width: 0;
@@ -759,6 +878,16 @@ ul {
   box-shadow: var(--shadow);
   /* Fast rebuilds finish before this becomes visible, so sliders don't flicker. */
   animation: appear 0.15s 0.25s both;
+}
+
+/* The objects being built are said only when they take a while: most are there within the blink. */
+.busy.building {
+  animation-delay: 0.6s;
+}
+
+/* The way out sits at the end of the badge, with a little air before it. */
+.busy-stop {
+  margin: -2px -6px -2px 4px;
 }
 
 .spinner {
@@ -1481,6 +1610,8 @@ select:hover {
 
 .export-row .menu {
   width: auto;
+  min-width: 0;
+  max-width: none;
 }
 
 .menu-item.format {
@@ -1656,17 +1787,21 @@ select:hover {
 .menu {
   display: flex;
   flex-direction: column;
-  /* Narrow enough to open within the sidebar, whose left edge is the window's. */
-  width: 216px;
+  /* As wide as its longest row, which differs from one language to the next, within bounds: narrow enough to open
+     within the sidebar, whose left edge is the window's. A row longer than that goes onto two lines. */
+  width: max-content;
+  min-width: 216px;
+  max-width: 252px;
 }
 
 .menu-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  height: 28px;
-  padding: 0 8px;
+  gap: 12px;
+  min-height: 28px;
+  padding: 4px 8px;
+  line-height: 1.25;
   border: 0;
   border-radius: 6px;
   background: none;
@@ -2278,17 +2413,24 @@ kbd {
   width: 96px;
 }
 
+/* The count of places on a line of its own, then Cancel and Apply at the right, as in the mate panel. */
 .array-foot {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 8px;
   margin-top: 2px;
 }
 
 .array-foot .field-note {
+  flex: 1 0 100%;
   margin: 0;
-  white-space: nowrap;
+}
+
+.array-foot .chip {
+  height: 30px;
+  padding: 0 14px;
 }
 
 .array-foot .primary {
@@ -2823,6 +2965,133 @@ kbd {
   font-size: 12.5px;
 }
 
+/* The Language box: the About box's frame round a short list, the language in use marked. */
+.about.language h2 {
+  margin: 8px 0 0;
+  font-size: 14px;
+}
+
+.language-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.language-list .menu-item.on {
+  background: var(--control);
+  font-weight: 600;
+}
+
+/* The look for a newer version, under the version in the About box: the button, and what came of it beside it. */
+.about-update {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The About box's buttons, and the report shown where it could not be copied. */
+.about-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.about-report {
+  width: 100%;
+  height: 9em;
+  margin-top: 10px;
+  font: 11px/1.4 ui-monospace, 'JetBrains Mono', monospace;
+  color: var(--text);
+  background: var(--control);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  resize: vertical;
+}
+
+/* Word from sync that stays until dismissed: above the projects, where it is about them. */
+.sync-notes {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 12px 16px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--warn-bg);
+  color: var(--warn-text);
+}
+
+.sync-notes ul {
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* A dot on the projects button: sync has left word in there. */
+.icon-button {
+  position: relative;
+}
+
+.news-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--signal);
+}
+
+.news-dot.trouble {
+  background: var(--error-text);
+}
+
+/* Where the search box would be, when a view has none: the buttons keep to the right. */
+.projects-gap {
+  flex: 1;
+}
+
+/* The earlier saves of a project: a plain list, each with when it was saved and a way to open it. */
+.versions {
+  list-style: none;
+  margin: 0;
+  padding: 12px 16px;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.version {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+
+.version:hover {
+  background: var(--panel-raised);
+}
+
+.version-when {
+  min-width: 11em;
+}
+
+.version-ago {
+  flex: 1;
+  color: var(--faint);
+}
+
+.chip.danger {
+  color: var(--error-text);
+}
+
 .projects-foot-row {
   display: flex;
   align-items: center;
@@ -3085,8 +3354,9 @@ kbd {
   color: var(--accent);
 }
 
-.outline-row .outline-kind {
-  text-transform: capitalize;
+/* A capital on the first word only: every word capitalised reads wrong in most languages ("Groupe De 2"). */
+.outline-row .outline-kind::first-letter {
+  text-transform: uppercase;
 }
 
 /* The joints of a link, listed in its panel as rows like the tree's. */
@@ -3423,6 +3693,7 @@ kbd {
   .import-button,
   .projects-head .primary,
   .array-foot .primary,
+  .array-foot .chip,
   .mate-actions .primary,
   .mate-actions .chip,
   .crash-actions .chip,
@@ -3433,7 +3704,7 @@ kbd {
   }
 
   .menu-item {
-    height: 44px;
+    min-height: 44px;
   }
 
   .menu-item.format {
@@ -3548,5 +3819,99 @@ kbd {
   /* Room for the taller boxes: three across the panel's narrowest width. */
   .field {
     margin-bottom: 10px;
+  }
+}
+
+/* ---------- touch feedback in the 3D view (src/viewer/touchFeedback.ts) ---------- */
+
+/* The ring that fills at a finger while a long press builds. The viewer sets --hold, the time it takes. */
+.hold-ring {
+  position: absolute;
+  display: none;
+  width: 80px;
+  height: 80px;
+  margin: -40px 0 0 -40px;
+  color: var(--accent);
+  pointer-events: none;
+  /* Unseen for the first moment, so that a tap does not flash it. */
+  animation: hold-ring-appear 80ms ease-out 100ms both;
+}
+
+.hold-ring svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  /* The filling starts at the top. */
+  transform: rotate(-90deg);
+}
+
+.hold-ring circle {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 4;
+}
+
+/* A rim in the panel's color, so that the ring shows on an object of any color. */
+.hold-ring .halo {
+  stroke: var(--panel);
+  stroke-width: 7;
+  opacity: 0.45;
+}
+
+.hold-ring .track {
+  opacity: 0.3;
+}
+
+.hold-ring .fill {
+  stroke-linecap: round;
+  /* The length of the circle: 2π × 36. */
+  stroke-dasharray: 226.2;
+  stroke-dashoffset: 226.2;
+  animation: hold-ring-fill var(--hold, 450ms) linear both;
+}
+
+@keyframes hold-ring-appear {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes hold-ring-fill {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* The word in the middle of the view after a tap of two or three fingers. The viewer sets --stay, how long it is there. */
+.touch-note {
+  left: 50%;
+  top: 40%;
+  padding: 6px 14px;
+  font-weight: 600;
+  transform: translate(-50%, -50%);
+  animation: touch-note-fade var(--stay, 900ms) ease-in both;
+}
+
+@keyframes touch-note-fade {
+  0%,
+  65% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Without motion: a whole ring that stands still, and a word that stays as it is until it goes. */
+@media (prefers-reduced-motion: reduce) {
+  .hold-ring .fill {
+    stroke-dashoffset: 0;
+    animation: none;
+  }
+
+  .touch-note {
+    animation: none;
   }
 }

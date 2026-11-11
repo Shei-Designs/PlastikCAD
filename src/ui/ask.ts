@@ -22,7 +22,10 @@ export interface ChoiceQuestion {
   text: string;
   /** Points listed under the text, one line each. */
   lines?: string[];
-  /** The last one is the plain way out (Escape, the backdrop); the first is the primary. */
+  /**
+   * The last one is the plain way out (Escape, the backdrop); the first is the primary. Each is the
+   * English the asker compares the answer with (`mark()` it): the box shows it translated.
+   */
   actions: string[];
   resolve: (action: string) => void;
 }

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { marked, tr } from '../i18n';
 import { answer, useQuestion } from './ask';
 import { Modal } from './Modal';
 
@@ -36,7 +37,7 @@ export function AskDialog() {
           </label>
           <div className="ask-buttons">
             <button type="button" className="chip" onClick={back}>
-              Cancel
+              {tr('Cancel')}
             </button>
             <button type="submit" className="primary" disabled={text.trim() === ''}>
               {question.okLabel}
@@ -57,8 +58,9 @@ export function AskDialog() {
           )}
           <div className="ask-buttons">
             {[...question.actions].reverse().map((action, i, all) => (
+              // An action is the English its asker compares the answer with: it is translated here, where it is shown.
               <button key={action} type="button" className={i === all.length - 1 ? 'primary' : 'chip'} onClick={() => answer(action)}>
-                {action}
+                {marked(action)}
               </button>
             ))}
           </div>

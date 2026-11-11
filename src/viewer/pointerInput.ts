@@ -1,8 +1,10 @@
 // Pointer input on the plate: what a press takes hold of (a grip, an object,
 // a marker, a feature to measure, or nothing), the drag that follows, and the
-// edit it reports. Which presses are the camera's is settled in gesture.ts;
-// the sums of each drag are in dragMath.ts.
+// edit it reports. Which presses are the camera's, and which are the hand that
+// holds the pen, is settled in gesture.ts; the sums of each drag are in
+// dragMath.ts; a tap of two or three fingers is told in multiTap.ts.
 import { Plane, Vector3 } from 'three';
+import { plural, tr } from '../i18n';
 import type { Feature } from '../geometry/features';
 import { boundsCenter, tidy, tidyVec } from '../model/math';
 import type { Mat } from '../model/math';
@@ -11,21 +13,26 @@ import type { SceneNode, Vec3 } from '../model/types';
 import type { CameraRig } from './camera';
 import { MIN_SIZE, ROTATE_COARSE, ROTATE_STEP, alongAxis, angleAbout, baseEdgeOn, bestBaseAxis, boxAxis, gripBox, pointOf, resizePoint, snapTo, snapTurn, stretched } from './dragMath';
 import type { GripBox } from './dragMath';
-import { LONG_PRESS_MS, pressOwner } from './gesture';
-import type { PressPhase } from './gesture';
+import { LONG_PRESS_MS, NO_PEN, penHeard, pressOwner } from './gesture';
+import type { PenState, PressPhase } from './gesture';
 import type { Handle, Handles } from './handles';
 import type { MeasureOverlay } from './measureOverlay';
+import { TapWatch } from './multiTap';
+import type { HistoryStep } from './multiTap';
 import type { HandlePrompts } from './prompt';
 import type { MarkerDrag, RobotOverlay } from './robotOverlay';
 import type { SceneSync } from './sceneSync';
 import { fmt, setRay } from './stage';
 import type { Stage } from './stage';
+import { TouchFeedback } from './touchFeedback';
 import type { HandleKind } from './types';
 
 const DRAG_THRESHOLD = 4; // px
 /** A finger wobbles more than a mouse before it means to drag. */
 const TOUCH_DRAG_THRESHOLD = 10; // px
 const dragThreshold = (event: PointerEvent) => (event.pointerType === 'touch' ? TOUCH_DRAG_THRESHOLD : DRAG_THRESHOLD);
+/** What the pen is heard by, in the whole window. */
+const PEN_EVENTS = ['pointerdown', 'pointermove', 'pointerover', 'pointerup', 'pointercancel', 'pointerout'] as const;
 
 type Drag =
   /** `select` is the node a finger landed on, selected only once the press turns out to be a tap or a drag (a long press adds it instead). */
@@ -79,11 +86,20 @@ export class PointerInput {
   private claimed = false;
   /** True while a finger is being handed to the camera. */
   private handing = false;
+  /** What has been heard of the pen: the hand that holds one rests on the screen, and is not a finger. */
+  private pen: PenState = NO_PEN;
+  /** The touches that landed while the pen was about: ignored until they lift. */
+  private palms = new Set<number>();
+  /** What the fingers on the plate have done, for telling a tap of two or three. */
+  private readonly taps = new TapWatch();
+  private readonly feedback: TouchFeedback;
 
   constructor(
     private readonly stage: Pick<Stage, 'container' | 'renderer' | 'camera' | 'controls' | 'raycaster' | 'pointer' | 'events' | 'options' | 'items' | 'placing'>,
     private readonly peers: PointerPeers,
-  ) {}
+  ) {
+    this.feedback = new TouchFeedback(stage.container);
+  }
 
   /** Starts listening on the canvas. */
   listen(): void {
@@ -96,6 +112,9 @@ export class PointerInput {
     canvas.addEventListener('pointercancel', this.onPointerUp);
     canvas.addEventListener('lostpointercapture', this.onLostCapture);
     canvas.addEventListener('pointerleave', this.onPointerLeave);
+    // The pen is heard in the whole window: it may hover over a panel while the hand rests on the plate.
+    for (const type of PEN_EVENTS) window.addEventListener(type, this.onPen, { capture: true, passive: true });
+    window.addEventListener('blur', this.onWindowBlur);
   }
 
   unlisten(): void {
@@ -106,11 +125,14 @@ export class PointerInput {
     canvas.removeEventListener('pointercancel', this.onPointerUp);
     canvas.removeEventListener('lostpointercapture', this.onLostCapture);
     canvas.removeEventListener('pointerleave', this.onPointerLeave);
+    for (const type of PEN_EVENTS) window.removeEventListener(type, this.onPen, { capture: true });
+    window.removeEventListener('blur', this.onWindowBlur);
   }
 
-  /** Takes the box-selection rectangle out of the page. */
-  removeMarquee(): void {
+  /** Takes the box-selection rectangle and what a finger is shown out of the page. */
+  removeOverlays(): void {
     this.marquee?.remove();
+    this.feedback.remove();
   }
 
   /** Whether an edit is under way, rather than a press that may yet become one or a box selection. */
@@ -121,7 +143,7 @@ export class PointerInput {
   /** The live measurement beside the pointer, with a word on what the drag leaves behind. */
   private say(text: string, event: PointerEvent): void {
     const n = this.heldBack;
-    this.stage.events.onReadout(n ? `${text} · ${n} locked ${n === 1 ? 'stays' : 'stay'} put` : text, event.clientX, event.clientY);
+    this.stage.events.onReadout(n ? plural(n, '{text} · {n} locked stays put', '{text} · {n} locked stay put', { text }) : text, event.clientX, event.clientY);
   }
 
   /** Abandon the drag in progress, if any. Returns whether there was one. */
@@ -139,16 +161,53 @@ export class PointerInput {
     return true;
   }
 
+  private readonly onPen = (event: PointerEvent): void => {
+    if (event.pointerType !== 'pen') return;
+    const { type } = event;
+    if (type === 'pointerdown') this.pen = penHeard(this.pen, 'down', event.timeStamp);
+    else if (type === 'pointerup' || type === 'pointercancel') this.pen = penHeard(this.pen, 'up', event.timeStamp);
+    // Leaving one element for the next is not leaving the screen: only a pen that goes nowhere has gone.
+    else if (type !== 'pointerout') this.pen = penHeard(this.pen, 'near', event.timeStamp);
+    else if (!event.relatedTarget) this.pen = penHeard(this.pen, 'gone', event.timeStamp);
+  };
+
+  /** A window in the background hears nothing more of the pen: it starts again as unknown. */
+  private readonly onWindowBlur = (): void => {
+    this.pen = NO_PEN;
+  };
+
   private readonly onPointerDown = (event: PointerEvent): void => {
     // The press being handed to the camera (see `handToCamera`) is on its way there.
     if (this.handing) return;
     const touch = event.pointerType === 'touch';
-    if (touch && event.isPrimary) this.cameraTouches.clear();
+    // The first finger down means none was down before: any kept went unheard.
+    if (touch && event.isPrimary) {
+      this.cameraTouches.clear();
+      this.palms.clear();
+    }
+    // As things stood before this press: a tap of fingers beside an edit, or a mouse or pen press, undoes nothing.
+    const busy = this.drag !== null && (this.dragType !== 'touch' || this.pressPhase() === 'editing');
     this.claimed = false;
     this.startPress(event);
+    if (touch && !this.palms.has(event.pointerId)) this.taps.down(event.pointerId, event.pointerType, event.clientX, event.clientY, event.timeStamp, event.isPrimary, busy);
     // A finger left unclaimed is one the camera follows from here on.
     if (touch && !this.claimed) this.cameraTouches.add(event.pointerId);
+    // A pen or mouse pressed while fingers turn the camera is kept from it: the controls take a left press as the end of the turn.
+    else if (!touch && event.button === 0 && this.cameraTouches.size > 0) event.stopImmediatePropagation();
   };
+
+  /** True for a touch that landed while the pen was about, which is kept from the camera as well. */
+  private palm(event: PointerEvent): boolean {
+    if (!this.palms.has(event.pointerId)) return false;
+    event.stopImmediatePropagation();
+    return true;
+  }
+
+  /** Two fingers tapped take the last step back, three bring it again; the middle of the view says which. */
+  private history(step: HistoryStep): void {
+    const taken = this.stage.events.onHistory(step);
+    this.feedback.say(step === 'undo' ? (taken ? tr('Undo') : tr('Nothing to undo')) : taken ? tr('Redo') : tr('Nothing to redo'));
+  }
 
   /** How far the viewer's own press has got, for `pressOwner`. */
   private pressPhase(): PressPhase {
@@ -182,9 +241,18 @@ export class PointerInput {
   private startPress(event: PointerEvent): void {
     // A camera button must not take the focus off a typing box: a pan keeps the boxes.
     if (event.button !== 0 && this.peers.prompts.current) event.preventDefault();
-    const owner = pressOwner({ phase: this.pressPhase(), pointerId: this.dragPointer, pointerType: this.dragType, cameraTouches: this.cameraTouches.size }, event);
+    const owner = pressOwner(
+      { phase: this.pressPhase(), pointerId: this.dragPointer, pointerType: this.dragType, cameraTouches: this.cameraTouches.size, pen: this.pen },
+      { pointerId: event.pointerId, pointerType: event.pointerType, isPrimary: event.isPrimary, time: event.timeStamp },
+    );
     switch (owner) {
       case 'camera':
+        return;
+      case 'palm':
+        // The hand that holds the pen: neither ours nor the camera's, now and until it lifts.
+        event.stopImmediatePropagation();
+        this.claimed = true;
+        this.palms.add(event.pointerId);
         return;
       case 'camera-drop-tap':
         // A second finger while the first rests on empty space makes a two-finger camera gesture (pan,
@@ -209,6 +277,8 @@ export class PointerInput {
         break;
     }
     if (event.button !== 0) return;
+    // While a panel lays the selection out, a press picks and moves nothing: the camera has it.
+    if (this.stage.options.frozen) return;
     // Whatever the press does next, the boxes from the last click are stale.
     this.peers.prompts.dismiss();
     this.peers.rig.halt();
@@ -287,7 +357,7 @@ export class PointerInput {
       if (!touch) this.drag = { mode: 'pending-marquee', x: event.clientX, y: event.clientY, additive };
       else {
         this.drag = { mode: 'pending-tap', x: event.clientX, y: event.clientY };
-        this.holdFor(() => {
+        this.holdFor(event, () => {
           this.stage.controls.enabled = false;
           this.drag = { mode: 'marquee', x: event.clientX, y: event.clientY, additive: true };
           this.showMarquee(event.clientX, event.clientY, event.clientX, event.clientY);
@@ -318,7 +388,7 @@ export class PointerInput {
       ...(later ? { select: node.id } : {}),
     };
     if (touch) {
-      this.holdFor(() => {
+      this.holdFor(event, () => {
         // Held still on an object: it joins (or leaves) the selection, and nothing moves.
         this.drag = null;
         if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
@@ -327,11 +397,13 @@ export class PointerInput {
     }
   };
 
-  /** Runs `then` if the finger is still down and has not moved by then. */
-  private holdFor(then: () => void): void {
+  /** Runs `then` if the finger is still down and has not moved by then; a ring at the finger fills meanwhile. */
+  private holdFor(event: PointerEvent, then: () => void): void {
     clearTimeout(this.longPress);
+    this.feedback.showRing(event.clientX, event.clientY);
     this.longPress = setTimeout(() => {
       this.longPress = undefined;
+      this.feedback.hideRing();
       if (this.drag?.mode === 'pending-tap' || this.drag?.mode === 'pending-move') then();
     }, LONG_PRESS_MS);
   }
@@ -339,6 +411,7 @@ export class PointerInput {
   endHold(): void {
     clearTimeout(this.longPress);
     this.longPress = undefined;
+    this.feedback.hideRing();
   }
 
   private startHandleDrag(handle: Handle, event: PointerEvent): void {
@@ -386,6 +459,7 @@ export class PointerInput {
    */
   private readonly onLostCapture = (event: PointerEvent): void => {
     this.cameraTouches.delete(event.pointerId);
+    this.palms.delete(event.pointerId);
     if (this.dragging(event)) this.cancel();
   };
 
@@ -432,6 +506,8 @@ export class PointerInput {
   }
 
   private readonly onPointerMove = (event: PointerEvent): void => {
+    if (this.palm(event)) return;
+    this.taps.move(event.pointerId, event.clientX, event.clientY);
     // A finger the camera is following does nothing else, unless it is also resting for a tap.
     if (this.cameraTouches.has(event.pointerId) && !this.dragging(event)) return;
     if (this.otherPointer(event)) return;
@@ -517,6 +593,19 @@ export class PointerInput {
   };
 
   private readonly onPointerUp = (event: PointerEvent): void => {
+    if (this.palm(event)) {
+      this.palms.delete(event.pointerId);
+      return;
+    }
+    // What the fingers did is known once the last has lifted; whatever the lift itself ends comes first.
+    const step = event.type === 'pointerup' ? this.taps.up(event.pointerId, event.timeStamp) : null;
+    if (event.type === 'pointercancel') this.taps.cancel(event.pointerId);
+    this.release(event);
+    if (step) this.history(step);
+  };
+
+  /** Ends whatever the lifted pointer was doing. */
+  private release(event: PointerEvent): void {
     // A finger lifting from a pan or a pinch ends nothing here, and puts no carried shape down.
     const ours = this.dragging(event);
     if (this.cameraTouches.delete(event.pointerId) && !ours) return;
@@ -579,7 +668,7 @@ export class PointerInput {
         this.stage.events.onGestureEnd(event.type === 'pointercancel');
       }
     }
-  };
+  }
 
   private readonly onPointerLeave = (): void => {
     if (this.stage.placing && !this.drag) this.stage.events.onPlaceMove(null);

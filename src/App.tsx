@@ -1,11 +1,14 @@
 import { useEffect } from 'react';
 import { APP_NAME } from './appInfo';
+import { tr } from './i18n';
 import * as platform from './platform';
 import {
   alignSelected,
   alignSelectedOn,
+  cancelArray,
   cancelMate,
   cancelPlacing,
+  clearMeasure,
   copySelected,
   deleteJoint,
   deleteSelected,
@@ -36,23 +39,26 @@ import {
   selectJoint,
   selectSensor,
   setHole,
+  setPrefs,
   stopAligning,
   stopJointPick,
+  stopMeasuring,
   toggleAligning,
   toggleMeasuring,
   toggleObjectAxes,
-  stopMeasuring,
-  clearMeasure,
   undo,
-  ungroupSelected,
   unghostAll,
+  ungroupSelected,
   useEditor,
 } from './state/store';
 import { ErrorBoundary } from './ui/ErrorBoundary';
+import { narrowWindow } from './state/persist';
 import { Inspector } from './ui/Inspector';
 import { Projects } from './ui/Projects';
 import { Sidebar } from './ui/Sidebar';
 import { initInput } from './ui/inputMode';
+import { commandFor } from './ui/keymap';
+import type { CommandId } from './ui/keymap';
 import { AskDialog } from './ui/AskDialog';
 import { TouchEntrySheet } from './ui/TouchEntry';
 import { commitTyping } from './ui/typing';
@@ -77,26 +83,36 @@ export const crashActions = {
   onSaveCopy: (): void => void saveCopy(),
 };
 
-function onKeyDown(e: KeyboardEvent): void {
-  const mod = e.ctrlKey || e.metaKey;
-  const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+/** Arrow keys move by the snap step; Shift makes it ten times that. */
+function step(e: KeyboardEvent): number {
+  return (getState().prefs.snap || 1) * (e.shiftKey ? 10 : 1);
+}
 
-  // File commands work everywhere, including from inside a text box.
-  if (mod && !e.altKey) {
-    const command = key === 's' ? (e.shiftKey ? saveCopy : saveNow) : key === 'o' ? (e.shiftKey ? openProjectFile : openProjects) : key === 'n' ? newProject : key === 'i' ? importModel : null;
-    if (command) {
-      e.preventDefault();
-      commitTyping();
-      void command();
-      return;
-    }
-  }
-  if (typing(e.target)) return;
+/** A quarter turn about an axis; with Alt, the other way. */
+const turn = (axis: 0 | 1 | 2) => (e: KeyboardEvent) => rotateSelected(axis, e.altKey ? -90 : 90);
 
-  if (key === 'Escape') {
+/** Lines the selection up on one side of an axis; with Shift, on the center of that axis. */
+const lineUp = (axis: 0 | 1 | 2, side: 'min' | 'max') => (e: KeyboardEvent) => alignSelected(axis, e.shiftKey ? 'center' : side);
+
+/**
+ * What each command of the keymap does; which keys ask for it is the keymap's to say (see
+ * ui/keymap.ts). Each is called through an arrow, so that none is handed the key press as an
+ * argument it would take for something else.
+ */
+const ACTIONS: Record<CommandId, (e: KeyboardEvent) => void> = {
+  save: () => void saveNow(),
+  saveCopy: () => void saveCopy(),
+  projects: () => void openProjects(),
+  openFile: () => void openProjectFile(),
+  newProject: () => void newProject(),
+  import: () => void importModel(),
+
+  // Escape backs out of one thing at a time: a drag first, then a mode, and the selection last.
+  cancel: () => {
     if (viewerRef.current?.cancelGesture()) return;
     const s = getState();
-    if (s.mating) cancelMate();
+    if (s.arraying) cancelArray();
+    else if (s.mating) cancelMate();
     else if (s.measuring?.picks.length) clearMeasure();
     else if (s.measuring) stopMeasuring();
     else if (s.aligning) stopAligning();
@@ -105,113 +121,72 @@ function onKeyDown(e: KeyboardEvent): void {
     else if (s.joint) selectJoint(null);
     else if (s.sensor) selectSensor(null);
     else select([]);
-    return;
-  }
+  },
 
-  // Shift + X / Y / Z turn the selection a quarter turn about that axis; with Alt, the other way.
-  if (e.shiftKey && !mod && (key === 'x' || key === 'y' || key === 'z')) {
-    e.preventDefault();
-    rotateSelected(key === 'x' ? 0 : key === 'y' ? 1 : 2, e.altKey ? -90 : 90);
-    return;
-  }
-
-  // Alt + arrows line the selection up; with Shift, on the center of that axis. Alt+C centers X and Y at once.
-  if (e.altKey && !mod) {
-    const axis = ALIGN_KEYS[key];
-    if (axis) {
-      e.preventDefault();
-      alignSelected(axis[0], e.shiftKey ? 'center' : axis[1]);
-      return;
-    }
-    if (key === 'c') {
-      e.preventDefault();
-      alignSelectedOn(e.shiftKey ? [[0, 'center'], [1, 'center'], [2, 'center']] : [[0, 'center'], [1, 'center']]);
-      return;
-    }
-  }
-
-  if (mod) {
-    const action =
-      key === 'z'
-        ? e.shiftKey
-          ? redo
-          : undo
-        : key === 'y'
-          ? redo
-          : key === 'd'
-            ? duplicateSelected
-            : key === 'c'
-              ? copySelected
-              : key === 'v'
-                ? paste
-                : key === 'x'
-                  ? () => {
-                      copySelected();
-                      deleteSelected();
-                    }
-                  : key === 'a'
-                    ? selectAll
-                    : key === 'g'
-                      ? e.shiftKey
-                        ? ungroupSelected
-                        : () => void groupSelected()
-                      : key === 'ArrowUp' || key === 'ArrowDown'
-                        ? () => nudgeSelected([0, 0, (key === 'ArrowUp' ? 1 : -1) * step(e)])
-                        : null;
-    if (action) {
-      e.preventDefault();
-      action();
-    }
-    return;
-  }
-
-  // In Robot mode a picked joint goes before any object.
-  const remove = () => {
+  undo: () => undo(),
+  redo: () => redo(),
+  copy: () => copySelected(),
+  cut: () => {
+    copySelected();
+    deleteSelected();
+  },
+  paste: () => paste(),
+  selectAll: () => selectAll(),
+  // In Robot mode a picked joint or sensor goes before any object.
+  delete: () => {
     const { joint, sensor } = getState();
     if (joint) deleteJoint(joint);
     else if (sensor) deleteSensor(sensor);
     else deleteSelected();
-  };
-  const plain: Record<string, () => void> = {
-    Delete: remove,
-    Backspace: remove,
-    ArrowLeft: () => nudgeSelected([-step(e), 0, 0]),
-    ArrowRight: () => nudgeSelected([step(e), 0, 0]),
-    ArrowUp: () => nudgeSelected([0, step(e), 0]),
-    ArrowDown: () => nudgeSelected([0, -step(e), 0]),
-    h: () => setHole(true),
-    s: () => setHole(false),
-    d: dropSelected,
-    f: () => viewerRef.current?.fit(),
-    // G ghosts the selection; Shift+G brings every ghost back.
-    g: () => (e.shiftKey ? unghostAll() : ghostSelected()),
-    l: toggleAligning,
-    m: toggleMeasuring,
-    o: toggleObjectAxes,
-    x: () => mirrorSelected(0),
-    y: () => mirrorSelected(1),
-    z: () => mirrorSelected(2),
-  };
-  const action = plain[key];
-  if (action) {
-    e.preventDefault();
-    action();
-  }
-}
+  },
+  duplicate: () => duplicateSelected(),
+  group: () => void groupSelected(),
+  ungroup: () => ungroupSelected(),
 
-/** Which side of which axis each alignment key goes to: left/right along X, front/back along Y, down/up along Z. */
-const ALIGN_KEYS: Record<string, [0 | 1 | 2, 'min' | 'max']> = {
-  ArrowLeft: [0, 'min'],
-  ArrowRight: [0, 'max'],
-  ArrowDown: [1, 'min'],
-  ArrowUp: [1, 'max'],
-  PageDown: [2, 'min'],
-  PageUp: [2, 'max'],
+  nudgeLeft: (e) => nudgeSelected([-step(e), 0, 0]),
+  nudgeRight: (e) => nudgeSelected([step(e), 0, 0]),
+  nudgeBack: (e) => nudgeSelected([0, step(e), 0]),
+  nudgeForward: (e) => nudgeSelected([0, -step(e), 0]),
+  raise: (e) => nudgeSelected([0, 0, step(e)]),
+  lower: (e) => nudgeSelected([0, 0, -step(e)]),
+
+  solid: () => setHole(false),
+  hole: () => setHole(true),
+  mirrorX: () => mirrorSelected(0),
+  mirrorY: () => mirrorSelected(1),
+  mirrorZ: () => mirrorSelected(2),
+  rotateX: turn(0),
+  rotateY: turn(1),
+  rotateZ: turn(2),
+  ghost: () => ghostSelected(),
+  unghostAll: () => unghostAll(),
+
+  align: () => toggleAligning(),
+  measure: () => toggleMeasuring(),
+  objectAxes: () => toggleObjectAxes(),
+  // Left and right along X, front and back along Y, bottom and top along Z.
+  alignLeft: lineUp(0, 'min'),
+  alignRight: lineUp(0, 'max'),
+  alignFront: lineUp(1, 'min'),
+  alignBack: lineUp(1, 'max'),
+  alignBottom: lineUp(2, 'min'),
+  alignTop: lineUp(2, 'max'),
+  centerOnPlate: () => alignSelectedOn([[0, 'center'], [1, 'center']]),
+  centerAll: () => alignSelectedOn([[0, 'center'], [1, 'center'], [2, 'center']]),
+
+  drop: () => dropSelected(),
+  fit: () => viewerRef.current?.fit(),
 };
 
-/** Arrow keys move by the snap step; Shift makes it ten times that. */
-function step(e: KeyboardEvent): number {
-  return (getState().prefs.snap || 1) * (e.shiftKey ? 10 : 1);
+function onKeyDown(e: KeyboardEvent): void {
+  const command = commandFor(e);
+  if (!command || (typing(e.target) && !command.typing)) return;
+  if (!command.keepsDefault) e.preventDefault();
+  // While the Array panel has the selection laid out, only backing out and looking are open.
+  if (getState().arraying && command.id !== 'cancel' && command.id !== 'fit') return;
+  // A command given from inside a text box takes what was being typed there with it.
+  if (command.typing) commitTyping();
+  ACTIONS[command.id](e);
 }
 
 /** Word from the app, along the bottom of the window over everything, as a toast on a phone; gone by itself after a moment. */
@@ -236,7 +211,7 @@ function Toast() {
             {notice.action.label}
           </button>
         )}
-        <button type="button" className="notice-close" aria-label="Dismiss" onClick={dismissNotice}>
+        <button type="button" className="notice-close" aria-label={tr('Dismiss')} onClick={dismissNotice}>
           <CloseIcon />
         </button>
       </div>
@@ -244,8 +219,32 @@ function Toast() {
   );
 }
 
+/**
+ * The tab on the plate's edge that hides a side panel, or brings it back. On a narrow window the
+ * panels lie over the plate, so showing one puts the other away.
+ */
+function PanelTab({ side, shown }: { side: 'left' | 'right'; shown: boolean }) {
+  const name = side === 'left' ? (shown ? tr('Hide left panel') : tr('Show left panel')) : shown ? tr('Hide right panel') : tr('Show right panel');
+  const toggle = () => {
+    const key = side === 'left' ? 'leftPanel' : 'rightPanel';
+    const other = side === 'left' ? 'rightPanel' : 'leftPanel';
+    setPrefs(!shown && narrowWindow() ? { [key]: true, [other]: false } : { [key]: !shown });
+  };
+  // The chevron points the way the panel will go: towards its edge to hide, away from it to show.
+  const pointsLeft = (side === 'left') === shown;
+  return (
+    <button type="button" className={`panel-tab ${side}`} title={name} aria-label={name} aria-expanded={shown} onClick={toggle}>
+      <svg viewBox="0 0 8 14" width="8" height="14" aria-hidden="true">
+        <path d={pointsLeft ? 'M6.5 1.5 1.5 7l5 5.5' : 'M1.5 1.5 6.5 7l-5 5.5'} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </button>
+  );
+}
+
 export default function App() {
   const theme = useEditor((s) => s.prefs.theme);
+  const left = useEditor((s) => s.prefs.leftPanel);
+  const right = useEditor((s) => s.prefs.rightPanel);
   const name = useEditor((s) => s.doc.name);
   const dirty = useEditor(isDirty);
 
@@ -282,7 +281,7 @@ export default function App() {
   }, []);
 
   return (
-    <div className="app">
+    <div className={`app${left ? '' : ' no-left'}${right ? '' : ' no-right'}`}>
       <ErrorBoundary frame="sidebar" {...crashActions}>
         <Sidebar />
       </ErrorBoundary>
@@ -290,6 +289,8 @@ export default function App() {
         <ErrorBoundary frame="viewport" {...crashActions}>
           <Viewport />
         </ErrorBoundary>
+        <PanelTab side="left" shown={left} />
+        <PanelTab side="right" shown={right} />
       </main>
       <ErrorBoundary frame="inspector" {...crashActions}>
         <Inspector />

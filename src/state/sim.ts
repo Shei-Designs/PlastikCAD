@@ -2,6 +2,7 @@
 // worker, every link drawn where the simulation has it. Lives beside the
 // editor's state so that sixty frames a second do not pass through it; the
 // plate and the Test section read it through `subscribe`.
+import { tr, WORKER_LANGUAGE } from '../i18n';
 import type { Mat } from '../model/math';
 import type { Doc, Vec3 } from '../model/types';
 import { buildMjcfModel } from '../robot/export';
@@ -242,10 +243,10 @@ class SimStore {
   }
 
   private spawn(): Worker {
-    const worker = new Worker(new URL('../sim/sim.worker.ts', import.meta.url), { type: 'module' });
+    const worker = new Worker(new URL('../sim/sim.worker.ts', import.meta.url), { type: 'module', name: WORKER_LANGUAGE });
     worker.onmessage = (e: MessageEvent<SimResponse>) => this.receive(e.data);
     worker.onerror = (e) => {
-      this.set({ status: 'error', error: e.message || 'The simulation worker crashed', running: false });
+      this.set({ status: 'error', error: e.message || tr('The simulation worker crashed'), running: false });
       this.worker = null;
       worker.terminate();
     };

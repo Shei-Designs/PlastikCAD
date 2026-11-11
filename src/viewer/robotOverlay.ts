@@ -3,6 +3,7 @@
 // runs, the snap points on offer, and the drag of a marker by its handles.
 import { BufferAttribute, BufferGeometry, LineBasicMaterial, LineSegments, Sprite, Vector3 } from 'three';
 import type { Group } from 'three';
+import { tr } from '../i18n';
 import { tidyVec } from '../model/math';
 import type { Mat } from '../model/math';
 import type { Vec3 } from '../model/types';
@@ -245,7 +246,8 @@ export class RobotOverlay {
     const d = snapTo(t - drag.grabT, this.stage.options.snap);
     const next = drag.origin.clone().addScaledVector(drag.axis, d);
     this.stage.events.onMarkerMove(tidyVec(next.toArray() as Vec3));
-    this.stage.events.onReadout(`${drag.how === 'slide' ? 'Along the axis' : 'XYZ'[drag.how]} ${d >= 0 ? '+' : ''}${fmt(d)}`, event.clientX, event.clientY);
+    const moved = `${d >= 0 ? '+' : ''}${fmt(d)}`;
+    this.stage.events.onReadout(drag.how === 'slide' ? tr('Along the axis {distance}', { distance: moved }) : `${'XYZ'[drag.how]} ${moved}`, event.clientX, event.clientY);
   }
 
   layoutSnaps(): void {

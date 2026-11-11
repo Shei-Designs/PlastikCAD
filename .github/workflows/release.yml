@@ -113,6 +113,11 @@ jobs:
           # The Google OAuth client for Drive sync (README > Development); without these the app says sync is not set up.
           VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
           VITE_GOOGLE_CLIENT_SECRET: ${{ secrets.VITE_GOOGLE_CLIENT_SECRET }}
+          # The key every update is signed with, which the installed app checks it against (README > Development >
+          # Updates). With it the build also makes the files an installed app updates from, and their index, latest.json.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
-          args: ${{ matrix.args }}
+          # The update files are asked for here and not in tauri.conf.json, so that a build without the key still works.
+          args: --config src-tauri/tauri.updater.conf.json ${{ matrix.args }}

@@ -14,12 +14,15 @@ export const AUTHOR_URL = 'https://andrewoshei.com';
 /** Marker written into design files, and their extension. */
 export const FILE_FORMAT = 'plastikcad';
 /**
- * 2 dropped the saved versions a file used to carry. 3 is read strictly: a
- * build refuses a file naming a kind of object, part, option or sensor it does
- * not know, rather than dropping it and saving the rest (see `STRICT_FROM` in
- * model/file.ts), so adding one needs no new number. Raise it when a build
- * starts writing something an older one would lose without noticing: a new
- * field on an object, a joint or the design itself.
+ * The version of the design file's format, which is not the app's: most
+ * versions of the app leave it as it is. 2 dropped the saved versions a file
+ * used to carry. 3 is read strictly: a build refuses a file that names
+ * something it does not know (a kind of object, part, option or sensor, a
+ * field of an object, of the robot or of the design itself) rather than
+ * dropping it and saving the rest, and offers a copy without it instead (see
+ * `STRICT_FROM` and `parseDocWithout` in model/file.ts). A build tells such a
+ * file by what is in it, so adding any of those needs no new number. Raise it
+ * only when the file itself is laid out in another way.
  */
 export const FILE_VERSION = 3;
 export const FILE_EXTENSION = 'plastikcad';

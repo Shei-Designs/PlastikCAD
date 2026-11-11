@@ -6,6 +6,7 @@ import type { Group } from 'three';
 import { indexFeatures, nearestFeature } from '../geometry/features';
 import type { Feature, FeatureIndex } from '../geometry/features';
 import { describe as describeFeature } from '../geometry/measure';
+import { tr } from '../i18n';
 import type { Vec3 } from '../model/types';
 import type { BuildResult } from '../worker/protocol';
 import type { Drawn, SceneSync } from './sceneSync';
@@ -17,6 +18,12 @@ import { dotTexture, textTexture } from './textures';
 const MEASURE_REACH = 10;
 /** Height of the figure on a measuring line, px. */
 const MEASURE_LABEL_PIXELS = 20;
+/**
+ * A mesh of more triangles than this is read away from the pointer's thread
+ * (it takes about a second per half million), and cannot be measured until
+ * that is done. Anything smaller is read on the spot, in a few milliseconds.
+ */
+export const READ_APART = 50_000;
 
 /** Whether two features are the one thing: the same kind on the same object at the same place. */
 function sameFeature(a: Feature | null, b: Feature | null): boolean {
@@ -40,6 +47,10 @@ export class MeasureOverlay {
   private dots: { sprite: Sprite; feature: Feature }[] = [];
   private label: { sprite: Sprite; aspect: number } | null = null;
   private indexes = new Map<string, { shown: BuildResult; key: string; index: FeatureIndex }>();
+  /** The large meshes being read (see `READ_APART`), or that could not be: asked for once per geometry and placement. */
+  private reading = new Map<string, { shown: BuildResult; key: string }>();
+  /** Whether the pointer is on an object that is still being read. */
+  private waiting = false;
   /** The dots' materials, made for one theme and remade for the other. */
   private materials: { theme: 'dark' | 'light'; dot: SpriteMaterial; dotHot: SpriteMaterial } | null = null;
 
@@ -58,6 +69,35 @@ export class MeasureOverlay {
     const key = d.mesh.matrixWorld.elements.map((v) => v.toFixed(5)).join(',');
     const had = this.indexes.get(d.item.node.id);
     if (had && had.shown === shown && had.key === key) return had.index;
+    const read = this.stage.events.featuresOf;
+    if (read && shown.triangles > READ_APART) {
+      const id = d.item.node.id;
+      const asked = this.reading.get(id);
+      if (asked && asked.shown === shown && asked.key === key) return null;
+      const mine = { shown, key };
+      this.reading.set(id, mine);
+      // A copy to hand over: the mesh itself stays with the renderer.
+      read(shown.render.positions.slice(), [...d.mesh.matrixWorld.elements]).then(
+        (index) => {
+          // The object has changed or moved meanwhile: this reading is of what it was.
+          if (this.reading.get(id) !== mine) return;
+          this.reading.delete(id);
+          this.indexes.set(id, { shown, key, index });
+          if (!this.stage.options.measure) return;
+          this.sync();
+          this.stage.requestRender();
+        },
+        (e: unknown) => {
+          // Called off along with other work of the worker's: the pointer's next move asks again.
+          if (e instanceof Error && e.name === 'Cancelled') {
+            if (this.reading.get(id) === mine) this.reading.delete(id);
+          }
+          // Otherwise left as asked for, so that the pointer's every move does not ask, and fail, again.
+          else console.warn(e);
+        },
+      );
+      return null;
+    }
     const src = shown.render.positions;
     const out = new Float32Array(src.length);
     const v = new Vector3();
@@ -90,18 +130,24 @@ export class MeasureOverlay {
       }
     }
     if (best) return best;
+    this.waiting = false;
     const hit = this.objects.pick();
     if (!hit) return null;
     const index = this.featureIndexOf(hit.drawn);
-    if (!index) return null;
+    if (!index) {
+      this.waiting = this.reading.has(hit.item.node.id);
+      return null;
+    }
     return nearestFeature(index, hit.item.node.id, [hit.point.x, hit.point.y, hit.point.z], hit.triangle, new Set(m.kinds), MEASURE_REACH * pixelSize(this.stage, hit.point));
   }
 
   hover(feature: Feature | null, event: PointerEvent): void {
     const same = sameFeature(this.hot, feature);
     this.hot = feature;
-    this.stage.renderer.domElement.style.cursor = feature ? 'crosshair' : '';
-    this.stage.events.onReadout(feature ? describeFeature(feature).lines.join(' · ') : null, event.clientX, event.clientY);
+    // Over a large object that is still being read, the pointer says to wait.
+    const waiting = !feature && this.waiting;
+    this.stage.renderer.domElement.style.cursor = feature ? 'crosshair' : waiting ? 'progress' : '';
+    this.stage.events.onReadout(feature ? describeFeature(feature).lines.join(' · ') : waiting ? tr('Reading the shape…') : null, event.clientX, event.clientY);
     if (same) return;
     this.sync();
     this.stage.requestRender();
@@ -109,6 +155,10 @@ export class MeasureOverlay {
 
   /** The pointer has left the view: nothing is hovered any more. */
   unhover(): void {
+    if (this.waiting) {
+      this.waiting = false;
+      this.stage.events.onReadout(null, 0, 0);
+    }
     if (this.hot) {
       this.hot = null;
       this.stage.events.onReadout(null, 0, 0);
@@ -120,6 +170,7 @@ export class MeasureOverlay {
   /** A feature index goes with the object, or the geometry, it was made from. */
   prune(): void {
     for (const [id, entry] of this.indexes) if (this.objects.drawn.get(id)?.shown !== entry.shown) this.indexes.delete(id);
+    for (const [id, entry] of this.reading) if (this.objects.drawn.get(id)?.shown !== entry.shown) this.reading.delete(id);
   }
 
   /** Takes away everything measure mode drew; the dots' shared materials stay. */
@@ -281,5 +332,6 @@ export class MeasureOverlay {
     this.clear();
     this.disposeMaterials();
     this.indexes.clear();
+    this.reading.clear();
   }
 }

@@ -19,6 +19,9 @@ export interface Prefs {
   robotMarkers: boolean;
   /** Which tab the left panel shows: the library of shapes and parts, or the design's objects. */
   sidebar: 'library' | 'objects' | 'structure';
+  /** Whether each side panel is on show; hidden, its room goes to the plate. */
+  leftPanel: boolean;
+  rightPanel: boolean;
   /** The folder projects are kept in, when the user picked one (desktop app); null for the default. */
   projectsDir: string | null;
   /** Key of the project that was open last, to open it again at start-up. */
@@ -28,6 +31,10 @@ export interface Prefs {
 }
 
 export const SNAP_STEPS = [0, 0.1, 0.25, 0.5, 1, 2, 5, 10];
+
+/** Below this width the side panels lie over the plate instead of beside it (see `.app` in styles.css). */
+export const NARROW_WIDTH = 900;
+export const narrowWindow = (): boolean => typeof window !== 'undefined' && window.innerWidth <= NARROW_WIDTH;
 
 const PREFS_KEY = `${FILE_FORMAT}:prefs:v1`;
 
@@ -49,6 +56,9 @@ export function loadPrefs(): Prefs {
     robotFormat: saved.robotFormat === 'sdf' || saved.robotFormat === 'mjcf' || saved.robotFormat === 'usd' ? saved.robotFormat : 'urdf',
     robotMarkers: saved.robotMarkers ?? true,
     sidebar: saved.sidebar === 'objects' || saved.sidebar === 'structure' ? saved.sidebar : 'library',
+    // On a window too narrow for the panels and the plate side by side, they start out of the way.
+    leftPanel: typeof saved.leftPanel === 'boolean' ? saved.leftPanel : !narrowWindow(),
+    rightPanel: typeof saved.rightPanel === 'boolean' ? saved.rightPanel : !narrowWindow(),
     projectsDir: typeof saved.projectsDir === 'string' && saved.projectsDir ? saved.projectsDir : null,
     lastProject: typeof saved.lastProject === 'string' && saved.lastProject ? saved.lastProject : null,
     device,

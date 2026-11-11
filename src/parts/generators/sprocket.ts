@@ -1,6 +1,7 @@
 // Roller chain sprockets. The tooth form is the classic drafting construction:
 // a roller seat arc on the pitch circle, joined tangentially to flank arcs
 // centered on the neighboring rollers, with the tips cut at the outside diameter.
+import { tr } from '../../i18n';
 import { addHubAndBore, boreGroup, boreRadius, boreShape, hubGroup } from '../features';
 import { arc, arcN, arcSegments, dedupe, polar, rotatePoint, TAU } from '../math2d';
 import { extrude, intersection, revolve } from '../types';
@@ -21,9 +22,9 @@ const CHAINS: Record<string, Chain> = {
   '25': { label: '#25 (1/4")', pitch: 6.35, roller: 3.3, width: 3.18 },
   '35': { label: '#35 (3/8")', pitch: 9.525, roller: 5.08, width: 4.77 },
   '40': { label: '#40 (1/2")', pitch: 12.7, roller: 7.92, width: 7.85 },
-  '41': { label: '#41 (1/2" narrow)', pitch: 12.7, roller: 7.77, width: 6.35 },
-  'bike-1/8': { label: 'Bicycle 1/2" × 1/8"', pitch: 12.7, roller: 7.75, width: 3.175 },
-  'bike-3/32': { label: 'Bicycle 1/2" × 3/32"', pitch: 12.7, roller: 7.75, width: 2.38 },
+  '41': { label: tr('#41 (1/2" narrow)'), pitch: 12.7, roller: 7.77, width: 6.35 },
+  'bike-1/8': { label: tr('Bicycle 1/2" × 1/8"'), pitch: 12.7, roller: 7.75, width: 3.175 },
+  'bike-3/32': { label: tr('Bicycle 1/2" × 3/32"'), pitch: 12.7, roller: 7.75, width: 2.38 },
   '05B': { label: '05B (8 mm)', pitch: 8, roller: 5, width: 3 },
   '06B': { label: '06B (3/8")', pitch: 9.525, roller: 6.35, width: 5.72 },
   '08B': { label: '08B (1/2")', pitch: 12.7, roller: 8.51, width: 7.75 },
@@ -94,7 +95,7 @@ function build(p: Params, q: Quality): BuildResult {
 
   const custom = num(p, 'thickness');
   const t = custom > 0 ? custom : 0.93 * chain.width;
-  if (custom > chain.width) warnings.push('The sprocket is thicker than the gap between the chain plates.');
+  if (custom > chain.width) warnings.push(tr('The sprocket is thicker than the gap between the chain plates.'));
 
   let body: Solid = extrude([outline], t);
   if (bool(p, 'chamfer')) {
@@ -113,20 +114,20 @@ function build(p: Params, q: Quality): BuildResult {
     body = intersection(body, revolve(blank, Math.max(48, arcSegments(q, TAU))));
   }
 
-  if (boreRadius(p) > rootR - 1) warnings.push('The bore leaves less than 1 mm of material below the teeth.');
+  if (boreRadius(p) > rootR - 1) warnings.push(tr('The bore leaves less than 1 mm of material below the teeth.'));
   const { solid, height } = addHubAndBore(body, 0, t, p, q, warnings, outerR);
 
   return {
     solid,
     outline: [outline, ...(boreShape(p, q) ?? [])],
     info: [
-      { label: 'Pitch diameter', value: mm(2 * pitchR) },
-      { label: 'Outside diameter', value: mm(2 * outerR) },
-      { label: 'Root diameter', value: mm(2 * rootR) },
-      { label: 'Chain pitch', value: mm(chain.pitch, 3) },
-      { label: 'Roller diameter', value: mm(chain.roller) },
-      { label: 'Thickness', value: mm(t) },
-      { label: 'Total height', value: mm(height) },
+      { label: tr('Pitch diameter'), value: mm(2 * pitchR) },
+      { label: tr('Outside diameter'), value: mm(2 * outerR) },
+      { label: tr('Root diameter'), value: mm(2 * rootR) },
+      { label: tr('Chain pitch'), value: mm(chain.pitch, 3) },
+      { label: tr('Roller diameter'), value: mm(chain.roller) },
+      { label: tr('Thickness'), value: mm(t) },
+      { label: tr('Total height'), value: mm(height) },
     ],
     warnings,
   };
@@ -134,26 +135,26 @@ function build(p: Params, q: Quality): BuildResult {
 
 export const sprocket: GeneratorDef = {
   id: 'sprocket',
-  name: 'Chain sprocket',
+  name: tr('Chain sprocket'),
   category: 'pulleys',
-  summary: 'Sprocket for roller chain: ANSI #25–#41, British 05B–08B and bicycle chain.',
+  summary: tr('Sprocket for roller chain: ANSI #25–#41, British 05B–08B and bicycle chain.'),
   groups: [
     {
-      title: 'Chain',
+      title: tr('Chain'),
       params: [
         {
           type: 'select',
           key: 'chain',
-          label: 'Chain',
+          label: tr('Chain'),
           default: '25',
           options: Object.entries(CHAINS).map(([value, c]) => ({ value, label: c.label })),
         },
-        { type: 'number', key: 'teeth', label: 'Teeth', default: 16, min: 8, max: 120, step: 1, integer: true },
+        { type: 'number', key: 'teeth', label: tr('Teeth'), default: 16, min: 8, max: 120, step: 1, integer: true },
         {
           type: 'number',
           key: 'thickness',
-          label: 'Thickness',
-          help: 'Sets the tooth width. 0 fits the chain automatically.',
+          label: tr('Thickness'),
+          help: tr('Sets the tooth width. 0 fits the chain automatically.'),
           default: 0,
           min: 0,
           max: 30,
@@ -163,8 +164,8 @@ export const sprocket: GeneratorDef = {
         {
           type: 'number',
           key: 'rollerClearance',
-          label: 'Roller clearance',
-          help: 'Extra radius added to the roller seats so the chain seats on a printed sprocket.',
+          label: tr('Roller clearance'),
+          help: tr('Extra radius added to the roller seats so the chain seats on a printed sprocket.'),
           default: 0.1,
           min: 0,
           max: 0.5,
@@ -174,8 +175,8 @@ export const sprocket: GeneratorDef = {
         {
           type: 'boolean',
           key: 'chamfer',
-          label: 'Chamfer tooth sides',
-          help: 'Tapers the teeth toward the tip so the chain engages smoothly.',
+          label: tr('Chamfer tooth sides'),
+          help: tr('Tapers the teeth toward the tip so the chain engages smoothly.'),
           default: true,
         },
       ],
@@ -185,3 +186,9 @@ export const sprocket: GeneratorDef = {
   ],
   build,
 };
+
+/** The pitch (mm from pin to pin) of the chain a sprocket with these settings takes. */
+export function chainPitch(p: Params): number {
+  return (CHAINS[String(p.chain)] ?? Object.values(CHAINS)[0]).pitch;
+}
+
