@@ -29,7 +29,11 @@ export default defineConfig({
   use: {
     baseURL: `http://localhost:${PORT}/`,
     trace: 'retain-on-failure',
-    actionTimeout: 10_000,
+    // A click waits for the page to answer. On a CI runner the page stops answering for some ten seconds after it
+    // loads, while the picture is drawn in software for the first time (a trace of a failed run shows 10.6 s with
+    // no frame, and 9.6 s for the first load): a limit of ten seconds failed a click made right after a reload
+    // whenever that took a little longer. The limit there is well clear of it; a test still has its minute.
+    actionTimeout: CI ? 30_000 : 10_000,
     launchOptions: {
       // WebGL without a GPU: ANGLE on SwiftShader, which headless Chromium otherwise refuses.
       args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
