@@ -13,10 +13,13 @@ formats) are done and merged. The README says what the app does today.
 ## From the reviews
 
 Six reviews were made on 2026-11-11; each has its section at the end of this
-file. What they found is in three lists here: what is fixed and waiting to
-be merged, what is left to choose from, and what they showed could be built.
+file. What they found is in three lists here: what was fixed, what is left
+to choose from, and what they showed could be built.
 
-### Fixed, in pull requests
+### Fixed
+
+All merged on 2026-11-11, after version 0.2.0: they go out with the next
+release.
 
 | Pull request | What it fixes | From |
 |---|---|---|
@@ -34,9 +37,7 @@ be merged, what is left to choose from, and what they showed could be built.
 | #56 | The look for updates at start can be turned off; the Android sign-in asks for one access only; a stricter content policy; imported data read strictly; no installation id in a copy | 2, 5 |
 | #57 | Actions named by movable tags in the job that holds the signing key; native tests before a release | 5 |
 | #58 | A finger took the wrong align dot, and resized where it meant to turn; panels opening behind the inspector; both panels left over the plate; the keypad rising over the projects | 3 |
-
-Merge #47 first: the others need `main` merged into them afterwards to get
-their checks. #51 and #52 follow #50; #56 follows #55; #57 follows #47.
+| #59 | A test of the parts that passed or failed by the speed of the CI runner | – |
 
 ### Left to choose from
 
@@ -121,12 +122,6 @@ Smaller pieces, each of which can be built without a session.
 - **PLY**: colors blended across a face on import, where today each face
   has one.
 
-## Needs a word first
-
-- **A preview of meshed gears turning together.** It needs a place in the
-  interface and a way to start it (a "Turn" control on a gear that carries
-  the gears meshed with it along, most likely), which is yours to say.
-
 ## Phases that need a session first
 
 Each of these changes how the app is used, so its features and approach are
@@ -181,6 +176,9 @@ Decided against; not to be proposed again.
 
 - A gesture to select what is behind an object: Ghost is how it is reached.
 - Snapping while moving, and a work plane.
+- A preview of meshed gears turning together: it shows something and does
+  nothing. The wizard already places a mate where it meshes, and a mate is a
+  part of its own afterwards, with nothing to say it still meshes.
 - In robot mode: a two-click joint tool, dragging to re-parent, axis
   defaults for round children, shaft-aware parts, an automatic base.
 
