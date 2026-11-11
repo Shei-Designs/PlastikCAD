@@ -5,6 +5,7 @@ import { writeObj } from '../../io/obj';
 import { zipSync } from 'fflate';
 import { zipTime } from '../../io/format';
 import { write3mf } from '../../io/threemf';
+import { writePly } from '../../io/ply';
 import type { FormatId } from '../../io/export';
 import { exportGlb } from '../glbExport';
 import * as platform from '../../platform';
@@ -89,10 +90,10 @@ export async function exportDesign(formatId: FormatId, selectionOnly: boolean): 
     const result = await made(async () => (await geometry.prepare(nodes, getState().doc.assets)).exportStep(nodes));
     bytes = result.bytes;
     warnings = result.warnings;
-  } else if (format.id === '3mf') {
-    // Objects stay apart, each in its colors, so a slicer can print them in their materials.
+  } else if (format.id === '3mf' || format.id === 'ply') {
+    // Objects stay apart, each in its colors, so a slicer can print them in their materials; a PLY file has them as one mesh, each face in its color.
     const result = await made(async () => (await geometry.prepare(nodes, getState().doc.assets)).exportColored(nodes, true));
-    bytes = write3mf(result.objects, name);
+    bytes = format.id === 'ply' ? writePly(result.objects) : write3mf(result.objects, name);
     warnings = result.warnings;
   } else {
     // Exports are always made at fine detail: curves get more facets than are drawn on screen.

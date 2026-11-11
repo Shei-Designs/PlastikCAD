@@ -20,7 +20,7 @@ No decision is needed for these.
 - **STEP export**: true surfaces for what still goes out as facets: helical
   and bevel gears, threads. (Eggs, tall domes and oval cones cannot be: a
   STEP file does not keep an oval turned round an axis.)
-- **PLY**: export; colors blended across a face on import.
+- **PLY**: colors blended across a face on import.
 
 ## Phases that need a session first
 

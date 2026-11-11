@@ -141,7 +141,7 @@ test.describe('core flows', { tag: '@mouse' }, () => {
     await noErrorNotice(page);
   });
 
-  for (const format of ['stl', '3mf', 'obj', 'glb', 'step', 'svg', 'dxf'] as const) {
+  for (const format of ['stl', '3mf', 'obj', 'ply', 'glb', 'step', 'svg', 'dxf'] as const) {
     test(`the design exports as ${format.toUpperCase()}`, async ({ page }) => {
       await boxWithHole(page);
       await store(page, (m) => m.select([]));

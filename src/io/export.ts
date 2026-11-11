@@ -6,7 +6,7 @@ import { writeObj } from './obj';
 import { writeStl } from './stl';
 import { writeSvg } from './svg';
 
-export type FormatId = 'stl' | '3mf' | 'obj' | 'glb' | 'step' | 'svg' | 'dxf';
+export type FormatId = 'stl' | '3mf' | 'obj' | 'ply' | 'glb' | 'step' | 'svg' | 'dxf';
 
 export interface ExportFormat {
   id: FormatId;
@@ -41,6 +41,14 @@ export const FORMATS: ExportFormat[] = [
     description: tr('Text mesh with colors for modeling tools'),
     kind: '3d',
     mime: 'model/obj',
+  },
+  {
+    id: 'ply',
+    label: 'PLY',
+    extension: 'ply',
+    description: tr('Binary mesh with a color on every face'),
+    kind: '3d',
+    mime: 'application/octet-stream',
   },
   {
     id: 'glb',

@@ -1,6 +1,7 @@
 // Preferences, kept in localStorage. Projects themselves live in the projects
 // store (see projects.ts), not here.
 import { FILE_FORMAT } from '../appInfo';
+import { FORMATS } from '../io/export';
 import type { FormatId } from '../io/export';
 import { newId } from '../model/ops';
 
@@ -52,7 +53,8 @@ export function loadPrefs(): Prefs {
     edges: saved.edges ?? true,
     grid: saved.grid ?? true,
     snap: SNAP_STEPS.includes(saved.snap as number) ? (saved.snap as number) : 1,
-    format: (['stl', '3mf', 'obj', 'glb', 'svg', 'dxf'] as const).find((f) => f === saved.format) ?? 'stl',
+    // Any format the app exports: a list of its own here once forgot the newest of them.
+    format: FORMATS.find((f) => f.id === saved.format)?.id ?? 'stl',
     robotFormat: saved.robotFormat === 'sdf' || saved.robotFormat === 'mjcf' || saved.robotFormat === 'usd' ? saved.robotFormat : 'urdf',
     robotMarkers: saved.robotMarkers ?? true,
     sidebar: saved.sidebar === 'objects' || saved.sidebar === 'structure' ? saved.sidebar : 'library',
