@@ -603,10 +603,11 @@ left alone, since that is its shape.
   them, an OBJ comes in plain.
 - **GLB / glTF**: meshes are placed by the scene's nodes and turned from Y up
   in meters to Z up in millimeters; each material brings its base color and
-  picture, laid out by the file's texture coordinates. A `.gltf` must embed
-  its buffers; one that keeps them in separate files should be saved as a
-  `.glb` first. Files with Draco or meshopt compression are refused; export
-  them again without compression.
+  picture, laid out by the file's texture coordinates. A `.gltf` that keeps
+  its buffers and pictures in separate files reads them from beside it, as
+  an OBJ does its `.mtl`; where the picker grants one file at a time, pick
+  them together with it or when asked. Files with Draco or meshopt
+  compression are refused; export them again without compression.
 - **Collada (.dae)**: the meshes of the visual scene, placed by its nodes,
   one part per material with its diffuse color and, when the picture it names
   came along, its texture; the file's own unit and up axis are honored, so a
