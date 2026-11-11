@@ -8,6 +8,9 @@ import type { DesignEntry } from '../platform';
 const files = new Map<string, Uint8Array>();
 /** What the next "Move them / Leave them" question is answered with. */
 let moveThem = true;
+/** A file that cannot be written (the place is full), and one whose start cannot be read (it is busy), until a test says otherwise. */
+let failWrite: string | null = null;
+let failHead: string | null = null;
 const HOME = '/home/me/Documents/PlastikCAD';
 
 vi.mock('./geometry', () => ({
@@ -25,13 +28,19 @@ vi.mock('../platform', () => ({
     Array.from(files, ([path, bytes]) => ({ path, name: path.slice(dir.length + 1), size: bytes.length, modified: 1 }))
       .filter((e) => e.path.startsWith(`${dir}/`) && !e.name.includes('/') && e.name.endsWith('.plastikcad'))
       .sort((a, b) => a.name.localeCompare(b.name)),
-  readHead: async (path: string, limit: number) => files.get(path)!.slice(0, limit),
+  readHead: async (path: string, limit: number) => {
+    if (path === failHead) throw new Error(`Could not read ${path}: the file is busy`);
+    return files.get(path)!.slice(0, limit);
+  },
   readPath: async (path: string) => {
     const bytes = files.get(path);
     if (!bytes) throw new Error(`Could not read ${path}`);
     return { name: path.slice(path.lastIndexOf('/') + 1), path, bytes };
   },
-  writePath: async (path: string, bytes: Uint8Array) => void files.set(path, bytes),
+  writePath: async (path: string, bytes: Uint8Array) => {
+    if (path === failWrite) throw new Error(`Could not write ${path}: No space left on device (os error 28)`);
+    files.set(path, bytes);
+  },
   removeFile: async (path: string) => void files.delete(path),
   moveFile: async (from: string, to: string) => {
     files.set(to, files.get(from)!);
@@ -45,6 +54,8 @@ const names = (dir: string, inside = false): string[] => [...files.keys()].filte
 
 beforeEach(async () => {
   files.clear();
+  failWrite = null;
+  failHead = null;
   store.setPrefs({ projectsDir: null, lastProject: null });
   await store.restoreSession();
   await store.startProject('Kept');
@@ -85,5 +96,49 @@ describe('changing the projects folder', () => {
     await store.saveProject();
     expect(names('/mnt/usb')).toEqual(['New.plastikcad']);
     expect(names(HOME)).toEqual(['Kept.plastikcad', 'Open.plastikcad']);
+  });
+
+  it('moves all of them or none: a move that cannot be finished leaves the old folder whole and the app on it', async () => {
+    moveThem = true;
+    const before = names(HOME, true);
+    // The stick fills up at the second project.
+    failWrite = '/mnt/usb/Open.plastikcad';
+    await store.chooseProjectsFolder('/mnt/usb');
+    expect(store.getState().notice).toMatchObject({ kind: 'error', text: expect.stringContaining('No space left on device') });
+    expect(names(HOME, true)).toEqual(before);
+    expect(names('/mnt/usb', true)).toEqual([]);
+    expect(store.getState()).toMatchObject({ projectKey: `${HOME}/Open.plastikcad`, storage: { location: HOME } });
+    expect((await store.listProjects()).map((p) => p.name).sort()).toEqual(['Kept', 'Open']);
+  });
+
+  it('takes the trash along, and the earlier saves of what is in it', async () => {
+    moveThem = true;
+    const kept = (await store.listProjects()).find((p) => p.name === 'Kept')!;
+    expect(await store.deleteProject(kept.key, 'Kept')).toBe(true);
+    expect((await store.listTrash()).map((p) => p.name)).toEqual(['Kept']);
+    await store.chooseProjectsFolder('/mnt/usb');
+    expect((await store.listTrash()).map((p) => p.name)).toEqual(['Kept']);
+    expect(names(HOME, true)).toEqual([]);
+    const back = (await store.listTrash())[0];
+    await store.restoreProject(back.key);
+    expect(names('/mnt/usb')).toEqual(['Kept.plastikcad', 'Open.plastikcad']);
+  });
+});
+
+describe('a file in the folder that cannot be read', () => {
+  it('is left out of the list, and the folder says its list is short', async () => {
+    const { DiskProjects } = await import('./projects');
+    // The app started again: nothing is remembered of the files, and one is busy as the folder is first listed.
+    const again = new DiskProjects(HOME);
+    failHead = `${HOME}/Kept.plastikcad`;
+    expect((await again.list()).map((p) => p.name)).toEqual(['Open']);
+    expect(again.unreadable()).toEqual([`${HOME}/Kept.plastikcad`]);
+    failHead = null;
+    expect((await again.list()).map((p) => p.name)).toEqual(['Kept', 'Open']);
+    expect(again.unreadable()).toEqual([]);
+    // A file that is no design at all is simply not one: the list is whole without it.
+    files.set(`${HOME}/Notes.plastikcad`, new TextEncoder().encode('{"shopping": ["bolts"]}'));
+    expect((await again.list()).map((p) => p.name)).toEqual(['Kept', 'Open']);
+    expect(again.unreadable()).toEqual([]);
   });
 });

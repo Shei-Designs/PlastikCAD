@@ -293,6 +293,37 @@ describe('what a pass must not destroy', () => {
     expect((await emptyFolder.list()).length).toBe(3);
   });
 
+  it('asks about a single project too when the folder it was in lists nothing at all', async () => {
+    await local.write(null, 'Only', serializeDoc(design('project1', 'Only', [box('a')])));
+    await sync();
+    // The same folder, empty: as a drive that is not connected lists.
+    const emptied = new MemoryProjects();
+    const held = await synchronize(emptied, remote, state, { device: 'device0a' });
+    expect(held.held).toEqual(['Only']);
+    expect(remote.files.size).toBe(1);
+    const asked: DeletePlan[] = [];
+    const restored = await synchronize(emptied, remote, state, { device: 'device0a', confirmDeletes: async (plan) => (asked.push(plan), false) });
+    expect(asked).toEqual([{ side: 'remote', names: ['Only'], total: 1 }]);
+    expect(restored.downloaded).toEqual(['Only']);
+  });
+
+  it('deletes nothing on the other side while a file here could not be read', async () => {
+    await three();
+    // "B" is in the folder and cannot be read just now: the listing is short by one, and says so.
+    const short = new (class extends MemoryProjects {
+      unreadable = (): readonly string[] => ['/home/me/PlastikCAD/B.plastikcad'];
+    })();
+    for (const p of await local.list()) if (p.name !== 'B') await short.write(null, p.name, await local.read(p.key));
+    const report = await synchronize(short, remote, state, { device: 'device0a', confirmDeletes: async () => expect.unreachable('nothing is asked: nothing is deleted') });
+    expect(report.deletedRemotely).toEqual([]);
+    expect(report.held).toEqual(['B']);
+    expect(remote.files.size).toBe(3);
+    // Once it reads again the pass finds everything in step.
+    const again = await synchronize(local, remote, state, { device: 'device0a' });
+    expect(again.held).toEqual([]);
+    expect(again.deletedRemotely).toEqual([]);
+  });
+
   it('lets a single deletion through without asking', async () => {
     await three();
     const fileB = [...remote.files.values()].find((f) => f.file.projectId === 'project2')!;
