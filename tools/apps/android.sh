@@ -2,8 +2,9 @@
 # The Android half of run.sh: builds the app for the emulator with the tests' hook, starts the emulator without
 # a window and without keeping what the run changes, installs the app and runs android.mjs against it.
 #
-# Needs JAVA_HOME and NDK_HOME set as for any Android build of the app, the SDK at ANDROID_HOME (or
-# ~/Android/Sdk), and an emulator image named by ANDROID_AVD (Medium_Phone_API_37.0 when unset).
+# Needs the SDK at ANDROID_HOME (or ~/Android/Sdk) with an NDK in it, a JDK 17, and an emulator image named by
+# ANDROID_AVD (Medium_Phone_API_37.0 when unset). JAVA_HOME and NDK_HOME are used when they are set; when they
+# are not, the JDK is looked for under ~/.jdks and /usr/lib/jvm and the newest NDK of the SDK is taken.
 set -uo pipefail
 
 work=$1
@@ -19,11 +20,26 @@ export PATH="$sdk/platform-tools:$PATH"
 for needed in "$sdk/platform-tools/adb" "$sdk/emulator/emulator"; do
   [ -x "$needed" ] || { echo "Missing: $needed. See the top of tools/apps/android.sh." >&2; exit 2; }
 done
-if [ -z "${JAVA_HOME:-}" ] || [ -z "${NDK_HOME:-}" ]; then
-  echo "JAVA_HOME and NDK_HOME must be set, as for any Android build of the app." >&2
+# The Android build wants JAVA_HOME and NDK_HOME. A shell that builds the desktop app only has neither, so they
+# are found here when it does not say: a JDK 17 (what the Android build is made with), the SDK's newest NDK.
+if [ -z "${JAVA_HOME:-}" ]; then
+  for candidate in "$HOME"/.jdks/*17* /usr/lib/jvm/*17*; do
+    if [ -x "$candidate/bin/java" ]; then
+      JAVA_HOME=$candidate
+      break
+    fi
+  done
+fi
+if [ -z "${NDK_HOME:-}" ]; then
+  NDK_HOME=${ANDROID_NDK_HOME:-$(find "$sdk/ndk" -mindepth 1 -maxdepth 1 -type d 2> /dev/null | sort -V | tail -1)}
+fi
+if [ ! -x "${JAVA_HOME:-}/bin/java" ] || [ ! -d "${NDK_HOME:-}" ]; then
+  echo "No JDK 17 or no Android NDK was found: set JAVA_HOME and NDK_HOME, as for any Android build of the app." >&2
   exit 2
 fi
+export JAVA_HOME NDK_HOME
 export PATH="$JAVA_HOME/bin:$PATH"
+echo "Android: the JDK at $JAVA_HOME, the NDK at $NDK_HOME."
 
 echo "Building the Android app with the tests' hook…"
 (cd "$repo" && pnpm tauri android build --debug --target x86_64 --apk --config '{"build":{"beforeBuildCommand":"pnpm exec vite build --mode e2e"}}') > "$work/android-build.log" 2>&1 || { echo "The Android app did not build: $work/android-build.log" >&2; exit 1; }
