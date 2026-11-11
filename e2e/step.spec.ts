@@ -43,6 +43,51 @@ test.describe('STEP and compressed glTF', { tag: '@mouse' }, () => {
     expect(errors).toEqual([]);
   });
 
+  test('the solids of a STEP file come in under the names a CAD program gave them', async ({ page, errors }) => {
+    await openApp(page);
+    await dropFiles(page, [{ name: 'fixture.step', bytes: fixture('named.step') }]);
+    await expect.poll(() => sceneCount(page), { timeout: 30_000 }).toBe(1);
+    await settled(page);
+    const names = await store(page, (m) => {
+      const node = m.getState().doc.scene[0];
+      return { group: node.name, parts: node.type === 'group' ? node.children.map((c) => c.name) : [] };
+    });
+    expect(names).toEqual({ group: 'fixture', parts: ['Bracket', 'Shaft', 'Knob été'] });
+    expect((await notices(page)).filter((n) => n.kind === 'error')).toEqual([]);
+    expect(errors).toEqual([]);
+  });
+
+  test('a design that goes out as a STEP file comes back with its names and colors', async ({ page, errors }) => {
+    await openApp(page);
+    await store(page, async (m) => {
+      m.addShape('box');
+      m.updateNode(m.getState().doc.scene[0].id, { name: 'Base plate', color: '#11aa33', pos: [0, 0, 10] });
+      m.addShape('cylinder');
+      m.updateNode(m.getState().doc.scene[1].id, { name: 'Shaft', color: '#cc2211', pos: [40, 0, 10] });
+      m.setPrefs({ format: 'step' });
+    });
+    await settled(page);
+    const download = page.waitForEvent('download');
+    expect(await store(page, (m) => m.exportDesign('step', false))).toBe(true);
+    const step = readFileSync(await (await download).path());
+    await store(page, (m) => {
+      m.selectAll();
+      m.deleteSelected();
+    });
+    await dropFiles(page, [{ name: 'back.step', bytes: [...step] }]);
+    await expect.poll(() => sceneCount(page), { timeout: 30_000 }).toBe(1);
+    await settled(page);
+    const back = await store(page, (m) => {
+      const node = m.getState().doc.scene[0];
+      return node.type === 'group' ? node.children.map((c) => [c.name, c.color]) : [];
+    });
+    expect(back).toEqual([
+      ['Base plate', '#11aa33'],
+      ['Shaft', '#cc2211'],
+    ]);
+    expect(errors).toEqual([]);
+  });
+
   test('a plate with a hole drilled through it goes out as a STEP solid whose hole is a cylinder, and comes back the same size', async ({ page, errors }) => {
     await openApp(page);
     await store(page, async (m) => {
