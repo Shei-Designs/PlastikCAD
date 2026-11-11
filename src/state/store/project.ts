@@ -299,7 +299,8 @@ async function explainCopy(name: string, file: PickedFile): Promise<void> {
     return;
   }
   const remove = tr('Delete the file');
-  const chosen = await tell({ title: tr('Project added'), text: `${text} ${tr('The file can stay where it is, or go.')}`, actions: [tr('Keep the file'), remove] });
+  // Keeping the file is the way out: Escape, a press beside the box and a question that takes its place all give the last action.
+  const chosen = await tell({ title: tr('Project added'), text: `${text} ${tr('The file can stay where it is, or go.')}`, actions: [remove, tr('Keep the file')] });
   if (chosen !== remove) return;
   try {
     await platform.deleteFile(file.path!);
