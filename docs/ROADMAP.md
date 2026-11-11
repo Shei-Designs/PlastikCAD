@@ -60,7 +60,11 @@ Things only the real devices and accounts can show.
 - The French glossary (`src/i18n/fr/glossary.md`).
 - Figures taken from memory or a single source: the M14 countersink, the
   M14 to M20 clearance holes, the heat-set insert bores, the M2 and M2.5
-  head sizes, the motor presets.
+  head sizes, the motor presets, the V-belt groove sizes, the inch thread,
+  head and nut sizes.
+- Google Drive's "Clean up…" against a real Drive.
+- The desktop app on a Mac: STEP and compressed glTF files, then an export
+  (see the first finding of review 1, fixed on Linux and not tried there).
 
 ## Put off
 
@@ -103,3 +107,54 @@ from rather than in fixes. In this order:
    policy, the sign-in, what leaves the device.
 6. **Gaps and opportunities.** What someone coming from Tinkercad, FreeCAD
    or Fusion 360 would miss, and what the app does that those do not.
+
+### Review 1: the bundled apps (2026-11-11)
+
+The desktop app (Linux, off screen) and the Android app (emulator, tablet
+size) as they are built, version 0.2.0, driven through their real native
+side: every import and export format, projects (new, rename, duplicate,
+earlier saves, trash, another folder), files handed in and given at
+start-up, lettering in every font, pictures, custom parts, the About box,
+French, and a robot (four exports and the test drive).
+
+All of that works on both, apart from what follows.
+
+Fixed as they were found:
+
+- **Escape deleted the file that was opened.** Leaving the "Project added"
+  box by Escape, a press beside it, or a second file dropped meanwhile
+  deleted the opened file for good (desktop and Android). #44.
+- **After the first STEP or compressed glTF file of a session, exports
+  failed** in the Linux desktop app ("… has no letters that can be drawn",
+  imported data "missing"): WebKit started the geometry worker's code a
+  second time, empty. #45.
+
+To choose from:
+
+1. **Android: Back closes the app**, even with a box open. Nothing is lost
+   (the design is saved on the way out), but a box is not closed by it.
+2. **Android: a STEP export of many imported meshes can run the device out
+   of memory.** Some 100 000 triangles of imports took the web view past
+   3.4 GB on a 4 GB device and Android closed the app without a word; the
+   project came back from its last save. One object too detailed is left
+   out today; the total is not limited. For review 4 as well.
+3. **A dropped file that cannot be read says nothing** (the file gone, or
+   not allowed): no notice at all.
+4. Small: "Writes … as a Isaac Sim stage" (an); the ten minutes between
+   earlier saves are counted afresh at each start of the app (twenty are
+   kept at most, so it is bounded); an empty `History` folder
+   is left when a project is deleted for good; a write cut short by the app
+   being closed leaves a hidden `.tmp` file that nothing removes; the Font
+   box of lettering is drawn light on the dark theme in the Linux app; on
+   Android an export under a name already used replaces the earlier file
+   without saying so (as written, but worth a word); the package's short
+   description reads "for 3D printing".
+
+Not tried, and why: the system's own pickers and questions (no driver can
+press them; the app was given their answers), closing the window with
+unsaved work, the Drive sign-in and sync and the keychain (a test must
+never reach the real account: a test run on the desktop does, unless it is
+cut off from the session's keychain), installing an update, the Mac and
+Windows apps, a real tablet, and the tablet held sideways in the app
+itself.
+
