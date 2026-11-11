@@ -56,7 +56,7 @@ export function MatePanel() {
   // A ring gear's set: the teeth are the sun's, which the ring already carries a figure for.
   const planetary = current === 'planetary';
   const teeth =
-    fixed ?? typed[current] ?? (current === 'gear' ? 2 * teeth1 : current === 'ring' ? 3 * teeth1 : current === 'wheel' ? 30 : drive ? teeth1 : planetary && source?.type === 'part' ? Math.round(num(source.params, 'sunTeeth', 12)) : 12);
+    fixed ?? typed[current] ?? (current === 'gear' ? 2 * teeth1 : current === 'ring' ? 3 * teeth1 : current === 'wheel' || current === 'throated' ? 30 : drive ? teeth1 : planetary && source?.type === 'part' ? Math.round(num(source.params, 'sunTeeth', 12)) : 12);
   const planets = planetary && source?.type === 'part' ? (typedPlanets ?? usualPlanets(source, teeth)) : 3;
   const span = drive && source?.type === 'part' ? (typedSpan ?? usualSpan(source, current, teeth)) : undefined;
   const request: MateRequest = { kind: current, teeth, backlash, extra, angle, ...(span === undefined ? {} : { span }), ...(planetary ? { planets } : {}) };

@@ -13,7 +13,7 @@ import { sprocket } from './sprocket';
 import { gt2Pulley, htdPulley, mxlPulley, tPulley } from './timingPulley';
 import { vBeltPulley } from './vbelt';
 import type { Category, GeneratorDef, Params } from './types';
-import { worm } from './worm';
+import { worm, wormWheel } from './worm';
 
 export const GENERATORS: GeneratorDef[] = [
   spurGear,
@@ -23,6 +23,7 @@ export const GENERATORS: GeneratorDef[] = [
   rack,
   bevelGear,
   worm,
+  wormWheel,
   gt2Pulley,
   htdPulley,
   tPulley,

@@ -47,7 +47,7 @@ describe('mating gears', () => {
   it('knows what each kind can mate with', () => {
     expect(mateKinds('spur')).toEqual(['gear', 'ring', 'rack']);
     expect(mateKinds('helical')).toEqual(['gear']);
-    expect(mateKinds('worm')).toEqual(['wheel']);
+    expect(mateKinds('worm')).toEqual(['wheel', 'throated']);
     expect(mateKinds('bevel')).toEqual(['bevel']);
     expect(sourceTeeth(part('spur', { teeth: 17 }))).toBe(17);
     expect(sourceTeeth(part('worm', { starts: 2 }))).toBe(2);
@@ -176,6 +176,34 @@ describe('mating gears', () => {
       expect(Math.sign((rotated.max[1] + rotated.min[1]) / 2) || 0).toBe(Math.abs(s0) > 0.1 ? Math.sign(s0) : (Math.sign((rotated.max[1] + rotated.min[1]) / 2) || 0));
     }
   });
+
+  it('stands a throated wheel beside a worm, its teeth round the thread wherever the worm is turned and whichever side it goes', () => {
+    for (const [starts, hand, d, rz, angle, z2, length] of [
+      [1, 'right', 12, 0, 0, 30, 20],
+      [1, 'right', 12, 40, 110, 25, 33],
+      [2, 'left', 16, -15, -60, 24, 20],
+      [3, 'right', 20, 7, 180, 31, 26.5],
+    ] as [number, string, number, number, number, number, number][]) {
+      const worm: P = { module: 1, starts, hand, pitchDiameter: d, length, backlash: 0.1 };
+      const { mate, a, b } = check('worm', worm, rz, { kind: 'throated', teeth: z2, backlash: 0.1, extra: 0, angle });
+      const label = `${starts}-start ${hand} d${d} rz ${rz} angle ${angle} z${z2}`;
+      expect(mate.part).toBe('worm-wheel');
+      expect(mate.params).toMatchObject({ teeth: z2, starts, hand, wormDiameter: d, module: 1 });
+      expect(mate.ratio).toBeCloseTo(z2 / starts, 9);
+      expect(mate.center).toBeCloseTo(d / 2 + z2 / 2, 6);
+      // On edge, halfway up the worm, on the side asked for.
+      const { min, max } = evaluate(b).stats;
+      expect((max[2] + min[2]) / 2, `${label} height`).toBeCloseTo(length / 2, 1);
+      const [c0, s0] = [Math.cos((angle * Math.PI) / 180), Math.sin((angle * Math.PI) / 180)];
+      expect((max[0] + min[0]) / 2, `${label} side`).toBeCloseTo(c0 * mate.center, 0);
+      expect((max[1] + min[1]) / 2, `${label} side`).toBeCloseTo(s0 * mate.center, 0);
+      // The thread runs between the teeth with nothing in the way.
+      expect(overlap(a, b), label).toBeLessThan(0.02);
+      // Half a thread pitch up the worm, or a tooth's half turn of the wheel on, they crash.
+      const lifted = placed(mate.part, mate.params as P, mate.rotation, [mate.offset[0], mate.offset[1], mate.offset[2] + Math.PI / 2]);
+      expect(overlap(a, lifted), `${label} crash`).toBeGreaterThan(5);
+    }
+  }, 120_000);
 
   it('stands the other bevel gear on its side with the cone apexes together', () => {
     for (const [z1, z2, rz, angle, hub] of [

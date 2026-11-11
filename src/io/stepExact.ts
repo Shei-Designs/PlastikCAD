@@ -352,6 +352,9 @@ class Builder {
         const [first, ...rest] = solid.children.map((c) => this.described(c));
         return this.cut(first ?? none(), rest);
       }
+      case 'tidy':
+        // Only its mesh is tidied: the solid is the child.
+        return this.described(solid.child);
       case 'transform': {
         let shape = this.described(solid.child);
         if (solid.mirror) shape = this.mirrored(shape, solid.mirror);

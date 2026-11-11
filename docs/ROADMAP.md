@@ -14,7 +14,7 @@ formats) are done and merged. The README says what the app does today.
 
 No decision is needed for these.
 
-- **Parts**: a throated worm wheel; screw holes in inch sizes.
+- **Parts**: screw holes in inch sizes.
 - **Gears**: a preview of meshed gears turning together.
 - **STEP export**: true surfaces for what still goes out as facets: helical
   and bevel gears, threads. (Eggs, tall domes and oval cones cannot be: a

@@ -81,6 +81,34 @@ test.describe('core flows', { tag: '@mouse' }, () => {
     await noErrorNotice(page);
   });
 
+  test('a worm gets a throated wheel through the wizard, standing meshed beside it', async ({ page }) => {
+    await store(page, async (m) => {
+      await m.addPart('gears');
+      const id = m.getState().doc.scene[0].id;
+      await m.editPart(id, { part: 'worm' });
+    });
+    await settled(page);
+    await page.getByRole('button', { name: 'Add mating gear…' }).click();
+    const panel = page.getByRole('dialog', { name: 'Mating gear' });
+    await expect(panel).toBeVisible();
+    await panel.getByRole('radio', { name: 'Throated wheel' }).click();
+    // Six for the worm, fifteen for thirty teeth of module 1, and the wizard's usual tenth of a millimeter of play.
+    await expect(panel).toContainText('Center distance 21.1 mm');
+    await expect.poll(() => store(page, (m) => m.getState().mating?.building), { timeout: 30_000 }).toBe(false);
+    await panel.getByRole('button', { name: 'Accept' }).click();
+    await expect(panel).toHaveCount(0);
+    await settled(page);
+    const parts = await store(page, (m) => m.getState().doc.scene.map((n) => (n.type === 'part' ? { part: n.part, teeth: n.params.teeth, pos: n.pos, size: n.size.map((v) => Math.round(v * 10) / 10) } : null)));
+    expect(parts.map((p) => p?.part)).toEqual(['worm', 'worm-wheel']);
+    expect(parts[1]!.teeth).toBe(30);
+    // On edge beside the worm: 21.1 mm from axis to axis, halfway up it; 33 across its rim and 10.5 wide, in its own frame.
+    expect(parts[1]!.pos[0] - parts[0]!.pos[0]).toBeCloseTo(21.1, 1);
+    expect(parts[1]!.pos[2]).toBeCloseTo(parts[0]!.pos[2], 1);
+    expect(parts[1]!.size).toEqual([33, 33, 10.5]);
+    expect(await drawnCount(page)).toBe(2);
+    await noErrorNotice(page);
+  });
+
   test('a ring gear gets its sun and planets through the wizard', async ({ page }) => {
     await store(page, async (m) => {
       await m.addPart('gears');

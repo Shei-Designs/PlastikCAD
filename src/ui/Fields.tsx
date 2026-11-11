@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useId, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { flushSync } from 'react-dom';
 import { Hint } from './Hint';
@@ -53,7 +53,10 @@ export function NumberBox({ value, onChange, tag, unit, step = 1, min = -Infinit
   const [editing, setEditing] = useState(false);
   // The last value this box itself sent out, to tell its own commits from changes made elsewhere.
   const sent = useRef<number | null>(null);
-  useEffect(() => {
+  // Before the screen is drawn again, not after: a box whose value changes from elsewhere (another box was typed into)
+  // must not show the old one for a frame. Whatever lands in it during that frame is typed into text that is then
+  // swapped under it: a 3 typed into a box about to change to 3 reads 33.
+  useLayoutEffect(() => {
     if (!editing || sent.current !== value) setText(formatNumber(value, places));
     sent.current = null;
   }, [value, places, editing]);
@@ -132,7 +135,8 @@ interface CommitInputProps {
 /** Text box for a name, taken when typing is done (Enter or leaving the box); Escape puts the old one back. */
 export function CommitInput({ value, onCommit, label, className, title, sheet }: CommitInputProps) {
   const [text, setText] = useState(value);
-  useEffect(() => setText(value), [value]);
+  // Before the screen is drawn again, like the number box's: the old words are not shown for a frame.
+  useLayoutEffect(() => setText(value), [value]);
   // Set by Escape for the blur it causes: that blur still sees what was typed, and must not take it.
   const dropped = useRef(false);
   const commit = (next: string) => {

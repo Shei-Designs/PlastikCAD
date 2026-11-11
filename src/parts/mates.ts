@@ -17,9 +17,12 @@ import { bevelApexHeight } from './generators/bevel';
 import { RACK_BASE_HEIGHT, rackPitchLine } from './generators/gears';
 import { chainPitch } from './generators/sprocket';
 import { beltPitch } from './generators/timingPulley';
+import { getGenerator } from './generators';
+import { sanitizeParams } from './generators/types';
+import { wormPair } from './generators/worm';
 import type { Params } from './generators/types';
 
-export type MateKind = 'gear' | 'ring' | 'rack' | 'wheel' | 'bevel' | 'pulley' | 'sprocket' | 'planetary';
+export type MateKind = 'gear' | 'ring' | 'rack' | 'wheel' | 'throated' | 'bevel' | 'pulley' | 'sprocket' | 'planetary';
 
 export interface MateRequest {
   kind: MateKind;
@@ -70,7 +73,7 @@ export interface Mate {
 export function mateKinds(part: string): MateKind[] {
   if (part === 'spur') return ['gear', 'ring', 'rack'];
   if (part === 'helical' || part === 'herringbone') return ['gear'];
-  if (part === 'worm') return ['wheel'];
+  if (part === 'worm') return ['wheel', 'throated'];
   if (part === 'bevel') return ['bevel'];
   if (beltPitch(part, {}) !== undefined) return ['pulley'];
   if (part === 'sprocket') return ['sprocket'];
@@ -78,7 +81,7 @@ export function mateKinds(part: string): MateKind[] {
   return [];
 }
 
-export const MATE_KIND_LABELS: Record<MateKind, string> = { gear: tr('Gear'), ring: tr('Ring'), rack: tr('Rack'), wheel: tr('Worm wheel'), bevel: tr('Bevel gear'), pulley: tr('Pulley'), sprocket: tr('Sprocket'), planetary: tr('Planetary set') };
+export const MATE_KIND_LABELS: Record<MateKind, string> = { gear: tr('Gear'), ring: tr('Ring'), rack: tr('Rack'), wheel: tr('Worm wheel'), throated: tr('Throated wheel'), bevel: tr('Bevel gear'), pulley: tr('Pulley'), sprocket: tr('Sprocket'), planetary: tr('Planetary set') };
 
 /** A bevel gear's cone angle already names its mate's tooth count; the wizard cannot change it. */
 export function fixedMateTeeth(source: PartNode): number | null {
@@ -283,6 +286,7 @@ export function mateOf(source: PartNode, req: MateRequest): Mate {
     warnings.push(tr('The gear has been resized, so its teeth no longer match its module; the mate fits the unresized gear.'));
   }
   if (req.kind === 'wheel') return wormWheel(source, req, warnings);
+  if (req.kind === 'throated') return throatedWheel(source, req, warnings);
   if (req.kind === 'bevel') return bevelMate(source, req, warnings);
   const z1 = Math.max(1, Math.round(num(p, 'teeth', 20)));
   const z2 = Math.max(1, Math.round(req.teeth));
@@ -375,6 +379,53 @@ export function mateOf(source: PartNode, req: MateRequest): Mate {
 /** Rotation about a horizontal axis at `azimuth` degrees from +X, by `degrees` (right-hand rule). */
 function aboutHorizontal(azimuth: number, degrees: number): Mat {
   return multiply(multiply(rotation([0, 0, azimuth]), rotation([degrees, 0, 0])), rotation([0, 0, -azimuth]));
+}
+
+/**
+ * The throated wheel a worm drives: the wheel the worm itself cuts (see `wormWheel` in
+ * generators/worm.ts), standing on edge beside the worm, halfway up it, on the side asked for.
+ *
+ * The wheel is made with the worm lying across its rim in one known place and turn. From there
+ * two motions keep the pair in mesh: the wheel turning on its axle while the worm turns in its
+ * own, teeth to starts; and the wheel carried round and along the worm as a nut would go, which
+ * leaves a thread looking the same. The first brings the worm to the turn it really has, the
+ * second brings the wheel to the side and the height asked for.
+ */
+function throatedWheel(source: PartNode, req: MateRequest, warnings: string[]): Mate {
+  const p = source.params;
+  const def = getGenerator('worm-wheel');
+  const params: Params = sanitizeParams(def, {
+    module: num(p, 'module', 1),
+    teeth: Math.round(req.teeth),
+    faceWidth: 0,
+    backlash: req.backlash,
+    starts: num(p, 'starts', 1),
+    wormDiameter: num(p, 'pitchDiameter', 12),
+    pressureAngle: num(p, 'pressureAngle', 20),
+    hand: p.hand === 'left' ? 'left' : 'right',
+    hubHeight: 0,
+    boreType: 'round',
+    boreDiameter: 5,
+  });
+  const pair = wormPair(params);
+  const hand = pair.leftHanded ? -1 : 1;
+  const lead = pair.pitch * pair.starts;
+  const zMid = num(p, 'length', 20) / 2;
+  // Carried up the worm from where it was cut to the worm's middle, it goes round it by this much as a nut would.
+  const round = (360 * hand * (zMid - pair.cutterLength / 2)) / lead;
+  // Seen from the worm, the wheel was cut on the side that is half a turn from where the worm's own turn begins.
+  const side = req.angle - source.rot[2];
+  const spin = 180 + round - side;
+  // The worm turned by `spin` from where it cut, the wheel is turned to match: starts to teeth, and against it for a right-hand thread.
+  const turn = (-hand * spin * pair.starts) / pair.teeth;
+  const center = pair.center + req.extra;
+  const facing = rotation([0, 0, req.angle - 180]);
+  // The wheel's axle lies along the worm's axis as it was cut: stood up from there, then faced to the side asked for.
+  const pose = multiply(multiply(facing, rotation([90, 0, 0])), rotation([0, 0, turn]));
+  // The wheel's own origin is the middle of its bottom face: half its width along its axle from its middle plane.
+  const origin: Vec3 = [-center, pair.faceWidth / 2, 0];
+  const offset: Vec3 = [facing[0] * origin[0] + facing[3] * origin[1], facing[1] * origin[0] + facing[4] * origin[1], zMid];
+  return { part: 'worm-wheel', params, offset, rotation: eulerOf(pose), center, ratio: pair.teeth / pair.starts, warnings };
 }
 
 /**

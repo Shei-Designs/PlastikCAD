@@ -3,7 +3,7 @@ PlastikCAD is a desktop app for fast solid modelling for 3D printing: drop shape
 ## What's in it
 
 - **Shapes and holes** – boxes, cylinders, wedges, domes and more; any object adds material or cuts it away, and groups never bake anything in.
-- **Parametric parts** – spur, helical, herringbone, ring, rack, bevel and worm gears, timing pulleys and sprockets, metric screws and nuts, screw holes and bearing seats that cut their own fit, aluminium rails, pipes and ducts, fan cutouts, panel connectors, motor mounts, and dev boards (Raspberry Pi, Arduino, ESP32, Jetson) with their holes and sockets.
+- **Parametric parts** – spur, helical, herringbone, ring, rack, bevel and worm gears with a throated worm wheel, timing pulleys and sprockets, metric screws and nuts, screw holes and bearing seats that cut their own fit, aluminium rails, pipes and ducts, fan cutouts, panel connectors, motor mounts, and dev boards (Raspberry Pi, Arduino, ESP32, Jetson) with their holes and sockets.
 - **Mating wizard** – pick a gear and add its mate (gear, ring, rack, worm wheel or bevel pair), the other pulley or sprocket of a belt or chain drive, or the sun and planets of a ring gear, with a live preview, meshed and placed at the right centre distance.
 - **Array** – a panel that copies the selection in a row, a grid or a circle, and stays open while you turn the view.
 - **Text** – seven print-friendly fonts, in Latin, Cyrillic, Greek and Vietnamese, bent round a cylinder or laid along an arc.

@@ -169,6 +169,17 @@ export const partsDrive: Catalog = {
   'Groove angle': 'Angle de gorge',
   'Standard [[groove angle]]': 'Normalisé',
 
+  // The throated worm wheel (parts/generators/worm.ts)
+  'Throated worm wheel': 'Roue creuse à vis sans fin',
+  'Throated wheel for a worm: its teeth wrap round the worm, cut by the worm itself.': 'Roue creuse pour vis sans fin\u00a0: ses dents enveloppent la vis, taillées par la vis elle-même.',
+  'Sets the axial module. Use the worm\'s.': 'Définit le module axial. Reprenez celui de la vis.',
+  'Sets the width of the rim. 0 takes three quarters of the worm\'s outside diameter.': 'Définit la largeur de la jante. 0 prend les trois quarts du diamètre extérieur de la vis.',
+  'Widens the tooth spaces by this amount.': 'Élargit les creux de denture de cette valeur.',
+  'Sets the number of threads of the worm. The ratio is teeth ÷ starts.': 'Définit le nombre de filets de la vis. Le rapport est dents ÷ filets.',
+  'Sets the pitch diameter of the worm. Use the worm\'s.': 'Définit le diamètre primitif de la vis. Reprenez celui de la vis.',
+  'Center distance': 'Entraxe',
+  'Throated wheel': 'Roue creuse',
+
   // The chain sprocket (parts/generators/sprocket.ts)
   '#41 (1/2" narrow)': '#41 (1/2" étroite)',
   'Bicycle 1/2" × 1/8"': 'Vélo 1/2" × 1/8"',
