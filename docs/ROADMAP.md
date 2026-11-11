@@ -55,8 +55,13 @@ By touch (review 3):
 
 Elsewhere:
 
-- **STEP for meshes as tessellated shapes**, which the format has and which
-  cost a fraction of a face to a triangle (research; #53 only limits).
+- **STEP for meshes as tessellated shapes**: tried on 2026-11-11 and advised
+  against. The file is 35 times smaller and written 100 times faster, but
+  FreeCAD draws nothing for such a body and fails when it is cut, the
+  slicers are built on a library too old to read it, and nothing says
+  Fusion takes it; today's facets open and cut everywhere. Left to decide:
+  whether an object over the triangle limit, which is left out of the file
+  today, should go out that way instead.
 - A Linux session with no keyring waits two minutes at start before the
   sign-in is known; an empty `History` folder and a hidden temporary file can be left
   behind; the package's short description reads "for 3D printing".
@@ -83,8 +88,15 @@ Smaller pieces, each of which can be built without a session.
 - **A V-belt pulley's mate** in the mating wizard: a V-belt's length is not
   a tooth count, so it needs its own rule.
 - **STEP export**: true surfaces for helical and bevel gears and for
-  threads, which still go out as facets. A research piece: the library has
-  to sweep a tooth along a helix and the file has to keep the result. (Eggs,
+  threads, which still go out as facets. Tried on 2026-11-11: helical and
+  herringbone gears, screws, nuts, tapped holes, lead screws and worms can
+  be rebuilt as smooth solids that FreeCAD reads as valid, 5 to 50 times
+  smaller than their facets and quicker to write (a default helical gear
+  2.5 MB for 17.8, an M8 bolt 1.2 MB for 43). To build in that order: the
+  gears, then the threads, whose description has to carry the thread
+  itself. Bevel gears came out right for some settings only and come last,
+  if at all; a throated worm wheel stays facets. Not yet measured: the time
+  on a tablet. (Eggs,
   tall domes and oval cones cannot be done: a STEP file does not keep an
   oval turned round an axis.)
 - **PLY**: colors blended across a face on import, where today each face
