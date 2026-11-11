@@ -2,7 +2,8 @@
 // each tagged with its project id and revision in the file's app properties.
 // With the drive.file scope the app sees only files it created, which is all
 // it needs, and nothing else in the Drive. The custom parts are a second
-// remote, in a "Parts" folder inside the app's folder.
+// remote, in a "Parts" folder inside the app's folder; the large meshes and
+// pictures the designs keep apart (see apart.ts) a third, in "Assets".
 import { APP_NAME, FILE_EXTENSION, FILE_FORMAT, isDesignName } from '../appInfo';
 import { tr } from '../i18n';
 import type { Remote, RemoteFile } from './engine';
@@ -76,13 +77,22 @@ const quote = (s: string): string => `'${s.replace(/\\/g, '\\\\').replace(/'/g, 
 export class DriveRemote implements Remote {
   private folderId: string | null = null;
 
-  /** `parent` is the remote whose folder this one's folder sits in; without one it sits at the top of the Drive. */
+  /**
+   * `parent` is the remote whose folder this one's folder sits in; without one it sits at the top of the Drive.
+   * `holds` says what the folder is for: designs, or the files designs keep apart, which go by the names they are given.
+   */
   constructor(
     private readonly fetch: Fetch,
     readonly folderName = APP_NAME,
     private readonly parent: DriveRemote | null = null,
     private readonly wait: Wait = (ms) => new Promise((done) => setTimeout(done, ms)),
+    private readonly holds: 'designs' | 'assets' = 'designs',
   ) {}
+
+  /** Whether a file of the folder is one of this remote's, by its name. */
+  private mine(name: string): boolean {
+    return this.holds === 'designs' ? isDesignName(name) : /^[0-9a-f]{64}\.json$/.test(name);
+  }
 
   /**
    * A request to Drive, tried again after a wait when Google puts it off (too many requests, a
@@ -132,7 +142,7 @@ export class DriveRemote implements Remote {
       const params = new URLSearchParams({ q, fields: `nextPageToken,files(${FILE_FIELDS})`, pageSize: '1000' });
       if (pageToken) params.set('pageToken', pageToken);
       const page = await body<{ files: DriveFile[]; nextPageToken?: string }>(await this.send(`${API}/files?${params}`), (message) => tr('Google Drive could not list the projects: {message}', { message }));
-      for (const file of page.files) if (isDesignName(file.name)) out.push(toRemote(file));
+      for (const file of page.files) if (this.mine(file.name)) out.push(toRemote(file));
       pageToken = page.nextPageToken;
     } while (pageToken);
     return out;
@@ -145,7 +155,7 @@ export class DriveRemote implements Remote {
   }
 
   async upload(existing: RemoteFile | null, name: string, text: string, meta: { projectId: string; revision: string | null }): Promise<RemoteFile> {
-    const fileName = isDesignName(name) ? name : `${name}.${FILE_EXTENSION}`;
+    const fileName = this.mine(name) ? name : `${name}.${FILE_EXTENSION}`;
     const metadata: Record<string, unknown> = {
       name: fileName,
       mimeType: 'application/json',

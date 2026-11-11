@@ -709,6 +709,26 @@ describe('Google Drive remote', () => {
     expect(decodeURIComponent(calls[3].url.replace(/\+/g, ' '))).toContain("'folder2' in parents");
   });
 
+  it('keeps what the designs hold apart in a folder of its own, under the names it is given', async () => {
+    const app = new DriveRemote(fetch);
+    const assets = new DriveRemote(fetch, 'Assets', app, undefined, 'assets');
+    const name = `${'0123456789abcdef'.repeat(4)}.json`;
+    answers.push(() => ({ files: [{ id: 'folder1', name: 'PlastikCAD' }] }));
+    answers.push(() => ({ files: [{ id: 'folder3', name: 'Assets' }] }));
+    // Only its own files are listed: not a design that strayed in, nor anything else.
+    answers.push(() => ({ files: [{ id: 'a1', name, appProperties: { projectId: name.slice(0, 64) } }, { id: 'a2', name: 'Stray.plastikcad' }, { id: 'a3', name: 'notes.json' }] }));
+    expect((await assets.list()).map((f) => f.name)).toEqual([name]);
+    expect(decodeURIComponent(calls[1].url.replace(/\+/g, ' '))).toContain("name = 'Assets' and mimeType = 'application/vnd.google-apps.folder' and 'folder1' in parents");
+    // A file goes up under its own name, not a design's.
+    answers.push(() => ({ id: 'a4', name, appProperties: { projectId: name.slice(0, 64), revision: '' } }));
+    const made = await assets.upload(null, name, '{"kind":"mesh"}', { projectId: name.slice(0, 64), revision: null });
+    expect(made.name).toBe(name);
+    const sent = calls[calls.length - 1].init!.body as string;
+    expect(sent).toContain(`"name":"${name}"`);
+    expect(sent).toContain('"parents":["folder3"]');
+    expect(sent).toContain('{"kind":"mesh"}');
+  });
+
   it('uploads as multipart, creating in the folder or replacing in place, and trashes to delete', async () => {
     const drive = new DriveRemote(fetch);
     answers.push(() => ({ files: [{ id: 'folder1', name: 'PlastikCAD' }] }));

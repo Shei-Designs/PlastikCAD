@@ -236,6 +236,7 @@ export const state: Catalog = {
   'Google Drive could not make its folder: {message}': 'Google Drive n’a pas pu créer son dossier\u00a0: {message}',
   'Google Drive could not list the projects: {message}': 'Google Drive n’a pas pu lister les projets\u00a0: {message}',
   'Google Drive could not download {name}: {message}': 'Google Drive n’a pas pu télécharger {name}\u00a0: {message}',
+  'The imported shapes and pictures of {name} are missing from Google Drive, or damaged there.': 'Les formes et images importées de {name} sont absentes de Google Drive, ou y sont endommagées.',
   'Google Drive could not upload {name}: {message}': 'Google Drive n’a pas pu envoyer {name}\u00a0: {message}',
   'Google Drive could not look at {name}: {message}': 'Google Drive n’a pas pu consulter {name}\u00a0: {message}',
   'Google Drive could not delete {name}: {message}': 'Google Drive n’a pas pu supprimer {name}\u00a0: {message}',

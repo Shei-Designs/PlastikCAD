@@ -7,6 +7,8 @@ import { noteDiagnostic } from '../diagnostics';
 import { asError } from '../errors';
 import { tr } from '../i18n';
 import { hasPartStore, hasProjectStore, partStore, projectStore } from '../state/projects';
+import { apartRemote } from './apart';
+import type { ApartRemote } from './apart';
 import { DriveRemote } from './drive';
 import { bindRecords, synchronize } from './engine';
 import type { DeletePlan, Remote, SyncReport, SyncState } from './engine';
@@ -17,6 +19,8 @@ import type { RecordStore } from './state';
 
 /** The Drive folder the custom parts go in, inside the app's folder. */
 export const PARTS_FOLDER = 'Parts';
+/** The Drive folder for the large meshes and pictures the designs keep apart (see apart.ts), inside the app's folder. */
+export const ASSETS_FOLDER = 'Assets';
 
 export interface SyncStatus {
   /** Whether this build knows a Google client at all. */
@@ -39,6 +43,8 @@ const listeners = new Set<() => void>();
 let tokens: Tokens | null = null;
 let remote: DriveRemote | null = null;
 let partsRemote: DriveRemote | null = null;
+/** The projects' remote as the engine sees it: designs whole, their large meshes and pictures kept apart behind it. */
+let projectsRemote: ApartRemote | null = null;
 const state = openSyncState(STORES.projects);
 const partsState = openSyncState(STORES.parts);
 let device = '';
@@ -67,12 +73,21 @@ const subscribe = (l: () => void) => {
 export const getSyncStatus = (): SyncStatus => status;
 export const useSyncStatus = (): SyncStatus => useSyncExternalStore(subscribe, () => status);
 
+/** A project as this device has it, by its id; null when it has none. */
+async function localProject(projectId: string): Promise<string | null> {
+  if (!hasProjectStore()) return null;
+  const store = projectStore();
+  const info = (await store.list()).find((p) => p.id === projectId);
+  return info ? store.read(info.key) : null;
+}
+
 /** `keep` is false for the sign-in as it was just read from where it is kept. */
 function setTokens(next: Tokens | null, keep = true): void {
   tokens = next;
   if (keep) void saveTokens(next);
   remote = next ? new DriveRemote(authorizedFetch(() => tokens, setTokens)) : null;
   partsRemote = remote ? new DriveRemote(authorizedFetch(() => tokens, setTokens), PARTS_FOLDER, remote) : null;
+  projectsRemote = remote ? apartRemote(remote, new DriveRemote(authorizedFetch(() => tokens, setTokens), ASSETS_FOLDER, remote, undefined, 'assets'), localProject) : null;
   publish({ linked: next !== null, email: next?.email ?? null });
 }
 
@@ -187,12 +202,12 @@ export async function withSyncPaused<T>(work: () => Promise<T>): Promise<T> {
 }
 
 /** One set (the projects, or the parts) brought into line, its records first checked against the places they were agreed for. */
-async function syncSet(store: RecordStore, what: 'projects' | 'parts', local: ReturnType<typeof projectStore>, to: DriveRemote, records: SyncState): Promise<SyncReport> {
-  const places = `${await to.folder()}\n${local.location ?? ''}`;
+async function syncSet(store: RecordStore, what: 'projects' | 'parts', local: ReturnType<typeof projectStore>, folder: DriveRemote, to: Remote, records: SyncState): Promise<SyncReport> {
+  const places = `${await folder.folder()}\n${local.location ?? ''}`;
   await bindRecords(records, loadBinding(store), places);
   saveBinding(store, places);
   const ask = confirmDeletes;
-  return synchronize(local, to as Remote, records, { device, ...(ask ? { confirmDeletes: (plan: DeletePlan) => ask(plan, what) } : {}) });
+  return synchronize(local, to, records, { device, ...(ask ? { confirmDeletes: (plan: DeletePlan) => ask(plan, what) } : {}) });
 }
 
 const touched = (report: SyncReport): boolean => report.changedKeys.length > 0 || report.removedKeys.length > 0 || report.kept.length > 0;
@@ -206,14 +221,16 @@ async function pass(): Promise<SyncReport | null> {
   publish({ busy: true, offline: false });
   try {
     await beforeSync?.();
-    const report = await syncSet(STORES.projects, 'projects', projectStore(), remote, state);
+    // What the Assets folder holds is looked at afresh each pass.
+    projectsRemote?.forget();
+    const report = await syncSet(STORES.projects, 'projects', projectStore(), remote, projectsRemote ?? remote, state);
     // Told whatever else went wrong: the editor must take in what the pass did write, or it would save its old copy over it.
     if (touched(report)) await onChanged?.(report);
     let failure: unknown = report.errors[0];
     let busy = report.busy.length > 0;
     // The parts after the projects, so that trouble with them never holds a project back.
     if (partsRemote && partsState && hasPartStore() && !(failure instanceof NeedsSignIn)) {
-      const parts = await syncSet(STORES.parts, 'parts', partStore(), partsRemote, partsState);
+      const parts = await syncSet(STORES.parts, 'parts', partStore(), partsRemote, partsRemote, partsState);
       if (touched(parts)) await onPartsChanged?.(parts);
       failure ??= parts.errors[0];
       busy ||= parts.busy.length > 0;

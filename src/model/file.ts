@@ -46,6 +46,9 @@ function pretty(value: unknown, depth: number): string {
   return `{\n${entries.map(([k, v]) => `${pad}${JSON.stringify(k)}: ${pretty(v, depth + 1)}`).join(',\n')}\n${end}}`;
 }
 
+/** A design file's text from what it holds, laid out as `serializeDoc` lays it out. */
+export const formatFile = (file: unknown): string => pretty(file, 0) + '\n';
+
 function isPlain(value: unknown): boolean {
   if (value === null || typeof value !== 'object') return true;
   return Array.isArray(value) && value.every((v) => v === null || typeof v !== 'object' || (Array.isArray(v) && v.every((w) => typeof w !== 'object')));
@@ -113,7 +116,7 @@ export function serializeDoc(doc: Doc): string {
     // After the scene: a robot's links carry "name" lines of their own, which must not pass for the header's.
     robot: doc.robot ? canonicalRobot(doc.robot) : undefined,
   };
-  return pretty(file, 0) + '\n';
+  return formatFile(file);
 }
 
 /** Fixed key order, links and joints sorted by id, so that the same robot always serializes to the same text. */
