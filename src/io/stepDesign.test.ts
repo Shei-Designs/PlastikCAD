@@ -13,7 +13,7 @@ import type { PartNode, SceneNode, ShapeNode } from '../model/types';
 import { getGenerator } from '../parts/generators';
 import { defaultParams as partDefaults } from '../parts/generators/types';
 import { parseStep } from './importStep';
-import { boxSlack } from './stepExact';
+import { boxSlack, exactShape } from './stepExact';
 import { loadOcc } from './occ';
 import { writeStep } from './stepExport';
 
@@ -54,13 +54,14 @@ const count = (step: string, entity: string): number => (step.match(new RegExp(`
  * Writes the node as the app does, reads the file back, and holds the two against each other.
  * Answers whether the node went out as true surfaces, and how many faces of each kind the file has.
  */
-function roundTrip(node: SceneNode, asShown = false, slack = 5e-3): { exact: boolean; faces: number; planes: number; cylinders: number; cones: number; spheres: number; tori: number } {
+function roundTrip(node: SceneNode, asShown = false, slack = 5e-3): { exact: boolean; bytes: Uint8Array; solids: number; faces: number; planes: number; cylinders: number; cones: number; spheres: number; tori: number; splines: number } {
   const colored = exportColored([node], true);
   // As the app writes it: what cannot be rebuilt goes out with the facets the screen has, not the finest.
   const shown = asShown ? exportColored([node], false) : null;
   const objects = colored.objects.flatMap((o, i) => o.parts.map((p, k) => ({ name: o.name, color: p.color, mesh: p.mesh, ...(shown ? { facets: shown.objects[i].parts[k].mesh } : {}), ...(o.parts.length === 1 ? { node } : {}) })));
-  const want = exportNodes([node], false, !asShown);
   const { bytes, warnings, exact } = writeStep(oc, objects, { partBox });
+  // What was rebuilt is held against the finest facets, as the writer held it; what went out as the screen's facets, against those.
+  const want = exportNodes([node], false, !asShown || exact > 0);
   expect(warnings, node.name).toEqual([]);
   const back = parseStep(oc, bytes, node.name);
   // An object of several bodies (a cutout with its screw holes) reads back as that many solids.
@@ -74,13 +75,49 @@ function roundTrip(node: SceneNode, asShown = false, slack = 5e-3): { exact: boo
   const step = new TextDecoder().decode(bytes);
   return {
     exact: exact === 1,
+    bytes,
+    solids: count(step, 'MANIFOLD_SOLID_BREP'),
     faces: count(step, 'ADVANCED_FACE'),
     planes: count(step, 'PLANE'),
     cylinders: count(step, 'CYLINDRICAL_SURFACE'),
     cones: count(step, 'CONICAL_SURFACE'),
     spheres: count(step, 'SPHERICAL_SURFACE'),
     tori: count(step, 'TOROIDAL_SURFACE'),
+    splines: count(step, 'B_SPLINE_SURFACE_WITH_KNOTS'),
   };
+}
+
+/** What OpenCascade makes of a STEP file read back: how many solids, whether it finds no fault in them, and whether every skin is closed. */
+function inspect(bytes: Uint8Array): { solids: number; valid: boolean; closed: boolean } {
+  const path = '/inspect.step';
+  oc.FS.writeFile(path, bytes);
+  const reader = new oc.STEPControl_Reader();
+  const progress = new oc.Message_ProgressRange();
+  try {
+    expect(reader.ReadFile(path)).toBe(oc.IFSelect_ReturnStatus.IFSelect_RetDone);
+    reader.TransferRoots(progress);
+    const shape = reader.OneShape();
+    const each = (kind: (typeof oc.TopAbs_ShapeEnum)[keyof typeof oc.TopAbs_ShapeEnum], visit: (s: InstanceType<typeof oc.TopoDS_Shape>) => void): void => {
+      const explorer = new oc.TopExp_Explorer(shape, kind, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
+      for (; explorer.More(); explorer.Next()) visit(explorer.Current());
+      explorer.delete();
+    };
+    let solids = 0;
+    each(oc.TopAbs_ShapeEnum.TopAbs_SOLID, () => solids++);
+    let closed = true;
+    each(oc.TopAbs_ShapeEnum.TopAbs_SHELL, (s) => {
+      if (!oc.TopoDS.Shell(s).Closed()) closed = false;
+    });
+    const checker = new oc.BRepCheck_Analyzer(shape, true, false, false);
+    const valid = checker.IsValid();
+    checker.delete();
+    shape.delete();
+    return { solids, valid, closed };
+  } finally {
+    reader.delete();
+    progress.delete();
+    oc.FS.unlink(path);
+  }
 }
 
 describe('the design as a STEP file', () => {
@@ -174,16 +211,16 @@ describe('the design as a STEP file', () => {
     }, 120_000);
   }
 
-  it('writes a part from its description where that is profiles and round bores, and from its facets where it is twisted', () => {
+  it('writes a part from its description where that is profiles and round bores, and from its facets where it is threaded', () => {
     // A bearing seat: two bores, one on the other.
     expect(roundTrip(partNode('bearing-seat'))).toMatchObject({ exact: true, cylinders: 2 });
-    // A threaded nut is a twisted extrusion: no exact form.
+    // A threaded nut: its thread is a coil of facets cut to length, which has no exact form.
     expect(roundTrip(partNode('metric-nut')).exact).toBe(false);
     // Flat profiles with round holes: a gear, a pulley, a motor mount, a panel cutout, a board.
     for (const id of ['spur', 'gt2-pulley', 'stepper-mount', 'servo-mount', 'panel-connector', 'raspberry-pi', 'extrusion']) expect(roundTrip(partNode(id)).exact, id).toBe(true);
   }, 120_000);
 
-  // A thread is a twisted extrusion cut to length: its mesh has corners that are one place under two numbers by
+  // A thread is a coil cut to length: its mesh has corners that are one place under two numbers by
   // the thousand, triangles of no area between them, and a few whose corners lie in a line.
   for (const id of ['metric-bolt', 'lead-screw', 'lead-screw-nut', 'worm']) {
     it(`writes a ${id} as one closed solid of its facets, as the app exports it`, () => {
@@ -192,6 +229,76 @@ describe('the design as a STEP file', () => {
       expect(written.faces).toBeGreaterThan(1000);
     }, 120_000);
   }
+
+  describe('gears with teeth that wind', () => {
+    // Each with the number of its teeth. A tooth is some seventeen faces up each stage of the gear, as the tracer reads
+    // its outline (the flanks in a few arcs each, the tip, the root); never two dozen, where its facets are hundreds.
+    const gears: [string, string, Record<string, number | string | boolean>, number][] = [
+      ['helical', 'at its defaults', {}, 24],
+      // Turned by more than a quarter turn over its height.
+      ['helical', 'of few teeth at a steep angle', { teeth: 12, faceWidth: 30, helixAngle: 45 }, 12],
+      ['helical', 'left-handed', { hand: 'left' }, 24],
+      ['helical', 'with a hub, two set screws and a D bore', { hubHeight: 8, setScrews: 2, boreType: 'd' }, 24],
+      // Two halves that wind opposite ways: every tooth twice.
+      ['herringbone', 'at its defaults', {}, 48],
+    ];
+    for (const [id, what, params, teeth] of gears) {
+      it(`writes a ${id} gear ${what} as one solid of smooth faces`, () => {
+        // As the app exports it: were it not rebuilt, the screen's facets would go out, and `exact` would say so.
+        const written = roundTrip(partNode(id, params), true);
+        expect(written.exact).toBe(true);
+        expect(written.solids).toBe(1);
+        // Every side of the outline a face of its own, swept up the helix; the two ends, the bore and what a hub adds.
+        expect(written.splines).toBeGreaterThanOrEqual(teeth * 4);
+        expect(written.faces).toBeLessThanOrEqual(teeth * 24);
+        expect(inspect(written.bytes)).toEqual({ solids: 1, valid: true, closed: true });
+      }, 120_000);
+    }
+
+    // The volume and the box cannot tell a gear from its mirror image, nor a herringbone from a helical gear of the
+    // same teeth: the corners of the kernel's finest facets can, which all lie on the skin of the true solid.
+    const wound: [string, string, Record<string, number | string | boolean>][] = [
+      ['helical', 'at its defaults', {}],
+      ['helical', 'left-handed', { hand: 'left', helixAngle: 35 }],
+      ['herringbone', 'at its defaults', {}],
+    ];
+    for (const [id, what, params] of wound) {
+      it(`rebuilds a ${id} gear ${what} through the corners of the kernel's own`, () => {
+        const node = partNode(id, params);
+        const fine = exportColored([node], true).objects[0].parts[0].mesh;
+        const [x0, y0, z0, x1, y1, z1] = box([fine]);
+        const made: { delete(): void }[] = [];
+        const keep = <T extends { delete(): void }>(o: T): T => {
+          made.push(o);
+          return o;
+        };
+        try {
+          const shape = exactShape(oc, node, { volume: volume(fine), bounds: { min: [x0, y0, z0], max: [x1, y1, z1] } }, { partBox }, keep);
+          if (!shape) throw new Error(`${id}: not rebuilt`);
+          expect(keep(new oc.BRepCheck_Analyzer(shape, true, false, false)).IsValid()).toBe(true);
+          const skin = keep(keep(new oc.TopExp_Explorer(shape, oc.TopAbs_ShapeEnum.TopAbs_SHELL, oc.TopAbs_ShapeEnum.TopAbs_SHAPE)).Current());
+          const corners = fine.positions.length / 3;
+          const picks = 150;
+          let worst = 0;
+          for (let k = 0; k < picks; k++) {
+            const i = Math.floor(((k + 0.5) / picks) * corners);
+            const corner = keep(keep(new oc.BRepBuilderAPI_MakeVertex(keep(new oc.gp_Pnt(fine.positions[i * 3], fine.positions[i * 3 + 1], fine.positions[i * 3 + 2])))).Vertex());
+            worst = Math.max(worst, keep(new oc.BRepExtrema_DistShapeShape(corner, skin)).Value());
+          }
+          // A hundredth of a millimeter: five times what the tracer lets a corner stand off the arc it reads it on.
+          expect(worst).toBeLessThan(0.01);
+        } finally {
+          for (const o of made.reverse()) {
+            try {
+              o.delete();
+            } catch {
+              // Already let go with what held it.
+            }
+          }
+        }
+      }, 120_000);
+    }
+  });
 
   it('writes a V-belt pulley as the cones of its groove between the cylinders of its rim', () => {
     // The rim either side of the groove and the groove's floor; its two flanks; the two sides; and the bore.
