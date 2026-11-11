@@ -9,7 +9,7 @@
 #   pnpm check:apps android    the Android app only
 #
 # Needs, for the desktop: cargo, gamescope, WebKitWebDriver (webkitgtk) and dbus-run-session.
-# For Android: the SDK with its emulator, an emulator named by ANDROID_AVD, and the build's own needs (README).
+# For Android: the SDK with its emulator and an NDK, a JDK 17, and an emulator named by ANDROID_AVD (android.sh).
 # The folder of a run is printed at its end and kept, with the logs and every file the apps wrote.
 set -uo pipefail
 
@@ -19,6 +19,13 @@ what=${1:-all}
 work=$(mktemp -d "${TMPDIR:-/tmp}/plastikcad-apps.XXXXXX")
 port=${APPS_DRIVER_PORT:-4455}
 status=0
+
+# One run at a time: two would take the same driver port and the same emulator, and fail each other.
+exec 9> /tmp/plastikcad-apps.lock
+if ! flock -n 9; then
+  echo "Another run of these checks is going on: wait for it to end." >&2
+  exit 2
+fi
 
 need() {
   for program in "$@"; do
