@@ -373,9 +373,11 @@ function inherit(parent: Frame, element: string, attrs: Record<string, string>, 
 
 function parseTransform(s: string): Matrix {
   let m: Matrix = [1, 0, 0, 1, 0, 0];
-  // From the start of a word only, so that a long word with no bracket after it is gone through once.
+  // From the start of a word only, so that a long word with no bracket after it is gone through once; and no further
+  // than the last closing bracket, so that words with a bracket opened and never closed are not each read to the end.
+  const closed = s.slice(0, s.lastIndexOf(')') + 1);
   const re = /\b([a-zA-Z]+)\s*\(([^)]*)\)/g;
-  for (let match = re.exec(s); match; match = re.exec(s)) {
+  for (let match = re.exec(closed); match; match = re.exec(closed)) {
     const a = numbers(match[2]);
     let t: Matrix | undefined;
     switch (match[1]) {

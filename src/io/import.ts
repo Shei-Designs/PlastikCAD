@@ -99,10 +99,40 @@ function sniff(bytes: Uint8Array): string {
   if (/^\s*solid\b/.test(head)) return 'stl';
   if (/^\s*ISO-10303-21\s*;/.test(head)) return 'step';
   if (/^\s*0\s*\r?\n\s*SECTION\b/.test(head) || /^\s*999\s*\r?\n/.test(head)) return 'dxf';
-  if (/^\s*(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*(<!DOCTYPE[^>]*>\s*)?<svg\b/i.test(head)) return 'svg';
+  if (/^<svg\b/i.test(afterProlog(head))) return 'svg';
   if (/<COLLADA[\s>]/.test(head)) return 'dae';
   if (/^\s*\{[\s\S]*"asset"/.test(head)) return 'gltf';
-  if (/^(\s*(#[^\n]*)?\r?\n)*\s*(v|vn|vt|o|g|mtllib|usemtl)\s/.test(head)) return 'obj';
+  if (/^(v|vn|vt|o|g|mtllib|usemtl)\s/.test(firstStatement(head))) return 'obj';
+  return '';
+}
+
+// The two below go through the text once. As single patterns ("any number of comments, then…") they took twice as
+// long for every blank line or empty comment at the top of a file, and a few dozen froze the app for good.
+
+/** What follows an XML file's opening: its declaration, its comments and its DOCTYPE, in any order. */
+function afterProlog(head: string): string {
+  let at = 0;
+  for (;;) {
+    while (at < head.length && /\s/.test(head[at])) at++;
+    const close = head.startsWith('<!--', at) ? '-->' : head.startsWith('<?', at) || /^<!doctype/i.test(head.slice(at, at + 9)) ? '>' : null;
+    if (close === null) return head.slice(at);
+    const end = head.indexOf(close, at);
+    // Cut short by the end of what was read: nothing follows that could be told.
+    if (end < 0) return '';
+    at = end + close.length;
+  }
+}
+
+/** The first line of a text that is neither blank nor a comment of an OBJ file, without what comes before its first word; a newline closes it. */
+function firstStatement(head: string): string {
+  let at = 0;
+  while (at < head.length) {
+    const end = head.indexOf('\n', at);
+    const line = (end < 0 ? head.slice(at) : head.slice(at, end)).trim();
+    if (line !== '' && !line.startsWith('#')) return `${line}\n`;
+    if (end < 0) break;
+    at = end + 1;
+  }
   return '';
 }
 
@@ -258,3 +288,13 @@ export function centerOutline(outline: { shapes: OutlineShape[] }): { size: Vec2
       }
   return { size: [max[0] - min[0], max[1] - min[1]], center };
 }
+
+/** The material library an OBJ file names (`mtllib …`), read a line at a time so that no file takes long over it. */
+export function namedLibrary(text: string): string | undefined {
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    if (/^mtllib\s/.test(line)) return line.slice(6).trim() || undefined;
+  }
+  return undefined;
+}
+

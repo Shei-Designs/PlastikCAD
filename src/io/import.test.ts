@@ -6,7 +6,7 @@ import { exportMesh, exportOutline } from './export';
 import { writeGlb } from './glb';
 import { write3mf } from './threemf';
 import { scaling, translation } from '../model/math';
-import { centerMesh, centerOutline, checkedMesh, checkedOutline, fileKind, guarded, IMPORT_EXTENSIONS, importFile } from './import';
+import { centerMesh, centerOutline, checkedMesh, checkedOutline, fileKind, guarded, IMPORT_EXTENSIONS, importFile, namedLibrary } from './import';
 import type { Companion, ImportedModel } from './import';
 import type { OutlineShape } from '../model/types';
 import { signedArea } from './outline';
@@ -159,6 +159,39 @@ describe('importFile', () => {
     // A STEP file is known by its first line; it is read elsewhere, with OpenCascade (see importStep.ts).
     expect(fileKind('document', bytes('ISO-10303-21;\nHEADER;'))).toBe('step');
     expect(() => importFile('part.step', bytes('ISO-10303-21;'))).toThrow('A STEP file cannot be read as part of another file.');
+  });
+
+  // Each of these froze the app as a single pattern: the time doubled with every blank line or empty comment, so
+  // that a few dozen never ended. A test that comes back at all is the proof; none of them is timed.
+  it('tells what a file is however many blank lines and comments it opens with', () => {
+    const blank = '\n'.repeat(1500);
+    expect(fileKind('msf:1', bytes(`${blank}v 0 0 0\n`))).toBe('obj');
+    expect(fileKind('msf:2', bytes(`${blank}x`))).toBe('');
+    expect(fileKind('cube.mtl', bytes(`${' \r\n'.repeat(600)}newmtl wood\n`))).toBe('');
+    expect(fileKind('msf:3', bytes(`${'# a comment\n'.repeat(150)}  mtllib colors.mtl\n`))).toBe('obj');
+    // A word that only begins like a statement is not one.
+    expect(fileKind('msf:4', bytes('vertex 0 0 0\n'))).toBe('');
+    const comments = '<!---->'.repeat(250);
+    expect(fileKind('msf:5', bytes(`${comments}<svg><rect width="1" height="1"/></svg>`))).toBe('svg');
+    expect(fileKind('msf:6', bytes(`${comments}x`))).toBe('');
+    expect(fileKind('msf:7', bytes('<!-- made elsewhere -->\n<?xml version="1.0"?>\n<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "x.dtd">\n<SVG width="1">'))).toBe('svg');
+    // A comment that never closes within what is looked at tells nothing.
+    expect(fileKind('msf:8', bytes('<!-- <svg>'))).toBe('');
+    expect(fileKind('msf:9', bytes('<svgs>'))).toBe('');
+  });
+
+  it('finds the material library an OBJ file names, a line at a time', () => {
+    expect(namedLibrary('# cube\nmtllib  colors.mtl \r\nv 0 0 0\n')).toBe('colors.mtl');
+    expect(namedLibrary('  mtllib my colors.mtl\n')).toBe('my colors.mtl');
+    expect(namedLibrary('v 0 0 0\nusemtl wood\n')).toBeUndefined();
+    expect(namedLibrary('mtllib\n')).toBeUndefined();
+    expect(namedLibrary(`mtllib ${' '.repeat(60000)}x\n${'\n'.repeat(60000)}`)).toBe('x');
+  });
+
+  it('reads the transform of an SVG whose brackets never close without reading it over and over', () => {
+    const open = 'translate('.repeat(20000);
+    const result = importFile('odd.svg', bytes(`<svg xmlns="http://www.w3.org/2000/svg"><rect transform="${open}" width="4" height="2"/><rect transform="translate(10 0) ${open}" x="0" y="0" width="4" height="2"/></svg>`));
+    expect(result.kind).toBe('outline');
   });
 });
 

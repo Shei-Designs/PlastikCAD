@@ -822,6 +822,11 @@ describe('file headers', () => {
   it('refuses what is not a design laid out by the app', () => {
     expect(readHeader('{"format":"plastikcad","version":2,"name":"Flat"}')).toBeNull();
     expect(readHeader('<svg/>')).toBeNull();
+    // A design padded with a quarter of a megabyte of blank lines is read as quickly as any other: as one pattern over
+    // any white space this took a minute, at every start of the app, for a file that only sat in the projects folder.
+    const padded = serializeDoc({ ...emptyDoc(), id: 'proj0002', name: 'Padded' }).replace('"name"', `${'\n'.repeat(250_000)}  "name"`);
+    expect(readHeader(padded)?.name).toBe('Padded');
+    expect(readHeader(`{\n${'\n'.repeat(250_000)}`)).toBeNull();
     expect(readHeader('{\n  "format": "plastikcad",\n  "version": 2')).toBeNull();
   });
 

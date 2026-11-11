@@ -662,12 +662,14 @@ export interface DocHeader {
  * the scene. Null when the text is not the start of a design file.
  */
 export function readHeader(head: string): DocHeader | null {
-  if (!/^\{\s*\n\s*"format": "(?:plastikcad|bashcad)",/.test(head)) return null;
+  // Spaces and tabs only between the start of a line and its field: with any white space allowed there, every blank
+  // line of a padded file was a place to start over from, and a quarter of a megabyte of them took a minute to read.
+  if (!/^\{[ \t\r]*\n[ \t]*"format": "(?:plastikcad|bashcad)",/.test(head)) return null;
   // Only what comes before the scene is the header: the objects in it have ids and names of their own.
-  const sceneAt = head.search(/^\s*"scene":/m);
+  const sceneAt = head.search(/^[ \t]*"scene":/m);
   const header = sceneAt < 0 ? head : head.slice(0, sceneAt);
   const field = (name: string): string | null => {
-    const match = new RegExp(`^\\s*"${name}": ("(?:[^"\\\\]|\\\\.)*")\\s*,?$`, 'm').exec(header);
+    const match = new RegExp(`^[ \\t]*"${name}": ("(?:[^"\\\\]|\\\\.)*")[ \\t]*,?\\r?$`, 'm').exec(header);
     if (!match) return null;
     try {
       return JSON.parse(match[1]) as string;
