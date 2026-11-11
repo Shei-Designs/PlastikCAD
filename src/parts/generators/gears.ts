@@ -12,7 +12,7 @@ const moduleParam: ParamDef = {
   type: 'number',
   key: 'module',
   label: tr('Module'),
-  help: tr('Tooth size: pitch diameter ÷ number of teeth. Meshing gears must share the same module.'),
+  help: tr('Sets the tooth size: pitch diameter ÷ number of teeth.'),
   default: 2,
   min: 0.3,
   max: 20,
@@ -35,7 +35,7 @@ const faceWidthParam: ParamDef = {
   type: 'number',
   key: 'faceWidth',
   label: tr('Face width'),
-  help: tr('Thickness of the toothed part.'),
+  help: tr('Sets the thickness of the toothed part.'),
   default: 10,
   min: 1,
   max: 200,
@@ -50,7 +50,7 @@ const toothFormGroup = (opts: { shift?: boolean } = {}): ParamGroup => ({
       type: 'number',
       key: 'pressureAngle',
       label: tr('Pressure angle'),
-      help: tr('20° is the modern standard. Meshing gears must use the same angle.'),
+      help: tr('Sets the slope of the tooth flanks.'),
       default: 20,
       min: 14.5,
       max: 30,
@@ -63,7 +63,7 @@ const toothFormGroup = (opts: { shift?: boolean } = {}): ParamGroup => ({
             type: 'number',
             key: 'profileShift',
             label: tr('Profile shift'),
-            help: tr('Shifts the teeth outward (positive) to strengthen small pinions and avoid undercut. Changes the center distance.'),
+            help: tr('Shifts the teeth outward (positive) or inward. Changes the center distance.'),
             default: 0,
             min: -0.5,
             max: 1,
@@ -75,7 +75,7 @@ const toothFormGroup = (opts: { shift?: boolean } = {}): ParamGroup => ({
       type: 'number',
       key: 'backlash',
       label: tr('Backlash'),
-      help: tr('Thins each tooth by this amount so printed gears run freely. 0.05–0.2 mm is typical for FDM.'),
+      help: tr('Thins each tooth by this amount.'),
       default: 0.1,
       min: 0,
       max: 1,
@@ -86,7 +86,7 @@ const toothFormGroup = (opts: { shift?: boolean } = {}): ParamGroup => ({
       type: 'number',
       key: 'clearance',
       label: tr('Root clearance'),
-      help: tr('Extra depth at the tooth root as a fraction of the module (0.25 is standard).'),
+      help: tr('Sets the extra depth at the tooth root, as a fraction of the module.'),
       default: 0.25,
       min: 0.1,
       max: 0.5,
@@ -108,7 +108,7 @@ function involuteGear(kind: GearKind): GeneratorDef {
       type: 'number',
       key: 'helixAngle',
       label: tr('Helix angle'),
-      help: tr('Angle of the teeth to the axis. Meshing gears need the same angle and opposite hands.'),
+      help: tr('Sets the angle of the teeth to the axis.'),
       default: kind === 'helical' ? 20 : 30,
       min: 1,
       max: 45,
@@ -118,14 +118,14 @@ function involuteGear(kind: GearKind): GeneratorDef {
     main.push(
       kind === 'helical'
         ? handParam
-        : { ...handParam, help: tr('Which way the lower half of the teeth winds. A herringbone gear and its mate have opposite hands.') },
+        : { ...handParam, help: tr('Selects which way the lower half of the teeth winds.') },
     );
   }
 
   const names: Record<GearKind, [string, string]> = {
     spur: [tr('Spur gear'), tr('Straight-toothed involute gear.')],
-    helical: [tr('Helical gear'), tr('Angled teeth for smoother, quieter running.')],
-    herringbone: [tr('Herringbone gear'), tr('Double helical: quiet, self-centering, no axial thrust.')],
+    helical: [tr('Helical gear'), tr('Gear with teeth at an angle to the axis.')],
+    herringbone: [tr('Herringbone gear'), tr('Gear with teeth in a double helix.')],
   };
 
   return {
@@ -173,7 +173,7 @@ function involuteGear(kind: GearKind): GeneratorDef {
       if (profile.undercut) {
         const xMin = minShiftWithoutUndercut(z, spec.pressureAngle);
         warnings.push(
-          tr('The teeth are undercut, which weakens them. A profile shift of {shift} or more avoids it.', { shift: (Math.ceil(xMin * 20) / 20).toFixed(2) }),
+          tr('The teeth are undercut. A profile shift of {shift} or more avoids it.', { shift: (Math.ceil(xMin * 20) / 20).toFixed(2) }),
         );
       }
       if (profile.pointed) warnings.push(tr('The teeth come to a point before reaching full height; reduce the profile shift.'));
@@ -203,7 +203,7 @@ export const ringGear: GeneratorDef = {
   id: 'ring',
   name: tr('Internal ring gear'),
   category: 'gears',
-  summary: tr('Teeth on the inside, for planetary gear sets.'),
+  summary: tr('Gear with teeth on the inside.'),
   groups: [
     {
       title: tr('Gear'),
@@ -215,7 +215,7 @@ export const ringGear: GeneratorDef = {
           type: 'number',
           key: 'rimThickness',
           label: tr('Rim thickness'),
-          help: tr('Material left outside the tooth roots.'),
+          help: tr('Sets the thickness left outside the tooth roots.'),
           default: 4,
           min: 0.5,
           max: 100,
@@ -330,7 +330,7 @@ export const rack: GeneratorDef = {
           type: 'number',
           key: 'baseHeight',
           label: tr('Base height'),
-          help: tr('Material below the tooth roots.'),
+          help: tr('Sets the thickness below the tooth roots.'),
           default: RACK_BASE_HEIGHT,
           min: 0.5,
           max: 100,
@@ -341,7 +341,7 @@ export const rack: GeneratorDef = {
           type: 'number',
           key: 'helixAngle',
           label: tr('Helix angle'),
-          help: tr('0 for a straight rack. Match the helix angle of the pinion; the sign sets the slant direction.'),
+          help: tr('Sets the slant of the teeth. 0 makes a straight rack.'),
           default: 0,
           min: -45,
           max: 45,

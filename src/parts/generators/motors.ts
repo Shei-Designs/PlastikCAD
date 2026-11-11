@@ -66,8 +66,8 @@ const corners = (s: number): Vec2[] => [
 const ring = (n: number, d: number): Vec2[] => Array.from({ length: n }, (_, i) => [(d / 2) * Math.cos((2 * Math.PI * i) / n), (d / 2) * Math.sin((2 * Math.PI * i) / n)]);
 
 export const STEPPERS: Motor[] = [
-  { id: 'nema17', label: 'NEMA 17 (42 mm)', face: square(42.3, 5), holes: corners(31), screw: 'M3', pilot: { d: 22, h: 2 }, shaft: { d: 5, len: 24, flat: 4.5 }, body: { w: 42.3, h: 42.3, r: 5, below: 40 }, lengths: '34, 40 or 48', bracket: true, note: tr('The usual printer stepper. Four M3 holes on a 31 mm square, 22 mm pilot boss.') },
-  { id: 'nema23', label: 'NEMA 23 (57 mm)', face: square(57.3, 5), holes: corners(47.14), screw: 'M5', pilot: { d: 38.1, h: 1.6 }, shaft: { d: 6.35, len: 21, flat: 5.85 }, body: { w: 57.3, h: 57.3, r: 5, below: 56 }, lengths: '42, 56 or 76', bracket: true, note: tr('Four M5 holes on a 47.1 mm square, 38.1 mm boss. Holes go right through: use long screws.') },
+  { id: 'nema17', label: 'NEMA 17 (42 mm)', face: square(42.3, 5), holes: corners(31), screw: 'M3', pilot: { d: 22, h: 2 }, shaft: { d: 5, len: 24, flat: 4.5 }, body: { w: 42.3, h: 42.3, r: 5, below: 40 }, lengths: '34, 40 or 48', bracket: true, note: tr('Four M3 holes on a 31 mm square, 22 mm pilot boss.') },
+  { id: 'nema23', label: 'NEMA 23 (57 mm)', face: square(57.3, 5), holes: corners(47.14), screw: 'M5', pilot: { d: 38.1, h: 1.6 }, shaft: { d: 6.35, len: 21, flat: 5.85 }, body: { w: 57.3, h: 57.3, r: 5, below: 56 }, lengths: '42, 56 or 76', bracket: true, note: tr('Four M5 through holes on a 47.1 mm square, 38.1 mm pilot boss.') },
   { id: 'nema14', label: 'NEMA 14 (35 mm)', face: square(35.2, 4), holes: corners(26), screw: 'M3', pilot: { d: 22, h: 2 }, shaft: { d: 5, len: 24, flat: 4.5 }, body: { w: 35.2, h: 35.2, r: 4, below: 34 }, lengths: '28 or 34', bracket: true, note: tr('Four M3 holes on a 26 mm square, 22 mm pilot boss.') },
   { id: 'nema11', label: 'NEMA 11 (28 mm)', face: square(28.2, 3), holes: corners(23), screw: 'M2.5', pilot: { d: 22, h: 2 }, shaft: { d: 5, len: 20 }, body: { w: 28.2, h: 28.2, r: 3, below: 33 }, lengths: '33, 45 or 51', bracket: true, note: tr('Four M2.5 holes on a 23 mm square, 22 mm pilot boss.') },
   { id: 'nema8', label: 'NEMA 8 (20 mm)', face: square(20.3, 2), holes: corners(15.4), screw: 'M2', pilot: { d: 16, h: 1.5 }, shaft: { d: 4, len: 10, flat: 3.5 }, body: { w: 20.3, h: 20.3, r: 2, below: 27.3 }, lengths: '27 to 38', bracket: true, note: tr('Four M2 holes on a 15.4 mm square, 16 mm pilot boss.') },
@@ -103,7 +103,7 @@ export const GEARMOTORS: Motor[] = [
     body: { w: 12, h: 10, r: 0.5, below: 32.5 },
     lengths: '32.5 with a 9 mm gearbox, 36 with 12.5',
     bracket: true,
-    note: tr('Screws reach only 1.3 mm into the gearbox: keep the plate thin or counterbore it.'),
+    note: tr('Screws reach 1.3 mm into the gearbox.'),
   },
   {
     id: 'tt',
@@ -199,7 +199,7 @@ export const DC_MOTORS: Motor[] = [
     shaft: { d: 5, len: 17 },
     body: { w: 42, h: 42, round: true, below: 66.7 },
     bracket: true,
-    note: tr('No maker\'s drawing; the figures are the sellers\' usual ones. Check a motor before printing.'),
+    note: tr('Two M4 holes 29 mm apart, 17.5 mm pilot boss.'),
   },
   {
     id: '130',
@@ -210,7 +210,7 @@ export const DC_MOTORS: Motor[] = [
     pilot: { d: 6.15, h: 1.7 },
     shaft: { d: 2, len: 9.4 },
     body: { w: 20.1, h: 15.1, r: 7.5, below: 25 },
-    note: tr('No screw holes: the plate carries only the bearing-boss bore; strap or clip the can.'),
+    note: tr('No screw holes: the plate carries only the bearing-boss bore.'),
   },
 ];
 
@@ -283,21 +283,21 @@ function groups(motors: Motor[]): ParamGroup[] {
             ...(anyBracket ? [{ value: 'bracket', label: tr('L-bracket') }] : []),
           ],
         },
-        { key: 'clearance', label: tr('Clearance'), type: 'number', default: 0.3, min: 0, max: 2, step: 0.05, unit: 'mm', help: tr('Added round the bore and any body that passes through. 0.3 mm suits most printers.') },
+        { key: 'clearance', label: tr('Clearance'), type: 'number', default: 0.3, min: 0, max: 2, step: 0.05, unit: 'mm', help: tr('Adds this much round the bore and any body that passes through.') },
       ],
     },
     {
       title: trx('mount', 'Plate'),
       params: [
         { key: 'thickness', label: tr('Thickness'), type: 'number', default: 4, min: 1, max: 30, step: 0.5, unit: 'mm', visible: is('plate', 'bracket') },
-        { key: 'margin', label: tr('Margin'), type: 'number', default: 6, min: 2, max: 40, step: 0.5, unit: 'mm', help: tr('From the bolt holes, and from a body that passes through, out to the edge of the plate.'), visible: is('plate', 'bracket') },
+        { key: 'margin', label: tr('Margin'), type: 'number', default: 6, min: 2, max: 40, step: 0.5, unit: 'mm', help: tr('Sets the margin from the bolt holes and a through body to the edge of the plate.'), visible: is('plate', 'bracket') },
         { key: 'corner', label: tr('Corner radius'), type: 'number', default: 3, min: 0, max: 20, step: 0.5, unit: 'mm', visible: is('plate', 'bracket') },
         {
           key: 'boltFit',
           label: tr('Bolt holes'),
           type: 'select',
           default: 'clearance',
-          help: tr('Clearance lets the motor screws pass through the plate. Tap makes them cut their own thread, for a plate the motor screws into.'),
+          help: tr('Selects the fit of the bolt holes.'),
           options: [
             { value: 'clearance', label: trx('hole', 'Clearance') },
             { value: 'tap', label: tr('Tapped') },
@@ -310,14 +310,14 @@ function groups(motors: Motor[]): ParamGroup[] {
     {
       title: tr('Body'),
       params: [
-        { key: 'length', label: tr('Body length'), type: 'number', default: 0, min: 0, max: 200, step: 0.5, unit: 'mm', help: tr('Behind the mounting face. 0 uses the usual length for the motor.'), visible: is('body') },
-        { key: 'shaftLength', label: tr('Shaft length'), type: 'number', default: 0, min: 0, max: 100, step: 0.5, unit: 'mm', help: tr('0 uses the usual length.'), visible: is('body') },
+        { key: 'length', label: tr('Body length'), type: 'number', default: 0, min: 0, max: 200, step: 0.5, unit: 'mm', help: tr('Sets the body length behind the mounting face. 0 takes the usual length.'), visible: is('body') },
+        { key: 'shaftLength', label: tr('Shaft length'), type: 'number', default: 0, min: 0, max: 100, step: 0.5, unit: 'mm', help: tr('Sets the shaft length. 0 takes the usual length.'), visible: is('body') },
       ],
     },
     {
       title: tr('Foot'),
       params: [
-        { key: 'footLength', label: tr('Foot length'), type: 'number', default: 30, min: 5, max: 150, step: 1, unit: 'mm', help: tr('How far the foot runs back from the upright.'), visible: is('bracket') },
+        { key: 'footLength', label: tr('Foot length'), type: 'number', default: 30, min: 5, max: 150, step: 1, unit: 'mm', help: tr('Sets how far the foot runs back from the upright.'), visible: is('bracket') },
         {
           key: 'footScrew',
           label: tr('Foot screws'),
@@ -326,8 +326,8 @@ function groups(motors: Motor[]): ParamGroup[] {
           options: ['M3', 'M4', 'M5'].map((s) => ({ value: s, label: s })),
           visible: is('bracket'),
         },
-        { key: 'slotLength', label: tr('Slot length'), type: 'number', default: 10, min: 0, max: 60, step: 1, unit: 'mm', help: tr('Slots in the foot let the bracket slide for belt tension; 0 for round holes.'), visible: is('bracket') },
-        { key: 'gusset', label: tr('Gusset'), type: 'boolean', default: true, help: tr('A triangular web either side, bracing the upright to the foot.'), visible: is('bracket') },
+        { key: 'slotLength', label: tr('Slot length'), type: 'number', default: 10, min: 0, max: 60, step: 1, unit: 'mm', help: tr('Sets the length of the slots in the foot. 0 makes round holes.'), visible: is('bracket') },
+        { key: 'gusset', label: tr('Gusset'), type: 'boolean', default: true, help: tr('Adds a triangular web either side, between the upright and the foot.'), visible: is('bracket') },
       ],
     },
   ];

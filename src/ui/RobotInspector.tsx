@@ -381,7 +381,7 @@ function LinkPanel({ node }: { node: SceneNode }) {
             </div>
             {material?.printed && (
               <>
-                <SliderField label={tr('Infill')} help={tr('How full the inside is printed; the shell stays solid.')} value={link.mass.infill} min={0} max={100} step={5} unit="%" onChange={(v) => setMass({ infill: v }, 'link-infill')} />
+                <SliderField label={tr('Infill')} help={tr('Sets how full the inside is; the shell stays solid.')} value={link.mass.infill} min={0} max={100} step={5} unit="%" onChange={(v) => setMass({ infill: v }, 'link-infill')} />
                 <div className="field inline">
                   <label>
                     {tr('Shell')}

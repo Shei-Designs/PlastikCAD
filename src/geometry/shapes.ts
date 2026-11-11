@@ -112,7 +112,7 @@ const sidesParam = (min: number, max: number, def: number, label = tr('Sides'), 
   help,
 });
 
-const ROUND_HELP = tr('Number of flat faces around the shape. More is smoother, fewer is faster.');
+const ROUND_HELP = tr('Sets the number of flat faces around the shape.');
 const PRISM_SIDES = 6;
 
 export const SHAPES: ShapeDef[] = [
@@ -160,7 +160,7 @@ export const SHAPES: ShapeDef[] = [
     name: tr('Sphere'),
     summary: tr('Ball or stretched ellipsoid.'),
     defaultSize: [20, 20, 20],
-    params: [sidesParam(8, 128, 48, tr('Segments'), tr('Number of segments around the equator, in steps of four.'))],
+    params: [sidesParam(8, 128, 48, tr('Segments'), tr('Sets the number of segments around the equator, in steps of four.'))],
     defaultColor: BLUE,
   },
   {
@@ -177,7 +177,7 @@ export const SHAPES: ShapeDef[] = [
         max: 0.95,
         step: 0.05,
         default: 0,
-        help: tr('Width of the top as a fraction of the base. 0 gives a point.'),
+        help: tr('Sets the width of the top as a fraction of the base. 0 gives a point.'),
       },
     ],
     defaultColor: GREEN,
@@ -247,7 +247,7 @@ export const SHAPES: ShapeDef[] = [
     name: tr('Dome'),
     summary: tr('Half sphere, flat side down.'),
     defaultSize: [20, 20, 10],
-    params: [sidesParam(8, 128, 48, tr('Segments'), tr('Number of segments around the base, in steps of four.'))],
+    params: [sidesParam(8, 128, 48, tr('Segments'), tr('Sets the number of segments around the base, in steps of four.'))],
     defaultColor: BLUE,
   },
   {
@@ -255,7 +255,7 @@ export const SHAPES: ShapeDef[] = [
     name: tr('Fillet'),
     summary: tr('Edge cutter for rounding or chamfering as a hole.'),
     defaultSize: [5, 20, 5],
-    params: [sidesParam(1, 64, 16, trx('facets', 'Steps'), tr('Number of flat faces along the curve. One step cuts a straight chamfer.'))],
+    params: [sidesParam(1, 64, 16, trx('facets', 'Steps'), tr('Sets the number of flat faces along the curve. One step cuts a straight chamfer.'))],
     defaultColor: GRAPHITE,
     hole: true,
   },

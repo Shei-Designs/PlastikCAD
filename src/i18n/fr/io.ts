@@ -5,14 +5,14 @@ import type { Catalog } from '../index';
 
 export const io: Catalog = {
   // The export formats (export.ts)
-  'Binary mesh for any slicer': 'Maillage binaire pour tout trancheur',
-  'Mesh with colors and units for slicers': 'Maillage avec couleurs et unités pour trancheurs',
-  'Text mesh with colors for modeling tools': 'Maillage texte avec couleurs pour logiciels de modélisation',
+  'Binary mesh': 'Maillage binaire',
+  'Mesh with colors and units': 'Maillage avec couleurs et unités',
+  'Text mesh with colors': 'Maillage texte avec couleurs',
   'Binary mesh with a color on every face': 'Maillage binaire avec une couleur par face',
-  'Mesh with pictures for scenes': 'Maillage avec images pour scènes',
-  'Solids with true surfaces for CAD programs': 'Solides à surfaces exactes pour logiciels de CAO',
-  'Top-down outline for lasers': 'Contour vu de dessus pour découpe laser',
-  'Top-down outline for CAD': 'Contour vu de dessus pour CAO',
+  'Mesh with pictures': 'Maillage avec images',
+  'Solids with true surfaces': 'Solides à surfaces exactes',
+  'Top-down outline as vector graphics': 'Contour vu de dessus, en dessin vectoriel',
+  'Top-down outline as a drawing': 'Contour vu de dessus, en plan',
 
   // Reading a file of any kind (import.ts)
   'Import [[object name]]': 'Importation',

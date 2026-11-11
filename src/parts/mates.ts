@@ -191,8 +191,7 @@ function driveMate(source: PartNode, req: MateRequest, warnings: string[]): Mate
     ratio: z2 / z1,
     warnings,
   };
-  if (kind === 'sprocket' && span % 2) mate.note = tr('A chain of an odd number of links needs an offset link.');
-  else if (kind === 'pulley') mate.note = tr('Belt length {length} mm', { length: Number(length.toFixed(2)) });
+  if (kind === 'pulley') mate.note = tr('Belt length {length} mm', { length: Number(length.toFixed(2)) });
   return mate;
 }
 
@@ -490,7 +489,6 @@ function wormWheel(source: PartNode, req: MateRequest, warnings: string[]): Mate
     center,
     ratio: z2 / starts,
     warnings,
-    note: tr('A plain helical gear cut at the lead angle, not a throated wheel: it meshes along a line, which prints fine but carries less load.'),
   };
 }
 
@@ -544,6 +542,5 @@ function bevelMate(source: PartNode, req: MateRequest, warnings: string[]): Mate
     center: coneDistance,
     ratio: z2 / z1,
     warnings,
-    note: tr('The tooth count is set by this gear’s cone angle. The mate’s axis passes through the cone apex, at right angles.'),
   };
 }
