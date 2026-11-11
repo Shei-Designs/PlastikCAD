@@ -90,9 +90,78 @@ describe('the worker', () => {
     expect(answers[0].type === 'error' && answers[0].message).toBe('The geometry kernel stopped (memory access out of bounds), most likely for lack of memory, and was restarted.');
     expect(answers[1].type === 'built' && answers[1].result.volume).toBeCloseTo(36, 4);
     expect(await initKernel()).not.toBe(before);
-    // Only what was built since is cached; the old kernel's solids went with it.
-    expect(cacheSize()).toBe(1);
+    // Only what was built since is cached (the imported mesh, and the gear that was measured, kept for
+    // when it is shown); the old kernel's solids went with it.
+    expect(cacheSize()).toBe(2);
     expect(assetCount()).toBe(1);
+  });
+
+  it('reads a file without a kernel, into what a design keeps', async () => {
+    // The kernel never loads here: reading a file must not wait for it.
+    const { ask } = worker(Infinity);
+    const stl = (corners: number[][]): Uint8Array => {
+      const lines = ['solid t'];
+      for (const f of corners) {
+        lines.push('facet normal 0 0 0', 'outer loop');
+        for (let k = 0; k < 9; k += 3) lines.push(`vertex ${f[k]} ${f[k + 1]} ${f[k + 2]}`);
+        lines.push('endloop', 'endfacet');
+      }
+      return new TextEncoder().encode([...lines, 'endsolid t', ''].join('\n'));
+    };
+    // The tetrahedron above, moved off the origin.
+    const tetra = [[10, 0, 0, 10, 6, 0, 16, 0, 0], [10, 0, 0, 16, 0, 0, 10, 0, 6], [16, 0, 0, 10, 6, 0, 10, 0, 6], [10, 0, 0, 10, 0, 6, 10, 6, 0]];
+    const [read] = await ask({ type: 'import', id: 1, name: 'tetra.stl', bytes: stl(tetra), companions: [] });
+    if (read.type !== 'imported' || read.result.kind !== 'model') throw new Error(`unexpected answer: ${JSON.stringify(read)}`);
+    const [part] = read.result.parts;
+    expect(part).toMatchObject({ name: 'tetra', size: [6, 6, 6], center: [13, 3, 3] });
+    expect(part.key).toMatch(/^mesh-[0-9a-z]+-[0-9a-z]+$/);
+    // Centered on its box, twelve corners' worth of numbers and four triangles.
+    const positions = new Float32Array(Uint8Array.from(atob(part.asset.positions), (c) => c.charCodeAt(0)).buffer);
+    expect([...positions].sort((a, b) => a - b)).toEqual([-3, -3, -3, -3, -3, -3, -3, -3, -3, 3, 3, 3]);
+    expect(atob(part.asset.triangles).length).toBe(4 * 3 * 4);
+    expect(read.result.warnings).toEqual([]);
+    // What cannot be read is answered with words for the user.
+    const [refused] = await ask({ type: 'import', id: 2, name: 'empty.stl', bytes: new Uint8Array(0), companions: [] });
+    expect(refused).toEqual({ type: 'error', id: 2, message: 'This STL file is empty.' });
+  });
+
+  it('holds a tiny file without a unit until it is told the unit', async () => {
+    const { ask } = worker(Infinity);
+    const bytes = new TextEncoder().encode(['v 0 0 0', 'v 0.2 0 0', 'v 0 0.1 0', 'v 0 0 0.05', 'f 1 3 2', 'f 1 2 4', 'f 2 3 4', 'f 1 4 3', ''].join('\n'));
+    const [asked] = await ask({ type: 'import', id: 1, name: 'link.obj', bytes, companions: [] });
+    expect(asked.type).toBe('imported');
+    if (asked.type !== 'imported' || asked.result.kind !== 'units') throw new Error('unexpected answer');
+    expect(asked.result.held).toBe(1);
+    expect(asked.result.extent.map((v) => Number(v.toFixed(6)))).toEqual([0.2, 0.1, 0.05]);
+    const [told] = await ask({ type: 'importHeld', id: 2, held: 1, scale: 1000 });
+    if (told.type !== 'imported' || told.result.kind !== 'model') throw new Error('unexpected answer');
+    expect(told.result.parts[0].size.map(Math.round)).toEqual([200, 100, 50]);
+    // Held once: asking again, or for another request's file, finds nothing.
+    const [gone] = await ask({ type: 'importHeld', id: 3, held: 1, scale: 1000 });
+    expect(gone).toEqual({ type: 'error', id: 3, message: 'The file is no longer at hand. Import it again.' });
+    // With the unit given from the start nothing is asked: an OBJ read again with its material library.
+    const [again] = await ask({ type: 'import', id: 4, name: 'link.obj', bytes, companions: [], scale: 25.4 });
+    if (again.type !== 'imported' || again.result.kind !== 'model') throw new Error('unexpected answer');
+    expect(again.result.parts[0].size.map((v) => Number(v.toFixed(3)))).toEqual([5.08, 2.54, 1.27]);
+    // A 3MF says its unit, and a model of ordinary size needs none: neither is asked about.
+    const big = new TextEncoder().encode(['v 0 0 0', 'v 20 0 0', 'v 0 10 0', 'v 0 0 5', 'f 1 3 2', 'f 1 2 4', 'f 2 3 4', 'f 1 4 3', ''].join('\n'));
+    const [plain] = await ask({ type: 'import', id: 5, name: 'bracket.obj', bytes: big, companions: [] });
+    expect(plain.type === 'imported' && plain.result.kind).toBe('model');
+  });
+
+  it('reads what the Measure tool takes hold of, on a mesh placed by a matrix', async () => {
+    const { ask } = worker(Infinity);
+    // A unit square of two triangles, made 10 wide and moved 5 up.
+    const positions = Float32Array.from([0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0]);
+    const matrix = [10, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 5, 1];
+    const [answer] = await ask({ type: 'features', id: 1, positions, matrix });
+    if (answer.type !== 'features') throw new Error('unexpected answer');
+    const { points, edges, regions, box } = answer.result;
+    expect(points.map((p) => p.join(',')).sort()).toEqual(['0,0,5', '0,1,5', '10,0,5', '10,1,5']);
+    expect(edges).toHaveLength(4);
+    expect(regions).toHaveLength(1);
+    expect(regions[0].area).toBeCloseTo(10, 6);
+    expect(box).toEqual([5, 0.5, 5]);
   });
 
   it('answers an ordinary failure with its message and carries on with the same kernel', async () => {

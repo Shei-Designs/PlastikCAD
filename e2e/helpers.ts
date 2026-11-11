@@ -474,6 +474,13 @@ export function screenPoint(page: Page, point: Vec3): Promise<[number, number]> 
 /** How many objects the viewer has a mesh for. */
 export const drawnCount = (page: Page): Promise<number> => viewer(page, (v) => v.objects.drawn.size);
 
+/** What the viewer holds of the first object on the plate: its triangles, how many of them the tree for picking covers, and whether it is a closed solid. */
+export const drawnMesh = (page: Page): Promise<{ triangles: number; indexed: number; watertight: boolean }> =>
+  viewer(page, (v) => {
+    const [d] = [...v.objects.drawn.values()];
+    return { triangles: d.shown.triangles as number, indexed: d.shown.bvh.order.length as number, watertight: d.shown.watertight as boolean };
+  });
+
 /** Whether the outlines of the objects that are not selected are on show. */
 export const edgesShown = (page: Page): Promise<boolean> =>
   viewer(page, (v) => [...v.objects.drawn.values()].filter((d: Internals) => !d.item.selected).some((d: Internals) => d.edges && d.edges.visible));

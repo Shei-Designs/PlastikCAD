@@ -1,4 +1,4 @@
-import { tr } from '../i18n';
+import { plural, tr } from '../i18n';
 import type { OutlineShape, Polygon } from '../model/types';
 import { applyTo, maxStretch, mul, signedArea, TOLERANCE, turnSegments } from './outline';
 import type { Matrix } from './outline';
@@ -47,9 +47,10 @@ const ROOT: Frame = { transform: [PX, 0, 0, -PX, 0, 0], evenodd: false, visible:
  * extruding.
  *
  * Not supported: <use>, <text>, <image>, CSS in <style> blocks (only
- * presentation attributes and `style="..."`), and stroke widths.
+ * presentation attributes and `style="..."`), and stroke widths. What a
+ * drawing holds of the first four is said in `warnings`, a sentence each.
  */
-export function parseSvg(bytes: Uint8Array): { shapes: OutlineShape[]; color?: string }[] {
+export function parseSvg(bytes: Uint8Array, warnings: string[] = []): { shapes: OutlineShape[]; color?: string }[] {
   const scan = new XmlScanner(toUtf8(bytes));
   const stack: Frame[] = [];
   // The name of the element each frame is of, to match closing tags against, and how many of each name are open.
@@ -59,6 +60,8 @@ export function parseSvg(bytes: Uint8Array): { shapes: OutlineShape[]; color?: s
   const parts = new Map<string | undefined, OutlineShape[]>();
   let count = 0;
   let sawRoot = false;
+  // What is there to be seen but is not read: copies of other shapes, lettering, pictures, and a style sheet.
+  const left = { use: 0, text: 0, image: 0, style: false };
 
   while (scan.next()) {
     const name = scan.name().replace(/^svg:/, '');
@@ -73,6 +76,8 @@ export function parseSvg(bytes: Uint8Array): { shapes: OutlineShape[]; color?: s
     }
     const parent = stack[stack.length - 1] ?? ROOT;
     let frame = parent;
+    // A style sheet counts wherever it is, <defs> included: that is where drawing programs put it.
+    if (name === 'style') left.style = true;
     if (!parent.skip) {
       if (SKIPPED.has(name)) frame = { ...parent, skip: true };
       else {
@@ -82,6 +87,13 @@ export function parseSvg(bytes: Uint8Array): { shapes: OutlineShape[]; color?: s
           frame.transform = mul(frame.transform, sawRoot ? innerViewport(attrs) : rootViewport(attrs));
           sawRoot = true;
         } else if (sawRoot && frame.visible && !frame.skip) {
+          if (name === 'use') left.use++;
+          else if (name === 'image') left.image++;
+          else if (name === 'text') {
+            left.text++;
+            // Its lines and spans are part of it, not lettering of their own.
+            frame = { ...frame, skip: true };
+          }
           const contours = outline(name, attrs, frame.transform);
           if (contours.length) {
             const color = cssColor(frame.fill);
@@ -101,6 +113,10 @@ export function parseSvg(bytes: Uint8Array): { shapes: OutlineShape[]; color?: s
 
   if (!sawRoot) throw new Error(tr('This is not an SVG file.'));
   if (count === 0) throw new Error(tr('This SVG has no shapes that can be extruded.'));
+  if (left.use) warnings.push(plural(left.use, '{n} copy of another shape (<use>) was left out.', '{n} copies of other shapes (<use>) were left out.'));
+  if (left.text) warnings.push(plural(left.text, '{n} piece of text was left out. Turn text into paths in the drawing program.', '{n} pieces of text were left out. Turn text into paths in the drawing program.'));
+  if (left.image) warnings.push(plural(left.image, '{n} picture was left out.', '{n} pictures were left out.'));
+  if (left.style) warnings.push(tr('Its style sheet was not read: colors and hidden shapes set there are not applied.'));
   return [...parts].map(([color, shapes]) => (color ? { shapes, color } : { shapes }));
 }
 

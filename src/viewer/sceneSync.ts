@@ -1,8 +1,8 @@
 // The design as drawn: one mesh per node with its edge lines, kept in step
 // with the items the viewer is given. Geometry is shared between nodes built
 // alike; a node's picture and a mixed group's colors ride on geometry of its own.
-import { Box3, BufferAttribute, BufferGeometry, CanvasTexture, ClampToEdgeWrapping, Color, EdgesGeometry, LineBasicMaterial, LineSegments, Mesh, MeshStandardMaterial, RepeatWrapping, SRGBColorSpace, Vector3 } from 'three';
-import { CREASE_ANGLE } from '../geometry/mesh';
+import { Box3, BufferAttribute, BufferGeometry, CanvasTexture, ClampToEdgeWrapping, Color, LineBasicMaterial, LineSegments, Matrix3, Matrix4, Mesh, MeshStandardMaterial, RepeatWrapping, SRGBColorSpace, Vector3 } from 'three';
+import { castRay } from '../geometry/bvh';
 import { skinAssets, skinKey, skinMesh, skinOf, skinRepeats } from '../geometry/skin';
 import type { Skin } from '../geometry/skin';
 import { cornerColors, tintKey, underPicture } from '../geometry/tint';
@@ -16,8 +16,6 @@ import { THEMES, toMatrix4 } from './stage';
 import type { Stage } from './stage';
 import type { ViewItem } from './types';
 
-/** Above this, sharp-edge extraction costs more than it is worth. */
-const EDGE_TRIANGLE_LIMIT = 300_000;
 export const EMPTY_RADIUS = 70;
 /** How much of a ghosted object's fill and outline is left. */
 const GHOST_OPACITY = 0.14;
@@ -369,7 +367,8 @@ export class SceneSync {
     }
     if (!d.edges && d.shown) {
       const shared = this.share(d.shown);
-      if (!shared.edges && d.shown.triangles <= EDGE_TRIANGLE_LIMIT) shared.edges = new EdgesGeometry(shared.geometry, CREASE_ANGLE);
+      // The lines come with the mesh from the geometry worker; a mesh with too many to be worth drawing has none.
+      if (!shared.edges && d.shown.edges) shared.edges = new BufferGeometry().setAttribute('position', new BufferAttribute(d.shown.edges, 3));
       if (shared.edges) {
         d.edges = new LineSegments(shared.edges, new LineBasicMaterial({ transparent: true }));
         d.edges.matrixAutoUpdate = false;
@@ -401,19 +400,47 @@ export class SceneSync {
     }
   }
 
-  /** The object under the pointer ray: the node, where it was hit, and which triangle of its built mesh. */
+  /**
+   * The object under the pointer ray: the node, where it was hit, and which
+   * triangle of its built mesh. Each object is asked through the tree that
+   * came with its mesh (see geometry/bvh.ts), in the mesh's own coordinates:
+   * the ray is taken there rather than the triangles to the ray. The mesh as
+   * built is what is asked, whatever is drawn over it: a picture cuts the
+   * triangles up along its edges, but the surface is the same.
+   */
   pick(): { item: ViewItem; point: Vector3; normal: Vector3; triangle: number; drawn: Drawn } | null {
-    const meshes: Mesh[] = [];
-    for (const d of this.drawn.values()) if (d.mesh.visible && !d.item.ghost) meshes.push(d.mesh);
-    const hit = this.stage.raycaster.intersectObjects(meshes, false)[0];
-    if (!hit) return null;
-    const d = this.drawn.get(hit.object.userData.id as string);
-    if (!d) return null;
-    const normal = hit.face ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld) : new Vector3(0, 0, 1);
-    // The triangle of the built mesh that was hit; a picture's cut-up geometry maps its triangles back to the mesh's.
-    const face = hit.faceIndex ?? -1;
-    const triangle = d.skin?.faces && face >= 0 ? d.skin.faces[face] ?? -1 : face;
-    return { item: d.item, point: hit.point, normal, triangle, drawn: d };
+    const { origin, direction } = this.stage.raycaster.ray;
+    const { near, far } = this.stage.raycaster;
+    const inverse = new Matrix4();
+    const linear = new Matrix3();
+    const from = new Vector3();
+    const along = new Vector3();
+    let nearest: Drawn | null = null;
+    let distance = far;
+    let triangle = -1;
+    for (const d of this.drawn.values()) {
+      if (!d.mesh.visible || d.item.ghost || !d.shown) continue;
+      d.mesh.updateMatrixWorld();
+      // A mesh squashed flat has no way back from the design to its own coordinates, and nothing to hit.
+      if (d.mesh.matrixWorld.determinant() === 0) continue;
+      inverse.copy(d.mesh.matrixWorld).invert();
+      from.copy(origin).applyMatrix4(inverse);
+      // Turned and scaled but not made of unit length again: a length along it is then the same length along the ray in the design.
+      along.copy(direction).applyMatrix3(linear.setFromMatrix4(inverse));
+      const hit = castRay(d.shown.bvh, d.shown.render.positions, [from.x, from.y, from.z], [along.x, along.y, along.z], distance);
+      if (!hit || hit.t < near) continue;
+      nearest = d;
+      distance = hit.t;
+      triangle = hit.triangle;
+    }
+    if (!nearest?.shown) return null;
+    const p = nearest.shown.render.positions;
+    const a = new Vector3().fromArray(p, triangle * 9);
+    const b = new Vector3().fromArray(p, triangle * 9 + 3);
+    const c = new Vector3().fromArray(p, triangle * 9 + 6);
+    // The face's normal goes to the design by the inverse transpose, which keeps it square to a stretched or mirrored face.
+    const normal = b.sub(a).cross(c.sub(a)).applyMatrix3(new Matrix3().getNormalMatrix(nearest.mesh.matrixWorld)).normalize();
+    return { item: nearest.item, point: origin.clone().addScaledVector(direction, distance), normal, triangle, drawn: nearest };
   }
 
   dispose(): void {

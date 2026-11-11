@@ -880,6 +880,16 @@ ul {
   animation: appear 0.15s 0.25s both;
 }
 
+/* The objects being built are said only when they take a while: most are there within the blink. */
+.busy.building {
+  animation-delay: 0.6s;
+}
+
+/* The way out sits at the end of the badge, with a little air before it. */
+.busy-stop {
+  margin: -2px -6px -2px 4px;
+}
+
 .spinner {
   width: 12px;
   height: 12px;

@@ -13,6 +13,7 @@ export {
   notify,
   dismissNotice,
   dismissSyncNotes,
+  stopWork,
   setPrefs,
   beginGesture,
   endGesture,

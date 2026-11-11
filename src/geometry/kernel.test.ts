@@ -1,11 +1,13 @@
 import { CURVED_TRIANGLES, curvedSize } from '../text/curve';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { geomKey, textAssetKey } from '../model/geomKey';
 import { add, apply, emptyBounds, expandBounds, nodeMatrix } from '../model/math';
 import type { Bounds } from '../model/math';
 import { alignNodes, cloneNode, makeGroup, sourceColor } from '../model/ops';
 import type { Asset, GroupNode, ImportNode, PictureNode, Polygon, SceneNode, ShapeKind, ShapeNode, TextNode, Vec3 } from '../model/types';
-import { build, cacheSize, clearCache, decodeBase64, exportColored, exportNodes, forgetAssets, initKernel, measure, rawManifold, SHEET, setAssets } from './kernel';
+import { getGenerator } from '../parts/generators';
+import { castRay } from './bvh';
+import { build, cacheSize, clearCache, decodeBase64, exportColored, exportNodes, forgetAssets, initKernel, measure, partBox, rawManifold, SHEET, setAssets } from './kernel';
 import type { MeshData } from './mesh';
 import { defaultParams, shapeDef } from './shapes';
 
@@ -915,6 +917,62 @@ describe('cache', () => {
     const g = group([20, 20, 10], [{ ...cyl, pos: [0, 0, 0] }]);
     expect(exportNodes([g], false, true).volume).toBeCloseTo(fine.volume, 3);
     expect(exportNodes([g], false).volume).toBeCloseTo(shown.volume, 3);
+  });
+});
+
+describe('what a build brings for the viewer', () => {
+  it('brings a tree that a ray finds the right face of the mesh through', () => {
+    const box = shape('box', { size: [20, 20, 20] });
+    const r = build(geomKey(box), box);
+    // Built at unit size, centered: straight down onto the top, at a point off the diagonal.
+    const hit = castRay(r.bvh, r.render.positions, [0.3, 0.1, 5], [0, 0, -1])!;
+    expect(hit.t).toBeCloseTo(4.5, 6);
+    const p = r.render.positions.subarray(hit.triangle * 9, hit.triangle * 9 + 9);
+    expect([p[2], p[5], p[8]]).toEqual([0.5, 0.5, 0.5]);
+    expect([...r.bvh.order].sort((a, b) => a - b)).toEqual(Array.from({ length: r.triangles }, (_, i) => i));
+  });
+
+  it('brings the edge lines: the twelve of a box, the two rims of a round cylinder', () => {
+    const box = shape('box', { size: [20, 20, 20] });
+    expect(build(geomKey(box), box).edges!.length / 6).toBe(12);
+    const cyl = shape('cylinder', { size: [20, 20, 10] });
+    expect(build(geomKey(cyl), cyl).edges!.length / 6).toBe(2 * cyl.params.sides);
+  });
+
+  it('brings both for an open mesh too, whose rim is an edge', () => {
+    // A square of two triangles.
+    const positions = Float32Array.from([0, 0, 0, 10, 0, 0, 10, 10, 0, 0, 10, 0]);
+    const triangles = Uint32Array.from([0, 1, 2, 0, 2, 3]);
+    const bytes = (a: Float32Array | Uint32Array) => btoa(String.fromCharCode(...new Uint8Array(a.buffer)));
+    setAssets({ sheet: { kind: 'mesh', positions: bytes(positions), triangles: bytes(triangles) } });
+    const node: ImportNode = { ...base('Sheet'), type: 'import', asset: 'sheet', natural: [10, 10, 1], size: [10, 10, 1] };
+    const r = build(geomKey(node), node);
+    expect(r.watertight).toBe(false);
+    expect(r.edges!.length / 6).toBe(4);
+    expect(castRay(r.bvh, r.render.positions, [2, 1, 5], [0, 0, -1])?.t).toBeCloseTo(5, 6);
+    forgetAssets([]);
+  });
+});
+
+describe('parts', () => {
+  it('builds a part once for its box and its mesh', () => {
+    clearCache();
+    const def = getGenerator('rack');
+    const made = vi.spyOn(def, 'build');
+    try {
+      const node: SceneNode = { ...base('Rack'), type: 'part', part: 'rack', params: {}, natural: [1, 1, 1], size: [1, 1, 1] };
+      const box = partBox(node)!;
+      expect(box.max[0] - box.min[0]).toBeGreaterThan(1);
+      const r = build(geomKey(node), node);
+      expect(made).toHaveBeenCalledTimes(1);
+      // The mesh is the part centered on its box.
+      for (let i = 0; i < 3; i++) {
+        expect(r.bounds.max[i] - r.bounds.min[i]).toBeCloseTo(box.max[i] - box.min[i], 6);
+        expect(r.bounds.max[i] + r.bounds.min[i]).toBeCloseTo(0, 6);
+      }
+    } finally {
+      made.mockRestore();
+    }
   });
 });
 

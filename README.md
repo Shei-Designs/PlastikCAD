@@ -552,7 +552,17 @@ left alone, since that is its shape.
 ## Import notes
 
 - **STL / OBJ** carry no units; coordinates are taken as millimeters (a URDF
-  says its meshes are in meters, and the robot importer scales them so).
+  says its meshes are in meters, and the robot importer scales them so). A
+  model that comes out under 5 mm across was most likely made in another
+  unit: the app asks whether it is in meters, inches, centimeters or
+  millimeters after all, and brings it in at that.
+- Whatever a drawing holds that is not read is said after the import, by the
+  name of the file: an SVG's `<use>` copies, text, pictures and style sheet,
+  a DXF's outlines that do not close and its text.
+- Large files are read away from the screen, which stays live meanwhile. The
+  badge over the plate says what is going on (the file of several being
+  read, the objects still being built) and its **Cancel** calls an import, an
+  export or a group being made off, leaving the design as it was.
 - A mesh that is not watertight can be placed, scaled and exported as it is,
   but cannot be grouped: there is no telling its inside from its outside.
 - A file of several parts (the objects of a 3MF, the materials of an OBJ, the
@@ -780,6 +790,17 @@ out where the node is, how it is turned and (for most shapes) how big it is.
 Moving, turning and resizing therefore only change a matrix on the graphics
 card; the kernel runs when a shape's form changes or a group is made, and then
 only for that node. Undo and redo reuse the same cache.
+
+What keeps large models from holding up the screen: everything that grows
+with the number of triangles is done in the geometry worker. A model file is
+read there (`worker/importing.ts`: parsed, its corners joined, centered and
+put in the form the design keeps). A build comes back with its edge lines and
+with a tree of boxes over its triangles (`geometry/bvh.ts`), through which
+the pointer finds the triangle it is on in a few steps rather than by trying
+them all. The Measure tool reads a mesh of more than 50,000 triangles there
+too, and says so while it waits. The worker cannot be interrupted in the
+middle of a solid, so calling work off stops it and starts another when next
+needed; the objects that were being built are simply asked for again.
 
 ### Adding a shape
 

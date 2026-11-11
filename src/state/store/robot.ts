@@ -23,7 +23,7 @@ import { massOf } from '../../robot/inertia';
 import { DRIVE_KINDS, defaultJoint, defaultSensor, SENSOR_KINDS } from '../../robot/types';
 import type { DriveKind, DriveRole, Robot, RobotJoint, RobotLink, RobotSensor, SensorKind, World } from '../../robot/types';
 import { massProps } from '../massProps';
-import { endMerge, fail, getState, notify, previewingAlign, record, set } from './core';
+import { endMerge, endWork, fail, getState, notify, previewingAlign, record, set, startWork } from './core';
 import type { EditorState } from './core';
 import { cancelPlacing } from './placing';
 import { cancelMate } from './parts';
@@ -380,7 +380,7 @@ async function writeRobot(format: ExportFormat): Promise<boolean> {
   if ((await tell({ title: tr('Export {format}', { format: label }), text: exportSummary(doc, format, robot), lines, actions: [mark('Export'), mark('Cancel')] })) !== 'Export') return false;
   const name = await exportName(packageName(doc.name), 'zip');
   if (!name) return false;
-  set({ busy: tr('Exporting the robot…') });
+  startWork(tr('Exporting the robot…'));
   try {
     const worker = await geometry.prepare(nodes, doc.assets);
     const collisions = Object.fromEntries(nodes.map((n) => [n.id, linkOf(robot, n.id).collision]));
@@ -399,6 +399,6 @@ async function writeRobot(format: ExportFormat): Promise<boolean> {
     fail(e);
     return false;
   } finally {
-    set({ busy: null });
+    endWork();
   }
 }

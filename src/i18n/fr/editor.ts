@@ -173,6 +173,8 @@ export const editor: Catalog = {
   'Rotation about {axis}': 'Rotation autour de {axis}',
 
   // The bar and the hints over the plate (Viewport.tsx)
+  'Building {n} objects…': { one: 'Construction de {n} objet…', other: 'Construction de {n} objets…' },
+  'Reading the shape…': 'Lecture de la forme…',
   'Top [[view]]': 'Dessus',
   'Front [[view]]': 'Face',
   'Side [[view]]': 'Côté',

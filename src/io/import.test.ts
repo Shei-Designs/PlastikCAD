@@ -790,6 +790,17 @@ describe('DXF import', () => {
   /** Four lines of a square, in no particular order or direction. */
   const square = (x: number, y: number, size: number, extra = '') =>
     [line(x + size, y, x + size, y + size, extra), line(x, y, x + size, y, extra), line(x, y + size, x, y, extra), line(x, y + size, x + size, y + size, extra)].join('\n');
+  it('says what a drawing holds that it leaves out', () => {
+    const text = (x: number) => `0\nTEXT\n8\n0\n10\n${x}\n20\n0\n40\n3\n1\nPart`;
+    // A square, a center line that meets nothing, a corner of two lines that never closes, and two labels.
+    const got = importFile('d.dxf', bytes(dxf([square(0, 0, 10), line(-5, 5, 15, 5), line(30, 0, 40, 0), line(40, 0, 40, 10), text(0), `0\nMTEXT\n8\n0\n10\n20\n20\n0\n1\nNote`].join('\n'))));
+    if (got.kind !== 'outline') throw new Error('expected an outline');
+    expect(got.parts).toHaveLength(1);
+    expect(got.warnings).toEqual(['2 outlines do not close and were left out.', '2 pieces of text were left out.']);
+    const plain = importFile('d.dxf', bytes(dxf(square(0, 0, 10))));
+    expect('warnings' in plain).toBe(false);
+  });
+
   const partsOf = (text: string | Uint8Array) => {
     const got = importFile('d.dxf', typeof text === 'string' ? bytes(text) : text);
     if (got.kind !== 'outline') throw new Error('expected an outline');
@@ -1011,6 +1022,31 @@ describe('SVG import', () => {
     `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" viewBox="0 0 100 100">${body}</svg>`;
 
   const shapesOf = (svg: string) => outlineOf(svg).shapes;
+
+  it('says what a drawing holds that it leaves out', () => {
+    const got = importFile(
+      'd.svg',
+      bytes(
+        mm(
+          '<defs><style>.a{fill:#f00}</style><rect id="r" width="5" height="5"/><text>not counted: nothing in here is drawn</text></defs>' +
+            '<rect class="a" width="10" height="10"/><use href="#r" x="20"/><use href="#r" x="30"/>' +
+            '<text x="5" y="50">Label <tspan>one</tspan></text><image href="photo.png" width="10" height="10"/>' +
+            '<g display="none"><use href="#r"/><text>hidden</text></g>',
+        ),
+      ),
+    );
+    if (got.kind !== 'outline') throw new Error('expected an outline');
+    expect(got.parts).toHaveLength(1);
+    expect(got.warnings).toEqual([
+      '2 copies of other shapes (<use>) were left out.',
+      '1 piece of text was left out. Turn text into paths in the drawing program.',
+      '1 picture was left out.',
+      'Its style sheet was not read: colors and hidden shapes set there are not applied.',
+    ]);
+    // A drawing of plain shapes has nothing to say.
+    const plain = importFile('d.svg', bytes(mm('<rect width="10" height="10"/>')));
+    expect('warnings' in plain).toBe(false);
+  });
 
   it('groups shapes by fill color, inherited and in any CSS form', () => {
     const got = importFile('d.svg', bytes(mm('<g fill="#F00"><rect width="10" height="10"/><rect x="20" width="10" height="10" style="fill: rgb(0, 0, 255)"/></g><circle cx="50" cy="50" r="5" fill="none"/><rect x="40" width="4" height="4" fill="GOLD"/><rect x="60" width="4" height="4" fill="#ff0000"/>')));

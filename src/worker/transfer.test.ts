@@ -59,6 +59,10 @@ describe('what a response hands over', () => {
     expect(built.render.positions.length).toBe(0);
     expect(built.render.normals.length).toBe(0);
     expect(built.faces!.source.length).toBe(0);
+    // The tree for picking and the edge lines go the same way.
+    expect(b.result.bvh.order.length).toBe(triangles);
+    expect(b.result.edges!.length).toBeGreaterThan(0);
+    expect(built.bvh.boxes.length + built.bvh.nodes.length + built.bvh.order.length + built.edges!.length).toBe(0);
     const exported = exportNodes([group], false, false, true);
     const e = sent({ type: 'exported', id: 2, result: exported });
     expect(e.result.mesh.triangles.length).toBe(triangles * 3);

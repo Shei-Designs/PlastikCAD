@@ -14,7 +14,8 @@ import type { Asset, GroupNode, ImportNode, MeshAsset, OutlineAsset, PartNode, P
 import type { BuildResult, ColoredExport, ColoredObject, ColoredPart, ExportResult, LinkGeometry, LinkProperties } from '../worker/protocol';
 import { meshProperties } from '../robot/inertia';
 import type { CollisionKind } from '../robot/types';
-import { CREASE_ANGLE, creasedNormals, NO_SOURCE } from './mesh';
+import { buildBvh } from './bvh';
+import { CREASE_ANGLE, creaseEdges, creasedNormals, NO_SOURCE, samePlace } from './mesh';
 import type { Faces, MeshData, MeshWithUV } from './mesh';
 import { buildSolid } from '../parts/evaluate';
 import { getGenerator } from '../parts/generators';
@@ -267,8 +268,11 @@ interface Source {
 
 /** The geometry of a node as built: at its built size, centered on the origin. */
 type Built =
-  /** `sources` for a group: the parts its faces came from, so each can be shown in its own color. */
-  | { solid: Manifold; triangles: number; sources?: Source[] }
+  /**
+   * `sources` for a group: the parts its faces came from, so each can be shown in its own color.
+   * `box` for a part: its bounds as its generator made it, before it was centered.
+   */
+  | { solid: Manifold; triangles: number; sources?: Source[]; box?: Bounds }
   /** An imported mesh that is not watertight. It can be shown and exported as it is, but not combined. */
   | { solid: null; open: MeshWithUV; triangles: number };
 
@@ -379,7 +383,13 @@ function construct(k: ManifoldToplevel, node: SceneNode, fine: boolean): Built {
       return asset.kind === 'mesh' ? meshEntry(k, node, asset) : solidEntry(outlineSolid(k, node, asset));
     }
     case 'part':
-      return solidEntry(scoped((keep) => partSolid(k, node, keep, fine)));
+      return scoped((keep) => {
+        const made = partAsBuilt(k, node, keep, fine);
+        const box = toBounds(made.boundingBox());
+        // Moved from standing on the plate to being centered on its box, like every other node.
+        const solid = made.translate([-(box.min[0] + box.max[0]) / 2, -(box.min[1] + box.max[1]) / 2, -(box.min[2] + box.max[2]) / 2]);
+        return { ...solidEntry(solid), box };
+      });
     case 'text': {
       // The outlines of lettering are sent along like imported drawings (see `textAssetKey`).
       const asset = assets.get(textAssetKey(node));
@@ -489,16 +499,16 @@ function partAsBuilt(k: ManifoldToplevel, node: PartNode, keep: Keep, fine: bool
   return solid;
 }
 
-/** A parametric part, moved from standing on the plate to being centered on its box like every other node. */
-function partSolid(k: ManifoldToplevel, node: PartNode, keep: Keep, fine: boolean): Manifold {
-  const solid = partAsBuilt(k, node, keep, fine);
-  const { min, max } = solid.boundingBox();
-  return keep(solid.translate([-(min[0] + max[0]) / 2, -(min[1] + max[1]) / 2, -(min[2] + max[2]) / 2]));
-}
-
-/** A part's box in its generator's frame, which says where the generator's origin sits in the box. */
+/**
+ * A part's box in its generator's frame, which says where the generator's
+ * origin sits in the box. The part is built for it and kept, so that showing
+ * it afterwards does not build it a second time.
+ */
 export function partBox(node: PartNode): Bounds | null {
-  return operation((k) => scoped((keep) => toBounds(partAsBuilt(k, node, keep, false).boundingBox())));
+  return operation((k) => {
+    const entry = builtOf(k, node, false);
+    return (entry.solid && entry.box) ?? null;
+  });
 }
 
 function outlineSolid(k: ManifoldToplevel, node: SceneNode, asset: OutlineAsset, thickness = 1): Manifold {
@@ -699,6 +709,12 @@ function concatenate(parts: MeshData[]): MeshData {
 // ---------------------------------------------------------------------------
 // Requests
 
+/**
+ * More edge lines than this are not drawn: a rough scan creases at every
+ * triangle, and that many lines cost more to draw than they tell.
+ */
+const EDGE_LIMIT = 250_000;
+
 /** Geometry of one node at its built size, centered on the origin (see `builtSize`); `key` is its `geomKey`. */
 export function build(key: string, node: SceneNode): BuildResult {
   return operation((k) => {
@@ -707,14 +723,18 @@ export function build(key: string, node: SceneNode): BuildResult {
       const { positions, triangles, uv } = entry.open;
       const render = creasedNormals(positions, triangles, CREASE_ANGLE);
       if (uv) render.uv = uv.slice();
-      return {
+      const result: BuildResult = {
         key,
         render,
+        bvh: buildBvh(render.positions),
         bounds: boundsOfPositions(positions),
         triangles: entry.triangles,
         volume: 0,
         watertight: false,
       };
+      const edges = creaseEdges(positions, triangles, CREASE_ANGLE, EDGE_LIMIT);
+      if (edges) result.edges = edges;
+      return result;
     }
     const mesh = meshOf(entry.solid);
     const render = creasedNormals(mesh.positions, mesh.triangles, CREASE_ANGLE);
@@ -723,11 +743,15 @@ export function build(key: string, node: SceneNode): BuildResult {
     const result: BuildResult = {
       key,
       render,
+      bvh: buildBvh(render.positions),
       bounds: toBounds(entry.solid.boundingBox()),
       triangles: entry.triangles,
       volume: entry.solid.volume(),
       watertight: true,
     };
+    // A mesh that carries texture coordinates has its seams as vertices of their own, which are no edges.
+    const edges = creaseEdges(mesh.positions, mesh.triangles, CREASE_ANGLE, EDGE_LIMIT, mesh.uv ? samePlace(mesh.positions) : undefined);
+    if (edges) result.edges = edges;
     const faces = entry.sources && facesOf(mesh, entry.sources);
     if (faces) result.faces = faces;
     return result;

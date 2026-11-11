@@ -5,7 +5,7 @@
 // taken to be in millimeters.
 //
 // Not read: text, dimensions, hatches, 3D entities, and the paper space.
-import { tr } from '../i18n';
+import { plural, tr } from '../i18n';
 import type { OutlineShape, Polygon, Vec2 } from '../model/types';
 import { applyTo, maxStretch, mul, signedArea, TOLERANCE, turnSegments } from './outline';
 import type { Matrix } from './outline';
@@ -77,7 +77,8 @@ interface Path {
   closed: boolean;
 }
 
-export function parseDxf(bytes: Uint8Array): { shapes: OutlineShape[]; color?: string }[] {
+/** What a drawing holds of these is said in `warnings`, a sentence each: outlines that do not close, and lettering. */
+export function parseDxf(bytes: Uint8Array, warnings: string[] = []): { shapes: OutlineShape[]; color?: string }[] {
   const text = decode(bytes);
   const pairs = tokenize(text);
   if (pairs.length === 0) throw new Error(tr('This is not a DXF file.'));
@@ -109,6 +110,8 @@ export function parseDxf(bytes: Uint8Array): { shapes: OutlineShape[]; color?: s
   const unit: Matrix = [scale, 0, 0, scale, 0, 0];
   let drawn = 0;
   let pointCount = 0;
+  // What is there to be seen but does not come in: lettering, and (counted below) outlines that do not close.
+  const left = { text: 0, open: 0 };
   const draw = (list: Entity[], m: Matrix, inherited: string | undefined, depth: number) => {
     for (const entity of list) {
       if (++drawn > MAX_ENTITIES) throw new Error(TOO_MANY);
@@ -144,6 +147,7 @@ export function parseDxf(bytes: Uint8Array): { shapes: OutlineShape[]; color?: s
           }
         continue;
       }
+      if (entity.type === 'TEXT' || entity.type === 'MTEXT') left.text++;
       // Curves are flattened in drawing units, so the tolerance is brought there.
       const stretch = maxStretch(m);
       if (!(stretch > 0) || !Number.isFinite(stretch)) continue;
@@ -163,12 +167,14 @@ export function parseDxf(bytes: Uint8Array): { shapes: OutlineShape[]; color?: s
 
   const parts: { shapes: OutlineShape[]; color?: string }[] = [];
   for (const [color, list] of paths) {
-    const contours = chain(list);
+    const contours = chain(list, left);
     if (contours.length === 0) continue;
     // All of one color as one shape, so that a contour inside another is a hole in it.
     parts.push(color ? { shapes: [{ contours, evenodd: true }], color } : { shapes: [{ contours, evenodd: true }] });
   }
   if (parts.length === 0) throw new Error(tr('This DXF has no closed outlines that can be extruded.'));
+  if (left.open) warnings.push(plural(left.open, '{n} outline does not close and was left out.', '{n} outlines do not close and were left out.'));
+  if (left.text) warnings.push(plural(left.text, '{n} piece of text was left out.', '{n} pieces of text were left out.'));
   return parts;
 }
 
@@ -511,9 +517,9 @@ function catmullRom(points: Vec2[], closed: boolean, tolerance: number): Polygon
 /**
  * Closed contours from the paths: those closed already, and chains of open
  * ones whose ends meet. Open chains that lead nowhere (construction lines,
- * dimension leaders) are dropped.
+ * dimension leaders) are dropped, and counted in `left.open`.
  */
-export function chain(paths: Path[]): Polygon[] {
+export function chain(paths: Path[], left: { open: number } = { open: 0 }): Polygon[] {
   const out: Polygon[] = [];
   const open: Polygon[] = [];
   for (const path of paths) {
@@ -582,7 +588,7 @@ export function chain(paths: Path[]): Polygon[] {
     if (near(points[0], points[points.length - 1])) {
       const contour = clean(points);
       if (contour) out.push(contour);
-    }
+    } else left.open++;
   }
   return out;
 }

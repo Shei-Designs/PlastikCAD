@@ -5,7 +5,7 @@ import type { GroupOver } from '../../model/ops';
 import type { GroupNode, Scene, SceneNode } from '../../model/types';
 import { tr } from '../../i18n';
 import { geometry } from '../geometry';
-import { abortAlignPreview, commit, fail, getState, notify, replaceState, set } from './core';
+import { abortAlignPreview, commit, endWork, fail, getState, notify, replaceState, set, startWork } from './core';
 import { selectedNodes } from './editing';
 
 /** Measure and build a group of the given members (their hole flags as they are to be inside it); null if nothing solid would be left. */
@@ -20,7 +20,7 @@ export async function groupSelected(): Promise<void> {
   const nodes = selectedNodes();
   if (nodes.length < 2) return;
   if (nodes.some((n) => n.locked)) return notify(tr('Unlock the selected objects before grouping them.'), 'error');
-  set({ busy: tr('Grouping…') });
+  startWork(tr('Grouping…'));
   try {
     const { members, hole } = holeGroup(nodes);
     const group = await buildGroup(members, hole, uniqueName(getState().doc.scene, tr('Group')));
@@ -32,7 +32,7 @@ export async function groupSelected(): Promise<void> {
   } catch (e) {
     fail(e);
   } finally {
-    set({ busy: null });
+    endWork();
   }
 }
 
@@ -86,7 +86,7 @@ export function editInside(path: string[]): void {
 export async function finishEditing(): Promise<void> {
   const session = getState().editing;
   if (!session) return;
-  set({ busy: tr('Regrouping…') });
+  startWork(tr('Regrouping…'));
   try {
     let scene = getState().doc.scene;
     let outermost: string | null = null;
@@ -114,7 +114,7 @@ export async function finishEditing(): Promise<void> {
   } catch (e) {
     fail(e);
   } finally {
-    set({ busy: null });
+    endWork();
   }
 }
 

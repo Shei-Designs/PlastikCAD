@@ -14,11 +14,20 @@ import type { SyncReport } from '../sync/engine';
 let gate: Promise<void> = Promise.resolve();
 const PART_BOX: Bounds = { min: [-10, -10, 0], max: [10, 10, 5] };
 
-vi.mock('./geometry', () => ({
+vi.mock('./geometry', async () => {
+  // Files are read by the worker's own code, here on the spot.
+  const { readFile, readHeld } = await import('../worker/importing');
+  let request = 0;
+  return {
   geometry: {
     bounds: (node: SceneNode) => boxBounds(node),
     ready: async () => {},
     forgetAssets: () => {},
+    cancel: () => {},
+    worker: () => ({
+      import: async (file: PickedFile, companions: PickedFile[], options: { scale?: number } = {}) => readFile(++request, file.name, file.bytes, companions, options.scale),
+      importHeld: async (held: number, scale: number) => readHeld(held, scale),
+    }),
     prepare: async () => ({
       measure: async (nodes: SceneNode[]) => {
         const solids = nodes.filter((n) => !n.hole && n.type !== 'picture');
@@ -30,7 +39,8 @@ vi.mock('./geometry', () => ({
       },
     }),
   },
-}));
+  };
+});
 
 const saved: { name: string; bytes: Uint8Array }[] = [];
 /** Whether the pretend platform can delete picked files, and which it was asked to. */
@@ -1112,6 +1122,40 @@ describe('importing', () => {
     await store.receiveFiles([empty]);
     expect(scene()).toEqual([]);
     expect(store.getState().notice?.text).toMatch(/^broken\.stl: /);
+  });
+
+  it('says what a drawing held that was left out, by the name of its file', async () => {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="20mm" height="20mm" viewBox="0 0 20 20"><rect id="r" width="10" height="10"/><use href="#r" x="10"/></svg>';
+    await store.receiveFiles([{ name: 'plate.svg', path: null, bytes: new TextEncoder().encode(svg) }]);
+    expect(scene()).toHaveLength(1);
+    expect(store.getState().notice).toEqual({ kind: 'error', text: 'plate.svg: 1 copy of another shape (<use>) was left out.', action: undefined });
+  });
+
+  it('asks which unit a tiny model without one was made in, and takes it at that', async () => {
+    // A wedge 0.2 by 0.1 by 0.05: a part written in meters.
+    const tiny = ascii([[0, 0, 0, 0.2, 0, 0, 0, 0.1, 0.05], [0, 0, 0, 0, 0.1, 0.05, 0.2, 0, 0]]);
+    told.length = 0;
+    await store.receiveFiles([tiny]);
+    expect(told).toHaveLength(1);
+    expect(told[0].text).toBe('"thin.stl" does not say which unit it was made in. As millimeters it is 0.2 × 0.1 × 0.05 mm. Which unit is it in?');
+    expect(told[0].actions).toEqual(['Meters', 'Inches', 'Centimeters', 'Millimeters']);
+    // The first answer, meters: a thousand times the numbers.
+    expect(scene()[0]).toMatchObject({ type: 'import', size: [200, 100, 50], natural: [200, 100, 50] });
+    // Inches, and backing out, which keeps millimeters.
+    await store.startProject();
+    choose = (actions) => actions[1];
+    await store.receiveFiles([tiny]);
+    expect(scene()[0]).toMatchObject({ size: [5.08, 2.54, 1.27] });
+    await store.startProject();
+    choose = (actions) => actions[actions.length - 1];
+    await store.receiveFiles([tiny]);
+    expect(scene()[0]).toMatchObject({ size: [0.2, 0.1, 0.05] });
+    choose = (actions) => actions[0];
+    // A model of an ordinary size is not asked about.
+    told.length = 0;
+    await store.startProject();
+    await store.receiveFiles([ascii([[0, 0, 0, 10, 0, 0, 0, 10, 2], [0, 0, 0, 0, 10, 2, 10, 0, 0]])]);
+    expect(told).toEqual([]);
   });
 
   it('reads a material library named after the OBJ beside it when the one it names is not there', async () => {

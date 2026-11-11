@@ -1,8 +1,11 @@
+import type { FeatureIndex } from '../geometry/features';
 import { tr, WORKER_LANGUAGE } from '../i18n';
+import type { Companion } from '../io/import';
 import { isTextAsset } from '../model/geomKey';
 import type { Bounds } from '../model/math';
 import type { Asset, PartNode, SceneNode } from '../model/types';
 import type { CollisionKind } from '../robot/types';
+import type { ImportResult } from './importing';
 import type { BuildResult, ColoredExport, ExportResult, LinkGeometry, LinkProperties, WorkerRequest, WorkerResponse } from './protocol';
 
 interface Waiting {
@@ -11,6 +14,14 @@ interface Waiting {
 }
 
 type Outgoing = WorkerRequest extends infer R ? (R extends { id: number } ? Omit<R, 'id'> : never) : never;
+
+/** What every request under way is refused with when the work is called off (see `GeometryClient.cancel`). */
+export class Cancelled extends Error {
+  constructor() {
+    super('Canceled');
+    this.name = 'Cancelled';
+  }
+}
 
 const startWorker = (): Worker => new Worker(new URL('./geometry.worker.ts', import.meta.url), { type: 'module', name: WORKER_LANGUAGE });
 
@@ -138,6 +149,26 @@ export class GeometryClient {
     this.live().postMessage({ type: 'forgetAssets', keep: [...this.sentAssets.keys()] } satisfies WorkerRequest);
   }
 
+  /**
+   * Reads a model or drawing file into what a design keeps. With `handOver` the file's bytes go to
+   * the worker rather than a copy of them (a large file is not held twice), and the caller's array
+   * is empty afterwards. `scale` is the unit the file was made in, in millimeters, when known; the
+   * answer may be `kind: 'units'`, asking for it (see `importHeld`).
+   */
+  import(file: Companion, companions: Companion[], options: { scale?: number; handOver?: boolean } = {}): Promise<ImportResult> {
+    const { bytes } = file;
+    // Only an array that is the whole of its buffer: one cut from a larger one would take its neighbours along.
+    const whole = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength && bytes.buffer instanceof ArrayBuffer;
+    const request: Outgoing = { type: 'import', name: file.name, bytes, companions: companions.map((c) => ({ name: c.name, bytes: c.bytes })) };
+    if (options.scale !== undefined) request.scale = options.scale;
+    return this.send(request, options.handOver && whole ? [bytes.buffer] : []);
+  }
+
+  /** Tells the worker the unit (in millimeters) of the file it is holding, which `import` answered `kind: 'units'` for. */
+  importHeld(held: number, scale: number): Promise<ImportResult> {
+    return this.send({ type: 'importHeld', held, scale });
+  }
+
   build(key: string, node: SceneNode): Promise<BuildResult> {
     return this.send({ type: 'build', key, node });
   }
@@ -160,6 +191,14 @@ export class GeometryClient {
     return this.send({ type: 'exportColored', nodes, fine, local });
   }
 
+  /**
+   * What the Measure tool can take hold of on a mesh of loose triangles, placed by `matrix` (sixteen
+   * numbers, column by column). The positions are handed over, not copied: the caller's array is empty afterwards.
+   */
+  features(positions: Float32Array, matrix: number[]): Promise<FeatureIndex> {
+    return this.send({ type: 'features', positions, matrix }, [positions.buffer]);
+  }
+
   /** Volume, area, centroid and inertia of each node as placed in the design. */
   massProperties(nodes: SceneNode[]): Promise<LinkProperties[]> {
     return this.send({ type: 'massProperties', nodes });
@@ -170,6 +209,20 @@ export class GeometryClient {
     return this.send({ type: 'robotGeometry', nodes, collisions, fine });
   }
 
+  /**
+   * Calls off whatever the worker is doing. It cannot be interrupted in the middle of a solid, so it
+   * is stopped and another started when next needed; every request under way is refused with
+   * `Cancelled`, and what the worker had built or been handed goes with it (the imported data is
+   * handed over again, see `syncAssets`).
+   */
+  cancel(): void {
+    if (this.waiting.size === 0) return;
+    this.worker?.terminate();
+    this.worker = null;
+    this.sentAssets.clear();
+    this.fail(new Cancelled());
+  }
+
   dispose(): void {
     this.worker?.terminate();
     this.worker = null;
@@ -177,11 +230,11 @@ export class GeometryClient {
     this.fail(new Error('The geometry worker was stopped'));
   }
 
-  private send<T>(request: Outgoing): Promise<T> {
+  private send<T>(request: Outgoing, transfer: Transferable[] = []): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       const id = this.nextId++;
       this.waiting.set(id, { resolve: resolve as (value: never) => void, reject });
-      this.live().postMessage({ ...request, id });
+      this.live().postMessage({ ...request, id }, transfer);
     });
   }
 

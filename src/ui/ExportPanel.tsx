@@ -5,6 +5,7 @@ import { FORMATS } from '../io/export';
 import { skinOf } from '../geometry/skin';
 import { confirm } from '../platform';
 import { exportDesign, notify, setPrefs, useEditor } from '../state/store';
+import { Cancelled } from '../worker/client';
 import { FormatPicker } from './FormatPicker';
 import { DownloadIcon } from './icons';
 
@@ -38,7 +39,8 @@ export function ExportPanel() {
       // Where it went is told over the stage, so the panel keeps its height.
       await exportDesign(format, partial);
     } catch (e) {
-      notify(tr('Export failed: {error}', { error: e instanceof Error ? e.message : String(e) }), 'error');
+      // Called off from the badge over the stage: nothing failed.
+      if (!(e instanceof Cancelled)) notify(tr('Export failed: {error}', { error: e instanceof Error ? e.message : String(e) }), 'error');
     } finally {
       setSaving(false);
     }

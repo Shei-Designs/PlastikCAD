@@ -11,7 +11,7 @@ import * as platform from '../../platform';
 import { askName, tell } from '../../ui/ask';
 import { plural, tr } from '../../i18n';
 import { geometry } from '../geometry';
-import { fail, getState, notify } from './core';
+import { endWork, fail, getState, notify, startWork } from './core';
 import { selectedNodes } from './editing';
 
 /**
@@ -51,13 +51,21 @@ export async function exportDesign(formatId: FormatId, selectionOnly: boolean): 
   const name = await exportName(getState().doc.name, format.extension);
   if (!name) return false;
   const filters = [{ name: format.label, extensions: [format.extension] }];
+  // The geometry is made first, with word of it on the screen and a way to call it off; then the file is saved.
+  const made = async <T>(run: () => Promise<T>): Promise<T> => {
+    startWork(tr('Exporting…'));
+    try {
+      return await run();
+    } finally {
+      endWork();
+    }
+  };
   let bytes: Uint8Array;
   let warnings: string[] = [];
   if (format.id === 'obj') {
     // The colors live in a material library beside the file, named after it: so the place is chosen
     // first, and the files written for the name they were given there.
-    const worker = await geometry.prepare(nodes, getState().doc.assets);
-    const result = await worker.exportColored(nodes, true);
+    const result = await made(async () => (await geometry.prepare(nodes, getState().doc.assets)).exportColored(nodes, true));
     // The two go side by side, the library named after the file.
     const bundle = { name, files: [] as { name: string; bytes: Uint8Array }[] };
     const where = await platform.saveBundle(`${name}.obj`, filters, format.mime, (base) => {
@@ -75,17 +83,15 @@ export async function exportDesign(formatId: FormatId, selectionOnly: boolean): 
     return true;
   }
   if (format.id === 'glb') {
-    bytes = await exportGlb(nodes, getState().doc.assets, name);
+    bytes = await made(() => exportGlb(nodes, getState().doc.assets, name));
   } else if (format.id === '3mf') {
     // Objects stay apart, each in its colors, so a slicer can print them in their materials.
-    const worker = await geometry.prepare(nodes, getState().doc.assets);
-    const result = await worker.exportColored(nodes, true);
+    const result = await made(async () => (await geometry.prepare(nodes, getState().doc.assets)).exportColored(nodes, true));
     bytes = write3mf(result.objects, name);
     warnings = result.warnings;
   } else {
-    const worker = await geometry.prepare(nodes, getState().doc.assets);
     // Exports are always made at fine detail: curves get more facets than are drawn on screen.
-    const result = await worker.export(nodes, format.kind === '2d', true);
+    const result = await made(async () => (await geometry.prepare(nodes, getState().doc.assets)).export(nodes, format.kind === '2d', true));
     bytes = format.id === 'svg' || format.id === 'dxf' ? exportOutline(format.id, result.outline ?? [], name) : exportMesh(format.id, result.mesh, name);
     warnings = result.warnings;
   }

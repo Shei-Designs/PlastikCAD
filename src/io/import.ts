@@ -37,12 +37,16 @@ export interface ImportedModel {
   used: string[];
   /** Files the model names (a material library, its pictures) that did not come along. */
   missing?: string[];
+  /** What the file holds that was left out, each in a sentence fit to show the user. */
+  warnings?: string[];
 }
 
 /** Filled 2D shapes in millimeters, Y up, in groups of one fill color. */
 export interface ImportedOutline {
   kind: 'outline';
   parts: { shapes: OutlineShape[]; color?: string }[];
+  /** What the drawing holds that was left out, each in a sentence fit to show the user. */
+  warnings?: string[];
 }
 
 export type Imported = ImportedModel | ImportedOutline;
@@ -111,15 +115,22 @@ export function importFile(fileName: string, bytes: Uint8Array, companions: Comp
     case 'dae':
       return guarded('Collada', () => checkedModel(parseCollada(bytes, name, companions)));
     case 'svg':
-      return guarded('SVG', () => ({ kind: 'outline', parts: parseSvg(bytes).map((part) => ({ ...part, shapes: checkedOutline(part.shapes) })) }));
+      return guarded('SVG', () => drawing((warnings) => parseSvg(bytes, warnings)));
     case 'dxf':
-      return guarded('DXF', () => ({ kind: 'outline', parts: parseDxf(bytes).map((part) => ({ ...part, shapes: checkedOutline(part.shapes) })) }));
+      return guarded('DXF', () => drawing((warnings) => parseDxf(bytes, warnings)));
     default: {
       const given = extensionOf(fileName);
       const supported = IMPORT_EXTENSIONS.map((e) => e.toUpperCase()).join(', ');
       throw new Error(given ? tr(".{extension} files can't be imported. Use one of: {supported}.", { extension: given, supported }) : tr("Files of this type can't be imported. Use one of: {supported}.", { supported }));
     }
   }
+}
+
+/** A drawing as read, with what the reader says it left out. */
+function drawing(read: (warnings: string[]) => ImportedOutline['parts']): ImportedOutline {
+  const warnings: string[] = [];
+  const parts = read(warnings).map((part) => ({ ...part, shapes: checkedOutline(part.shapes) }));
+  return warnings.length ? { kind: 'outline', parts, warnings } : { kind: 'outline', parts };
 }
 
 /**

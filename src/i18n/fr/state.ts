@@ -108,6 +108,13 @@ export const state: Catalog = {
     'Un fichier .mtl contient les couleurs d’un OBJ et se lit avec lui\u00a0: choisissez le .obj, accompagné du .mtl pour ses couleurs.',
   'Cannot import that. Supported: {formats}.': 'Importation impossible. Formats pris en charge\u00a0: {formats}.',
   'Importing…': 'Importation…',
+  'Importing {n} of {total}…': 'Importation {n} sur {total}…',
+  '"{name}" does not say which unit it was made in. As millimeters it is {size} mm. Which unit is it in?':
+    '«\u00a0{name}\u00a0» n’indique pas dans quelle unité il a été créé. En millimètres, il mesure {size}\u00a0mm. Dans quelle unité est-il\u00a0?',
+  Meters: 'Mètres',
+  Inches: 'Pouces',
+  Centimeters: 'Centimètres',
+  Millimeters: 'Millimètres',
   'URDF robot': 'Robot URDF',
   '"{file}" draws its links with {list}, which did not come along. Pick them now, or import without?': {
     one: '«\u00a0{file}\u00a0» dessine ses segments avec {list}, qui n’a pas été fourni. Le choisir maintenant, ou importer sans\u00a0?',

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Asset, OutlineShape, ShapeNode } from '../model/types';
-import { GeometryClient } from './client';
+import { Cancelled, GeometryClient } from './client';
+import { buildBvh } from '../geometry/bvh';
 import type { BuildResult, WorkerRequest, WorkerResponse } from './protocol';
 
 /** A stand-in for the worker: keeps what it is sent, and says what the test tells it to. */
@@ -10,8 +11,11 @@ class FakeWorker {
   onmessage: ((e: MessageEvent<WorkerResponse>) => void) | null = null;
   onerror: ((e: ErrorEvent) => void) | null = null;
   onmessageerror: ((e: MessageEvent) => void) | null = null;
-  postMessage(msg: WorkerRequest): void {
+  /** What was handed over rather than copied, request by request. */
+  transfers: Transferable[][] = [];
+  postMessage(msg: WorkerRequest, transfer: Transferable[] = []): void {
     this.posted.push(msg);
+    this.transfers.push(transfer);
   }
   terminate(): void {
     this.terminated = true;
@@ -24,6 +28,10 @@ class FakeWorker {
   }
   garble(): void {
     this.onmessageerror?.({} as MessageEvent);
+  }
+  /** What went with the latest thing it was sent, handed over rather than copied. */
+  handedOver(): Transferable[] {
+    return this.transfers[this.transfers.length - 1];
   }
   /** The latest thing it was sent. */
   last(): WorkerRequest {
@@ -50,7 +58,7 @@ function setup(): { client: GeometryClient; workers: FakeWorker[] } {
 }
 
 const box: ShapeNode = { id: 'b', type: 'shape', name: 'Box', shape: 'box', params: {}, pos: [0, 0, 0], rot: [0, 0, 0], size: [20, 20, 20], hole: false, color: '#8fa3bf' };
-const result = (key: string): BuildResult => ({ key, render: { positions: new Float32Array(9), normals: new Float32Array(9) }, bounds: { min: [0, 0, 0], max: [1, 1, 1] }, triangles: 1, volume: 1, watertight: true });
+const result = (key: string): BuildResult => ({ key, render: { positions: new Float32Array(9), normals: new Float32Array(9) }, bvh: buildBvh(new Float32Array(9)), bounds: { min: [0, 0, 0], max: [1, 1, 1] }, triangles: 1, volume: 1, watertight: true });
 const mesh = (positions = 'AAAA'): Asset => ({ kind: 'mesh', positions, triangles: 'AAAA' });
 const lettering = (shapes: OutlineShape[] = []): Asset => ({ kind: 'outline', shapes });
 
@@ -162,6 +170,49 @@ describe('the geometry client', () => {
     send('text:1');
     client.forgetLettering(new Set(), 4);
     expect(workers[0].last()).toEqual({ type: 'forgetAssets', keep: ['m', 'text:Hello', 'text:1'] });
+  });
+
+  it('calls off everything under way, and starts afresh for what is asked next', async () => {
+    const { client, workers } = setup();
+    client.syncAssets({ m: mesh() });
+    const grouping = client.measure([box]);
+    const building = client.build('k', box);
+    client.cancel();
+    await expect(grouping).rejects.toBeInstanceOf(Cancelled);
+    await expect(building).rejects.toBeInstanceOf(Cancelled);
+    expect(workers[0].terminated).toBe(true);
+    // The next request goes to a fresh worker, which is handed the imported data again.
+    const asset = mesh();
+    client.syncAssets({ m: asset });
+    const again = client.build('k', box);
+    expect(workers).toHaveLength(2);
+    expect(workers[1].assets()).toEqual(['m']);
+    workers[1].say({ type: 'built', id: workers[1].ids()[0], result: result('k') });
+    expect((await again).key).toBe('k');
+    // The worker that was let go has nothing more to say.
+    workers[0].say({ type: 'built', id: workers[0].ids()[1], result: result('stale') });
+    // With nothing under way there is nothing to call off: the worker stays.
+    client.cancel();
+    expect(workers[1].terminated).toBe(false);
+  });
+
+  it('hands a file over to be read, or copies it when it is to be read again', () => {
+    const { client, workers } = setup();
+    const file = { name: 'a.stl', bytes: new Uint8Array(8), path: '/somewhere/a.stl' };
+    const library = { name: 'a.mtl', bytes: new Uint8Array(2) };
+    void client.import(file, [library], { handOver: true }).catch(() => undefined);
+    expect(workers[0].last()).toMatchObject({ type: 'import', name: 'a.stl', companions: [{ name: 'a.mtl' }] });
+    // Only what the worker needs goes over: not where the file is on this device.
+    expect(Object.keys(workers[0].last()).sort()).toEqual(['bytes', 'companions', 'id', 'name', 'type']);
+    expect(workers[0].handedOver()).toEqual([file.bytes.buffer]);
+    void client.import(file, [], { scale: 25.4 }).catch(() => undefined);
+    expect(workers[0].last()).toMatchObject({ scale: 25.4 });
+    expect(workers[0].handedOver()).toEqual([]);
+    // A piece of a larger buffer is copied whatever was asked: handing it over would take its neighbours along.
+    const piece = { name: 'b.stl', bytes: new Uint8Array(new ArrayBuffer(16), 4, 8) };
+    void client.import(piece, [], { handOver: true }).catch(() => undefined);
+    expect(workers[0].handedOver()).toEqual([]);
+    client.dispose();
   });
 
   it('fails what is waiting when it is stopped', async () => {

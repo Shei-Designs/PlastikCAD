@@ -16,6 +16,8 @@ import { pruned } from '../../robot/model';
 import type { Feature, FeatureKind } from '../../geometry/features';
 import { picksStand } from '../../viewer/picks';
 import type { Robot } from '../../robot/types';
+import { Cancelled } from '../../worker/client';
+import { geometry } from '../geometry';
 import { cancelMate } from './parts';
 import { refreshAlignBounds } from './tools';
 import { scheduleAutosave } from './project';
@@ -90,6 +92,8 @@ export interface EditorState {
   syncNotes: string[];
   /** Something slow is going on ("Grouping…"). */
   busy: string | null;
+  /** Whether that is work of the geometry worker, which `stopWork` can call off. */
+  stoppable: boolean;
   /** The newer version of the app that was found among the releases (see store/updating.ts); null when there is none, or none was looked for. */
   update: string | null;
   canUndo: boolean;
@@ -133,6 +137,7 @@ let state: EditorState = {
   notice: null,
   syncNotes: [],
   busy: null,
+  stoppable: false,
   update: null,
   canUndo: false,
   canRedo: false,
@@ -206,7 +211,22 @@ export function noteSync(texts: string[]): void {
 
 export const dismissSyncNotes = (): void => set({ syncNotes: [] });
 
-export const fail = (e: unknown): void => notify(asError(e).message, 'error');
+/** Says what went wrong. Work that the user called off (see `stopWork`) went as asked, and is not said. */
+export const fail = (e: unknown): void => {
+  if (!(e instanceof Cancelled)) notify(asError(e).message, 'error');
+};
+
+/** Word on the screen that the geometry worker is at something slow, with a way to call it off. */
+export const startWork = (label: string): void => set({ busy: label, stoppable: true });
+export const endWork = (): void => set({ busy: null, stoppable: false });
+
+/**
+ * Calls off the slow work under way (an import, an export, a group being made): whoever waits on it
+ * is refused with `Cancelled` and leaves things as they were.
+ */
+export function stopWork(): void {
+  if (state.stoppable) geometry.cancel();
+}
 
 export function setPrefs(patch: Partial<Prefs>): void {
   set({ prefs: { ...state.prefs, ...patch } });

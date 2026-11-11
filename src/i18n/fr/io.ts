@@ -20,6 +20,9 @@ export const io: Catalog = {
   'This file holds coordinates that are not numbers, and cannot be imported.': 'Ce fichier contient des coordonnées qui ne sont pas des nombres et ne peut pas être importé.',
   'This file is damaged: its triangles point at corners it does not have.': 'Ce fichier est endommagé\u00a0: ses triangles renvoient à des sommets qu’il n’a pas.',
 
+  // A file read in the geometry worker (worker/importing.ts)
+  'The file is no longer at hand. Import it again.': 'Le fichier n’est plus disponible. Importez-le de nouveau.',
+
   // XML (xml.ts)
   'This file is nested too deeply to read.': 'Ce fichier est imbriqué trop profondément pour être lu.',
 
@@ -94,11 +97,20 @@ export const io: Catalog = {
   'This is not a DXF file.': 'Ce n’est pas un fichier DXF.',
   'This DXF has too many points to open.': 'Ce DXF a trop de points pour être ouvert.',
   'This DXF has no closed outlines that can be extruded.': 'Ce DXF n’a aucun contour fermé qui puisse être extrudé.',
+  '{n} outlines do not close and were left out.': { one: '{n} contour ne se ferme pas et a été ignoré.', other: '{n} contours ne se ferment pas et ont été ignorés.' },
+  '{n} pieces of text were left out.': { one: '{n} texte a été ignoré.', other: '{n} textes ont été ignorés.' },
   'Binary DXF files cannot be imported. Save the drawing as ASCII DXF.': 'Les fichiers DXF binaires ne peuvent pas être importés. Enregistrez le dessin en DXF ASCII.',
 
   // SVG (importSvg.ts)
   'This is not an SVG file.': 'Ce n’est pas un fichier SVG.',
   'This SVG has no shapes that can be extruded.': 'Ce SVG n’a aucune forme qui puisse être extrudée.',
+  '{n} copies of other shapes (<use>) were left out.': { one: '{n} copie d’une autre forme (<use>) a été ignorée.', other: '{n} copies d’autres formes (<use>) ont été ignorées.' },
+  '{n} pieces of text were left out. Turn text into paths in the drawing program.': {
+    one: '{n} texte a été ignoré. Convertissez le texte en tracés dans le logiciel de dessin.',
+    other: '{n} textes ont été ignorés. Convertissez le texte en tracés dans le logiciel de dessin.',
+  },
+  '{n} pictures were left out.': { one: '{n} image a été ignorée.', other: '{n} images ont été ignorées.' },
+  'Its style sheet was not read: colors and hidden shapes set there are not applied.': 'Sa feuille de style n’a pas été lue\u00a0: les couleurs et les formes masquées qui y sont définies ne sont pas appliquées.',
 
   // URDF (importUrdf.ts)
   Robot: 'Robot',

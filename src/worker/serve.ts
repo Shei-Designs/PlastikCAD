@@ -2,7 +2,9 @@
 // order they arrived (so imported data is always in before the nodes that use
 // it). Apart from the worker file itself so that it can run under vitest.
 import { build, exportColored, exportNodes, forgetAssets, massProperties, measure, partBox, resetKernel, robotGeometry, setAssets } from '../geometry/kernel';
+import { indexFeatures } from '../geometry/features';
 import { tr } from '../i18n';
+import { readFile, readHeld } from './importing';
 import type { WorkerRequest, WorkerResponse } from './protocol';
 import { transferOf } from './transfer';
 
@@ -16,6 +18,10 @@ function answer(req: WorkerRequest): WorkerResponse | null {
     case 'forgetAssets':
       forgetAssets(req.keep);
       return null;
+    case 'import':
+      return { type: 'imported', id: req.id, result: readFile(req.id, req.name, req.bytes, req.companions, req.scale) };
+    case 'importHeld':
+      return { type: 'imported', id: req.id, result: readHeld(req.held, req.scale) };
     case 'build':
       return { type: 'built', id: req.id, result: build(req.key, req.node) };
     case 'measure':
@@ -24,6 +30,8 @@ function answer(req: WorkerRequest): WorkerResponse | null {
       return { type: 'partBoxed', id: req.id, bounds: partBox(req.node) };
     case 'exportColored':
       return { type: 'exportedColored', id: req.id, result: exportColored(req.nodes, req.fine, req.local) };
+    case 'features':
+      return { type: 'features', id: req.id, result: indexFeatures(placedBy(req.positions, req.matrix)) };
     case 'massProperties':
       return { type: 'massProperties', id: req.id, result: massProperties(req.nodes) };
     case 'robotGeometry':
@@ -31,6 +39,19 @@ function answer(req: WorkerRequest): WorkerResponse | null {
     case 'export':
       return { type: 'exported', id: req.id, result: exportNodes(req.nodes, req.outline, req.fine, req.local) };
   }
+}
+
+/** The points moved by a matrix of sixteen numbers, column by column, where they are (the array is this request's own). */
+function placedBy(positions: Float32Array, m: number[]): Float32Array {
+  for (let i = 0; i < positions.length; i += 3) {
+    const x = positions[i];
+    const y = positions[i + 1];
+    const z = positions[i + 2];
+    positions[i] = m[0] * x + m[4] * y + m[8] * z + m[12];
+    positions[i + 1] = m[1] * x + m[5] * y + m[9] * z + m[13];
+    positions[i + 2] = m[2] * x + m[6] * y + m[10] * z + m[14];
+  }
+  return positions;
 }
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -53,8 +74,10 @@ export function serve(post: Post, load: () => Promise<unknown>): (req: WorkerReq
   const handle = async (req: WorkerRequest): Promise<void> => {
     // Imported data needs no kernel: it is taken in even while one fails to load, for the requests that follow.
     const stores = req.type === 'assets' || req.type === 'forgetAssets';
+    // Nor does reading a file, or a mesh for the Measure tool.
+    const reads = req.type === 'import' || req.type === 'importHeld' || req.type === 'features';
     try {
-      if (!stores) await load();
+      if (!stores && !reads) await load();
     } catch (err) {
       if (!stores) post({ type: 'error', id: req.id, message: messageOf(err) }, []);
       return;

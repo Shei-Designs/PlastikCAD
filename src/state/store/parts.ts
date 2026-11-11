@@ -10,7 +10,7 @@ import { mateOf } from '../../parts/mates';
 import type { MateRequest } from '../../parts/mates';
 import { geometry } from '../geometry';
 import { tr } from '../../i18n';
-import { abortAlignPreview, commit, fail, getState, notify, pushStep, replaceState, rewriteHistory, set } from './core';
+import { abortAlignPreview, commit, endWork, fail, getState, notify, pushStep, replaceState, rewriteHistory, set, startWork } from './core';
 import type { Step } from './core';
 import { updateNode } from './editing';
 import { cancelArray, stopAligning } from './tools';
@@ -66,7 +66,7 @@ async function sizePart(node: PartNode, was: PartNode = node): Promise<PartNode>
 export async function startPlacingPart(category: string): Promise<void> {
   const def = GENERATORS.find((g) => g.category === category);
   if (!def) return;
-  set({ busy: tr('Making the part…') });
+  startWork(tr('Making the part…'));
   try {
     const node = await sizePart(makePart(def.id));
     abortAlignPreview();
@@ -74,7 +74,7 @@ export async function startPlacingPart(category: string): Promise<void> {
   } catch (e) {
     fail(e);
   } finally {
-    set({ busy: null });
+    endWork();
   }
 }
 
@@ -82,7 +82,7 @@ export async function startPlacingPart(category: string): Promise<void> {
 export async function addPart(category: string): Promise<void> {
   const def = GENERATORS.find((g) => g.category === category);
   if (!def) return;
-  set({ busy: tr('Making the part…') });
+  startWork(tr('Making the part…'));
   try {
     const node = await sizePart(makePart(def.id));
     node.pos = [0, 0, node.size[2] / 2];
@@ -92,7 +92,7 @@ export async function addPart(category: string): Promise<void> {
   } catch (e) {
     fail(e);
   } finally {
-    set({ busy: null });
+    endWork();
   }
 }
 

@@ -1,6 +1,6 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { CSSProperties, JSX } from 'react';
-import { tr, trx } from '../i18n';
+import { plural, tr, trx } from '../i18n';
 import { rich } from '../i18n/rich';
 import { geometry } from '../state/geometry';
 import { SNAP_STEPS } from '../state/persist';
@@ -33,6 +33,7 @@ import {
   select,
   setAlignAnchor,
   setPrefs,
+  stopWork,
   toggleAligning,
   toggleMeasuring,
   toggleObjectAxes,
@@ -552,6 +553,37 @@ const Toolbar = memo(function Toolbar() {
   );
 });
 
+/**
+ * Word of slow work, over the stage: what the editor is waiting on (an import, an export, a group
+ * being made), with a way to call it off; or else the objects still being built, which shows only
+ * when that takes a while (a large design coming up, a group of imported meshes).
+ */
+const Busy = memo(function Busy() {
+  const busy = useEditor((s) => s.busy);
+  const stoppable = useEditor((s) => s.stoppable);
+  const building = useSyncExternalStore(geometry.subscribeBuilding, geometry.getBuilding);
+  if (busy) {
+    return (
+      <div className="busy" role="status">
+        <span className="spinner" />
+        {busy}
+        {stoppable && (
+          <button type="button" className="chip busy-stop" onClick={stopWork}>
+            {tr('Cancel')}
+          </button>
+        )}
+      </div>
+    );
+  }
+  if (building === 0) return null;
+  return (
+    <div className="busy building" role="status">
+      <span className="spinner" />
+      {plural(building, 'Building {n} object…', 'Building {n} objects…')}
+    </div>
+  );
+});
+
 export function Viewport() {
   const host = useRef<HTMLDivElement>(null);
   const [prompt, setPrompt] = useState<HandlePrompt | null>(null);
@@ -657,6 +689,7 @@ export function Viewport() {
         onMarkerMove: dragMarker,
         onMarkerDrop: endMarkerDrag,
         onMeasurePick: pickMeasure,
+        featuresOf: (positions, matrix) => geometry.worker().features(positions, matrix),
         // Two fingers tapped on the plate undo and three redo; the viewer is told whether there was a step to take.
         onHistory: (step) => {
           const can = step === 'undo' ? getState().canUndo : getState().canRedo;
@@ -781,12 +814,7 @@ export function Viewport() {
         <TransformBox />
       </div>
 
-      {busy && (
-        <div className="busy" role="status">
-          <span className="spinner" />
-          {busy}
-        </div>
-      )}
+      <Busy />
     </div>
   );
 }
