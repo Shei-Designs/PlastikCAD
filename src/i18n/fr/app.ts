@@ -138,6 +138,8 @@ export const app: Catalog = {
   'Syncs with Google Drive now.': 'Synchronise avec Google Drive maintenant.',
   'Sync now': 'Synchroniser',
   'Stops syncing with Google Drive.': 'Arrête la synchronisation avec Google Drive.',
+  'Clean up…': 'Nettoyer…',
+  'Moves imported meshes and pictures that no design uses any more to the Drive\'s trash.': 'Déplace vers la corbeille du Drive les maillages et images importés qu’aucune conception n’utilise plus.',
   Unlink: 'Dissocier',
   'Goes back to the projects.': 'Revient aux projets.',
   Trash: 'Corbeille',

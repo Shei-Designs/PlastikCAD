@@ -50,12 +50,6 @@ Things only the real devices and accounts can show.
   M14 to M20 clearance holes, the heat-set insert bores, the M2 and M2.5
   head sizes, the motor presets.
 
-## Decided, to build
-
-- **"Clean up Drive"**: a command that moves to the Drive's trash the files in
-  its `Assets` folder that no design names any more and that are older than
-  a week. Drive space is not free.
-
 ## Put off
 
 Not dropped: taken up when asked for.

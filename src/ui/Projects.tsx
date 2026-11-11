@@ -26,6 +26,7 @@ import {
   renameProjectAt,
   restoreProject,
   unlinkGoogleDrive,
+  cleanUpGoogleDrive,
   useEditor,
 } from '../state/store';
 import { cancelLink, syncNow, useSyncStatus } from '../sync/sync';
@@ -157,6 +158,9 @@ function DriveRow() {
       </span>
       <button type="button" className="chip" disabled={sync.busy} title={tr('Syncs with Google Drive now.')} onClick={() => void syncNow()}>
         {tr('Sync now')}
+      </button>
+      <button type="button" className="chip" disabled={sync.busy} title={tr('Moves imported meshes and pictures that no design uses any more to the Drive\'s trash.')} onClick={() => void cleanUpGoogleDrive()}>
+        {tr('Clean up…')}
       </button>
       <button type="button" className="chip" disabled={sync.busy} title={tr('Stops syncing with Google Drive.')} onClick={() => void unlinkGoogleDrive()}>
         {tr('Unlink')}

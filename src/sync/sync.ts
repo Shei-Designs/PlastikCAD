@@ -7,7 +7,7 @@ import { noteDiagnostic } from '../diagnostics';
 import { asError } from '../errors';
 import { tr } from '../i18n';
 import { hasPartStore, hasProjectStore, partStore, projectStore } from '../state/projects';
-import { apartRemote } from './apart';
+import { apartRemote, unusedParts } from './apart';
 import type { ApartRemote } from './apart';
 import { DriveRemote } from './drive';
 import { bindRecords, synchronize } from './engine';
@@ -45,6 +45,8 @@ let remote: DriveRemote | null = null;
 let partsRemote: DriveRemote | null = null;
 /** The projects' remote as the engine sees it: designs whole, their large meshes and pictures kept apart behind it. */
 let projectsRemote: ApartRemote | null = null;
+/** The folder those meshes and pictures are kept in. */
+let assetsRemote: DriveRemote | null = null;
 const state = openSyncState(STORES.projects);
 const partsState = openSyncState(STORES.parts);
 let device = '';
@@ -87,7 +89,8 @@ function setTokens(next: Tokens | null, keep = true): void {
   if (keep) void saveTokens(next);
   remote = next ? new DriveRemote(authorizedFetch(() => tokens, setTokens)) : null;
   partsRemote = remote ? new DriveRemote(authorizedFetch(() => tokens, setTokens), PARTS_FOLDER, remote) : null;
-  projectsRemote = remote ? apartRemote(remote, new DriveRemote(authorizedFetch(() => tokens, setTokens), ASSETS_FOLDER, remote, undefined, 'assets'), localProject) : null;
+  assetsRemote = remote ? new DriveRemote(authorizedFetch(() => tokens, setTokens), ASSETS_FOLDER, remote, undefined, 'assets') : null;
+  projectsRemote = remote && assetsRemote ? apartRemote(remote, assetsRemote, localProject) : null;
   publish({ linked: next !== null, email: next?.email ?? null });
 }
 
@@ -199,6 +202,32 @@ export async function withSyncPaused<T>(work: () => Promise<T>): Promise<T> {
     paused--;
     if (!paused) requestSync(1000);
   }
+}
+
+/**
+ * Moves to the Drive's trash the imported meshes and pictures in its Assets folder that no design
+ * there names any more (see `unusedParts`). `confirm` is told how many there are and how many bytes
+ * they take, and says whether to go ahead. Resolves with what was moved (nothing, when there was
+ * nothing to move), or null when it was called off. No sync runs meanwhile.
+ */
+export function cleanUpDrive(confirm: (count: number, bytes: number) => Promise<boolean>): Promise<{ count: number; bytes: number } | null> {
+  if (!remote || !assetsRemote) return Promise.reject(new Error(tr('Google Drive is not linked.')));
+  const [designs, store] = [remote, assetsRemote];
+  return withSyncPaused(async () => {
+    publish({ busy: true });
+    try {
+      const unused = await unusedParts(designs, store);
+      const bytes = unused.reduce((sum, file) => sum + (file.size ?? 0), 0);
+      if (unused.length === 0) return { count: 0, bytes: 0 };
+      if (!(await confirm(unused.length, bytes))) return null;
+      for (const file of unused) await store.remove(file);
+      // What the folder holds is looked at afresh by the next pass.
+      projectsRemote?.forget();
+      return { count: unused.length, bytes };
+    } finally {
+      publish({ busy: false });
+    }
+  });
 }
 
 /** One set (the projects, or the parts) brought into line, its records first checked against the places they were agreed for. */

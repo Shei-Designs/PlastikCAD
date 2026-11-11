@@ -5,7 +5,7 @@ import { emptyDoc, NewerVersion, parseDoc, readHeader, serializeDoc } from '../m
 import { makeShape, newId } from '../model/ops';
 import type { Asset, Doc, ImportNode, SceneNode } from '../model/types';
 import { MemoryProjects } from '../state/projects';
-import { APART_FROM, apartRemote, contentName, inParts, putTogether, takeApart } from './apart';
+import { APART_FROM, apartRemote, contentName, inParts, putTogether, takeApart, UNUSED_AFTER, unusedParts } from './apart';
 import { MemorySyncState, synchronize } from './engine';
 import type { Remote, RemoteFile } from './engine';
 
@@ -251,3 +251,66 @@ describe('a remote that keeps the large parts of designs apart', () => {
     expect(parseDoc((await b.text(doc.id))!).assets['mesh-big']).toEqual(doc.assets['mesh-big']);
   });
 });
+
+describe('the parts no design names any more', () => {
+  const DAY = 24 * 3600_000;
+  /** Two designs sent up through the remote that keeps their parts apart, the parts dated `age` ago. */
+  async function drive(age: number) {
+    const designs = new FakeRemote();
+    const store = new FakeRemote('.json');
+    const remote = apartRemote(designs, store, async () => null);
+    const one = scan('One');
+    const two = { ...scan('Two'), assets: { 'mesh-big': mesh(APART_FROM * 3, 'QQQR') }, scene: [imported('big', 'mesh-big')] };
+    const files = [await remote.upload(null, one.name, serializeDoc(one), { projectId: one.id, revision: one.revision! }), await remote.upload(null, two.name, serializeDoc(two), { projectId: two.id, revision: two.revision! })];
+    const now = Date.now();
+    for (const entry of store.files.values()) entry.file = { ...entry.file, modified: now - age, size: entry.text.length };
+    return { designs, store, remote, files, one, two, now };
+  }
+
+  it('are those of a design that is gone, or of a mesh that was replaced, once they are a week old', async () => {
+    const { designs, store, remote, files, one, now } = await drive(30 * DAY);
+    expect(store.files.size).toBe(3);
+    // Every part is named by a design: nothing is unused.
+    expect(await unusedParts(designs, store, now)).toEqual([]);
+    // The second design is deleted from the Drive: its one part is left behind.
+    await remote.remove(files[1]);
+    const gone = await unusedParts(designs, store, now);
+    expect(gone).toHaveLength(1);
+    expect(gone[0].size).toBeGreaterThan(APART_FROM * 3);
+    // The first design's mesh is replaced by another: the old one is left behind too, the picture is still worn.
+    const swapped = edited({ ...one, assets: { ...one.assets, 'mesh-big': mesh(APART_FROM * 3, 'NEWM') } }, one.scene);
+    await remote.upload(files[0], swapped.name, serializeDoc(swapped), { projectId: swapped.id, revision: swapped.revision! });
+    const newest = [...store.files.values()].find((f) => f.text.includes('NEWM'))!;
+    newest.file = { ...newest.file, modified: now - 30 * DAY };
+    expect(await unusedParts(designs, store, now)).toHaveLength(2);
+    expect((await unusedParts(designs, store, now)).some((f) => f.id === newest.file.id)).toBe(false);
+  });
+
+  it('are left alone while they are new, or of no known date: a design that names them may be on its way', async () => {
+    const { designs, store, remote, files, now } = await drive(UNUSED_AFTER - 60_000);
+    await remote.remove(files[0]);
+    await remote.remove(files[1]);
+    expect(await unusedParts(designs, store, now)).toEqual([]);
+    expect(await unusedParts(designs, store, now + 120_000)).toHaveLength(3);
+    for (const entry of store.files.values()) entry.file = { ...entry.file, modified: 0 };
+    expect(await unusedParts(designs, store, now + 400 * DAY)).toEqual([]);
+  });
+
+  it('are not looked for at all when a design cannot be read: what it names would pass for unused', async () => {
+    const { designs, store, remote, files, now } = await drive(30 * DAY);
+    await remote.remove(files[1]);
+    designs.download = async () => {
+      throw new Error('offline');
+    };
+    await expect(unusedParts(designs, store, now)).rejects.toThrow('offline');
+  });
+
+  it('count nothing a design sent up whole names, and need no look at the designs when there are no parts', async () => {
+    const designs = new FakeRemote();
+    const store = new FakeRemote('.json');
+    await designs.upload(null, 'Whole', serializeDoc(scan('Whole')), { projectId: 'p1', revision: null });
+    expect(await unusedParts(designs, store)).toEqual([]);
+    expect(designs.calls.download).toBe(0);
+  });
+});
+

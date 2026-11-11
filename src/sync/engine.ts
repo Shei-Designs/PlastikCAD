@@ -29,6 +29,8 @@ export interface RemoteFile {
   revision: string | null;
   /** Milliseconds since the epoch. */
   modified: number;
+  /** In bytes, where the remote says. */
+  size?: number;
 }
 
 export interface Remote {
