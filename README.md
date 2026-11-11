@@ -988,6 +988,9 @@ waits until someone needs it:
 
 ## Roadmap
 
+The whole of what is planned, put off and dropped is in
+[docs/ROADMAP.md](docs/ROADMAP.md). Next in the app itself:
+
 - More scripts and fonts for lettering.
 - More parts: throated worm wheel, V-belt pulleys, imperial threads.
 - Assembly preview of meshing gears.
