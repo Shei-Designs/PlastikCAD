@@ -135,6 +135,24 @@ beforeEach(async () => {
 });
 
 describe('the sync scheduler', () => {
+  it('removes a custom part deleted on another device for good, where a project goes to the trash', async () => {
+    const parts = new MemoryProjects();
+    setPartStore(parts);
+    await parts.write(null, 'Post', serializeDoc(design('part0001', 'Post')));
+    await parts.write(null, 'Foot', serializeDoc(design('part0002', 'Foot')));
+    await sync.syncNow();
+    expect(account().parts.size).toBe(2);
+    // Deleted on another device: the part Post, and the project B.
+    for (const [id, part] of account().parts) if (part.file.projectId === 'part0001') account().parts.delete(id);
+    for (const [id, project] of account().files) if (project.file.projectId === 'project2') account().files.delete(id);
+    await sync.syncNow();
+    expect((await parts.list()).map((p) => p.name)).toEqual(['Foot']);
+    // Nothing of the part is kept: there is no trash of parts to look into.
+    expect(parts.trash.size).toBe(0);
+    expect((await local.list()).map((p) => p.name).sort()).toEqual(['A', 'C']);
+    expect(local.trash.size).toBe(1);
+  });
+
   it('starts over, deleting nothing, when the Drive folder is not the one it synced with', async () => {
     // Another Google account, or the folder trashed in the Drive and made again: empty either way.
     cloud.account = new Account('folder-b');
