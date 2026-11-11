@@ -2,7 +2,7 @@
 // the plate, and a URDF as a robot.
 import { isDesignName } from '../../appInfo';
 import { plural, tr } from '../../i18n';
-import { fileKind, IMAGE_EXTENSIONS, IMPORT_EXTENSIONS } from '../../io/import';
+import { fileKind, IMAGE_EXTENSIONS, IMPORT_EXTENSIONS, ZIP_EXTENSION } from '../../io/import';
 import { meshPath, parseUrdf, urdfMeshFiles } from '../../io/importUrdf';
 import { bytesToBase64 } from '../../io/base64';
 import { isUntitled } from '../../model/file';
@@ -23,6 +23,9 @@ import { stopAligning } from './tools';
 import { buildGroup } from './groups';
 import { baseName, extension, folderOf, importProjectFile } from './project';
 import { enterRobotMode } from './robot';
+
+/** A file's name without its extension or the folders it is in (a file out of an archive comes under its path there). */
+const plainName = (fileName: string): string => baseName(fileName.slice(Math.max(fileName.lastIndexOf('/'), fileName.lastIndexOf('\\')) + 1));
 
 /** The default color of an imported object that brought none. */
 const IMPORT_COLOR = '#8fa3bf';
@@ -177,7 +180,7 @@ async function importModels(files: PickedFile[], companions: PickedFile[]): Prom
   return used;
 
   async function bring(file: PickedFile): Promise<void> {
-    const name = uniqueName(scene, baseName(file.name));
+    const name = uniqueName(scene, plainName(file.name));
     const read = await readModel(file, companions);
     companions = read.companions;
     const { data } = read;
@@ -292,7 +295,7 @@ function makePicture(key: string): PictureNode {
   return {
     id: newId(),
     type: 'picture',
-    name: baseName(image.name),
+    name: plainName(image.name),
     asset: key,
     mapping: 'flat',
     angle: 120,
@@ -357,17 +360,53 @@ export async function pickImage(): Promise<string | null> {
   }
 }
 
-const IMPORTABLE = [...IMPORT_EXTENSIONS, ...IMAGE_EXTENSIONS];
+const IMPORTABLE = [...IMPORT_EXTENSIONS, ...IMAGE_EXTENSIONS, ZIP_EXTENSION];
+
+/** A file handed to the app; `companion` when it came in an archive beside what it is for, and is nothing by itself. */
+type Received = PickedFile & { companion?: boolean };
+
+const isModel = (f: PickedFile): boolean => IMPORT_EXTENSIONS.includes(fileKind(f.name, f.bytes));
+const isPicture = (f: PickedFile): boolean => IMAGE_EXTENSIONS.includes(fileKind(f.name, f.bytes));
+const isZip = (f: PickedFile): boolean => fileKind(f.name, f.bytes) === ZIP_EXTENSION;
+
+/**
+ * The files with every zip archive among them replaced by what it holds, unpacked in the geometry
+ * worker. The pictures of an archive that holds a model, a robot or a design are there for those
+ * (a texture, its other maps, a preview), so they do not also become picture sheets.
+ */
+async function unpacked(files: PickedFile[]): Promise<Received[]> {
+  const out: Received[] = [];
+  for (const file of files) {
+    if (!isZip(file)) {
+      out.push(file);
+      continue;
+    }
+    const inside: PickedFile[] = (await geometry.worker().unzip(file.bytes)).map((f) => ({ name: f.name, path: null, bytes: f.bytes }));
+    const bundle = inside.some((f) => isModel(f) || isDesignName(f.name) || extension(f.name) === 'urdf');
+    for (const f of inside) {
+      // A design is named after its file, wherever in the archive that is.
+      if (isDesignName(f.name)) out.push({ ...f, name: f.name.slice(f.name.lastIndexOf('/') + 1) });
+      else out.push(bundle && isPicture(f) ? { ...f, companion: true } : f);
+    }
+    if (inside.length === 0) throw new Error(tr('Nothing in "{name}" can be imported. Supported: {formats}.', { name: file.name, formats: [...IMPORT_EXTENSIONS, ...IMAGE_EXTENSIONS].map((e) => e.toUpperCase()).join(', ') }));
+  }
+  return out;
+}
 
 /** Files picked or dropped: designs are opened, a URDF brings its robot in, models, drawings and pictures are imported into the current design. */
-export async function receiveFiles(files: PickedFile[]): Promise<void> {
+export async function receiveFiles(given: PickedFile[]): Promise<void> {
   try {
+    let files: Received[] = given;
+    if (files.some(isZip)) {
+      startWork(tr('Importing…'));
+      files = await unpacked(files);
+    }
     const design = files.find((f) => isDesignName(f.name));
     if (design) return await importProjectFile(design);
     const urdf = files.find((f) => extension(f.name) === 'urdf');
     if (urdf) return await importRobot(urdf, files.filter((f) => f !== urdf));
-    const models = files.filter((f) => IMPORT_EXTENSIONS.includes(fileKind(f.name, f.bytes)));
-    const pictures = files.filter((f) => IMAGE_EXTENSIONS.includes(fileKind(f.name, f.bytes)));
+    const models = files.filter(isModel);
+    const pictures = files.filter((f) => isPicture(f) && !f.companion);
     if (models.length === 0 && pictures.length === 0) {
       if (files.some((f) => extension(f.name) === 'mtl')) notify(tr('A .mtl file holds the colors of an OBJ and is read with it: pick the .obj, together with the .mtl for its colors.'), 'error');
       else if (files.length) notify(tr('Cannot import that. Supported: {formats}.', { formats: IMPORTABLE.map((e) => e.toUpperCase()).join(', ') }), 'error');

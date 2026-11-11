@@ -5,6 +5,7 @@ import { build, exportColored, exportNodes, forgetAssets, massProperties, measur
 import { indexFeatures } from '../geometry/features';
 import { tr } from '../i18n';
 import { writeStep } from '../io/stepExport';
+import { unpackZip } from '../io/zip';
 import { readFile, readHeld } from './importing';
 import type { WorkerRequest, WorkerResponse } from './protocol';
 import { transferOf } from './transfer';
@@ -28,6 +29,8 @@ function answer(req: WorkerRequest, occ: Occ, draco: Draco): WorkerResponse | nu
       return readFile(req.id, req.name, req.bytes, req.companions, req.scale, occ, draco).then((result) => ({ type: 'imported' as const, id: req.id, result }));
     case 'importHeld':
       return { type: 'imported', id: req.id, result: readHeld(req.held, req.scale) };
+    case 'unzip':
+      return { type: 'unzipped', id: req.id, result: unpackZip(req.bytes) };
     case 'build':
       return { type: 'built', id: req.id, result: build(req.key, req.node) };
     case 'measure':
@@ -110,7 +113,7 @@ export function serve(post: Post, load: () => Promise<unknown>, occ?: Occ, draco
     // Imported data needs no kernel: it is taken in even while one fails to load, for the requests that follow.
     const stores = req.type === 'assets' || req.type === 'forgetAssets';
     // Nor does reading a file, or a mesh for the Measure tool.
-    const reads = req.type === 'import' || req.type === 'importHeld' || req.type === 'features';
+    const reads = req.type === 'import' || req.type === 'importHeld' || req.type === 'unzip' || req.type === 'features';
     try {
       if (!stores && !reads) await load();
     } catch (err) {

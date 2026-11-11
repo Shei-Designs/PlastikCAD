@@ -117,9 +117,9 @@ fn file_path(path: &str) -> FilePath {
 const DESIGN_EXTENSION: &str = "plastikcad";
 const OLD_DESIGN_EXTENSION: &str = "bashcad";
 /// What the app opens: designs, the models, drawings and pictures it imports, and what those name beside them
-/// (a material library, the data of a glTF file). Kept in step with the app's own lists by `src/nativeKinds.test.ts`.
+/// (a material library, the data of a glTF file), or an archive of them. Kept in step with the app's own lists by `src/nativeKinds.test.ts`.
 const READABLE: &[&str] = &[
-    DESIGN_EXTENSION, OLD_DESIGN_EXTENSION, "stl", "obj", "mtl", "3mf", "glb", "gltf", "bin", "dae", "ply", "step", "stp", "svg", "dxf", "urdf", "xacro", "png", "jpg", "jpeg",
+    DESIGN_EXTENSION, OLD_DESIGN_EXTENSION, "stl", "obj", "mtl", "3mf", "glb", "gltf", "bin", "dae", "ply", "step", "stp", "svg", "dxf", "urdf", "xacro", "png", "jpg", "jpeg", "zip",
 ];
 /// What the app saves: designs and exports.
 const WRITABLE: &[&str] = &[DESIGN_EXTENSION, "stl", "3mf", "obj", "mtl", "glb", "step", "svg", "dxf", "zip"];

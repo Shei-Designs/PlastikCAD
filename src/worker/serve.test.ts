@@ -1,3 +1,4 @@
+import { zipSync } from 'fflate';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it, vi } from 'vitest';
@@ -126,6 +127,18 @@ describe('the worker', () => {
     // What cannot be read is answered with words for the user.
     const [refused] = await ask({ type: 'import', id: 2, name: 'empty.stl', bytes: new Uint8Array(0), companions: [] });
     expect(refused).toEqual({ type: 'error', id: 2, message: 'This STL file is empty.' });
+  });
+
+  it('unpacks an archive without a kernel, into the files of it the app reads', async () => {
+    const { ask } = worker(Infinity);
+    const text = (s: string): Uint8Array => new TextEncoder().encode(s);
+    const archive = zipSync({ 'kit/part.obj': text('v 0 0 0\n'), 'kit/part.mtl': text('newmtl a\n'), 'kit/notes.txt': text('hello') });
+    const [unpacked] = await ask({ type: 'unzip', id: 1, bytes: archive });
+    if (unpacked.type !== 'unzipped') throw new Error(`unexpected answer: ${JSON.stringify(unpacked)}`);
+    expect(unpacked.result.map((f) => f.name)).toEqual(['kit/part.obj', 'kit/part.mtl']);
+    expect(new TextDecoder().decode(unpacked.result[0].bytes)).toBe('v 0 0 0\n');
+    const [refused] = await ask({ type: 'unzip', id: 2, bytes: text('not an archive at all') });
+    expect(refused).toEqual({ type: 'error', id: 2, message: 'This zip file is damaged or not supported.' });
   });
 
   it('holds a tiny file without a unit until it is told the unit', async () => {

@@ -164,6 +164,12 @@ export class GeometryClient {
     return this.send(request, options.handOver && whole ? [bytes.buffer] : []);
   }
 
+  /** The files of a zip archive that the app could read (see io/zip.ts). The archive is handed over: it is of no further use here. */
+  unzip(bytes: Uint8Array): Promise<Companion[]> {
+    const whole = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength && bytes.buffer instanceof ArrayBuffer;
+    return this.send({ type: 'unzip', bytes }, whole ? [bytes.buffer] : []);
+  }
+
   /** Tells the worker the unit (in millimeters) of the file it is holding, which `import` answered `kind: 'units'` for. */
   importHeld(held: number, scale: number): Promise<ImportResult> {
     return this.send({ type: 'importHeld', held, scale });

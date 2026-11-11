@@ -62,6 +62,8 @@ export interface Companion {
 export const IMPORT_EXTENSIONS = ['stl', 'obj', '3mf', 'glb', 'gltf', 'dae', 'ply', 'step', 'stp', 'svg', 'dxf'];
 /** The formats read by OpenCascade, which is loaded for them and so cannot answer at once (see importStep.ts). */
 export const STEP_EXTENSIONS = ['step', 'stp'];
+/** An archive of files the app reads, taken in their place (see zip.ts): not itself something to import. */
+export const ZIP_EXTENSION = 'zip';
 /** Pictures, which come in as picture sheets rather than solids. */
 export const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg'];
 
@@ -74,7 +76,7 @@ const extensionOf = (fileName: string): string => /\.([^./\\]+)$/.exec(fileName)
  */
 export function fileKind(fileName: string, bytes: Uint8Array): string {
   const extension = extensionOf(fileName);
-  if (IMPORT_EXTENSIONS.includes(extension) || IMAGE_EXTENSIONS.includes(extension)) return extension;
+  if (IMPORT_EXTENSIONS.includes(extension) || IMAGE_EXTENSIONS.includes(extension) || extension === ZIP_EXTENSION) return extension;
   return sniff(bytes);
 }
 
@@ -84,7 +86,8 @@ function sniff(bytes: Uint8Array): string {
   const [a, b, c, d] = bytes;
   if (a === 0x89 && b === 0x50 && c === 0x4e && d === 0x47) return 'png';
   if (a === 0xff && b === 0xd8 && c === 0xff) return 'jpg';
-  if (a === 0x50 && b === 0x4b && c === 0x03 && d === 0x04) return '3mf';
+  // A 3MF file is a zip archive that holds a model part; any other archive is taken for the files in it.
+  if (a === 0x50 && b === 0x4b && c === 0x03 && d === 0x04) return holds(bytes, '.model') ? '3mf' : ZIP_EXTENSION;
   if (a === 0x67 && b === 0x6c && c === 0x54 && d === 0x46) return 'glb';
   // A binary STL is exactly as long as its triangle count says.
   if (bytes.length >= 84) {
@@ -107,8 +110,10 @@ function sniff(bytes: Uint8Array): string {
  * Whether a glTF file says it is compressed with Draco, which is unpacked by a decoder that has to be
  * loaded first (see draco.ts) and handed to `importFile`.
  */
-export function needsDraco(bytes: Uint8Array): boolean {
-  const word = 'KHR_draco_mesh_compression';
+export const needsDraco = (bytes: Uint8Array): boolean => holds(bytes, 'KHR_draco_mesh_compression');
+
+/** Whether the bytes spell `word` somewhere. */
+function holds(bytes: Uint8Array, word: string): boolean {
   outer: for (let i = bytes.indexOf(word.charCodeAt(0)); i >= 0; i = bytes.indexOf(word.charCodeAt(0), i + 1)) {
     for (let k = 1; k < word.length; k++) if (bytes[i + k] !== word.charCodeAt(k)) continue outer;
     return true;

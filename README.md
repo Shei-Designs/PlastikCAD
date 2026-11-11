@@ -130,7 +130,7 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
 - **Import** – the button at the bottom of the library (or Ctrl+I) takes STL,
   OBJ, PLY, 3MF and GLB meshes, STEP solids from a CAD program, SVG and DXF drawings (extruded into a plate) and PNG or JPEG
   pictures; meshes and drawings then behave like any other object. Drop files
-  on the window.
+  on the window. A zip archive is taken for the files in it.
 - **Pictures** – the Picture tile in the library (or importing a PNG or JPEG)
   puts the picture on a sheet. Flat, it prints straight through onto the first
   surface behind it that faces it; wrapped, it is a band around its own axis,
@@ -628,6 +628,13 @@ left alone, since that is its shape.
   Each material comes in with its color (`Kd`)
   and picture (`map_Kd`), laid out by the file's texture coordinates. Without
   them, an OBJ comes in plain.
+- **Zip archives**: an archive is unpacked and what it holds taken as if
+  those files had been dropped together, so a model comes in with the
+  material library and pictures packed beside it, and a robot package the
+  app exported comes back as its robot. Every model in it is imported; its
+  pictures become picture sheets only when it holds nothing else to import
+  (a bundle's other maps and previews stay out). Only what the app reads is
+  unpacked, up to 512 MB.
 - **PLY**: text or binary, as scanners and mesh tools write it; the points
   and faces make one part. The colors a PLY file gives its points or its
   faces come in as a picture the part wears, each face in one color (its

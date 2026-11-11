@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { FILE_EXTENSION, LEGACY_EXTENSION } from './appInfo';
 import { FORMATS } from './io/export';
-import { IMAGE_EXTENSIONS, IMPORT_EXTENSIONS } from './io/import';
+import { IMAGE_EXTENSIONS, IMPORT_EXTENSIONS, ZIP_EXTENSION } from './io/import';
 
 const native = readFileSync(fileURLToPath(new URL('../src-tauri/src/lib.rs', import.meta.url)), 'utf8');
 
@@ -29,8 +29,8 @@ function kinds(list: string): string[] {
 describe('the kinds of file the native side lets through', () => {
   it('opens every kind the app imports, and what those files name beside them', () => {
     const readable = kinds('READABLE');
-    // A material library beside an OBJ, the data beside a glTF, and a robot description with its macros.
-    const beside = ['mtl', 'bin', 'urdf', 'xacro'];
+    // A material library beside an OBJ, the data beside a glTF, a robot description with its macros, and an archive of any of them.
+    const beside = ['mtl', 'bin', 'urdf', 'xacro', ZIP_EXTENSION];
     for (const extension of [FILE_EXTENSION, LEGACY_EXTENSION, ...IMPORT_EXTENSIONS, ...IMAGE_EXTENSIONS, ...beside]) {
       expect(readable, `.${extension} files are opened`).toContain(extension);
     }
@@ -46,6 +46,6 @@ describe('the kinds of file the native side lets through', () => {
 
   it('saves nothing the app does not write, and opens nothing it does not read', () => {
     expect([...kinds('WRITABLE')].sort()).toEqual([...new Set([FILE_EXTENSION, ...FORMATS.map((f) => f.extension), 'mtl', 'zip'])].sort());
-    expect([...kinds('READABLE')].sort()).toEqual([...new Set([FILE_EXTENSION, LEGACY_EXTENSION, ...IMPORT_EXTENSIONS, ...IMAGE_EXTENSIONS, 'mtl', 'bin', 'urdf', 'xacro'])].sort());
+    expect([...kinds('READABLE')].sort()).toEqual([...new Set([FILE_EXTENSION, LEGACY_EXTENSION, ...IMPORT_EXTENSIONS, ...IMAGE_EXTENSIONS, 'mtl', 'bin', 'urdf', 'xacro', ZIP_EXTENSION])].sort());
   });
 });
