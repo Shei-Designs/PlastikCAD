@@ -158,3 +158,65 @@ cut off from the session's keychain), installing an update, the Mac and
 Windows apps, a real tablet, and the tablet held sideways in the app
 itself.
 
+### Review 2: correctness and data safety (2026-11-11)
+
+Saving, the project folder, earlier saves, the trash, sync and the version
+rule, read end to end, with a test written for each finding that shows it
+(thirteen of them; not kept in the repository, to be turned into the tests
+of whatever is fixed). "Shown" below means such a test passes.
+
+Where work can be lost:
+
+1. **An autosave during a sync pass puts the old copy back over what was
+   just downloaded, and the next pass uploads it.** The other device's work
+   on the open project is gone here and on the Drive; only that device's
+   earlier saves still hold it. It needs an edit between the moment the
+   pass writes the open project and the end of the pass (seconds, longer
+   with large downloads): picking the tablet up and starting to edit is
+   that moment. A save never checks that the file is still the one the
+   editor loaded. Shown.
+2. **An import that ends after the scene changed commits the scene as it
+   was when it began**, into another project if one was opened meanwhile:
+   that project's objects are replaced and saved. Edits made during an
+   import in the same project go the same way. Undo brings them back in
+   that session. Shown.
+3. **Undo after a sync merge takes the other device's changes out again**,
+   and the next save uploads the result. Shown.
+4. **Two new projects of one name written at the same moment land in one
+   file** (a download named "Untitled" and a first autosave of a new
+   "Untitled"). A narrow window. Shown at the level of the store.
+5. **"Empty Trash" destroys what a sync pass moved there while its question
+   was up**, never having been listed. Narrow. Shown.
+6. On a Mac, two names that differ only in how an accent is written
+   ("é" as one character or two) are not seen as the same file. Not tried.
+
+Where the result is wrong:
+
+7. **A move of the projects folder that fails part-way** (a full USB
+   stick) leaves the app on the old folder without the projects already
+   moved, and the next pass deletes those from the Drive unasked. The files
+   are safe in the new folder. Shown.
+8. **A project that cannot be listed counts as deleted**: a file that
+   cannot be read for a moment, or a chosen folder on a drive that is not
+   mounted (it is made anew, empty), is carried to the Drive as a deletion,
+   unasked when it is one project or fewer than half. Shown.
+9. **A project file copied by hand keeps its id**: one of the two never
+   syncs, with no word, and they share their earlier saves. Shown.
+10. **A move of the projects folder leaves the Trash behind.** Shown.
+
+Smaller: a file of the first format already in the folder loses the saved
+versions it carries when opened, unasked; a field a newer app adds to an
+imported mesh or picture is dropped without the "newer version" refusal
+(nothing does so today); a name typed without its extension in the save
+box can replace a file unasked (the box checked the name as typed); a
+change of language reloads the app whether or not the save worked; a failed
+save is tried again only at the next edit.
+
+Found sound: a write never leaves a half file; a rename never lands on
+another project; an edit made during a save stays to be saved; closing,
+leaving a project, deleting and updating all hold on a failed save; the
+earlier saves kept and dropped; sync decides by revision and never by the
+clock, writes nothing it could not read whole (a cut-off file, a missing
+or damaged import), and its clean-up cannot touch anything on the device;
+a newer design is refused everywhere it could be opened or merged.
+
