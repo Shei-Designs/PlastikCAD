@@ -1,4 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it, vi } from 'vitest';
+import { loadOcc } from '../io/occ';
 import { assetCount, cacheSize, clearCache, forgetAssets, initKernel } from '../geometry/kernel';
 import { geomKey } from '../model/geomKey';
 import { makeShape } from '../model/ops';
@@ -148,6 +151,38 @@ describe('the worker', () => {
     const [plain] = await ask({ type: 'import', id: 5, name: 'bracket.obj', bytes: big, companions: [] });
     expect(plain.type === 'imported' && plain.result.kind).toBe('model');
   });
+
+  it('reads a STEP file with OpenCascade, loaded when the first one comes', async () => {
+    const posts: WorkerResponse[] = [];
+    let loads = 0;
+    const receive = serve(
+      (msg) => posts.push(msg),
+      () => Promise.reject(new Error('no kernel is needed')),
+      () => {
+        loads++;
+        return loadOcc({ wasmBinary: readFileSync(fileURLToPath(new URL('../../node_modules/replicad-opencascadejs/dist/replicad_single.wasm', import.meta.url))) });
+      },
+    );
+    const step = readFileSync(fileURLToPath(new URL('../../fixtures/step/plate.step', import.meta.url)));
+    // A plain file first: nothing is loaded for it.
+    receive({ type: 'import', id: 1, name: 'a.obj', bytes: new TextEncoder().encode('v 0 0 0\nv 20 0 0\nv 0 10 0\nv 0 0 5\nf 1 3 2\nf 1 2 4\nf 2 3 4\nf 1 4 3\n'), companions: [] });
+    await vi.waitFor(() => expect(posts).toHaveLength(1));
+    expect(loads).toBe(0);
+    receive({ type: 'import', id: 2, name: 'plate.step', bytes: new Uint8Array(step), companions: [] });
+    receive({ type: 'import', id: 3, name: 'unnamed', bytes: new Uint8Array(step), companions: [] });
+    await vi.waitFor(() => expect(posts).toHaveLength(3), { timeout: 30_000 });
+    const [, named, sniffed] = posts;
+    if (named.type !== 'imported' || named.result.kind !== 'model') throw new Error(`unexpected answer: ${JSON.stringify(named).slice(0, 200)}`);
+    expect(named.result.parts).toHaveLength(1);
+    expect(named.result.parts[0]).toMatchObject({ name: 'plate', size: [40, 30, 10], center: [20, 15, 5] });
+    // Told by its first line when its name does not say.
+    expect(sniffed.type === 'imported' && sniffed.result.kind).toBe('model');
+    // Where there is no OpenCascade to load (a test of the app without it), a STEP file is refused in words.
+    const bare: WorkerResponse[] = [];
+    serve((msg) => bare.push(msg), () => Promise.resolve())({ type: 'import', id: 1, name: 'plate.step', bytes: new Uint8Array(step), companions: [] });
+    await vi.waitFor(() => expect(bare).toHaveLength(1));
+    expect(bare[0]).toEqual({ type: 'error', id: 1, message: 'STEP files cannot be read here.' });
+  }, 60_000);
 
   it('reads what the Measure tool takes hold of, on a mesh placed by a matrix', async () => {
     const { ask } = worker(Infinity);

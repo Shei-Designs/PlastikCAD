@@ -10,7 +10,10 @@ import { transferOf } from './transfer';
 
 type Post = (msg: WorkerResponse, transfer: Transferable[]) => void;
 
-function answer(req: WorkerRequest): WorkerResponse | null {
+/** What the worker reads STEP files with, loaded when first asked for; none where STEP is not on offer. */
+type Occ = Parameters<typeof readFile>[5];
+
+function answer(req: WorkerRequest, occ: Occ): WorkerResponse | null | Promise<WorkerResponse> {
   switch (req.type) {
     case 'assets':
       setAssets(req.assets);
@@ -19,7 +22,7 @@ function answer(req: WorkerRequest): WorkerResponse | null {
       forgetAssets(req.keep);
       return null;
     case 'import':
-      return { type: 'imported', id: req.id, result: readFile(req.id, req.name, req.bytes, req.companions, req.scale) };
+      return readFile(req.id, req.name, req.bytes, req.companions, req.scale, occ).then((result) => ({ type: 'imported' as const, id: req.id, result }));
     case 'importHeld':
       return { type: 'imported', id: req.id, result: readHeld(req.held, req.scale) };
     case 'build':
@@ -69,7 +72,7 @@ export const kernelFault = (err: unknown): boolean => err instanceof WebAssembly
  * before every request: it answers at once when the kernel is there, and
  * tries again when the last attempt failed.
  */
-export function serve(post: Post, load: () => Promise<unknown>): (req: WorkerRequest) => void {
+export function serve(post: Post, load: () => Promise<unknown>, occ?: Occ): (req: WorkerRequest) => void {
   let queue: Promise<void> = Promise.resolve();
   const handle = async (req: WorkerRequest): Promise<void> => {
     // Imported data needs no kernel: it is taken in even while one fails to load, for the requests that follow.
@@ -83,7 +86,7 @@ export function serve(post: Post, load: () => Promise<unknown>): (req: WorkerReq
       return;
     }
     try {
-      const msg = answer(req);
+      const msg = await answer(req, occ);
       if (msg) post(msg, transferOf(msg));
     } catch (err) {
       const fault = kernelFault(err);

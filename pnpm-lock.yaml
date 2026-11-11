@@ -53,6 +53,9 @@ importers:
       react-dom:
         specifier: ^19.1.0
         version: 19.3.0(react@19.3.0)
+      replicad-opencascadejs:
+        specifier: 1.2.1
+        version: 1.2.1
       three:
         specifier: ^0.186.1
         version: 0.186.1
@@ -1274,6 +1277,9 @@ packages:
   react@19.3.0:
     resolution: {integrity: sha512-E8LUcbtBWt20bbl2YoHfx4ZDBdxVTfOKtCZn9cDSJ4l6/nuoApcpIBcj47t2wZoVX8g2ZHuMHbiShgCR1T5Sog==}
     engines: {node: '>=0.10.0'}
+
+  replicad-opencascadejs@1.2.1:
+    resolution: {integrity: sha512-nFWkL5+24JiN1sv5fLGhdQr3FKCOLR3PIBkeZJcLm37p4eraEtD7Jueo8dP2BoqClJwb9hTSkf2QMli3GVqhpg==}
 
   rolldown@1.2.16:
     resolution: {integrity: sha512-bWvlMpFKiTfDKfnK7FC2MPgPeWCf/Kpwsq49ApdW+FQaBZb6O6dZ4MAPbPUjp7hYQrw/RobqCzn64BRrQecGHw==}
@@ -2536,6 +2542,8 @@ snapshots:
       scheduler: 0.28.0
 
   react@19.3.0: {}
+
+  replicad-opencascadejs@1.2.1: {}
 
   rolldown@1.2.16:
     dependencies:

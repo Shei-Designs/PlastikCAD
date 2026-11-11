@@ -41,6 +41,6 @@ export default defineConfig(({ mode }) => ({
   optimizeDeps: {
     // The geometry and simulation workers are the only importers, so Vite would otherwise find
     // these dependencies after the first page load, re-optimise and reload the page mid-start.
-    include: ["manifold-3d", "@mujoco/mujoco"],
+    include: ["manifold-3d", "@mujoco/mujoco", "replicad-opencascadejs"],
   },
 }));

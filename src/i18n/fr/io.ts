@@ -23,6 +23,14 @@ export const io: Catalog = {
   // A file read in the geometry worker (worker/importing.ts)
   'The file is no longer at hand. Import it again.': 'Le fichier n’est plus disponible. Importez-le de nouveau.',
 
+  // STEP (importStep.ts)
+  'A STEP file cannot be read as part of another file.': 'Un fichier STEP ne peut pas être lu comme partie d’un autre fichier.',
+  'This STEP file is empty.': 'Ce fichier STEP est vide.',
+  'This STEP file has no shapes.': 'Ce fichier STEP ne contient aucune forme.',
+  'This STEP file is too detailed to open.': 'Ce fichier STEP est trop détaillé pour être ouvert.',
+  'STEP files cannot be read here.': 'Les fichiers STEP ne peuvent pas être lus ici.',
+  'The STEP reader could not be loaded.': 'Le lecteur STEP n’a pas pu être chargé.',
+
   // XML (xml.ts)
   'This file is nested too deeply to read.': 'Ce fichier est imbriqué trop profondément pour être lu.',
 

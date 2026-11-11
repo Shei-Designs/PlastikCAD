@@ -128,7 +128,7 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
   once; the un-ghost button (Shift+G, or the ghost mark on a row of the
   Objects list) brings them back.
 - **Import** – the button at the bottom of the library (or Ctrl+I) takes STL,
-  OBJ, 3MF and GLB meshes, SVG and DXF drawings (extruded into a plate) and PNG or JPEG
+  OBJ, 3MF and GLB meshes, STEP solids from a CAD program, SVG and DXF drawings (extruded into a plate) and PNG or JPEG
   pictures; meshes and drawings then behave like any other object. Drop files
   on the window.
 - **Pictures** – the Picture tile in the library (or importing a PNG or JPEG)
@@ -616,6 +616,12 @@ left alone, since that is its shape.
   came along, its texture; the file's own unit and up axis are honored, so a
   Blender or ROS mesh in meters, Z up, comes in at size. Skins and morphs
   show their base mesh; animation is ignored.
+- **STEP (.step, .stp)**: every solid of the file is a part, where the file
+  put it and at its size (STEP says its unit), its curved faces cut into flat
+  ones to within 0.02 mm; several solids come in as one group. The file is
+  read by [OpenCascade](https://dev.opencascade.org/), which is loaded when
+  the first STEP file is read rather than with the app. Colors and names in
+  the file are not read.
 - An imported picture shows on the mesh in the **Imported** texture mode; the
   mesh can still be given any other texture, wrapped or tiled.
 - **SVG**: shapes are grouped by fill color, each group a part of its own.
@@ -803,7 +809,7 @@ src/
   state/              the editor: selection, undo, projects, preferences, the test drive (store.ts is the one door to it, over the modules in store/)
   viewer/             three.js view: Viewer.ts and its parts (drawing, picking, handles, pointer input, measuring, the robot overlay)
   parts/              the part generators (gears, pulleys, threads, rails, ducts, boards, fans, cutouts, motors) and the mating-gear maths
-  io/                 STL, 3MF, OBJ, GLB, SVG, DXF, URDF, SDF, MJCF, USD writers; STL, OBJ, 3MF, GLB, Collada, SVG, DXF, URDF readers
+  io/                 STL, 3MF, OBJ, GLB, SVG, DXF, URDF, SDF, MJCF, USD writers; STL, OBJ, 3MF, GLB, Collada, STEP, SVG, DXF, URDF readers
   robot/              Robot mode: links and joints, materials and mass properties, checks, the export packages
   sim/                the test drive: MuJoCo (WebAssembly) in a worker
   sync/               Google sign-in (PKCE, loopback), Drive remote, three-way merge, sync engine
@@ -920,8 +926,9 @@ waits until someone needs it:
 - More parts: throated worm wheel, V-belt pulleys, imperial threads.
 - Assembly preview of meshing gears.
 - STEP export. Shapes and parts are already described as profiles and
-  operations rather than triangles, so a B-rep backend can evaluate the same
-  descriptions.
+  operations rather than triangles, so OpenCascade, which already reads STEP
+  files here, can evaluate the same descriptions into true planes and
+  cylinders.
 
 ## License
 
