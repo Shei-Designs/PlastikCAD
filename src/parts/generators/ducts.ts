@@ -99,7 +99,7 @@ function loft(stations: Station[], rings: Ring[]): Solid {
       positions[a + 2] * (positions[b] * positions[c + 1] - positions[b + 1] * positions[c]);
   }
   if (vol < 0) for (let t = 0; t < triangles.length; t += 3) [triangles[t + 1], triangles[t + 2]] = [triangles[t + 2], triangles[t + 1]];
-  return { op: 'mesh', positions, triangles };
+  return { op: 'mesh', positions, triangles, swept: { stations, rings } };
 }
 
 /** The same path with its two ends pushed out along their own direction, for a bore that must break through the end faces. */

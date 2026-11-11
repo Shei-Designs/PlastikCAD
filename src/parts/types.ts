@@ -19,13 +19,24 @@ export type Solid =
   | { op: 'revolve'; profile: Polygon; segments?: number }
   /** Cylinder / cone frustum along +Z from z=0. */
   | { op: 'cylinder'; radius: number; radiusTop?: number; height: number; segments?: number }
-  /** Closed, outward-facing (CCW) triangle mesh. */
-  | { op: 'mesh'; positions: number[]; triangles: number[] }
+  /** Closed, outward-facing (CCW) triangle mesh. `swept` says what it was lofted from, where it was. */
+  | { op: 'mesh'; positions: number[]; triangles: number[]; swept?: Swept }
   | { op: 'union' | 'intersection'; children: Solid[] }
   /** First child minus all the others. */
   | { op: 'difference'; children: Solid[] }
   /** Applied in the order mirror, rotate (degrees, XYZ), translate. */
   | { op: 'transform'; child: Solid; mirror?: Vec3; rotate?: Vec3; translate?: Vec3 };
+
+/**
+ * What a lofted mesh was made from: a ring of points at each station along a
+ * path, each ring in the plane its station's `u` and `v` span, around `p`.
+ * The mesh is what the kernel builds with; a writer that can make true
+ * surfaces (see io/stepExact.ts) makes the same solid from this instead.
+ */
+export interface Swept {
+  stations: { p: Vec3; u: Vec3; v: Vec3 }[];
+  rings: Polygon[];
+}
 
 export interface ExtrudeOptions {
   twist?: number;

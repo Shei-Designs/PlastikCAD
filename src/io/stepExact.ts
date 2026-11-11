@@ -20,7 +20,7 @@ import type { GroupNode, PartNode, SceneNode, ShapeNode, Vec3 } from '../model/t
 import { getGenerator } from '../parts/generators';
 import { sanitizeParams } from '../parts/generators/types';
 import { QUALITY } from '../parts/types';
-import type { Polygon, Shape2D, Solid } from '../parts/types';
+import type { Polygon, Shape2D, Solid, Swept } from '../parts/types';
 import { traceArcs } from './arcs';
 import { signedArea } from './outline';
 
@@ -47,6 +47,8 @@ class Builder {
     readonly oc: Oc,
     readonly keep: Keep,
     readonly tools: ExactTools,
+    /** Whether faces on one surface are made one (see `tidy`). */
+    readonly join = true,
   ) {}
 
   point(x: number, y: number, z: number): InstanceType<Oc['gp_Pnt']> {
@@ -192,6 +194,101 @@ class Builder {
     return this.result(new this.oc.BRepBuilderAPI_Transform(shape, move, true, false));
   }
 
+  // --- sweeps: a pipe's section carried along its path ------------------------------------------
+
+  /**
+   * A lofted mesh from what it was lofted from, stretch by stretch: a section carried straight on
+   * is a prism, one carried round a bend is turned about the bend's axis, and one that changes
+   * size on the way is a cone when it is round and stays on its axis, and otherwise the surface
+   * of straight lines from the one outline to the other. Anything else has no exact form.
+   */
+  swept({ stations, rings }: Swept): Shape {
+    const { oc } = this;
+    const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    const dot = (a: Vec3, b: Vec3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    const cross = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    const along = (p: Vec3, d: Vec3, by: number): Vec3 => [p[0] + d[0] * by, p[1] + d[1] * by, p[2] + d[2] * by];
+    const length = (a: Vec3): number => Math.hypot(a[0], a[1], a[2]);
+    const close = (a: Vec3, b: Vec3, within = 1e-6): boolean => length(sub(a, b)) <= within;
+    const sameRing = (a: Polygon, b: Polygon): boolean => a.length === b.length && a.every((q, k) => Math.hypot(q[0] - b[k][0], q[1] - b[k][1]) <= 1e-9);
+    type Station = Swept['stations'][number];
+    const place = (s: Station) => ([x, y]: [number, number]): Vec3 => along(along(s.p, s.u, x), s.v, y);
+    /** The section at a station as a face. */
+    const section = (i: number): Shape => {
+      const [face] = this.faces([rings[i]], place(stations[i]));
+      return face;
+    };
+    /** The bend two stations are on, if they are on one: the section's plane turned about an axis along `v`. */
+    const bend = (a: Station, b: Station): { center: Vec3; angle: number } | null => {
+      if (!close(a.v, b.v)) return null;
+      const turn = sub(a.u, b.u);
+      if (length(turn) < 1e-9) return null;
+      // The one point both sections stand off by the same distance along their `u`: the middle of the bend.
+      const off = dot(sub(b.p, a.p), turn) / dot(turn, turn);
+      const center = along(a.p, a.u, off);
+      if (!close(center, along(b.p, b.u, off), 1e-6 * Math.max(1, Math.abs(off)))) return null;
+      return { center, angle: Math.atan2(dot(cross(a.u, b.u), a.v), dot(a.u, b.u)) };
+    };
+    const pieces: Shape[] = [];
+    let i = 0;
+    while (i + 1 < stations.length) {
+      const a = stations[i];
+      const b = stations[i + 1];
+      const step = sub(b.p, a.p);
+      if (close(a.u, b.u) && close(a.v, b.v)) {
+        // Carried on without turning: straight along the section's own normal, or it is skewed.
+        const normal = cross(a.u, a.v);
+        const run = dot(step, normal);
+        if (!close(step, along([0, 0, 0], normal, run), 1e-6 * Math.max(1, length(step))) || Math.abs(run) < 1e-9) none();
+        if (sameRing(rings[i], rings[i + 1])) pieces.push(this.result(new oc.BRepPrimAPI_MakePrism(section(i), this.keep(new oc.gp_Vec(...step)), false, true)));
+        else pieces.push(this.taper(rings[i], rings[i + 1], a, b, normal, run));
+        i++;
+        continue;
+      }
+      // Turned: every station from here on that is on the same bend makes one piece with it.
+      const first = sameRing(rings[i], rings[i + 1]) ? bend(a, b) : null;
+      if (!first || first.angle === 0) return none();
+      let total = first.angle;
+      let j = i + 1;
+      while (j + 1 < stations.length && sameRing(rings[j], rings[j + 1])) {
+        const next = bend(stations[j], stations[j + 1]);
+        if (!next || !close(next.center, first.center, 1e-6 * Math.max(1, length(first.center))) || next.angle * first.angle <= 0) break;
+        total += next.angle;
+        j++;
+      }
+      // A full turn or more would run into itself.
+      if (Math.abs(total) >= 2 * Math.PI - 1e-9) none();
+      const way = total > 0 ? 1 : -1;
+      const axis = this.keep(new oc.gp_Ax1(this.point(...first.center), this.keep(new oc.gp_Dir(a.v[0] * way, a.v[1] * way, a.v[2] * way))));
+      pieces.push(this.result(new oc.BRepPrimAPI_MakeRevol(section(i), axis, Math.abs(total), false)));
+      i = j;
+    }
+    return this.fuse(pieces);
+  }
+
+  /** A section that changes from one outline to another between two stations facing the same way, `run` apart along `normal`. */
+  private taper(from: Polygon, to: Polygon, a: Swept['stations'][number], b: Swept['stations'][number], normal: Vec3, run: number): Shape {
+    const { oc } = this;
+    const [near0, far] = [traceArcs(from), traceArcs(to)];
+    const centered = (t: ReturnType<typeof traceArcs>): t is { circle: { center: [number, number]; radius: number } } => 'circle' in t && Math.hypot(t.circle.center[0], t.circle.center[1]) <= 1e-9;
+    if (centered(near0) && centered(far)) {
+      // Round and on its axis at both ends: a cone, its side a straight line turned round the axis.
+      const [r0, r1] = [near0.circle.radius, far.circle.radius];
+      const at = ([r, z]: [number, number]): Vec3 => [a.p[0] + a.u[0] * r + normal[0] * z, a.p[1] + a.u[1] * r + normal[1] * z, a.p[2] + a.u[2] * r + normal[2] * z];
+      const [face] = this.faces([[[0, 0], [r0, 0], [r1, run], [0, run]]], at);
+      const axis = this.keep(new oc.gp_Ax1(this.point(...a.p), this.keep(new oc.gp_Dir(...normal))));
+      return this.result(new oc.BRepPrimAPI_MakeRevol(face, axis, false));
+    }
+    // Any other pair of outlines: straight lines from each point of the one to its like on the other.
+    const through = this.keep(new oc.BRepOffsetAPI_ThruSections(true, true, 1e-6));
+    const put = (s: Swept['stations'][number]) => ([x, y]: [number, number]): Vec3 => [s.p[0] + s.u[0] * x + s.v[0] * y, s.p[1] + s.u[1] * x + s.v[1] * y, s.p[2] + s.u[2] * x + s.v[2] * y];
+    through.AddWire(this.wire(from, put(a)));
+    through.AddWire(this.wire(to, put(b)));
+    through.Build(this.keep(new oc.Message_ProgressRange()));
+    if (!through.IsDone()) none();
+    return this.keep(through.Shape());
+  }
+
   // --- parts: a generator's description --------------------------------------------------------
 
   described(solid: Solid): Shape {
@@ -211,7 +308,8 @@ class Builder {
       case 'revolve':
         return this.turned(solid.profile);
       case 'mesh':
-        return none();
+        // Only one that says what it was lofted from has another form than its triangles.
+        return solid.swept ? this.swept(solid.swept) : none();
       case 'union':
         return this.fuse(solid.children.map((c) => this.described(c)));
       case 'intersection': {
@@ -245,7 +343,18 @@ class Builder {
     const scale = node.size[0] / node.natural[0];
     if (!node.size.every((s, i) => near(s / node.natural[i], scale))) none();
     const center = [0, 1, 2].map((i) => (box.min[i] + box.max[i]) / 2);
-    return this.moved(this.described(built.solid), [scale, 0, 0, 0, scale, 0, 0, 0, scale, -center[0] * scale, -center[1] * scale, -center[2] * scale]);
+    return this.moved(this.tidy(this.described(built.solid)), [scale, 0, 0, 0, scale, 0, 0, 0, scale, -center[0] * scale, -center[1] * scale, -center[2] * scale]);
+  }
+
+  /**
+   * `shape` with its faces that are parts of one surface made one face: the two halves a round wall
+   * is drawn in, the pieces a cut left of a flat. Left as it is when the builder was told not to.
+   */
+  tidy(shape: Shape): Shape {
+    if (!this.join) return shape;
+    const unify = this.keep(new this.oc.ShapeUpgrade_UnifySameDomain(shape, true, true, false));
+    unify.Build();
+    return this.keep(unify.Shape());
   }
 
   // --- the basic shapes ----------------------------------------------------------------------------
@@ -409,21 +518,24 @@ function measured(oc: Oc, shape: Shape, keep: Keep): { volume: number; bounds: B
  * facets, its box to a twentieth of a millimeter.
  */
 export function exactShape(oc: Oc, node: SceneNode, expect: { volume: number; bounds: Bounds }, tools: ExactTools, keep: Keep): Shape | null {
-  let shape: Shape;
-  try {
-    shape = new Builder(oc, keep, tools).placed(node);
-  } catch {
-    // No exact form, or OpenCascade gave up on it (it says so by an exception of its own).
-    return null;
-  }
-  try {
-    const got = measured(oc, shape, keep);
-    if (!(Math.abs(got.volume - expect.volume) <= 0.005 * expect.volume)) return null;
-    for (let i = 0; i < 3; i++) {
-      if (Math.abs(got.bounds.min[i] - expect.bounds.min[i]) > 0.05 || Math.abs(got.bounds.max[i] - expect.bounds.max[i]) > 0.05) return null;
+  // With its faces joined where they lie on one surface, and failing that as it was built: two round
+  // pipes of one size that cross touch along a line, and joining faces there has been seen to lose one of them.
+  for (const join of [true, false]) {
+    let shape: Shape;
+    try {
+      shape = new Builder(oc, keep, tools, join).placed(node);
+    } catch {
+      // No exact form, or OpenCascade gave up on it (it says so by an exception of its own).
+      continue;
     }
-    return shape;
-  } catch {
-    return null;
+    try {
+      const got = measured(oc, shape, keep);
+      if (!(Math.abs(got.volume - expect.volume) <= 0.005 * expect.volume)) continue;
+      if ([0, 1, 2].some((i) => Math.abs(got.bounds.min[i] - expect.bounds.min[i]) > 0.05 || Math.abs(got.bounds.max[i] - expect.bounds.max[i]) > 0.05)) continue;
+      return shape;
+    } catch {
+      continue;
+    }
   }
+  return null;
 }
