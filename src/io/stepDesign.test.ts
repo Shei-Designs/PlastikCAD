@@ -204,6 +204,8 @@ describe('the design as a STEP file', () => {
       expect(roundTrip(partNode('elbow'))).toMatchObject({ exact: true, tori: 2, cylinders: 4, planes: 2 });
       // Without legs, solid, at another angle: the bend alone.
       expect(roundTrip(partNode('elbow', { legA: 0, legB: 0, wall: 0, angle: 45 }))).toMatchObject({ exact: true, tori: 1, cylinders: 0, planes: 2 });
+      // Hollow and without legs: the bore runs straight out through each end, which leaves the bend the bend it is.
+      expect(roundTrip(partNode('elbow', { legA: 0, legB: 0 }))).toMatchObject({ exact: true, tori: 2, cylinders: 0, planes: 2 });
       // A rectangular one bends in cylinders, flat rings and, round its corners, tori.
       const duct = roundTrip(partNode('elbow', { section: 'rect', angle: 120 }));
       expect(duct.exact).toBe(true);
