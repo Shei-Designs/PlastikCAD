@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { marked, tr } from '../i18n';
-import { answer, useQuestion } from './ask';
+import { answer, answerPick, useQuestion } from './ask';
 import { Modal } from './Modal';
 
 /** The box the questions in `ask.ts` are put in. */
@@ -16,6 +16,9 @@ export function AskDialog() {
       setTimeout(() => box.current?.select(), 0);
     }
   }, [question]);
+  // Which of a list are ticked, by their place in it; none whenever a new list is put up.
+  const [picked, setPicked] = useState<ReadonlySet<number>>(new Set());
+  useEffect(() => setPicked(new Set()), [question]);
   const back = () => answer(null);
   return (
     <Modal open={Boolean(question)} onClose={back} className="ask" label={question?.title}>
@@ -40,6 +43,45 @@ export function AskDialog() {
               {tr('Cancel')}
             </button>
             <button type="submit" className="primary" disabled={text.trim() === ''}>
+              {question.okLabel}
+            </button>
+          </div>
+        </form>
+      )}
+      {question?.kind === 'pick' && (
+        <form
+          className="ask-body"
+          onSubmit={(e) => {
+            e.preventDefault();
+            answerPick([...picked].sort((a, b) => a - b));
+          }}
+        >
+          <h2>{question.title}</h2>
+          <p>{question.text}</p>
+          <ul className="ask-picks">
+            {question.items.map((item, i) => (
+              <li key={i}>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={picked.has(i)}
+                    onChange={(e) => {
+                      const next = new Set(picked);
+                      if (e.target.checked) next.add(i);
+                      else next.delete(i);
+                      setPicked(next);
+                    }}
+                  />
+                  <span>{item}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+          <div className="ask-buttons">
+            <button type="button" className="chip" onClick={back}>
+              {tr('Skip')}
+            </button>
+            <button type="submit" className="primary" disabled={picked.size === 0}>
               {question.okLabel}
             </button>
           </div>
