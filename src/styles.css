@@ -3026,6 +3026,14 @@ kbd {
   gap: 8px;
 }
 
+/* Whether the app looks for a newer version by itself: a switch and its words on one line. */
+.about-auto {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+}
+
 /* The About box's buttons, and the report shown where it could not be copied. */
 .about-actions {
   display: flex;

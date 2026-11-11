@@ -624,6 +624,24 @@ describe('design files', () => {
     }
   });
 
+  it('refuses a strict file whose imported data carries a field it does not know, and reads the same from before', () => {
+    const withAssets = (extra: Record<string, unknown>, version: number): string => {
+      const raw = JSON.parse(serializeDoc(emptyDoc())) as Record<string, unknown>;
+      raw.version = version;
+      raw.assets = {
+        m1: { kind: 'mesh', positions: 'AAAA', triangles: 'AAAA', ...(extra.mesh as object) },
+        o1: { kind: 'outline', shapes: [{ contours: [[[0, 0], [1, 0], [0, 1]]], evenodd: false, ...(extra.shape as object) }], ...(extra.outline as object) },
+        i1: { kind: 'image', name: 'a.png', mime: 'image/png', data: 'AAAA', width: 2, height: 2, ...(extra.image as object) },
+      };
+      return JSON.stringify(raw, null, 2);
+    };
+    expect(Object.keys(parseDoc(withAssets({}, 3)).assets).sort()).toEqual(['i1', 'm1', 'o1']);
+    for (const extra of [{ mesh: { normals: 'AAAA' } }, { outline: { units: 'mm' } }, { shape: { stroke: 1 } }, { image: { dpi: 300 } }]) {
+      expect(() => parseDoc(withAssets(extra, 3)), JSON.stringify(extra)).toThrow(NewerVersion);
+      expect(Object.keys(parseDoc(withAssets(extra, 2)).assets).length, JSON.stringify(extra)).toBe(3);
+    }
+  });
+
   it('reads a newer build\'s file for a copy, leaving out what it does not know and saying how much that was', () => {
     const { text, def, option } = withRobot();
     const whole = parseDoc(text);

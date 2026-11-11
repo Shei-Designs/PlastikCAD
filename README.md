@@ -8,8 +8,10 @@ Drop boxes, cylinders and wedges on the plate, add a gear, a pulley or a
 threaded rod made to your numbers, turn some of it into holes, group, and
 export a file for your slicer.
 
-Runs locally on Linux, Windows, macOS and Android; nothing leaves your machine
-unless you link a Google Drive. Free software under the GPL-3.0.
+Runs locally on Linux, Windows, macOS and Android. Nothing of yours leaves
+your machine unless you link a Google Drive; the desktop app asks the releases
+page for a newer version when it starts, which **File → About** turns off.
+Free software under the GPL-3.0.
 
 PlastikCAD is a [Shei Designs](https://sheidesigns.com) project, designed and
 built by [Andrew O'Shei](https://andrewoshei.com).
@@ -25,7 +27,8 @@ Installers for Windows, macOS (Apple Silicon and Intel) and Linux (AppImage,
 [releases page](https://github.com/Shei-Designs/PlastikCAD/releases/latest),
 which also says which file to pick and how to get past the first-launch
 warning: the builds are not code-signed yet. The desktop app looks for a
-newer version when it starts and from **File → About**, and installs it when
+newer version when it starts (a switch in **File → About** turns that off)
+and whenever asked there, and installs it when
 you say so: it saves the design, fetches the update, checks it against the
 app's own key, and starts again. A copy installed as a Linux package (`.deb`,
 `.rpm`) is shown the way to the releases instead, since only the system can
