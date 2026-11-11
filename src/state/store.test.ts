@@ -746,6 +746,22 @@ describe('projects', () => {
     await store.saveProject();
     const text = await kept.read('mem:1');
     deletable = true;
+    try {
+      await store.receiveFiles([{ name: 'shared.plastikcad', path: '/elsewhere/shared.plastikcad', bytes: new TextEncoder().encode(text) }]);
+    } finally {
+      deletable = false;
+    }
+    expect(told.pop()?.actions).toEqual(['Delete the file', 'Keep the file']);
+    expect(deleted).toEqual(['/elsewhere/shared.plastikcad']);
+    expect(store.getState().notice?.text).toMatch(/Deleted shared.plastikcad/);
+    deleted.length = 0;
+  });
+
+  it('keeps that file when the box is left by Escape or a press beside it, which give the last action', async () => {
+    store.addShape('box');
+    await store.saveProject();
+    const text = await kept.read('mem:1');
+    deletable = true;
     choose = (actions) => actions[actions.length - 1];
     try {
       await store.receiveFiles([{ name: 'shared.plastikcad', path: '/elsewhere/shared.plastikcad', bytes: new TextEncoder().encode(text) }]);
@@ -753,10 +769,9 @@ describe('projects', () => {
       deletable = false;
       choose = (actions) => actions[0];
     }
-    expect(told.pop()?.actions).toEqual(['Keep the file', 'Delete the file']);
-    expect(deleted).toEqual(['/elsewhere/shared.plastikcad']);
-    expect(store.getState().notice?.text).toMatch(/Deleted shared.plastikcad/);
-    deleted.length = 0;
+    expect(told.pop()?.actions).toEqual(['Delete the file', 'Keep the file']);
+    expect(deleted).toEqual([]);
+    expect(store.getState().projectKey).toBe('mem:2');
   });
 
   it('takes in what a sync pass changed under the open project, merging edits not yet saved', async () => {
