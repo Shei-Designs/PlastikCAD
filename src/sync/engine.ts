@@ -208,12 +208,17 @@ export async function synchronize(local: ProjectStore, remote: Remote, state: Sy
   };
 
   const writeLocal = async (info: ProjectInfo | undefined, name: string, text: string): Promise<string> => {
-    if (info) {
-      await untouched(info);
-      // What is here goes into the project's earlier saves first: this is a replacement nobody on this device made.
-      await local.keep?.(info.key, true);
-    }
-    const key = await local.write(info?.key ?? null, name, text);
+    // The look and the write as one turn of the store: the editor's save, which looks before it writes as well,
+    // cannot land between the two and be written over, nor write over this.
+    const replace = async (): Promise<string> => {
+      if (info) {
+        await untouched(info);
+        // What is here goes into the project's earlier saves first: this is a replacement nobody on this device made.
+        await local.keep?.(info.key, true);
+      }
+      return local.write(info?.key ?? null, name, text);
+    };
+    const key = await (local.exclusive ? local.exclusive(replace) : replace());
     report.changedKeys.push(key);
     if (info && key !== info.key) report.movedKeys.push({ from: info.key, to: key });
     return key;

@@ -107,6 +107,7 @@ export const state: Catalog = {
   'Material libraries and pictures': 'Bibliothèques de matériaux et images',
   '{name}: {message}': '{name}\u00a0: {message}',
   '"{name}" is flat or empty, so it cannot be made into a solid.': '«\u00a0{name}\u00a0» est plat ou vide et ne peut donc pas devenir un solide.',
+  'The import was dropped: another project was opened before it ended.': 'L’importation a été abandonnée\u00a0: un autre projet a été ouvert avant qu’elle ne se termine.',
   Pictures: 'Images',
   'A .mtl file holds the colors of an OBJ and is read with it: pick the .obj, together with the .mtl for its colors.':
     'Un fichier .mtl contient les couleurs d’un OBJ et se lit avec lui\u00a0: choisissez le .obj, accompagné du .mtl pour ses couleurs.',

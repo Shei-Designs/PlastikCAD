@@ -149,6 +149,8 @@ async function importModels(files: PickedFile[], companions: PickedFile[]): Prom
   const assets = { ...getState().doc.assets };
   const placed: SceneNode[] = [];
   let scene = getState().doc.scene;
+  // Reading a file takes a while, and the window stays in use meanwhile: the design this import is for.
+  const home = getState().doc.id;
   let x = 0;
   const put = (node: SceneNode) => {
     node.pos = tidyVec([x + node.size[0] / 2, 0, node.size[2] / 2]);
@@ -171,11 +173,13 @@ async function importModels(files: PickedFile[], companions: PickedFile[]): Prom
     }
   }
   if (placed.length === 0 && failed.length) throw new Error(failed.join(' '));
+  elsewhere(home);
   // Center the row on the plate.
   const shift = (x - 5) / 2;
   for (const n of placed) n.pos = tidyVec([n.pos[0] - shift, n.pos[1], n.pos[2]]);
-  replaceState({ ...getState(), doc: { ...getState().doc, assets }, placing: null });
-  commit(scene, { selection: placed.map((n) => n.id) });
+  // Added to the design as it is now, not as it was when the reading began: what was changed meanwhile stays changed.
+  replaceState({ ...getState(), doc: { ...getState().doc, assets: { ...getState().doc.assets, ...assets } }, placing: null });
+  commit([...getState().doc.scene, ...placed], { selection: placed.map((n) => n.id) });
   if (failed.length) notify(failed.join(' '), 'error');
   return used;
 
@@ -192,6 +196,7 @@ async function importModels(files: PickedFile[], companions: PickedFile[]): Prom
         if (!node) continue;
         node.pos = tidyVec(part.center);
         if (part.image) {
+          elsewhere(home);
           const key = await addImage({ name: part.image.name, path: null, bytes: part.image.bytes }, part.image.mime);
           assets[key] = getState().doc.assets[key];
           node.texture = { asset: key, mode: part.asset.uv ? 'own' : 'wrap', scale: 50, turn: 0 };
@@ -220,8 +225,9 @@ async function importModels(files: PickedFile[], companions: PickedFile[]): Prom
       put(members[0]);
       return;
     }
+    elsewhere(home);
     // The assets must be in the design before the kernel can measure the parts.
-    replaceState({ ...getState(), doc: { ...getState().doc, assets } });
+    replaceState({ ...getState(), doc: { ...getState().doc, assets: { ...getState().doc.assets, ...assets } } });
     const group = await buildGroup(members, false, name).catch((e: unknown) => {
       if (e instanceof Cancelled) throw e;
       return null;
@@ -331,8 +337,10 @@ export async function addPicture(): Promise<void> {
 async function importPictures(files: PickedFile[]): Promise<void> {
   const nodes: PictureNode[] = [];
   let scene = getState().doc.scene;
+  const home = getState().doc.id;
   let x = 0;
   for (const file of files) {
+    elsewhere(home);
     const node = makePicture(await addImage(file));
     node.name = uniqueName(scene, node.name);
     node.pos = tidyVec([x + node.size[0] / 2, 0, node.size[2] / 2]);
@@ -340,10 +348,20 @@ async function importPictures(files: PickedFile[]): Promise<void> {
     nodes.push(node);
     scene = [...scene, node];
   }
+  elsewhere(home);
   const shift = (x - 5) / 2;
   for (const n of nodes) n.pos = tidyVec([n.pos[0] - shift, n.pos[1], n.pos[2]]);
   replaceState({ ...getState(), placing: null, bin: false });
-  commit(scene, { selection: nodes.map((n) => n.id) });
+  commit([...getState().doc.scene, ...nodes], { selection: nodes.map((n) => n.id) });
+}
+
+/**
+ * Stops an import whose design is no longer the one on the plate: another project was opened while its files were
+ * being read. What it read is dropped, since put into the project now open it would replace that project's objects
+ * with those of the one it began in.
+ */
+function elsewhere(home: string): void {
+  if (getState().doc.id !== home) throw new Error(tr('The import was dropped: another project was opened before it ended.'));
 }
 
 /** Pick a picture file for a texture and keep it in the design. Returns its key, or null if canceled. */

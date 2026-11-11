@@ -806,7 +806,7 @@ describe('projects', () => {
     ]);
     expect(store.isDirty()).toBe(true);
     // The open project renamed on the other side: the editor follows the file.
-    const moved = await kept.write(null, 'Plate 2', serializeDoc({ ...next, name: 'Plate 2' }));
+    const moved = await kept.write(null, 'Plate 2', serializeDoc({ ...next, name: 'Plate 2', revision: 'remoterev3' }));
     await store.applySyncReport({ ...report, changedKeys: [moved], movedKeys: [{ from: key, to: moved }] });
     expect(store.getState().projectKey).toBe(moved);
     expect(store.getState().doc.name).toBe('Plate 2');

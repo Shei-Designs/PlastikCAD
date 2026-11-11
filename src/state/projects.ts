@@ -57,6 +57,23 @@ export interface ProjectStore {
   keep?(key: string, always?: boolean): Promise<void>;
   /** The earlier saves kept of a project, newest first. Each is read like a project, by its key. */
   versions?(id: string): Promise<VersionInfo[]>;
+  /**
+   * Runs a look at what is stored together with the write that relies on it, with no other such pair in between:
+   * the editor's save and a sync pass each check that a file is still the one they know before they replace it,
+   * and neither may write between the other's check and its write.
+   */
+  exclusive?<T>(run: () => Promise<T>): Promise<T>;
+}
+
+/** One at a time, in the order asked; one that fails does not hold up the next. */
+export class Turns {
+  private last: Promise<unknown> = Promise.resolve();
+
+  take<T>(run: () => Promise<T>): Promise<T> {
+    const next = this.last.then(run, run);
+    this.last = next.catch(() => undefined);
+    return next;
+  }
 }
 
 /** An earlier save of a project, kept beside the projects. */
@@ -158,8 +175,15 @@ const join = (dir: string, name: string): string => (dir.endsWith('/') || dir.en
 /** The desktop app's projects folder. Headers are read from the start of each file and remembered until the file changes. */
 export class DiskProjects implements ProjectStore {
   private heads = new Map<string, { modified: number; size: number; header: DocHeader }>();
+  private readonly pairs = new Turns();
+  /** Writes go one at a time: a new project looks for a free name and then takes it, and two at once would take the same one. */
+  private readonly writes = new Turns();
 
   constructor(readonly location: string) {}
+
+  exclusive<T>(run: () => Promise<T>): Promise<T> {
+    return this.pairs.take(run);
+  }
 
   list(): Promise<ProjectInfo[]> {
     return this.listIn(this.location);
@@ -204,7 +228,11 @@ export class DiskProjects implements ProjectStore {
     return decoder.decode((await platform.readPath(key)).bytes);
   }
 
-  async write(key: string | null, name: string, text: string): Promise<string> {
+  write(key: string | null, name: string, text: string): Promise<string> {
+    return this.writes.take(() => this.writeNow(key, name, text));
+  }
+
+  private async writeNow(key: string | null, name: string, text: string): Promise<string> {
     const wanted = fileNameFor(name);
     let target = key;
     if (!key || !sameFile(baseName(key), wanted)) {
@@ -311,6 +339,11 @@ export class MemoryProjects implements ProjectStore {
   private kept = new Map<string, number>();
   private serial = 0;
   private clock = 0;
+  private readonly pairs = new Turns();
+
+  exclusive<T>(run: () => Promise<T>): Promise<T> {
+    return this.pairs.take(run);
+  }
 
   async list(): Promise<ProjectInfo[]> {
     return this.infos(this.records);
@@ -461,8 +494,14 @@ function transact<T>(name: string, mode: IDBTransactionMode, run: (tx: IDBTransa
 export class DbProjects implements ProjectStore {
   readonly location = null;
 
+  private readonly pairs = new Turns();
+
   /** `name` is the database: the projects have one, the custom parts another. */
   constructor(private readonly name: string = FILE_FORMAT) {}
+
+  exclusive<T>(run: () => Promise<T>): Promise<T> {
+    return this.pairs.take(run);
+  }
 
   async list(): Promise<ProjectInfo[]> {
     const rows = await transact<MetaRecord[]>(this.name, 'readonly', (tx) => tx.objectStore(META).getAll());
