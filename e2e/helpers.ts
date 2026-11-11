@@ -17,6 +17,7 @@ type Internals = any;
 const STORE = '/src/state/store.ts';
 const VIEWPORT = '/src/ui/Viewport.tsx';
 const INPUT_MODE = '/src/ui/inputMode.ts';
+const BACK = '/src/ui/back.ts';
 const PROJECTS = '/src/state/projects.ts';
 const APP_INFO = '/src/appInfo.ts';
 const EXPORT = '/src/io/export.ts';
@@ -69,6 +70,11 @@ function withModules<R>(page: Page, paths: string[], fn: (...args: Internals[]) 
 /** Runs `fn` in the page with the store, as the app's own code would call it. */
 export function store<R, A = undefined>(page: Page, fn: (m: Store, arg: A) => R | Promise<R>, arg?: A): Promise<Awaited<R>> {
   return withModules(page, [STORE], fn, arg);
+}
+
+/** Android's Back, as the app answers it: true when there was something to go back from. */
+export function back(page: Page): Promise<boolean> {
+  return withModules(page, [BACK], (m: { backOut: () => boolean }) => m.backOut());
 }
 
 /** The same with the projects store as well, for the tests that look at what was saved. */

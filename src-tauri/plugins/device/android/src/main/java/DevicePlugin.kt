@@ -504,6 +504,13 @@ class DevicePlugin(activity: Activity) : Plugin(activity), InputManager.InputDev
     }
   }
 
+  /** Puts the app behind the others, as Back does from an app's first screen. Nothing is closed: it comes back as it was. */
+  @Command
+  fun leave(invoke: Invoke) {
+    host.moveTaskToBack(true)
+    invoke.resolve()
+  }
+
   @Command
   fun state(invoke: Invoke) {
     // Asked afresh: the insets are read again in case a change went by unseen.

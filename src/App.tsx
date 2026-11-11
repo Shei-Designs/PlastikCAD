@@ -52,6 +52,7 @@ import {
   ungroupSelected,
   useEditor,
 } from './state/store';
+import { backOut } from './ui/back';
 import { ErrorBoundary } from './ui/ErrorBoundary';
 import { narrowWindow } from './state/persist';
 import { Inspector } from './ui/Inspector';
@@ -269,6 +270,7 @@ export default function App() {
     // Changes are written as they happen; closing or hiding the window writes whatever is still pending.
     const stopGuard = platform.guardClose(isDirty, () => saveProject(true));
     const stopHidden = platform.onHidden(() => void saveProject(true));
+    const stopBack = platform.onBack(backOut);
     // The browser's own menu has nothing to offer here, and right-drag orbits.
     const noMenu = (e: MouseEvent) => {
       if (!typing(e.target)) e.preventDefault();
@@ -281,6 +283,7 @@ export default function App() {
       stopOpened();
       stopGuard();
       stopHidden();
+      stopBack();
     };
   }, []);
 
