@@ -160,6 +160,14 @@ export const partsDrive: Catalog = {
   'Mating gear': 'Engrenage conjugué',
   'Helical, {angle} helix, left-handed, normal module {module}': 'Hélicoïdal, hélice de {angle} à gauche, module réel {module}',
   'Helical, {angle} helix, right-handed, normal module {module}': 'Hélicoïdal, hélice de {angle} à droite, module réel {module}',
+  // V-belt pulleys (vbelt.ts)
+  'V-belt pulley': 'Poulie trapézoïdale',
+  'Pulley for V-belts: classical sections Z to C and narrow sections SPZ to SPC, with one groove or several.': 'Poulie pour courroies trapézoïdales\u00a0: sections classiques Z à C et sections étroites SPZ à SPC, à une ou plusieurs gorges.',
+  'Datum diameter': 'Diamètre de référence',
+  'Sets the diameter the belt runs at, a little below the rim.': 'Définit le diamètre auquel la courroie travaille, un peu sous la jante.',
+  Grooves: 'Gorges',
+  'Groove angle': 'Angle de gorge',
+  'Standard [[groove angle]]': 'Normalisé',
 
   // The chain sprocket (parts/generators/sprocket.ts)
   '#41 (1/2" narrow)': '#41 (1/2" étroite)',

@@ -156,7 +156,7 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
 | Herringbone gear | T-series timing pulley (T2.5 / T5 / T10) | Trapezoidal lead screw (multi-start) |  | | Reducer (in line or eccentric) | ESP32-DevKitC V4, DevKit V1, NodeMCU-32S | Printed grill with the same patterns, to screw over the fan | | Servo: SG90, MG996R |
 | Internal ring gear | MXL / XL timing pulley | Lead screw nut (flanged) |  | | Tee / wye (branch at any angle) | NVIDIA Jetson Nano, Orin Nano / Orin NX and Xavier NX developer kits | The fan itself: frame, hub and blades of a typical fan, to check clearance | | DC motor: 775, 130 |
 | Gear rack (straight, helical, herringbone) | Chain sprocket (#25–#41, 05B–08B, bicycle) | Screw hole (M2–M20): clearance, threaded or for a heat-set insert, with a counterbore, countersink or nut trap |  | | | | | | |
-| Bevel gear (90° shafts) | | | | |  | | | | |
+| Bevel gear (90° shafts) | V-belt pulley (Z, A, B, C, SPZ–SPC, one groove or several) | | | |  | | | | |
 | Worm | | | | |  | | | | |
 
 Rotating parts share the same options for the shaft: round, D-shaft, hex or
@@ -718,6 +718,9 @@ left alone, since that is its shape.
   on your printer.
 - **Sprockets** use the common arc-based drafting construction, not the full
   ANSI B29.1 tooth form.
+- **V-belt pulleys** are grooved as ISO 4183 lays them out: the belt rides on
+  its flanks at the datum diameter, 34° between them on a small pulley and
+  38° on a large one, or the angle you set.
 - **Threads** follow the ISO metric and ISO trapezoidal basic profiles, with a
   clearance setting for printing.
 - **Screw holes**: clearance holes are those of ISO 273 (close, normal and
@@ -992,7 +995,7 @@ The whole of what is planned, put off and dropped is in
 [docs/ROADMAP.md](docs/ROADMAP.md). Next in the app itself:
 
 - More scripts and fonts for lettering.
-- More parts: throated worm wheel, V-belt pulleys, imperial threads.
+- More parts: throated worm wheel, imperial threads.
 - Assembly preview of meshing gears.
 - True surfaces in STEP files for what still goes out as facets: threads
   and helical gears, bevel gears and stretched shapes.

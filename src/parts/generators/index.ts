@@ -11,6 +11,7 @@ import { helicalGear, herringboneGear, rack, ringGear, spurGear } from './gears'
 import { leadScrew, leadScrewNut, metricBolt, metricNut, screwHole } from './screws';
 import { sprocket } from './sprocket';
 import { gt2Pulley, htdPulley, mxlPulley, tPulley } from './timingPulley';
+import { vBeltPulley } from './vbelt';
 import type { Category, GeneratorDef, Params } from './types';
 import { worm } from './worm';
 
@@ -26,6 +27,7 @@ export const GENERATORS: GeneratorDef[] = [
   htdPulley,
   tPulley,
   mxlPulley,
+  vBeltPulley,
   sprocket,
   metricBolt,
   metricNut,
