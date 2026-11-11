@@ -134,9 +134,17 @@ fn is_kind(path: &Path, kinds: &[&str]) -> bool {
 /// Refuses a path that is not a file of one of `kinds`. What an Android picker hands out is a `content://` URI with
 /// no name to go by, and is the user's own choice of document, granted by the system: those pass, there. Any other
 /// URL is refused, since what it names is not what its last letters say.
+///
+/// Whether the string is a URL is asked of `file_path`, which is what then opens the file: told apart here by a rule
+/// of its own (the letters `://`), a `file:` URL written with one slash passed as a path named after its query
+/// (`file:/etc/passwd?x.stl`) and was opened as the file before the question mark.
 fn allowed(path: &str, kinds: &[&str], doing: &str) -> Result<(), String> {
     let document = cfg!(target_os = "android") && path.starts_with("content://");
-    if document || (!path.contains("://") && is_kind(Path::new(path), kinds)) {
+    let plain = match file_path(path) {
+        FilePath::Path(plain) => Some(plain),
+        FilePath::Url(_) => None,
+    };
+    if document || plain.is_some_and(|plain| is_kind(&plain, kinds)) {
         return Ok(());
     }
     let name = Path::new(path).file_name().map_or_else(|| path.to_owned(), |name| name.to_string_lossy().into_owned());
@@ -243,7 +251,8 @@ async fn stage_share(app: AppHandle, request: Request<'_>) -> Result<String, Str
         .headers()
         .get("name")
         .and_then(|value| percent_decode(value.as_bytes()))
-        .filter(|name| !name.is_empty() && !name.contains(['/', '\\']))
+        // A name and nothing else: no folder, and no drive (`C:name` would land beside the working folder on Windows).
+        .filter(|name| !name.is_empty() && !name.contains(['/', '\\', ':']) && is_kind(Path::new(name), WRITABLE))
         .ok_or("Could not prepare the file to share: no valid name was given")?;
     let bytes = body_bytes(request.body()).ok_or_else(|| format!("Could not prepare {name}: the data was not bytes"))?;
     let dir = app.path().app_cache_dir().map_err(|err| format!("Could not prepare {name}: {err}"))?.join("share");
@@ -973,6 +982,25 @@ mod tests {
         // A URL names what its path says, not what it ends in; only Android's documents are taken on trust.
         assert!(allowed("file:///etc/passwd?x.stl", READABLE, "open").is_err());
         assert!(allowed("file:///home/me/part.stl", READABLE, "open").is_err());
+        // However it is written: with one slash or none, with the kind in a query or after a hash, in any case.
+        for path in [
+            "file:/etc/passwd?x.stl",
+            "file:/home/me/.bashrc?/x.stl",
+            "file:/home/me/.ssh/id_ed25519#/a.png",
+            "FILE:/etc/passwd?x.stl",
+            "file:etc/passwd?x.stl",
+            "file://localhost/etc/passwd?x.stl",
+            "http://example.com/part.stl",
+            "data:text/plain,part.stl",
+        ] {
+            assert!(allowed(path, READABLE, "open").is_err(), "{path}");
+            assert!(allowed(path, WRITABLE, "save").is_err(), "{path}");
+        }
+        // What is allowed is opened as the very path that was judged.
+        for path in ["/home/me/Documents/part.STL", "C:\\Users\\me\\robot.urdf", "relative/part.stl", "/home/me/odd?name.stl"] {
+            assert!(allowed(path, READABLE, "open").is_ok(), "{path}");
+            assert_eq!(file_path(path).into_path().unwrap(), PathBuf::from(path), "{path}");
+        }
         assert_eq!(allowed("content://com.android.providers/document/1", READABLE, "open").is_ok(), cfg!(target_os = "android"));
         assert_eq!(
             allowed("/home/me/notes.txt", READABLE, "open").unwrap_err(),
