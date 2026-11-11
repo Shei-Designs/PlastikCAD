@@ -102,7 +102,6 @@ What the reviews showed could be built, beyond mending. None is planned.
 - **The browser tests in WebKit as well as Chromium**: the desktop app on
   Linux and macOS is WebKit, and the fault of #45 only shows there.
 
-
 ## Next to build
 
 Smaller pieces, each of which can be built without a session.
