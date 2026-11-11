@@ -1,6 +1,7 @@
 // A PLY file with colors, in the built app: the colors come in as a picture the reader writes
 // itself, which the browser has to be able to decode and the viewer to draw.
-import { dropFiles, expect, notices, openApp, sceneCount, settled, skinColors, skins, store, test } from './helpers';
+import type { Page } from '@playwright/test';
+import { dropFiles, expect, notices, openApp, pngBytes, sceneCount, settled, skinColors, skins, store, test } from './helpers';
 
 /** A cube of 20 mm whose six sides each name a color. */
 function coloredCube(): number[] {
@@ -10,7 +11,66 @@ function coloredCube(): number[] {
   return [...new TextEncoder().encode([...head, ...points, ...sides, ''].join('\n'))];
 }
 
+/** A cube of 20 mm whose points are laid out on the picture it names. */
+function skinnedCube(): number[] {
+  const head = ['ply', 'format ascii 1.0', 'comment TextureFile skin.png', 'element vertex 8', 'property float x', 'property float y', 'property float z', 'property float s', 'property float t', 'element face 6', 'property list uchar int vertex_indices', 'end_header'];
+  const points = ['0 0 0 0 0', '20 0 0 1 0', '20 20 0 1 1', '0 20 0 0 1', '0 0 20 0 0', '20 0 20 1 0', '20 20 20 1 1', '0 20 20 0 1'];
+  const sides = ['4 0 3 2 1', '4 4 5 6 7', '4 0 1 5 4', '4 1 2 6 5', '4 2 3 7 6', '4 3 0 4 7'];
+  return [...new TextEncoder().encode([...head, ...points, ...sides, ''].join('\n'))];
+}
+
+/** The picture the one object on the plate wears, by the name of its file; null when it wears none. */
+const worn = (page: Page): Promise<string | null> =>
+  store(page, (m) => {
+    const node = m.getState().doc.scene[0];
+    const picture = node.type === 'import' && node.texture ? m.getState().doc.assets[node.texture.asset] : undefined;
+    return picture?.kind === 'image' ? picture.name : null;
+  });
+
 test.describe('PLY files', { tag: '@mouse' }, () => {
+  test('a file that names a picture wears it when the two are dropped together', async ({ page, errors }) => {
+    await openApp(page);
+    await dropFiles(page, [
+      { name: 'crate.ply', bytes: skinnedCube() },
+      { name: 'skin.png', bytes: await pngBytes(page) },
+    ]);
+    await expect.poll(() => sceneCount(page), { timeout: 30_000 }).toBe(1);
+    await settled(page);
+    // One object: the picture went on the cube's faces, not onto a sheet of its own.
+    expect(await worn(page)).toBe('skin.png');
+    await expect.poll(() => skins(page)).toMatchObject({ images: ['ready'], worn: 1 });
+    expect(errors).toEqual([]);
+  });
+
+  test('a file dropped without the picture it names asks for it, and wears what is picked', async ({ page, errors }) => {
+    await openApp(page);
+    const picture = Buffer.from(await pngBytes(page));
+    const asked: string[] = [];
+    page.on('dialog', (dialog) => {
+      asked.push(dialog.message());
+      void dialog.accept();
+    });
+    page.on('filechooser', (chooser) => void chooser.setFiles({ name: 'skin.png', mimeType: 'image/png', buffer: picture }));
+    await dropFiles(page, [{ name: 'crate.ply', bytes: skinnedCube() }]);
+    await expect.poll(() => sceneCount(page), { timeout: 30_000 }).toBe(1);
+    await settled(page);
+    expect(asked).toEqual(['"crate.ply" names "skin.png" for its colors and pictures. Pick it now, or import the shapes without?']);
+    expect(await worn(page)).toBe('skin.png');
+    expect(errors).toEqual([]);
+  });
+
+  test('a file whose picture is turned down comes in plain', async ({ page, errors }) => {
+    await openApp(page);
+    page.on('dialog', (dialog) => void dialog.dismiss());
+    await dropFiles(page, [{ name: 'crate.ply', bytes: skinnedCube() }]);
+    await expect.poll(() => sceneCount(page), { timeout: 30_000 }).toBe(1);
+    await settled(page);
+    expect(await worn(page)).toBeNull();
+    expect((await notices(page)).filter((n) => n.kind === 'error')).toEqual([]);
+    expect(errors).toEqual([]);
+  });
+
+
   test('a cube with a color on each side comes in as one solid wearing those colors', async ({ page, errors }) => {
     await openApp(page);
     await dropFiles(page, [{ name: 'die.ply', bytes: coloredCube() }]);
