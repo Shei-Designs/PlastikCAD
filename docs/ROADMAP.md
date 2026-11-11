@@ -100,9 +100,6 @@ What the reviews showed could be built, beyond mending. None is planned.
   repository it is a check to run before publishing.
 - **The browser tests in WebKit as well as Chromium**: the desktop app on
   Linux and macOS is WebKit, and the fault of #45 only shows there.
-- **A release that checks itself**: version 0.2.0 was published without its
-  Linux packages because that one build failed; a last job that lists what
-  is attached and fails when a platform is missing would have said so.
 
 ## Next to build
 
