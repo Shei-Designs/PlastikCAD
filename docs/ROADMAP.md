@@ -10,16 +10,28 @@ Phases 0 to 6 (the review fixes, the safety net, the tablet workspace,
 versions and updates, large models, the modelling features and the file
 formats) are done and merged. The README says what the app does today.
 
-## Being built now
+## Next to build
 
-No decision is needed for these.
+Smaller pieces, each of which can be built without a session.
 
-- **Parts**: screw holes in inch sizes.
-- **Gears**: a preview of meshed gears turning together.
-- **STEP export**: true surfaces for what still goes out as facets: helical
-  and bevel gears, threads. (Eggs, tall domes and oval cones cannot be: a
-  STEP file does not keep an oval turned round an axis.)
-- **PLY**: colors blended across a face on import.
+- **Screw holes in inch sizes**: clearance holes, counterbores, 82°
+  countersinks and nut traps for the sizes the inch bolts come in. The
+  figures need a table to work from.
+- **A V-belt pulley's mate** in the mating wizard: a V-belt's length is not
+  a tooth count, so it needs its own rule.
+- **STEP export**: true surfaces for helical and bevel gears and for
+  threads, which still go out as facets. A research piece: the library has
+  to sweep a tooth along a helix and the file has to keep the result. (Eggs,
+  tall domes and oval cones cannot be done: a STEP file does not keep an
+  oval turned round an axis.)
+- **PLY**: colors blended across a face on import, where today each face
+  has one.
+
+## Needs a word first
+
+- **A preview of meshed gears turning together.** It needs a place in the
+  interface and a way to start it (a "Turn" control on a gear that carries
+  the gears meshed with it along, most likely), which is yours to say.
 
 ## Phases that need a session first
 
