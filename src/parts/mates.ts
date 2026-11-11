@@ -15,9 +15,11 @@ import type { PartNode, Vec3 } from '../model/types';
 import { inv } from './involute';
 import { bevelApexHeight } from './generators/bevel';
 import { RACK_BASE_HEIGHT, rackPitchLine } from './generators/gears';
+import { chainPitch } from './generators/sprocket';
+import { beltPitch } from './generators/timingPulley';
 import type { Params } from './generators/types';
 
-export type MateKind = 'gear' | 'ring' | 'rack' | 'wheel' | 'bevel';
+export type MateKind = 'gear' | 'ring' | 'rack' | 'wheel' | 'bevel' | 'pulley' | 'sprocket';
 
 export interface MateRequest {
   kind: MateKind;
@@ -29,6 +31,8 @@ export interface MateRequest {
   extra: number;
   /** Which side of the gear the mate goes, degrees anticlockwise from +X. */
   angle: number;
+  /** For a pulley or sprocket: the teeth of the belt or the links of the chain that joins the two. Left out, a usual length is taken (see `usualSpan`). */
+  span?: number;
 }
 
 export interface Mate {
@@ -55,10 +59,12 @@ export function mateKinds(part: string): MateKind[] {
   if (part === 'helical' || part === 'herringbone') return ['gear'];
   if (part === 'worm') return ['wheel'];
   if (part === 'bevel') return ['bevel'];
+  if (beltPitch(part, {}) !== undefined) return ['pulley'];
+  if (part === 'sprocket') return ['sprocket'];
   return [];
 }
 
-export const MATE_KIND_LABELS: Record<MateKind, string> = { gear: tr('Gear'), ring: tr('Ring'), rack: tr('Rack'), wheel: tr('Worm wheel'), bevel: tr('Bevel gear') };
+export const MATE_KIND_LABELS: Record<MateKind, string> = { gear: tr('Gear'), ring: tr('Ring'), rack: tr('Rack'), wheel: tr('Worm wheel'), bevel: tr('Bevel gear'), pulley: tr('Pulley'), sprocket: tr('Sprocket') };
 
 /** A bevel gear's cone angle already names its mate's tooth count; the wizard cannot change it. */
 export function fixedMateTeeth(source: PartNode): number | null {
@@ -92,9 +98,97 @@ function invInverse(value: number): number {
   return a;
 }
 
+/**
+ * The diameter a belt or chain goes round on a wheel of `teeth`: the circle whose rim is as long as the
+ * teeth are pitches. A belt's pitch line is that circle; a chain lies on it a pitch per tooth, which is
+ * how its length is counted.
+ */
+const wrapDiameter = (pitch: number, teeth: number): number => (teeth * pitch) / Math.PI;
+
+/** How far the teeth of a wheel reach from its axis, near enough to keep two wheels from touching: a sprocket's pins sit at the corners of a polygon. */
+const reach = (kind: MateKind, pitch: number, teeth: number): number => (kind === 'sprocket' ? pitch / Math.sin(Math.PI / teeth) : (teeth * pitch) / Math.PI) / 2;
+
+/** The pitch length of an open belt (or chain) round two wheels of pitch diameters `d1` and `d2` whose centers are `c` apart. */
+function wrapLength(d1: number, d2: number, c: number): number {
+  const half = Math.abs(d2 - d1) / 2;
+  const lean = Math.asin(Math.min(1, half / c));
+  return 2 * Math.sqrt(Math.max(0, c * c - half * half)) + (Math.PI * (d1 + d2)) / 2 + 2 * lean * half;
+}
+
+/** The pitch of the belt or chain a pulley or sprocket takes. */
+const drivePitch = (source: PartNode): number => beltPitch(source.part, source.params) ?? chainPitch(source.params);
+
+/**
+ * The belt teeth or chain links offered for a pair until a count is typed: enough for the wheels to
+ * stand about their two diameters apart, and for a chain an even number (an odd one needs an offset link).
+ */
+export function usualSpan(source: PartNode, kind: MateKind, teeth: number): number {
+  const pitch = drivePitch(source);
+  const d1 = wrapDiameter(pitch, sourceTeeth(source));
+  const d2 = wrapDiameter(pitch, Math.max(1, Math.round(teeth)));
+  const span = Math.ceil(wrapLength(d1, d2, d1 + d2) / pitch);
+  return kind === 'sprocket' ? span + (span % 2) : span;
+}
+
+/**
+ * The second pulley of a belt drive, or sprocket of a chain drive: the same part with the tooth count
+ * asked for, as far away as the belt or chain of `span` pitches is long, on the side asked for and
+ * turned as its partner is (a belt or chain meets the teeth wherever they are).
+ */
+function driveMate(source: PartNode, req: MateRequest, warnings: string[]): Mate {
+  const kind = req.kind;
+  const pitch = drivePitch(source);
+  const z1 = sourceTeeth(source);
+  const z2 = Math.max(1, Math.round(req.teeth));
+  const d1 = wrapDiameter(pitch, z1);
+  const d2 = wrapDiameter(pitch, z2);
+  // Closer than this the two would touch: their teeth a pitch apart.
+  const least = reach(kind, pitch, z1) + reach(kind, pitch, z2) + pitch;
+  const shortest = Math.ceil(wrapLength(d1, d2, least) / pitch);
+  let span = Math.round(req.span ?? usualSpan(source, kind, z2));
+  if (span < shortest) {
+    warnings.push(
+      kind === 'sprocket'
+        ? tr('The chain is too short for these sprockets; the shortest that fits has {n} links.', { n: shortest })
+        : tr('The belt is too short for these pulleys; the shortest that fits has {n} teeth.', { n: shortest }),
+    );
+    span = shortest;
+  }
+  const length = span * pitch;
+  // The length grows with the distance, so the distance for a length is found by halving.
+  let lo = Math.abs(d2 - d1) / 2;
+  let hi = length / 2;
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2;
+    if (wrapLength(d1, d2, mid) < length) lo = mid;
+    else hi = mid;
+  }
+  const center = (lo + hi) / 2;
+  const theta = (req.angle * Math.PI) / 180;
+  const mate: Mate = {
+    part: source.part,
+    params: { ...source.params, teeth: z2 },
+    offset: [center * Math.cos(theta), center * Math.sin(theta), 0],
+    rotation: [0, 0, source.rot[2]],
+    center,
+    ratio: z2 / z1,
+    warnings,
+  };
+  if (kind === 'sprocket' && span % 2) mate.note = tr('A chain of an odd number of links needs an offset link.');
+  else if (kind === 'pulley') mate.note = tr('Belt length {length} mm', { length: Number(length.toFixed(2)) });
+  return mate;
+}
+
 export function mateOf(source: PartNode, req: MateRequest): Mate {
   const p = source.params;
   const warnings: string[] = [];
+  if (req.kind === 'pulley' || req.kind === 'sprocket') {
+    if (Math.abs(source.rot[0]) > 1e-9 || Math.abs(source.rot[1]) > 1e-9) warnings.push(tr('The part is tilted; the mate is placed as if it stood upright.'));
+    if (source.size.some((s, i) => Math.abs(s - source.natural[i]) > 1e-6 * Math.max(1, source.natural[i]))) {
+      warnings.push(tr('The part has been resized, so its teeth no longer match its pitch; the mate fits the unresized part.'));
+    }
+    return driveMate(source, req, warnings);
+  }
   if (Math.abs(source.rot[0]) > 1e-9 || Math.abs(source.rot[1]) > 1e-9) warnings.push(tr('The gear is tilted; the mate is placed as if it stood upright.'));
   if (source.flip?.some(Boolean)) warnings.push(tr('The gear is mirrored; the mate is placed as if it were not.'));
   if (source.size.some((s, i) => Math.abs(s - source.natural[i]) > 1e-6 * Math.max(1, source.natural[i]))) {

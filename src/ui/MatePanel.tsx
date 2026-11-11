@@ -1,10 +1,11 @@
 // The mating gear wizard: while it is open the mate stands next to its gear in
-// the scene, rebuilt as the figures change, and Accept keeps it. It is driven
+// the scene, rebuilt as the figures change, and Accept keeps it. A pulley or a
+// sprocket has the same wizard for the other wheel of its belt or chain. It is driven
 // by the store's `mating` state, so it stays up while the view is orbited;
 // Escape or Cancel drops the preview.
 import { useEffect, useId, useState } from 'react';
 import { tr } from '../i18n';
-import { fixedMateTeeth, MATE_KIND_LABELS, mateKinds, mateOf, sourceTeeth } from '../parts/mates';
+import { fixedMateTeeth, MATE_KIND_LABELS, mateKinds, mateOf, sourceTeeth, usualSpan } from '../parts/mates';
 import type { MateKind, MateRequest } from '../parts/mates';
 import type { Params } from '../parts/generators/types';
 import { cancelMate, commitMate, previewMate, useEditor } from '../state/store';
@@ -41,13 +42,18 @@ export function MatePanel() {
   const [kind, setKind] = useState<MateKind>(kinds[0] ?? 'gear');
   // Tooth counts follow the gear until they are typed over.
   const [typed, setTyped] = useState<Partial<Record<MateKind, number>>>({});
+  // The belt's teeth or the chain's links follow the pair until they are typed over.
+  const [typedSpan, setTypedSpan] = useState<number | null>(null);
   const [backlash, setBacklash] = useState(() => (source?.type === 'part' ? num(source.params, 'backlash', 0.1) : 0.1));
   const [extra, setExtra] = useState(0.1);
   const [angle, setAngle] = useState(0);
   const current = kinds.includes(kind) ? kind : kinds[0];
   const fixed = source?.type === 'part' ? fixedMateTeeth(source) : null;
-  const teeth = fixed ?? typed[current] ?? (current === 'gear' ? 2 * teeth1 : current === 'ring' ? 3 * teeth1 : current === 'wheel' ? 30 : 12);
-  const request: MateRequest = { kind: current, teeth, backlash, extra, angle };
+  // A belt or chain joins two wheels at a distance: no teeth mesh, so there is no backlash to set.
+  const drive = current === 'pulley' || current === 'sprocket';
+  const teeth = fixed ?? typed[current] ?? (current === 'gear' ? 2 * teeth1 : current === 'ring' ? 3 * teeth1 : current === 'wheel' ? 30 : drive ? teeth1 : 12);
+  const span = drive && source?.type === 'part' ? (typedSpan ?? usualSpan(source, current, teeth)) : undefined;
+  const request: MateRequest = { kind: current, teeth, backlash, extra, angle, ...(span === undefined ? {} : { span }) };
   const mate = source?.type === 'part' ? mateOf(source, request) : null;
 
   // Every change shows straight away, including edits to the gear itself; the key keeps it to real changes.
@@ -73,8 +79,14 @@ export function MatePanel() {
   const setCount = (v: number) => setTyped({ ...typed, [current]: v });
   const finish = (keep: boolean) => (keep ? void commitMate() : cancelMate());
   return (
-    <div className="mate-panel" role="dialog" aria-label={tr('Mating gear')}>
-      <div className="array-title">{tr('Mating gear for {name}', { name: source.name })}</div>
+    <div className="mate-panel" role="dialog" aria-label={current === 'pulley' ? tr('Mating pulley') : current === 'sprocket' ? tr('Mating sprocket') : tr('Mating gear')}>
+      <div className="array-title">
+        {current === 'pulley'
+          ? tr('Mating pulley for {name}', { name: source.name })
+          : current === 'sprocket'
+            ? tr('Mating sprocket for {name}', { name: source.name })
+            : tr('Mating gear for {name}', { name: source.name })}
+      </div>
       {kinds.length > 1 && (
         <div className="segmented" role="radiogroup" aria-label={tr('Kind of mate')}>
           {kinds.map((k) => (
@@ -85,23 +97,34 @@ export function MatePanel() {
         </div>
       )}
       <div className="mate-pair">
-        <Figure label={tr('Teeth')} help={fixed !== null ? tr('Taken from the bevel gear’s mating tooth count.') : undefined} value={teeth} min={current === 'rack' ? 2 : 5} max={400} integer disabled={fixed !== null} onChange={setCount} />
+        <Figure label={tr('Teeth')} help={fixed !== null ? tr('Taken from the bevel gear’s mating tooth count.') : undefined} value={teeth} min={current === 'rack' ? 2 : current === 'pulley' ? 10 : current === 'sprocket' ? 8 : 5} max={current === 'pulley' ? 200 : current === 'sprocket' ? 120 : 400} integer disabled={fixed !== null} onChange={setCount} />
         {current !== 'rack' && (
           <Figure
             label={tr('Ratio')}
-            help={worm ? tr('Sets the ratio of wheel teeth to worm starts.') : tr("Sets the ratio of mate teeth to this gear's teeth.")}
+            help={worm ? tr('Sets the ratio of wheel teeth to worm starts.') : drive ? tr("Sets the ratio of mate teeth to this part's teeth.") : tr("Sets the ratio of mate teeth to this gear's teeth.")}
             value={Number(formatNumber(mate.ratio, 3))}
             min={0.05}
             max={100}
             step={0.1}
             places={3}
             disabled={fixed !== null}
-            onChange={(v) => setCount(Math.min(400, Math.max(5, Math.round(v * teeth1))))}
+            onChange={(v) => setCount(Math.min(current === 'pulley' ? 200 : current === 'sprocket' ? 120 : 400, Math.max(current === 'pulley' ? 10 : current === 'sprocket' ? 8 : 5, Math.round(v * teeth1))))}
           />
         )}
       </div>
-      <Figure label={tr('Backlash')} help={tr("Sets how much thinner than ideal the mate's teeth are made.")} value={backlash} unit="mm" min={0} max={2} step={0.05} onChange={setBacklash} />
-      <Figure
+      {drive && (
+        <Figure
+          label={current === 'pulley' ? tr('Belt teeth') : tr('Chain links')}
+          help={current === 'pulley' ? tr('Sets the length of the belt, and with it how far apart the pulleys stand.') : tr('Sets the length of the chain, and with it how far apart the sprockets stand.')}
+          value={span ?? 0}
+          min={4}
+          max={5000}
+          integer
+          onChange={setTypedSpan}
+        />
+      )}
+      {!drive && <Figure label={tr('Backlash')} help={tr("Sets how much thinner than ideal the mate's teeth are made.")} value={backlash} unit="mm" min={0} max={2} step={0.05} onChange={setBacklash} />}
+      {!drive && <Figure
         label={current === 'bevel' ? tr('Extra mounting distance') : tr('Extra center distance')}
         help={
           current === 'ring'
@@ -116,8 +139,8 @@ export function MatePanel() {
         max={5}
         step={0.05}
         onChange={setExtra}
-      />
-      <Figure label={tr('Side')} help={tr('Sets the angle around this gear where the mate goes. 0° is +X, 90° is +Y.')} value={angle} unit="°" min={-360} max={360} onChange={setAngle} />
+      />}
+      <Figure label={tr('Side')} help={drive ? tr('Sets the angle around this part where the mate goes. 0° is +X, 90° is +Y.') : tr('Sets the angle around this gear where the mate goes. 0° is +X, 90° is +Y.')} value={angle} unit="°" min={-360} max={360} onChange={setAngle} />
       {mate.note && <p className="field-note">{mate.note}</p>}
       {mate.warnings.map((w) => (
         <p key={w} className="field-note warn">

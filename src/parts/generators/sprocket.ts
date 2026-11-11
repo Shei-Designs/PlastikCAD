@@ -186,3 +186,9 @@ export const sprocket: GeneratorDef = {
   ],
   build,
 };
+
+/** The pitch (mm from pin to pin) of the chain a sprocket with these settings takes. */
+export function chainPitch(p: Params): number {
+  return (CHAINS[String(p.chain)] ?? Object.values(CHAINS)[0]).pitch;
+}
+

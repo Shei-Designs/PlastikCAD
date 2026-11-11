@@ -365,3 +365,13 @@ export const mxlPulley = makePulley({
   hub: { height: 6, diameter: 14, setScrews: 2, setScrewDiameter: 2.8 },
   bore: { type: 'round', diameter: 5 },
 });
+
+const FAMILIES: Record<string, Record<string, BeltProfile>> = { 'gt2-pulley': GT2, 'htd-pulley': HTD, 't-pulley': T_SERIES, 'mxl-pulley': IMPERIAL };
+
+/** The pitch (mm from tooth to tooth along the belt) of a pulley with these settings; undefined for a part that is no timing pulley. */
+export function beltPitch(part: string, p: Params): number | undefined {
+  const profiles = FAMILIES[part];
+  if (!profiles) return undefined;
+  return (profiles[String(p.profile)] ?? Object.values(profiles)[0]).pitch;
+}
+

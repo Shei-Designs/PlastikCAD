@@ -64,7 +64,10 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
   with backlash and extra center distance to suit the printer. The mate
   stands meshed beside its gear at the right center distance, on whichever
   side you turn it to, and follows the numbers as they are typed; *Accept*
-  keeps it as a part of its own.
+  keeps it as a part of its own. A timing pulley or a chain sprocket has the
+  same wizard for the other wheel of its drive: give the teeth (or the ratio)
+  and the belt's teeth or the chain's links, and the mate stands exactly that
+  belt or chain away, with the center distance and belt length shown.
 - **Text** – lettering in four print-friendly fonts (sans, slab serif,
   monospace, stencil), on one line or several. Put it on a face and group it
   to emboss; make it a hole and sink it in a little (Ctrl+Down) to engrave.

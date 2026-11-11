@@ -89,6 +89,8 @@ export const editor: Catalog = {
 
   // The settings of a part (PartFields.tsx)
   'Add mating gear…': 'Ajouter un engrenage conjugué…',
+  'Add mating pulley…': 'Ajouter une poulie conjuguée…',
+  'Add mating sprocket…': 'Ajouter un pignon conjugué…',
   'Reset to defaults': 'Rétablir les valeurs par défaut',
   'Kind of part': 'Type de pièce',
 
@@ -134,6 +136,16 @@ export const editor: Catalog = {
   // The mating gear wizard (MatePanel.tsx)
   'Mating gear': 'Engrenage conjugué',
   'Mating gear for {name}': 'Engrenage conjugué pour {name}',
+  'Mating pulley': 'Poulie conjuguée',
+  'Mating sprocket': 'Pignon conjugué',
+  'Mating pulley for {name}': 'Poulie conjuguée pour {name}',
+  'Mating sprocket for {name}': 'Pignon conjugué pour {name}',
+  "Sets the ratio of mate teeth to this part's teeth.": 'Définit le rapport entre les dents de la pièce conjuguée et celles de cette pièce.',
+  'Belt teeth': 'Dents de la courroie',
+  'Chain links': 'Maillons de la chaîne',
+  'Sets the length of the belt, and with it how far apart the pulleys stand.': 'Définit la longueur de la courroie, et avec elle l’entraxe des poulies.',
+  'Sets the length of the chain, and with it how far apart the sprockets stand.': 'Définit la longueur de la chaîne, et avec elle l’entraxe des pignons.',
+  'Sets the angle around this part where the mate goes. 0° is +X, 90° is +Y.': 'Définit l’angle autour de cette pièce où se place la pièce conjuguée. 0° correspond à +X, 90° à +Y.',
   'Kind of mate': 'Type d’engrenage conjugué',
   Teeth: 'Dents',
   'Taken from the bevel gear’s mating tooth count.': 'Repris du nombre de dents du conjugué défini sur l’engrenage conique.',

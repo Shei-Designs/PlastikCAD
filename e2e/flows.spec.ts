@@ -57,6 +57,30 @@ test.describe('core flows', { tag: '@mouse' }, () => {
     await noErrorNotice(page);
   });
 
+  test('a pulley gets its mate through the wizard, a belt of the length typed away', async ({ page }) => {
+    await store(page, (m) => m.addPart('pulleys'));
+    await settled(page);
+    await page.getByRole('button', { name: 'Add mating pulley…' }).click();
+    const panel = page.getByRole('dialog', { name: 'Mating pulley' });
+    await expect(panel).toBeVisible();
+    // The pulley the tile gives has 20 teeth of GT2 at 2 mm; a belt of 100 teeth leaves 80 mm between two of them.
+    await panel.getByRole('textbox', { name: 'Belt teeth' }).fill('100');
+    await page.keyboard.press('Enter');
+    await expect(panel).toContainText('Center distance 80 mm');
+    await expect(panel).toContainText('Belt length 200 mm');
+    await expect.poll(() => store(page, (m) => m.getState().mating?.building)).toBe(false);
+    await panel.getByRole('button', { name: 'Accept' }).click();
+    await expect(panel).toHaveCount(0);
+    await settled(page);
+    const parts = await store(page, (m) => m.getState().doc.scene.map((n) => (n.type === 'part' ? { part: n.part, teeth: n.params.teeth, pos: n.pos } : null)));
+    expect(parts).toHaveLength(2);
+    expect(parts.map((p) => [p?.part, p?.teeth])).toEqual([['gt2-pulley', 20], ['gt2-pulley', 20]]);
+    expect(parts[1]!.pos[0] - parts[0]!.pos[0]).toBeCloseTo(80, 3);
+    expect(parts[1]!.pos[1]).toBeCloseTo(parts[0]!.pos[1], 6);
+    expect(await drawnCount(page)).toBe(2);
+    await noErrorNotice(page);
+  });
+
   test('a torus resized to an oval builds and is drawn', async ({ page }) => {
     await store(page, (m) => {
       m.addShape('torus');

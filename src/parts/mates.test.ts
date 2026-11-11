@@ -3,7 +3,7 @@ import type { PartNode, Vec3 } from '../model/types';
 import { evaluate, initKernel } from './testing';
 import { getGenerator } from './generators';
 import { defaultParams, sanitizeParams } from './generators/types';
-import { fixedMateTeeth, mateKinds, mateOf, sourceTeeth } from './mates';
+import { fixedMateTeeth, mateKinds, mateOf, sourceTeeth, usualSpan } from './mates';
 import type { MateRequest } from './mates';
 import { QUALITY, rotate, translate } from './types';
 import type { Solid } from './types';
@@ -261,3 +261,90 @@ describe('mate edge cases', () => {
     expect(mild.center).toBeGreaterThan(39);
   });
 });
+
+describe('belt and chain mates', () => {
+  const drive = (kind: 'pulley' | 'sprocket', teeth: number, span?: number, angle = 0): MateRequest => ({ kind, teeth, backlash: 0, extra: 0, angle, ...(span === undefined ? {} : { span }) });
+  /** The length of an open belt round two circles, worked out the long way: the two straight runs and the two arcs. */
+  const beltLength = (d1: number, d2: number, c: number): number => {
+    const lean = Math.asin((d2 - d1) / 2 / c);
+    return 2 * c * Math.cos(lean) + (d1 * (Math.PI - 2 * lean)) / 2 + (d2 * (Math.PI + 2 * lean)) / 2;
+  };
+
+  it('offers a pulley to a pulley of any family and a sprocket to a sprocket', () => {
+    for (const id of ['gt2-pulley', 'htd-pulley', 't-pulley', 'mxl-pulley']) expect(mateKinds(id)).toEqual(['pulley']);
+    expect(mateKinds('sprocket')).toEqual(['sprocket']);
+  });
+
+  it('stands an equal pulley half the free belt away: 100 teeth of GT2 round two of 20 leaves 80 mm', () => {
+    const source = part('gt2-pulley', { profile: '2', teeth: 20 }, 15);
+    const mate = mateOf(source, drive('pulley', 20, 100, 90));
+    expect(mate.part).toBe('gt2-pulley');
+    expect(mate.params).toMatchObject({ profile: '2', teeth: 20 });
+    expect(mate.center).toBeCloseTo(80, 6);
+    expect(mate.ratio).toBe(1);
+    // On the side asked for, turned as its partner is, at the same height.
+    expect(mate.offset[0]).toBeCloseTo(0, 6);
+    expect(mate.offset[1]).toBeCloseTo(80, 6);
+    expect(mate.offset[2]).toBe(0);
+    expect(mate.rotation).toEqual([0, 0, 15]);
+    expect(mate.note).toBe('Belt length 200 mm');
+    expect(mate.warnings).toEqual([]);
+  });
+
+  it('sets unequal pulleys so that the belt asked for is exactly taut', () => {
+    const source = part('htd-pulley', { profile: '5M', teeth: 16 });
+    const mate = mateOf(source, drive('pulley', 48, 120));
+    const d1 = (16 * 5) / Math.PI;
+    const d2 = (48 * 5) / Math.PI;
+    expect(beltLength(d1, d2, mate.center)).toBeCloseTo(600, 6);
+    expect(mate.ratio).toBe(3);
+    // The two stand clear of each other.
+    const { a, b } = check('htd-pulley', { profile: '5M', teeth: 16 }, 0, drive('pulley', 48, 120));
+    expect(overlap(a, b)).toBeCloseTo(0, 6);
+  });
+
+  it('counts a chain in whole pitches round each sprocket: 40 links of #25 round two of 16 leaves 12 pitches', () => {
+    const source = part('sprocket', { chain: '25', teeth: 16 });
+    const mate = mateOf(source, drive('sprocket', 16, 40));
+    expect(mate.center).toBeCloseTo(12 * 6.35, 6);
+    expect(mate.note).toBeUndefined();
+    expect(mateOf(source, drive('sprocket', 16, 41)).note).toBe('A chain of an odd number of links needs an offset link.');
+    const { a, b } = check('sprocket', { chain: '25', teeth: 16 }, 0, drive('sprocket', 16, 40));
+    expect(overlap(a, b)).toBeCloseTo(0, 6);
+  });
+
+  it('offers a usual length until one is typed: the wheels about their two diameters apart, a chain in even links', () => {
+    const pulley = part('gt2-pulley', { profile: '2', teeth: 20 });
+    const span = usualSpan(pulley, 'pulley', 40);
+    const mate = mateOf(pulley, drive('pulley', 40));
+    expect(mate.note).toBe(`Belt length ${span * 2} mm`);
+    const sum = (60 * 2) / Math.PI;
+    expect(mate.center).toBeGreaterThanOrEqual(sum - 1e-9);
+    expect(mate.center).toBeLessThan(sum + 2);
+    const sprocket = part('sprocket', { chain: '06B', teeth: 15 });
+    expect(usualSpan(sprocket, 'sprocket', 30) % 2).toBe(0);
+  });
+
+  it('says when a belt or chain is too short, and stands the mate as near as it can go', () => {
+    const source = part('gt2-pulley', { profile: '2', teeth: 20 });
+    const mate = mateOf(source, drive('pulley', 20, 22));
+    expect(mate.warnings).toHaveLength(1);
+    const shortest = Number(/has (\d+) teeth/.exec(mate.warnings[0])?.[1]);
+    expect(mate.warnings[0]).toBe(`The belt is too short for these pulleys; the shortest that fits has ${shortest} teeth.`);
+    // One tooth fewer would bring the pitch circles within a pitch of each other.
+    const d = 40 / Math.PI;
+    expect(mate.center).toBeGreaterThanOrEqual(d + 2 - 1e-9);
+    expect(beltLength(d, d, mate.center)).toBeCloseTo(shortest * 2, 6);
+    expect((shortest - 1) * 2).toBeLessThan(beltLength(d, d, d + 2));
+    const chain = mateOf(part('sprocket', { chain: '25', teeth: 16 }), drive('sprocket', 16, 10));
+    expect(chain.warnings[0]).toMatch(/^The chain is too short for these sprockets; the shortest that fits has \d+ links\.$/);
+  });
+
+  it('warns about a wheel it cannot fully honor', () => {
+    const tilted = { ...part('gt2-pulley', { teeth: 20 }), rot: [30, 0, 0] as Vec3 };
+    expect(mateOf(tilted, drive('pulley', 20)).warnings).toEqual(['The part is tilted; the mate is placed as if it stood upright.']);
+    const resized = { ...part('gt2-pulley', { teeth: 20 }), natural: [10, 10, 10] as Vec3, size: [20, 20, 10] as Vec3 };
+    expect(mateOf(resized, drive('pulley', 20)).warnings).toEqual(['The part has been resized, so its teeth no longer match its pitch; the mate fits the unresized part.']);
+  });
+});
+

@@ -92,7 +92,7 @@ export function PartFields({ node }: { node: PartNode }) {
   if (canMate && sections.length) {
     sections[0].after = (
       <button type="button" className="primary mate-button" disabled={mating || locked} onClick={() => startMate(node.id)}>
-        {tr('Add mating gear…')}
+        {mateKinds(def.id)[0] === 'pulley' ? tr('Add mating pulley…') : mateKinds(def.id)[0] === 'sprocket' ? tr('Add mating sprocket…') : tr('Add mating gear…')}
       </button>
     );
   }
