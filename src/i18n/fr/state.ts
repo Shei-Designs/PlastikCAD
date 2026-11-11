@@ -172,6 +172,18 @@ export const state: Catalog = {
   'Sign in': 'Se connecter',
   'Not now': 'Pas maintenant',
   'Google Drive linked.': 'Google Drive associé.',
+  'Google Drive is not linked.': 'Google Drive n’est pas associé.',
+  'Clean up Drive': 'Nettoyer le Drive',
+  '{n} imported meshes and pictures in your Drive ({size}) are no longer used by any design. Move them to the Drive\'s trash?': {
+    one: 'Un maillage ou une image importé dans votre Drive ({size}) n’est plus utilisé par aucune conception. Le déplacer vers la corbeille du Drive\u00a0?',
+    other: '{n} maillages et images importés dans votre Drive ({size}) ne sont plus utilisés par aucune conception. Les déplacer vers la corbeille du Drive\u00a0?',
+  },
+  'Move to trash': 'Déplacer vers la corbeille',
+  'Nothing to clean up: every imported mesh and picture in your Drive is in use, or under a week old.': 'Rien à nettoyer\u00a0: chaque maillage et image importé dans votre Drive est utilisé, ou date de moins d’une semaine.',
+  'Moved {n} files ({size}) to the Drive\'s trash.': {
+    one: 'Un fichier ({size}) déplacé vers la corbeille du Drive.',
+    other: '{n} fichiers ({size}) déplacés vers la corbeille du Drive.',
+  },
   'Unlink Google Drive? Your projects stay here and in your Drive, but changes no longer sync.': 'Dissocier Google Drive\u00a0? Vos projets restent ici et dans votre Drive, mais les modifications ne sont plus synchronisées.',
   Unlink: 'Dissocier',
   'Keep linked': 'Rester associé',

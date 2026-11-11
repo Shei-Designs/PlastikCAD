@@ -11,7 +11,7 @@ import type { Remote, RemoteFile } from './engine';
 const API = 'https://www.googleapis.com/drive/v3';
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3';
 const FOLDER_TYPE = 'application/vnd.google-apps.folder';
-const FILE_FIELDS = 'id,name,modifiedTime,appProperties';
+const FILE_FIELDS = 'id,name,modifiedTime,appProperties,size';
 
 export type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 /** Waits before a request is tried again; a test gives one that does not. */
@@ -47,6 +47,8 @@ interface DriveFile {
   name: string;
   modifiedTime?: string;
   appProperties?: Record<string, string>;
+  /** In bytes, as a string. */
+  size?: string;
 }
 
 /** The answer's JSON, or an error worded by `failed` from what Google said went wrong. */
@@ -70,6 +72,7 @@ const toRemote = (file: DriveFile): RemoteFile => ({
   projectId: file.appProperties?.projectId ?? null,
   revision: file.appProperties?.revision ?? null,
   modified: file.modifiedTime ? Date.parse(file.modifiedTime) : 0,
+  ...(file.size !== undefined && Number.isFinite(Number(file.size)) ? { size: Number(file.size) } : {}),
 });
 
 const quote = (s: string): string => `'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;

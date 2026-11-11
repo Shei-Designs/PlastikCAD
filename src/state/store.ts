@@ -178,6 +178,7 @@ export {
   applySyncReport,
   linkGoogleDrive,
   unlinkGoogleDrive,
+  cleanUpGoogleDrive,
   restoreSession,
 } from './store/sync';
 export { lookForUpdate, updateApp } from './store/updating';

@@ -1,12 +1,13 @@
 // Cloud sync as the editor sees it (what a pass changed, linking an account),
 // and start-up, which opens the project store and sets sync going.
 import { APP_NAME } from '../../appInfo';
-import { plural, tr } from '../../i18n';
+import { mark, plural, tr } from '../../i18n';
 import { emptyDoc, parseDoc, serializeDoc } from '../../model/file';
 import { newId } from '../../model/ops';
 import * as platform from '../../platform';
 import { openProjectStore, partStore, projectStore, TRASH_FOLDER } from '../projects';
-import { initSync, linkAccount, requestSync, unlinkAccount } from '../../sync/sync';
+import { tell } from '../../ui/ask';
+import { cleanUpDrive, initSync, linkAccount, requestSync, unlinkAccount } from '../../sync/sync';
 import type { DeletePlan, SyncReport } from '../../sync/engine';
 import { mergeDocs } from '../../sync/merge';
 import { fail, getState, isDirty, noteSync, notify, resetHistory, set, setPrefs } from './core';
@@ -139,6 +140,33 @@ export async function unlinkGoogleDrive(): Promise<void> {
   try {
     await unlinkAccount();
     notify(tr('Google Drive unlinked.'), 'ok');
+  } catch (e) {
+    fail(e);
+  }
+}
+
+/** A size for a sentence: megabytes to one place, or kilobytes below one. */
+const sizeText = (bytes: number): string => (bytes >= 1e6 ? `${(bytes / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1e3))} kB`);
+
+/** Clears out of the Drive the imported meshes and pictures that no design there uses any more, after saying how many there are. */
+export async function cleanUpGoogleDrive(): Promise<void> {
+  try {
+    const moved = await cleanUpDrive(async (count, bytes) => {
+      const go = await tell({
+        title: tr('Clean up Drive'),
+        text: plural(
+          count,
+          'One imported mesh or picture in your Drive ({size}) is no longer used by any design. Move it to the Drive\'s trash?',
+          '{n} imported meshes and pictures in your Drive ({size}) are no longer used by any design. Move them to the Drive\'s trash?',
+          { size: sizeText(bytes) },
+        ),
+        actions: [mark('Move to trash'), mark('Cancel')],
+      });
+      return go === 'Move to trash';
+    });
+    if (!moved) return;
+    if (moved.count === 0) notify(tr('Nothing to clean up: every imported mesh and picture in your Drive is in use, or under a week old.'), 'ok');
+    else notify(plural(moved.count, 'Moved one file ({size}) to the Drive\'s trash.', 'Moved {n} files ({size}) to the Drive\'s trash.', { size: sizeText(moved.bytes) }), 'ok');
   } catch (e) {
     fail(e);
   }

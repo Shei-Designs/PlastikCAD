@@ -194,3 +194,26 @@ export function apartRemote(designs: Remote, store: Remote, local: (projectId: s
   if (designs.stat) remote.stat = (file) => designs.stat!(file);
   return remote;
 }
+
+/** A part no design names is left where it is for this long (ms) before it counts as unused: a device may have sent it up and not yet the design that names it. */
+export const UNUSED_AFTER = 7 * 24 * 3600_000;
+
+/**
+ * The parts in `store` that no design in `designs` names any more: what a
+ * mesh that was replaced, or a project that was deleted, leaves behind. Every
+ * design is read for the parts it names, so `designs` is the remote as it
+ * is, not the one that puts designs back together; and if one cannot be
+ * read the whole look is called off, since a part it names would pass for
+ * unused. Parts newer than `UNUSED_AFTER`, or of no known date, are left out.
+ */
+export async function unusedParts(designs: Remote, store: Remote, now = Date.now()): Promise<RemoteFile[]> {
+  const parts = await store.list();
+  if (parts.length === 0) return [];
+  const named = new Set<string>();
+  for (const design of await designs.list()) {
+    const text = await designs.download(design);
+    for (const match of text.matchAll(/"apart": "([0-9a-f]{64})"/g)) named.add(fileOf(match[1]));
+  }
+  return parts.filter((part) => !named.has(part.name) && part.modified > 0 && now - part.modified > UNUSED_AFTER);
+}
+

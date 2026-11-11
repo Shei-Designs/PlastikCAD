@@ -471,10 +471,14 @@ its contents: a design that moves a box sends a few kilobytes. The same mesh
 in two designs is one file there. The projects on your devices stay whole,
 one self-contained file each; only the Drive's copy is in parts, so a design
 is taken out of the Drive by syncing or with **Save a copy…**, not by
-downloading its file from the Drive by hand. Files in `Assets` that no design
-uses any more are left there; they can be deleted from the Drive by hand,
-and one deleted while still in use is sent again by the next save of its
-design on a device that has it. Custom parts are kept whole.
+downloading its file from the Drive by hand. A mesh that was replaced, or a
+project that was deleted, leaves its file in `Assets` behind: **Clean up…**
+in the projects browser reads every design in the Drive, says how many such
+files there are and how much room they take, and moves them to the Drive's
+trash when you say so, where Google keeps them for thirty days. A file under
+a week old is left alone, since the design that names it may still be on its
+way from another device. One removed while still in use is sent again by the
+next save of its design on a device that has it. Custom parts are kept whole.
 
 A design made in an older version of the app opens in a newer one as it is.
 The other way round, a design saved by a newer version than the one reading

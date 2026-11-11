@@ -716,8 +716,12 @@ describe('Google Drive remote', () => {
     answers.push(() => ({ files: [{ id: 'folder1', name: 'PlastikCAD' }] }));
     answers.push(() => ({ files: [{ id: 'folder3', name: 'Assets' }] }));
     // Only its own files are listed: not a design that strayed in, nor anything else.
-    answers.push(() => ({ files: [{ id: 'a1', name, appProperties: { projectId: name.slice(0, 64) } }, { id: 'a2', name: 'Stray.plastikcad' }, { id: 'a3', name: 'notes.json' }] }));
-    expect((await assets.list()).map((f) => f.name)).toEqual([name]);
+    answers.push(() => ({ files: [{ id: 'a1', name, size: '2400000', appProperties: { projectId: name.slice(0, 64) } }, { id: 'a2', name: 'Stray.plastikcad' }, { id: 'a3', name: 'notes.json' }] }));
+    const listed = await assets.list();
+    expect(listed.map((f) => f.name)).toEqual([name]);
+    // With its size, which Drive gives as text: what a clean-up says it would free.
+    expect(listed[0].size).toBe(2_400_000);
+    expect(decodeURIComponent(calls[2].url)).toContain('size');
     expect(decodeURIComponent(calls[1].url.replace(/\+/g, ' '))).toContain("name = 'Assets' and mimeType = 'application/vnd.google-apps.folder' and 'folder1' in parents");
     // A file goes up under its own name, not a design's.
     answers.push(() => ({ id: 'a4', name, appProperties: { projectId: name.slice(0, 64), revision: '' } }));
