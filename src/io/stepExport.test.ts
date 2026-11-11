@@ -106,5 +106,9 @@ describe('STEP export', () => {
     expect(count(text(mixed.bytes), 'MANIFOLD_SOLID_BREP')).toBe(1);
     expect(() => writeStep(oc, [{ name: 'Scan', color: '#ffffff', mesh: huge }])).toThrow('"Scan" is too detailed for a STEP file and was left out.');
     expect(() => writeStep(oc, [])).toThrow('There is nothing to export.');
+    // With a coarser mesh to write in its place, that one is counted and written.
+    const coarse = writeStep(oc, [{ name: 'Scan', color: '#ffffff', mesh: huge, facets: box(2, 2, 2) }]);
+    expect(coarse.warnings).toEqual([]);
+    expect(count(text(coarse.bytes), 'ADVANCED_FACE')).toBe(6);
   });
 });

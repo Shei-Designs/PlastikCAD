@@ -39,14 +39,28 @@ function answer(req: WorkerRequest, occ: Occ): WorkerResponse | null | Promise<W
     case 'exportStep': {
       // The shapes first, by the kernel, which must be done with them before the wait for OpenCascade begins.
       const colored = exportColored(req.nodes, true);
-      const objects = colored.objects.flatMap((o) => o.parts.map((p) => ({ name: o.name, color: p.color, mesh: p.mesh })));
+      // The objects come in the order of the nodes that are neither holes, hidden nor pictures. One of a single
+      // color is the whole of its node, which the writer then tries to rebuild as true surfaces.
+      const sources = req.nodes.filter((n) => !n.hole && !n.hidden && n.type !== 'picture');
+      // At fine detail, to hold a rebuilt solid against; and as the screen has them, to write when there is none:
+      // every facet is a face in the file, and a thread at fine detail makes one of a hundred megabytes.
+      const coarse = exportColored(req.nodes, false);
+      const objects = colored.objects.flatMap((o, i) =>
+        o.parts.map((p, k) => ({
+          name: o.name,
+          color: p.color,
+          mesh: p.mesh,
+          ...(coarse.objects[i]?.parts.length === o.parts.length ? { facets: coarse.objects[i].parts[k].mesh } : {}),
+          ...(o.parts.length === 1 && sources.length === colored.objects.length ? { node: sources[i] } : {}),
+        })),
+      );
       if (!occ) throw new Error(tr('STEP files cannot be written here.'));
       return occ()
         .catch(() => {
           throw new Error(tr('The STEP writer could not be loaded.'));
         })
         .then((oc) => {
-          const written = writeStep(oc, objects);
+          const written = writeStep(oc, objects, { partBox });
           // What the kernel had to say of open meshes is said by the writer too, of the same objects.
           return { type: 'exportedStep' as const, id: req.id, result: { bytes: written.bytes, warnings: written.warnings } };
         });

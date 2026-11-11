@@ -54,7 +54,7 @@ export const FORMATS: ExportFormat[] = [
     id: 'step',
     label: 'STEP',
     extension: 'step',
-    description: tr('Solids with flat faces for CAD programs'),
+    description: tr('Solids with true surfaces for CAD programs'),
     kind: '3d',
     mime: 'model/step',
   },

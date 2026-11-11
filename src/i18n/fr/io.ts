@@ -9,7 +9,7 @@ export const io: Catalog = {
   'Mesh with colors and units for slicers': 'Maillage avec couleurs et unités pour trancheurs',
   'Text mesh with colors for modeling tools': 'Maillage texte avec couleurs pour logiciels de modélisation',
   'Mesh with pictures for scenes': 'Maillage avec images pour scènes',
-  'Solids with flat faces for CAD programs': 'Solides à faces planes pour logiciels de CAO',
+  'Solids with true surfaces for CAD programs': 'Solides à surfaces exactes pour logiciels de CAO',
   'Top-down outline for lasers': 'Contour vu de dessus pour découpe laser',
   'Top-down outline for CAD': 'Contour vu de dessus pour CAO',
 
@@ -38,6 +38,7 @@ export const io: Catalog = {
   '"{name}" is too detailed for a STEP file and was left out.': '«\u00a0{name}\u00a0» est trop détaillé pour un fichier STEP et a été ignoré.',
   '"{name}" is not watertight and was exported as a surface.': '«\u00a0{name}\u00a0» n’est pas étanche et a été exporté comme surface.',
   'The STEP file could not be written.': 'Le fichier STEP n’a pas pu être écrit.',
+  '"{name}" may not be whole in the STEP file: check it where it is opened.': '«\u00a0{name}\u00a0» n’est peut-être pas complet dans le fichier STEP\u00a0: vérifiez-le là où il est ouvert.',
 
   // XML (xml.ts)
   'This file is nested too deeply to read.': 'Ce fichier est imbriqué trop profondément pour être lu.',
