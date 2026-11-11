@@ -180,9 +180,7 @@ describe('the design as a STEP file', () => {
     // A threaded nut is a twisted extrusion: no exact form.
     expect(roundTrip(partNode('metric-nut')).exact).toBe(false);
     // Flat profiles with round holes: a gear, a pulley, a motor mount, a panel cutout, a board.
-    for (const id of ['spur', 'gt2-pulley', 'stepper-mount', 'panel-connector', 'raspberry-pi', 'extrusion']) expect(roundTrip(partNode(id)).exact, id).toBe(true);
-    // An outline that crosses itself (the servo's body cut through the edge of its plate) is left to the facets.
-    expect(roundTrip(partNode('servo-mount')).exact).toBe(false);
+    for (const id of ['spur', 'gt2-pulley', 'stepper-mount', 'servo-mount', 'panel-connector', 'raspberry-pi', 'extrusion']) expect(roundTrip(partNode(id)).exact, id).toBe(true);
   }, 120_000);
 
   // A thread is a twisted extrusion cut to length: its mesh has corners that are one place under two numbers by

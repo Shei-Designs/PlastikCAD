@@ -13,8 +13,22 @@ const q = QUALITY.normal;
 const params = (def: GeneratorDef, over: Params = {}): Params => ({ ...defaultParams(def), ...over });
 const made = (def: GeneratorDef, over: Params = {}) => {
   const r = def.build(params(def, over), q);
-  return { ...r, stats: evaluate(r.solid).stats };
+  const { stats, mesh } = evaluate(r.solid);
+  return { ...r, stats, mesh };
 };
+/** How many separate pieces a mesh is made of: the groups of triangles that hang together through a shared corner. */
+function pieces(mesh: { positions: Float32Array; triangles: Uint32Array }): number {
+  const group = Array.from({ length: mesh.positions.length / 3 }, (_, i) => i);
+  const find = (i: number): number => {
+    while (group[i] !== i) i = group[i] = group[group[i]];
+    return i;
+  };
+  for (let t = 0; t < mesh.triangles.length; t += 3) {
+    group[find(mesh.triangles[t])] = find(mesh.triangles[t + 1]);
+    group[find(mesh.triangles[t + 1])] = find(mesh.triangles[t + 2]);
+  }
+  return new Set(Array.from(mesh.triangles, find)).size;
+}
 const extent = (s: { min: number[]; max: number[] }, axis: number) => s.max[axis] - s.min[axis];
 const disc = (d: number) => (Math.PI / 4) * d * d;
 
@@ -82,9 +96,15 @@ describe('motor mounts', () => {
 
   it("drops a servo's body through the plate and seats its tabs", () => {
     const plate = made(servo, { motor: 'sg90', form: 'plate', thickness: 3, clearance: 0.3 });
+    // 6 beyond the screws at ±14 along it, and 6 beyond the body's opening across it: the opening is 12.4 wide there.
     expect(extent(plate.stats, 0)).toBeCloseTo(40, 1);
+    expect(extent(plate.stats, 1)).toBeCloseTo(12.4 + 12, 1);
     const cutout = (22.5 + 0.6) * (11.8 + 0.6);
-    expect(plate.stats.volume).toBeLessThan((40 * 12.8 - cutout) * 3);
+    expect(plate.stats.volume).toBeLessThan((40 * 24.4 - cutout) * 3);
+    expect(plate.stats.volume).toBeGreaterThan((40 * 24.4 - cutout) * 3 * 0.95);
+    // One plate round the opening, not a tab either side of it.
+    expect(pieces(plate.mesh)).toBe(1);
+    for (const motor of ['sg90', 'mg996r']) for (const margin of [2, 6, 12]) expect(pieces(made(servo, { motor, form: 'plate', margin, clearance: 1 }).mesh), `${motor} ${margin}`).toBe(1);
     const body = made(servo, { motor: 'sg90', form: 'body' });
     expect(body.stats.min[2]).toBeCloseTo(-16, 6);
     expect(body.stats.max[2]).toBeCloseTo(6.7 + 8, 6);
