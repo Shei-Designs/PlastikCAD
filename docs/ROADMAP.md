@@ -220,3 +220,40 @@ clock, writes nothing it could not read whole (a cut-off file, a missing
 or damaged import), and its clean-up cannot touch anything on the device;
 a newer design is refused everywhere it could be opened or merged.
 
+### Review 4: performance and size (2026-11-11)
+
+Measured on the built app in Chromium with the picture drawn in software
+(so frame rates are on the low side), at this workstation's speed and with
+the processor slowed four times to stand for a tablet.
+
+What it weighs: the installers are 11 to 12 MB (Windows, macOS); the app's
+files are 39 MB unpacked, 12 MB compressed, of which OpenCascade (STEP) is
+23 MB and MuJoCo (the test drive) 11 MB, each read only when first used.
+Start-up reads 0.7 MB in 11 requests.
+
+| | Workstation | Slowed 4× |
+|---|---|---|
+| Window drawn | 0.2 s | 0.6 s |
+| First shape built and drawn | 0.8 s | 1.2 s |
+| First gear / first lettering | | 0.2 s / 0.1 s |
+| 400 objects placed, grouped, saved | no frame dropped, 36 MB | |
+| A mesh of 200 000 triangles read | under 2 s, 76 MB | |
+| A mesh of 1 000 000 triangles read | 2.5 s, 293 MB, a hole cut in 0.6 s | |
+| A save with that mesh in the design (24 MB file) | 0.07 s | 0.16 s |
+
+None of that needs work. One thing does:
+
+1. **A STEP export of imported meshes costs about 2.5 kB of file, 0.4 ms
+   and 22 kB of memory per triangle**: 20 000 triangles make a 50 MB file
+   in 6 s with 0.9 GB in use, 50 000 a 128 MB file in 22 s with 1.6 GB.
+   One object over 60 000 triangles is left out with a warning; the total
+   is not limited, so several smaller ones pass, and on a tablet the system
+   closes the app (review 1, finding 2). A limit on the whole export, said
+   before it starts, would do; or meshes written as tessellated shapes,
+   which STEP has and which cost a fraction (a research piece).
+
+Not measured: the desktop and Android apps themselves (the debug builds
+used in review 1 are not built for speed), memory on a real tablet, and a
+project of hundreds of megabytes saved to the tablet's storage on every
+edit, which is where keeping a project as one whole file will first cost.
+
