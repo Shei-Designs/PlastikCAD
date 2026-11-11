@@ -29,9 +29,11 @@ export interface StepObject {
 }
 
 /**
- * Past this many triangles an object that cannot be rebuilt is left out: every
- * triangle is a face to sew and some 1.6 kB of file, so this many already
- * take ten seconds and make a file of a hundred megabytes.
+ * Past this many triangles an object that cannot be rebuilt is left out, and so is one that would take the
+ * triangles of the whole file past it: every triangle is a face to sew, some 2.5 kB of file and some 22 kB of
+ * memory while it is written, so this many already take half a minute, make a file of 150 MB and need well over
+ * a gigabyte. Counted over the whole file because that is what runs out: twenty imported meshes of a few thousand
+ * triangles each passed one by one, and on a tablet the system closed the app for the memory they took together.
  */
 export const STEP_TRIANGLES = 60_000;
 
@@ -49,7 +51,7 @@ const linear = (c: number): number => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) /
  * say of it: the objects left out for being too detailed, and those that are
  * not closed and went out as surfaces.
  */
-export function writeStep(oc: OpenCascadeInstance, objects: StepObject[], tools: ExactTools = { partBox: () => null }): { bytes: Uint8Array; warnings: string[]; exact: number } {
+export function writeStep(oc: OpenCascadeInstance, objects: StepObject[], tools: ExactTools = { partBox: () => null }, budget = STEP_TRIANGLES): { bytes: Uint8Array; warnings: string[]; exact: number } {
   // Everything made here lives in the library's own memory, which is not collected: it is let go at the end.
   const made: Deletable[] = [];
   const keep = <T extends Deletable>(o: T): T => {
@@ -65,14 +67,20 @@ export function writeStep(oc: OpenCascadeInstance, objects: StepObject[], tools:
     const colors = keep(oc.XCAFDoc_DocumentTool.ColorTool(keep(doc.Main())));
     let written = 0;
     let exact = 0;
+    /** The triangles written as faces so far. */
+    let sewn = 0;
     for (const object of objects) {
       const rebuilt = object.node ? exactShape(oc, object.node, measure(object.mesh), tools, keep) : null;
       const facets = object.facets ?? object.mesh;
+      const count = facets.triangles.length / 3;
       if (rebuilt) exact++;
-      else if (facets.triangles.length / 3 > STEP_TRIANGLES) {
+      else if (count > budget) {
         warnings.push(tr('"{name}" is too detailed for a STEP file and was left out.', { name: object.name }));
         continue;
-      }
+      } else if (sewn + count > budget) {
+        warnings.push(tr('"{name}" was left out: the file had reached the detail a STEP file can hold.', { name: object.name }));
+        continue;
+      } else sewn += count;
       let solid: { shape: InstanceType<typeof oc.TopoDS_Shape>; closed: boolean };
       try {
         solid = rebuilt ? { shape: rebuilt, closed: true } : facetedSolid(oc, facets, keep);

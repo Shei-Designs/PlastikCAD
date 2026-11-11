@@ -111,4 +111,14 @@ describe('STEP export', () => {
     expect(coarse.warnings).toEqual([]);
     expect(count(text(coarse.bytes), 'ADVANCED_FACE')).toBe(6);
   });
+
+  it('counts the triangles of the whole file: what would take it past the limit is left out, and said', () => {
+    // Twelve triangles to a box, and room for thirty: two go out, the third does not, a smaller fourth would not either.
+    const boxes = ['One', 'Two', 'Three'].map((name) => ({ name, color: '#ffffff', mesh: box(1, 1, 1) }));
+    const { bytes, warnings } = writeStep(oc, boxes, { partBox: () => null }, 30);
+    expect(warnings).toEqual(['"Three" was left out: the file had reached the detail a STEP file can hold.']);
+    expect(count(text(bytes), 'MANIFOLD_SOLID_BREP')).toBe(2);
+    // The same three with the room they need all go out.
+    expect(writeStep(oc, boxes, { partBox: () => null }, 36).warnings).toEqual([]);
+  });
 });
