@@ -10,6 +10,100 @@ Phases 0 to 6 (the review fixes, the safety net, the tablet workspace,
 versions and updates, large models, the modelling features and the file
 formats) are done and merged. The README says what the app does today.
 
+## From the reviews
+
+Six reviews were made on 2026-11-11; each has its section at the end of this
+file. What they found is in three lists here: what is fixed and waiting to
+be merged, what is left to choose from, and what they showed could be built.
+
+### Fixed, in pull requests
+
+| Pull request | What it fixes | From |
+|---|---|---|
+| #44 | Escape, or a press beside the box, deleted the file that was opened | 1 |
+| #45 | Linux desktop: exports failed after the first STEP or compressed glTF file of a session | 1 |
+| #47 | Every Linux job of the CI failed when the runners could not reach Ubuntu's package hosts | – |
+| #48 | A small file could freeze the app for good; three slow readers | 5 |
+| #49 | The native side's check of the kind of file could be got round | 5 |
+| #50 | A save during a sync pass, undo after a merge, and an import ending in another project each lost work; two new projects of one name took one file | 2 |
+| #51 | "Empty Trash" during a sync pass; a project file copied by hand; names differing by an accent's form; saved versions of an old-format file | 2 |
+| #52 | A move of the projects folder that fails part-way, and its trash; a listing that is short or empty taken for deletions | 2 |
+| #53 | A STEP export of many imported meshes ran a tablet out of memory | 1, 4 |
+| #54 | A dropped file that cannot be read said nothing; a failed save was not tried again; reloading on a failed save; the save box replacing a file unasked; names in the diagnostics; smaller wording | 1, 2, 5 |
+| #55 | Android: Back left the app with a box still open | 1 |
+| #56 | The look for updates at start can be turned off; the Android sign-in asks for one access only; a stricter content policy; imported data read strictly; no installation id in a copy | 2, 5 |
+| #57 | Actions named by movable tags in the job that holds the signing key; native tests before a release | 5 |
+| #58 | A finger took the wrong align dot, and resized where it meant to turn; panels opening behind the inspector; both panels left over the plate; the keypad rising over the projects | 3 |
+
+Merge #47 first: the others need `main` merged into them afterwards to get
+their checks. #51 and #52 follow #50; #56 follows #55; #57 follows #47.
+
+### Left to choose from
+
+By touch (review 3):
+
+- **The test drive needs a keyboard**: there are no pads on the screen to
+  drive with.
+- **A tablet held upright**: the open inspector covers the number boxes of
+  the Dimensions box and six toolbar buttons; a first start shows a bare
+  plate with the Library behind a small tab; the "Custom" tile opens the
+  parts bin in the inspector, which is hidden then.
+- **Held sideways**, the Dimensions box sits on handles and on what was
+  just placed.
+- **A slider takes a touch anywhere on its track at once**, so a swipe
+  meant to scroll the inspector sets a value.
+- **Icon buttons have no name a finger can see** (they are in tooltips).
+- **Number boxes have no stepper**: every change is the sheet and the
+  whole number typed again.
+- **Hints speak of clicks and Esc** on a tablet; upright with the Library
+  open, the hint bar is cut by the panel.
+- Small targets outside what the tests measure (the view buttons, the
+  buttons of an Objects row, the panel tabs); long French names cut on the
+  part tiles; the help marks, to be tried on the device.
+
+Elsewhere:
+
+- **STEP for meshes as tessellated shapes**, which the format has and which
+  cost a fraction of a face to a triangle (research; #53 only limits).
+- **The signing key at hand during the build** of a release: signing in a
+  step of its own, after the build (#57 pins the actions only).
+- **Android's backup** is at the system's default: projects come back after
+  a restore, which is wanted; the hour-long Drive token is in it too.
+- Custom parts that a sync deletes go to a trash no screen lists; a Linux
+  session with no keyring waits two minutes at start before the sign-in is
+  known; an empty `History` folder and a hidden temporary file can be left
+  behind; the package's short description reads "for 3D printing".
+
+### Opportunities
+
+What the reviews showed could be built, beyond mending. None is planned.
+
+- **Example projects** to start from, one for each kind of work (a part, a
+  robot, a model for Blender): the app has no way in for a newcomer, and
+  nothing shows what it can do.
+- **A section view**: the model cut by a plane, to look inside (a clipping
+  plane in the viewer).
+- **A list of the standard parts in a design** (M3 × 10 screws, 608
+  bearings), to buy from: the app knows each one it placed.
+- **Pads on the screen for the test drive**: a robot built and driven on a
+  tablet with no keyboard.
+- **An enclosure from a board**: the board mounts and the connector
+  cut-outs already know where everything is; a box round them is one step.
+- **Inches as the working unit**, now that inch bolts and nuts exist.
+- **Volume and weight of the selection** outside robot mode, which already
+  works them out.
+- **A link to pass a design on**, with the phone viewer of phase 9 as what
+  opens it.
+- **The built apps tried by a script before each release.** The driver made
+  for review 1 (the real desktop and Android apps, their pickers answered
+  for them) found three faults no browser test could see. Kept in the
+  repository it is a check to run before publishing.
+- **The browser tests in WebKit as well as Chromium**: the desktop app on
+  Linux and macOS is WebKit, and the fault of #45 only shows there.
+- **A release that checks itself**: version 0.2.0 was published without its
+  Linux packages because that one build failed; a last job that lists what
+  is attached and fails when a platform is missing would have said so.
+
 ## Next to build
 
 Smaller pieces, each of which can be built without a session.
@@ -93,7 +187,9 @@ Decided against; not to be proposed again.
 ## Reviews
 
 Passes over the whole project, each ending in a list of findings to choose
-from rather than in fixes. In this order:
+from rather than in fixes. All six were made on 2026-11-11; what came of
+them is summed up in "From the reviews" above, and each has its record
+below. They were:
 
 1. **The bundled apps.** Every feature tried in the real desktop and Android
    builds: what the browser tests cannot see.
@@ -220,6 +316,32 @@ clock, writes nothing it could not read whole (a cut-off file, a missing
 or damaged import), and its clean-up cannot touch anything on the device;
 a newer design is refused everywhere it could be opened or merged.
 
+### Review 3: tablet usability (2026-11-11)
+
+Every main flow at tablet size (1280 × 800 and 800 × 1280), with fingers,
+in English and in French, on the built app in Chromium: placing, selecting,
+the handles, the camera, the inspector, the toolbar, the panels, projects,
+the mating wizard, custom parts, robot mode. The real keypad, the system's
+pickers and the colour picker could not be walked there.
+
+Fixed (#58): a finger on the "front" or "bottom" align dot aligned left, and
+one on the turn arrow beside a corner grip resized; the mating gear and
+array panels opened behind the inspector on an upright tablet; a tablet
+turned upright kept both panels over the plate; the projects box raised the
+keypad as it opened.
+
+Left: see "Left to choose from" above. The three that stop a task or come
+close: the test drive cannot be driven without a keyboard; upright, the
+inspector covers the Dimensions box; a slider takes a swipe meant to scroll.
+
+What works well by touch: placing by tap and double tap; tap to select,
+a long press to add, a long press and drag to box-select; one finger to
+orbit, two to pan and pinch; the readout above the finger; every handle
+once it is reached; the entry sheet, which takes "32,5" and stays above the
+keypad; the gear inspector without scrolling; the Objects list under a
+finger; projects, the File menu, About, Language, the format list, the
+ruler, Array, Mirror and Group in both orientations and in French.
+
 ### Review 4: performance and size (2026-11-11)
 
 Measured on the built app in Chromium with the picture drawn in software
@@ -256,55 +378,6 @@ Not measured: the desktop and Android apps themselves (the debug builds
 used in review 1 are not built for speed), memory on a real tablet, and a
 project of hundreds of megabytes saved to the tablet's storage on every
 edit, which is where keeping a project as one whole file will first cost.
-
-### Review 6: gaps and opportunities (2026-11-11)
-
-Not measured: a reading of what the app does against what someone arriving
-from Tinkercad, FreeCAD or Fusion 360 is used to. Nothing here repeats what
-was dropped on purpose (a work plane, snapping while moving, a gesture to
-select what is behind).
-
-What they would look for and not find:
-
-1. **A way in.** No first-run guide, no example projects, no starter for
-   each of the three kinds of work (a part to make, a robot, a model for
-   Blender). Tinkercad teaches by its starters.
-2. **A look inside.** No section view (the model cut by a plane, for
-   looking only). Ghost shows through an object, not into one.
-3. **Fillet or chamfer of a chosen edge.** Today an edge cutter is lined up
-   by hand; the others pick an edge and give a radius.
-4. **Hollowing a solid to a wall thickness** (shell).
-5. **Keeping only the overlap of two solids** (intersect): a group adds
-   solids and cuts holes, nothing more.
-6. **Drawing a profile in the app** and pushing it out or turning it round
-   an axis. Outlines come in as SVG or DXF only; there is no revolve.
-7. **Inches as the working unit.** Everything is millimeters; inch parts
-   exist, inch sizes cannot be typed.
-8. **Volume and weight of what is selected**, outside robot mode.
-9. **A drawing with dimensions** to print or hand over (FreeCAD, Fusion).
-10. **Passing a design to someone**: a file can be sent, but there is no
-    link and nothing to open one with (the phone viewer of phase 9 is the
-    natural place for it).
-
-What the app does that those do not, each a thing to lean on:
-
-- **Real machine parts with their mates**: gears cut as a cutter cuts
-  them, pulleys, sprockets, threads, and a wizard that makes the part that
-  meshes. FreeCAD and Fusion need add-ons; Tinkercad has shapes that look
-  the part.
-- **A robot from a design in one place**: joints, mass, sensors, a drive, a
-  test drive in the app, and packages that open as they are in ROS 2,
-  Gazebo, MuJoCo and Isaac Sim. None of the three does this unaided.
-- **Mounts and cut-outs for real boards, motors, fans and connectors.**
-- **A tablet, by touch, with no account and no network**: 12 MB to
-  download, files that stay on the device, free software.
-- **STEP in and out** beside the mesh formats, with true surfaces where
-  the shape allows; Tinkercad has no STEP at all.
-
-Three small things that follow from the above and cost little: example
-projects (they answer 1 and show off the list above); a section view (a
-clipping plane in the viewer); a list of the standard parts in a design
-(M3 × 10 screws, 608 bearings) to buy from.
 
 ### Review 5: security and privacy (2026-11-11)
 
@@ -368,3 +441,51 @@ that reaches a robot description, a launch file, a script or a path inside
 a package is reduced to letters, digits and underscores first; pull
 requests run without secrets.
 
+### Review 6: gaps and opportunities (2026-11-11)
+
+Not measured: a reading of what the app does against what someone arriving
+from Tinkercad, FreeCAD or Fusion 360 is used to. Nothing here repeats what
+was dropped on purpose (a work plane, snapping while moving, a gesture to
+select what is behind).
+
+What they would look for and not find:
+
+1. **A way in.** No first-run guide, no example projects, no starter for
+   each of the three kinds of work (a part to make, a robot, a model for
+   Blender). Tinkercad teaches by its starters.
+2. **A look inside.** No section view (the model cut by a plane, for
+   looking only). Ghost shows through an object, not into one.
+3. **Fillet or chamfer of a chosen edge.** Today an edge cutter is lined up
+   by hand; the others pick an edge and give a radius.
+4. **Hollowing a solid to a wall thickness** (shell).
+5. **Keeping only the overlap of two solids** (intersect): a group adds
+   solids and cuts holes, nothing more.
+6. **Drawing a profile in the app** and pushing it out or turning it round
+   an axis. Outlines come in as SVG or DXF only; there is no revolve.
+7. **Inches as the working unit.** Everything is millimeters; inch parts
+   exist, inch sizes cannot be typed.
+8. **Volume and weight of what is selected**, outside robot mode.
+9. **A drawing with dimensions** to print or hand over (FreeCAD, Fusion).
+10. **Passing a design to someone**: a file can be sent, but there is no
+    link and nothing to open one with (the phone viewer of phase 9 is the
+    natural place for it).
+
+What the app does that those do not, each a thing to lean on:
+
+- **Real machine parts with their mates**: gears cut as a cutter cuts
+  them, pulleys, sprockets, threads, and a wizard that makes the part that
+  meshes. FreeCAD and Fusion need add-ons; Tinkercad has shapes that look
+  the part.
+- **A robot from a design in one place**: joints, mass, sensors, a drive, a
+  test drive in the app, and packages that open as they are in ROS 2,
+  Gazebo, MuJoCo and Isaac Sim. None of the three does this unaided.
+- **Mounts and cut-outs for real boards, motors, fans and connectors.**
+- **A tablet, by touch, with no account and no network**: 12 MB to
+  download, files that stay on the device, free software.
+- **STEP in and out** beside the mesh formats, with true surfaces where
+  the shape allows; Tinkercad has no STEP at all.
+
+Three small things that follow from the above and cost little: example
+projects (they answer 1 and show off the list above); a section view (a
+clipping plane in the viewer); a list of the standard parts in a design
+(M3 × 10 screws, 608 bearings) to buy from.
