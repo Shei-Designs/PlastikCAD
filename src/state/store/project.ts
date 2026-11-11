@@ -10,7 +10,7 @@ import * as platform from '../../platform';
 import { askName, tell } from '../../ui/ask';
 import type { PickedFile } from '../../platform';
 import { geometry } from '../geometry';
-import { DiskProjects, fileNameFor, hasProjectStore, partStore, projectStore, setProjectStore } from '../projects';
+import { DiskProjects, fileNameFor, hasProjectStore, partsDirOf, partStore, projectStore, setProjectStore } from '../projects';
 import type { ProjectInfo, VersionInfo } from '../projects';
 import { mergeDocs } from '../../sync/merge';
 import { requestSync, withSyncPaused } from '../../sync/sync';
@@ -625,21 +625,35 @@ async function moveProjectsFolder(storage: NonNullable<EditorState['storage']>, 
   const oldParts = partStore();
   const parts = move ? await oldParts.list() : [];
   if (move) {
+    // Everything is copied before anything is removed. A move that cannot be finished (the new place fills up, is
+    // taken away) leaves the old folder whole and the app on it, and takes back what it had put in the new one:
+    // done one project at a time, the app was left on a folder missing those already moved, which the next sync
+    // pass took for deleted.
+    const freshParts = new DiskProjects(partsDirOf(picked));
+    const copied: { store: DiskProjects; key: string }[] = [];
+    try {
+      for (const item of items) {
+        const key = await fresh.write(null, item.name, await old.read(item.key));
+        copied.push({ store: fresh, key });
+        if (item.key === getState().projectKey) openKey = key;
+      }
+      // The custom parts go with their projects.
+      for (const item of parts) copied.push({ store: freshParts, key: await freshParts.write(null, item.name, await oldParts.read(item.key)) });
+    } catch (e) {
+      for (const made of copied) await made.store.remove(made.key).catch(() => {});
+      throw e;
+    }
+    // Now in the new folder, whole: the old copies go, and what was kept beside them comes along.
     for (const item of items) {
-      const text = await old.read(item.key);
-      const key = await fresh.write(null, item.name, text);
-      await old.remove(item.key);
+      await old.remove(item.key).catch(() => {});
       // Its earlier saves go with it.
       if (item.id && old instanceof DiskProjects) await fresh.takeVersions(old, item.id);
-      if (item.key === getState().projectKey) openKey = key;
     }
+    for (const item of parts) await oldParts.remove(item.key).catch(() => {});
+    // The trash too: what is in it can still be put back.
+    if (old instanceof DiskProjects) await fresh.takeTrash(old);
   }
   setProjectStore(fresh);
-  // The custom parts go with their projects.
-  for (const item of parts) {
-    await partStore().write(null, item.name, await oldParts.read(item.key));
-    await oldParts.remove(item.key);
-  }
   if (parts.length) set({ partsEpoch: getState().partsEpoch + 1 });
   // Left behind with the others, the open project is not among the projects kept here any more. The editor starts
   // afresh, rather than go on saving it into a folder the app no longer lists or syncs.

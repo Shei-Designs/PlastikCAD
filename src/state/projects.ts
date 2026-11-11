@@ -63,6 +63,11 @@ export interface ProjectStore {
    * and neither may write between the other's check and its write.
    */
   exclusive?<T>(run: () => Promise<T>): Promise<T>;
+  /**
+   * The files the last listing found and could not read (busy, not yet fetched by the system, damaged): they are
+   * missing from what `list` gave, and are not to be taken for deleted.
+   */
+  unreadable?(): readonly string[];
 }
 
 /** One at a time, in the order asked; one that fails does not hold up the next. */
@@ -200,11 +205,15 @@ export class DiskProjects implements ProjectStore {
   private async listIn(dir: string): Promise<ProjectInfo[]> {
     const entries = await platform.listDesigns(dir);
     const out: ProjectInfo[] = [];
+    const unread: string[] = [];
     for (const entry of entries) {
       let cached = this.heads.get(entry.path);
       if (!cached || cached.modified !== entry.modified || cached.size !== entry.size) {
-        const header = await this.header(entry);
-        // Not a design after all (some other JSON with the extension): left out.
+        const header = await this.header(entry).catch(() => {
+          if (dir === this.location) unread.push(entry.path);
+          return null;
+        });
+        // Not a design after all (some other JSON with the extension), or not to be read just now: left out.
         if (!header) continue;
         cached = { modified: entry.modified, size: entry.size, header };
         this.heads.set(entry.path, cached);
@@ -215,17 +224,26 @@ export class DiskProjects implements ProjectStore {
     }
     // What is gone from this folder is forgotten; headers of the other folders are left alone.
     for (const path of this.heads.keys()) if (folderOf(path) === folderOf(join(dir, 'x')) && !entries.some((e) => e.path === path)) this.heads.delete(path);
+    if (dir === this.location) this.unread = unread;
     return out;
   }
 
+  private unread: string[] = [];
+
+  unreadable(): readonly string[] {
+    return this.unread;
+  }
+
+  /** The header of a file; null when it is not a design. Rejects when the file could not be read at all. */
   private async header(entry: platform.DesignEntry): Promise<DocHeader | null> {
+    const head = decoder.decode(await platform.readHead(entry.path, HEAD_BYTES));
+    const header = readHeader(head);
+    if (header) return header;
+    // Laid out some other way (edited by hand, say): the whole file has to be read.
+    if (entry.size > 64 * 1024 * 1024) return null;
+    const text = decoder.decode((await platform.readPath(entry.path)).bytes);
     try {
-      const head = decoder.decode(await platform.readHead(entry.path, HEAD_BYTES));
-      const header = readHeader(head);
-      if (header) return header;
-      // Laid out some other way (edited by hand, say): the whole file has to be read.
-      if (entry.size > 64 * 1024 * 1024) return null;
-      return headerOf(decoder.decode((await platform.readPath(entry.path)).bytes));
+      return headerOf(text);
     } catch {
       return null;
     }
@@ -320,6 +338,15 @@ export class DiskProjects implements ProjectStore {
     }
     const gone = new Set(versionsToDrop(names.map(stampTime).filter((t): t is number => t !== null)));
     for (const old of names) if (gone.has(stampTime(old) ?? -1)) await platform.removeFile(join(dir, old)).catch(() => {});
+  }
+
+  /** Takes over what another folder holds in its trash, with the earlier saves of each, when its projects move here. */
+  async takeTrash(from: DiskProjects): Promise<void> {
+    for (const item of await from.discarded()) {
+      const taken = (await platform.listDesigns(this.trash)).map((e) => e.name);
+      await platform.moveFile(item.key, join(this.trash, uniqueFileName(baseName(item.key), taken))).catch(() => {});
+      if (item.id) await this.takeVersions(from, item.id);
+    }
   }
 
   /** Takes over the earlier saves another folder kept of a project, when its projects move here. */

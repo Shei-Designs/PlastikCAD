@@ -105,8 +105,13 @@ export interface SyncOptions {
   confirmDeletes?: (plan: DeletePlan) => Promise<boolean>;
 }
 
-/** A deletion counts as a mass deletion from two projects up, when it takes more than half of what the side has. */
-const massDeletion = (count: number, total: number): boolean => count >= 2 && count * 2 > total;
+/**
+ * A deletion counts as a mass deletion from two projects up, when it takes more than half of what the side has; and
+ * whatever its count when the side it was read off has nothing left at all. A projects folder on a drive that is
+ * not connected lists as an empty folder, and so does a Drive folder that was swapped for another: "everything is
+ * gone" is more often the place than the projects.
+ */
+const massDeletion = (count: number, total: number, left: number): boolean => (count >= 2 && count * 2 > total) || (count >= 1 && left === 0);
 
 /** An id that is the same every time for the same text: a retried pass finds what an earlier one made. */
 function stableId(text: string): string {
@@ -243,14 +248,18 @@ export async function synchronize(local: ProjectStore, remote: Remote, state: Sy
       // Whatever kept it from being read is met again, and reported, in its turn below.
     }
   }
-  const decide = async (side: DeletePlan['side'], ids: Set<string>, total: number): Promise<'delete' | 'restore' | 'hold'> => {
-    if (!massDeletion(ids.size, total)) return 'delete';
+  const decide = async (side: DeletePlan['side'], ids: Set<string>, total: number, left: number): Promise<'delete' | 'restore' | 'hold'> => {
+    if (ids.size === 0) return 'delete';
+    // A file that is there and could not be read is not in the listing: nothing is deleted elsewhere on the word of
+    // a listing known to be short. The pass after the file reads again settles it.
+    if (side === 'remote' && (local.unreadable?.().length ?? 0) > 0) return 'hold';
+    if (!massDeletion(ids.size, total, left)) return 'delete';
     if (!options.confirmDeletes) return 'hold';
     const names = [...ids].map((id) => (side === 'local' ? locals.get(id)!.name : stem(remotes.get(id)!.name)));
     return (await options.confirmDeletes({ side, names, total })) ? 'delete' : 'restore';
   };
-  const localDeletes = await decide('local', dropLocal, locals.size);
-  const remoteDeletes = await decide('remote', dropRemote, remotes.size);
+  const localDeletes = await decide('local', dropLocal, locals.size, remotes.size);
+  const remoteDeletes = await decide('remote', dropRemote, remotes.size, locals.size);
 
   for (const projectId of new Set([...locals.keys(), ...remotes.keys(), ...records.keys()])) {
     const info = locals.get(projectId);
