@@ -78,6 +78,9 @@ describe('file names', () => {
     expect(uniqueFileName('Box.plastikcad', ['Lid.plastikcad'])).toBe('Box.plastikcad');
     expect(uniqueFileName('Box.plastikcad', ['box.plastikcad'])).toBe('Box (2).plastikcad');
     expect(uniqueFileName('Box.plastikcad', ['Box.plastikcad', 'Box (2).plastikcad'])).toBe('Box (3).plastikcad');
+    // An accented letter written as one character or as a letter and its accent is one name to a Mac.
+    expect(uniqueFileName('Caf\u00e9.plastikcad', ['Cafe\u0301.plastikcad'])).toBe('Caf\u00e9 (2).plastikcad');
+    expect(uniqueFileName('Cafe\u0301.plastikcad', ['CAF\u00c9.plastikcad'], 'Caf\u00e9.plastikcad')).toBe('Cafe\u0301.plastikcad');
     expect(uniqueFileName('Box.plastikcad', ['Box.plastikcad'], 'box.plastikcad')).toBe('Box.plastikcad');
   });
 });

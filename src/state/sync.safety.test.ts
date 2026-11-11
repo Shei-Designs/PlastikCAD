@@ -43,8 +43,17 @@ vi.mock('../ui/ask', () => ({
   tell: async (options: { actions: string[] }) => options.actions[options.actions.length - 1],
   askPick: async () => [],
 }));
+/** Something a test has happen while a question is up, and what was asked. */
+let whileAsked: (() => Promise<void>) | null = null;
+const asked: string[] = [];
 vi.mock('../platform', () => ({
-  confirm: async () => true,
+  confirm: async (message: string) => {
+    asked.push(message);
+    const run = whileAsked;
+    whileAsked = null;
+    await run?.();
+    return true;
+  },
   pickFiles: async () => [],
   readPath: async () => {
     throw new Error('no files here');
@@ -110,6 +119,8 @@ const changed = (key: string): SyncReport => ({ uploaded: [], downloaded: ['Plat
 
 beforeEach(async () => {
   importGate = Promise.resolve();
+  whileAsked = null;
+  asked.length = 0;
   await store.startProject();
   kept = new projects.MemoryProjects();
   projects.setProjectStore(kept);
@@ -325,3 +336,56 @@ describe('two new projects of one name written at the same moment', () => {
     expect([...files.keys()].sort()).toEqual(['/home/me/Documents/PlastikCAD/Untitled (2).plastikcad', '/home/me/Documents/PlastikCAD/Untitled.plastikcad']);
   });
 });
+
+describe('the trash emptied while a sync pass adds to it', () => {
+  it('destroys what was listed when the question was put, and nothing that arrived since', async () => {
+    store.addShape('box');
+    store.renameProject('Old junk');
+    await store.saveProject();
+    const junk = store.getState().projectKey!;
+    await store.startProject('Wanted');
+    store.addShape('sphere');
+    await store.saveProject();
+    const wanted = store.getState().projectKey!;
+    await store.startProject();
+    await kept.discard(junk);
+    expect((await store.listTrash()).map((p) => p.name)).toEqual(['Old junk']);
+    // While the question is up, a pass moves a project deleted on another device into the trash.
+    whileAsked = () => kept.discard(wanted);
+    expect(await store.emptyTrash()).toBe(true);
+    expect((await store.listTrash()).map((p) => p.name)).toEqual(['Wanted']);
+  });
+});
+
+describe('a project file copied by hand in the folder', () => {
+  it('becomes a project of its own when it is opened, so that both sync and each keeps its own earlier saves', async () => {
+    store.addShape('box');
+    store.renameProject('Box');
+    await store.saveProject();
+    const key = store.getState().projectKey!;
+    const id = store.getState().doc.id;
+    const copy = await kept.write(null, 'Box copy', (await kept.read(key)).replace('"name": "Box"', '"name": "Box copy"'));
+    expect((await kept.list()).map((p) => p.id)).toEqual([id, id]);
+    await store.openProject(copy);
+    await store.saveProject();
+    const all = await kept.list();
+    expect(new Set(all.map((p) => p.id)).size).toBe(2);
+    expect(all.find((p) => p.key === key)?.id).toBe(id);
+    // And the one that was there is opened as it is.
+    await store.openProject(key);
+    expect(store.getState().doc.id).toBe(id);
+  });
+});
+
+describe('a design of the first format, already in the folder', () => {
+  it('is asked about the saved versions it carries before they go', async () => {
+    const v1 = JSON.stringify({ format: 'plastikcad', version: 1, units: 'mm', name: 'Legacy', scene: [box('n1')], assets: {}, versions: [{ label: 'First draft', scene: [box('n1'), box('n2')] }] }, null, 2);
+    const key = await kept.write(null, 'Legacy', v1);
+    await store.openProject(key);
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toMatch(/^"Legacy" carries 1 saved version/);
+    await store.saveProject();
+    expect((await kept.list()).map((p) => p.name).sort()).toEqual(['Legacy', 'Legacy - First draft']);
+  });
+});
+

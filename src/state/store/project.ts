@@ -291,13 +291,20 @@ export async function openProject(key: string): Promise<void> {
       if (e instanceof NewerVersion) return void (await openCopyOf(text));
       throw e;
     }
+    // A copy of a project's file made by hand in the folder carries the project's id: the two would share their
+    // earlier saves, and sync would carry only one of them, without a word. The one opened becomes a project of its own.
+    const twin = (await projectStore().list()).some((p) => p.key !== key && p.id !== null && p.id === doc.id);
+    if (twin) doc = { ...doc, id: newId(), parent: undefined };
     adopt(doc, key);
     set({ browsing: false });
     // A file saved before projects had ids was just given one: written back, so the folder knows it too.
-    if (!readHeader(text.slice(0, HEAD_BYTES))?.id) {
+    const fresh = !readHeader(text.slice(0, HEAD_BYTES))?.id;
+    if (fresh || twin) {
       set({ saved: null });
       scheduleAutosave();
     }
+    // Such a file may carry saved versions, which that write would drop: each can be kept as a project first.
+    if (fresh) await offerLegacyVersions(text, doc.name);
   } catch (e) {
     fail(e);
   }
@@ -502,8 +509,10 @@ export async function restoreProject(key: string): Promise<void> {
 export async function emptyTrash(key?: string, name?: string): Promise<boolean> {
   try {
     const text = key ? tr('Delete "{name}" for good? Its earlier saves go with it. This cannot be undone.', { name: String(name) }) : tr('Delete everything in the Trash for good? This cannot be undone.');
+    // What is in the trash as the question is put: a sync pass may move more there while it is up, and that was never agreed to.
+    const listed = key ? [key] : ((await projectStore().discarded?.()) ?? []).map((item) => item.key);
     if (!(await platform.confirm(text, { title: APP_NAME, okLabel: tr('Delete'), cancelLabel: tr('Keep') }))) return false;
-    await projectStore().purge?.(key);
+    for (const each of listed) await projectStore().purge?.(each);
     return true;
   } catch (e) {
     fail(e);
