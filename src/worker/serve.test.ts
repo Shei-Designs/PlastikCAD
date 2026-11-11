@@ -184,6 +184,35 @@ describe('the worker', () => {
     expect(bare[0]).toEqual({ type: 'error', id: 1, message: 'STEP files cannot be read here.' });
   }, 60_000);
 
+  it('writes the design as a STEP file that reads back as its objects', async () => {
+    const posts: WorkerResponse[] = [];
+    const occ = () => loadOcc({ wasmBinary: readFileSync(fileURLToPath(new URL('../../node_modules/replicad-opencascadejs/dist/replicad_single.wasm', import.meta.url))) });
+    const receive = serve((msg) => posts.push(msg), () => initKernel(), occ);
+    // A box 20 across, and a cylinder beside it, made a hole: holes do not go out.
+    const plate = { ...makeShape('box'), id: 'plate', name: 'Plate', color: '#d8605a' };
+    const hole = { ...makeShape('cylinder', [40, 0, 0]), id: 'hole', hole: true };
+    receive({ type: 'exportStep', id: 1, nodes: [plate, hole] });
+    await vi.waitFor(() => expect(posts).toHaveLength(1), { timeout: 30_000 });
+    const [written] = posts;
+    if (written.type !== 'exportedStep') throw new Error(`unexpected answer: ${JSON.stringify(written).slice(0, 200)}`);
+    expect(written.result.warnings).toEqual([]);
+    const step = new TextDecoder().decode(written.result.bytes);
+    expect((step.match(/MANIFOLD_SOLID_BREP\(/g) ?? []).length).toBe(1);
+    expect((step.match(/\bPLANE\(/g) ?? []).length).toBe(6);
+    expect(step).toContain("PRODUCT('Plate'");
+    // And back in through the same worker: one part, the size of the box.
+    receive({ type: 'import', id: 2, name: 'plate.step', bytes: written.result.bytes, companions: [] });
+    await vi.waitFor(() => expect(posts).toHaveLength(2), { timeout: 30_000 });
+    const back = posts[1];
+    if (back.type !== 'imported' || back.result.kind !== 'model') throw new Error('unexpected answer');
+    expect(back.result.parts.map((p) => p.size)).toEqual([plate.size]);
+    // Without OpenCascade there is no STEP to write, and that is said.
+    const bare: WorkerResponse[] = [];
+    serve((msg) => bare.push(msg), () => initKernel())({ type: 'exportStep', id: 1, nodes: [plate] });
+    await vi.waitFor(() => expect(bare).toHaveLength(1));
+    expect(bare[0]).toEqual({ type: 'error', id: 1, message: 'STEP files cannot be written here.' });
+  }, 60_000);
+
   it('reads what the Measure tool takes hold of, on a mesh placed by a matrix', async () => {
     const { ask } = worker(Infinity);
     // A unit square of two triangles, made 10 wide and moved 5 up.

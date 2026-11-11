@@ -4,6 +4,7 @@
 import { build, exportColored, exportNodes, forgetAssets, massProperties, measure, partBox, resetKernel, robotGeometry, setAssets } from '../geometry/kernel';
 import { indexFeatures } from '../geometry/features';
 import { tr } from '../i18n';
+import { writeStep } from '../io/stepExport';
 import { readFile, readHeld } from './importing';
 import type { WorkerRequest, WorkerResponse } from './protocol';
 import { transferOf } from './transfer';
@@ -35,6 +36,21 @@ function answer(req: WorkerRequest, occ: Occ): WorkerResponse | null | Promise<W
       return { type: 'exportedColored', id: req.id, result: exportColored(req.nodes, req.fine, req.local) };
     case 'features':
       return { type: 'features', id: req.id, result: indexFeatures(placedBy(req.positions, req.matrix)) };
+    case 'exportStep': {
+      // The shapes first, by the kernel, which must be done with them before the wait for OpenCascade begins.
+      const colored = exportColored(req.nodes, true);
+      const objects = colored.objects.flatMap((o) => o.parts.map((p) => ({ name: o.name, color: p.color, mesh: p.mesh })));
+      if (!occ) throw new Error(tr('STEP files cannot be written here.'));
+      return occ()
+        .catch(() => {
+          throw new Error(tr('The STEP writer could not be loaded.'));
+        })
+        .then((oc) => {
+          const written = writeStep(oc, objects);
+          // What the kernel had to say of open meshes is said by the writer too, of the same objects.
+          return { type: 'exportedStep' as const, id: req.id, result: { bytes: written.bytes, warnings: written.warnings } };
+        });
+    }
     case 'massProperties':
       return { type: 'massProperties', id: req.id, result: massProperties(req.nodes) };
     case 'robotGeometry':

@@ -41,6 +41,8 @@ export type WorkerRequest =
    * first placed by `matrix` (sixteen numbers, column by column). A large mesh takes seconds to read.
    */
   | { type: 'features'; id: number; positions: Float32Array; matrix: number[] }
+  /** Every node placed, as a STEP file: a solid per object and color, named and colored (see io/stepExport.ts). */
+  | { type: 'exportStep'; id: number; nodes: SceneNode[] }
   /** Volume, area, centroid and inertia of each node as placed in the design, for the robot's links. */
   | { type: 'massProperties'; id: number; nodes: SceneNode[] }
   /** Each node placed, as the visual parts, collision shape and mass properties of a robot link. */
@@ -89,6 +91,12 @@ export interface ColoredObject {
   parts: ColoredPart[];
 }
 
+/** A STEP file, and what there is to say of it. */
+export interface StepExport {
+  bytes: Uint8Array;
+  warnings: string[];
+}
+
 export interface ColoredExport {
   objects: ColoredObject[];
   warnings: string[];
@@ -118,6 +126,7 @@ export type WorkerResponse =
   | { type: 'partBoxed'; id: number; bounds: Bounds | null }
   | { type: 'exported'; id: number; result: ExportResult }
   | { type: 'exportedColored'; id: number; result: ColoredExport }
+  | { type: 'exportedStep'; id: number; result: StepExport }
   | { type: 'imported'; id: number; result: ImportResult }
   | { type: 'features'; id: number; result: FeatureIndex }
   | { type: 'massProperties'; id: number; result: LinkProperties[] }

@@ -20,6 +20,8 @@ function viewsOf(msg: WorkerResponse): View[] {
         msg.result.bvh.order,
         msg.result.edges,
       ];
+    case 'exportedStep':
+      return [msg.result.bytes];
     case 'imported':
       // The meshes travel as text; only the pictures that came with a model are arrays.
       return msg.result.kind === 'model' ? msg.result.parts.map((p) => p.image?.bytes) : [];

@@ -84,6 +84,11 @@ export async function exportDesign(formatId: FormatId, selectionOnly: boolean): 
   }
   if (format.id === 'glb') {
     bytes = await made(() => exportGlb(nodes, getState().doc.assets, name));
+  } else if (format.id === 'step') {
+    // Objects stay apart, each a solid with its name and its color.
+    const result = await made(async () => (await geometry.prepare(nodes, getState().doc.assets)).exportStep(nodes));
+    bytes = result.bytes;
+    warnings = result.warnings;
   } else if (format.id === '3mf') {
     // Objects stay apart, each in its colors, so a slicer can print them in their materials.
     const result = await made(async () => (await geometry.prepare(nodes, getState().doc.assets)).exportColored(nodes, true));
