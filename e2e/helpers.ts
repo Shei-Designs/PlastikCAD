@@ -494,6 +494,44 @@ export const edgesShown = (page: Page): Promise<boolean> =>
 /** Whether the box that points out a part of a group is on show. */
 export const pointingBoxShown = (page: Page): Promise<boolean> => viewer(page, (v) => v.pointer3d.visible);
 
+/** Every handle on show: what it is, where its middle is on the page, and places well inside what is drawn of it (the middles of its triangles). */
+export const handlePoints = (page: Page): Promise<{ kind: Internals; at: [number, number]; drawn: [number, number][] }[]> =>
+  viewer(page, (v) => {
+    v.handles.layout();
+    v.overlay.updateMatrixWorld();
+    const r = v.renderer.domElement.getBoundingClientRect();
+    const onPage = (p: Internals): [number, number] => [r.left + ((p.x + 1) / 2) * r.width, r.top + ((1 - p.y) / 2) * r.height];
+    return v.handles.list
+      .filter((h: Internals) => h.object.visible)
+      .map((h: Internals) => {
+        const drawn: [number, number][] = [];
+        h.object.traverse((o: Internals) => {
+          const points = o.geometry?.getAttribute?.('position');
+          if (!points) return;
+          const index = o.geometry.getIndex();
+          const corner = (i: number) => v.controls.target.clone().fromBufferAttribute(points, index ? index.getX(i) : i);
+          for (let i = 0; i + 2 < (index ? index.count : points.count); i += 3) {
+            const middle = corner(i).add(corner(i + 1)).add(corner(i + 2)).divideScalar(3);
+            drawn.push(onPage(middle.applyMatrix4(o.matrixWorld).project(v.camera)));
+          }
+        });
+        return { kind: h.kind, at: onPage(h.object.getWorldPosition(v.controls.target.clone()).project(v.camera)), drawn };
+      });
+  });
+
+/** The handle a pointer at a place on the page would take hold of: the viewer's own choice, for a finger or a mouse. */
+export const handleUnder = (page: Page, x: number, y: number, pointerType: 'touch' | 'mouse' = 'touch'): Promise<Internals> =>
+  viewer(
+    page,
+    (v, [x, y, pointerType]: [number, number, string]) => {
+      const r = v.renderer.domElement.getBoundingClientRect();
+      v.pointer.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
+      v.raycaster.setFromCamera(v.pointer, v.camera);
+      return v.handles.pick({ pointerType })?.kind ?? null;
+    },
+    [x, y, pointerType] as [number, number, string],
+  );
+
 /** The handles round the selection: which set, how many, and whether they follow the object's own axes. */
 export const handles = (page: Page): Promise<{ mode: string; count: number; local: boolean | null }> =>
   viewer(page, (v) => ({ mode: v.handles.mode, count: v.handles.list.length, local: v.handles.frame ? v.handles.frame.local : null }));

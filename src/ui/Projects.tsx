@@ -229,6 +229,7 @@ export function Projects() {
       onClose={closeProjects}
       onEscape={cancelled}
       className="projects"
+      calm
       label={tr('Projects')}
       onKeyDown={(e) => {
         // The search box swallows Escape (it clears itself) before the dialog's cancel event can fire.
