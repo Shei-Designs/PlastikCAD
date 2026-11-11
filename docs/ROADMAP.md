@@ -13,8 +13,9 @@ formats) are done and merged. The README says what the app does today.
 ## From the reviews
 
 Six reviews were made on 2026-11-11; each has its section at the end of this
-file. What they found is in three lists here: what was fixed, what is left
-to choose from, and what they showed could be built.
+file. What they found is in two lists here: what was fixed, and what is left
+to choose from. What they showed could be built has each been decided: it is
+under "Next to build", "Put off" or "Dropped".
 
 ### Fixed
 
@@ -43,7 +44,8 @@ release.
 
 By touch (review 3):
 
-- **What the app says by touch**, to be talked through as one question:
+- **What the app says by touch**, put by for now, to be talked through as
+  one question:
   icon buttons have no name a finger can see (they are in tooltips; a long
   press is not to be used for it), hints speak of clicks and Esc, and the
   list of shortcuts is long and always in the side panel.
@@ -55,43 +57,25 @@ By touch (review 3):
 
 Elsewhere:
 
-- **STEP for meshes as tessellated shapes**: tried on 2026-11-11 and advised
-  against. The file is 35 times smaller and written 100 times faster, but
-  FreeCAD draws nothing for such a body and fails when it is cut, the
-  slicers are built on a library too old to read it, and nothing says
-  Fusion takes it; today's facets open and cut everywhere. Left to decide:
-  whether an object over the triangle limit, which is left out of the file
-  today, should go out that way instead.
 - A Linux session with no keyring waits two minutes at start before the
   sign-in is known; an empty `History` folder and a hidden temporary file can be left
   behind; the package's short description reads "for 3D printing".
-
-### Opportunities
-
-What the reviews showed could be built, beyond mending. None is planned.
-
-- **A section view**: the model cut by a plane, to look inside (a clipping
-  plane in the viewer).
-- **The browser tests in WebKit as well as Chromium**: the desktop app on
-  Linux and macOS is WebKit, and the fault of #45 only shows there.
 
 ## Next to build
 
 Smaller pieces, each of which can be built without a session.
 
-- **STEP export**: true surfaces for helical and bevel gears and for
-  threads, which still go out as facets. Tried on 2026-11-11: helical and
-  herringbone gears, screws, nuts, tapped holes, lead screws and worms can
-  be rebuilt as smooth solids that FreeCAD reads as valid, 5 to 50 times
-  smaller than their facets and quicker to write (a default helical gear
-  2.5 MB for 17.8, an M8 bolt 1.2 MB for 43). To build in that order: the
-  gears, then the threads, whose description has to carry the thread
-  itself. Bevel gears came out right for some settings only and come last,
-  if at all; a throated worm wheel stays facets. Not yet measured: the time
-  on a tablet. (Eggs,
-  tall domes and oval cones cannot be done: a STEP file does not keep an
-  oval turned round an axis.)
-
+- **STEP export, threads as true surfaces** (being built): screws, nuts,
+  tapped holes, lead screws and worms rebuilt as smooth solids, as helical
+  and herringbone gears are since #70. A trial on 2026-11-11 found them 5
+  to 50 times smaller than their facets and quicker to write (an M8 bolt
+  1.2 MB for 43). Bevel gears came out right for some settings only and
+  come last, if at all; a throated worm wheel stays facets. (Eggs, tall
+  domes and oval cones cannot be done: a STEP file does not keep an oval
+  turned round an axis.)
+- **STEP export, the limit**: a design or selection that would take the
+  file past its limit of facets is not offered STEP, and is told why; no
+  file goes out with an object left out of it, as happens today.
 - **Inches as the working unit**: an option for what is shown and typed.
   Designs stay in millimeters, and metric stays what the app starts with.
 
@@ -136,6 +120,9 @@ Things only the real devices and accounts can show.
 Not dropped: taken up when asked for.
 
 - Languages other than English and French.
+- The browser tests in WebKit as well as Chromium: the script that tries
+  the built apps before a release (`pnpm check:apps`) runs the desktop app
+  itself, which is WebKit; taken up only if a fault gets past it.
 - Lettering in scripts that need shaping (Arabic, Hebrew, the Indic scripts)
   or thousands of characters (Chinese, Japanese, Korean): each needs fonts of
   megabytes fetched when asked for, and the first three a shaping engine.
@@ -166,6 +153,10 @@ Decided against; not to be proposed again.
   running: a feature works on the device or through the user's own Google
   Drive.
 - A way to keep the Dimensions box off the handles: the view is moved.
+- A section view (the model cut by a plane to look inside).
+- STEP for meshes as tessellated shapes. Tried on 2026-11-11: the file is 35
+  times smaller, but FreeCAD draws nothing for such a body and fails when
+  it is cut, the slicers cannot read it, and nothing says Fusion takes it.
 - Steppers on the number boxes.
 - A change to Android's backup: it stays at the system's default, which
   brings the projects back after a restore.
