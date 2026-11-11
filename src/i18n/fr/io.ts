@@ -24,6 +24,10 @@ export const io: Catalog = {
   // A file read in the geometry worker (worker/importing.ts)
   'The file is no longer at hand. Import it again.': 'Le fichier n’est plus disponible. Importez-le de nouveau.',
 
+  // Draco (importGlb.ts, worker/importing.ts)
+  'This glTF file is damaged: a compressed mesh cannot be unpacked.': 'Ce fichier glTF est endommagé\u00a0: un maillage compressé ne peut pas être décompressé.',
+  'The decoder for this compressed glTF file could not be loaded.': 'Le décodeur de ce fichier glTF compressé n’a pas pu être chargé.',
+
   // STEP (importStep.ts)
   'A STEP file cannot be read as part of another file.': 'Un fichier STEP ne peut pas être lu comme partie d’un autre fichier.',
   'This STEP file is empty.': 'Ce fichier STEP est vide.',

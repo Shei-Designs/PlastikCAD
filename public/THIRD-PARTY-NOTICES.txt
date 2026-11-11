@@ -736,6 +736,14 @@ THE SOFTWARE.
 
 ------------------------------------------------------------------------
 
+draco (the decoder, as shipped inside three)
+License: Apache-2.0
+https://github.com/google/draco
+
+The Apache License 2.0 is printed at the end of this file.
+
+------------------------------------------------------------------------
+
 Apache License 2.0
 
 Apache License

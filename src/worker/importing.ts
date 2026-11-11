@@ -4,7 +4,8 @@
 import { tr } from '../i18n';
 import { encodeFloat32, encodeUint32 } from '../io/base64';
 import type { OpenCascadeInstance } from 'replicad-opencascadejs';
-import { centerMesh, centerOutline, checkedMesh, fileKind, guarded, importFile, STEP_EXTENSIONS } from '../io/import';
+import type { DracoDecode } from '../io/draco';
+import { centerMesh, centerOutline, checkedMesh, fileKind, guarded, importFile, needsDraco, STEP_EXTENSIONS } from '../io/import';
 import type { Companion, Imported, ImportedImage, ImportedModel } from '../io/import';
 import { parseStep } from '../io/importStep';
 import { hashString } from '../model/geomKey';
@@ -82,7 +83,7 @@ function extentOf(data: Imported): Vec3 {
  * file that names no unit and comes out tiny is held, and `kind: 'units'`
  * asks which it is.
  */
-export async function readFile(id: number, name: string, bytes: Uint8Array, companions: Companion[], scale?: number, occ?: () => Promise<OpenCascadeInstance>): Promise<ImportResult> {
+export async function readFile(id: number, name: string, bytes: Uint8Array, companions: Companion[], scale?: number, occ?: () => Promise<OpenCascadeInstance>, draco?: () => Promise<DracoDecode>): Promise<ImportResult> {
   held = null;
   const kind = fileKind(name, bytes);
   let data: Imported;
@@ -93,6 +94,11 @@ export async function readFile(id: number, name: string, bytes: Uint8Array, comp
     });
     const base = name.slice(Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\')) + 1).replace(/\.[^.]+$/, '');
     data = checkedParts(guarded('STEP', () => parseStep(oc, bytes, base || undefined)));
+  } else if (draco && (kind === 'glb' || kind === 'gltf') && needsDraco(bytes)) {
+    const decode = await draco().catch(() => {
+      throw new Error(tr('The decoder for this compressed glTF file could not be loaded.'));
+    });
+    data = importFile(name, bytes, companions, { draco: decode });
   } else data = importFile(name, bytes, companions);
   if (scale === undefined && data.kind === 'model' && UNITLESS.includes(kind)) {
     const extent = extentOf(data);

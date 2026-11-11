@@ -8,6 +8,7 @@ import { tr } from '../i18n';
 import { apply, determinant, IDENTITY, multiply } from '../model/math';
 import type { Mat } from '../model/math';
 import { base64ToBytes } from './base64';
+import type { DracoDecode } from './draco';
 import type { Companion, ImportedImage, ImportedModel, ImportedPart } from './import';
 import { hex, imageMime, srgb } from './material';
 import { MeshBuilder } from './weld';
@@ -27,7 +28,17 @@ interface Gltf {
   scene?: number;
   scenes?: { nodes?: number[] }[];
   nodes?: { name?: string; mesh?: number; children?: number[]; matrix?: number[]; translation?: number[]; rotation?: number[]; scale?: number[] }[];
-  meshes?: { name?: string; primitives: { attributes: Record<string, number>; indices?: number; material?: number; mode?: number }[] }[];
+  meshes?: {
+    name?: string;
+    primitives: {
+      attributes: Record<string, number>;
+      indices?: number;
+      material?: number;
+      mode?: number;
+      /** A primitive compressed with Draco: the bytes, and the ids its attributes go by in them. */
+      extensions?: { KHR_draco_mesh_compression?: { bufferView: number; attributes: Record<string, number> } };
+    }[];
+  }[];
   materials?: {
     name?: string;
     pbrMetallicRoughness?: { baseColorFactor?: number[]; baseColorTexture?: { index: number } };
@@ -134,12 +145,13 @@ const tail = (path: string): string => path.split(/[\\/]/).pop()!.toLowerCase();
  * ones it names that did not come are listed in `missing`; without a buffer there are no shapes to
  * read, and the model comes back with no parts, for the caller to fetch the files and ask again.
  */
-export function parseGlb(bytes: Uint8Array, name = 'Model', companions: Companion[] = []): ImportedModel {
+export function parseGlb(bytes: Uint8Array, name = 'Model', companions: Companion[] = [], draco?: DracoDecode): ImportedModel {
   if (bytes.length === 0) throw new Error(tr('This glTF file is empty.'));
   const { json, bin } = unpack(bytes);
   const gltf = checkedShape(json);
   const required = gltf.extensionsRequired ?? [];
-  if (required.includes('KHR_draco_mesh_compression') || required.includes('EXT_meshopt_compression'))
+  // Draco is unpacked when its decoder was handed in (it is loaded for the file that needs it); meshopt is not read.
+  if ((required.includes('KHR_draco_mesh_compression') && !draco) || required.includes('EXT_meshopt_compression'))
     throw new Error(tr('This glTF file is compressed. Export it again without mesh compression and import that.'));
   const used = new Set<string>();
   const missing = new Set<string>();
@@ -262,6 +274,16 @@ export function parseGlb(bytes: Uint8Array, name = 'Model', companions: Companio
     return { data, size };
   };
 
+  /** A primitive compressed with Draco, unpacked. */
+  const unpack3d = (packed: { bufferView: number; attributes: Record<string, number> }): { indices: ArrayLike<number>; attributes: Record<string, { data: ArrayLike<number>; size: number } | undefined> } => {
+    if (!draco) throw new Error(tr('This glTF file is compressed. Export it again without mesh compression and import that.'));
+    try {
+      return draco(viewOf(packed.bufferView), packed.attributes);
+    } catch {
+      throw bad(tr('This glTF file is damaged: a compressed mesh cannot be unpacked.'));
+    }
+  };
+
   const parts: ImportedPart[] = [];
   let triangles = 0;
   let visited = 0;
@@ -272,11 +294,13 @@ export function parseGlb(bytes: Uint8Array, name = 'Model', companions: Companio
     for (const [p, primitive] of mesh.primitives.entries()) {
       const mode = primitive.mode ?? 4;
       if (mode !== 4 && mode !== 5 && mode !== 6) continue;
-      const position = accessor(primitive.attributes.POSITION);
+      const packed = primitive.extensions?.KHR_draco_mesh_compression;
+      const unpacked = packed ? unpack3d(packed) : null;
+      const position = unpacked ? unpacked.attributes.POSITION : accessor(primitive.attributes.POSITION);
       if (!position || position.size !== 3) continue;
       const count = position.data.length / 3;
-      const texcoord = accessor(primitive.attributes.TEXCOORD_0);
-      const indices = accessor(primitive.indices)?.data ?? Float64Array.from({ length: count }, (_, i) => i);
+      const texcoord = unpacked ? (unpacked.attributes.TEXCOORD_0 ?? null) : accessor(primitive.attributes.TEXCOORD_0);
+      const indices = unpacked ? unpacked.indices : (accessor(primitive.indices)?.data ?? Float64Array.from({ length: count }, (_, i) => i));
       const tris: number[] = [];
       if (mode === 4) for (let i = 0; i + 2 < indices.length; i += 3) tris.push(indices[i], indices[i + 1], indices[i + 2]);
       else if (mode === 5) for (let i = 0; i + 2 < indices.length; i++) tris.push(indices[i], indices[i + (i % 2 ? 2 : 1)], indices[i + (i % 2 ? 1 : 2)]);

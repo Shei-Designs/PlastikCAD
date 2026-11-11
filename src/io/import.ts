@@ -1,6 +1,7 @@
 import type { MeshData, MeshWithUV } from '../geometry/mesh';
 import { tr, trx } from '../i18n';
 import type { OutlineShape, Vec2, Vec3 } from '../model/types';
+import type { DracoDecode } from './draco';
 import { parse3mf } from './import3mf';
 import { parseCollada } from './importCollada';
 import { parseDxf } from './importDxf';
@@ -100,8 +101,21 @@ function sniff(bytes: Uint8Array): string {
   return '';
 }
 
-/** Reads a file by its extension, or by its contents when the name has none. Throws an Error with a message fit to show the user. `companions` are the other files picked with it. */
-export function importFile(fileName: string, bytes: Uint8Array, companions: Companion[] = []): Imported {
+/**
+ * Whether a glTF file says it is compressed with Draco, which is unpacked by a decoder that has to be
+ * loaded first (see draco.ts) and handed to `importFile`.
+ */
+export function needsDraco(bytes: Uint8Array): boolean {
+  const word = 'KHR_draco_mesh_compression';
+  outer: for (let i = bytes.indexOf(word.charCodeAt(0)); i >= 0; i = bytes.indexOf(word.charCodeAt(0), i + 1)) {
+    for (let k = 1; k < word.length; k++) if (bytes[i + k] !== word.charCodeAt(k)) continue outer;
+    return true;
+  }
+  return false;
+}
+
+/** Reads a file by its extension, or by its contents when the name has none. Throws an Error with a message fit to show the user. `companions` are the other files picked with it; `tools` what was loaded for the file. */
+export function importFile(fileName: string, bytes: Uint8Array, companions: Companion[] = [], tools: { draco?: DracoDecode } = {}): Imported {
   const extension = fileKind(fileName, bytes);
   const base = fileName.slice(Math.max(fileName.lastIndexOf('/'), fileName.lastIndexOf('\\')) + 1);
   const name = extensionOf(base) ? base.replace(/\.[^.]+$/, '') : base || trx('object name', 'Import');
@@ -114,7 +128,7 @@ export function importFile(fileName: string, bytes: Uint8Array, companions: Comp
       return guarded('3MF', () => checkedModel(parse3mf(bytes, name)));
     case 'glb':
     case 'gltf':
-      return guarded('glTF', () => checkedModel(parseGlb(bytes, name, companions)));
+      return guarded('glTF', () => checkedModel(parseGlb(bytes, name, companions, tools.draco)));
     case 'dae':
       return guarded('Collada', () => checkedModel(parseCollada(bytes, name, companions)));
     case 'step':

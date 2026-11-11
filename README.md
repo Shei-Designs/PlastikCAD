@@ -633,8 +633,9 @@ left alone, since that is its shape.
   picture, laid out by the file's texture coordinates. A `.gltf` that keeps
   its buffers and pictures in separate files reads them from beside it, as
   an OBJ does its `.mtl`; where the picker grants one file at a time, pick
-  them together with it or when asked. Files with Draco or meshopt
-  compression are refused; export them again without compression.
+  them together with it or when asked. A file compressed with Draco is
+  unpacked by its decoder, which is loaded for the first such file. Files
+  with meshopt compression are refused; export them again without it.
 - **Collada (.dae)**: the meshes of the visual scene, placed by its nodes,
   one part per material with its diffuse color and, when the picture it names
   came along, its texture; the file's own unit and up axis are honored, so a
