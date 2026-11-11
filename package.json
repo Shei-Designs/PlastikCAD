@@ -1,7 +1,7 @@
 {
   "name": "plastikcad",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Fast solid modelling for 3D printing: combine simple shapes into parts",
   "license": "GPL-3.0-or-later",
   "type": "module",
