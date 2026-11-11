@@ -152,23 +152,30 @@ export function fileNameFor(name: string): string {
 
 /** `Name.plastikcad`, or `Name (2).plastikcad` when a different file already has that name (compared ignoring case, as some file systems do). */
 export function uniqueFileName(wanted: string, taken: Iterable<string>, own?: string): string {
-  const used = new Set(Array.from(taken, (n) => n.toLowerCase()));
-  if (own) used.delete(own.toLowerCase());
-  if (!used.has(wanted.toLowerCase())) return wanted;
+  const used = new Set(Array.from(taken, folded));
+  if (own) used.delete(folded(own));
+  if (!used.has(folded(wanted))) return wanted;
   const stem = wanted.slice(0, wanted.length - FILE_EXTENSION.length - 1);
   for (let n = 2; ; n++) {
     const candidate = `${stem} (${n}).${FILE_EXTENSION}`;
-    if (!used.has(candidate.toLowerCase())) return candidate;
+    if (!used.has(folded(candidate))) return candidate;
   }
 }
+
+/**
+ * A file name as the file systems that fold names see it: case aside (Windows, macOS, a memory card), and an
+ * accented letter the same whether written as one character or as a letter and its accent (macOS takes the two
+ * for one file, and names that came from a Mac are often in the second form).
+ */
+const folded = (name: string): string => name.normalize('NFC').toLowerCase();
 
 const baseName = (path: string): string => path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1);
 const folderOf = (path: string): string => path.slice(0, Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')));
 const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** Whether a file already carries a project name: the same name ignoring case, with or without the number a clash gave it. */
 const sameFile = (existing: string, wanted: string): boolean => {
-  const stem = wanted.slice(0, wanted.length - FILE_EXTENSION.length - 1);
-  return new RegExp(`^${escapeRegExp(stem)}( \\(\\d+\\))?\\.${FILE_EXTENSION}$`, 'i').test(existing);
+  const stem = folded(wanted.slice(0, wanted.length - FILE_EXTENSION.length - 1));
+  return new RegExp(`^${escapeRegExp(stem)}( \\(\\d+\\))?\\.${FILE_EXTENSION}$`, 'i').test(folded(existing));
 };
 const join = (dir: string, name: string): string => (dir.endsWith('/') || dir.endsWith('\\') ? dir + name : `${dir}${dir.includes('\\') && !dir.includes('/') ? '\\' : '/'}${name}`);
 
