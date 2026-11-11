@@ -14,7 +14,7 @@ formats) are done and merged. The README says what the app does today.
 
 No decision is needed for these.
 
-- **Parts**: V-belt pulleys, imperial (unified) threads, a throated worm wheel.
+- **Parts**: imperial (unified) threads, a throated worm wheel.
 - **Gears**: a preview of meshed gears turning together.
 - **Lettering**: more fonts, and scripts beyond Latin.
 - **STEP export**: true surfaces for what still goes out as facets: shapes

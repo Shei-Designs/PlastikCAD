@@ -186,6 +186,11 @@ describe('the design as a STEP file', () => {
     }, 120_000);
   }
 
+  it('writes a V-belt pulley as the cones of its groove between the cylinders of its rim', () => {
+    // The rim either side of the groove and the groove's floor; its two flanks; the two sides; and the bore.
+    expect(roundTrip(partNode('v-belt-pulley'))).toMatchObject({ exact: true, cones: 2, cylinders: 4, planes: 2 });
+  });
+
   describe('pipes and ducts', () => {
     it('writes a straight pipe as two cylinders, one inside the other, and a solid one as one', () => {
       // The outer wall, the bore and the two ring-shaped ends.
