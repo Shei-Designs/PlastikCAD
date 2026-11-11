@@ -1,7 +1,7 @@
 import type { MeshWithUV } from '../geometry/mesh';
 import { tr } from '../i18n';
 import type { Companion, ImportedImage, ImportedModel, ImportedPart } from './import';
-import { hex, imageMime } from './material';
+import { baseOf, findCompanion, hex, imageMime } from './material';
 import { ByteReader } from './scan';
 import { cutPolygon, MeshBuilder } from './weld';
 
@@ -257,15 +257,6 @@ function textureName(words: string[]): string {
     while (i < words.length - 1 && /^(-?[\d.]+(e-?\d+)?|on|off)$/i.test(words[i])) i++;
   }
   return words.slice(i).join(' ');
-}
-
-/** The file name a reference ends in, folders dropped. */
-const baseOf = (ref: string): string => ref.replace(/\\/g, '/').split('/').pop() ?? ref;
-
-/** A companion file by the name a file refers to it by, ignoring folders and case. */
-function findCompanion(companions: Companion[], ref: string): Companion | undefined {
-  const base = baseOf(ref).toLowerCase();
-  return base ? companions.find((c) => baseOf(c.name).toLowerCase() === base) : undefined;
 }
 
 function startsWith(bytes: Uint8Array, at: number, word: string): boolean {

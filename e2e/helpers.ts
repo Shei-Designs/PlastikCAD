@@ -594,6 +594,22 @@ export function skins(page: Page): Promise<SkinState> {
   }));
 }
 
+/** The colors of the picture an object is drawn with, each once, as `#rrggbb`; empty when it wears none. */
+export function skinColors(page: Page, id: string): Promise<string[]> {
+  return viewer(
+    page,
+    (v, id) => {
+      const canvas = v.objects.drawn.get(id)?.skin?.map.image as HTMLCanvasElement | undefined;
+      if (!canvas) return [];
+      const { data } = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height);
+      const seen = new Set<string>();
+      for (let i = 0; i < data.length; i += 4) seen.add(`#${[data[i], data[i + 1], data[i + 2]].map((c) => c.toString(16).padStart(2, '0')).join('')}`);
+      return [...seen].sort();
+    },
+    id,
+  );
+}
+
 /** Whether one object is drawn with its picture. */
 export const wearsSkin = (page: Page, id: string): Promise<boolean> => viewer(page, (v, id) => Boolean(v.objects.drawn.get(id)?.skin), id);
 

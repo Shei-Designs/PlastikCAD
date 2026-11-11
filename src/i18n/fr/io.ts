@@ -1,5 +1,5 @@
 // French: importing and exporting files. The export formats the format picker lists, what the
-// readers of STL, OBJ, 3MF, glTF, Collada, DXF, SVG and URDF files say of a file they cannot
+// readers of STL, OBJ, PLY, 3MF, glTF, Collada, DXF, SVG and URDF files say of a file they cannot
 // read, and what the URDF reader says of what it left out. Nothing written into a file is here.
 import type { Catalog } from '../index';
 
@@ -57,6 +57,17 @@ export const io: Catalog = {
   'This OBJ file is empty.': 'Ce fichier OBJ est vide.',
   'This OBJ file has no usable faces.': 'Ce fichier OBJ n’a aucune face utilisable.',
   'This OBJ file has no faces.': 'Ce fichier OBJ n’a aucune face.',
+
+  // PLY (importPly.ts)
+  'This PLY file is empty.': 'Ce fichier PLY est vide.',
+  'This is not a PLY file.': 'Ce n’est pas un fichier PLY.',
+  'This PLY file is damaged: its header has no end.': 'Ce fichier PLY est endommagé\u00a0: son en-tête n’a pas de fin.',
+  'This PLY file is damaged: its header cannot be read.': 'Ce fichier PLY est endommagé\u00a0: son en-tête ne peut pas être lu.',
+  'This PLY file is damaged: a list has no length.': 'Ce fichier PLY est endommagé\u00a0: une liste n’a pas de longueur.',
+  'This PLY file is incomplete: it ends before its last point or face.': 'Ce fichier PLY est incomplet\u00a0: il s’arrête avant son dernier point ou sa dernière face.',
+  'This PLY file has no points.': 'Ce fichier PLY n’a aucun point.',
+  'This PLY file holds points with no faces between them, which cannot be made into a solid.': 'Ce fichier PLY contient des points sans faces entre eux, dont on ne peut pas faire un solide.',
+  'This PLY file has no usable faces.': 'Ce fichier PLY n’a aucune face utilisable.',
 
   // 3MF (import3mf.ts)
   'This 3MF file is too large to open.': 'Ce fichier 3MF est trop volumineux pour être ouvert.',
