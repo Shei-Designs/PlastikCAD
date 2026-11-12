@@ -178,3 +178,33 @@ test.describe("a joint's start", { tag: '@mouse' }, () => {
     expect(await command()).toBeUndefined();
   });
 });
+
+test.describe('the test drive', { tag: '@mouse' }, () => {
+  test('holds a walker in the air and lets it go', async ({ page }) => {
+    await openApp(page);
+    // The reference quadruped, read here and handed to the page: the built app does not serve the repository.
+    const bytes = [...readFileSync(new URL('../fixtures/robots/quadruped.plastikcad', import.meta.url))];
+    await store(
+      page,
+      (m, b) => {
+        // Not waited for: the import ends in a "Project added" box that holds it until OK is pressed.
+        void m.receiveFiles([{ name: 'quadruped.plastikcad', path: null, bytes: new Uint8Array(b) }]);
+      },
+      bytes,
+    );
+    await page.getByRole('button', { name: 'OK' }).click();
+    await expect.poll(() => store(page, (m) => m.getState().doc.robot?.joints.length ?? 0)).toBe(8);
+    await settled(page);
+    await store(page, (m) => m.enterRobotMode());
+    await page.getByRole('button', { name: 'Test drive' }).click();
+    // The engine is fetched and the model built before the controls show.
+    const hold = page.getByRole('button', { name: 'Hold in the air' });
+    await expect(hold).toHaveAttribute('aria-pressed', 'false', { timeout: 30_000 });
+    await hold.click();
+    await expect(hold).toHaveAttribute('aria-pressed', 'true');
+    await hold.click();
+    await expect(hold).toHaveAttribute('aria-pressed', 'false');
+    await page.getByRole('button', { name: 'Stop' }).click();
+    await expect(hold).toHaveCount(0);
+  });
+});

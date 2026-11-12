@@ -288,6 +288,11 @@ function Test() {
             <button type="button" className="chip" title={tr('Puts the robot back at its start, standing still')} onClick={() => sim.reset()}>
               {tr('Reset')}
             </button>
+            {s.floating && (
+              <button type="button" className={s.held ? 'chip on' : 'chip'} aria-pressed={s.held} title={s.held ? tr('Lets the robot go, back at its start') : tr('Holds the base still in the air, clear of the floor')} onClick={() => sim.hold(!s.held)}>
+                {tr('Hold in the air')}
+              </button>
+            )}
             <button type="button" className="chip" title={tr('Ends the test drive; the plate shows the design again')} onClick={() => sim.stop()}>
               {tr('Stop')}
             </button>

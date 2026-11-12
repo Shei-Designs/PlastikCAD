@@ -379,7 +379,10 @@ in the design file and synced with it.
   and the view following the base. Drive a rover with W A S D or the arrow
   keys (Q and E slide a mecanum robot sideways), move an arm's servos with a
   slider each, and read the time, the distance moved and the heading; *Pause*,
-  *Reset* and *Stop* do what they say. The sensors ride their links while it
+  *Reset* and *Stop* do what they say. *Hold in the air*, for a robot whose
+  base is free, pins the base clear of the floor so that a walker's legs can
+  be swung through their ranges without it falling; let go, it starts again
+  from its start pose. The sensors ride their links while it
   drives, a lidar's rays reach to whatever they measure, a touch sensor's
   pad lights while it presses on something and a picked camera's picture
   follows it, so a tilt, a range or a foot that misses the floor can be

@@ -70,7 +70,7 @@ async function load(req: Extract<SimRequest, { type: 'load' }>): Promise<void> {
   sim = Simulation.load(mj, req.xml, req.files, req.drive);
   lidars = req.lidars;
   touches = req.touches;
-  post({ type: 'loaded', id: req.id, bodies: sim.bodies, actuators: sim.actuators, timestep: sim.timestep });
+  post({ type: 'loaded', id: req.id, bodies: sim.bodies, actuators: sim.actuators, timestep: sim.timestep, floating: sim.floating });
   frame();
 }
 
@@ -94,6 +94,12 @@ self.onmessage = async (e: MessageEvent<SimRequest>) => {
         break;
       case 'reset':
         sim?.reset();
+        frame();
+        break;
+      case 'hold':
+        sim?.hold(req.on);
+        // Let go, the robot starts again from its start pose, on the floor.
+        if (!req.on) sim?.reset();
         frame();
         break;
       case 'drive':

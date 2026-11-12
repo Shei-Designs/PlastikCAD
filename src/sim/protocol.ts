@@ -12,13 +12,15 @@ export type SimRequest =
   | { type: 'run'; running: boolean }
   /** Back to the start pose, time zero, controls off. */
   | { type: 'reset' }
+  /** Holds a free base still in the air, clear of the floor, or lets it go. */
+  | { type: 'hold'; on: boolean }
   /** A rover's command: forward, turn and (mecanum) sideways, each -1..1 of the motors' top speed. */
   | { type: 'drive'; forward: number; turn: number; side: number }
   /** A servo's target (radians or meters), or a motor's speed. */
   | { type: 'target'; actuator: string; value: number };
 
 export type SimResponse =
-  | { type: 'loaded'; id: number; bodies: string[]; actuators: SimActuator[]; timestep: number }
+  | { type: 'loaded'; id: number; bodies: string[]; actuators: SimActuator[]; timestep: number; floating: boolean }
   /**
    * Where every body is: 7 numbers each in `bodies` order, position xyz (m) then quaternion wxyz; every lidar's rays in `lidars`
    * order, meters, -1 where a ray hits nothing; and every touch sensor's force in `touches` order, newtons, -1 where the model lacks it.

@@ -43,7 +43,7 @@ vi.stubGlobal('window', { addEventListener: () => {}, removeEventListener: () =>
 const make = (file: string): Doc => ROBOTS.find((r) => r.file === file)!.make();
 const loads = (w: FakeWorker) => w.sent.filter((m): m is Extract<SimRequest, { type: 'load' }> => m.type === 'load');
 /** The worker's word that a load is done, with the bodies its XML names in their order. */
-const loaded = (load: Extract<SimRequest, { type: 'load' }>): SimResponse => ({ type: 'loaded', id: load.id, bodies: ['world', ...[...load.xml.matchAll(/<body name="([^"]+)"/g)].map((m) => m[1])], actuators: [], timestep: 0.002 });
+const loaded = (load: Extract<SimRequest, { type: 'load' }>, floating = false): SimResponse => ({ type: 'loaded', id: load.id, bodies: ['world', ...[...load.xml.matchAll(/<body name="([^"]+)"/g)].map((m) => m[1])], actuators: [], timestep: 0.002, floating });
 
 describe('the test drive', () => {
   beforeEach(() => vi.resetModules());
@@ -71,5 +71,31 @@ describe('the test drive', () => {
     sim.stop();
     expect(sim.get().status).toBe('off');
     expect(worker.sent[worker.sent.length - 1]).toEqual({ type: 'unload' });
+  });
+  it('holds a free base in the air and lets it go, and offers neither for a base bolted down', async () => {
+    const { sim } = await import('./sim');
+    await sim.start(make('quadruped'));
+    const worker = FakeWorker.last!;
+    worker.answer(loaded(loads(worker)[0], true));
+    expect(sim.get().floating).toBe(true);
+    sim.setTarget('Knee_front_left_servo', 0.4);
+    sim.hold(true);
+    expect(sim.get().held).toBe(true);
+    expect(worker.sent[worker.sent.length - 1]).toEqual({ type: 'hold', on: true });
+    // The sliders stay where they were while it hangs; let go, it starts again, every control let go of.
+    expect(sim.get().targets.size).toBe(1);
+    sim.hold(false);
+    expect(sim.get().held).toBe(false);
+    expect(sim.get().targets.size).toBe(0);
+    expect(worker.sent[worker.sent.length - 1]).toEqual({ type: 'hold', on: false });
+    // A new load begins let go.
+    sim.hold(true);
+    await sim.start(make('arm'));
+    worker.answer(loaded(loads(worker)[1]));
+    expect(sim.get().held).toBe(false);
+    const sent = worker.sent.length;
+    sim.hold(true);
+    expect(sim.get().held).toBe(false);
+    expect(worker.sent.length).toBe(sent);
   });
 });
