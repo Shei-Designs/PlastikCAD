@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ShapeNode } from '../model/types';
-import { collisionPrimitive, primitiveMesh, shapeInOwn } from './collision';
+import { collisionPrimitive, primitiveMesh, shapeInOwn, shapeOf } from './collision';
 
 const node = (over: Partial<ShapeNode>): ShapeNode => ({ id: 'a', name: 'A', type: 'shape', shape: 'box', params: {}, hole: false, color: '#888888', pos: [0, 0, 0], rot: [0, 0, 0], size: [20, 20, 20], ...over });
 const round = (v: number[]) => v.map((x) => +x.toFixed(3));
@@ -40,6 +40,25 @@ describe('the primitive a link collides as', () => {
     }
     // Round about none: along its own Z, as wide as the wider of the two others.
     expect(collisionPrimitive(node({ size: [10, 20, 30], rot: [0, 0, 90] }), { collision: 'cylinder' })).toEqual({ shape: { cylinder: { radius: 10, length: 30 } }, at: [0, 0, 0], rot: [0, 0, 90] });
+  });
+
+  it('reads the fitted shape in the object\'s own frame, where keeping it changes nothing', () => {
+    for (const size of [[10, 20, 30], [60, 20, 20], [40, 8, 40]] as [number, number, number][]) {
+      const n = node({ size, pos: [5, 6, 7], rot: [20, 40, 60] });
+      for (const collision of ['box', 'cylinder', 'sphere'] as const) {
+        const fitted = collisionPrimitive(n, { collision });
+        const shape = shapeOf(n, { collision });
+        expect(round(shape.center)).toEqual([0, 0, 0]);
+        const kept = collisionPrimitive(n, { collision, shape });
+        expect(kept.shape).toEqual(fitted.shape);
+        expect(round(kept.at)).toEqual(round(fitted.at));
+        const [a, b] = [boundsOfPositions(primitiveMesh(kept).positions), boundsOfPositions(primitiveMesh(fitted).positions)];
+        expect(round([...a.min, ...a.max])).toEqual(round([...b.min, ...b.max]));
+      }
+    }
+    // One it keeps is read as it is.
+    const own = { size: [4, 4, 4] as [number, number, number], center: [0, 0, -9] as [number, number, number], rot: [0, 0, 0] as [number, number, number] };
+    expect(shapeOf(node({}), { collision: 'sphere', shape: own })).toBe(own);
   });
 
   it('is the shape the link keeps for itself where it has one, in the object\'s own frame', () => {
