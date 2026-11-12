@@ -18,8 +18,8 @@ names=$(jq -r '.assets[].name' <<<"$release")
 tag=$(jq -r '.tag_name' <<<"$release")
 
 # The notes are changed with the tag said again beside them: GitHub takes a draft whose notes alone are sent for
-# one without a tag, and names it "untagged-…". Published like that, the release is not where the index of
-# updates says its files are, and no installed app can fetch them (this happened to the draft of 0.2.2).
+# one without a tag, and names it "untagged-…". Published like that, the release makes a tag of that name and
+# sits under it, and the version's own tag has no release (this happened to the draft of 0.2.2).
 write_notes() {
   gh api -X PATCH "repos/$repo/releases/$id" -f tag_name="$tag" -f body="$1" --silent
   kept=$(gh api "repos/$repo/releases/$id" --jq .tag_name)
