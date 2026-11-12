@@ -33,6 +33,8 @@ function viewsOf(msg: WorkerResponse): View[] {
       return [...meshViews(msg.result.mesh), msg.result.faces?.source, msg.result.uv];
     case 'exportedColored':
       return msg.result.objects.flatMap((o) => o.parts.flatMap((p) => meshViews(p.mesh)));
+    case 'collisionMeshes':
+      return msg.result.flatMap(meshViews);
     case 'robotGeometry':
       return msg.result.flatMap((l) => [...l.visual.flatMap((p) => meshViews(p.mesh)), ...meshViews(l.collision)]);
     default:

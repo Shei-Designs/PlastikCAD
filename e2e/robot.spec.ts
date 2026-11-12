@@ -1,7 +1,7 @@
 // Robot mode with fingers. Robot mode is experimental and its panels are not being polished yet;
 // what is known to be wrong is written down here so that it is not forgotten.
 import { readFileSync } from 'node:fs';
-import { expect, openApp, settled, store, test } from './helpers';
+import { expect, openApp, settled, started, store, test } from './helpers';
 
 test.describe('robot mode on a tablet', { tag: '@touch' }, () => {
   // Known to fail: with a joint picked, the "Fixed" button of the base's Free / Fixed row ends
@@ -91,6 +91,30 @@ test.describe('a weighed link', { tag: '@mouse' }, () => {
     expect(await mass()).toEqual({ kind: 'measured', grams: 60 });
     await expect(box('Inertia ZZ')).toHaveValue('40');
     await expect(page.getByRole('button', { name: 'From the shape' })).toHaveCount(0);
+  });
+});
+
+test.describe('the collision shapes', { tag: '@mouse' }, () => {
+  test('are shown and hidden by their button, and the app remembers which', async ({ page }) => {
+    await openApp(page);
+    await store(page, (m) => {
+      m.addShape('box');
+      m.enterRobotMode();
+    });
+    await settled(page);
+    const shown = () => store(page, (m) => m.getState().prefs.robotCollisions);
+    const button = page.getByRole('button', { name: 'Shows what each link collides as' });
+    await expect(button).toHaveAttribute('aria-pressed', 'false');
+    await button.click();
+    await expect(button).toHaveAttribute('aria-pressed', 'true');
+    expect(await shown()).toBe(true);
+    await page.reload();
+    // Not before the app has started again: what it opens then would undo the mode.
+    await started(page);
+    await store(page, (m) => m.enterRobotMode());
+    await expect(button).toHaveAttribute('aria-pressed', 'true');
+    await button.click();
+    expect(await shown()).toBe(false);
   });
 });
 

@@ -63,3 +63,4 @@ coverage/
 # Reference robots exported for the MuJoCo smoke test
 /fixtures/out
 MUJOCO_LOG.TXT
+__pycache__/

@@ -11,7 +11,7 @@ const KEEP = 300;
 /** A drag changes a node every frame; the kernel is asked once it settles. */
 const SETTLE_MS = 150;
 
-const propsKey = (node: SceneNode): string => `${geomKey(node)}|${node.pos}|${node.rot}|${node.size}|${node.flip ?? ''}`;
+export const propsKey = (node: SceneNode): string => `${geomKey(node)}|${node.pos}|${node.rot}|${node.size}|${node.flip ?? ''}`;
 
 class MassPropsStore {
   private entries = new Map<string, LinkProperties>();

@@ -331,7 +331,9 @@ in the design file and synced with it.
   *From the shape* gives them back to the shape.
 - **Collision.** A convex hull by default, or the object's box, a cylinder
   or a sphere filling it (turned as the object is), the exact mesh, or none;
-  and the surface's coefficient of friction for Gazebo.
+  and the surface's coefficient of friction for Gazebo. The button beside
+  the joints' in the Robot mode bar draws what every link collides as over
+  it, see-through, in a tried pose and during the test drive too.
 - **Sensors.** A link's panel adds a camera, depth camera, lidar, IMU or
   touch sensor to it: a frame of its own, placed by a point on the plate or
   by numbers, turned to look (or sweep) along any of the design's axes,

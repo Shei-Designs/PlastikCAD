@@ -301,6 +301,13 @@ export const JointIcon = () => (
     <path d="M5.5 16.5 9 14M18.5 7.5 15 10" />
   </Icon>
 );
+/** A shape inside the outline it collides as. */
+export const CollisionIcon = () => (
+  <Icon>
+    <path d="M12 3.5 19.5 8v8L12 20.5 4.5 16V8z" strokeDasharray="2.5 2" />
+    <circle cx="12" cy="12" r="3" />
+  </Icon>
+);
 /** A map pin: pick a point on the plate. */
 export const PinIcon = () => (
   <Icon>

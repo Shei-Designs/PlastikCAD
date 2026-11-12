@@ -1,4 +1,5 @@
 import type { FeatureIndex } from '../geometry/features';
+import type { MeshData } from '../geometry/mesh';
 import { tr, WORKER_LANGUAGE } from '../i18n';
 import type { Companion } from '../io/import';
 import { isTextAsset } from '../model/geomKey';
@@ -213,6 +214,11 @@ export class GeometryClient {
   /** Volume, area, centroid and inertia of each node as placed in the design. */
   massProperties(nodes: SceneNode[]): Promise<LinkProperties[]> {
     return this.send({ type: 'massProperties', nodes });
+  }
+
+  /** What each node collides as where that is a mesh of its own, placed in the design; null for the rest. */
+  collisionMeshes(nodes: SceneNode[], collisions: Record<string, CollisionKind>): Promise<(MeshData | null)[]> {
+    return this.send({ type: 'collisionMeshes', nodes, collisions });
   }
 
   /** Each node as a robot link: visual parts, collision shape and mass properties, placed in the design. */

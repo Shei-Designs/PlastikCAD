@@ -1,8 +1,9 @@
 // Robot mode on the plate: the picked joint or sensor as a marker with its
 // move arrows, the others drawn small, a lidar's rays while the test drive
 // runs, the snap points on offer, and the drag of a marker by its handles.
-import { BufferAttribute, BufferGeometry, LineBasicMaterial, LineSegments, Sprite, Vector3 } from 'three';
+import { BufferAttribute, BufferGeometry, DoubleSide, EdgesGeometry, LineBasicMaterial, LineSegments, Mesh, MeshBasicMaterial, Sprite, Vector3 } from 'three';
 import type { Group } from 'three';
+import type { MeshData } from '../geometry/mesh';
 import { tr } from '../i18n';
 import { tidyVec } from '../model/math';
 import type { Mat } from '../model/math';
@@ -50,6 +51,9 @@ export class RobotOverlay {
   private dimKey = '';
   /** The rays of the lidars among the dim markers, by marker id, while the test drive reports them. */
   private rays = new Map<string, LineSegments<BufferGeometry, LineBasicMaterial>>();
+  /** What the links collide as, by link id: a see-through skin with its edges, and the triangles it was made from. */
+  private collisions = new Map<string, { skin: Mesh<BufferGeometry, MeshBasicMaterial>; from: MeshData }>();
+  private collisionTheme = '';
   /** Dots at the snap points on offer, one sprite each, and the hovered one. */
   private snapDots: Sprite[] = [];
   private snapHot: number | null = null;
@@ -106,6 +110,49 @@ export class RobotOverlay {
           this.rays.set(d.id, rays);
         }
       }
+    }
+  }
+
+  /** The collision shapes: one skin per link, remade when its triangles are others, moved with its link every time. */
+  syncCollisions(): void {
+    const { theme } = this.stage.options;
+    const wanted = new Map((this.stage.options.collisions ?? []).map((c) => [c.id, c]));
+    for (const [id, held] of this.collisions) {
+      if (wanted.get(id)?.mesh === held.from && theme === this.collisionTheme) continue;
+      this.stage.overlay.remove(held.skin);
+      for (const child of held.skin.children) {
+        (child as LineSegments<BufferGeometry, LineBasicMaterial>).geometry.dispose();
+        (child as LineSegments<BufferGeometry, LineBasicMaterial>).material.dispose();
+      }
+      held.skin.geometry.dispose();
+      held.skin.material.dispose();
+      this.collisions.delete(id);
+    }
+    this.collisionTheme = theme;
+    const color = THEMES[theme].accent;
+    for (const [id, c] of wanted) {
+      let held = this.collisions.get(id);
+      if (!held) {
+        const geometry = new BufferGeometry();
+        geometry.setAttribute('position', new BufferAttribute(c.mesh.positions, 3));
+        geometry.setIndex(new BufferAttribute(c.mesh.triangles, 1));
+        const skin = new Mesh(geometry, new MeshBasicMaterial({ color, transparent: true, opacity: 0.16, depthWrite: false, side: DoubleSide }));
+        // The edges where the shape turns a corner, drawn through whatever is in front: the shape is read by them.
+        const edges = new LineSegments(new EdgesGeometry(geometry, 25), new LineBasicMaterial({ color, transparent: true, opacity: 0.85, depthTest: false }));
+        edges.renderOrder = 8;
+        skin.add(edges);
+        skin.renderOrder = 7;
+        skin.matrixAutoUpdate = false;
+        skin.frustumCulled = false;
+        skin.raycast = () => {};
+        edges.raycast = () => {};
+        this.stage.overlay.add(skin);
+        held = { skin, from: c.mesh };
+        this.collisions.set(id, held);
+      }
+      if (c.frame) toMatrix4(c.frame, held.skin.matrix);
+      else held.skin.matrix.identity();
+      held.skin.matrixWorldNeedsUpdate = true;
     }
   }
 
