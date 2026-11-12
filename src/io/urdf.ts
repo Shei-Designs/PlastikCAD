@@ -43,9 +43,10 @@ export interface UrdfExtras {
   /**
    * Joints under ros2_control, with position commands; a block is written and the Gazebo plugin for it, reading
    * `controllersYaml`. `starts` is where each joint that does not begin at zero stands when the simulation begins
-   * (radians or meters): Gazebo puts it there, and the controller holds what it finds.
+   * (radians or meters): Gazebo puts it there, and the controller holds what it finds. The joints in `torque`
+   * take an effort command as well, for a controller that claims it in place of the position.
    */
-  control?: { joints: string[]; controllersYaml: string; starts?: Record<string, number> };
+  control?: { joints: string[]; controllersYaml: string; starts?: Record<string, number>; torque?: string[] };
   /**
    * Write xacro instead: the package name as a property, the Gazebo blocks
    * behind a `use_gazebo` argument and ros2_control behind `use_ros2_control`,
@@ -174,12 +175,13 @@ export function writeUrdf(name: string, links: UrdfLink[], joints: UrdfJoint[], 
   const control: string[] = [];
   if (extras.control && extras.control.joints.length) {
     const starts = extras.control.starts ?? {};
+    const torque = new Set(extras.control.torque ?? []);
     control.push(
       '  <ros2_control name="GazeboSimSystem" type="system">',
       '    <hardware>',
       '      <plugin>gz_ros2_control/GazeboSimSystem</plugin>',
       '    </hardware>',
-      ...extras.control.joints.flatMap((j) => [`    <joint name="${escapeXml(j)}">`, '      <command_interface name="position"/>', starts[j] ? `      <state_interface name="position">\n        <param name="initial_value">${fmt(starts[j], 6)}</param>\n      </state_interface>` : '      <state_interface name="position"/>', '      <state_interface name="velocity"/>', '    </joint>']),
+      ...extras.control.joints.flatMap((j) => [`    <joint name="${escapeXml(j)}">`, '      <command_interface name="position"/>', ...(torque.has(j) ? ['      <command_interface name="effort"/>'] : []), starts[j] ? `      <state_interface name="position">\n        <param name="initial_value">${fmt(starts[j], 6)}</param>\n      </state_interface>` : '      <state_interface name="position"/>', '      <state_interface name="velocity"/>', ...(torque.has(j) ? ['      <state_interface name="effort"/>'] : []), '    </joint>']),
       '  </ros2_control>',
       '  <gazebo>',
       '    <plugin filename="gz_ros2_control-system" name="gz_ros2_control::GazeboSimROS2ControlPlugin">',

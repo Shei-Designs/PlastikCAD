@@ -57,6 +57,8 @@ export interface MjcfModel {
   /** Position servos over these joints, velocity motors over the wheels. */
   servos: string[];
   wheels: string[];
+  /** Those of the servos' joints that take a torque instead: a plain motor, with no gains of its own. */
+  torques?: string[];
   /** The floor: level, bumpy around a flat start, tilted, or level with steps or a ramp ahead. */
   world: World;
   /** Which way the robot faces, a unit vector in the design's axes: the steps and the ramp stand that way. */
@@ -372,14 +374,17 @@ export function writeMjcf(model: MjcfModel): string {
   const servos = new Set(model.servos.filter(canDrive));
   const wheels = new Set(model.wheels.filter(canDrive));
   const driven = joints.map((j) => j.name).filter((j) => servos.has(j) || wheels.has(j));
+  const torques = new Set((model.torques ?? []).filter((j) => servos.has(j)));
   const actuators = driven.map((j) => {
     const g = gainsOf(j);
+    // A torque motor is told newton-meters (or newtons), up to the joint's effort; what holds the joint is the controller's business.
+    if (torques.has(j)) return `    <motor name="${escapeXml(j)}_torque" joint="${escapeXml(j)}" ctrlrange="-${sig(g.effort)} ${sig(g.effort)}"/>`;
     return servos.has(j)
       ? `    <position name="${escapeXml(j)}_servo" joint="${escapeXml(j)}" kp="${sig(g.kp)}" kv="${sig(g.kv)}" forcerange="-${sig(g.effort)} ${sig(g.effort)}"/>`
       : `    <velocity name="${escapeXml(j)}_motor" joint="${escapeXml(j)}" kv="${sig(g.effort / g.velocity)}" ctrlrange="-${sig(g.velocity)} ${sig(g.velocity)}" forcerange="-${sig(g.effort)} ${sig(g.effort)}"/>`;
   });
   const startOf = new Map(joints.map((j) => [j.name, j.start ?? 0]));
-  const ctrl = driven.map((j) => (servos.has(j) ? fmt(startOf.get(j) ?? 0, 6) : '0'));
+  const ctrl = driven.map((j) => (servos.has(j) && !torques.has(j) ? fmt(startOf.get(j) ?? 0, 6) : '0'));
   const equality = [
     ...model.connects.map((c) => `    <connect body1="${escapeXml(c.body1)}" body2="${escapeXml(c.body2)}" anchor="${vec(c.anchor)}"/>`),
     ...model.followers.filter((f) => moves(f.joint) && moves(f.leader)).map((f) => `    <joint joint1="${escapeXml(f.joint)}" joint2="${escapeXml(f.leader)}" polycoef="${fmt(f.offset, 6)} ${fmt(f.multiplier, 6)} 0 0 0"/>`),

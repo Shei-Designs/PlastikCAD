@@ -255,6 +255,11 @@ def initial_values(urdf_path):
     return out
 
 
+def effort_joints(urdf_path):
+    """The joints under ros2_control that take an effort command beside the position."""
+    return [j.get('name') for j in ET.parse(urdf_path).getroot().findall('ros2_control/joint') if any(c.get('name') == 'effort' for c in j.findall('command_interface'))]
+
+
 def bridged(pkg_dir):
     with open(os.path.join(pkg_dir, 'config', 'bridge.yaml')) as f:
         return yaml.safe_load(f) or []
@@ -549,6 +554,15 @@ def check_ros_package(pkg_dir, env):
                 fail(name, f'controllers {wanted} did not all become active')
             else:
                 ok(f'controllers active: {", ".join(wanted)}')
+                # A joint commanded by torque offers its effort to a controller of the user's, beside the position this one holds.
+                efforts = effort_joints(urdf)
+                if efforts:
+                    offered = run(['ros2', 'control', 'list_hardware_interfaces'], timeout=15, env=env).stdout
+                    lacking = [j for j in efforts if not re.search(rf'{re.escape(j)}/effort \[available\]', offered)]
+                    if lacking:
+                        fail(name, f'no effort command interface offered for {lacking}')
+                    else:
+                        ok(f'{len(efforts)} joints offer an effort command, unclaimed')
                 ctrl = next((k for k in wanted if k != 'joint_state_broadcaster'), None)
                 cjoints = cfg[ctrl]['ros__parameters']['joints']
                 target = [0.3] + [0.0] * (len(cjoints) - 1)

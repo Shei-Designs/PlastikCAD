@@ -721,7 +721,7 @@ describe('design files', () => {
         { node: 'b', mass: { kind: 'measured', grams: 12, center: [1, 2, 3], inertia: [500, 300, 200, 40, -30, 20] }, collision: 'hull', friction: 0.8 },
       ],
       joints: [
-        { id: 'j1', name: 'j', type: 'revolute', parent: 'a', child: 'b', origin: [0, 0, 0], axis: [0, 0, 1], lower: -90, upper: 90, effort: 1, velocity: 1, damping: 0, friction: 0, start: 30, motor: 'sg90' },
+        { id: 'j1', name: 'j', type: 'revolute', parent: 'a', child: 'b', origin: [0, 0, 0], axis: [0, 0, 1], lower: -90, upper: 90, effort: 1, velocity: 1, damping: 0, friction: 0, start: 30, command: 'torque', motor: 'sg90' },
         { id: 'j2', name: 'k', type: 'revolute', parent: 'a', child: 'b', origin: [0, 0, 0], axis: [0, 0, 1], lower: -90, upper: 90, effort: 1, velocity: 1, damping: 0, friction: 0, mimic: { joint: 'j1', multiplier: 1, offset: 0 } },
       ],
       sensors: [defaultSensor('s1', 'cam', 'camera', 'a', [0, 0, 0]), defaultSensor('s2', 'scan', 'lidar', 'a', [0, 0, 0])],
@@ -753,6 +753,7 @@ describe('design files', () => {
     expect(doc.robot?.joints.length).toBe(2);
     expect(doc.robot?.sensors.length).toBe(2);
     expect(doc.robot?.joints.map((j) => j.start)).toEqual([30, undefined]);
+    expect(doc.robot?.joints.map((j) => j.command)).toEqual(['torque', undefined]);
     expect(doc.robot?.links.find((l) => l.node === 'b')?.mass).toEqual({ kind: 'measured', grams: 12, center: [1, 2, 3], inertia: [500, 300, 200, 40, -30, 20] });
   });
 

@@ -15,7 +15,9 @@ export function drivePy(model: string, kind: ScriptKind): string {
 
 A rover follows velocity commands (forward, turn) through drive.json; an arm
 sweeps each servo; a walker stands, then wiggles its joints in turn, which is
-where a gait of your own, or a trained one (see env.py), goes.
+where a gait of your own, or a trained one (see env.py), goes. A joint
+commanded by torque has no servo: Joints below holds it with a spring and a
+damper, which is where a controller of your own goes.
 """
 import argparse
 import json
@@ -54,12 +56,49 @@ def joint_range(model, a):
     return 0.0, 0.5
 
 
+class Joints:
+    """Aims joints at angles. A servo takes the angle itself; a joint commanded by torque gets the torque of a
+    spring and a damper about the angle, and stays where the simulation began until it is aimed elsewhere."""
+
+    BAND = 0.5  # rad (or m) off its angle at which a joint gets its full torque
+
+    def __init__(self, model, data):
+        self.torque = {}
+        self.want = {}
+        step = model.opt.timestep
+        for a in range(model.nu):
+            # A plain motor: no spring of its own (a servo has one) and no damper (a wheel's motor has one).
+            if model.actuator_biasprm[a, 1] != 0 or model.actuator_biasprm[a, 2] != 0:
+                continue
+            j = model.actuator_trnid[a, 0]
+            q, v = model.jnt_qposadr[j], model.jnt_dofadr[j]
+            top = model.actuator_ctrlrange[a, 1]
+            # The inertia the joint turns, as the model stands. The spring is no stiffer than a step can follow,
+            # and the damper settles it without swinging. Tune both for your robot: they are yours, not the model's.
+            inertia = max(model.dof_M0[v], 1e-9)
+            kp = min(top / self.BAND, 0.25 * inertia / step**2)
+            kd = 2 * math.sqrt(kp * inertia)
+            self.torque[a] = (q, v, kp, kd, top)
+            self.want[a] = float(data.qpos[q])
+
+    def aim(self, data, a, angle):
+        if a in self.torque:
+            self.want[a] = angle
+        else:
+            data.ctrl[a] = angle
+
+    def apply(self, data):
+        for a, (q, v, kp, kd, top) in self.torque.items():
+            data.ctrl[a] = max(-top, min(top, kp * (self.want[a] - data.qpos[q]) - kd * data.qvel[v]))
+
+
 class Rover:
     """Wheel speeds and steering from a forward speed (m/s) and a turn rate (rad/s), by the drive's kind."""
 
-    def __init__(self, model):
+    def __init__(self, model, data):
         with open(os.path.join(HERE, "drive.json")) as f:
             self.drive = json.load(f)
+        self.joints = Joints(model, data)
         self.ids = actuator_ids(model)
         self.model = model
 
@@ -72,6 +111,7 @@ class Rover:
         return 0.2, 0.0
 
     def apply(self, data, t):
+        self.joints.apply(data)
         v, w = self.plan(t)
         d = self.drive
         r = d["wheelRadius"]
@@ -102,28 +142,32 @@ class Rover:
 class Arm:
     """Sweeps every servo through its range, each a little out of step with the last."""
 
-    def __init__(self, model):
+    def __init__(self, model, data):
+        self.joints = Joints(model, data)
         self.targets = [(a, *joint_range(model, a)) for a in range(model.nu)]
 
     def apply(self, data, t):
         for i, (a, mid, half) in enumerate(self.targets):
-            data.ctrl[a] = mid + 0.6 * half * math.sin(2 * math.pi * t / 4 + 0.7 * i)
+            self.joints.aim(data, a, mid + 0.6 * half * math.sin(2 * math.pi * t / 4 + 0.7 * i))
+        self.joints.apply(data)
 
 
 class Walker:
     """Stands for a second, then wiggles the joints in alternating pairs. A real gait, or a trained policy, replaces this."""
 
-    def __init__(self, model):
+    def __init__(self, model, data):
+        self.joints = Joints(model, data)
         self.targets = [(a, *joint_range(model, a)) for a in range(model.nu)]
 
     def apply(self, data, t):
         for i, (a, mid, half) in enumerate(self.targets):
             swing = 0.0 if t < 1 else 0.3 * half * math.sin(2 * math.pi * (t - 1) / 1.0 + math.pi * ((i // 2) % 2))
-            data.ctrl[a] = mid + swing
+            self.joints.aim(data, a, mid + swing)
+        self.joints.apply(data)
 
 
-def controller(model):
-    return {"rover": Rover, "arm": Arm, "walker": Walker}[KIND](model)
+def controller(model, data):
+    return {"rover": Rover, "arm": Arm, "walker": Walker}[KIND](model, data)
 
 
 def main():
@@ -133,7 +177,7 @@ def main():
     parser.add_argument("--seconds", type=float, default=6.0)
     args = parser.parse_args()
     model, data = load()
-    control = controller(model)
+    control = controller(model, data)
     base = 1
     start = data.subtree_com[base].copy()
 
@@ -191,8 +235,8 @@ export function envPy(model: string): string {
 Observations: every joint's position and velocity, and for a free base its
 orientation, turn rate and velocity (the model's sensors, in order), then the
 touch sensors and each lidar's rays (a distance, or -1 where nothing is hit).
-Actions: one per actuator in -1..1, scaled to a velocity motor's
-range or a servo's joint range. The reward is a stub to replace: speed along
+Actions: one per actuator in -1..1, scaled to a servo's joint range, a
+velocity motor's speed or a torque motor's torque. The reward is a stub to replace: speed along
 the robot's own forward (the way its wheels face, from drive.json; +Y of the
 base when it has none) less a little for effort.
 """
@@ -255,7 +299,7 @@ class RobotEnv(gym.Env):
                 j = m.actuator_trnid[a, 0]
                 lo, hi = (m.jnt_range[j] if m.jnt_limited[j] else (-0.5, 0.5))
                 ctrl[a] = (lo + hi) / 2 + x * (hi - lo) / 2
-            else:  # a velocity motor: a share of its speed limit
+            else:  # a velocity motor or a torque motor: a share of its speed limit, or of its torque
                 top = m.actuator_ctrlrange[a, 1] if m.actuator_ctrllimited[a] else 1.0
                 ctrl[a] = x * top
         return ctrl

@@ -89,6 +89,11 @@ export interface RobotJoint {
    * designed in. Absent for a joint that starts as designed. A follower starts where its leader puts it.
    */
   start?: number;
+  /**
+   * What a controller sends the joint: a torque (or a force) the controller works out itself, where set; a
+   * position its actuator then holds, where absent. Only the exports heed it: the test drive holds positions.
+   */
+  command?: 'torque';
   /** Follows another joint (a linkage's passive joint): angle = multiplier × that joint's angle + offset. */
   mimic?: { joint: string; multiplier: number; offset: number };
   /** Id in `MOTORS` of the motor the figures came from; none once they are typed by hand. */

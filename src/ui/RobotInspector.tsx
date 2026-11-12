@@ -737,6 +737,28 @@ function JointPanel({ joint }: { joint: RobotJoint }) {
               <Select value={joint.motor ?? ''} label={tr('Motor')} placeholder={trx('motor', 'Custom')} options={MOTORS.map((m) => ({ value: m.id, label: `${m.name} · ${m.torque} N·m, ${m.speed}°/s` }))} onChange={(id) => setJointMotor(joint.id, id)} />,
               tr("Sets the effort, speed and damping to the motor's figures; typing any of them makes it custom again."),
             )}
+          {robot.control &&
+            !joint.mimic &&
+            !driveJoints(robot.drive).includes(joint.id) &&
+            row(
+              tr('Command'),
+              <div className="segmented small" role="radiogroup" aria-label={tr('Command')}>
+                <button type="button" role="radio" aria-checked={!joint.command} className={joint.command ? '' : 'on'} title={tr('A controller sends a position, and the joint holds it')} onClick={() => joint.command && updateJoint(joint.id, { command: undefined })}>
+                  {tr('Position')}
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={joint.command === 'torque'}
+                  className={joint.command === 'torque' ? 'on' : ''}
+                  title={angular ? tr('A controller sends a torque, and holds the joint itself') : tr('A controller sends a force, and holds the joint itself')}
+                  onClick={() => !joint.command && updateJoint(joint.id, { command: 'torque' })}
+                >
+                  {angular ? tr('Torque') : tr('Force')}
+                </button>
+              </div>,
+              tr('Sets what a controller sends the joint in the exported files.'),
+            )}
           {joint.type !== 'continuous' && (
             <>
               {row(tr('Lower limit'), <NumberBox label={tr('Lower limit')} value={joint.lower} unit={unit} length={!angular} step={angular ? 5 : 1} places={2} onChange={(v) => updateJoint(joint.id, { lower: v }, 'joint-lower')} />)}
