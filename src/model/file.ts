@@ -13,7 +13,7 @@ import { newId, usedAssets } from './ops';
 import { TEXT_FONTS } from './types';
 import type { Asset, Doc, OutlineShape, PartParamValue, Scene, SceneNode, ShapeKind, Texture, Vec3 } from './types';
 import { COLLISION_KINDS, DRIVE_KINDS, JOINT_TYPES, SENSOR_KINDS, WORLDS, defaultSensor } from '../robot/types';
-import type { CollisionKind, Drive, DriveRole, JointType, MassSpec, Robot, RobotJoint, RobotLink, RobotSensor, SensorKind } from '../robot/types';
+import type { CollisionKind, CollisionShape, Drive, DriveRole, JointType, MassSpec, Robot, RobotJoint, RobotLink, RobotSensor, SensorKind } from '../robot/types';
 
 export function emptyDoc(): Doc {
   return { id: newId(), name: tr('Untitled'), scene: [], assets: {} };
@@ -131,6 +131,7 @@ export function canonicalRobot(robot: Robot): Record<string, unknown> {
       name: l.name,
       mass: l.mass.kind === 'measured' ? { kind: 'measured', grams: l.mass.grams, center: l.mass.center, inertia: l.mass.inertia } : { kind: 'material', material: l.mass.material, infill: l.mass.infill, shell: l.mass.shell },
       collision: l.collision,
+      shape: l.shape && (l.collision === 'box' || l.collision === 'cylinder' || l.collision === 'sphere') ? { size: l.shape.size, center: l.shape.center, rot: l.shape.rot } : undefined,
       friction: l.friction,
     })),
     joints: [...robot.joints].sort(byId((j: RobotJoint) => j.id)).map((j) => ({
@@ -236,7 +237,8 @@ const CURVE_FIELDS = new Set(['kind', 'angle', 'flip', 'thickness']);
 /** The fields this build writes for a robot and what is in it (see `canonicalRobot`; a test holds the two together). */
 export const ROBOT_FIELDS = {
   robot: new Set(['root', 'base', 'links', 'joints', 'sensors', 'drive', 'control', 'world', 'scripts']),
-  link: new Set(['node', 'name', 'mass', 'collision', 'friction']),
+  link: new Set(['node', 'name', 'mass', 'collision', 'shape', 'friction']),
+  shape: new Set(['size', 'center', 'rot']),
   mass: new Set(['kind', 'grams', 'center', 'inertia', 'material', 'infill', 'shell']),
   joint: new Set(['id', 'name', 'type', 'parent', 'child', 'origin', 'axis', 'lower', 'upper', 'effort', 'velocity', 'damping', 'friction', 'start', 'command', 'mimic', 'motor']),
   mimic: new Set(['joint', 'multiplier', 'offset']),
@@ -480,6 +482,16 @@ function readSensors(raw: unknown, ids: Set<string>): RobotSensor[] {
   return out;
 }
 
+/** A link's own collision shape, for the kinds that take one: three sizes above zero, a center and a turn. */
+function readShape(raw: unknown, kind: unknown): { shape?: CollisionShape } {
+  if (!isRecord(raw)) return {};
+  only(raw, ROBOT_FIELDS.shape);
+  const three = (v: unknown): Vec3 | null => (Array.isArray(v) && v.length === 3 && v.every((x) => typeof x === 'number' && Number.isFinite(x)) ? (v as Vec3) : null);
+  const size = three(raw.size);
+  if ((kind !== 'box' && kind !== 'cylinder' && kind !== 'sphere') || !size || !size.every((x) => x > 0)) return {};
+  return { shape: { size, center: three(raw.center) ?? [0, 0, 0], rot: three(raw.rot) ?? [0, 0, 0] } };
+}
+
 function readMass(raw: unknown): MassSpec {
   if (isRecord(raw)) only(raw, ROBOT_FIELDS.mass);
   if (isRecord(raw) && raw.kind === 'measured') {
@@ -528,6 +540,7 @@ function readRobot(raw: unknown, scene: Scene): Robot | undefined {
         ...(typeof l.name === 'string' && l.name.trim() ? { name: l.name } : {}),
         mass: readMass(l.mass),
         collision: oneOf<CollisionKind>(l.collision, (c) => COLLISIONS.has(c)) ?? 'hull',
+        ...readShape(l.shape, l.collision),
         friction: Math.max(0, finite(l.friction, 0.8)),
       });
     }

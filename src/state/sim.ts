@@ -5,6 +5,8 @@
 import { tr, WORKER_LANGUAGE } from '../i18n';
 import type { Mat } from '../model/math';
 import type { Doc, Vec3 } from '../model/types';
+import { FaultWatch, floorLinks, linkLooks } from '../robot/collisionCheck';
+import type { KeptFault } from '../robot/collisionCheck';
 import { buildMjcfModel } from '../robot/export';
 import type { DriveSpec } from '../robot/export';
 import { linkNodes, linkOf, robotOf } from '../robot/model';
@@ -41,6 +43,11 @@ export interface SimState {
   targets: Map<string, number>;
   /** The rover command as held. */
   command: { forward: number; turn: number; side: number };
+  /**
+   * The links whose collision shape was seen to disagree with their looks since the start pose: one that stood on
+   * its shape clear of the floor, or sank into the floor, with the most it did so by (mm).
+   */
+  faults: KeptFault[];
   /** By the design sensor's id: a lidar's rays, mm from its origin, -1 where a ray hits nothing; a touch sensor's one number, the force it feels in newtons. */
   readings: Map<string, number[]>;
 }
@@ -59,10 +66,10 @@ const DRIVE_KEYS: Record<string, string> = {
   e: 'slide-right',
 };
 
-const OFF: SimState = { status: 'off', error: null, running: false, time: 0, frames: new Map(), base: null, actuators: [], drive: null, world: 'flat', floating: false, held: false, targets: new Map(), command: { forward: 0, turn: 0, side: 0 }, readings: new Map() };
+const OFF: SimState = { status: 'off', error: null, running: false, time: 0, frames: new Map(), base: null, actuators: [], drive: null, world: 'flat', floating: false, held: false, targets: new Map(), command: { forward: 0, turn: 0, side: 0 }, readings: new Map(), faults: [] };
 
 /** The transform taking a link from where it is designed to where the simulation has its body: a turn by the quaternion about the body's frame origin, and a move. */
-function frameOf(poses: Float64Array, at: number, origin: Vec3): Mat {
+export function frameOf(poses: Float64Array, at: number, origin: Vec3): Mat {
   const px = poses[at] / M;
   const py = poses[at + 1] / M;
   const pz = poses[at + 2] / M;
@@ -96,6 +103,8 @@ class SimStore {
   private lidars: { name: string; id: string; rays: number }[] = [];
   /** The touch sensors the worker reads with every frame, in the order their forces arrive. */
   private touches: { name: string; id: string }[] = [];
+  /** The links whose collision shape is a plain one, or none, to judge against the floor as the drive runs; none on a floor that is not flat. */
+  private watch = new FaultWatch();
   /** Counts starts, so that a start overtaken by a stop or another start lets go. */
   private starts = 0;
   private held = new Set<string>();
@@ -134,6 +143,10 @@ class SimStore {
       const collisions = Object.fromEntries(nodes.map((n) => [n.id, linkOf(robot, n.id).collision]));
       const geo = await worker.robotGeometry(nodes, collisions, false);
       if (turn !== this.starts) return;
+      // The collision shapes are watched against the floor as the drive runs, by the corners of each link's looks: its hull.
+      const hulls = (robot.world ?? 'flat') === 'flat' ? await worker.collisionMeshes(nodes, {}) : [];
+      if (turn !== this.starts) return;
+      this.watch = new FaultWatch(hulls.length ? floorLinks(nodes, Object.fromEntries(nodes.map((n) => [n.id, linkOf(robot, n.id)])), hulls) : [], linkLooks(nodes, hulls));
       // The plate draws the links itself: the model needs no visual meshes.
       const pkg = buildMjcfModel(doc, new Map(geo.map((g) => [g.id, { ...g, visual: [] }])), robot, robot.world ?? 'flat', true);
       const xml = new TextDecoder().decode(pkg.files.find((f) => f.name.endsWith('.xml'))!.bytes);
@@ -178,14 +191,14 @@ class SimStore {
   reset(): void {
     if (this.state.status !== 'ready') return;
     this.send({ type: 'reset' });
-    this.set({ time: 0, targets: new Map(), command: { forward: 0, turn: 0, side: 0 } });
+    this.set({ time: 0, targets: new Map(), command: { forward: 0, turn: 0, side: 0 }, faults: this.watch.clear() });
   }
 
   /** Holds the base still in the air, or lets it go: let go, the robot starts again from its start pose. */
   hold(on: boolean): void {
     if (this.state.status !== 'ready' || !this.state.floating || on === this.state.held) return;
     this.send({ type: 'hold', on });
-    this.set(on ? { held: true } : { held: false, time: 0, targets: new Map(), command: { forward: 0, turn: 0, side: 0 } });
+    this.set(on ? { held: true } : { held: false, time: 0, targets: new Map(), command: { forward: 0, turn: 0, side: 0 }, faults: this.watch.clear() });
   }
 
   /** A rover's command, each part -1..1. */
@@ -295,7 +308,7 @@ class SimStore {
           from += l.rays;
         }
         this.touches.forEach((t, i) => readings.set(t.id, [message.touches[i]]));
-        this.set({ frames, base, time: message.time, readings });
+        this.set({ frames, base, time: message.time, readings, faults: this.watch.see(frames, message.time) });
         break;
       }
       case 'error':

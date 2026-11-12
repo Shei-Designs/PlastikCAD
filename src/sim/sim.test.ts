@@ -9,6 +9,10 @@ import { buildMjcfModel } from '../robot/export';
 import { ROBOTS } from '../robot/fixtures';
 import { forward } from '../robot/kinematics';
 import { linkNodes, linkOf } from '../robot/model';
+import { FaultWatch, floorLinks, linkLooks } from '../robot/collisionCheck';
+import { collisionMeshes } from '../geometry/kernel';
+import { frameOf } from '../state/sim';
+import type { Mat } from '../model/math';
 import { loadMujoco, Simulation } from './mujoco';
 
 let mj: MainModule;
@@ -44,6 +48,59 @@ const yaw = (sim: Simulation, body: string): number => {
   const [w, x, y, z] = [p[7 * i + 3], p[7 * i + 4], p[7 * i + 5], p[7 * i + 6]];
   return (Math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z)) * 180) / Math.PI;
 };
+
+/** What the test drive's watch says of the robot's collision shapes after `seconds` on the floor, as the app works it out. */
+function faultsAfter(doc: Doc, seconds: number): { name: string; kind: string; by: number; bare: boolean }[] {
+  const robot = doc.robot!;
+  const nodes = linkNodes(doc.scene);
+  const kinds = Object.fromEntries(nodes.map((n) => [n.id, linkOf(robot, n.id).collision]));
+  const geo = robotGeometry(nodes, kinds, false);
+  const pkg = buildMjcfModel(doc, new Map(geo.map((g) => [g.id, { ...g, visual: [] }])), robot, 'flat', true);
+  const xml = new TextDecoder().decode(pkg.files.find((f) => f.name.endsWith('.xml'))!.bytes);
+  const sim = Simulation.load(mj, xml, pkg.files.filter((f) => f.name.startsWith('meshes/')), pkg.drive);
+  const all = collisionMeshes(nodes, {});
+  const watch = new FaultWatch(floorLinks(nodes, Object.fromEntries(nodes.map((n) => [n.id, linkOf(robot, n.id)])), all), linkLooks(nodes, all));
+  const bodies = new Map(pkg.bodies.map((b) => [b.body, b]));
+  let faults = watch.clear();
+  for (let t = 0; t < seconds; t += 1 / 60) {
+    sim.step(1 / 60);
+    const poses = sim.poses();
+    const frames = new Map<string, Mat>();
+    sim.bodies.forEach((name, i) => {
+      const body = bodies.get(name);
+      if (body) frames.set(body.node, frameOf(poses, 7 * i, body.frame));
+    });
+    faults = watch.see(frames, sim.time);
+  }
+  sim.dispose();
+  return faults.map((f) => ({ name: nodes.find((n) => n.id === f.id)!.name, kind: f.kind, by: f.by, bare: f.bare }));
+}
+
+describe('the collision shapes against the floor', () => {
+  it('finds nothing wrong with the reference robots', () => {
+    for (const file of ['rover', 'car', 'quadruped']) expect(faultsAfter(make(file), 1.5), file).toEqual([]);
+  });
+
+  it('finds the rover held off its wheels by a ball around its body', () => {
+    const doc = make('rover');
+    const body = doc.scene.find((n) => n.id === doc.robot!.root)!;
+    doc.robot!.links = doc.robot!.links.map((l) => (l.node === body.id ? { ...l, collision: 'sphere' as const } : l));
+    const faults = faultsAfter(doc, 1.5);
+    // The ball around the body reaches under the wheels: the body rides on it, and so the wheels hang in the air.
+    expect(faults.map((f) => [f.name, f.kind])).toEqual([[body.name, 'rides']]);
+    expect(faults[0].by).toBeGreaterThan(10);
+  });
+
+  it('finds the lower legs of a walker that collide with nothing, sunk into the floor', () => {
+    const doc = make('quadruped');
+    const lower = new Set(doc.scene.filter((n) => n.name.startsWith('Lower leg')).map((n) => n.id));
+    expect(lower.size).toBe(4);
+    doc.robot!.links = [...doc.robot!.links.filter((l) => !lower.has(l.node)), ...[...lower].map((node) => ({ ...linkOf(doc.robot!, node), collision: 'none' as const }))];
+    const faults = faultsAfter(doc, 1.5);
+    expect(faults.map((f) => f.name).sort()).toEqual([...lower].map((id) => doc.scene.find((n) => n.id === id)!.name).sort());
+    for (const f of faults) expect([f.kind, f.bare]).toEqual(['sinks', true]);
+  });
+});
 
 describe('the rover', () => {
   it('names its wheel motors and drives forward along +Y', () => {

@@ -19,7 +19,7 @@ import type { Problem } from '../robot/check';
 import { addJoint, addSensor, deleteJoint, deleteSensor, fitJointFollowers, placeJoint, placeSensor, select, selectJoint, selectSensor, setBase, setControl, setDriveKind, setDriveRole, setJointMotor, setPose, setPrefs, setRobotRoot, setScripts, setWorld, startJointPick, stopJointPick, updateJoint, updateLink, updateSensor, useEditor } from '../state/store';
 import { rangeOf } from '../robot/kinematics';
 import { sim } from '../state/sim';
-import { inUnit, lengthFigure, lengthText, unitName } from '../units';
+import { inUnit, lengthFigure, lengthText, sizeText, unitName } from '../units';
 import type { Unit } from '../units';
 import { formatNumber, NumberBox, selectOnFocus, SliderField } from './Fields';
 import { Hint } from './Hint';
@@ -235,7 +235,7 @@ function Controllers() {
 
 /** The robot driven on the plate by MuJoCo, built from the design as it stands: run, pause and reset it, steer a rover by the keys, move an arm's servos by sliders. */
 function Test() {
-  const { doc, robot, problems } = useRobot();
+  const { doc, robot, nodes, problems } = useRobot();
   const unit = useEditor((s) => s.prefs.units);
   useSyncExternalStore(sim.subscribe, sim.getRevision);
   const s = sim.get();
@@ -312,6 +312,29 @@ function Test() {
             const target = s.targets.has(a.name) ? s.targets.get(a.name)! * scale : (joint?.start ?? 0);
             return <SliderField key={a.name} label={joint?.name ?? a.joint} value={Math.round(target)} min={Math.ceil(a.min * scale)} max={Math.floor(a.max * scale)} step={1} unit={angular ? '°' : 'mm'} length={!angular} onChange={(v) => sim.setTarget(a.name, v / scale)} />;
           })}
+          {s.faults.length > 0 && (
+            <ul className="problems">
+              {s.faults.map((f) => {
+                const name = nodes.find((n) => n.id === f.id)?.name ?? '';
+                const by = lengthText(f.by, unit, 0);
+                return (
+                  <li key={`${f.id}:${f.kind}`} className="problem warn">
+                    <WarningIcon />
+                    <span>
+                      {f.kind === 'rides'
+                        ? tr('"{name}" stands on its collision shape, {by} clear of the floor.', { name, by })
+                        : f.bare
+                          ? tr('"{name}" sinks {by} into the floor: it collides with nothing.', { name, by })
+                          : tr('"{name}" sinks {by} into the floor: its collision shape is smaller than it.', { name, by })}
+                    </span>
+                    <button type="button" className="chip" onClick={() => select([f.id])}>
+                      {tr('Show')}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
           <dl className="facts">
             <div>
               <dt>{tr('Time')}</dt>
@@ -522,8 +545,16 @@ function LinkPanel({ node }: { node: SceneNode }) {
             {tr('Shape')}
             <Hint text={COLLISION_KINDS.find((k) => k.id === link.collision)?.help ?? ''} />
           </label>
-          <Select value={link.collision} label={tr('Collision shape')} options={COLLISION_KINDS.map((k) => ({ value: k.id, label: k.name }))} onChange={(id) => set({ collision: id })} />
+          <Select value={link.collision} label={tr('Collision shape')} options={COLLISION_KINDS.map((k) => ({ value: k.id, label: k.name }))} onChange={(id) => set({ collision: id, shape: undefined })} />
         </div>
+        {link.shape && (link.collision === 'box' || link.collision === 'cylinder' || link.collision === 'sphere') && (
+          <div className="field inline">
+            <label>{tr('{size}, as its file has it', { size: sizeText(link.collision === 'box' ? link.shape.size : link.collision === 'cylinder' ? [link.shape.size[0], link.shape.size[2]] : [link.shape.size[0]], unit) })}</label>
+            <button type="button" className="chip" title={tr("Fits the shape to the object's box again")} onClick={() => set({ shape: undefined })}>
+              {tr('Fit to the object')}
+            </button>
+          </div>
+        )}
         <div className="field inline">
           <label>
             {tr('Friction')}

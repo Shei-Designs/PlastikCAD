@@ -717,7 +717,7 @@ describe('design files', () => {
       ...emptyRobot(),
       root: 'a',
       links: [
-        { node: 'a', name: 'base', mass: { kind: 'material', material: 'pla', infill: 20, shell: 1.2 }, collision: 'hull', friction: 0.8 },
+        { node: 'a', name: 'base', mass: { kind: 'material', material: 'pla', infill: 20, shell: 1.2 }, collision: 'sphere', shape: { size: [40, 40, 40], center: [0, 0, -10], rot: [0, 0, 90] }, friction: 0.8 },
         { node: 'b', mass: { kind: 'measured', grams: 12, center: [1, 2, 3], inertia: [500, 300, 200, 40, -30, 20] }, collision: 'hull', friction: 0.8 },
       ],
       joints: [
@@ -742,6 +742,7 @@ describe('design files', () => {
     expect(fields(written).sort()).toEqual([...ROBOT_FIELDS.robot].sort());
     check(written.links, ROBOT_FIELDS.link, 'link');
     check(part(written.links, 'mass'), ROBOT_FIELDS.mass, 'mass');
+    check(part(written.links, 'shape'), ROBOT_FIELDS.shape, 'shape');
     check(written.joints, ROBOT_FIELDS.joint, 'joint');
     check(part(written.joints, 'mimic'), ROBOT_FIELDS.mimic, 'mimic');
     check(written.sensors, ROBOT_FIELDS.sensor, 'sensor');
@@ -754,6 +755,7 @@ describe('design files', () => {
     expect(doc.robot?.sensors.length).toBe(2);
     expect(doc.robot?.joints.map((j) => j.start)).toEqual([30, undefined]);
     expect(doc.robot?.joints.map((j) => j.command)).toEqual(['torque', undefined]);
+    expect(doc.robot?.links.map((l) => l.shape)).toEqual([{ size: [40, 40, 40], center: [0, 0, -10], rot: [0, 0, 90] }, undefined]);
     expect(doc.robot?.links.find((l) => l.node === 'b')?.mass).toEqual({ kind: 'measured', grams: 12, center: [1, 2, 3], inertia: [500, 300, 200, 40, -30, 20] });
   });
 

@@ -2,9 +2,11 @@
 // sphere fitted to the object, where it stands and turned as it is. The
 // exports write it and the plate draws it from here, so that they agree.
 import type { MeshData } from '../geometry/mesh';
-import { apply, rotation } from '../model/math';
+import { apply, determinant, eulerOf, invert, multiply, rotation, tidyVec } from '../model/math';
+import type { Mat } from '../model/math';
 import type { SceneNode, Vec3 } from '../model/types';
-import type { CollisionKind } from './types';
+import { ownFrame } from './inertia';
+import type { CollisionShape, RobotLink } from './types';
 
 /** A box by its full size, a cylinder along its own Z, or a sphere; lengths in the unit of whoever asks. */
 export type Primitive = { box: Vec3 } | { cylinder: { radius: number; length: number } } | { sphere: { radius: number } };
@@ -16,11 +18,33 @@ export interface PlacedPrimitive {
   rot: Vec3;
 }
 
-/** The primitive a link collides as, in mm: the object's own box, a cylinder filling it along its own Z, or a ball filling it. */
-export function collisionPrimitive(node: SceneNode, kind: Extract<CollisionKind, 'box' | 'cylinder' | 'sphere'>): PlacedPrimitive {
-  const size = node.size;
+/** What of a link says how it collides. */
+export type Collides = Pick<RobotLink, 'collision' | 'shape'>;
+
+/**
+ * The primitive a link collides as, in mm. Fitted to the object unless the link has a shape of its own: the
+ * object's box, a cylinder filling it along its own Z, or a ball filling it. A shape of its own sits where
+ * the link keeps it, in the object's own frame, and moves, turns and mirrors with the object.
+ */
+export function collisionPrimitive(node: SceneNode, link: Collides): PlacedPrimitive {
+  const kind = link.collision;
+  const size = link.shape?.size ?? node.size;
   const shape: Primitive = kind === 'box' ? { box: [size[0], size[1], size[2]] } : kind === 'cylinder' ? { cylinder: { radius: Math.max(size[0], size[1]) / 2, length: size[2] } } : { sphere: { radius: Math.max(...size) / 2 } };
-  return { shape, at: node.pos, rot: node.rot };
+  if (!link.shape) return { shape, at: node.pos, rot: node.rot };
+  const own = ownFrame(node);
+  const turned = multiply(own, rotation(link.shape.rot));
+  // A mirrored object's frame is left-handed, which no turn is: a box, a cylinder and a ball look the same with one axis the other way.
+  if (determinant(turned) < 0) for (const i of [6, 7, 8]) turned[i] = -turned[i];
+  return { shape, at: apply(own, link.shape.center), rot: eulerOf(turned) };
+}
+
+/** A primitive given in the design (its frame there, sizes in mm) as the shape a link keeps for itself, in the object's own frame. */
+export function shapeInOwn(node: SceneNode, primitive: Primitive, frame: Mat): CollisionShape {
+  const back = invert(ownFrame(node));
+  const local = multiply(back, frame);
+  if (determinant(local) < 0) for (const i of [6, 7, 8]) local[i] = -local[i];
+  const size: Vec3 = 'box' in primitive ? primitive.box : 'cylinder' in primitive ? [2 * primitive.cylinder.radius, 2 * primitive.cylinder.radius, primitive.cylinder.length] : [2 * primitive.sphere.radius, 2 * primitive.sphere.radius, 2 * primitive.sphere.radius];
+  return { size: tidyVec(size), center: tidyVec([local[9], local[10], local[11]]), rot: eulerOf(local) };
 }
 
 /** A placed primitive as triangles in the design, for drawing. */

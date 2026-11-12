@@ -331,7 +331,11 @@ in the design file and synced with it.
   *From the shape* gives them back to the shape.
 - **Collision.** A convex hull by default, or the object's box, a cylinder
   or a sphere filling it (turned as the object is), the exact mesh, or none;
-  and the surface's coefficient of friction for Gazebo. The button beside
+  and the surface's coefficient of friction for Gazebo. A box, cylinder or
+  sphere is fitted to the object's box; a link that came from a robot file
+  with one of another size, place or turn (a ball under a foot, wider than
+  the foot looks) keeps the file's own, until *Fit to the object* fits it
+  again. The button beside
   the joints' in the Robot mode bar draws what every link collides as over
   it, see-through, in a tried pose and during the test drive too.
 - **Sensors.** A link's panel adds a camera, depth camera, lidar, IMU or
@@ -382,7 +386,10 @@ in the design file and synced with it.
   *Reset* and *Stop* do what they say. *Hold in the air*, for a robot whose
   base is free, pins the base clear of the floor so that a walker's legs can
   be swung through their ranges without it falling; let go, it starts again
-  from its start pose. The sensors ride their links while it
+  from its start pose. On the flat floor the drive watches what the links
+  collide as: a link that stands on its collision shape clear of the floor,
+  or sinks into the floor because the shape is smaller than it or missing,
+  is named under the controls. The sensors ride their links while it
   drives, a lidar's rays reach to whatever they measure, a touch sensor's
   pad lights while it presses on something and a picked camera's picture
   follows it, so a tilt, a range or a foot that misses the floor can be
@@ -442,6 +449,8 @@ in the design file and synced with it.
   each link's mass comes as weighed, with the center of mass and the
   inertia the file gives it (an inertia no real body could have is left to
   the shape);
+  a link's one box, cylinder or sphere of collision comes as the file has
+  it (several, or a mesh, become its convex hull);
   the joints, their `mimic` lines, and the sensors, friction and drive in
   the `<gazebo>` blocks come along, and `ros2_control` switches the
   controllers on. Links without a shape (`base_footprint`, `world`, frames)

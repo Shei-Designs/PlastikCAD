@@ -193,7 +193,7 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
     }
     if (link.collision === 'box' || link.collision === 'cylinder' || link.collision === 'sphere') {
       // The primitive fitted to the object, where it stands and turned as it is (URDF's roll, pitch, yaw are the design's X, Y, Z turns).
-      const fitted = collisionPrimitive(node, link.collision);
+      const fitted = collisionPrimitive(node, link);
       const origin = fitted.at.map((x, i) => (x - frame[i]) * M) as Vec3;
       const rpy = fitted.rot.map((d) => d * RAD) as Vec3;
       const s = fitted.shape;
