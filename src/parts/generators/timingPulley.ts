@@ -10,6 +10,7 @@ import { extrude, revolve, union } from '../types';
 import type { Polygon, Quality, Solid, Vec2 } from '../types';
 import { lengthInfo, mm, num, str } from './types';
 import type { BuildResult, GeneratorDef, InfoItem, Params } from './types';
+import { lengthFixed, lengthText, said } from '../../units';
 
 interface BeltBase {
   label: string;
@@ -183,7 +184,7 @@ function buildPulley(profiles: Record<string, BeltProfile>, p: Params, q: Qualit
     toothed = pulleyOutline(b, teeth, clearance, q);
   }
   if (!toothed) throw new Error(tr('The belt grooves overlap: use more teeth.'));
-  if (clearance < num(p, 'toothClearance')) warnings.push(tr('The tooth clearance was reduced to {clearance} mm so the grooves do not overlap.', { clearance: clearance.toFixed(2) }));
+  if (clearance < num(p, 'toothClearance')) warnings.push(said((unit) => tr('The tooth clearance was reduced to {clearance} so the grooves do not overlap.', { clearance: lengthFixed(clearance, unit, 2) })));
 
   const pitchD = (teeth * b.pitch) / Math.PI;
   const od = pitchD - 2 * b.plo;
@@ -212,7 +213,7 @@ function buildPulley(profiles: Record<string, BeltProfile>, p: Params, q: Qualit
     parts.push(revolve(dedupe([[0, z0], [rf - run, z0], [rf, z0 + run], [rf, zTop], [0, zTop]]), segs));
   }
 
-  if (boreRadius(p) > rootR - 1) warnings.push(tr('The bore leaves less than 1 mm of material below the belt grooves.'));
+  if (boreRadius(p) > rootR - 1) warnings.push(said((unit) => tr('The bore leaves less than {least} of material below the belt grooves.', { least: lengthText(1, unit, 0) })));
   const { solid, height } = addHubAndBore(union(...parts), 0, zTop, p, q, warnings, hasBottom || hasTop ? rf : ro);
 
   const info: InfoItem[] = [

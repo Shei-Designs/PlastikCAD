@@ -18,7 +18,7 @@ import type { Problem } from '../robot/check';
 import { addJoint, addSensor, deleteJoint, deleteSensor, fitJointFollowers, placeJoint, placeSensor, select, selectJoint, selectSensor, setBase, setControl, setDriveKind, setDriveRole, setJointMotor, setPose, setRobotRoot, setScripts, setWorld, startJointPick, stopJointPick, updateJoint, updateLink, updateSensor, useEditor } from '../state/store';
 import { rangeOf } from '../robot/kinematics';
 import { sim } from '../state/sim';
-import { lengthFigure, lengthText, unitName } from '../units';
+import { inUnit, lengthFigure, lengthText, unitName } from '../units';
 import type { Unit } from '../units';
 import { formatNumber, NumberBox, selectOnFocus, SliderField } from './Fields';
 import { Hint } from './Hint';
@@ -76,13 +76,14 @@ function Select<T extends string>({ value, options, label, onChange, placeholder
 }
 
 function Problems({ problems }: { problems: Problem[] }) {
+  const unit = useEditor((s) => s.prefs.units);
   if (problems.length === 0) return <p className="empty">{tr('Nothing stands in the way of an export.')}</p>;
   return (
     <ul className="problems">
       {problems.map((p, i) => (
         <li key={i} className={p.level === 'error' ? 'problem error' : 'problem warn'}>
           <WarningIcon />
-          <span>{p.text}</span>
+          <span>{inUnit(p.text, unit)}</span>
           {(p.link || p.joint || p.sensor) && (
             <button type="button" className="chip" onClick={() => (p.joint ? selectJoint(p.joint) : p.sensor ? selectSensor(p.sensor) : select([p.link!]))}>
               {tr('Show')}
@@ -248,7 +249,7 @@ function Test() {
           <div className="field inline">
             <label>
               {tr('Floor')}
-              <Hint text={`${WORLDS.find((w) => w.id === (robot.world ?? 'flat'))?.help ?? ''} ${tr('Only under the test drive: every export stands the robot on a flat floor.')}`} />
+              <Hint text={`${WORLDS.find((w) => w.id === (robot.world ?? 'flat'))?.help(unit) ?? ''} ${tr('Only under the test drive: every export stands the robot on a flat floor.')}`} />
             </label>
             <Select value={robot.world ?? 'flat'} label={tr('Floor')} options={WORLDS.map((w) => ({ value: w.id, label: w.name }))} onChange={(w) => setWorld(w as World)} />
           </div>
@@ -624,7 +625,7 @@ function JointPanel({ joint }: { joint: RobotJoint }) {
             )}
           </legend>
           <SliderField label={angular ? tr('Angle') : tr('Travel')} help={tr('Moves the joint on the plate to see the robot move; the design stays as it is.')} value={posed} min={lo} max={hi} step={angular ? 1 : 0.5} unit={unit} length={!angular} onChange={(v) => setPose(v)} />
-          {pose?.joint === joint.id && !pose.solved.closed && <p className="export-note problems warn">{tr('The linkage cannot close here: a loop joint is {gap} mm apart.', { gap: formatNumber(pose.solved.error, 1) })}</p>}
+          {pose?.joint === joint.id && !pose.solved.closed && <p className="export-note problems warn">{tr('The linkage cannot close here: a loop joint is {gap} apart.', { gap: lengthText(pose.solved.error, working, 1) })}</p>}
           {inLoop && (
             <div className="field">
               <button type="button" className="chip" title={tr('Sweeps this joint over its range with the loops closed and sets the passive joints to follow it (mimic), as URDF needs')} onClick={() => fitJointFollowers(joint.id)}>

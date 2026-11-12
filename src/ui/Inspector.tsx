@@ -10,7 +10,7 @@ import { TEXT_FONTS } from '../model/types';
 import type { ImageAsset, PictureMapping, PictureNode, SceneNode, ShapeNode, TextAlign, TextNode } from '../model/types';
 import { geometry } from '../state/geometry';
 import { editPicture, editText, imageAssets, notify, pickImage, saveAsPart, setColor, setHole, setSelectedLocked, setTexture, toggleLocked, updateNode, updateSelected, useEditor } from '../state/store';
-import { lengthText, sizeText } from '../units';
+import { inUnit, lengthText, sizeText } from '../units';
 import { CommitInput, NumberBox, SliderField } from './Fields';
 import { Hint } from './Hint';
 import { shortcutRows, tip } from './keymap';
@@ -487,6 +487,7 @@ function Warnings() {
   const scene = useEditor((s) => s.doc.scene);
   const selection = useEditor((s) => s.selection);
   const node = selection.length === 1 ? scene.find((n) => n.id === selection[0]) : undefined;
+  const unit = useEditor((s) => s.prefs.units);
   const warnings = node?.type === 'part' ? partFigures(node).warnings : [];
   const keys = warnings.map((w) => `${node!.id}:${w}`);
   const [dismissed, setDismissed] = useState<string[]>([]);
@@ -500,7 +501,7 @@ function Warnings() {
       {shown.map((w) => (
         <div key={w} className="inspector-note">
           <WarningIcon />
-          <span>{w}</span>
+          <span>{inUnit(w, unit)}</span>
           <button type="button" className="legend-button" title={tr('Dismiss')} aria-label={tr('Dismiss')} onClick={() => setDismissed((d) => [...d, `${node!.id}:${w}`])}>
             <CloseIcon />
           </button>

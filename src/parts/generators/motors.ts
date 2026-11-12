@@ -14,6 +14,7 @@ import { cylinder, extrude, rotate, translate, union } from '../types';
 import type { Polygon, Quality, Shape2D, Solid, Vec2 } from '../types';
 import { bool, num, str } from './types';
 import type { BuildResult, GeneratorDef, ParamGroup, Params } from './types';
+import { lengthFixed, said } from '../../units';
 
 /** Drill sizes for a screw in printed plastic: the screw cutting its own thread, or a clearance hole. */
 const SCREWS: Record<string, { tap: number; clearance: number }> = {
@@ -393,7 +394,7 @@ function build(motors: Motor[], p: Params, q: Quality): BuildResult {
     let slotLen = num(p, 'slotLength');
     if (slotLen > footLen - foot) {
       slotLen = Math.max(0, footLen - foot);
-      warnings.push(tr('The slots were shortened to {length} mm to stay inside the foot.', { length: slotLen.toFixed(1) }));
+      warnings.push(said((unit) => tr('The slots were shortened to {length} to stay inside the foot.', { length: lengthFixed(slotLen, unit, 1) })));
     }
     const footShape: Shape2D = [roundedRect(0, footLen / 2, W, footLen, Math.min(num(p, 'corner'), footLen / 2 - 0.1), q)];
     const sx = W / 2 - num(p, 'margin');

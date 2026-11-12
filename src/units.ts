@@ -50,6 +50,28 @@ export const areaText = (mm2: number, unit: Unit, places = 1): string => `${Numb
  */
 export const keyStep = (step: number, unit: Unit): number => (unit === 'in' ? fromUnit(step / 20, 'in') : step);
 
+// --- sentences that name lengths ------------------------------------------------
+
+/** What a sentence reads in inches, by what it reads in millimeters (see `said`). The oldest go first when there are many. */
+const IN_INCHES = new Map<string, string>();
+const SENTENCES_KEPT = 4000;
+
+/**
+ * A sentence that names lengths the user set (a part's warning, a robot's), which `text` writes for a unit. What
+ * comes back is the sentence in millimeters: that is how it is kept, compared and dismissed. `inUnit` gives what
+ * the same sentence reads in the unit the user works in. One that names a standard's own figure (the pitch a
+ * metric thread may have) is written plainly, and reads the same in both.
+ */
+export function said(text: (unit: Unit) => string): string {
+  const sentence = text('mm');
+  if (!IN_INCHES.has(sentence) && IN_INCHES.size >= SENTENCES_KEPT) IN_INCHES.delete(IN_INCHES.keys().next().value as string);
+  IN_INCHES.set(sentence, text('in'));
+  return sentence;
+}
+
+/** A sentence `said` gave, as it reads in `unit`; any other sentence as it is. */
+export const inUnit = (sentence: string, unit: Unit): string => (unit === 'in' ? (IN_INCHES.get(sentence) ?? sentence) : sentence);
+
 // --- the snap step -------------------------------------------------------------
 
 /** The parts of an inch the snap step can be, as what the inch is divided by. */

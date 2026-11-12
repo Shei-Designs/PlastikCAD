@@ -22,6 +22,7 @@ import { sanitizeParams } from './generators/types';
 import { V_BELT_DIAMETERS, vBeltRim } from './generators/vbelt';
 import { wormPair } from './generators/worm';
 import type { Params } from './generators/types';
+import { lengthText, said } from '../units';
 
 export type MateKind = 'gear' | 'ring' | 'rack' | 'wheel' | 'throated' | 'bevel' | 'pulley' | 'vbelt' | 'sprocket' | 'planetary';
 
@@ -219,7 +220,7 @@ function vBeltMate(source: PartNode, req: MateRequest, warnings: string[]): Mate
   const shortest = Math.ceil(wrapLength(d1, d2, least));
   let length = req.span ?? usualSpan(source, 'vbelt', d2);
   if (length < shortest) {
-    warnings.push(tr('The belt is too short for these pulleys; the shortest that fits is {n} mm long.', { n: shortest }));
+    warnings.push(said((unit) => tr('The belt is too short for these pulleys; the shortest that fits is {length} long.', { length: lengthText(shortest, unit, 0) })));
     length = shortest;
   }
   // The length grows with the distance, so the distance for a length is found by halving.

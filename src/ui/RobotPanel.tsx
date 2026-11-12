@@ -15,6 +15,7 @@ import { massProps } from '../state/massProps';
 import { exportRobot, fixLooseLinks, importRobotFile, leaveRobotMode, select, selectJoint, selectSensor, setPrefs, useEditor } from '../state/store';
 import { ChevronIcon, CloseIcon, DownloadIcon, JointIcon, SensorIcon, WarningIcon } from './icons';
 import { Popover } from './Popover';
+import { inUnit } from '../units';
 
 /** What the panels in Robot mode share: the links, the tree from the base, and what the checks found. */
 export function useRobot() {
@@ -181,6 +182,7 @@ export function RobotExport() {
   const { problems, nodes } = useRobot();
   const busy = useEditor((s) => s.busy);
   const format = useEditor((s) => s.prefs.robotFormat);
+  const unit = useEditor((s) => s.prefs.units);
   const active = EXPORT_FORMATS.find((f) => f.id === format) ?? EXPORT_FORMATS[0];
   const errors = problems.filter((p) => p.level === 'error').length;
   const warnings = problems.length - errors;
@@ -228,7 +230,7 @@ export function RobotExport() {
           </Popover>
         </div>
         {problems.length > 0 ? (
-          <button type="button" className={errors ? 'export-note problems error' : 'export-note problems warn'} title={problems.map((p) => p.text).join('\n')} onClick={() => select([])}>
+          <button type="button" className={errors ? 'export-note problems error' : 'export-note problems warn'} title={problems.map((p) => inUnit(p.text, unit)).join('\n')} onClick={() => select([])}>
             <WarningIcon />
             <span className="clip">{status}</span>
           </button>

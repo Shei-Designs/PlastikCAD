@@ -10,7 +10,7 @@ import type { MateKind, MateRequest } from '../parts/mates';
 import type { Params } from '../parts/generators/types';
 import { V_BELT_DIAMETERS } from '../parts/generators/vbelt';
 import { cancelMate, commitMate, previewMate, useEditor } from '../state/store';
-import { lengthText } from '../units';
+import { inUnit, lengthText } from '../units';
 import { formatNumber, NumberBox } from './Fields';
 import { Hint } from './Hint';
 
@@ -169,7 +169,7 @@ export function MatePanel() {
       {mate.note && <p className="field-note">{mate.note}</p>}
       {mate.warnings.map((w) => (
         <p key={w} className="field-note warn">
-          {w}
+          {inUnit(w, unit)}
         </p>
       ))}
       <p className="field-note mate-figure">

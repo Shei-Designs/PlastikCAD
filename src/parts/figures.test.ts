@@ -3,6 +3,7 @@ import type { PartNode } from '../model/types';
 import { partFigures } from './figures';
 import { getGenerator } from './generators';
 import { defaultParams } from './generators/types';
+import { inUnit } from '../units';
 
 const part = (id: string, over: Partial<PartNode> = {}): PartNode => ({ id: 'p', type: 'part', name: 'Part', part: id, params: defaultParams(getGenerator(id)), natural: [1, 1, 1], size: [1, 1, 1], pos: [0, 0, 0], rot: [0, 0, 0], hole: false, color: '#ffffff', ...over });
 
@@ -40,6 +41,21 @@ describe('partFigures', () => {
     expect(row('worm', 'Lead').inches).toBeUndefined();
     // A count and an angle are no lengths.
     expect(row('bevel', 'Pitch cone angle').inches).toBeUndefined();
+  });
+
+  it('warns in the user\'s unit of a length the user set, and in millimeters of a standard\'s own figure', () => {
+    const warnings = (id: string, params: Record<string, number | string | boolean>) => {
+      const node = part(id);
+      return partFigures({ ...node, params: { ...node.params, ...params } }).warnings;
+    };
+    // More backlash than teeth of module 0.5 can lose: a length of the user's.
+    const [backlash] = warnings('spur', { module: 0.5, backlash: 1 });
+    expect(backlash).toBe('Backlash was limited to 0.63 mm so the teeth keep two flanks.');
+    expect(inUnit(backlash, 'in')).toBe('Backlash was limited to 0.0247 in so the teeth keep two flanks.');
+    // A metric thread's pitch is the standard's: millimeters in both.
+    const [pitch] = warnings('metric-bolt', { size: 'M8', pitch: 6 });
+    expect(pitch).toBe('The pitch was limited to 4 mm for this diameter.');
+    expect(inUnit(pitch, 'in')).toBe(pitch);
   });
 
   it('has nothing to say about a part it cannot build', () => {

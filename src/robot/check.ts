@@ -12,6 +12,7 @@ import { followFault, jointInDesign, linkNodes, linkOf, robotOf, sensorInDesign,
 import type { FollowFault } from './model';
 import { withRole } from './types';
 import type { Robot, RobotJoint } from './types';
+import { lengthText, said } from '../units';
 
 export interface Problem {
   level: 'error' | 'warning';
@@ -108,7 +109,7 @@ export function checkRobot(doc: Doc, props: Map<string, LinkProperties>, robot: 
         if (dz >= 0) continue;
         nearest = Math.min(nearest, (height / -dz) * (1 / n));
       }
-      if (nearest < x.camera.near) warn(tr("{name}: the floor is {distance} mm away at the picture's edge, inside the {near} mm near clip. Raise it, tilt it up or lower Nearest.", { name: x.name, distance: Math.round(nearest), near: x.camera.near }), { sensor: x.id });
+      if (nearest < x.camera.near) warn(said((unit) => tr("{name}: the floor is {distance} away at the picture's edge, inside the {near} near clip. Raise it, tilt it up or lower Nearest.", { name: x.name, distance: lengthText(nearest, unit, 0), near: lengthText(x.camera.near, unit, 0) })), { sensor: x.id });
     }
   }
   if (robot.drive) {

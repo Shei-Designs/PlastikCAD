@@ -7,6 +7,7 @@ import { intersection, mirror, revolve, translate } from '../types';
 import type { Polygon, Quality, Solid, Vec2 } from '../types';
 import { degrees, lengthInfo, num } from './types';
 import type { GeneratorDef, InfoItem, Params } from './types';
+import { lengthFixed, said } from '../../units';
 
 // Straight bevel gear for shafts at 90°.
 //
@@ -124,7 +125,7 @@ export const bevelGear: GeneratorDef = {
     let face = num(p, 'faceWidth');
     if (face > coneDistance / 2) {
       face = coneDistance / 2;
-      warnings.push(tr('Face width was limited to {width} mm (half the cone distance).', { width: face.toFixed(1) }));
+      warnings.push(said((unit) => tr('Face width was limited to {width} (half the cone distance).', { width: lengthFixed(face, unit, 1) })));
     } else if (face > coneDistance / 3 + 1e-6) {
       warnings.push(tr('Face width is more than a third of the cone distance; the small ends of the teeth get very thin.'));
     }

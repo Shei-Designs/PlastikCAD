@@ -16,6 +16,7 @@ import { cylinder, difference, extrude, intersection, revolve, rotate, translate
 import type { Polygon, Quality, Solid } from '../types';
 import { bool, lengthInfo, mm, num, str } from './types';
 import type { BuildResult, GeneratorDef, InfoItem, ParamDef, Params } from './types';
+import { lengthFixed, said } from '../../units';
 
 /** What a bolt and its nut are made from, whichever standard the figures are from: all in millimeters. */
 interface ThreadSize {
@@ -856,7 +857,7 @@ export const leadScrewNut: GeneratorDef = {
     const { rMin, rMax } = profileExtent(profile);
     if (bodyR <= rMax) {
       bodyR = rMax + 1;
-      warnings.push(tr('The body was widened to {diameter} mm to clear the thread.', { diameter: (2 * bodyR).toFixed(1) }));
+      warnings.push(said((unit) => tr('The body was widened to {diameter} to clear the thread.', { diameter: lengthFixed(2 * bodyR, unit, 1) })));
     } else if (bodyR < rMax + 0.5) warnings.push(tr('The body wall around the thread is very thin.'));
 
     let body = cylinder(bodyR, length, q.circle);

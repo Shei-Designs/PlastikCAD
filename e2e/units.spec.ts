@@ -206,6 +206,34 @@ test.describe('inches as the working unit', () => {
     await expect.poll(() => plateGrid(page)).toEqual({ half: 100, major: 10 });
   });
 
+  test('the grid goes to feet and to yards under a large design, to meters in millimeters', async ({ page }) => {
+    const heavy = (): Promise<number> => plateGrid(page).then((grid) => grid.major);
+    const wide = (width: number): Promise<void> => store(page, (m, width) => m.updateNode(m.getState().doc.scene[0].id, { size: [width, 20, 20] }), width);
+    // Two meters wide: a heavy line every 100 mm, or every foot.
+    await wide(2000);
+    await expect.poll(heavy).toBe(100);
+    await chooseUnits(page, 'Inches');
+    await expect.poll(heavy).toBe(304.8);
+    // Twenty meters wide: every yard, or every meter.
+    await wide(20_000);
+    await expect.poll(heavy).toBe(914.4);
+    await chooseUnits(page, 'Millimeters');
+    await expect.poll(heavy).toBe(1000);
+  });
+
+  test('a warning about a length the user set reads in inches', async ({ page }) => {
+    const built = { timeout: 30_000 };
+    await store(page, async (m) => {
+      await m.addPart('gears');
+      await m.editPart(m.getState().doc.scene[1].id, { params: { module: 0.5, backlash: 1 } });
+    });
+    await settled(page);
+    const note = page.locator('.inspector-notes');
+    await expect(note).toContainText('Backlash was limited to 0.63 mm so the teeth keep two flanks.', built);
+    await chooseUnits(page, 'Inches');
+    await expect(note).toContainText('Backlash was limited to 0.0247 in so the teeth keep two flanks.');
+  });
+
   test('the choice is kept when the app starts again', async ({ page }) => {
     await chooseUnits(page, 'Inches');
     await page.reload();

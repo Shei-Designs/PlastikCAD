@@ -8,6 +8,7 @@ import { extrude, intersection, revolve } from '../types';
 import type { Polygon, Quality, Solid, Vec2 } from '../types';
 import { bool, lengthInfo, mm, num, str } from './types';
 import type { BuildResult, GeneratorDef, Params } from './types';
+import { lengthText, said } from '../../units';
 
 interface Chain {
   label: string;
@@ -114,7 +115,7 @@ function build(p: Params, q: Quality): BuildResult {
     body = intersection(body, revolve(blank, Math.max(48, arcSegments(q, TAU))));
   }
 
-  if (boreRadius(p) > rootR - 1) warnings.push(tr('The bore leaves less than 1 mm of material below the teeth.'));
+  if (boreRadius(p) > rootR - 1) warnings.push(said((unit) => tr('The bore leaves less than {least} of material below the teeth.', { least: lengthText(1, unit, 0) })));
   const { solid, height } = addHubAndBore(body, 0, t, p, q, warnings, outerR);
 
   return {

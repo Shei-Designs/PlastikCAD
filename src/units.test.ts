@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { areaText, figureFixed, fromUnit, keyStep, lengthFigure, lengthFixed, lengthText, nearestSnap, sizeText, snapLabel, snapSteps, toUnit, unitName, unitPlaces } from './units';
+import { areaText, figureFixed, fromUnit, inUnit, keyStep, lengthFigure, lengthFixed, lengthText, nearestSnap, said, sizeText, snapLabel, snapSteps, toUnit, unitName, unitPlaces } from './units';
 
 describe('a length in a unit', () => {
   it('is itself in millimeters, either way', () => {
@@ -121,5 +121,18 @@ describe('the snap steps', () => {
       for (const step of snapSteps(unit)) expect(nearestSnap(step, unit)).toBe(step);
       expect(nearestSnap(0, unit)).toBe(0);
     }
+  });
+});
+
+describe('a sentence that names lengths', () => {
+  it('is kept as it reads in millimeters, and read in inches when asked', () => {
+    const sentence = said((unit) => `The wall was thinned to ${lengthFixed(2.5, unit, 1)}.`);
+    expect(sentence).toBe('The wall was thinned to 2.5 mm.');
+    expect(inUnit(sentence, 'mm')).toBe(sentence);
+    expect(inUnit(sentence, 'in')).toBe('The wall was thinned to 0.098 in.');
+  });
+
+  it('reads the same in both units when it was written plainly', () => {
+    expect(inUnit('The pitch was limited to 4 mm for this diameter.', 'in')).toBe('The pitch was limited to 4 mm for this diameter.');
   });
 });

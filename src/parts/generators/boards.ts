@@ -21,6 +21,7 @@ import { cylinder, difference, extrude, rotate, translate, union } from '../type
 import type { Polygon, Quality, Shape2D, Solid, Vec2 } from '../types';
 import { mm, num, str } from './types';
 import type { BuildResult, GeneratorDef, ParamGroup, Params } from './types';
+import { lengthFixed, said } from '../../units';
 
 /** Drill sizes for a screw in printed plastic: the screw cutting its own thread, a clearance hole, a heat-set insert. */
 const SCREWS: Record<string, { tap: number; clearance: number; insert: number }> = {
@@ -560,7 +561,8 @@ function build(boards: Board[], p: Params, q: Quality): BuildResult {
     const hole = drill(p, b);
     if (hole > 0 && d < hole + 1.6) {
       d = hole + 1.6;
-      warnings.push(tr('The posts were widened to {diameter} mm to leave a wall round the {hole} mm hole.', { diameter: d.toFixed(1), hole }));
+      // The posts are the user's; the hole is the board's own, and stays in millimeters.
+      warnings.push(said((unit) => tr('The posts were widened to {diameter} to leave a wall round the {hole} mm hole.', { diameter: lengthFixed(d, unit, 1), hole })));
     }
     const posts = b.holes.map(([x, y]) => translate(cylinder(d / 2, height, n), [x, y, baseT]));
     let solid = union(...plate(), ...posts);
@@ -638,7 +640,7 @@ function build(boards: Board[], p: Params, q: Quality): BuildResult {
   const height = num(p, 'stopHeight');
   const t = num(p, 'stopThickness');
   const leg = Math.min(num(p, 'stopLength'), b.length / 2, b.width / 2);
-  if (base && num(p, 'baseMargin') < gap + t) warnings.push(tr('The stops overhang the base: a margin of at least {margin} mm covers them.', { margin: (gap + t).toFixed(1) }));
+  if (base && num(p, 'baseMargin') < gap + t) warnings.push(said((unit) => tr('The stops overhang the base: a margin of at least {margin} covers them.', { margin: lengthFixed(gap + t, unit, 1) })));
   // At an end the module reaches past, the legs across that end stop short of it.
   const endLeg = b.overhang ? Math.max(1, Math.min(leg, (b.width - b.overhang.width) / 2 - gap - 0.5)) : leg;
   if (endLeg < leg) info.push({ label: tr('Legs at the antenna end'), value: `${endLeg.toFixed(1)} mm` });

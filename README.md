@@ -53,14 +53,25 @@ is set to them: the size and position of the selection, a size typed at a
 grip, the settings of shapes and parts and the dimensions parts work out, the
 ruler, the readout of a drag, the array and mating panels, and the lengths in
 Robot mode. Inches are decimal, to four places at the most. The snap steps
-are then 1/32 in to 1 in, and the plate's grid has a heavy line every inch
-and a light one every eighth. The design itself is in millimeters whichever
+are then 1/32 in to 1 in. The design itself is in millimeters whichever
 unit is on show, and so is every export.
+
+The plate's grid is in the unit as well, and grows with the design. Under a
+small one it has a heavy line every 10 mm and a light one every millimeter,
+or every inch and every eighth of one. With more than thirty heavy lines
+each way they move further apart: to 100 mm and then to meters, a meter in
+quarters; to feet and then to yards, a yard in feet; past that to tens of
+meters or of yards. A design the size of a room has no more lines than a
+small one.
 
 What a standard lays down in millimeters stays in millimeters: a gear's
 module, the pitch of a metric thread or a belt, a belt's width, the head and
 key of a metric screw, and the figures of a rail, board, fan, motor or panel
-cutout. So do the warnings and questions that name a figure.
+cutout. A warning follows the same rule: one about a length you set (a wall
+thinned, backlash limited, a bend radius raised) reads in your unit, one
+about a standard's figure (the pitch a metric thread may have) in
+millimeters. The question asked of a file that names no unit says what it
+measures as millimeters, since that is what it asks about.
 
 ## How it works
 

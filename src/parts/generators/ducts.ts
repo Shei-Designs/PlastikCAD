@@ -7,7 +7,7 @@
 // eccentric one.
 import { tr, trx } from '../../i18n';
 import { cross, scale, unit } from '../../model/math';
-import { figureFixed, lengthFixed, unitName } from '../../units';
+import { figureFixed, lengthFixed, said, unitName } from '../../units';
 import type { Unit } from '../../units';
 import { arcSegments, polar, TAU } from '../math2d';
 import { difference, union } from '../types';
@@ -182,7 +182,7 @@ function wallOf(p: Params, sections: Section[], warnings: string[]): number {
   const least = Math.min(...sections.map((s) => Math.min(s.w, s.h)));
   const most = least / 2 - 0.2;
   if (wall <= most) return wall;
-  warnings.push(tr('The wall is as thick as the pipe: it was thinned to {wall} mm so that a bore is left.', { wall: most.toFixed(1) }));
+  warnings.push(said((unit) => tr('The wall is as thick as the pipe: it was thinned to {wall} so that a bore is left.', { wall: lengthFixed(most, unit, 1) })));
   return most;
 }
 
@@ -255,7 +255,7 @@ export const elbow: GeneratorDef = {
     const least = s.w / 2 + 0.2;
     if (radius < least) {
       radius = least;
-      warnings.push(tr('The bend radius was raised to {radius} mm, half the width, so that the inside of the bend does not fold over.', { radius: least.toFixed(1) }));
+      warnings.push(said((unit) => tr('The bend radius was raised to {radius}, half the width, so that the inside of the bend does not fold over.', { radius: lengthFixed(least, unit, 1) })));
     }
     const legA = num(p, 'legA');
     const legB = num(p, 'legB');
