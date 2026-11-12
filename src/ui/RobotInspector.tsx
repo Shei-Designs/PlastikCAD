@@ -16,7 +16,7 @@ import { MOTORS } from '../robot/motors';
 import { COLLISION_KINDS, DRIVE_KINDS, driveJoints, JOINT_TYPES, SENSOR_KINDS, WORLDS } from '../robot/types';
 import type { DriveKind, DriveRole, RobotJoint, RobotLink, RobotSensor, SensorKind, World } from '../robot/types';
 import type { Problem } from '../robot/check';
-import { addJoint, addSensor, deleteJoint, deleteSensor, fitJointFollowers, placeJoint, placeSensor, select, selectJoint, selectSensor, setBase, setControl, setDriveKind, setDriveRole, setJointMotor, setPose, setRobotRoot, setScripts, setWorld, startJointPick, stopJointPick, updateJoint, updateLink, updateSensor, useEditor } from '../state/store';
+import { addJoint, addSensor, deleteJoint, deleteSensor, fitJointFollowers, placeJoint, placeSensor, select, selectJoint, selectSensor, setBase, setControl, setDriveKind, setDriveRole, setJointMotor, setPose, setPrefs, setRobotRoot, setScripts, setWorld, startJointPick, stopJointPick, updateJoint, updateLink, updateSensor, useEditor } from '../state/store';
 import { rangeOf } from '../robot/kinematics';
 import { sim } from '../state/sim';
 import { inUnit, lengthFigure, lengthText, unitName } from '../units';
@@ -335,10 +335,15 @@ function Test() {
 const distance = (v: number, unit: Unit): string => (unit === 'in' ? lengthText(v, unit, 0) : v >= 1000 ? `${formatNumber(v / 1000, 2)} m` : `${formatNumber(v, 0)} mm`);
 const grams = (g: number): string => (g >= 1000 ? `${formatNumber(g / 1000, 3)} kg` : `${formatNumber(g, g < 10 ? 2 : 1)} g`);
 const cm3 = (mm3: number): string => `${formatNumber(mm3 / 1000, mm3 < 10000 ? 2 : 1)} cm³`;
-/** g·mm² shown in g·cm², the size robot parts come in. */
-const inertia = (gmm2: number): string => formatNumber(gmm2 / 100, gmm2 / 100 < 10 ? 3 : 1);
 
 const INERTIA_TAGS = ['XX', 'YY', 'ZZ', 'XY', 'XZ', 'YZ'] as const;
+/** The units an inertia is typed in: its name, how many g·mm² one of it is, the decimals its boxes keep and the step of their arrow keys. */
+const INERTIA_UNITS = {
+  gcm2: { name: 'g·cm²', scale: 100, places: 3, step: 1 },
+  kgm2: { name: 'kg·m²', scale: 1e9, places: 9, step: 1e-6 },
+} as const;
+/** g·mm² as a figure of the readout, in the chosen unit: g·cm² is the size robot parts come in, kg·m² what datasheets and robot files give. */
+const inertia = (gmm2: number, unit: keyof typeof INERTIA_UNITS): string => (unit === 'kgm2' ? String(Number((gmm2 / 1e9).toPrecision(3))) : formatNumber(gmm2 / 100, gmm2 / 100 < 10 ? 3 : 1));
 
 /**
  * The center of mass and the inertia of a weighed link, in the object's own
@@ -351,8 +356,10 @@ function WeighedFigures({ node, mass, props, onChange }: { node: SceneNode; mass
   // To the thousandth, and no minus zero: what the boxes show is what is kept once one of them is typed in.
   const round = (x: number): number => Number(x.toFixed(3)) + 0;
   const center = own.center.map(round);
-  // g·mm² in the design, g·cm² in the boxes.
-  const shown = own.inertia.map((x) => round(x / 100));
+  // g·mm² in the design, the chosen unit in the boxes.
+  const unitId = useEditor((s) => s.prefs.inertiaUnit);
+  const unit = INERTIA_UNITS[unitId];
+  const shown = own.inertia.map((x) => Number((x / unit.scale).toFixed(unit.places)) + 0);
   const box = (i: number) => (
     <NumberBox
       key={INERTIA_TAGS[i]}
@@ -360,9 +367,9 @@ function WeighedFigures({ node, mass, props, onChange }: { node: SceneNode; mass
       tag={INERTIA_TAGS[i]}
       value={shown[i]}
       min={i < 3 ? 0 : undefined}
-      step={1}
-      places={3}
-      onChange={(v) => onChange({ ...mass, inertia: shown.map((x, k) => (k === i ? v : x) * 100) as Tensor }, 'link-inertia')}
+      step={unit.step}
+      places={unit.places}
+      onChange={(v) => onChange({ ...mass, inertia: shown.map((x, k) => Number(((k === i ? v : x) * unit.scale).toPrecision(12))) as Tensor }, 'link-inertia')}
     />
   );
   return (
@@ -381,8 +388,15 @@ function WeighedFigures({ node, mass, props, onChange }: { node: SceneNode; mass
       <div className="field">
         <label>
           {tr('Inertia')}
-          <Hint text={tr("Sets the inertia about the center of mass, along the object's own axes (g·cm²).")} />
+          <Hint text={tr("Sets the inertia about the center of mass, along the object's own axes.")} />
         </label>
+        <div className="segmented small" role="radiogroup" aria-label={tr('Inertia unit')}>
+          {(Object.keys(INERTIA_UNITS) as (keyof typeof INERTIA_UNITS)[]).map((id) => (
+            <button key={id} type="button" role="radio" aria-checked={unitId === id} className={unitId === id ? 'on' : ''} title={tr('Shows the inertia in {unit}', { unit: INERTIA_UNITS[id].name })} onClick={() => setPrefs({ inertiaUnit: id })}>
+              {INERTIA_UNITS[id].name}
+            </button>
+          ))}
+        </div>
         <div className="number-row spread pairs">{[0, 1, 2].map(box)}</div>
         <div className="number-row spread pairs">{[3, 4, 5].map(box)}</div>
       </div>
@@ -400,6 +414,7 @@ function WeighedFigures({ node, mass, props, onChange }: { node: SceneNode; mass
 function LinkPanel({ node }: { node: SceneNode }) {
   const { robot, nodes, props, problems } = useRobot();
   const unit = useEditor((s) => s.prefs.units);
+  const inertiaUnit = useEditor((s) => s.prefs.inertiaUnit);
   const link = linkOf(robot, node.id);
   const p = props.get(node.id);
   const mass = p ? massOf(link.mass, p) : null;
@@ -483,13 +498,13 @@ function LinkPanel({ node }: { node: SceneNode }) {
             <dd>{figures ? figures.center.map((v) => lengthFigure(v, unit, 1)).join(', ') : '…'}</dd>
           </div>
           <div>
-            <dt title={tr('Principal moments of inertia, g·cm²')}>{tr('Inertia')}</dt>
+            <dt title={tr('Principal moments of inertia, {unit}', { unit: INERTIA_UNITS[inertiaUnit].name })}>{tr('Inertia')}</dt>
             <dd>
               {figures && mass
                 ? principalMoments(figures.inertia)
                     .sort((a, b) => b - a)
-                    .map(inertia)
-                    .join(' · ') + ' g·cm²'
+                    .map((v) => inertia(v, inertiaUnit))
+                    .join(' · ') + ` ${INERTIA_UNITS[inertiaUnit].name}`
                 : '…'}
             </dd>
           </div>

@@ -172,6 +172,7 @@ export const io: Catalog = {
   '"{name}" hangs in a loop of joints and was left out.': '«\u00a0{name}\u00a0» fait partie d’une boucle d’articulations et a été ignoré.',
   '"{name}" moves but has no shape; a small box stands for it.': '«\u00a0{name}\u00a0» bouge mais n’a pas de forme\u00a0; une petite boîte le représente.',
   '"{name}" has mass but no shape; its mass was dropped.': '«\u00a0{name}\u00a0» a une masse mais pas de forme\u00a0; sa masse a été ignorée.',
+  '"{name}" has an inertia no real body could have; its shape gives it one.': '«\u00a0{name}\u00a0» a une inertie qu’aucun corps réel ne pourrait avoir\u00a0; sa forme lui en donne une.',
   '"{name}" has a mesh that could not be read and was left out.': '«\u00a0{name}\u00a0» a un maillage qui n’a pas pu être lu et a été ignoré.',
   '"{name}" is flat or empty and was left out.': '«\u00a0{name}\u00a0» est plat ou vide et a été ignoré.',
   'Joint "{joint}" was dropped: nothing above "{link}" has a shape to hang it from. "{link}" is fixed to the base.': 'L’articulation «\u00a0{joint}\u00a0» a été supprimée\u00a0: rien au-dessus de «\u00a0{link}\u00a0» n’a de forme à laquelle l’attacher. «\u00a0{link}\u00a0» est fixé à la base.',

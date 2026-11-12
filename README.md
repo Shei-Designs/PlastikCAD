@@ -323,7 +323,8 @@ in the design file and synced with it.
   the infill and the shell thickness, or type the mass you weighed. The
   volume, surface, mass, center of mass and principal moments of inertia are
   shown; the inertia tensor goes into the file. A weighed link also takes
-  a center of mass and an inertia tensor (g·cm², about the center of mass):
+  a center of mass and an inertia tensor (about the center of mass, in
+  g·cm² or kg·m² as the switch over the boxes says):
   the boxes show what the shape gives until one is typed. They are measured
   from the object's own origin (the origin of an imported file, else the
   middle of its box) along its own axes, and turn and mirror with it.
@@ -425,6 +426,9 @@ in the design file and synced with it.
   puts it, its meshes (STL, OBJ or Collada) read from `meshes/` beside the
   file as a package keeps them, or asked for when they are not there (an OBJ
   brings its `.mtl`);
+  each link's mass comes as weighed, with the center of mass and the
+  inertia the file gives it (an inertia no real body could have is left to
+  the shape);
   the joints, their `mimic` lines, and the sensors, friction and drive in
   the `<gazebo>` blocks come along, and `ros2_control` switches the
   controllers on. Links without a shape (`base_footprint`, `world`, frames)

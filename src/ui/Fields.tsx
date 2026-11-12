@@ -114,7 +114,7 @@ export function NumberBox({ value, onChange, tag, unit, length, step = 1, min = 
         onKeyDown={(e) => {
           if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
             e.preventDefault();
-            const next = clamp(Number((value + (e.key === 'ArrowUp' ? 1 : -1) * keyStep(step, inches ? 'in' : 'mm') * (e.shiftKey ? 10 : 1)).toFixed(6)));
+            const next = clamp(Number((value + (e.key === 'ArrowUp' ? 1 : -1) * keyStep(step, inches ? 'in' : 'mm') * (e.shiftKey ? 10 : 1)).toFixed(Math.max(6, places))));
             setText(show(next));
             if (next !== value) send(next);
           } else if (e.key === 'Enter') {
