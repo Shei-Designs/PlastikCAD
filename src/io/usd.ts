@@ -24,8 +24,10 @@ export type UsdCollision =
 
 export interface UsdLink {
   name: string;
-  /** Where the link's frame sits in the world, m; every frame is parallel to the design's axes. */
+  /** Where the link's frame sits in the world, m; every frame is parallel to the design's axes unless `rot` turns it. */
   pos: Vec3;
+  /** How the link is turned in the pose the simulation begins in (w, x, y, z); absent for a link that is not. */
+  rot?: [number, number, number, number];
   inertial: { mass: number; origin: Vec3; inertia: Tensor } | null;
   /** Meshes in the link's frame, m, each one color. */
   visual: { mesh: MeshData; color: [number, number, number] }[];
@@ -52,6 +54,8 @@ export interface UsdJoint {
   loop: boolean;
   /** What the joint's drive is told: a speed (a wheel), a position (a servo), or nothing. */
   drive: 'velocity' | 'position' | null;
+  /** Where the joint stands when the simulation begins, radians or meters: the links are written posed so, and a servo holds it. */
+  start?: number;
 }
 
 export interface UsdSensor {
@@ -161,6 +165,26 @@ function quatOf(m: Mat): Quat {
 const quatOfRpy = (rpy: Vec3): Quat => quatOf(rotation(rpy.map((r) => r * DEG) as Vec3));
 
 /** The quaternion turning +X onto `axis`: a joint's frame, whose axis USD Physics takes as X. */
+/** The turn of a 3×3 matrix held by columns (its first nine numbers), as a quaternion. */
+export function quatOfMatrix(m: readonly number[]): Quat {
+  const [m00, m10, m20, m01, m11, m21, m02, m12, m22] = m;
+  const trace = m00 + m11 + m22;
+  if (trace > 0) {
+    const s = Math.sqrt(trace + 1) * 2;
+    return [s / 4, (m21 - m12) / s, (m02 - m20) / s, (m10 - m01) / s];
+  }
+  if (m00 > m11 && m00 > m22) {
+    const s = Math.sqrt(1 + m00 - m11 - m22) * 2;
+    return [(m21 - m12) / s, s / 4, (m01 + m10) / s, (m02 + m20) / s];
+  }
+  if (m11 > m22) {
+    const s = Math.sqrt(1 + m11 - m00 - m22) * 2;
+    return [(m02 - m20) / s, (m01 + m10) / s, s / 4, (m12 + m21) / s];
+  }
+  const s = Math.sqrt(1 + m22 - m00 - m11) * 2;
+  return [(m10 - m01) / s, (m02 + m20) / s, (m12 + m21) / s, s / 4];
+}
+
 function quatToAxis(axis: Vec3): Quat {
   const n = Math.hypot(...axis) || 1;
   const [x, y, z] = [axis[0] / n, axis[1] / n, axis[2] / n];
@@ -458,7 +482,7 @@ function linkPrim(l: UsdLink, sensors: UsdSensor[], touched: boolean): string[] 
     body.push(`point3f physics:centerOfMass = ${v3(l.inertial.origin)}`, `float3 physics:diagonalInertia = ${v3(moments, 9)}`, `float physics:mass = ${fmt(l.inertial.mass, 6)}`, `quatf physics:principalAxes = ${q4(axes)}`);
   }
   if (touched) body.push('float physxContactReport:threshold = 0');
-  body.push(...xformOps(l.pos));
+  body.push(...xformOps(l.pos, l.rot));
   l.visual.forEach((v, i) => {
     body.push('', `def Mesh "visual_${i}" (`, '    prepend apiSchemas = ["MaterialBindingAPI"]', ')', '{', ...indent([`rel material:binding = </World/Looks/${colorKey(v.color)}>`, ...meshLines(v.mesh)], 1), '}');
   });
@@ -494,9 +518,11 @@ function jointPrim(j: UsdJoint, robot: string, leader?: UsdJoint): string[] {
       `float drive:${drive}:physics:maxForce = ${fmt(effort, 6)}`,
       `float drive:${drive}:physics:stiffness = ${fmt(stiffness * perUnit, 9)}`,
       `uniform token drive:${drive}:physics:type = "force"`,
-      `float drive:${drive}:physics:targetPosition = 0`,
+      // A servo is asked to hold the joint where the simulation begins; the joint's state says it is there.
+      `float drive:${drive}:physics:targetPosition = ${j.drive === 'position' && j.start ? fmt(j.start * (j.type === 'prismatic' ? 1 : DEG), 4) : '0'}`,
       `float drive:${drive}:physics:targetVelocity = 0`,
     );
+    if (j.start) body.push(`float state:${drive}:physics:position = ${fmt(j.start * (j.type === 'prismatic' ? 1 : DEG), 4)}`);
     if (j.dynamics) body.push(`float physxJoint:jointFriction = ${fmt(j.dynamics.friction, 6)}`);
     if (j.armature) body.push(`float physxJoint:armature = ${fmt(j.armature, 9)}`);
     if (j.mimic) {

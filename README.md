@@ -303,8 +303,9 @@ in the design file and synced with it.
   whose limits leave out the pose it is designed in needs a start inside
   them. The MuJoCo model's `home` keyframe and the test drive begin there,
   each servo holding its joint at its start; in the ROS 2 package Gazebo
-  puts each joint a controller holds at its start. The Gazebo model and the
-  Isaac Sim stage do not carry it yet, and say so when exported.
+  puts each joint a controller holds at its start; the Isaac Sim stage has
+  the links in that pose, each drive holding its joint there. The Gazebo
+  model does not carry it yet, and says so when exported.
 - **Try it.** The slider in a joint's panel moves it on the plate, the links
   below it following, to see the range of motion and catch an axis pointing
   the wrong way. The design is not touched; *Reset* puts the robot back.

@@ -48,7 +48,16 @@ def read_stage(path):
         rays = re.search(r'uint omni:sensor:Core:reportRateBaseHz = (\d+)', block)
         rate = re.search(r'uint omni:sensor:Core:scanRateBaseHz = (\d+)', block)
         lidars[m.group(1)] = int(rays.group(1)) // max(int(rate.group(1)), 1) if rays and rate else None
+    # Where each joint begins, radians or meters, for those the stage gives a start.
+    starts = {}
+    for m in re.finditer(r'def Physics(Revolute|Prismatic)Joint "([^"]+)"', text):
+        after = text[m.end():]
+        block = after[:after.find('\ndef Physics')] if '\ndef Physics' in after else after[:8000]
+        at = re.search(r'float state:(?:angular|linear):physics:position = ([-0-9.e]+)', block)
+        if at:
+            starts[m.group(2)] = math.radians(float(at.group(1))) if m.group(1) == 'Revolute' else float(at.group(1))
     return {
+        'starts': starts,
         'topics': topics,
         'cameras': re.findall(r'def Camera "([^"]+)"', text),
         'imus': re.findall(r'def IsaacImuSensor "([^"]+)"', text),
@@ -194,9 +203,10 @@ def one(path, pictures):
                 m.drive.steering_angle = 0.0
                 ackermann_pub.publish(m)
             elif drive_kind == 'joints' and servo:
+                # From where the joint began: a robot that starts crouched is not told to stand up.
                 m = JointState()
                 m.name = [servo]
-                m.position = [position]
+                m.position = [float(q0[names.index(servo)]) + position]
                 joint_pub.publish(m)
 
         # Standing still first: the sensors read the scene as built, the wall a meter ahead.
@@ -229,7 +239,14 @@ def one(path, pictures):
             i = names.index(servo)
             result['servo_deg'] = round(float(math.degrees(q[i] - q0[i])), 1)
             if abs(q[i] - q0[i] - 0.5) > 0.1:
-                result['problems'].append(f'{servo} told to go to 0.5 rad is at {q[i] - q0[i]:.2f}')
+                result['problems'].append(f'{servo} told to go 0.5 rad on from where it began went {q[i] - q0[i]:.2f}')
+        # Every joint with a start began there, and those not told to move are still there.
+        if info['starts']:
+            began = {j: float(q0[names.index(j)]) for j in info['starts'] if j in names}
+            off = [f'{j} began at {began.get(j, float("nan")):.3f}, start {v:.3f}' for j, v in info['starts'].items() if not abs(began.get(j, float('nan')) - v) < 0.05]
+            drift = [f'{j} is at {float(q[names.index(j)]):.3f}, start {v:.3f}' for j, v in info['starts'].items() if j in names and j != servo and abs(float(q[names.index(j)]) - v) > 0.15]
+            result['starts_held'] = len(info['starts']) - len(off) - len(drift)
+            result['problems'] += off + drift
         if not got['joint_states']:
             result['problems'].append('no joint_states arrived')
         elif set(got['joint_states'][-1].name) != set(names):

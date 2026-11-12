@@ -19,7 +19,7 @@ import type { MjcfBody, MjcfModel } from '../io/mjcf';
 import { modelConfig, SDF_NAMES, writeSdf } from '../io/sdf';
 import type { SdfJoint, SdfLink } from '../io/sdf';
 import { writeStl } from '../io/stl';
-import { robotPrim, USD_NAMES, writeUsda } from '../io/usd';
+import { quatOfMatrix, robotPrim, USD_NAMES, writeUsda } from '../io/usd';
 import type { UsdCollision, UsdJoint, UsdModel } from '../io/usd';
 import { NameSet, uniqueNames, URDF_NAMES, urdfName, writeUrdf } from '../io/urdf';
 import type { Naming, UrdfJoint, UrdfLink, UrdfShape } from '../io/urdf';
@@ -133,6 +133,8 @@ interface Prepared {
    * for the robot's lowest point to be as far above the floor in both. Zero for a robot that starts as designed.
    */
   lift: number;
+  /** Where each link goes in that pose, from where it is designed (by object; mm); null for a robot that starts as designed. */
+  posed: Map<string, Mat> | null;
   /** The tree's joints, parents before children. */
   treeJoints: UrdfJoint[];
   /** The joints that close loops, which only SDF carries. */
@@ -238,7 +240,8 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
       return low;
     };
     const [designed, started] = [lowest(), lowest(begun.frames)];
-    if (Number.isFinite(designed) && Number.isFinite(started)) lift = (designed - started) * M;
+    // A base bolted to the world stays where it is.
+    if (robot.base !== 'fixed' && Number.isFinite(designed) && Number.isFinite(started)) lift = (designed - started) * M;
   }
   const jointOf = (j: RobotJoint): UrdfJoint => {
     const parentFrame = frames.get(j.parent)!;
@@ -346,7 +349,7 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
   const driven = new Set(driveJoints(robot.drive));
   const controlled = robot.control ? tree.order.slice(1).map((id) => tree.parentJoint.get(id)!).filter((j) => j.type !== 'fixed' && !j.mimic && !driven.has(j.id)).map((j) => jointNames.get(j)!) : [];
 
-  return { pkg, robotName: urdfName(doc.name, 'robot'), files, warnings, leftOut, order: tree.order, names, naming, linkNames, jointNames, frames, links, lift, treeJoints, loopJoints, sensors, drive, controlled };
+  return { pkg, robotName: urdfName(doc.name, 'robot'), files, warnings, leftOut, order: tree.order, names, naming, linkNames, jointNames, frames, links, lift, posed: begun?.frames ?? null, treeJoints, loopJoints, sensors, drive, controlled };
 }
 
 /**
@@ -584,7 +587,6 @@ export function exportSummary(doc: Doc, format: ExportFormat, robot: Robot = rob
 export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot = robotOf(doc)): RobotPackage {
   const p = prepare(doc, geometry, robot, (path) => path, USD_NAMES);
   const { pkg, warnings } = p;
-  if (p.treeJoints.some((j) => j.start)) warnings.push(NO_START);
   const velocity = new Set(p.drive?.wheels ?? []);
   const position = new Set([...p.controlled, ...(p.drive?.steer ?? [])]);
   // An Ackermann car in Isaac: the controller speaks for all four wheels, front left, front right, rear left, rear right,
@@ -612,6 +614,7 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
     armature: j.armature,
     loop,
     drive: velocity.has(j.name) ? 'velocity' : position.has(j.name) ? 'position' : null,
+    ...(j.start ? { start: j.start } : {}),
   });
   const links: UsdModel['links'] = p.links.map((l) => {
     const geo = geometry.get(l.node.id)!;
@@ -622,7 +625,13 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
         if (geo.collision) collision.push({ mesh: inFrame(geo.collision, l.frame), convex: kind !== 'mesh' });
       } else collision.push({ ...c.geometry, origin: c.origin ?? [0, 0, 0], rpy: c.rpy ?? [0, 0, 0] } as UsdCollision);
     }
-    return { name: l.name, pos: l.frame.map((x) => x * M) as Vec3, inertial: l.inertial, visual: geo.visual.map((v) => ({ mesh: inFrame(v.mesh, l.frame), color: rgb(v.color) })), collision, friction: l.friction ?? 0.5 };
+    // In the pose the simulation begins in, a link stands where that pose puts it, turned as it turns it, the whole
+    // robot raised or lowered to stand on the floor. A joint's zero stays where the design has it: the joint's
+    // frames are fixed in its two links, so links written posed are joints at their starts.
+    const to = p.posed?.get(l.node.id);
+    const at = (to ? apply(to, l.frame) : l.frame).map((x) => x * M) as Vec3;
+    const turn = to ? quatOfMatrix(to) : undefined;
+    return { name: l.name, pos: [at[0], at[1], at[2] + p.lift], ...(turn && Math.abs(turn[0]) < 1 - 1e-9 ? { rot: turn } : {}), inertial: l.inertial, visual: geo.visual.map((v) => ({ mesh: inFrame(v.mesh, l.frame), color: rgb(v.color) })), collision, friction: l.friction ?? 0.5 };
   });
   let drive: UsdModel['drive'] = null;
   if (p.drive) {
