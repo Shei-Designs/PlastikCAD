@@ -864,8 +864,9 @@ export function collisionMeshes(nodes: SceneNode[], collisions: Record<string, C
         if (kind !== 'hull' && kind !== 'mesh') return null;
         const entry = builtOf(k, node, false);
         if (entry.solid) {
-          const solid = placed(k, node, keep, false);
-          return meshOf(kind === 'mesh' ? solid : keep(solid.hull()));
+          if (kind === 'mesh') return meshOf(placed(k, node, keep, false));
+          const hulls = hullsOf(k, node, keep, false).map(meshOf);
+          return hulls.length === 1 ? hulls[0] : joined(hulls);
         }
         const mesh = transformed(entry.open, nodeMatrix(node));
         if (kind === 'mesh') return mesh;
@@ -893,11 +894,92 @@ export function robotGeometry(nodes: SceneNode[], collisions: Record<string, Col
         const matrix = mat4(nodeMatrix(node));
         const visual = coloredParts(k, node, keep, fine).map((p) => ({ color: p.color, mesh: meshOf(keep(p.solid.transform(matrix))) }));
         const solid = placed(k, node, keep, fine);
-        const collision = kind === 'mesh' ? meshOf(solid) : kind === 'hull' ? meshOf(keep(solid.hull())) : null;
-        return { id: node.id, visual, collision, bounds: toBounds(solid.boundingBox()), props: propertiesOf(k, node, keep, fine) };
+        const hulls = kind === 'hull' ? hullsOf(k, node, keep, fine).map(meshOf) : [];
+        const collision = kind === 'mesh' ? meshOf(solid) : hulls.length === 1 ? hulls[0] : hulls.length ? joined(hulls) : null;
+        return { id: node.id, visual, collision, ...(hulls.length > 1 ? { hulls } : {}), bounds: toBounds(solid.boundingBox()), props: propertiesOf(k, node, keep, fine) };
       }),
     ),
   );
+}
+
+/** More convex pieces than this for one link, and it collides as one hull round all of them. */
+const MAX_HULLS = 64;
+
+/**
+ * The convex pieces a solid node collides as when it collides as its hull, placed in the design. A group gives
+ * one for each of its parts, down through the groups in it, so that the space between them stays open; a part
+ * its group's holes cut in two gives one for each half. A piece inside another is left out. Anything else, and
+ * a group of more pieces than `MAX_HULLS`, gives the one hull round it.
+ */
+function hullsOf(k: ManifoldToplevel, node: SceneNode, keep: Keep, fine: boolean): Manifold[] {
+  const whole = (): Manifold[] => [keep(placed(k, node, keep, fine).hull())];
+  if (node.type !== 'group') return whole();
+  const parts = partsOf(k, node, keep, fine);
+  if (parts === null || parts.length > MAX_HULLS) return whole();
+  const hulls = parts.map((p) => keep(p.hull())).filter((h) => !h.isEmpty() && h.volume() > 0);
+  if (hulls.length === 0 || hulls.length > MAX_HULLS) return whole();
+  // The largest first, so that what lies inside another is found against it.
+  const sized = hulls.map((h) => ({ h, box: toBounds(h.boundingBox()), volume: h.volume() })).sort((a, b) => b.volume - a.volume);
+  const kept: typeof sized = [];
+  for (const piece of sized) {
+    const inside = kept.some((other) => within(piece.box, other.box) && keep(piece.h.subtract(other.h)).volume() <= 1e-6 * piece.volume);
+    if (!inside) kept.push(piece);
+  }
+  return kept.map((p) => p.h);
+}
+
+const within = (a: Bounds, b: Bounds): boolean => a.min.every((v, i) => v >= b.min[i] - 1e-6) && a.max.every((v, i) => v <= b.max[i] + 1e-6);
+
+/**
+ * The separate solid pieces of a node in its parent's coordinates: a group's parts with its holes cut from them,
+ * each piece a cut leaves on its own. Null where a part is not solid, or there are too many to be worth it.
+ */
+function partsOf(k: ManifoldToplevel, node: SceneNode, keep: Keep, fine: boolean): Manifold[] | null {
+  if (node.type !== 'group') {
+    const { solid } = builtOf(k, node, fine);
+    return solid ? [keep(solid.transform(mat4(nodeMatrix(node))))] : null;
+  }
+  const holes: Manifold[] = [];
+  let parts: Manifold[] = [];
+  for (const child of node.children) {
+    if (child.type === 'picture') continue;
+    if (child.hole) {
+      holes.push(placed(k, child, keep, fine));
+      continue;
+    }
+    const inner = partsOf(k, child, keep, fine);
+    if (inner === null) return null;
+    parts.push(...inner);
+    if (parts.length > MAX_HULLS) return null;
+  }
+  if (holes.length) {
+    const cutter = holes.length === 1 ? holes[0] : keep(k.Manifold.union(holes));
+    const cut: Manifold[] = [];
+    for (const part of parts) {
+      const left = keep(part.subtract(cutter));
+      if (left.isEmpty()) continue;
+      for (const piece of left.decompose()) cut.push(keep(piece));
+      if (cut.length > MAX_HULLS) return null;
+    }
+    parts = cut;
+  }
+  const matrix = mat4(nodeMatrix(node));
+  return parts.map((p) => keep(p.transform(matrix)));
+}
+
+/** Several meshes as one, for drawing and measuring. */
+function joined(meshes: MeshData[]): MeshData {
+  const positions = new Float32Array(meshes.reduce((n, m) => n + m.positions.length, 0));
+  const triangles = new Uint32Array(meshes.reduce((n, m) => n + m.triangles.length, 0));
+  let p = 0;
+  let t = 0;
+  for (const m of meshes) {
+    positions.set(m.positions, p);
+    for (let i = 0; i < m.triangles.length; i++) triangles[t + i] = m.triangles[i] + p / 3;
+    p += m.positions.length;
+    t += m.triangles.length;
+  }
+  return { positions, triangles };
 }
 
 /** A node's solid in its built frame, split by color (see `exportColored`); the solids are the cache's own or kept. */

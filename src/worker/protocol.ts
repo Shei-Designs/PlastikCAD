@@ -120,6 +120,8 @@ export interface LinkGeometry {
   visual: ColoredPart[];
   /** The collision mesh (a hull, or the shape itself); null for a box, which `bounds` describes, or none. */
   collision: MeshData | null;
+  /** The convex pieces of `collision`, where it is the hulls of several parts and not one. */
+  hulls?: MeshData[];
   bounds: Bounds;
   props: LinkProperties;
 }
