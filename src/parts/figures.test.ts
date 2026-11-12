@@ -59,6 +59,16 @@ describe('partFigures', () => {
     }
   });
 
+  it('has no note about a piece of hardware that names millimeters and has no reading in inches', () => {
+    const notes = [...FAN_PARTS, ...MOTORS, ...BOARDS, ...CUTOUTS].flatMap((g) => g.groups.flatMap((group) => group.params.flatMap((param) => (param.type === 'select' ? param.options.map((o) => o.note ?? '') : []))));
+    const metric = notes.filter((note) => /\d mm\b/.test(note));
+    expect(metric.length).toBeGreaterThan(15);
+    for (const note of metric) expect(inUnit(note, 'in'), note).not.toMatch(/\d mm\b/);
+    // A NEMA 17's, in both.
+    expect(metric).toContain('Four M3 holes on a 31 mm square, 22 mm pilot boss.');
+    expect(inUnit('Four M3 holes on a 31 mm square, 22 mm pilot boss.', 'in')).toBe('Four M3 holes on a 1.2205 in square, 0.8661 in pilot boss.');
+  });
+
   it('warns of lengths in the unit the user works in, a standard\'s own figure among them', () => {
     const warnings = (id: string, params: Record<string, number | string | boolean>) => {
       const node = part(id);

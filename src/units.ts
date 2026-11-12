@@ -69,8 +69,21 @@ export function said(text: (unit: Unit) => string): string {
   return sentence;
 }
 
-/** A sentence `said` gave, as it reads in `unit`; any other sentence as it is. */
-export const inUnit = (sentence: string, unit: Unit): string => (unit === 'in' ? (IN_INCHES.get(sentence) ?? sentence) : sentence);
+/** What the notes written when the app starts read in inches. Kept for good, where the sentences of `said` come and go. */
+const NOTES = new Map<string, string>();
+
+/**
+ * A note that names lengths and is written once, when the app starts (what a list of motors or boards says of
+ * each): kept and read as a sentence of `said` is, for as long as the app runs.
+ */
+export function noted(text: (unit: Unit) => string): string {
+  const note = text('mm');
+  NOTES.set(note, text('in'));
+  return note;
+}
+
+/** A sentence `said` or `noted` gave, as it reads in `unit`; any other sentence as it is. */
+export const inUnit = (sentence: string, unit: Unit): string => (unit === 'in' ? (NOTES.get(sentence) ?? IN_INCHES.get(sentence) ?? sentence) : sentence);
 
 // --- the snap step -------------------------------------------------------------
 

@@ -21,7 +21,7 @@ import { cylinder, difference, extrude, rotate, translate, union } from '../type
 import type { Polygon, Quality, Shape2D, Solid, Vec2 } from '../types';
 import { lengthInfo, num, lengthsText, str, unitInfo } from './types';
 import type { BuildResult, GeneratorDef, InfoItem, ParamGroup, Params } from './types';
-import { figureFixed, lengthFigure, lengthFixed, lengthText, said } from '../../units';
+import { figureFixed, lengthFigure, lengthFixed, lengthText, noted, said, sizeText } from '../../units';
 import type { Unit } from '../../units';
 
 /** Drill sizes for a screw in printed plastic: the screw cutting its own thread, a clearance hole, a heat-set insert. */
@@ -157,10 +157,10 @@ const piHoles = (width: number): Vec2[] => [
 ];
 
 export const RASPBERRY_PI: Board[] = [
-  { id: 'pi5', label: 'Raspberry Pi 5', length: 85, width: 56, corner: 3, holes: piHoles(56), holeDiameter: 2.7, screw: 'M2.5', layout: 'USB and Ethernet on the right, SD card slot on the left, GPIO header along the top, power and HDMI along the bottom.', sockets: PI5_SOCKETS, note: tr('Four M2.5 holes, 58 × 49 mm. USB and Ethernet on the right, GPIO header along the top.') },
-  { id: 'pi4', label: 'Raspberry Pi 4 Model B', length: 85, width: 56, corner: 3, holes: piHoles(56), holeDiameter: 2.7, screw: 'M2.5', layout: 'USB and Ethernet on the right, SD card slot on the left, GPIO header along the top, power, HDMI and audio along the bottom.', sockets: PI4_SOCKETS, note: tr('Four M2.5 holes, 58 × 49 mm. USB and Ethernet on the right, GPIO header along the top.') },
-  { id: 'pi3', label: 'Raspberry Pi 3 Model B / B+', length: 85, width: 56, corner: 3, holes: piHoles(56), holeDiameter: 2.75, screw: 'M2.5', layout: 'USB and Ethernet on the right, SD card slot on the left, GPIO header along the top, power, HDMI and audio along the bottom.', sockets: PI3_SOCKETS, note: tr('Four M2.5 holes, 58 × 49 mm. USB and Ethernet on the right, GPIO header along the top.') },
-  { id: 'pi-zero-2', label: 'Raspberry Pi Zero / Zero 2 W', length: 65, width: 30, corner: 3, holes: piHoles(30), holeDiameter: 2.75, screw: 'M2.5', layout: 'Mini HDMI and micro USB along the bottom long edge, SD card slot on the left. The holes sit 3.5 mm in from every edge, so the pattern is the same whichever way round.', sockets: ZERO_SOCKETS, note: tr('Four M2.5 holes, 58 × 23 mm. Ports along the bottom long edge, SD card on the left.') },
+  { id: 'pi5', label: 'Raspberry Pi 5', length: 85, width: 56, corner: 3, holes: piHoles(56), holeDiameter: 2.7, screw: 'M2.5', layout: 'USB and Ethernet on the right, SD card slot on the left, GPIO header along the top, power and HDMI along the bottom.', sockets: PI5_SOCKETS, note: noted((unit) => tr('Four M2.5 holes, {a}. USB and Ethernet on the right, GPIO header along the top.', { a: sizeText([58, 49], unit) })) },
+  { id: 'pi4', label: 'Raspberry Pi 4 Model B', length: 85, width: 56, corner: 3, holes: piHoles(56), holeDiameter: 2.7, screw: 'M2.5', layout: 'USB and Ethernet on the right, SD card slot on the left, GPIO header along the top, power, HDMI and audio along the bottom.', sockets: PI4_SOCKETS, note: noted((unit) => tr('Four M2.5 holes, {a}. USB and Ethernet on the right, GPIO header along the top.', { a: sizeText([58, 49], unit) })) },
+  { id: 'pi3', label: 'Raspberry Pi 3 Model B / B+', length: 85, width: 56, corner: 3, holes: piHoles(56), holeDiameter: 2.75, screw: 'M2.5', layout: 'USB and Ethernet on the right, SD card slot on the left, GPIO header along the top, power, HDMI and audio along the bottom.', sockets: PI3_SOCKETS, note: noted((unit) => tr('Four M2.5 holes, {a}. USB and Ethernet on the right, GPIO header along the top.', { a: sizeText([58, 49], unit) })) },
+  { id: 'pi-zero-2', label: 'Raspberry Pi Zero / Zero 2 W', length: 65, width: 30, corner: 3, holes: piHoles(30), holeDiameter: 2.75, screw: 'M2.5', layout: 'Mini HDMI and micro USB along the bottom long edge, SD card slot on the left. The holes sit 3.5 mm in from every edge, so the pattern is the same whichever way round.', sockets: ZERO_SOCKETS, note: noted((unit) => tr('Four M2.5 holes, {a}. Ports along the bottom long edge, SD card on the left.', { a: sizeText([58, 23], unit) })) },
   {
     id: 'pico',
     label: 'Raspberry Pi Pico / Pico W / Pico 2',
@@ -177,7 +177,7 @@ export const RASPBERRY_PI: Board[] = [
     screw: 'M2',
     layout: 'Micro USB on the left.',
     sockets: [{ name: 'Micro USB', socket: 'micro-usb', edge: 'left', at: 10.5, w: 8, h: 2.9, out: 1.3 }],
-    note: tr('Four M2 holes, 47 × 11.4 mm. Micro USB on the left.'),
+    note: noted((unit) => tr('Four M2 holes, {a}. Micro USB on the left.', { a: sizeText([47, 11.4], unit) })),
   },
 ];
 
@@ -246,7 +246,7 @@ export const ARDUINO: Board[] = [
     // One socket stands for the three connectors: the classic's mini-B body (the tallest and the furthest out) and an
     // opening wide enough for a USB-C plug and tall enough for a micro-B one.
     sockets: [{ name: tr('USB (mini-B; micro-B on the Every, C on the Nano ESP32)'), socket: 'mini-usb', edge: 'left', at: 8.89, w: 7.7, h: 3.9, out: 1.8, plug: { w: 12.35, h: 8.5, r: 1.5 } }],
-    note: tr('Four M1.6 holes 1.27 mm in from the corners. USB on the left, centered.'),
+    note: noted((unit) => tr('Four M1.6 holes {a} in from the corners. USB on the left, centered.', { a: lengthText(1.27, unit) })),
   },
 ];
 
@@ -263,7 +263,7 @@ export const ESP32: Board[] = [
     layout: 'Micro USB on the left. The module\'s antenna reaches 6 mm past the right-hand end of the board, which the blank, the pocket and the corner stops allow for. No mounting holes.',
     overhang: { length: 6.04, width: 18 },
     sockets: [{ name: 'Micro USB', socket: 'micro-usb', edge: 'left', at: 13.95, w: 7.4, h: 2.9, out: 0.95 }],
-    note: tr('No holes: blank, pocket or corner stops. Antenna reaches 6 mm past the right end.'),
+    note: noted((unit) => tr('No holes: blank, pocket or corner stops. Antenna reaches {a} past the right end.', { a: lengthText(6, unit) })),
   },
   {
     id: 'esp32-devkit-v1',
@@ -281,7 +281,7 @@ export const ESP32: Board[] = [
     screw: 'M2.5',
     layout: 'Micro USB on the left, centered on the board\'s width, antenna on the right. The holes sit 2.2 mm in from every edge.',
     sockets: [{ name: 'Micro USB', socket: 'micro-usb', edge: 'left', at: 14.1, w: 7.5, h: 2.9, out: 1 }],
-    note: tr('Four holes 2.2 mm in from the corners. USB on the left, antenna on the right.'),
+    note: noted((unit) => tr('Four holes {a} in from the corners. USB on the left, antenna on the right.', { a: lengthText(2.2, unit) })),
   },
   {
     id: 'nodemcu-32s',
@@ -335,7 +335,7 @@ export const JETSON: Board[] = [
     screw: 'M2.5',
     layout: `${JETSON_LAYOUT} Module and heatsink reach about 27 mm above the carrier.`,
     sockets: JETSON_PORTS(HDMI_DP, JETSON_MICRO_USB),
-    note: tr('Four M2.5 holes, 86 × 58 mm. Ports along the bottom edge.'),
+    note: noted((unit) => tr('Four M2.5 holes, {a}. Ports along the bottom edge.', { a: sizeText([86, 58], unit) })),
   },
   {
     id: 'jetson-orin-nano',

@@ -65,10 +65,10 @@ meters or of yards. A design the size of a room has no more lines than a
 small one.
 
 A part that is metric by its standard keeps its name as the standard writes
-it (M8, GT2 2 mm, NEMA 17, a 40 mm fan), and so do the notes that describe
-such hardware. Everything else about it is in the unit in use once it is on
-the plate: its settings, a gear's module and a thread's pitch among them,
-the figures it lists, and its warnings. A setting left as it reads keeps the
+it (M8, GT2 2 mm, NEMA 17, a 40 mm fan): that is what its datasheet says.
+Everything else about it is in the unit in use once it is on the plate: its
+settings, a gear's module and a thread's pitch among them, the figures it
+lists, the note under its name, and its warnings. A setting left as it reads keeps the
 exact value it has (a module of 2 mm reads 0.0787 in and stays 2 mm), and a
 slider still moves in the steps it has in millimeters. The question asked of
 a file that names no unit says what it measures as millimeters, since that
@@ -1085,7 +1085,7 @@ waits until someone needs it:
 
 ## Roadmap
 
-The whole of what is planned, put off and dropped is in
+The whole of what is planned, deferred and dropped is in
 [docs/ROADMAP.md](docs/ROADMAP.md). Next are the phases it lists: robot mode
 made dependable, the release on the Play Store, the viewer for phones.
 

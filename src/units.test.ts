@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { areaText, figureFixed, fromUnit, inUnit, keyStep, lengthFigure, lengthFixed, lengthText, nearestSnap, said, sizeText, snapLabel, snapSteps, toUnit, unitName, unitPlaces } from './units';
+import { areaText, figureFixed, fromUnit, inUnit, keyStep, lengthFigure, lengthFixed, lengthText, nearestSnap, noted, said, sizeText, snapLabel, snapSteps, toUnit, unitName, unitPlaces } from './units';
 
 describe('a length in a unit', () => {
   it('is itself in millimeters, either way', () => {
@@ -130,6 +130,16 @@ describe('a sentence that names lengths', () => {
     expect(sentence).toBe('The wall was thinned to 2.5 mm.');
     expect(inUnit(sentence, 'mm')).toBe(sentence);
     expect(inUnit(sentence, 'in')).toBe('The wall was thinned to 0.098 in.');
+  });
+
+  it('keeps a note written at the start for good, however many sentences come after', () => {
+    const note = noted((unit) => `Four holes on a ${lengthText(31, unit)} square.`);
+    for (let i = 0; i < 5000; i++) said((unit) => `Limited to ${lengthFixed(i / 10, unit, 1)}.`);
+    expect(note).toBe('Four holes on a 31 mm square.');
+    expect(inUnit(note, 'in')).toBe('Four holes on a 1.2205 in square.');
+    // The oldest of the passing sentences are gone, and read as they were written.
+    expect(inUnit('Limited to 0.0 mm.', 'in')).toBe('Limited to 0.0 mm.');
+    expect(inUnit('Limited to 499.9 mm.', 'in')).toBe('Limited to 19.681 in.');
   });
 
   it('reads the same in both units when it was written plainly', () => {

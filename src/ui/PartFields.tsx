@@ -9,6 +9,7 @@ import type { BooleanParam, ParamDef, Params, SelectParam } from '../parts/gener
 import type { PartNode } from '../model/types';
 import { mateKinds } from '../parts/mates';
 import { editPart, startMate, useEditor } from '../state/store';
+import { inUnit } from '../units';
 import { SliderField } from './Fields';
 import { Hint } from './Hint';
 import { ResetIcon } from './icons';
@@ -19,6 +20,7 @@ import type { Section } from './Sections';
 function SelectField({ def, value, disabled, onChange }: { def: SelectParam; value: string; disabled?: boolean; onChange: (v: string) => void }) {
   const id = useId();
   const compact = def.options.length <= 3 && def.options.every((o) => o.label.length <= 14);
+  const unit = useEditor((s) => s.prefs.units);
   const note = def.options.find((o) => o.value === value)?.note;
   return (
     <div className="field">
@@ -43,7 +45,7 @@ function SelectField({ def, value, disabled, onChange }: { def: SelectParam; val
           ))}
         </select>
       )}
-      {note && <p className="field-note option-note">{note}</p>}
+      {note && <p className="field-note option-note">{inUnit(note, unit)}</p>}
     </div>
   );
 }

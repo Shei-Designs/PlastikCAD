@@ -237,6 +237,16 @@ test.describe('inches as the working unit', () => {
     await expect(note).toContainText('Backlash was limited to 0.0247 in so the teeth keep two flanks.');
   });
 
+  test('the note under a piece of hardware reads in inches, its name as the maker writes it', async ({ page }) => {
+    await store(page, (m) => m.addPart('motors'));
+    await settled(page);
+    const note = page.locator('.inspector .option-note');
+    await expect(note).toHaveText('Four M3 holes on a 31 mm square, 22 mm pilot boss.');
+    await chooseUnits(page, 'Inches');
+    await expect(note).toHaveText('Four M3 holes on a 1.2205 in square, 0.8661 in pilot boss.');
+    await expect(page.locator('.inspector select').filter({ hasText: 'NEMA 17 (42 mm)' })).toHaveValue('nema17');
+  });
+
   test('the choice is kept when the app starts again', async ({ page }) => {
     await chooseUnits(page, 'Inches');
     await page.reload();

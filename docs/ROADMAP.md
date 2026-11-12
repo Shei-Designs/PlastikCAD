@@ -2,7 +2,7 @@
 
 What is left to do on PlastikCAD, in one place: what can be built now, what
 needs a session together first, what is waiting on a check or a decision,
-and what was put off or dropped on purpose. It is kept here, in the
+and what was deferred or dropped on purpose. It is kept here, in the
 repository, until version 1.0.0; from then on the work is tracked as public
 issues.
 
@@ -15,7 +15,7 @@ formats) are done and merged. The README says what the app does today.
 Six reviews were made on 2026-11-11; each has its section at the end of this
 file. What they found is in two lists here: what was fixed, and what is left
 to choose from. What they showed could be built has each been decided: it is
-under "Next to build", "Put off" or "Dropped".
+under "Next to build", "Deferred" or "Dropped".
 
 ### Fixed
 
@@ -107,20 +107,23 @@ Things only the real devices and accounts can show.
 - The desktop app on a Mac: STEP and compressed glTF files, then an export
   (see the first finding of review 1, fixed on Linux and not tried there).
 
-## Put off
+## Deferred
 
-Not dropped: taken up when asked for.
+Not dropped: put by, to come back to.
 
 - Languages other than English and French.
-- True surfaces in STEP files for what still goes out as facets: bevel
-  gears (right for some settings only in the trial of 2026-11-11), a
-  throated worm wheel, threads of eight starts on a thin shaft. (Eggs, tall
+- **Bevel gears as true surfaces in STEP files.** They go out as facets
+  today, which is right for every setting but large and not to be picked
+  in a CAD program. In the trial of 2026-11-11 the smooth form came out
+  right for larger gears and wrong for a pinion of twelve teeth (1.2% off
+  in volume; the checks would send it out as facets). To come back to:
+  find why the pinion fails, then decide whether rewriting the generator
+  is worth it.
+- True surfaces in STEP files for a throated worm wheel and for threads of
+  eight starts on a thin shaft, which also go out as facets. (Eggs, tall
   domes and oval cones cannot be done at all: a STEP file does not keep an
   oval turned round an axis.)
 - Fractions of an inch typed into a box: inches are decimal.
-- The notes that describe a piece of metric hardware (where a motor's ears
-  are, how far a board's holes are in) in inches: they read as the maker
-  writes them, in millimeters.
 - The browser tests in WebKit as well as Chromium: the script that tries
   the built apps before a release (`pnpm check:apps`) runs the desktop app
   itself, which is WebKit; taken up only if a fault gets past it.
