@@ -47,6 +47,8 @@ export class Simulation {
   private readonly sensors = new Map<string, { at: number; dim: number }>();
   /** Time asked for and not yet stepped: what is left of a time step after each call, s. */
   private owed = 0;
+  /** Where a free base is pinned while the robot is held in the air: its position and quaternion, as qpos has them. */
+  private pinned: Float64Array | null = null;
 
   private constructor(
     private readonly mj: MainModule,
@@ -107,7 +109,50 @@ export class Simulation {
     if (this.model.nkey > 0) this.mj.mj_resetDataKeyframe(this.model, this.data, 0);
     else this.mj.mj_resetData(this.model, this.data);
     this.owed = 0;
+    this.pin();
     this.mj.mj_forward(this.model, this.data);
+  }
+
+  /** Whether the base is free to move, and so can be held: its joint is the model's first. */
+  get floating(): boolean {
+    return this.model.njnt > 0 && (this.model.jnt_type as Int32Array)[0] === this.mj.mjtJoint.mjJNT_FREE.value;
+  }
+
+  /**
+   * Holds a free base still in the air, level as the home pose has it and high enough that no part of the
+   * robot can reach the floor however its joints turn, or lets it go. The joints move as before.
+   */
+  hold(on: boolean): void {
+    if (!on || !this.floating) {
+      this.pinned = null;
+      return;
+    }
+    // The home pose's base, raised: the farthest any of the robot's shapes reaches from the base's origin is as low as one can hang.
+    const qpos = this.data.qpos as Float64Array;
+    const live = qpos.slice();
+    const vel = (this.data.qvel as Float64Array).slice();
+    if (this.model.nkey > 0) qpos.set((this.model.key_qpos as Float64Array).subarray(0, 7));
+    this.mj.mj_forward(this.model, this.data);
+    const at = this.data.geom_xpos as Float64Array;
+    const body = this.model.geom_bodyid as Int32Array;
+    const bound = this.model.geom_rbound as Float64Array;
+    const base = (this.data.xpos as Float64Array).subarray(3, 6);
+    let reach = 0;
+    for (let g = 0; g < this.model.ngeom; g++) if (body[g] > 0) reach = Math.max(reach, Math.hypot(at[3 * g] - base[0], at[3 * g + 1] - base[1], at[3 * g + 2] - base[2]) + bound[g]);
+    this.pinned = qpos.slice(0, 7);
+    this.pinned[2] = reach * 1.1 + 0.01;
+    // The joints stay as they were, moving as they were.
+    qpos.set(live.subarray(7), 7);
+    (this.data.qvel as Float64Array).set(vel);
+    this.pin();
+    this.mj.mj_forward(this.model, this.data);
+  }
+
+  /** Puts a held base back where it is pinned, standing still. */
+  private pin(): void {
+    if (!this.pinned) return;
+    (this.data.qpos as Float64Array).set(this.pinned);
+    (this.data.qvel as Float64Array).fill(0, 0, 6);
   }
 
   /**
@@ -118,7 +163,15 @@ export class Simulation {
     this.owed += Math.max(0, seconds);
     const n = Math.floor(this.owed / this.timestep + 1e-9);
     this.owed -= n * this.timestep;
-    for (let i = 0; i < n; i++) this.mj.mj_step(this.model, this.data);
+    for (let i = 0; i < n; i++) {
+      this.pin();
+      this.mj.mj_step(this.model, this.data);
+    }
+    // The step moved the base a hair on from where it is pinned; what is read next is where it is held.
+    if (this.pinned && n > 0) {
+      this.pin();
+      this.mj.mj_forward(this.model, this.data);
+    }
     return n;
   }
 

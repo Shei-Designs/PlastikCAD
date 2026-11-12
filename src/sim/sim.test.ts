@@ -250,6 +250,45 @@ describe('the quadruped', () => {
     sim.dispose();
   });
 
+  it('hangs still in the air while held, its legs swinging free, and starts again on the floor when let go', () => {
+    const doc = make('quadruped');
+    const { sim, base } = simulate(doc);
+    expect(sim.floating).toBe(true);
+    sim.step(0.5);
+    const stood = position(sim, base);
+    sim.hold(true);
+    const hung = position(sim, base);
+    // Level over where it began, and well clear of the floor.
+    expect(hung[2]).toBeGreaterThan(stood[2] + 0.05);
+    expect(Math.hypot(hung[0], hung[1])).toBeLessThan(1e-6);
+    // Every joint thrown as far as it goes: the base does not move a hair, and nothing reaches the floor.
+    for (const a of sim.actuators) sim.setTarget(a.name, a.max);
+    sim.step(1.5);
+    expect(position(sim, base)).toEqual(hung);
+    expect(Math.abs(sim.jointValue('Knee_front_left'))).toBeGreaterThan(1);
+    expect(sim.touchForces(['Foot_front_left', 'Foot_rear_right'])).toEqual(new Float32Array([0, 0]));
+    // A reset leaves it hanging, at its start.
+    sim.reset();
+    expect(position(sim, base)).toEqual(hung);
+    expect(Math.abs(sim.jointValue('Knee_front_left'))).toBeLessThan(1e-6);
+    // Let go and started again, it stands where it stood.
+    sim.hold(false);
+    sim.reset();
+    sim.step(0.5);
+    expect(Math.abs(position(sim, base)[2] - stood[2])).toBeLessThan(0.005);
+    sim.dispose();
+  });
+
+  it('has nothing to hold on an arm bolted down', () => {
+    const { sim, base } = simulate(make('arm'));
+    expect(sim.floating).toBe(false);
+    const at = position(sim, base);
+    sim.hold(true);
+    sim.step(0.2);
+    expect(position(sim, base)).toEqual(at);
+    sim.dispose();
+  });
+
   it('begins with its knees where their start has them, and holds them there', () => {
     const doc = make('quadruped');
     const knees = doc.robot!.joints.filter((j) => j.name.startsWith('Knee'));
