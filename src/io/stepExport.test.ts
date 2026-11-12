@@ -102,12 +102,11 @@ describe('STEP export', () => {
     expect(count(step, 'ADVANCED_FACE')).toBe(5);
   });
 
-  it('leaves out an object too detailed to sew, and refuses a file with nothing left in it', () => {
+  it('writes no file of a design too detailed to sew, and says which objects make it so', () => {
     const huge: MeshData = { positions: new Float32Array(9), triangles: new Uint32Array((STEP_TRIANGLES + 1) * 3) };
-    const mixed = writeStep(oc, [{ name: 'Scan', color: '#ffffff', mesh: huge }, { name: 'Box', color: '#ffffff', mesh: box(1, 1, 1) }]);
-    expect(mixed.warnings).toEqual(['"Scan" is too detailed for a STEP file and was left out.']);
-    expect(count(text(mixed.bytes), 'MANIFOLD_SOLID_BREP')).toBe(1);
-    expect(() => writeStep(oc, [{ name: 'Scan', color: '#ffffff', mesh: huge }])).toThrow('"Scan" is too detailed for a STEP file and was left out.');
+    // Not with the object left out: the file would pass for the whole design.
+    expect(() => writeStep(oc, [{ name: 'Scan', color: '#ffffff', mesh: huge }, { name: 'Box', color: '#ffffff', mesh: box(1, 1, 1) }])).toThrow('Too detailed for a STEP file: "Scan".');
+    expect(() => writeStep(oc, [{ name: 'Scan', color: '#ffffff', mesh: huge }])).toThrow('Too detailed for a STEP file: "Scan".');
     expect(() => writeStep(oc, [])).toThrow('There is nothing to export.');
     // With a coarser mesh to write in its place, that one is counted and written.
     const coarse = writeStep(oc, [{ name: 'Scan', color: '#ffffff', mesh: huge, facets: box(2, 2, 2) }]);
@@ -115,12 +114,13 @@ describe('STEP export', () => {
     expect(count(text(coarse.bytes), 'ADVANCED_FACE')).toBe(6);
   });
 
-  it('counts the triangles of the whole file: what would take it past the limit is left out, and said', () => {
-    // Twelve triangles to a box, and room for thirty: two go out, the third does not, a smaller fourth would not either.
+  it('counts the triangles of the whole file: objects that fit one by one and not together get no file', () => {
+    // Twelve triangles to a box, and room for thirty: the third takes the file past it, and all three are named.
     const boxes = ['One', 'Two', 'Three'].map((name) => ({ name, color: '#ffffff', mesh: box(1, 1, 1) }));
-    const { bytes, warnings } = writeStep(oc, boxes, { partBox: () => null }, 30);
-    expect(warnings).toEqual(['"Three" was left out: the file had reached the detail a STEP file can hold.']);
-    expect(count(text(bytes), 'MANIFOLD_SOLID_BREP')).toBe(2);
+    expect(() => writeStep(oc, boxes, { partBox: () => null }, 30)).toThrow('Too detailed for a STEP file: "One", "Two", "Three".');
+    // Of more than three, the first three and how many more.
+    const five = [...boxes, { name: 'Four', color: '#ffffff', mesh: box(1, 1, 1) }, { name: 'Five', color: '#ffffff', mesh: box(1, 1, 1) }];
+    expect(() => writeStep(oc, five, { partBox: () => null }, 50)).toThrow('Too detailed for a STEP file: "One", "Two", "Three" and 2 more.');
     // The same three with the room they need all go out.
     expect(writeStep(oc, boxes, { partBox: () => null }, 36).warnings).toEqual([]);
   });

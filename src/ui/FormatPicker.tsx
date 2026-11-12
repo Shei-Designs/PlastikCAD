@@ -16,10 +16,12 @@ interface FormatPickerProps<Id extends string> {
   title: string;
   /** What a screen reader calls the list; the tooltip when left out. */
   label?: string;
+  /** The formats that cannot be had just now, each with why: shown in the list, and not to be picked. */
+  unavailable?: Partial<Record<Id, string>>;
 }
 
 /** A button showing the format in use; its list opens upwards: the panel sits at the bottom of the window, where a native select's list would run off the screen. */
-export function FormatPicker<Id extends string>({ formats, value, onPick, title, label = title }: FormatPickerProps<Id>) {
+export function FormatPicker<Id extends string>({ formats, value, onPick, title, label = title, unavailable = {} }: FormatPickerProps<Id>) {
   const active = formats.find((f) => f.id === value)!;
   return (
     <Popover
@@ -43,6 +45,7 @@ export function FormatPicker<Id extends string>({ formats, value, onPick, title,
               type="button"
               role="option"
               aria-selected={f.id === value}
+              disabled={unavailable[f.id] !== undefined}
               className={f.id === value ? 'menu-item format on' : 'menu-item format'}
               onClick={() => {
                 close();
@@ -50,7 +53,7 @@ export function FormatPicker<Id extends string>({ formats, value, onPick, title,
               }}
             >
               <span>{f.label}</span>
-              <small>{f.description}</small>
+              <small>{unavailable[f.id] ?? f.description}</small>
             </button>
           ))}
         </div>
