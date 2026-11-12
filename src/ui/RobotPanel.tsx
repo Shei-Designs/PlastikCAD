@@ -13,7 +13,7 @@ import { linkNodes, robotOf, spanningTree } from '../robot/model';
 import type { RobotJoint, RobotSensor } from '../robot/types';
 import { massProps } from '../state/massProps';
 import { exportRobot, fixLooseLinks, importRobotFile, leaveRobotMode, select, selectJoint, selectSensor, setPrefs, useEditor } from '../state/store';
-import { ChevronIcon, CloseIcon, DownloadIcon, JointIcon, SensorIcon, WarningIcon } from './icons';
+import { ChevronIcon, CloseIcon, CollisionIcon, DownloadIcon, JointIcon, SensorIcon, WarningIcon } from './icons';
 import { Popover } from './Popover';
 import { inUnit } from '../units';
 
@@ -250,6 +250,7 @@ export function RobotExport() {
 export function RobotModeBar() {
   const picking = useEditor((s) => s.jointPick);
   const all = useEditor((s) => s.prefs.robotMarkers);
+  const shapes = useEditor((s) => s.prefs.robotCollisions);
   return (
     <div className="tabs robot-bar">
       <div className="page-tabs">
@@ -257,6 +258,9 @@ export function RobotModeBar() {
         <div className="robot-bar-actions">
           <button type="button" className={all ? 'icon-button on' : 'icon-button'} aria-pressed={all} title={tr('Shows every joint and sensor on the plate')} onClick={() => setPrefs({ robotMarkers: !all })}>
             <JointIcon />
+          </button>
+          <button type="button" className={shapes ? 'icon-button on' : 'icon-button'} aria-pressed={shapes} title={tr('Shows what each link collides as')} aria-label={tr('Shows what each link collides as')} onClick={() => setPrefs({ robotCollisions: !shapes })}>
+            <CollisionIcon />
           </button>
           <button type="button" className="icon-button" title={tr('Leave Robot mode')} aria-label={tr('Leave Robot mode')} onClick={leaveRobotMode}>
             <CloseIcon />

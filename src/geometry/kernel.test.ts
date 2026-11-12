@@ -1129,4 +1129,22 @@ describe('robot links', () => {
     const [m] = robotGeometry([body], { [body.id]: 'mesh' }, false);
     expect(m.collision!.triangles.length).toBe(36);
   });
+
+  it('gives what a link collides as on its own, for the plate: the same hull or mesh, and nothing for a plain shape', async () => {
+    const { collisionMeshes, robotGeometry } = await import('./kernel');
+    const body = shape('box', { size: [20, 20, 10], pos: [0, 0, 5] });
+    const wheel = shape('cylinder', { size: [10, 10, 4], pos: [15, 0, 5], rot: [90, 0, 0] });
+    const ghost = shape('box', { pos: [40, 0, 5] });
+    const kinds = { [body.id]: 'box', [wheel.id]: 'hull', [ghost.id]: 'none' } as const;
+    const [b, w, g] = collisionMeshes([body, wheel, ghost], kinds);
+    expect(b).toBeNull();
+    expect(g).toBeNull();
+    // The very hull the export writes.
+    const exported = robotGeometry([body, wheel, ghost], kinds, false)[1].collision!;
+    expect([...w!.positions]).toEqual([...exported.positions]);
+    expect([...w!.triangles]).toEqual([...exported.triangles]);
+    // Unset, a link collides as its hull; told to, as itself.
+    expect(collisionMeshes([body], {})[0]!.triangles.length).toBe(36);
+    expect(collisionMeshes([body], { [body.id]: 'mesh' })[0]!.triangles.length).toBe(36);
+  });
 });

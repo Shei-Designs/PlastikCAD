@@ -852,6 +852,31 @@ function propertiesOf(k: ManifoldToplevel, node: SceneNode, keep: Keep, fine: bo
  * the collision shape asked for (a convex hull, the shape itself, or nothing
  * for a box or none) and its mass properties.
  */
+/**
+ * What each node collides as, placed in the design, where that is a mesh of its own: its convex hull, or the
+ * shape itself. Null for a box, a cylinder or a sphere, which need no mesh, and for a link that collides with nothing.
+ */
+export function collisionMeshes(nodes: SceneNode[], collisions: Record<string, CollisionKind>): (MeshData | null)[] {
+  return operation((k) =>
+    scoped((keep) =>
+      nodes.map((node) => {
+        const kind = collisions[node.id] ?? 'hull';
+        if (kind !== 'hull' && kind !== 'mesh') return null;
+        const entry = builtOf(k, node, false);
+        if (entry.solid) {
+          const solid = placed(k, node, keep, false);
+          return meshOf(kind === 'mesh' ? solid : keep(solid.hull()));
+        }
+        const mesh = transformed(entry.open, nodeMatrix(node));
+        if (kind === 'mesh') return mesh;
+        const points: [number, number, number][] = [];
+        for (let i = 0; i < mesh.positions.length; i += 3) points.push([mesh.positions[i], mesh.positions[i + 1], mesh.positions[i + 2]]);
+        return points.length >= 4 ? meshOf(keep(k.Manifold.hull(points))) : null;
+      }),
+    ),
+  );
+}
+
 export function robotGeometry(nodes: SceneNode[], collisions: Record<string, CollisionKind>, fine: boolean): LinkGeometry[] {
   return operation((k) =>
     scoped((keep) =>

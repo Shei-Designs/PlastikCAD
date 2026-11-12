@@ -30,6 +30,7 @@ import type { Tensor } from './inertia';
 import { followFault, jointInDesign, linkNodes, linkOf, robotForward, robotOf, sensorInDesign, spanningTree } from './model';
 import { motorOf } from './motors';
 import { drivePy, envPy, trainPy } from '../io/scripts';
+import { collisionPrimitive } from './collision';
 import { DRIVE_KINDS, driveJoints, withRole } from './types';
 import { APP_NAME } from '../appInfo';
 import type { DriveKind, DriveRole, Robot, RobotJoint, World } from './types';
@@ -191,12 +192,12 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
       visual.push({ geometry: { mesh: meshUri(`meshes/visual/${name}.obj`) }, color: rgb(geo.visual[0].color) });
     }
     if (link.collision === 'box' || link.collision === 'cylinder' || link.collision === 'sphere') {
-      // The object's own box, where it stands and turned as it is (URDF's roll, pitch, yaw are the design's X, Y, Z turns).
-      const origin = node.pos.map((x, i) => (x - frame[i]) * M) as Vec3;
-      const rpy = node.rot.map((d) => d * RAD) as Vec3;
-      const size = node.size.map((x) => x * M) as Vec3;
-      const geometryOf =
-        link.collision === 'box' ? { box: size } : link.collision === 'cylinder' ? { cylinder: { radius: Math.max(size[0], size[1]) / 2, length: size[2] } } : { sphere: { radius: Math.max(...size) / 2 } };
+      // The primitive fitted to the object, where it stands and turned as it is (URDF's roll, pitch, yaw are the design's X, Y, Z turns).
+      const fitted = collisionPrimitive(node, link.collision);
+      const origin = fitted.at.map((x, i) => (x - frame[i]) * M) as Vec3;
+      const rpy = fitted.rot.map((d) => d * RAD) as Vec3;
+      const s = fitted.shape;
+      const geometryOf = 'box' in s ? { box: s.box.map((x) => x * M) as Vec3 } : 'cylinder' in s ? { cylinder: { radius: s.cylinder.radius * M, length: s.cylinder.length * M } } : { sphere: { radius: s.sphere.radius * M } };
       collision.push({ geometry: geometryOf, origin, rpy });
     } else if (link.collision !== 'none' && geo.collision) {
       files.push({ name: `meshes/collision/${name}.stl`, bytes: writeStl(inFrame(geo.collision, frame), name, 'm') });

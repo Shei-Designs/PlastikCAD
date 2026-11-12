@@ -94,6 +94,28 @@ test.describe('a weighed link', { tag: '@mouse' }, () => {
   });
 });
 
+test.describe('the collision shapes', { tag: '@mouse' }, () => {
+  test('are shown and hidden by their button, and the app remembers which', async ({ page }) => {
+    await openApp(page);
+    await store(page, (m) => {
+      m.addShape('box');
+      m.enterRobotMode();
+    });
+    await settled(page);
+    const shown = () => store(page, (m) => m.getState().prefs.robotCollisions);
+    const button = page.getByRole('button', { name: 'Shows what each link collides as' });
+    await expect(button).toHaveAttribute('aria-pressed', 'false');
+    await button.click();
+    await expect(button).toHaveAttribute('aria-pressed', 'true');
+    expect(await shown()).toBe(true);
+    await page.reload();
+    await store(page, (m) => m.enterRobotMode());
+    await expect(button).toHaveAttribute('aria-pressed', 'true');
+    await button.click();
+    expect(await shown()).toBe(false);
+  });
+});
+
 test.describe("a joint's start", { tag: '@mouse' }, () => {
   test('is typed, or taken from the slider', async ({ page }) => {
     await openApp(page);

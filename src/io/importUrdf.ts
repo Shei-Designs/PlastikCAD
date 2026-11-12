@@ -12,6 +12,7 @@ import { apply, boxBounds, determinant, eulerOf, IDENTITY, invert, multiply, rot
 import type { Mat } from '../model/math';
 import { newId } from '../model/ops';
 import type { Asset, SceneNode, ShapeKind, Vec3 } from '../model/types';
+import { tessellate } from '../robot/collision';
 import { jointFit } from '../robot/defaults';
 import { ownFrame, plausibleInertia, turned } from '../robot/inertia';
 import type { Tensor } from '../robot/inertia';
@@ -209,59 +210,6 @@ function addMesh(builder: MeshBuilder, mesh: MeshData, m: Mat): void {
     if (det < 0) builder.triangle(index[t[i]], index[t[i + 2]], index[t[i + 1]]);
     else builder.triangle(index[t[i]], index[t[i + 1]], index[t[i + 2]]);
   }
-}
-
-/** A primitive as triangles, centered, in mm: for links that mix primitives and meshes. */
-function tessellate(g: Exclude<Geometry, { mesh: string }>): MeshData {
-  const positions: number[] = [];
-  const triangles: number[] = [];
-  const push = (p: Vec3): number => {
-    positions.push(p[0], p[1], p[2]);
-    return positions.length / 3 - 1;
-  };
-  if ('box' in g) {
-    const [w, d, h] = g.box.map((x) => x / 2);
-    for (const z of [-h, h]) for (const y of [-d, d]) for (const x of [-w, w]) push([x, y, z]);
-    triangles.push(0, 2, 1, 1, 2, 3, 4, 5, 6, 5, 7, 6, 0, 1, 5, 0, 5, 4, 1, 3, 7, 1, 7, 5, 3, 2, 6, 3, 6, 7, 2, 0, 4, 2, 4, 6);
-  } else if ('cylinder' in g) {
-    const n = 32;
-    const r = g.cylinder.radius;
-    const h = g.cylinder.length / 2;
-    const bottom = push([0, 0, -h]);
-    const top = push([0, 0, h]);
-    for (let i = 0; i < n; i++) {
-      const a = (2 * Math.PI * i) / n;
-      push([r * Math.cos(a), r * Math.sin(a), -h]);
-      push([r * Math.cos(a), r * Math.sin(a), h]);
-    }
-    for (let i = 0; i < n; i++) {
-      const b0 = 2 + 2 * i;
-      const b1 = 2 + 2 * ((i + 1) % n);
-      triangles.push(bottom, b1, b0, top, b0 + 1, b1 + 1, b0, b1, b1 + 1, b0, b1 + 1, b0 + 1);
-    }
-  } else {
-    const rings = 16;
-    const segments = 32;
-    const r = g.sphere.radius;
-    for (let i = 0; i <= rings; i++) {
-      const phi = (Math.PI * i) / rings;
-      for (let j = 0; j < segments; j++) {
-        const theta = (2 * Math.PI * j) / segments;
-        push([r * Math.sin(phi) * Math.cos(theta), r * Math.sin(phi) * Math.sin(theta), r * Math.cos(phi)]);
-      }
-    }
-    for (let i = 0; i < rings; i++) {
-      for (let j = 0; j < segments; j++) {
-        const a = i * segments + j;
-        const b = i * segments + ((j + 1) % segments);
-        const c = a + segments;
-        const d = b + segments;
-        if (i > 0) triangles.push(a, c, b);
-        if (i < rings - 1) triangles.push(b, c, d);
-      }
-    }
-  }
-  return { positions: Float32Array.from(positions), triangles: Uint32Array.from(triangles) };
 }
 
 type LinkShape = { kind: 'mesh'; mesh: MeshData; color?: string } | { kind: 'shape'; shape: ShapeKind; size: Vec3; pose: Mat; color?: string };

@@ -52,9 +52,10 @@ import { describe as describeFeature, measure as measureBetween } from '../geome
 import type { Mat } from '../model/math';
 import type { SceneNode, Vec3 } from '../model/types';
 import { posedScene } from '../robot/kinematics';
-import { jointInDesign, sensorInDesign } from '../robot/model';
+import { jointInDesign, linkNodes, linkOf, robotOf, sensorInDesign } from '../robot/model';
 import type { RobotJoint, RobotSensor } from '../robot/types';
 import type { EditorState } from '../state/store';
+import { collisionShapes } from '../state/collisionShapes';
 import { sim } from '../state/sim';
 import { fromUnit, lengthFigure, snapLabel, snapSteps, unitName } from '../units';
 import { GIZMO_SIZE, Viewer } from '../viewer/Viewer';
@@ -633,6 +634,19 @@ export function Viewport() {
     const mk = simFrames ? markers?.find((d) => d.id === state.sensor)?.marker : marker;
     return mk?.kind === 'camera' ? mk : null;
   }, [state.robot, state.sensor, simFrames, marker, markers]);
+  // What each link collides as, drawn over it where it stands: as designed, as a tried pose has it, or as the test drive does.
+  const shapesRevision = useSyncExternalStore(collisionShapes.subscribe, collisionShapes.getRevision);
+  const links = useMemo(() => (robot && prefs.robotCollisions ? linkNodes(doc.scene) : null), [robot, prefs.robotCollisions, doc.scene]);
+  const kinds = useMemo(() => (links ? Object.fromEntries(links.map((n) => [n.id, linkOf(robotOf(doc), n.id).collision])) : null), [links, doc]);
+  useEffect(() => {
+    if (links && kinds) collisionShapes.ensure(links, kinds, doc.assets);
+  }, [links, kinds, doc.assets]);
+  const collisions = useMemo(() => {
+    if (!links || !kinds) return null;
+    const frames = simFrames ?? pose?.solved.frames;
+    return [...collisionShapes.known(links, kinds)].map(([id, mesh]) => ({ id, mesh, frame: frames?.get(id) ?? null }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `shapesRevision` is not read here: it changes when a shape arrives, which `known` then finds
+  }, [links, kinds, simFrames, pose, shapesRevision]);
   const ground = useMemo(() => (simFrames && driven.world !== 'flat' ? { world: driven.world, forward: driven.drive?.forward ?? ([0, 1, 0] as Vec3) } : null), [simFrames, driven.world, driven.drive]);
   // The view follows a driving robot: it moves by what the base moved since the last frame, and comes back when the drive ends.
   const followed = useRef<Vec3 | null>(null);
@@ -728,8 +742,8 @@ export function Viewport() {
   }, []);
 
   useEffect(() => {
-    viewer.current?.setOptions({ theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, units: prefs.units, snap: prefs.snap, align: aligning, highlight, snaps, marker, markers, ground, preview, measure, objectAxes, frozen: arraying });
-  }, [prefs.theme, prefs.edges, prefs.grid, prefs.units, prefs.snap, aligning, highlight, snaps, marker, markers, ground, preview, measure, objectAxes, arraying]);
+    viewer.current?.setOptions({ theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, units: prefs.units, snap: prefs.snap, align: aligning, highlight, snaps, marker, markers, collisions, ground, preview, measure, objectAxes, frozen: arraying });
+  }, [prefs.theme, prefs.edges, prefs.grid, prefs.units, prefs.snap, aligning, highlight, snaps, marker, markers, collisions, ground, preview, measure, objectAxes, arraying]);
 
   const carrying = Boolean(placing);
   useEffect(() => {

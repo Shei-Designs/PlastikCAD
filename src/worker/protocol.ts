@@ -47,6 +47,8 @@ export type WorkerRequest =
   | { type: 'exportStep'; id: number; nodes: SceneNode[] }
   /** Volume, area, centroid and inertia of each node as placed in the design, for the robot's links. */
   | { type: 'massProperties'; id: number; nodes: SceneNode[] }
+  /** What each node collides as where that is a mesh (a hull, the shape itself), placed in the design, for showing on the plate. */
+  | { type: 'collisionMeshes'; id: number; nodes: SceneNode[]; collisions: Record<string, CollisionKind> }
   /** Each node placed, as the visual parts, collision shape and mass properties of a robot link. */
   | { type: 'robotGeometry'; id: number; nodes: SceneNode[]; collisions: Record<string, CollisionKind>; fine: boolean };
 
@@ -133,5 +135,6 @@ export type WorkerResponse =
   | { type: 'unzipped'; id: number; result: Companion[] }
   | { type: 'features'; id: number; result: FeatureIndex }
   | { type: 'massProperties'; id: number; result: LinkProperties[] }
+  | { type: 'collisionMeshes'; id: number; result: (MeshData | null)[] }
   | { type: 'robotGeometry'; id: number; result: LinkGeometry[] }
   | { type: 'error'; id: number; message: string };

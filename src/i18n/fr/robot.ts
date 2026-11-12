@@ -40,6 +40,7 @@ export const robot: Catalog = {
   'Export model': 'Exporter le modèle',
   'Click a point on the plate': 'Cliquez sur un point du plateau',
   'Robot mode': 'Mode Robot',
+  'Shows what each link collides as': 'Affiche la forme de collision de chaque segment',
   'Shows every joint and sensor on the plate': 'Affiche toutes les articulations et tous les capteurs sur le plateau',
   'Leave Robot mode': 'Quitter le mode Robot',
 

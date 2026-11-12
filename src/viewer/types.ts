@@ -2,6 +2,7 @@
 // draw, the callbacks an edit goes out through, and the shapes of the things
 // it points out (markers, snap points, the boxes to type a value in).
 import type { Feature, FeatureIndex, FeatureKind } from '../geometry/features';
+import type { MeshData } from '../geometry/mesh';
 import type { Measurement } from '../geometry/measure';
 import type { Bounds, Mat } from '../model/math';
 import type { SceneNode, Vec3 } from '../model/types';
@@ -33,6 +34,11 @@ export interface ViewerOptions {
   marker: Marker | null;
   /** The other joints and sensors, drawn small; a click on one picks it. */
   markers: { id: string; marker: Marker }[] | null;
+  /**
+   * What the robot's links collide as, drawn see-through over them: each as triangles in the design, moved by
+   * `frame` (from where the link was designed to where the test drive has it) when there is one. Null to draw none.
+   */
+  collisions: { id: string; mesh: MeshData; frame: Mat | null }[] | null;
   /** The floor of a test drive when it is not the plate itself, with which way the robot faces for a course of steps or a ramp. */
   ground: { world: Exclude<World, 'flat'>; forward: Vec3 } | null;
   /**
