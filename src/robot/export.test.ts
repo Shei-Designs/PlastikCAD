@@ -342,10 +342,31 @@ describe('the pose a simulation begins in', () => {
     expect(xml).toMatch(/<key name="home" qpos="[-0-9. ]+ 1 0 0 0( 0.523599 -1.047198){4}" ctrl="0.523599 -1.047198( 0.523599 -1.047198){3}"\/>/);
   });
 
+  it('is the pose the Isaac stage has the links in, each servo holding its joint there', () => {
+    const stage = buildIsaacStage(walker(90), geo(walker(90)));
+    expect(stage.warnings).toEqual([]);
+    const usda = text(stage.files.find((f) => f.name.endsWith('.usda'))!.bytes);
+    const prim = (name: string) => usda.slice(usda.indexOf(`def Xform "${name}" (`)).split('def Mesh')[0];
+    // The trunk comes down the 35 mm the level leg leaves under it; it is not turned.
+    expect(prim('Trunk')).toContain('double3 xformOp:translate = (0, 0, 0.015)');
+    expect(prim('Trunk')).not.toContain('xformOp:orient');
+    // The leg's frame is its hinge, 10 mm under the trunk's middle, and the leg is turned a quarter about Y there.
+    expect(prim('Leg')).toContain('double3 xformOp:translate = (0, 0, 0.005)');
+    expect(prim('Leg')).toContain('quatf xformOp:orient = (0.707107, 0, 0.707107, 0)');
+    // The joint is still where the design has it in the trunk: its zero has not moved. It is at 90°, and held there.
+    const hip = usda.slice(usda.indexOf('def PhysicsRevoluteJoint "hip"'));
+    expect(hip).toMatch(/point3f physics:localPos0 = \(0, 0, -0.01\)/);
+    expect(hip).toMatch(/float drive:angular:physics:targetPosition = 90\b/);
+    expect(hip).toMatch(/float state:angular:physics:position = 90\b/);
+    // A robot that starts as designed is written as it was.
+    const plain = text(buildIsaacStage(walker(), geo(walker())).files.find((f) => f.name.endsWith('.usda'))!.bytes);
+    expect(plain).not.toContain('state:angular:physics:position');
+    expect(plain).toContain('float drive:angular:physics:targetPosition = 0');
+  });
+
   it('is said to be missing from the formats that cannot carry it yet', () => {
     const said = "This format does not carry the joints' starts yet: the robot begins in the pose it is designed in.";
     expect(buildSdfModel(walker(90), geo(walker(90))).warnings).toEqual([said]);
-    expect(buildIsaacStage(walker(90), geo(walker(90))).warnings).toEqual([said]);
     expect(buildSdfModel(walker(), geo(walker())).warnings).toEqual([]);
   });
 
