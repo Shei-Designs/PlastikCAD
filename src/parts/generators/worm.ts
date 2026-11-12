@@ -209,7 +209,8 @@ function buildWheel(p: Params, q: Quality): BuildResult {
   const profile = pressureAngleProfile({ pitch, pitchRadius: r1, addendum: 1.25 * m, dedendum: m, pressureAngle: alpha, thickness: pitch / 2 + num(p, 'backlash') });
   // Its own facets, and the steps it is carried in, both end up on every tooth: they are kept to what shows.
   const coarse: Quality = { ...q, circle: Math.min(q.circle, 48) };
-  const thread = translate(threadSolid({ profile, pitch, starts, length: pair.cutterLength, leftHanded: pair.leftHanded, q: coarse }), [0, 0, -pair.cutterLength / 2]);
+  // Only its facets: the wheel is what forty and more cuts with it leave, which has no surfaces of its own to be written in.
+  const thread = translate(threadSolid({ profile, pitch, starts, length: pair.cutterLength, leftHanded: pair.leftHanded, q: coarse, facetsOnly: true }), [0, 0, -pair.cutterLength / 2]);
   /** The worm where it is once the wheel has turned by `turn` degrees, seen from the wheel: lying across the wheel's rim at +X, halfway up it. */
   const cutter = (turn: number): Solid => rotate(translate(rotate(rotate(thread, [0, 0, wormTurn(pair, turn)]), [-90, 0, 0]), [center, 0, b / 2]), [0, 0, -turn]);
 

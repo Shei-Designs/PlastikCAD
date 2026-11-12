@@ -3,14 +3,17 @@ import { fileURLToPath } from 'node:url';
 import type { OpenCascadeInstance } from 'replicad-opencascadejs';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { MeshData } from '../geometry/mesh';
+import type { PartNode } from '../model/types';
 import { parseStep } from './importStep';
 import { loadOcc } from './occ';
 import { STEP_TRIANGLES, writeStep } from './stepExport';
 
 let oc: OpenCascadeInstance;
 
+const load = (): Promise<OpenCascadeInstance> => loadOcc({ wasmBinary: readFileSync(fileURLToPath(new URL('../../node_modules/replicad-opencascadejs/dist/replicad_single.wasm', import.meta.url))) });
+
 beforeAll(async () => {
-  oc = await loadOcc({ wasmBinary: readFileSync(fileURLToPath(new URL('../../node_modules/replicad-opencascadejs/dist/replicad_single.wasm', import.meta.url))) });
+  oc = await load();
 }, 60_000);
 
 /** A box from the origin, its corners shared, facing outwards. */
@@ -121,4 +124,29 @@ describe('STEP export', () => {
     // The same three with the room they need all go out.
     expect(writeStep(oc, boxes, { partBox: () => null }, 36).warnings).toEqual([]);
   });
+
+  // The last of the file: it gives up the library the others were written with.
+  it('lets go of the library after a trap inside it, and writes the next file with a fresh one', async () => {
+    // A part to rebuild, which asks for its box: the trap is forced there, thrown as the engine throws one
+    // (out of memory inside the library ends that way), since the library cannot be made to trap to order.
+    const node: PartNode = { id: 'p', type: 'part', name: 'Gear', part: 'spur', params: {}, natural: [1, 1, 1], size: [1, 1, 1], pos: [0, 0, 0], rot: [0, 0, 0], hole: false, color: '#ffffff' };
+    const objects = [{ name: 'Gear', color: '#ffffff', mesh: box(4, 4, 4), node }];
+    const trap = (): never => {
+      throw new WebAssembly.RuntimeError('memory access out of bounds');
+    };
+    // The trap is passed on, not taken for a part that has no exact form.
+    expect(() => writeStep(oc, objects, { partBox: trap })).toThrow(WebAssembly.RuntimeError);
+    const fresh = await load();
+    expect(fresh).not.toBe(oc);
+    // Asked again, the fresh one is the one in use.
+    expect(await load()).toBe(fresh);
+    // The object that met the trap is not rebuilt a second time: its box is not asked for, and it goes out as its facets.
+    const again = writeStep(fresh, objects, { partBox: trap });
+    expect(again.warnings).toEqual([]);
+    expect(again.exact).toBe(0);
+    expect(count(text(again.bytes), 'ADVANCED_FACE')).toBe(6);
+    // A part that has no exact form is no trap: the library is kept.
+    writeStep(fresh, [{ ...objects[0], node: { ...node, part: 'bevel' } }], { partBox: () => null });
+    expect(await load()).toBe(fresh);
+  }, 60_000);
 });

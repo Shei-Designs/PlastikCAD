@@ -12,7 +12,7 @@
 import { dedupe, TAU } from './math2d';
 import { triangulate } from './meshUtil';
 import { cylinder, intersection, revolve, translate, union } from './types';
-import type { Polygon, Quality, Solid, Vec2 } from './types';
+import type { Polygon, Quality, Solid, Thread, Vec2 } from './types';
 
 /**
  * Thread surface radius over one pitch as [t, radius] breakpoints, t rising
@@ -188,10 +188,15 @@ export interface ThreadOptions {
   length: number;
   leftHanded?: boolean;
   q: Quality;
+  /**
+   * Leaves the thread without the description a writer of true surfaces makes it from (see `Thread`): for a thread
+   * that is only a tool, carried through many places to cut with, which such a writer should not try to follow.
+   */
+  facetsOnly?: boolean;
 }
 
-/** One thread ridge as a closed (z, radius) polygon, rooted inside the core cylinder. */
-function ridgePolygon(profile: AxialProfile, pitch: number, rMin: number): Polygon {
+/** The part of one thread ridge that stands proud of the root, as (z, radius) corners from the root point it rises from to the one it comes down to. */
+function proudOf(profile: AxialProfile, pitch: number, rMin: number): Vec2[] {
   const eps = 1e-9;
   // Keep the part of the profile that stands proud of the root, plus the root
   // points it rises from; the root flats themselves belong to the core.
@@ -201,11 +206,15 @@ function ridgePolygon(profile: AxialProfile, pitch: number, rMin: number): Polyg
   while (last > first + 1 && profile[last - 1][1] <= rMin + eps) last--;
   const pts: Polygon = [];
   for (let i = first; i <= last; i++) pts.push([profile[i][0] * pitch, profile[i][1]]);
+  return pts;
+}
+
+/** One thread ridge as a closed (z, radius) polygon, rooted inside the core cylinder. */
+function ridgePolygon(proud: Vec2[], pitch: number, rMin: number): Polygon {
   // The foot tapers slightly so that successive turns never share a face.
   const inset = 0.02 * pitch;
   const foot = rMin * 0.6;
-  pts.push([pts[pts.length - 1][0] - inset, foot], [pts[0][0] + inset, foot]);
-  return dedupe(pts);
+  return dedupe([...proud, [proud[proud.length - 1][0] - inset, foot], [proud[0][0] + inset, foot]]);
 }
 
 /** Ridge polygon swept along a helix: a closed coil with flat ends. */
@@ -253,7 +262,8 @@ function untrimmedThread(o: ThreadOptions): Solid {
   const starts = o.starts ?? 1;
   const lead = o.pitch * starts;
   const { rMin, rMax } = profileExtent(o.profile);
-  const ridge = ridgePolygon(o.profile, o.pitch, rMin);
+  const proud = proudOf(o.profile, o.pitch, rMin);
+  const ridge = ridgePolygon(proud, o.pitch, rMin);
   // Fewer facets per turn on small threads, where they would be invisible.
   const perTurn = Math.max(24, Math.min(o.q.circle, Math.round(o.q.circle * (0.5 + rMax / 20))));
   const margin = 2 * lead;
@@ -264,7 +274,13 @@ function untrimmedThread(o: ThreadOptions): Solid {
     const steps = Math.ceil(((o.length + margin - zStart) / lead) * perTurn) + 1;
     parts.push(coil(ridge, { lead, perTurn, steps, zStart, leftHanded: o.leftHanded ?? false }));
   }
-  return union(...parts);
+  if (o.facetsOnly) return union(...parts);
+  // The same thread as its surface over one lead: every start's ridge where its coil begins, the root between them.
+  const outline: Vec2[] = [];
+  for (let k = 0; k < starts; k++) for (const [z, r] of proud) outline.push([z + k * o.pitch - margin, r]);
+  outline.push([outline[0][0] + lead, outline[0][1]]);
+  const thread: Thread = { outline, lead, leftHanded: o.leftHanded ?? false, turns: Math.ceil((o.length - outline[0][0]) / lead) + 1 };
+  return { op: 'union', children: parts, thread };
 }
 
 /** Thread along +Z from z = 0 to z = length, with flat ends. */

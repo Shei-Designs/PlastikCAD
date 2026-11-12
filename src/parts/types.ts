@@ -21,7 +21,9 @@ export type Solid =
   | { op: 'cylinder'; radius: number; radiusTop?: number; height: number; segments?: number }
   /** Closed, outward-facing (CCW) triangle mesh. `swept` says what it was lofted from, where it was. */
   | { op: 'mesh'; positions: number[]; triangles: number[]; swept?: Swept }
-  | { op: 'union' | 'intersection'; children: Solid[] }
+  /** `thread` says what a union is when it is a thread before it is cut to length: its children are then the mesh of it. */
+  | { op: 'union'; children: Solid[]; thread?: Thread }
+  | { op: 'intersection'; children: Solid[] }
   /** The child with its mesh tidied: faces in one plane made one, and what is smaller than `within` (mm) taken out. The solid is the same to that measure. */
   | { op: 'tidy'; child: Solid; within: number }
   /** First child minus all the others. */
@@ -38,6 +40,26 @@ export type Solid =
 export interface Swept {
   stations: { p: Vec3; u: Vec3; v: Vec3 }[];
   rings: Polygon[];
+}
+
+/**
+ * What a thread is made from, before it is cut to length: the kernel builds it of a core and a coiled ridge for
+ * every start, in facets; a writer that can make true surfaces (see io/stepExact.ts) makes the same solid from this
+ * instead. The thread stands on the Z axis and is whole from z = 0 up to the length it was asked for: beyond both
+ * ends it runs out in whatever way suits who makes it, since it is cut off there.
+ */
+export interface Thread {
+  /**
+   * The thread's surface in the half plane through the axis at angle 0, over one lead: (z, radius) corners from the
+   * root, over the ridge of every start, to the root one lead higher. It starts below z = 0, a lead and more.
+   */
+  outline: Vec2[];
+  /** How far the thread climbs in one turn. */
+  lead: number;
+  /** A right-handed thread climbs as it turns counterclockwise, seen from +Z. */
+  leftHanded: boolean;
+  /** How many whole turns of the outline reach past the top of the thread, with a turn to spare. */
+  turns: number;
 }
 
 export interface ExtrudeOptions {

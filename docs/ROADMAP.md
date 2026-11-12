@@ -65,14 +65,11 @@ Elsewhere:
 
 Smaller pieces, each of which can be built without a session.
 
-- **STEP export, threads as true surfaces** (being built): screws, nuts,
-  tapped holes, lead screws and worms rebuilt as smooth solids, as helical
-  and herringbone gears are since #70. A trial on 2026-11-11 found them 5
-  to 50 times smaller than their facets and quicker to write (an M8 bolt
-  1.2 MB for 43). Bevel gears came out right for some settings only and
-  come last, if at all; a throated worm wheel stays facets. (Eggs, tall
-  domes and oval cones cannot be done: a STEP file does not keep an oval
-  turned round an axis.)
+- **STEP export, what still goes out as facets**: bevel gears came out
+  right for some settings only in the trial of 2026-11-11, and come last,
+  if at all; a throated worm wheel and threads of eight starts on a thin
+  shaft stay facets. (Eggs, tall domes and oval cones cannot be done: a
+  STEP file does not keep an oval turned round an axis.)
 - **STEP export, the limit**: a design or selection that would take the
   file past its limit of facets is not offered STEP, and is told why; no
   file goes out with an object left out of it, as happens today.
@@ -102,6 +99,9 @@ Things only the real devices and accounts can show.
 - On the tablet: PLY, zip and STEP import, STEP export, the licenses in the
   About box.
 - On the tablet held upright: that every flow can still be done.
+- On the tablet: how long a STEP export of a helical gear and of a bolt
+  takes (about a second each on the workstation).
+- A STEP file with a helical gear and a bolt opened in Fusion 360.
 - On the tablet: a swipe that begins on a slider scrolls the inspector, and
   a drag along it or a tap still sets it (#66).
 - On the desktop: saving a STEP export through the dialog; the Mac build.

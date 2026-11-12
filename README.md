@@ -599,18 +599,24 @@ a fillet a quarter of one, or of an oval bar when they are stretched. Gears, pul
 fans, motor mounts and cutouts go out as their profiles raised, with circles
 and arcs where they have them. A helical or herringbone gear goes out with
 its teeth as smooth surfaces that wind up it, one to each side of a tooth's
-outline, a few megabytes where its facets were tens. Pipes and ducts go out as what they are: a
+outline, a few megabytes where its facets were tens. A thread goes out the
+same way, its flanks, crest and root each a surface that winds round it,
+cut to length and given its lead-ins and its head as the part describes
+them: screws, nuts, threaded rod, tapped holes, lead screws and their nuts,
+and worms, in metric and inch sizes; of several alike in one file, the
+thread is built once. Pipes and ducts go out as what they are: a
 straight run as cylinders (or flats with rounded corners), a bend as tori
 about its axis, a round reducer as cones, a tee as two pipes run together;
 only a reducer off its axis or between rectangles has no simple surface, and
 is the surface of straight lines from one end to the other. Whatever
 is rebuilt is held against the kernel's own solid (its volume to half a
-percent, its box to what a curve stands out from its facets), and written to
+percent, its box to what a curve stands out from its facets, and for a
+thread its skin as well), and written to
 a STEP file of its own and read back, before it goes into yours: a solid the
 file would not keep goes out as its facets instead.
 
 What cannot be rebuilt goes out as the kernel's facets, sewn into a solid
-with the facets that lie in one plane joined: threads, bevel gears, lettering, imported meshes, shapes
+with the facets that lie in one plane joined: bevel gears, a worm wheel, lettering, imported meshes, shapes
 stretched out of round (an egg from a ball, a dome taller than half a ball,
 an oval cone), a rounded rim, and any group that holds one of these or parts in
 several colors. Flat sides are still true planes; a curve is as many flat strips as
@@ -1050,8 +1056,8 @@ The whole of what is planned, put off and dropped is in
 [docs/ROADMAP.md](docs/ROADMAP.md). Next in the app itself:
 
 - Lettering in scripts that need shaping or thousands of characters (Arabic, Hebrew, Indic, Chinese, Japanese, Korean).
-- True surfaces in STEP files for what still goes out as facets: threads,
-  bevel gears and stretched shapes.
+- True surfaces in STEP files for what still goes out as facets: bevel
+  gears and stretched shapes.
 
 ## License
 
