@@ -200,6 +200,39 @@ describe('checkRobot', () => {
   });
 });
 
+describe('a center of mass and an inertia typed for a weighed link', () => {
+  // The wheel: 50 g, its center of mass typed 2 mm above the middle of its box, its inertia in g·mm².
+  const typed = (inertia: [number, number, number, number, number, number] = [3000, 5000, 3000, 100, -200, 300]) => {
+    const d = doc();
+    d.robot!.links[0] = { ...d.robot!.links[0], mass: { kind: 'measured', grams: 50, center: [0, 0, 2], inertia } };
+    return d;
+  };
+
+  it('are what every export writes, in the link\'s frame and SI', () => {
+    const urdf = text(buildRobotPackage(typed(), geometry()).files.find((f) => f.name === 'urdf/test_rover.urdf')!.bytes);
+    // The wheel's frame is its joint, 4 mm inboard of its center.
+    expect(urdf).toMatch(/<origin xyz="0 0.004 0.002" rpy="0 0 0"\/>\s*<mass value="0.05"\/>\s*<inertia ixx="0.000003" ixy="0.0000001" ixz="-0.0000002" iyy="0.000005" iyz="0.0000003" izz="0.000003"\/>/);
+    const mjcf = text(buildMjcfModel(typed(), geometry()).files.find((f) => f.name.endsWith('.xml'))!.bytes);
+    expect(mjcf).toContain('<inertial pos="0 0.004 0.002" mass="0.05" fullinertia="0.000003 0.000005 0.000003 0.0000001 -0.0000002 0.0000003"/>');
+  });
+
+  it('turn with the object', () => {
+    const d = typed();
+    d.scene = d.scene.map((n) => (n.id === wheel.id ? { ...n, rot: [0, 0, 90] } : n));
+    const urdf = text(buildRobotPackage(d, geometry()).files.find((f) => f.name === 'urdf/test_rover.urdf')!.bytes);
+    expect(urdf).toMatch(/<inertia ixx="0.000005" ixy="-0.0000001" ixz="-0.0000003" iyy="0.000003" iyz="-0.0000002" izz="0.000003"\/>/);
+  });
+
+  it('leave nothing to estimate on an open mesh, and are refused when no body could have them', () => {
+    const open = new Map([...geometry()].map(([id, g]) => [id, { ...g.props, watertight: id !== wheel.id }]));
+    expect(checkRobot(doc(), open).map((p) => p.text)).toEqual(['Left wheel: not a closed mesh, so its mass and inertia are estimates.']);
+    expect(checkRobot(typed(), open)).toEqual([]);
+    // One moment larger than the other two together.
+    const wrong = checkRobot(typed([100, 100, 900, 0, 0, 0]), open);
+    expect(wrong).toEqual([{ level: 'error', text: '"Left wheel" has a typed inertia no real body could have.', link: wheel.id }]);
+  });
+});
+
 describe('buildRobotPackage', () => {
   it('writes a package with the URDF, meshes and launch files, in meters and SI', () => {
     const pkg = buildRobotPackage(doc(), geometry());

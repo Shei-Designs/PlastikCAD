@@ -23,7 +23,7 @@ import type { UsdCollision, UsdJoint, UsdModel } from '../io/usd';
 import { NameSet, uniqueNames, URDF_NAMES, urdfName, writeUrdf } from '../io/urdf';
 import type { Naming, UrdfJoint, UrdfLink, UrdfShape } from '../io/urdf';
 import type { LinkGeometry } from '../worker/protocol';
-import { massOf, tensorOf, toSI } from './inertia';
+import { inertialOf, toSI } from './inertia';
 import type { Tensor } from './inertia';
 import { followFault, jointInDesign, linkNodes, linkOf, robotForward, robotOf, sensorInDesign, spanningTree } from './model';
 import { motorOf } from './motors';
@@ -189,14 +189,15 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
       files.push({ name: `meshes/collision/${name}.stl`, bytes: writeStl(inFrame(geo.collision, frame), name, 'm') });
       collision.push({ geometry: { mesh: meshUri(`meshes/collision/${name}.stl`) } });
     }
-    const mass = massOf(link.mass, geo.props);
+    const figures = inertialOf(link.mass, node, geo.props);
     let inertial: UrdfLink['inertial'] = null;
-    if (mass > 0 && geo.props.volume > 0) {
-      inertial = { mass: mass / 1000, origin: geo.props.centroid.map((x, i) => (x - frame[i]) * M) as Vec3, inertia: tensorOf(mass, geo.props.unit).map(toSI) as Tensor };
+    // A shape with no volume has no inertia of its own to give; one typed for it stands in.
+    if (figures.mass > 0 && (geo.props.volume > 0 || figures.typed.inertia)) {
+      inertial = { mass: figures.mass / 1000, origin: figures.center.map((x, i) => (x - frame[i]) * M) as Vec3, inertia: figures.inertia.map(toSI) as Tensor };
     } else {
       warnings.push(`"${node.name}" has no mass or volume; it was written without inertia, which a simulator may reject.`);
     }
-    if (!geo.props.watertight) warnings.push(`"${node.name}" is not a closed mesh; its inertia is an estimate.`);
+    if (!geo.props.watertight && !(figures.typed.center && figures.typed.inertia)) warnings.push(`"${node.name}" is not a closed mesh; its inertia is an estimate.`);
     links.push({ name, inertial, visual, collision, friction: link.friction, frame, node });
   }
 

@@ -304,7 +304,12 @@ in the design file and synced with it.
   (filaments, resin, metals, acrylic, wood, foam...) and, for a printed part,
   the infill and the shell thickness, or type the mass you weighed. The
   volume, surface, mass, center of mass and principal moments of inertia are
-  shown; the inertia tensor goes into the file.
+  shown; the inertia tensor goes into the file. A weighed link also takes
+  a center of mass and an inertia tensor (g·cm², about the center of mass):
+  the boxes show what the shape gives until one is typed. They are measured
+  from the object's own origin (the origin of an imported file, else the
+  middle of its box) along its own axes, and turn and mirror with it.
+  *From the shape* gives them back to the shape.
 - **Collision.** A convex hull by default, or the object's box, a cylinder
   or a sphere filling it (turned as the object is), the exact mesh, or none;
   and the surface's coefficient of friction for Gazebo.

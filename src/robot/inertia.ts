@@ -4,7 +4,9 @@
 // per unit mass about the centroid in mm², which any uniform density scales
 // to a tensor. Masses are in grams; `toSI` makes kg·m² for the exporters.
 import type { MeshData } from '../geometry/mesh';
-import type { Vec3 } from '../model/types';
+import { apply, flipSigns, invert, multiply, originOf, rotation, scaling } from '../model/math';
+import type { Mat } from '../model/math';
+import type { SceneNode, Vec3 } from '../model/types';
 import type { MassSpec } from './types';
 import { materialOf } from './materials';
 
@@ -93,6 +95,64 @@ export function massOf(spec: MassSpec, props: Pick<MeshProperties, 'volume' | 'a
 
 /** The tensor (g·mm²) of a uniform solid of this mass. */
 export const tensorOf = (mass: number, unit: Tensor): Tensor => unit.map((x) => x * mass) as Tensor;
+
+/**
+ * The frame a link's typed figures are in: at the origin its file had, or the
+ * middle of its box when it keeps none, along the object's own axes (mirrored
+ * with it). A source that gives a link's center of mass and inertia gives
+ * them from the point its mesh is measured from, which is this.
+ */
+export function ownFrame(node: SceneNode): Mat {
+  const m = multiply(rotation(node.rot), scaling(flipSigns(node.flip)));
+  const at = originOf(node) ?? node.pos;
+  m[9] = at[0];
+  m[10] = at[1];
+  m[11] = at[2];
+  return m;
+}
+
+/** A tensor seen from another set of axes: M·I·Mᵀ, by the turning (and mirroring) part of `m`. */
+export function turned(t: Tensor, m: Mat): Tensor {
+  const i = [t[0], t[3], t[4], t[3], t[1], t[5], t[4], t[5], t[2]];
+  // m is held by columns: entry (row, col) is m[col * 3 + row].
+  const at = (row: number, col: number): number => {
+    let sum = 0;
+    for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) sum += m[a * 3 + row] * i[a * 3 + b] * m[b * 3 + col];
+    return sum;
+  };
+  return [at(0, 0), at(1, 1), at(2, 2), at(0, 1), at(0, 2), at(1, 2)];
+}
+
+export interface Inertial {
+  /** Grams. */
+  mass: number;
+  /** The center of mass in the design (mm). */
+  center: Vec3;
+  /** g·mm² about the center of mass, along the design's axes. */
+  inertia: Tensor;
+  /** Whether the center and the inertia were typed rather than taken from the shape. */
+  typed: { center: boolean; inertia: boolean };
+}
+
+/**
+ * A link's mass, where its center is and its inertia about it, as it stands in
+ * the design: the figures typed for a weighed link where it has them, the
+ * shape's own (a uniform solid of that mass) where it has not.
+ */
+export function inertialOf(spec: MassSpec, node: SceneNode, props: MeshProperties): Inertial {
+  const mass = massOf(spec, props);
+  const frame = ownFrame(node);
+  const center = spec.kind === 'measured' && spec.center ? apply(frame, spec.center) : props.centroid;
+  const inertia = spec.kind === 'measured' && spec.inertia ? turned(spec.inertia, frame) : tensorOf(mass, props.unit);
+  return { mass, center, inertia, typed: { center: spec.kind === 'measured' && Boolean(spec.center), inertia: spec.kind === 'measured' && Boolean(spec.inertia) } };
+}
+
+/** What `inertialOf` gives, as the object's own frame has it: the figures to show in the boxes, and to keep once one is typed. */
+export function inertialInOwn(spec: MassSpec, node: SceneNode, props: MeshProperties): { center: Vec3; inertia: Tensor } {
+  const { center, inertia } = inertialOf(spec, node, props);
+  const back = invert(ownFrame(node));
+  return { center: apply(back, center), inertia: turned(inertia, back) };
+}
 
 /** g·mm² → kg·m². */
 export const toSI = (gmm2: number): number => gmm2 * 1e-9;
