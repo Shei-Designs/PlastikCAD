@@ -13,6 +13,8 @@ import type { Mat } from '../model/math';
 import { newId } from '../model/ops';
 import type { Asset, SceneNode, ShapeKind, Vec3 } from '../model/types';
 import { jointFit } from '../robot/defaults';
+import { ownFrame, plausibleInertia, turned } from '../robot/inertia';
+import type { Tensor } from '../robot/inertia';
 import { jointInChild, linkNodes, sensorInLink } from '../robot/model';
 import { DEFAULT_MASS, defaultJoint, defaultLink, defaultSensor } from '../robot/types';
 import type { CollisionKind, DriveKind, DriveRole, JointType, Robot, RobotJoint, RobotLink, RobotSensor, SensorKind } from '../robot/types';
@@ -38,6 +40,8 @@ export interface ImportedRobot {
 
 const MM = 1000;
 const DEG = 180 / Math.PI;
+/** kg·m² in g·mm². */
+const KGM2 = 1e9;
 /** The default color of an imported object that brought none, as in the store. */
 const IMPORT_COLOR = '#8fa3bf';
 /** A link that moves but has no shape of its own gets a small box to stand for it, mm. */
@@ -58,6 +62,8 @@ interface Link {
   name: string;
   visuals: Shape[];
   collisions: Shape[];
+  /** The `<inertial>`'s frame in the link's (mm) and its tensor about it (kg·m²: xx yy zz xy xz yz), where the file gives them. */
+  inertial?: { pose: Mat; tensor?: Tensor };
   grams: number | null;
 }
 
@@ -480,12 +486,16 @@ function readUrdf(bytes: Uint8Array, companions: Companion[]): ImportedRobot {
   for (const l of childrenOf(root, 'link')) {
     const name = l.attrs.name;
     if (!name || links.has(name)) continue;
-    const kg = num(childOf(l, 'inertial') && childOf(childOf(l, 'inertial')!, 'mass')?.attrs.value);
+    const inertial = childOf(l, 'inertial');
+    const kg = num(inertial && childOf(inertial, 'mass')?.attrs.value);
+    const moments = inertial && childOf(inertial, 'inertia')?.attrs;
+    const tensor = moments && (['ixx', 'iyy', 'izz', 'ixy', 'ixz', 'iyz'] as const).map((k) => num(moments[k]) ?? 0);
     links.set(name, {
       name,
       visuals: childrenOf(l, 'visual').map((v) => readShape(v, materials)).filter((s): s is Shape => s !== null),
       collisions: childrenOf(l, 'collision').map((c) => readShape(c, materials)).filter((s): s is Shape => s !== null),
       grams: kg !== undefined && kg > 0 ? Number((kg * MM).toFixed(2)) : null,
+      ...(inertial ? { inertial: { pose: originOf(inertial), ...(tensor ? { tensor: tensor as Tensor } : {}) } } : {}),
     });
   }
   if (links.size === 0) throw new Error(tr('This URDF has no links.'));
@@ -592,6 +602,15 @@ function readUrdf(bytes: Uint8Array, companions: Companion[]): ImportedRobot {
     const node = nodeOf.get(name);
     if (!node) continue;
     const made: RobotLink = { ...defaultLink(node.id), mass: link.grams ? { kind: 'measured', grams: link.grams } : DEFAULT_MASS, collision: collisionOf(link) };
+    if (made.mass.kind === 'measured' && link.inertial) {
+      // The file's figures are in the link's frame; the design keeps them in the object's own.
+      const own = invert(ownFrame(node));
+      const pose = multiply(own, multiply(inDesign(name), link.inertial.pose));
+      made.mass.center = tidyVec(translationOf(pose));
+      const tensor = link.inertial.tensor && turned(link.inertial.tensor.map((v) => v * KGM2) as Tensor, pose);
+      if (tensor && plausibleInertia(tensor)) made.mass.inertia = tensor.map(round) as Tensor;
+      else if (tensor) warnings.push(tr('"{name}" has an inertia no real body could have; its shape gives it one.', { name }));
+    }
     const friction = frictionOf.get(name);
     if (friction !== undefined) made.friction = friction;
     if (urdfName(node.name) !== name) made.name = name;

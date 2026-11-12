@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { initKernel, robotGeometry } from '../geometry/kernel';
+import { initKernel, robotGeometry, setAssets } from '../geometry/kernel';
 import { buildRobotPackage } from '../robot/export';
 import { ROBOTS } from '../robot/fixtures';
 import { linkNodes, linkOf } from '../robot/model';
@@ -27,6 +27,51 @@ function packaged(file: string): { urdf: Uint8Array; companions: Companion[]; do
 }
 
 describe('parseUrdf', () => {
+  it('turns an inertia given in a turned frame into the link\'s own, and leaves out one no body could have', () => {
+    const link = (name: string, inertial: string) => `<link name="${name}"><inertial>${inertial}</inertial><visual><geometry><box size="0.1 0.1 0.1"/></geometry></visual></link>`;
+    const urdf = encodeText(`<robot name="t">
+      ${link('a', '<origin xyz="0.01 0 0.02" rpy="0 0 1.5707963267948966"/><mass value="1"/><inertia ixx="1e-4" iyy="2e-4" izz="3e-4" ixy="0" ixz="0" iyz="0"/>')}
+      ${link('b', '<mass value="1"/><inertia ixx="1e-4" iyy="1e-4" izz="9e-4" ixy="0" ixz="0" iyz="0"/>')}
+      <joint name="j" type="fixed"><parent link="a"/><child link="b"/><origin xyz="0.2 0 0"/></joint>
+    </robot>`);
+    const imported = parseUrdf(urdf);
+    const [a, b] = imported.robot.links.map((l) => l.mass);
+    if (a.kind !== 'measured' || b.kind !== 'measured') throw new Error('not weighed');
+    close(a.center!, [10, 0, 20], 1e-6);
+    // A quarter turn about Z swaps the moments about X and Y.
+    close(a.inertia!, [2e5, 1e5, 3e5, 0, 0, 0], 1e-3);
+    expect(b.center).toEqual([0, 0, 0]);
+    expect(b.inertia).toBeUndefined();
+    expect(imported.warnings).toEqual(['"b" has an inertia no real body could have; its shape gives it one.']);
+  });
+
+  it.each(ROBOTS.map((r) => r.file))('keeps the masses, centers and inertias of %s through an import', (file) => {
+    const { urdf, companions } = packaged(file);
+    const imported = parseUrdf(urdf, companions);
+    const doc = { ...ROBOTS.find((r) => r.file === file)!.make(), scene: imported.scene, assets: imported.assets, robot: imported.robot };
+    const nodes = linkNodes(doc.scene);
+    setAssets(imported.assets);
+    const geo = robotGeometry(nodes, Object.fromEntries(nodes.map((n) => [n.id, linkOf(doc.robot, n.id).collision])), true);
+    const again = buildRobotPackage(doc, new Map(geo.map((g) => [g.id, g])), doc.robot).files.find((f) => f.name.endsWith('.urdf'))!;
+    /** Every link's inertial figures by its name: mass, where its center is, and the six of its tensor. */
+    const inertials = (bytes: Uint8Array): Map<string, number[]> => {
+      const found = new Map<string, number[]>();
+      for (const [, name, body] of new TextDecoder().decode(bytes).matchAll(/<link name="([^"]+)">\s*<inertial>([\s\S]*?)<\/inertial>/g)) {
+        found.set(name, [...body.matchAll(/(?:value|xyz|ixx|iyy|izz|ixy|ixz|iyz)="([^"]+)"/g)].flatMap((m) => m[1].split(/\s+/).map(Number)));
+      }
+      return found;
+    };
+    const before = inertials(urdf);
+    const after = inertials(again.bytes);
+    expect(before.size).toBeGreaterThan(1);
+    for (const [name, figures] of before) {
+      const back = after.get(name);
+      expect(back, name).toBeDefined();
+      const scale = Math.max(...figures.slice(4).map(Math.abs));
+      figures.forEach((v, i) => expect(Math.abs(back![i] - v), `${name} figure ${i}`).toBeLessThan(i < 4 ? 1e-4 : 1e-3 * scale));
+    }
+  });
+
   it('brings the reference rover back: links where they were, wheels on continuous joints, the lidar and the drive', () => {
     const { urdf, companions, doc } = packaged('rover');
     const imported = parseUrdf(urdf, companions);
@@ -216,7 +261,8 @@ describe('parseUrdf', () => {
     expect(finger.type).toBe('shape');
     close(finger.pos, [300, 0, 50]);
     const links = imported.robot.links;
-    expect(links[0].mass).toEqual({ kind: 'measured', grams: 500 });
+    // The file's inertia comes with the mass: 1 kg·m² about each axis, at the link's frame (the middle of this box).
+    expect(links[0].mass).toEqual({ kind: 'measured', grams: 500, center: [0, 0, 0], inertia: [1e9, 1e9, 1e9, 0, 0, 0] });
     expect(links[0].friction).toBe(1.5);
     expect(links[0].collision).toBe('box');
     // "base link" writes back as base_link by itself, so no other name is kept for it.

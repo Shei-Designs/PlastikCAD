@@ -20,6 +20,8 @@ export interface Prefs {
   format: FormatId;
   /** What the robot is exported as: a ROS 2 package with a URDF, a Gazebo model with an SDF, or a MuJoCo model. */
   robotFormat: 'urdf' | 'sdf' | 'mjcf' | 'usd';
+  /** The unit a link's inertia is shown and typed in; the design keeps g·mm² either way. */
+  inertiaUnit: 'gcm2' | 'kgm2';
   /** Robot mode: every joint and sensor is drawn on the plate, not only the picked one. */
   robotMarkers: boolean;
   /** Which tab the left panel shows: the library of shapes and parts, or the design's objects. */
@@ -62,6 +64,7 @@ export function loadPrefs(): Prefs {
     // Any format the app exports: a list of its own here once forgot the newest of them.
     format: FORMATS.find((f) => f.id === saved.format)?.id ?? 'stl',
     robotFormat: saved.robotFormat === 'sdf' || saved.robotFormat === 'mjcf' || saved.robotFormat === 'usd' ? saved.robotFormat : 'urdf',
+    inertiaUnit: saved.inertiaUnit === 'kgm2' ? 'kgm2' : 'gcm2',
     robotMarkers: saved.robotMarkers ?? true,
     sidebar: saved.sidebar === 'objects' || saved.sidebar === 'structure' ? saved.sidebar : 'library',
     // On a window too narrow for the panels and the plate side by side, they start out of the way.

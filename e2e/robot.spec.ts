@@ -75,6 +75,18 @@ test.describe('a weighed link', { tag: '@mouse' }, () => {
     await page.keyboard.type('55');
     await page.keyboard.press('Enter');
     expect(await mass()).toEqual({ kind: 'measured', grams: 60, center: [0, 0, -4], inertia: [4000, 4000, 5500, 0, 0, 0] });
+    // In kg·m² the same figures read a ten-millionth as large, and one typed is kept in the design's g·mm².
+    await page.getByRole('radio', { name: 'kg·m²' }).click();
+    await expect(box('Inertia ZZ')).toHaveValue('0.0000055');
+    await expect(page.locator('.inspector dl')).toContainText('kg·m²');
+    await box('Inertia XX').click();
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.type('1.2e-5');
+    await page.keyboard.press('Enter');
+    await expect(box('Inertia XX')).toHaveValue('0.000012');
+    expect(await mass()).toEqual({ kind: 'measured', grams: 60, center: [0, 0, -4], inertia: [12000, 4000, 5500, 0, 0, 0] });
+    await page.getByRole('radio', { name: 'g·cm²' }).click();
+    await expect(box('Inertia XX')).toHaveValue('120');
     await page.getByRole('button', { name: 'From the shape' }).click();
     expect(await mass()).toEqual({ kind: 'measured', grams: 60 });
     await expect(box('Inertia ZZ')).toHaveValue('40');
