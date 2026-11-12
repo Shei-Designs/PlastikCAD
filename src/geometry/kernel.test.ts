@@ -1090,6 +1090,27 @@ describe('robot links', () => {
     expect(p.unit[0]).toBeCloseTo((900 + 1600) / 12, 3);
   });
 
+  it('weighs an open mesh as the solid stretched tight round it, the same wherever it stands', async () => {
+    const { massProperties } = await import('./kernel');
+    // A box of 4 by 2 by 2 with one triangle of its skin missing: what its triangles enclose is no volume at all.
+    setAssets({ open: meshAsset(CUBE_POSITIONS, CUBE_TRIANGLES.slice(3)) });
+    const near = imported('open', [2, 2, 2], { name: 'Shell', size: [4, 2, 2], pos: [0, 0, 1] });
+    const far = imported('open', [2, 2, 2], { name: 'Shell', size: [4, 2, 2], pos: [193, 46, 400] });
+    const [a, b] = massProperties([near, far]);
+    for (const p of [a, b]) {
+      expect(p.watertight).toBe(false);
+      expect(p.triangles).toBe(11);
+      expect(p.volume).toBeCloseTo(16, 3);
+      // A box's own inertia for each unit of its mass, which no stand of the mesh changes.
+      expect(p.unit.slice(0, 3).map((v) => +v.toFixed(3))).toEqual([+((4 + 4) / 12).toFixed(3), +((16 + 4) / 12).toFixed(3), +((16 + 4) / 12).toFixed(3)]);
+      // The two smaller moments together are no less than the largest: a body a simulator takes.
+      const [x, y, z] = [...p.unit.slice(0, 3)].sort((m, n) => m - n);
+      expect(x + y).toBeGreaterThanOrEqual(z - 1e-9);
+    }
+    expect(a.centroid.map((v) => +v.toFixed(3))).toEqual([0, 0, 1]);
+    expect(b.centroid.map((v) => +v.toFixed(3))).toEqual([193, 46, 400]);
+  });
+
   it('gives each link its visual parts, the collision shape asked for and its bounds', async () => {
     const { robotGeometry } = await import('./kernel');
     const body = shape('box', { size: [20, 20, 10], pos: [0, 0, 5] });
