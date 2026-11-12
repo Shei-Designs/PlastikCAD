@@ -71,6 +71,65 @@ export function jointInChild(origin: Vec3, axis: Vec3, child: SceneNode): { orig
   return { origin: apply(back, origin), axis: turned.map((x) => x / length) as Vec3 };
 }
 
+/**
+ * The robot with what the copied objects carried copied with them. `copies` maps each object that was copied to
+ * its copy. A copy keeps its original's link settings and sensors. A joint that hung a copied object hangs its
+ * copy: from the copy of the parent when that was copied too, else from the same parent, so the copy of a leg is
+ * on the body the leg is on. Wheel roles are not copied: a drive has one wheel to a place.
+ */
+export function withCopies(robot: Robot, copies: Map<string, string>, newId: () => string): Robot {
+  if (copies.size === 0) return robot;
+  const links = [...robot.links, ...robot.links.filter((l) => copies.has(l.node)).map((l) => ({ ...l, node: copies.get(l.node)! }))];
+  const named = (taken: string[], name: string, join: string): string => {
+    const base = name.replace(new RegExp(`${join}\\d+$`), '');
+    let out = base;
+    for (let n = 2; taken.includes(out); n++) out = `${base}${join}${n}`;
+    return out;
+  };
+  const joints = [...robot.joints];
+  const jointCopies = new Map<string, string>();
+  for (const j of robot.joints) {
+    if (!copies.has(j.child)) continue;
+    const id = newId();
+    jointCopies.set(j.id, id);
+    joints.push({ ...j, id, name: named(joints.map((o) => o.name), j.name, ' '), child: copies.get(j.child)!, parent: copies.get(j.parent) ?? j.parent });
+  }
+  // A copied follower follows the copy of its leader, when the leader was copied with it.
+  const followers = joints.map((j, i) => (i >= robot.joints.length && j.mimic && jointCopies.has(j.mimic.joint) ? { ...j, mimic: { ...j.mimic, joint: jointCopies.get(j.mimic.joint)! } } : j));
+  const sensors = [...robot.sensors];
+  for (const x of robot.sensors) if (copies.has(x.link)) sensors.push({ ...x, id: newId(), name: named(sensors.map((o) => o.name), x.name, '_'), link: copies.get(x.link)! });
+  if (links.length === robot.links.length && followers.length === robot.joints.length && sensors.length === robot.sensors.length) return robot;
+  return { ...robot, links, joints: followers, sensors };
+}
+
+/**
+ * The robot after the objects in `nodes` were mirrored along `axis` where they stand (`mirrorNodes`): what is
+ * kept in a mirrored object's own frame is mirrored with it. A joint and a sensor stay on the spot of the
+ * object they were on. A joint's axis is turned so that the same angle gives the mirror image of the motion,
+ * and its limits still hold; a sensor looks the mirrored way.
+ */
+const SIDE_REVERSED: Mat = [1, 0, 0, 0, -1, 0, 0, 0, 1, 0, 0, 0];
+
+export function withMirrored(robot: Robot, nodes: Set<string>, axis: 0 | 1 | 2): Robot {
+  const flip = (v: Vec3): Vec3 => v.map((x, i) => (i === axis ? -x || 0 : x)) as Vec3;
+  const reflect: Mat = [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0];
+  reflect[axis * 4] = -1;
+  let changed = false;
+  const joints = robot.joints.map((j) => {
+    if (!nodes.has(j.child)) return j;
+    changed = true;
+    // A slide is mirrored by its mirrored direction; a turn by its mirrored axis reversed.
+    return { ...j, origin: flip(j.origin), axis: j.type === 'prismatic' ? flip(j.axis) : (flip(j.axis).map((x) => -x || 0) as Vec3) };
+  });
+  const sensors = robot.sensors.map((x) => {
+    if (!nodes.has(x.link)) return x;
+    changed = true;
+    // Its line of sight (X) and its up (Z) are mirrored; its Y is turned round to keep the frame right-handed.
+    return { ...x, origin: flip(x.origin), rot: eulerOf(multiply(reflect, multiply(rotation(x.rot), SIDE_REVERSED))) };
+  });
+  return changed ? { ...robot, joints, sensors } : robot;
+}
+
 export interface Tree {
   /** Links reached from the base, parents before children. */
   order: string[];

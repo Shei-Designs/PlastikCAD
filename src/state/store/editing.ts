@@ -4,7 +4,9 @@ import { clampParams } from '../../geometry/shapes';
 import { MAX_NOTE } from '../../model/file';
 import { apply, axisRotation, boundsCenter, eulerOf, multiply, rotation, tidyVec, unionBounds } from '../../model/math';
 import type { Bounds } from '../../model/math';
-import { alignNodes, cloneNode, mirrorNodes, rotateNodes, uniqueName, usedAssets } from '../../model/ops';
+import { alignNodes, cloneNode, mirrorNodes, newId, rotateNodes, uniqueName, usedAssets } from '../../model/ops';
+import { withCopies, withMirrored } from '../../robot/model';
+import type { Robot } from '../../robot/types';
 import type { AlignMode } from '../../model/ops';
 import type { Doc, ImageAsset, PictureNode, Scene, SceneNode, Texture, Vec3 } from '../../model/types';
 import { geometry } from '../geometry';
@@ -56,11 +58,11 @@ export function updateSelected(change: (node: SceneNode) => SceneNode, merge?: s
 }
 
 /** Replace specific nodes (used by drags in the viewport). */
-export function replaceNodes(nodes: SceneNode[], merge?: string): void {
+export function replaceNodes(nodes: SceneNode[], merge?: string, robot?: (robot: Robot) => Robot): void {
   const byId = new Map(nodes.map((n) => [n.id, n]));
   commit(
     getState().doc.scene.map((n) => byId.get(n.id) ?? n),
-    { merge },
+    { merge, robot },
   );
 }
 
@@ -100,15 +102,18 @@ function addCopies(sources: SceneNode[], offset: Vec3): void {
   if (sources.length === 0) return;
   abortAlignPreview();
   let scene = getState().doc.scene;
+  // Which object each copy is of, for the robot: a copied link keeps its settings, joints and sensors.
+  const made = new Map<string, string>();
   const copies = sources.map((source) => {
     const copy = cloneNode(source);
+    made.set(source.id, copy.id);
     copy.name = uniqueName(scene, source.name.replace(/ \d+$/, ''));
     copy.pos = tidyVec([source.pos[0] + offset[0], source.pos[1] + offset[1], source.pos[2] + offset[2]]);
     delete copy.locked;
     scene = [...scene, copy];
     return copy;
   });
-  commit(scene, { selection: copies.map((c) => c.id) });
+  commit(scene, { selection: copies.map((c) => c.id), robot: (robot) => withCopies(robot, made, newId) });
 }
 
 /** Copies appear exactly on top of the originals, selected, ready to be dragged away. */
@@ -251,7 +256,8 @@ export function mirrorSelected(axis: 0 | 1 | 2): void {
   const nodes = selectedNodes().filter((n) => !n.locked);
   const bounds = selectionBounds(nodes);
   if (!bounds) return;
-  replaceNodes(mirrorNodes(nodes, axis, boundsCenter(bounds)));
+  const ids = new Set(nodes.map((n) => n.id));
+  replaceNodes(mirrorNodes(nodes, axis, boundsCenter(bounds)), undefined, (robot) => withMirrored(robot, ids, axis));
 }
 
 /** Turn the selection by `degrees` about a fixed axis through its center (a single object turns about its own). */
