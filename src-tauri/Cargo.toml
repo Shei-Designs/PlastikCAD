@@ -1,7 +1,7 @@
 [package]
 name = "plastikcad"
 version = "0.2.2"
-description = "Fast solid modelling for 3D printing: combine simple shapes into parts"
+description = "Fast solid modeling for 3D parts and robots: combine simple shapes and parametric parts, then add joints, motors and sensors"
 authors = ["Andrew O'Shei"]
 license = "GPL-3.0-or-later"
 homepage = "https://sheidesigns.com"

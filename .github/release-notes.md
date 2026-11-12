@@ -1,4 +1,4 @@
-PlastikCAD is a desktop app for fast solid modelling for 3D printing: drop shapes and parametric parts on the plate, turn some into holes, group, and export for your slicer. It runs locally; nothing of yours leaves your machine unless you link a Google Drive. Free software under the GPL-3.0.
+PlastikCAD is a desktop app for fast solid modeling of 3D parts and robots: drop shapes and parametric parts on the plate, turn some into holes and group them into a part; give the parts joints, motors and sensors and they are a robot to test-drive and export for a simulator. It runs locally; nothing of yours leaves your machine unless you link a Google Drive. Free software under the GPL-3.0.
 
 ## New in 0.2.2
 

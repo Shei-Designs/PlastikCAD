@@ -68,13 +68,13 @@ fs.writeFileSync(path.join(root, 'docs/brand/icon-macos.svg'), `<svg xmlns="http
 
 // --- the banner: 1280 x 360, Carbon, tile + name + one-liner + mono metadata + Shei Designs ------
 const name = text(grotesk, 'PlastikCAD', 328, 176, 96);
-const line = text(inter400, 'Fast solid modelling for 3D printing.', 330, 228, 30);
-const meta = text(mono, 'linux · windows · macos · android      gpl-3.0      stl · 3mf · obj · glb · svg · dxf', 332, 276, 17);
+const line = text(inter400, 'Fast solid modeling for 3D parts and robots.', 330, 228, 30);
+const meta = text(mono, 'linux · windows · macos · android      gpl-3.0', 332, 276, 17);
 const shei = text(inter800, 'Shei Designs', 0, 0, 22, { tracking: -0.02 });
 const sheiX = 1184 - shei.width - 14;
 const sheiPath = text(inter800, 'Shei Designs', sheiX, 318, 22, { tracking: -0.02 });
 const banner = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 360" role="img" aria-labelledby="t">
-  <title id="t">PlastikCAD: fast solid modelling for 3D printing. A Shei Designs project.</title>
+  <title id="t">PlastikCAD: fast solid modeling for 3D parts and robots. A Shei Designs project.</title>
   <rect width="1280" height="360" rx="28" fill="${CARBON}"/>
   <g transform="translate(80 80) scale(2)"><path d="${TILE}" fill="${TEAL}"/>${mark(64)}</g>
   <path d="${name.d}" fill="${LINEN}"/>
