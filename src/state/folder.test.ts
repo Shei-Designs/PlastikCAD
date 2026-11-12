@@ -42,6 +42,7 @@ vi.mock('../platform', () => ({
     files.set(path, bytes);
   },
   removeFile: async (path: string) => void files.delete(path),
+  removeHistoryFolder: async () => {},
   moveFile: async (from: string, to: string) => {
     files.set(to, files.get(from)!);
     files.delete(from);

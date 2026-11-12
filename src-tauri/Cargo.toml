@@ -46,3 +46,8 @@ tauri-plugin-updater = "2"
 # The system's keychain, where the Google sign-in is kept: the Keychain on macOS, the Credential Manager on Windows,
 # the Secret Service (GNOME Keyring, KWallet) on Linux, spoken to in Rust alone, with no system library to link.
 keyring = { version = "3", features = ["apple-native", "windows-native", "async-secret-service", "tokio", "crypto-rust"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# The session's message bus, asked whether a keychain answers on it before one is waited for (see `keychain_answers`).
+# Already built: the opener and single-instance plugins use it.
+zbus = "5"

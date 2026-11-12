@@ -353,9 +353,14 @@ export interface DesignEntry {
   modified: number;
 }
 
-/** Desktop only: the designs directly inside a folder, which is created if missing. */
-export async function listDesigns(dir: string): Promise<DesignEntry[]> {
-  return command<DesignEntry[]>('list_designs', { dir });
+/** Desktop only: the designs directly inside a folder. A missing folder is made, unless `create` is false: it then holds nothing. */
+export async function listDesigns(dir: string, create = true): Promise<DesignEntry[]> {
+  return command<DesignEntry[]>('list_designs', { dir, create });
+}
+
+/** Desktop only: takes away the folder of a project's earlier saves, if it holds none. */
+export async function removeHistoryFolder(path: string): Promise<void> {
+  await command<void>('remove_history_folder', { path });
 }
 
 /** Desktop only: the first `limit` bytes of a file. */

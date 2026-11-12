@@ -57,9 +57,7 @@ By touch (review 3):
 
 Elsewhere:
 
-- A Linux session with no keyring waits two minutes at start before the
-  sign-in is known; an empty `History` folder and a hidden temporary file can be left
-  behind; the package's short description reads "for 3D printing".
+- The package's short description reads "for 3D printing".
 
 ## Next to build
 
