@@ -15,6 +15,19 @@ mark='> **Do not publish yet: this release is missing'
 
 release=$(gh api "repos/$repo/releases/$id")
 names=$(jq -r '.assets[].name' <<<"$release")
+tag=$(jq -r '.tag_name' <<<"$release")
+
+# The notes are changed with the tag said again beside them: GitHub takes a draft whose notes alone are sent for
+# one without a tag, and names it "untagged-…". Published like that, the release is not where the index of
+# updates says its files are, and no installed app can fetch them (this happened to the draft of 0.2.2).
+write_notes() {
+  gh api -X PATCH "repos/$repo/releases/$id" -f tag_name="$tag" -f body="$1" --silent
+  kept=$(gh api "repos/$repo/releases/$id" --jq .tag_name)
+  if [ "$kept" != "$tag" ]; then
+    echo "::error::The release's tag is now $kept, not $tag: set it back before publishing."
+    exit 1
+  fi
+}
 
 missing=()
 need() { grep -Eq "$2" <<<"$names" || missing+=("$1"); }
@@ -41,7 +54,7 @@ body=$(jq -r '.body // ""' <<<"$release" | awk -v mark="$mark" 'index($0, mark) 
 
 if [ ${#missing[@]} -eq 0 ]; then
   echo "The release holds every platform's files."
-  [ "$look" = "--look" ] || gh api -X PATCH "repos/$repo/releases/$id" -f body="$body" --silent
+  [ "$look" = "--look" ] || write_notes "$body"
   exit 0
 fi
 
@@ -49,8 +62,8 @@ list=$(printf '%s, ' "${missing[@]}")
 list=${list%, }
 echo "::error::The release is missing: $list"
 if [ "$look" != "--look" ]; then
-  gh api -X PATCH "repos/$repo/releases/$id" -f body="$mark: $list.** Run the failed build again first.
+  write_notes "$mark: $list.** Run the failed build again first.
 
-$body" --silent
+$body"
 fi
 exit 1
