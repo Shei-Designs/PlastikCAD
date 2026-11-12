@@ -50,10 +50,10 @@ const linear = (c: number): number => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) /
 
 /**
  * Writes the objects as a STEP file. Returns its bytes and what there is to
- * say of it: the objects that are not closed and went out as surfaces, and
- * any the library could make nothing of. There is no file when the objects
- * that go out as facets are together more than `budget` triangles (see
- * stepLimit.ts): the error names them.
+ * say of it: the objects that are not closed and went out as surfaces. Every
+ * object is in the file, or there is no file: not when the objects that go
+ * out as facets are together more than `budget` triangles (see stepLimit.ts),
+ * and not when the library can make nothing of one. The error names them.
  */
 export function writeStep(oc: OpenCascadeInstance, objects: StepObject[], tools: ExactTools = { partBox: () => null }, budget = STEP_TRIANGLES): { bytes: Uint8Array; warnings: string[]; exact: number } {
   // Everything made here lives in the library's own memory, which is not collected: it is let go at the end.
@@ -95,15 +95,16 @@ export function writeStep(oc: OpenCascadeInstance, objects: StepObject[], tools:
         sewn += facets.triangles.length / 3;
         if (sewn > budget) throw new Error(tooDetailed(faceted));
       }
-      let solid: { shape: InstanceType<typeof oc.TopoDS_Shape>; closed: boolean };
+      let solid: { shape: InstanceType<typeof oc.TopoDS_Shape>; closed: boolean } | null;
       try {
         solid = rebuilt ? { shape: rebuilt, closed: true } : facetedSolid(oc, facets, keep);
       } catch (e) {
         if (isTrap(e)) throw e;
-        // The library gave up on it (it says so by an exception of its own): the others still go out.
-        warnings.push(tr('"{name}" could not be written to the STEP file and was left out.', { name: object.name }));
-        continue;
+        // The library gave up on it, which it says by an exception of its own.
+        solid = null;
       }
+      // An object nothing could be made of ends the file, as one too detailed does: without it the file is not the design.
+      if (!solid) throw new Error(tr('"{name}" could not be written to a STEP file.', { name: object.name }));
       if (!solid.closed) warnings.push(tr('"{name}" is not watertight and was exported as a surface.', { name: object.name }));
       else if (!rebuilt) {
         // Nothing goes out on trust: the sewn solid has to enclose what its triangles do.
@@ -120,7 +121,7 @@ export function writeStep(oc: OpenCascadeInstance, objects: StepObject[], tools:
       colors.SetColor(label, keep(new oc.Quantity_ColorRGBA(r, g, b, 1)), oc.XCAFDoc_ColorType.XCAFDoc_ColorGen);
       written++;
     }
-    if (written === 0) throw new Error(warnings[0] ?? tr('There is nothing to export.'));
+    if (written === 0) throw new Error(tr('There is nothing to export.'));
     const writer = keep(new oc.STEPCAFControl_Writer());
     writer.SetNameMode(true);
     writer.SetColorMode(true);
@@ -226,7 +227,7 @@ function tidied(mesh: MeshData): number[] {
  * out, so each lump (the triangles that hang together through edges shared by
  * two) is sewn on its own, and the object is the lumps together.
  */
-function facetedSolid(oc: OpenCascadeInstance, mesh: MeshData, keep: <T extends Deletable>(o: T) => T): { shape: InstanceType<typeof oc.TopoDS_Shape>; closed: boolean } {
+function facetedSolid(oc: OpenCascadeInstance, mesh: MeshData, keep: <T extends Deletable>(o: T) => T): { shape: InstanceType<typeof oc.TopoDS_Shape>; closed: boolean } | null {
   const { positions } = mesh;
   const points: InstanceType<typeof oc.gp_Pnt>[] = [];
   for (let i = 0; i < positions.length; i += 3) points.push(keep(new oc.gp_Pnt(positions[i], positions[i + 1], positions[i + 2])));
@@ -303,10 +304,14 @@ function facetedSolid(oc: OpenCascadeInstance, mesh: MeshData, keep: <T extends 
     unify.Build();
     shapes.push(keep(unify.Shape()));
   }
-  if (shapes.length === 1) return { shape: shapes[0], closed };
-  const all = keep(new oc.TopoDS_Compound());
-  const builder = keep(new oc.TopoDS_Builder());
-  builder.MakeCompound(all);
-  for (const shape of shapes) builder.Add(all, shape);
-  return { shape: all, closed };
+  let all = shapes[0];
+  if (shapes.length !== 1) {
+    all = keep(new oc.TopoDS_Compound());
+    const builder = keep(new oc.TopoDS_Builder());
+    builder.MakeCompound(all);
+    for (const shape of shapes) builder.Add(all, shape);
+  }
+  // A mesh with no triangle a face could be made of (all of them lines or points) leaves nothing to write.
+  const faces = keep(new oc.TopExp_Explorer(all, oc.TopAbs_ShapeEnum.TopAbs_FACE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE));
+  return faces.More() ? { shape: all, closed } : null;
 }

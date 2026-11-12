@@ -114,6 +114,21 @@ describe('STEP export', () => {
     expect(count(text(coarse.bytes), 'ADVANCED_FACE')).toBe(6);
   });
 
+  it('writes no file when nothing can be made of one of its objects, and names it', () => {
+    const good = { name: 'Box', color: '#ffffff', mesh: box(1, 1, 1) };
+    const broken: Record<string, MeshData> = {
+      // A corner the mesh does not have.
+      Torn: { positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]), triangles: new Uint32Array([0, 1, 7]) },
+      // A triangle whose corners are one point: no face to make.
+      Speck: { positions: new Float32Array(9), triangles: new Uint32Array([0, 1, 2]) },
+    };
+    for (const [name, mesh] of Object.entries(broken)) {
+      expect(() => writeStep(oc, [good, { name, color: '#ffffff', mesh }]), name).toThrow(`"${name}" could not be written to a STEP file.`);
+    }
+    // And the library is as good as before for the next file.
+    expect(count(text(writeStep(oc, [good]).bytes), 'MANIFOLD_SOLID_BREP')).toBe(1);
+  });
+
   it('counts the triangles of the whole file: objects that fit one by one and not together get no file', () => {
     // Twelve triangles to a box, and room for thirty: the third takes the file past it, and all three are named.
     const boxes = ['One', 'Two', 'Three'].map((name) => ({ name, color: '#ffffff', mesh: box(1, 1, 1) }));
