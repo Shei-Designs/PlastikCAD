@@ -626,8 +626,9 @@ selection past that gets no STEP file: where it is known beforehand (imported
 meshes and lettering), STEP is not to be had in the list of formats and the
 panel names the objects that are too detailed; where only the writing shows
 it, the export stops and says the same. Selecting fewer objects, or another
-format, gets them out. An object that is not watertight goes out as a
-surface, which is said.
+format, gets them out. The same holds for an object the library can make
+nothing of: the export stops and names it. An object that is not watertight
+goes out as a surface, which is said.
 
 In an SVG or DXF, round things are round. A hole or a disc goes out as a
 circle (in a DXF, a `CIRCLE`), and a rounded corner as an arc (a bulge on the
