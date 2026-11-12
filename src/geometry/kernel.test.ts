@@ -1160,6 +1160,32 @@ describe('robot links', () => {
     expect(one.collision!.triangles.length).toBe(36);
   });
 
+  it('splits a bent part into convex pieces when asked for more than one, closed or not', async () => {
+    const { robotGeometry } = await import('./kernel');
+    // An L, 10 mm thick: two arms 40 long and 10 wide. One hull round it fills the corner between the arms.
+    const outline = [[0, 0], [40, 0], [40, 10], [10, 10], [10, 40], [0, 40]];
+    const positions = [...outline.map(([x, y]) => [x, y, 0]), ...outline.map(([x, y]) => [x, y, 10])].flat();
+    const fan = [[0, 1, 2], [0, 2, 3], [0, 3, 4], [0, 4, 5]];
+    const triangles = [...fan.map(([a, b, c]) => [a, c, b]), ...fan.map(([a, b, c]) => [a + 6, b + 6, c + 6]), ...outline.map((_, i) => [i, (i + 1) % 6, ((i + 1) % 6) + 6, i, ((i + 1) % 6) + 6, i + 6])].flat();
+    setAssets({ bent: meshAsset(positions, triangles), torn: meshAsset(positions, triangles.slice(3)) });
+    const volumes = (g: { collision: MeshData | null; hulls?: MeshData[] }) => (g.hulls ?? (g.collision ? [g.collision] : [])).map((m) => Math.round(meshProperties(m).volume)).sort((a, b) => a - b);
+    for (const asset of ['bent', 'torn']) {
+      const l = imported(asset, [40, 40, 10], { pos: [100, 0, 5], rot: [0, 0, 30] });
+      const [one] = robotGeometry([l], {}, false);
+      expect(volumes(one)).toEqual([11500]);
+      // Cut where the arms meet, however the part is turned: the two hulls are the arms, 7000 mm³ together, to within a hundredth.
+      const [two] = robotGeometry([l], {}, false, { [l.id]: 2 });
+      expect(volumes(two)).toHaveLength(2);
+      expect(volumes(two)[0] + volumes(two)[1]).toBeLessThan(7070);
+      // No more pieces than are worth it, however many are allowed.
+      const [many] = robotGeometry([l], {}, false, { [l.id]: 16 });
+      expect(volumes(many)).toEqual(volumes(two));
+    }
+    // A part that is convex already stays whole.
+    const box = shape('box', { size: [20, 30, 40] });
+    expect(robotGeometry([box], {}, false, { [box.id]: 8 })[0].hulls).toBeUndefined();
+  });
+
   it('gives what a link collides as on its own, for the plate: the same hull or mesh, and nothing for a plain shape', async () => {
     const { collisionMeshes, robotGeometry } = await import('./kernel');
     const body = shape('box', { size: [20, 20, 10], pos: [0, 0, 5] });

@@ -19,7 +19,7 @@ export interface PlacedPrimitive {
 }
 
 /** What of a link says how it collides. */
-export type Collides = Pick<RobotLink, 'collision' | 'shape'>;
+export type Collides = Pick<RobotLink, 'collision' | 'shape' | 'pieces'>;
 
 /**
  * The primitive a link collides as, in mm. Fitted to the object unless the link has a shape of its own: the

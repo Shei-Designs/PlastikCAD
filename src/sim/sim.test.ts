@@ -3,14 +3,15 @@
 // arm holds a target, the quadruped stands.
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { MainModule } from '@mujoco/mujoco';
-import { initKernel, measure, robotGeometry } from '../geometry/kernel';
+import { initKernel, measure, robotGeometry, setAssets } from '../geometry/kernel';
+import { encodeFloat32, encodeUint32 } from '../io/base64';
 import { makeGroup } from '../model/ops';
 import type { Doc, SceneNode } from '../model/types';
 import { defaultLink } from '../robot/types';
 import { buildMjcfModel } from '../robot/export';
 import { ROBOTS } from '../robot/fixtures';
 import { forward } from '../robot/kinematics';
-import { linkNodes, linkOf } from '../robot/model';
+import { linkNodes, linkOf, piecesOf } from '../robot/model';
 import { FaultWatch, floorLinks, linkLooks } from '../robot/collisionCheck';
 import { collisionMeshes } from '../geometry/kernel';
 import { frameOf } from '../state/sim';
@@ -102,6 +103,39 @@ describe('a link grouped from several parts', () => {
     expect(Math.abs(rise(false))).toBeLessThan(1);
     // As one hull round the whole arch, which is what it used to collide as, it rides up on the post.
     expect(rise(true)).toBeGreaterThan(15);
+  });
+});
+
+describe('a link that is one bent mesh', () => {
+  it('split into convex pieces, stands over what is between its legs', () => {
+    // The same arch as one mesh: three boxes' triangles, legs 60 mm apart under a bar, over a post 24 mm tall.
+    // The mesh keeps its file's origin, at the feet, so it begins on the floor.
+    const box = (x: number, z: number, w: number, h: number): { positions: number[]; triangles: number[] } => {
+      const positions: number[] = [];
+      for (const dz of [-h / 2, h / 2]) for (const dy of [-15, 15]) for (const dx of [-w / 2, w / 2]) positions.push(x + dx, dy, z + dz);
+      return { positions, triangles: [0, 2, 1, 1, 2, 3, 4, 5, 6, 5, 7, 6, 0, 1, 5, 0, 5, 4, 1, 3, 7, 1, 7, 5, 3, 2, 6, 3, 6, 7, 2, 0, 4, 2, 4, 6] };
+    };
+    const boxes = [box(-35, 20, 10, 40), box(35, 20, 10, 40), box(0, 45, 80, 10)];
+    const positions = boxes.flatMap((b) => b.positions);
+    const triangles = boxes.flatMap((b, i) => b.triangles.map((t) => t + 8 * i));
+    setAssets({ arch: { kind: 'mesh', positions: encodeFloat32(Float32Array.from(positions)), triangles: encodeUint32(Uint32Array.from(triangles)) } });
+    const arch: SceneNode = { id: 'arch', name: 'Arch', type: 'import', asset: 'arch', natural: [80, 30, 50], size: [80, 30, 50], pos: [0, 0, 0], rot: [0, 0, 0], hole: false, color: '#8fa3bf' };
+    const doc = make('rover');
+    doc.scene = [arch];
+    const post = (xml: string) => xml.replace('<worldbody>', '<worldbody>\n    <geom type="box" size="0.008 0.03 0.012" pos="0 0 0.012" conaffinity="1"/>');
+    const rise = (pieces: number): number => {
+      doc.robot = { root: arch.id, base: 'free', links: [{ ...defaultLink(arch.id), ...(pieces > 1 ? { pieces } : {}) }], joints: [], sensors: [], control: false };
+      const geo = robotGeometry([arch], {}, false, piecesOf(doc.robot));
+      const pkg = buildMjcfModel(doc, new Map(geo.map((g) => [g.id, { ...g, visual: [] }])), doc.robot, 'flat');
+      const sim = Simulation.load(mj, post(new TextDecoder().decode(pkg.files.find((f) => f.name.endsWith('.xml'))!.bytes)), pkg.files.filter((f) => f.name.startsWith('meshes/')), pkg.drive);
+      const before = position(sim, pkg.bodies[0].body)[2];
+      for (let t = 0; t < 1; t += 1 / 60) sim.step(1 / 60);
+      const after = position(sim, pkg.bodies[0].body)[2];
+      sim.dispose();
+      return (after - before) * 1000;
+    };
+    expect(rise(1)).toBeGreaterThan(15);
+    expect(Math.abs(rise(4))).toBeLessThan(1);
   });
 });
 

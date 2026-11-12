@@ -12,7 +12,7 @@ import { sanitizeParams } from '../parts/generators/types';
 import { newId, usedAssets } from './ops';
 import { TEXT_FONTS } from './types';
 import type { Asset, Doc, OutlineShape, PartParamValue, Scene, SceneNode, ShapeKind, Texture, Vec3 } from './types';
-import { COLLISION_KINDS, DRIVE_KINDS, JOINT_TYPES, SENSOR_KINDS, WORLDS, defaultSensor } from '../robot/types';
+import { COLLISION_KINDS, DRIVE_KINDS, JOINT_TYPES, MAX_PIECES, SENSOR_KINDS, WORLDS, defaultSensor } from '../robot/types';
 import type { CollisionKind, CollisionShape, Drive, DriveRole, JointType, MassSpec, Robot, RobotJoint, RobotLink, RobotSensor, SensorKind } from '../robot/types';
 
 export function emptyDoc(): Doc {
@@ -132,6 +132,7 @@ export function canonicalRobot(robot: Robot): Record<string, unknown> {
       mass: l.mass.kind === 'measured' ? { kind: 'measured', grams: l.mass.grams, center: l.mass.center, inertia: l.mass.inertia } : { kind: 'material', material: l.mass.material, infill: l.mass.infill, shell: l.mass.shell },
       collision: l.collision,
       shape: l.shape && (l.collision === 'box' || l.collision === 'cylinder' || l.collision === 'sphere') ? { size: l.shape.size, center: l.shape.center, rot: l.shape.rot } : undefined,
+      pieces: l.collision === 'hull' && l.pieces && l.pieces > 1 ? l.pieces : undefined,
       friction: l.friction,
     })),
     joints: [...robot.joints].sort(byId((j: RobotJoint) => j.id)).map((j) => ({
@@ -237,7 +238,7 @@ const CURVE_FIELDS = new Set(['kind', 'angle', 'flip', 'thickness']);
 /** The fields this build writes for a robot and what is in it (see `canonicalRobot`; a test holds the two together). */
 export const ROBOT_FIELDS = {
   robot: new Set(['root', 'base', 'links', 'joints', 'sensors', 'drive', 'control', 'world', 'scripts']),
-  link: new Set(['node', 'name', 'mass', 'collision', 'shape', 'friction']),
+  link: new Set(['node', 'name', 'mass', 'collision', 'shape', 'pieces', 'friction']),
   shape: new Set(['size', 'center', 'rot']),
   mass: new Set(['kind', 'grams', 'center', 'inertia', 'material', 'infill', 'shell']),
   joint: new Set(['id', 'name', 'type', 'parent', 'child', 'origin', 'axis', 'lower', 'upper', 'effort', 'velocity', 'damping', 'friction', 'start', 'command', 'mimic', 'motor']),
@@ -541,6 +542,7 @@ function readRobot(raw: unknown, scene: Scene): Robot | undefined {
         mass: readMass(l.mass),
         collision: oneOf<CollisionKind>(l.collision, (c) => COLLISIONS.has(c)) ?? 'hull',
         ...readShape(l.shape, l.collision),
+        ...((l.collision === undefined || l.collision === 'hull') && typeof l.pieces === 'number' && l.pieces >= 2 ? { pieces: Math.min(MAX_PIECES, Math.floor(l.pieces)) } : {}),
         friction: Math.max(0, finite(l.friction, 0.8)),
       });
     }

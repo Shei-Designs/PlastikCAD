@@ -159,6 +159,35 @@ test.describe('a plain collision shape', { tag: '@mouse' }, () => {
   });
 });
 
+test.describe('a hull collision shape', { tag: '@mouse' }, () => {
+  test('takes how many convex pieces each part may be split into', async ({ page }) => {
+    await openApp(page);
+    await store(page, (m) => {
+      m.addShape('box');
+      m.enterRobotMode();
+      m.select([m.getState().doc.scene[0].id]);
+    });
+    await settled(page);
+    const pieces = () => store(page, (m) => m.getState().doc.robot?.links[0]?.pieces);
+    const box = page.locator('.inspector input[aria-label="Pieces"]');
+    await expect(box).toHaveValue('1');
+    await box.click();
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.type('6');
+    await page.keyboard.press('Enter');
+    expect(await pieces()).toBe(6);
+    // One piece is the hull as it always was: nothing is kept for it.
+    await box.click();
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.type('1');
+    await page.keyboard.press('Enter');
+    expect(await pieces()).toBeUndefined();
+    // Only a hull is split.
+    await store(page, (m) => m.updateLink(m.getState().doc.scene[0].id, { collision: 'mesh' }));
+    await expect(box).toHaveCount(0);
+  });
+});
+
 test.describe("a joint's start", { tag: '@mouse' }, () => {
   test('is typed, or taken from the slider', async ({ page }) => {
     await openApp(page);

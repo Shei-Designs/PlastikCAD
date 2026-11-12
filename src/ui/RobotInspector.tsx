@@ -13,7 +13,7 @@ import type { MeshProperties, Tensor } from '../robot/inertia';
 import { MATERIALS, materialOf } from '../robot/materials';
 import { followFault, jointInDesign, linkOf, robotForward, sensorInDesign } from '../robot/model';
 import { MOTORS } from '../robot/motors';
-import { COLLISION_KINDS, DRIVE_KINDS, driveJoints, JOINT_TYPES, SENSOR_KINDS, WORLDS } from '../robot/types';
+import { COLLISION_KINDS, DRIVE_KINDS, driveJoints, JOINT_TYPES, MAX_PIECES, SENSOR_KINDS, WORLDS } from '../robot/types';
 import type { CollisionShape, DriveKind, DriveRole, RobotJoint, RobotLink, RobotSensor, SensorKind, World } from '../robot/types';
 import { shapeOf } from '../robot/collision';
 import type { Problem } from '../robot/check';
@@ -591,6 +591,15 @@ function LinkPanel({ node }: { node: SceneNode }) {
           </label>
           <Select value={link.collision} label={tr('Collision shape')} options={COLLISION_KINDS.map((k) => ({ value: k.id, label: k.name }))} onChange={(id) => set({ collision: id, shape: undefined })} />
         </div>
+        {link.collision === 'hull' && (
+          <div className="field inline">
+            <label>
+              {tr('Pieces')}
+              <Hint text={tr('Sets how many convex pieces each part is split into at most.')} />
+            </label>
+            <NumberBox label={tr('Pieces')} value={link.pieces ?? 1} min={1} max={MAX_PIECES} step={1} places={0} onChange={(v) => set({ pieces: Math.round(v) > 1 ? Math.round(v) : undefined }, 'link-pieces')} />
+          </div>
+        )}
         {(link.collision === 'box' || link.collision === 'cylinder' || link.collision === 'sphere') && <CollisionBoxes node={node} link={link} onChange={(shape) => set({ shape }, 'link-shape')} />}
         {link.shape && (link.collision === 'box' || link.collision === 'cylinder' || link.collision === 'sphere') && (
           <div className="field">

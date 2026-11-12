@@ -14,7 +14,7 @@ import { checkRobot } from '../../robot/check';
 import { buildIsaacStage, buildMjcfModel, buildRobotPackage, buildSdfModel, exportSummary, EXPORT_FORMATS, packageName } from '../../robot/export';
 import type { ExportFormat } from '../../robot/export';
 import { fitFollowers, solvePose } from '../../robot/kinematics';
-import { jointInChild, jointInDesign as jointInDesignOf, linkNodes, linkOf, meetingPoint, robotOf, sensorInDesign, sensorInLink, spanningTree } from '../../robot/model';
+import { jointInChild, jointInDesign as jointInDesignOf, linkNodes, linkOf, meetingPoint, piecesOf, robotOf, sensorInDesign, sensorInLink, spanningTree } from '../../robot/model';
 import { snapPointsOf } from '../../robot/snaps';
 import type { SnapPoint } from '../../viewer/Viewer';
 import { jointFit } from '../../robot/defaults';
@@ -386,7 +386,7 @@ async function writeRobot(format: ExportFormat): Promise<boolean> {
   try {
     const worker = await geometry.prepare(nodes, doc.assets);
     const collisions = Object.fromEntries(nodes.map((n) => [n.id, linkOf(robot, n.id).collision]));
-    const geo = await worker.robotGeometry(nodes, collisions, true);
+    const geo = await worker.robotGeometry(nodes, collisions, true, piecesOf(robot));
     // Checked again with every link weighed, in case some had not been when the first check ran.
     if (await stop(checkRobot(doc, new Map(geo.map((g) => [g.id, g.props])), robot))) return false;
     const build = format === 'sdf' ? buildSdfModel : format === 'mjcf' ? buildMjcfModel : format === 'usd' ? buildIsaacStage : buildRobotPackage;

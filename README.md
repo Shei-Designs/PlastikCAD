@@ -335,6 +335,9 @@ in the design file and synced with it.
   a hull for each of its parts (down through the groups in it, a part its
   holes cut in two as each half, a part inside another left out), so the
   space between them stays open; above 64 pieces it is one hull round all.
+  *Pieces* under a convex hull splits each part into as many convex pieces
+  at most (a bent or forked mesh, closed or not, is cut across its own axes
+  where that takes the most off the hulls, and no further than is worth it).
   A box, cylinder or
   sphere is fitted to the object's box (the cylinder along the axis the
   object is round about, else its own Z); a link that came from a robot file
