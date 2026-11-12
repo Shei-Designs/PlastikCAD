@@ -200,8 +200,12 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
       const geometryOf = 'box' in s ? { box: s.box.map((x) => x * M) as Vec3 } : 'cylinder' in s ? { cylinder: { radius: s.cylinder.radius * M, length: s.cylinder.length * M } } : { sphere: { radius: s.sphere.radius * M } };
       collision.push({ geometry: geometryOf, origin, rpy });
     } else if (link.collision !== 'none' && geo.collision) {
-      files.push({ name: `meshes/collision/${name}.stl`, bytes: writeStl(inFrame(geo.collision, frame), name, 'm') });
-      collision.push({ geometry: { mesh: meshUri(`meshes/collision/${name}.stl`) } });
+      // One file for each convex piece: a simulator takes a mesh as its hull, which would close the space between them.
+      (geo.hulls ?? [geo.collision]).forEach((mesh, i) => {
+        const file = `meshes/collision/${name}${i ? `_${i + 1}` : ''}.stl`;
+        files.push({ name: file, bytes: writeStl(inFrame(mesh, frame), name, 'm') });
+        collision.push({ geometry: { mesh: meshUri(file) } });
+      });
     }
     const figures = inertialOf(link.mass, node, geo.props);
     let inertial: UrdfLink['inertial'] = null;
@@ -448,7 +452,7 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
     if (s.kind === 'touch') {
       const link = links.find((l) => l.name === s.link);
       const folded = footprint && s.link === base ? { collision: `${footprint.name}_fixed_joint_lump__${base}_collision` } : {};
-      if (link) link.sensors = [...(link.sensors ?? []), sensorXml({ ...s, ...folded })];
+      if (link) link.sensors = [...(link.sensors ?? []), sensorXml({ ...s, ...folded, ...(link.collision.length > 1 ? { collisions: link.collision.length } : {}) })];
       const carrier = joints.find((j) => j.child === s.link);
       if (carrier?.type === 'fixed') carrier.preserve = true;
       continue;
@@ -499,7 +503,8 @@ export function buildSdfModel(doc: Doc, geometry: Map<string, LinkGeometry>, rob
   for (const s of p.sensors) {
     const list = sensorsByLink.get(s.link) ?? [];
     // In SDF the sensor sits in its link at its own pose, and its frame is the link's.
-    list.push(sensorXml({ ...s, pose: { xyz: s.xyz, rpy: s.rpy } }));
+    const pieces = p.links.find((l) => l.name === s.link)?.collision.length ?? 1;
+    list.push(sensorXml({ ...s, pose: { xyz: s.xyz, rpy: s.rpy }, ...(pieces > 1 ? { collisions: pieces } : {}) }));
     sensorsByLink.set(s.link, list);
   }
   if (p.treeJoints.some((j) => j.start)) warnings.push(NO_START);
@@ -627,11 +632,12 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
     const geo = geometry.get(l.node.id)!;
     const kind = linkOf(robot, l.node.id).collision;
     const collision: UsdCollision[] = [];
-    for (const c of l.collision) {
+    const meshes = geo.hulls ?? (geo.collision ? [geo.collision] : []);
+    l.collision.forEach((c, i) => {
       if ('mesh' in c.geometry) {
-        if (geo.collision) collision.push({ mesh: inFrame(geo.collision, l.frame), convex: kind !== 'mesh' });
+        if (meshes[i]) collision.push({ mesh: inFrame(meshes[i], l.frame), convex: kind !== 'mesh' });
       } else collision.push({ ...c.geometry, origin: c.origin ?? [0, 0, 0], rpy: c.rpy ?? [0, 0, 0] } as UsdCollision);
-    }
+    });
     // In the pose the simulation begins in, a link stands where that pose puts it, turned as it turns it, the whole
     // robot raised or lowered to stand on the floor. A joint's zero stays where the design has it: the joint's
     // frames are fixed in its two links, so links written posed are joints at their starts.

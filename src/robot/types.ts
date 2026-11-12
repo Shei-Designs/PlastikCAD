@@ -42,7 +42,7 @@ export type MassSpec =
 export type CollisionKind = 'hull' | 'box' | 'cylinder' | 'sphere' | 'mesh' | 'none';
 
 export const COLLISION_KINDS: { id: CollisionKind; name: string; help: string }[] = [
-  { id: 'hull', name: tr('Convex hull'), help: tr('The shape wrapped tight, with no hollows: fast and close.') },
+  { id: 'hull', name: tr('Convex hull'), help: tr('Each part wrapped tight, with no hollows: fast and close.') },
   { id: 'box', name: tr('Box'), help: tr("The object's box, turned as it is: fastest, roomier.") },
   { id: 'cylinder', name: tr('Cylinder'), help: tr("A cylinder filling the object's box along its own Z: wheels, rollers, shafts.") },
   { id: 'sphere', name: tr('Sphere'), help: tr("A ball filling the object's box: balls and casters.") },

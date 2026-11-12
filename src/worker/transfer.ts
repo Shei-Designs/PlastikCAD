@@ -36,7 +36,7 @@ function viewsOf(msg: WorkerResponse): View[] {
     case 'collisionMeshes':
       return msg.result.flatMap(meshViews);
     case 'robotGeometry':
-      return msg.result.flatMap((l) => [...l.visual.flatMap((p) => meshViews(p.mesh)), ...meshViews(l.collision)]);
+      return msg.result.flatMap((l) => [...l.visual.flatMap((p) => meshViews(p.mesh)), ...meshViews(l.collision), ...(l.hulls ?? []).flatMap(meshViews)]);
     default:
       return [];
   }

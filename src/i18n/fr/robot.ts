@@ -298,7 +298,7 @@ export const robot: Catalog = {
 
   // Collision shapes (robot/types.ts)
   'Convex hull': 'Enveloppe convexe',
-  'The shape wrapped tight, with no hollows: fast and close.': 'La forme enveloppée au plus près, sans creux\u00a0: rapide et fidèle.',
+  'Each part wrapped tight, with no hollows: fast and close.': 'Chaque pièce enveloppée au plus près, sans creux\u00a0: rapide et fidèle.',
   Box: 'Boîte',
   "The object's box, turned as it is: fastest, roomier.": 'La boîte de l’objet, orientée comme lui\u00a0: la plus rapide, moins ajustée.',
   Cylinder: 'Cylindre',

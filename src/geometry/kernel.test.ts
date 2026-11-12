@@ -10,6 +10,7 @@ import { getGenerator } from '../parts/generators';
 import { castRay } from './bvh';
 import { build, cacheSize, clearCache, decodeBase64, exportColored, exportNodes, forgetAssets, initKernel, measure, partBox, rawManifold, SHEET, setAssets } from './kernel';
 import type { MeshData } from './mesh';
+import { meshProperties } from '../robot/inertia';
 import { defaultParams, shapeDef } from './shapes';
 
 import type { ManifoldToplevel } from 'manifold-3d';
@@ -1128,6 +1129,35 @@ describe('robot links', () => {
     expect(w.props.centroid.map((v) => +v.toFixed(3))).toEqual([15, 0, 5]);
     const [m] = robotGeometry([body], { [body.id]: 'mesh' }, false);
     expect(m.collision!.triangles.length).toBe(36);
+  });
+
+  it('wraps each part of a group in a hull of its own, and leaves out a part inside another', async () => {
+    const { collisionMeshes, robotGeometry } = await import('./kernel');
+    // Two posts on a bar, a U: one hull round it would fill the gap between the posts.
+    const bar = shape('box', { size: [40, 10, 10], pos: [0, 0, -10] });
+    const left = shape('box', { size: [10, 10, 20], pos: [-15, 0, 5] });
+    const right = shape('box', { size: [10, 10, 20], pos: [15, 0, 5] });
+    const pin = shape('box', { size: [4, 4, 4], pos: [0, 0, -10] });
+    const u = group([40, 10, 30], [bar, left, right, pin], { pos: [100, 0, 15] });
+    const [g] = robotGeometry([u], {}, false);
+    expect(g.hulls).toHaveLength(3);
+    const volumes = g.hulls!.map((m) => meshProperties(m).volume).sort((a, b) => a - b);
+    expect(volumes.map((v) => Math.round(v))).toEqual([2000, 2000, 4000]);
+    // Nothing of them between the posts, above the bar.
+    for (const m of g.hulls!) for (let i = 0; i < m.positions.length; i += 3) expect(Math.abs(m.positions[i] - 100) < 9 && m.positions[i + 2] > 10.01).toBe(false);
+    // The plate draws them as one mesh, the same triangles.
+    expect(g.collision!.triangles.length).toBe(g.hulls!.reduce((n, m) => n + m.triangles.length, 0));
+    const [drawn] = collisionMeshes([u], {});
+    expect(drawn!.triangles.length).toBe(g.collision!.triangles.length);
+    // A hole through the bar's middle leaves two halves, each wrapped on its own.
+    const slot = shape('box', { size: [10, 20, 20], pos: [0, 0, -10], hole: true });
+    const [cut] = robotGeometry([group([40, 10, 30], [bar, left, right, slot], { pos: [100, 0, 15] })], {}, false);
+    expect(cut.hulls).toHaveLength(4);
+    // One part alone, or a shape that is no group, is one hull as before.
+    const [one, plain] = robotGeometry([group([40, 10, 10], [bar]), bar], {}, false);
+    expect(one.hulls).toBeUndefined();
+    expect(plain.hulls).toBeUndefined();
+    expect(one.collision!.triangles.length).toBe(36);
   });
 
   it('gives what a link collides as on its own, for the plate: the same hull or mesh, and nothing for a plain shape', async () => {

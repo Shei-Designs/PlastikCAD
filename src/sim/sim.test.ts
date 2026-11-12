@@ -3,8 +3,10 @@
 // arm holds a target, the quadruped stands.
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { MainModule } from '@mujoco/mujoco';
-import { initKernel, robotGeometry } from '../geometry/kernel';
-import type { Doc } from '../model/types';
+import { initKernel, measure, robotGeometry } from '../geometry/kernel';
+import { makeGroup } from '../model/ops';
+import type { Doc, SceneNode } from '../model/types';
+import { defaultLink } from '../robot/types';
 import { buildMjcfModel } from '../robot/export';
 import { ROBOTS } from '../robot/fixtures';
 import { forward } from '../robot/kinematics';
@@ -75,6 +77,33 @@ function faultsAfter(doc: Doc, seconds: number): { name: string; kind: string; b
   sim.dispose();
   return faults.map((f) => ({ name: nodes.find((n) => n.id === f.id)!.name, kind: f.kind, by: f.by, bare: f.bare }));
 }
+
+describe('a link grouped from several parts', () => {
+  it('collides as each part, so that what stands between its legs does not lift it', () => {
+    // An arch: two legs 40 mm tall under a bar, 50 mm apart, standing over a post 24 mm tall.
+    const leg = (x: number): SceneNode => ({ id: `leg${x}`, name: 'Leg', type: 'shape', shape: 'box', params: {}, pos: [x, 0, 20], rot: [0, 0, 0], size: [10, 30, 40], hole: false, color: '#8fa3bf' });
+    const bar: SceneNode = { ...leg(0), id: 'bar', name: 'Bar', pos: [0, 0, 45], size: [70, 30, 10] };
+    const parts = [leg(-30), leg(30), bar];
+    const arch = makeGroup(parts, measure(parts)!, 'Arch');
+    const doc = make('rover');
+    doc.scene = [arch];
+    doc.robot = { root: arch.id, base: 'free', links: [defaultLink(arch.id)], joints: [], sensors: [], control: false };
+    const post = (xml: string) => xml.replace('<worldbody>', '<worldbody>\n    <geom type="box" size="0.008 0.03 0.012" pos="0 0 0.012" conaffinity="1"/>');
+    const rise = (oneHull: boolean): number => {
+      const geo = robotGeometry([arch], {}, false).map((g) => (oneHull ? { ...g, hulls: undefined } : g));
+      const pkg = buildMjcfModel(doc, new Map(geo.map((g) => [g.id, { ...g, visual: [] }])), doc.robot!, 'flat');
+      const sim = Simulation.load(mj, post(new TextDecoder().decode(pkg.files.find((f) => f.name.endsWith('.xml'))!.bytes)), pkg.files.filter((f) => f.name.startsWith('meshes/')), pkg.drive);
+      const before = position(sim, pkg.bodies[0].body)[2];
+      for (let t = 0; t < 1; t += 1 / 60) sim.step(1 / 60);
+      const after = position(sim, pkg.bodies[0].body)[2];
+      sim.dispose();
+      return (after - before) * 1000;
+    };
+    expect(Math.abs(rise(false))).toBeLessThan(1);
+    // As one hull round the whole arch, which is what it used to collide as, it rides up on the post.
+    expect(rise(true)).toBeGreaterThan(15);
+  });
+});
 
 describe('the collision shapes against the floor', () => {
   it('finds nothing wrong with the reference robots', () => {
