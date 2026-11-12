@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { APP_NAME } from '../appInfo';
 import { plural, tr } from '../i18n';
 import { FORMATS } from '../io/export';
 import { skinOf } from '../geometry/skin';
+import { pastStepLimit, tooDetailed } from '../io/stepLimit';
 import { confirm } from '../platform';
+import { geometry } from '../state/geometry';
 import { exportDesign, notify, setPrefs, useEditor } from '../state/store';
 import { Cancelled } from '../worker/client';
 import { FormatPicker } from './FormatPicker';
@@ -21,6 +23,14 @@ export function ExportPanel() {
   const all = exportable(scene);
   const partial = picked.length > 0;
   const count = partial ? picked.length : all.length;
+  // What is known to go out as facets (imported meshes, lettering) can be more than a STEP file holds: it is then
+  // not to be had, for the design or for the selection, whichever would go out. Counted as the objects are drawn.
+  useSyncExternalStore(geometry.subscribe, geometry.getRevision);
+  const past = pastStepLimit(partial ? picked : all, (node) => {
+    const built = geometry.get(node);
+    return built?.state === 'ready' ? built.result.triangles : 0;
+  });
+  const refused = format === 'step' && past.length > 0;
 
   const run = async () => {
     const going = partial ? picked : all;
@@ -64,12 +74,12 @@ export function ExportPanel() {
       <section className="export" aria-label={tr('Export')}>
         <div className="export-row">
           <span className="export-label">{tr('Format')}</span>
-          <FormatPicker formats={FORMATS} value={format} title={tr('File format')} onPick={(id) => setPrefs({ format: id })} />
+          <FormatPicker formats={FORMATS} value={format} title={tr('File format')} onPick={(id) => setPrefs({ format: id })} unavailable={past.length ? { step: tr('Too detailed to export as STEP') } : {}} />
         </div>
         <p className="export-note">
-          {note}
+          {refused ? tooDetailed(past) : note}
         </p>
-        <button type="button" className="primary" disabled={saving || count === 0} onClick={run}>
+        <button type="button" className="primary" disabled={saving || count === 0 || refused} onClick={run}>
           <DownloadIcon />
           {saving ? tr('Exporting…') : partial ? tr('Export selection') : tr('Export')}
         </button>

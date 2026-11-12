@@ -1850,6 +1850,13 @@ select:hover {
   background: var(--control);
 }
 
+/* A choice that cannot be had just now: there to be read, with why, and not to be pressed. */
+.menu-item:disabled {
+  background: none;
+  opacity: 0.55;
+  cursor: default;
+}
+
 kbd {
   font: inherit;
   font-size: 11.5px;

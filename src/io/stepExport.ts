@@ -15,6 +15,7 @@ import type { Bounds } from '../model/math';
 import type { SceneNode } from '../model/types';
 import { forgetOcc, isTrap } from './occ';
 import { exactShape } from './stepExact';
+import { STEP_TRIANGLES, tooDetailed } from './stepLimit';
 import type { ExactTools, Expected, PartCache } from './stepExact';
 
 /** One object to write: closed or not, placed in the design (mm, Z up). */
@@ -29,14 +30,7 @@ export interface StepObject {
   facets?: MeshData;
 }
 
-/**
- * Past this many triangles an object that cannot be rebuilt is left out, and so is one that would take the
- * triangles of the whole file past it: every triangle is a face to sew, some 2.5 kB of file and some 22 kB of
- * memory while it is written, so this many already take half a minute, make a file of 150 MB and need well over
- * a gigabyte. Counted over the whole file because that is what runs out: twenty imported meshes of a few thousand
- * triangles each passed one by one, and on a tablet the system closed the app for the memory they took together.
- */
-export const STEP_TRIANGLES = 60_000;
+export { STEP_TRIANGLES };
 
 type Deletable = { delete(): void };
 
@@ -56,8 +50,10 @@ const linear = (c: number): number => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) /
 
 /**
  * Writes the objects as a STEP file. Returns its bytes and what there is to
- * say of it: the objects left out for being too detailed, and those that are
- * not closed and went out as surfaces.
+ * say of it: the objects that are not closed and went out as surfaces, and
+ * any the library could make nothing of. There is no file when the objects
+ * that go out as facets are together more than `budget` triangles (see
+ * stepLimit.ts): the error names them.
  */
 export function writeStep(oc: OpenCascadeInstance, objects: StepObject[], tools: ExactTools = { partBox: () => null }, budget = STEP_TRIANGLES): { bytes: Uint8Array; warnings: string[]; exact: number } {
   // Everything made here lives in the library's own memory, which is not collected: it is let go at the end.
@@ -77,8 +73,9 @@ export function writeStep(oc: OpenCascadeInstance, objects: StepObject[], tools:
     const colors = keep(oc.XCAFDoc_DocumentTool.ColorTool(keep(doc.Main())));
     let written = 0;
     let exact = 0;
-    /** The triangles written as faces so far. */
+    /** The triangles written as faces so far, and the objects they are of. */
     let sewn = 0;
+    const faceted: string[] = [];
     for (const object of objects) {
       const what = object.node ? JSON.stringify(object.node) : '';
       let rebuilt: InstanceType<typeof oc.TopoDS_Shape> | null = null;
@@ -91,15 +88,13 @@ export function writeStep(oc: OpenCascadeInstance, objects: StepObject[], tools:
         }
       }
       const facets = object.facets ?? object.mesh;
-      const count = facets.triangles.length / 3;
       if (rebuilt) exact++;
-      else if (count > budget) {
-        warnings.push(tr('"{name}" is too detailed for a STEP file and was left out.', { name: object.name }));
-        continue;
-      } else if (sewn + count > budget) {
-        warnings.push(tr('"{name}" was left out: the file had reached the detail a STEP file can hold.', { name: object.name }));
-        continue;
-      } else sewn += count;
+      else {
+        // Past what the file can hold, there is no file: one with this object left out would pass for the whole design.
+        faceted.push(object.name);
+        sewn += facets.triangles.length / 3;
+        if (sewn > budget) throw new Error(tooDetailed(faceted));
+      }
       let solid: { shape: InstanceType<typeof oc.TopoDS_Shape>; closed: boolean };
       try {
         solid = rebuilt ? { shape: rebuilt, closed: true } : facetedSolid(oc, facets, keep);

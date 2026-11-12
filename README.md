@@ -620,9 +620,14 @@ with the facets that lie in one plane joined: bevel gears, a worm wheel, letteri
 stretched out of round (an egg from a ball, a dome taller than half a ball,
 an oval cone), a rounded rim, and any group that holds one of these or parts in
 several colors. Flat sides are still true planes; a curve is as many flat strips as
-it has on screen, which makes a large file (some 1.6 kB a triangle). Such an
-object of more than 60,000 triangles is left out, and one that is not
-watertight goes out as a surface; both are said.
+it has on screen, which makes a large file (some 1.6 kB a triangle), so a
+file takes 60,000 triangles of such objects and no more. A design or a
+selection past that gets no STEP file: where it is known beforehand (imported
+meshes and lettering), STEP is not to be had in the list of formats and the
+panel names the objects that are too detailed; where only the writing shows
+it, the export stops and says the same. Selecting fewer objects, or another
+format, gets them out. An object that is not watertight goes out as a
+surface, which is said.
 
 In an SVG or DXF, round things are round. A hole or a disc goes out as a
 circle (in a DXF, a `CIRCLE`), and a rounded corner as an arc (a bulge on the

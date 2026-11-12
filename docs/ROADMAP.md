@@ -70,9 +70,6 @@ Smaller pieces, each of which can be built without a session.
   if at all; a throated worm wheel and threads of eight starts on a thin
   shaft stay facets. (Eggs, tall domes and oval cones cannot be done: a
   STEP file does not keep an oval turned round an axis.)
-- **STEP export, the limit**: a design or selection that would take the
-  file past its limit of facets is not offered STEP, and is told why; no
-  file goes out with an object left out of it, as happens today.
 - **Inches as the working unit**: an option for what is shown and typed.
   Designs stay in millimeters, and metric stays what the app starts with.
 

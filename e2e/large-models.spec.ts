@@ -40,6 +40,46 @@ test.describe('large models', { tag: '@mouse' }, () => {
     await openApp(page);
   });
 
+  test('a design past what a STEP file holds is not offered STEP, is told why, and gets no file', async ({ page, errors }) => {
+    // 64,440 triangles, which can only go out as facets: over the 60,000 a STEP file takes.
+    await importBall(page, 180);
+    await store(page, (m) => {
+      m.addShape('box');
+      m.select([]);
+      m.setPrefs({ format: 'step' });
+    });
+    await settled(page);
+    const panel = page.locator('.export');
+    const exportButton = panel.getByRole('button', { name: /^Export/ });
+    // With STEP chosen before: the panel names what is too detailed, and there is nothing to press.
+    await expect(panel.locator('.export-note')).toHaveText('Too detailed for a STEP file: "ball".');
+    await expect(exportButton).toBeDisabled();
+    // In the list it is there to be read, and not to be picked.
+    await panel.locator('.select-button').click();
+    const step = page.getByRole('option', { name: /^STEP/ });
+    await expect(step).toBeDisabled();
+    await expect(step).toContainText('Too detailed to export as STEP');
+    await page.getByRole('option', { name: /^STL/ }).click();
+    await expect(exportButton).toBeEnabled();
+    // The box alone fits: with it selected, STEP is to be had again.
+    await store(page, (m) => {
+      m.setPrefs({ format: 'step' });
+      m.select([m.getState().doc.scene[1].id]);
+    });
+    await expect(exportButton).toBeEnabled();
+    await expect(exportButton).toHaveText('Export selection');
+    // Asked for the whole design all the same, the writer makes no file and says the same.
+    const refused = await store(page, (m) => {
+      m.select([]);
+      return m.exportDesign('step', false).then(
+        () => 'written',
+        (e: unknown) => (e instanceof Error ? e.message : String(e)),
+      );
+    });
+    expect(refused).toBe('Too detailed for a STEP file: "ball".');
+    expect(errors).toEqual([]);
+  });
+
   test('a mesh of 120,000 triangles comes in, is drawn, and is picked by the pointer', async ({ page, errors }) => {
     await importBall(page, 246);
     expect(await sceneCount(page)).toBe(1);
