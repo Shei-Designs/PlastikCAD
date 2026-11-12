@@ -28,7 +28,7 @@
     "active": true,
     "targets": "all",
     "category": "GraphicsAndDesign",
-    "shortDescription": "Fast solid modelling for 3D printing",
+    "shortDescription": "Fast solid modeling for 3D parts and robots",
     "license": "GPL-3.0-or-later",
     "publisher": "Shei Designs",
     "homepage": "https://sheidesigns.com",

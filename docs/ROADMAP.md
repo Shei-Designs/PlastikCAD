@@ -55,10 +55,6 @@ By touch (review 3):
   buttons of an Objects row, the panel tabs); the help marks, to be tried
   on the device.
 
-Elsewhere:
-
-- The package's short description reads "for 3D printing".
-
 ## Next to build
 
 Smaller pieces, each of which can be built without a session.

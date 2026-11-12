@@ -1,12 +1,13 @@
 <h1 align="center">
-  <img src="docs/banner.svg" alt="PlastikCAD: fast solid modelling for 3D printing" width="100%">
+  <img src="docs/banner.svg" alt="PlastikCAD: fast solid modeling for 3D parts and robots" width="100%">
 </h1>
 
-Fast solid modeling for 3D printing: an app for bashing out a part from
-a few simple shapes.
+Fast solid modeling for 3D parts and robots: an app for bashing out a part
+from a few simple shapes.
 Drop boxes, cylinders and wedges on the plate, add a gear, a pulley or a
-threaded rod made to your numbers, turn some of it into holes, group, and
-export a file for your slicer.
+threaded rod made to your numbers, turn some of it into holes, and group.
+Give the parts joints, motors and sensors and they are a robot, to test-drive
+on the plate and export for a simulator.
 
 Runs locally on Linux, Windows, macOS and Android. Nothing of yours leaves
 your machine unless you link a Google Drive; the desktop app asks the releases

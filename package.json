@@ -2,7 +2,7 @@
   "name": "plastikcad",
   "private": true,
   "version": "0.2.2",
-  "description": "Fast solid modelling for 3D printing: combine simple shapes into parts",
+  "description": "Fast solid modeling for 3D parts and robots: combine simple shapes and parametric parts, then add joints, motors and sensors",
   "license": "GPL-3.0-or-later",
   "type": "module",
   "engines": {
