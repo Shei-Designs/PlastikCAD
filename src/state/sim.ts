@@ -33,6 +33,10 @@ export interface SimState {
   actuators: (SimActuator & { jointId: string | null })[];
   drive: DriveSpec | null;
   world: World;
+  /** The base is free to move, and so can be held in the air. */
+  floating: boolean;
+  /** The base is held still in the air, for the joints to move without the robot falling. */
+  held: boolean;
   /** The servo targets as set, radians or meters. */
   targets: Map<string, number>;
   /** The rover command as held. */
@@ -55,7 +59,7 @@ const DRIVE_KEYS: Record<string, string> = {
   e: 'slide-right',
 };
 
-const OFF: SimState = { status: 'off', error: null, running: false, time: 0, frames: new Map(), base: null, actuators: [], drive: null, world: 'flat', targets: new Map(), command: { forward: 0, turn: 0, side: 0 }, readings: new Map() };
+const OFF: SimState = { status: 'off', error: null, running: false, time: 0, frames: new Map(), base: null, actuators: [], drive: null, world: 'flat', floating: false, held: false, targets: new Map(), command: { forward: 0, turn: 0, side: 0 }, readings: new Map() };
 
 /** The transform taking a link from where it is designed to where the simulation has its body: a turn by the quaternion about the body's frame origin, and a move. */
 function frameOf(poses: Float64Array, at: number, origin: Vec3): Mat {
@@ -177,6 +181,13 @@ class SimStore {
     this.set({ time: 0, targets: new Map(), command: { forward: 0, turn: 0, side: 0 } });
   }
 
+  /** Holds the base still in the air, or lets it go: let go, the robot starts again from its start pose. */
+  hold(on: boolean): void {
+    if (this.state.status !== 'ready' || !this.state.floating || on === this.state.held) return;
+    this.send({ type: 'hold', on });
+    this.set(on ? { held: true } : { held: false, time: 0, targets: new Map(), command: { forward: 0, turn: 0, side: 0 } });
+  }
+
   /** A rover's command, each part -1..1. */
   drive(forward: number, turn: number, side = 0): void {
     if (this.state.status !== 'ready' || !this.state.drive) return;
@@ -261,7 +272,7 @@ class SimStore {
       case 'loaded': {
         this.bodyOrder = message.bodies;
         const actuators = message.actuators.map((a) => ({ ...a, jointId: this.jointIds.get(a.joint) ?? null }));
-        this.set({ status: 'ready', error: null, actuators, running: false, time: 0 });
+        this.set({ status: 'ready', error: null, actuators, running: false, time: 0, floating: message.floating, held: false });
         // Time runs as soon as the model stands: a rover settles onto its wheels and waits for the keys.
         this.setRunning(true);
         break;
