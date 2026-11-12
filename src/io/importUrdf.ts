@@ -568,7 +568,7 @@ function readUrdf(bytes: Uint8Array, companions: Companion[]): ImportedRobot {
       const key = `mesh-${id}`;
       assets[key] = asset;
       const pose = designPose(name);
-      node = { ...common, type: 'import', asset: key, natural: tidyVec(size), size: tidyVec(size), pos: tidyVec(apply(pose, center)), rot: eulerOf(rotationOf(pose)) };
+      node = { ...common, type: 'import', asset: key, natural: tidyVec(size), size: tidyVec(size), pos: tidyVec(apply(pose, center)), rot: eulerOf(rotationOf(pose)), origin: tidyVec([-center[0], -center[1], -center[2]]) };
     }
     scene.push(node);
     nodeOf.set(name, node);

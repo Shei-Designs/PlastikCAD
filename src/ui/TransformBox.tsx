@@ -1,6 +1,6 @@
 import { useMemo, useState, useSyncExternalStore } from 'react';
 import { plural, tr, trx } from '../i18n';
-import { boundsSize, tidy, tidyAngle, unionBounds } from '../model/math';
+import { boundsSize, originOf, tidy, tidyAngle, tidyVec, unionBounds } from '../model/math';
 import type { SceneNode, Vec3 } from '../model/types';
 import { geometry } from '../state/geometry';
 import { partFigures } from '../parts/figures';
@@ -88,6 +88,14 @@ function Single({ node }: { node: SceneNode }) {
     pos[axis] = axis === 2 ? tidy(node.pos[2] + value - low) : value;
     updateNode(node.id, { pos }, `pos:${node.id}:${axis}`);
   };
+  // An imported object also says where its file's own origin is; typing there moves the object, not the origin within it.
+  const origin = originOf(node);
+  const setOrigin = (axis: number, value: number) => {
+    if (!origin) return;
+    const pos: Vec3 = [...node.pos];
+    pos[axis] = tidy(node.pos[axis] + value - origin[axis]);
+    updateNode(node.id, { pos }, `origin:${node.id}:${axis}`);
+  };
   const setRot = (axis: number, value: number) => {
     const rot: Vec3 = [...node.rot];
     rot[axis] = tidyAngle(value);
@@ -113,6 +121,14 @@ function Single({ node }: { node: SceneNode }) {
           <NumberBox key={tag} tag={tag} label={axis === 2 ? tr('Height above the plate') : tr('{axis} of the center', { axis: tag })} value={axis === 2 ? low : node.pos[axis]} unit={named} length min={-100000} max={100000} disabled={locked} onChange={(v) => setPos(axis, v)} />
         ))}
       </div>
+      {origin && (
+        <div className="transform-row">
+          <span className="transform-label">{tr('Origin')}</span>
+          {AXES.map((tag, axis) => (
+            <NumberBox key={tag} tag={tag} label={tr("{axis} of the file's origin", { axis: tag })} value={tidyVec(origin)[axis]} unit={named} length min={-100000} max={100000} disabled={locked} onChange={(v) => setOrigin(axis, v)} />
+          ))}
+        </div>
+      )}
       <div className="transform-row">
         <span className="transform-label">{tr('Rotation')}</span>
         {AXES.map((tag, axis) => (

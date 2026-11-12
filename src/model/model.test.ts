@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { canonicalRobot, emptyDoc, legacyVersions, NewerVersion, parseDoc, parseDocWithout, readHeader, ROBOT_FIELDS, savedTime, serializeDoc } from './file';
 import { geomKey } from './geomKey';
-import { apply, axisRotation, determinant, eulerOf, multiply, nodeMatrix, rotation } from './math';
+import { apply, axisRotation, determinant, eulerOf, multiply, nodeMatrix, originOf, rotation } from './math';
 import type { Mat } from './math';
 import { alignNodes, arrayNodes, arrayPlaces, boxBoundsOf, cloneNode, dissolve, frameAlong, layerMembers, makeGroup, makeShape, mirrorNodes, nodeAt, picturesOf, regroup, rotateNodes, scaleNodes, sourceColor, ungroup, usedAssets } from './ops';
 import type { Doc, GroupNode, PictureNode, SceneNode, ShapeNode, Vec3 } from './types';
@@ -105,6 +105,34 @@ describe('mirroring', () => {
     const [back] = mirrorNodes(mirrorNodes([node], 1, [0, 3, 0]), 1, [0, 3, 0]);
     close(nodeMatrix(back), nodeMatrix(node));
     expect(back.flip).toBeUndefined();
+  });
+});
+
+describe("an imported object's own origin", () => {
+  const imported = (over: Partial<SceneNode> = {}): SceneNode => {
+    const node = { ...shape('box'), type: 'import', asset: 'mesh-1', natural: [10, 20, 4], size: [10, 20, 4], pos: [0, 0, 0], rot: [0, 0, 0], origin: [-5, -10, -2], ...over } as unknown as SceneNode;
+    delete (node as { shape?: unknown }).shape;
+    delete (node as { params?: unknown }).params;
+    return node;
+  };
+  const near = (a: Vec3 | null, b: Vec3) => a!.forEach((v, i) => expect(v).toBeCloseTo(b[i], 6));
+
+  it('moves, turns, stretches and mirrors with the object', () => {
+    near(originOf(imported()), [-5, -10, -2]);
+    near(originOf(imported({ pos: [100, 50, 2] })), [95, 40, 0]);
+    near(originOf(imported({ rot: [0, 0, 90] })), [10, -5, -2]);
+    near(originOf(imported({ size: [20, 20, 8] })), [-10, -10, -4]);
+    near(originOf(imported({ flip: [true, false, false] })), [5, -10, -2]);
+  });
+
+  it('is kept by a mirrored copy, and is absent where the file had none', () => {
+    const node = imported({ pos: [10, 4, 5], rot: [20, 30, 40] });
+    const [mirrored] = mirrorNodes([node], 0, [2, 0, 0]);
+    const there = originOf(node)!;
+    near(originOf(mirrored), [4 - there[0], there[1], there[2]]);
+    expect(originOf(shape('box'))).toBeNull();
+    const { origin: _origin, ...bare } = node as SceneNode & { origin?: Vec3 };
+    expect(originOf(bare as SceneNode)).toBeNull();
   });
 });
 

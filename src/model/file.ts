@@ -71,6 +71,7 @@ export function canonical(node: SceneNode): Record<string, unknown> {
     align: node.type === 'text' && node.align !== 'left' ? node.align : undefined,
     curve: node.type === 'text' ? node.curve : undefined,
     natural: node.type === 'shape' ? undefined : node.natural,
+    origin: node.type === 'import' ? node.origin : undefined,
     pos: node.pos,
     rot: node.rot,
     size: node.size,
@@ -315,7 +316,8 @@ function readNode(raw: unknown, assets: Record<string, Asset>, depth: number): S
   }
   if (raw.type === 'import') {
     if (typeof raw.asset !== 'string' || assets[raw.asset]?.kind === undefined || assets[raw.asset].kind === 'image') return null;
-    return { ...base, type: 'import', asset: raw.asset, natural: vec3(raw.natural, base.size, true) };
+    const origin = Array.isArray(raw.origin) && raw.origin.length === 3 && raw.origin.every((x) => typeof x === 'number' && Number.isFinite(x)) ? { origin: raw.origin as Vec3 } : {};
+    return { ...base, type: 'import', asset: raw.asset, natural: vec3(raw.natural, base.size, true), ...origin };
   }
   if (raw.type === 'picture') {
     if (typeof raw.asset !== 'string' || assets[raw.asset]?.kind !== 'image') return null;

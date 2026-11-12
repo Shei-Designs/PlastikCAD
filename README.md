@@ -689,6 +689,10 @@ left alone, since that is its shape.
   export or a group being made off, leaving the design as it was.
 - A mesh that is not watertight can be placed, scaled and exported as it is,
   but cannot be grouped: there is no telling its inside from its outside.
+- An imported mesh keeps the origin its file had. The **Origin** row under
+  Position says where that point is now; a value typed there moves the
+  object so the point lands on it. A joint made to such an object starts at
+  its origin.
 - A file of several parts (the objects of a 3MF, the materials of an OBJ, the
   meshes of a GLB) comes in as one group, its parts where the file put them,
   each in its own color, so it looks as it did where it came from. Parts that

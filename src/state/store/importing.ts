@@ -195,6 +195,8 @@ async function importModels(files: PickedFile[], companions: PickedFile[]): Prom
         const node = importNode(assets, part.key, part.asset, part.name, tidyVec(part.size), tidyVec(part.size), part.color);
         if (!node) continue;
         node.pos = tidyVec(part.center);
+        // The mesh was centered on its box; the file's own origin is that far back from the middle.
+        node.origin = tidyVec([-part.center[0], -part.center[1], -part.center[2]]);
         if (part.image) {
           elsewhere(home);
           const key = await addImage({ name: part.image.name, path: null, bytes: part.image.bytes }, part.image.mime);
