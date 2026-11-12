@@ -50,14 +50,20 @@ def read_stage(path):
         lidars[m.group(1)] = int(rays.group(1)) // max(int(rate.group(1)), 1) if rays and rate else None
     # Where each joint begins, radians or meters, for those the stage gives a start.
     starts = {}
+    # The joints commanded by torque, with the most each can push: nothing holds them until efforts arrive.
+    torques = {}
     for m in re.finditer(r'def Physics(Revolute|Prismatic)Joint "([^"]+)"', text):
         after = text[m.end():]
         block = after[:after.find('\ndef Physics')] if '\ndef Physics' in after else after[:8000]
         at = re.search(r'float state:(?:angular|linear):physics:position = ([-0-9.e]+)', block)
         if at:
             starts[m.group(2)] = math.radians(float(at.group(1))) if m.group(1) == 'Revolute' else float(at.group(1))
+        top = re.search(r'float drive:(?:angular|linear):physics:maxForce = ([-0-9.e]+)', block)
+        if 'custom token robot:command = "effort"' in block and top:
+            torques[m.group(2)] = float(top.group(1))
     return {
         'starts': starts,
+        'torques': torques,
         'topics': topics,
         'cameras': re.findall(r'def Camera "([^"]+)"', text),
         'imus': re.findall(r'def IsaacImuSensor "([^"]+)"', text),
@@ -183,7 +189,7 @@ def one(path, pictures):
         servo = None
         if drive_kind == 'joints' and names:
             # Ask the first joint for a quarter turn (or a centimeter) and see it get there.
-            servo = names[0]
+            servo = next((n for n in names if n not in info['torques']), None)
         dt = world.get_physics_dt()
 
         def run(seconds, command):
@@ -233,7 +239,7 @@ def one(path, pictures):
         else:
             if drive_kind in ('twist', 'ackermann') and moved < MUST_MOVE:
                 result['problems'].append(f'moved only {moved * 1000:.0f} mm in {SECONDS:.0f} s at {SPEED} m/s')
-            if dropped > MAY_SETTLE:
+            if dropped > MAY_SETTLE and not info['torques']:
                 result['problems'].append(f'the base dropped {dropped * 1000:.0f} mm: the robot collapsed')
         if servo:
             i = names.index(servo)
@@ -244,7 +250,7 @@ def one(path, pictures):
         if info['starts']:
             began = {j: float(q0[names.index(j)]) for j in info['starts'] if j in names}
             off = [f'{j} began at {began.get(j, float("nan")):.3f}, start {v:.3f}' for j, v in info['starts'].items() if not abs(began.get(j, float('nan')) - v) < 0.05]
-            drift = [f'{j} is at {float(q[names.index(j)]):.3f}, start {v:.3f}' for j, v in info['starts'].items() if j in names and j != servo and abs(float(q[names.index(j)]) - v) > 0.15]
+            drift = [f'{j} is at {float(q[names.index(j)]):.3f}, start {v:.3f}' for j, v in info['starts'].items() if j in names and j != servo and j not in info['torques'] and abs(float(q[names.index(j)]) - v) > 0.15]
             result['starts_held'] = len(info['starts']) - len(off) - len(drift)
             result['problems'] += off + drift
         if not got['joint_states']:
@@ -303,8 +309,27 @@ def one(path, pictures):
                 result['problems'].append(f'contact sensors could not be read: {type(e).__name__}: {e}')
             result['touch_N'] = touched
             quiet = [k for k, v in touched.items() if not v]
-            if len(quiet) == len(touched) and touched:
+            # With nothing holding its joints the robot lies as it fell, on whatever it fell on.
+            if len(quiet) == len(touched) and touched and not info['torques']:
                 result['problems'].append('no contact sensor feels any force')
+
+        # A joint commanded by torque goes the way its effort pushes it: full effort one way, then the other.
+        if info['torques']:
+            pushed = next(n for n in names if n in info['torques'])
+
+            def push(sign):
+                m = JointState()
+                m.name = [pushed]
+                m.effort = [sign * info['torques'][pushed]]
+                joint_pub.publish(m)
+
+            run(1.0, lambda i: push(1.0))
+            up = float(np.asarray(art.get_joint_positions())[0][names.index(pushed)])
+            run(1.0, lambda i: push(-1.0))
+            down = float(np.asarray(art.get_joint_positions())[0][names.index(pushed)])
+            result['effort_swing_deg'] = round(math.degrees(up - down), 1)
+            if up - down < 0.1:
+                result['problems'].append(f'{pushed} pushed with its full effort each way went from {up:.2f} to {down:.2f}')
 
         # A picture, aimed at the robot where it ended up.
         cache = UsdGeom.BBoxCache(Usd.TimeCode.Default(), ['default'], useExtentsHint=False)

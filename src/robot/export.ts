@@ -592,9 +592,9 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
   const p = prepare(doc, geometry, robot, (path) => path, USD_NAMES);
   const { pkg, warnings } = p;
   const velocity = new Set(p.drive?.wheels ?? []);
-  // A joint commanded by torque keeps its position drive here: the stage stands by itself, and a controller that
-  // sends efforts sets the gains it wants (Isaac Lab writes its own over these when it loads the robot).
-  const position = new Set([...p.controlled, ...(p.drive?.steer ?? [])]);
+  // A joint commanded by torque has no servo: its drive holds nothing, and `/joint_command` carries its efforts.
+  const torque = new Set(p.torque);
+  const position = new Set([...p.controlled.filter((j) => !torque.has(j)), ...(p.drive?.steer ?? [])]);
   // An Ackermann car in Isaac: the controller speaks for all four wheels, front left, front right, rear left, rear right,
   // so the front wheels, which turn free on their knuckles in the design, get velocity drives too.
   let ackermannWheels: string[] | undefined;
@@ -619,7 +619,7 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
     mimic: loop ? undefined : j.mimic,
     armature: j.armature,
     loop,
-    drive: velocity.has(j.name) ? 'velocity' : position.has(j.name) ? 'position' : null,
+    drive: velocity.has(j.name) ? 'velocity' : position.has(j.name) ? 'position' : torque.has(j.name) ? 'effort' : null,
     ...(j.start ? { start: j.start } : {}),
   });
   const links: UsdModel['links'] = p.links.map((l) => {
@@ -670,7 +670,7 @@ function usdReadme(name: string, robot: string, model: UsdModel): string {
     ...(model.fixedBase ? [] : ['`/odom`, with the odom → base transform']),
     ...(d && d.kind !== 'ackermann' ? ['`/cmd_vel` (geometry_msgs/Twist) drives it'] : []),
     ...(d && d.kind === 'ackermann' ? ['`/ackermann_cmd` (ackermann_msgs/AckermannDriveStamped) drives it: speed and steering angle'] : []),
-    ...(model.controlled.length ? ['`/joint_command` (sensor_msgs/JointState) positions the joints by name'] : []),
+    ...(model.controlled.length ? [`\`/joint_command\` (sensor_msgs/JointState) positions the joints by name${model.joints.some((j) => j.drive === 'effort') ? ', and carries the efforts of those commanded by torque, which nothing holds until it does' : ''}`] : []),
     ...model.sensors.filter((s) => s.kind !== 'touch').map((s) => `\`/${s.name}/${s.kind === 'camera' ? 'image` and `/' + s.name + '/camera_info' : s.kind === 'depth' ? 'depth` and `/' + s.name + '/camera_info' : s.kind === 'lidar' ? 'scan' : 'imu'}\` from the ${s.name} sensor`),
   ];
   return `# ${robot}
