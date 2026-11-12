@@ -50,6 +50,18 @@ export const COLLISION_KINDS: { id: CollisionKind; name: string; help: string }[
   { id: 'none', name: trx('collision', 'None'), help: tr('Passes through everything.') },
 ];
 
+/**
+ * A box, cylinder or sphere a link collides as when it is not the one fitted to the object's box: its size in
+ * mm (a cylinder's is its diameter twice and its length, a sphere's its diameter three times), where its center
+ * is from the object's own origin along its own axes (`ownFrame`, mm), and how it is turned from them (degrees
+ * about X, Y, Z). A robot file that gives a link such a shape is kept to it this way.
+ */
+export interface CollisionShape {
+  size: Vec3;
+  center: Vec3;
+  rot: Vec3;
+}
+
 /** The robot's settings for one top-level object. An object with none is a link with the defaults. */
 export interface RobotLink {
   /** Id of the top-level scene node. */
@@ -58,6 +70,8 @@ export interface RobotLink {
   name?: string;
   mass: MassSpec;
   collision: CollisionKind;
+  /** The box, cylinder or sphere it collides as, when not the one fitted to the object; heeded for those three kinds only. */
+  shape?: CollisionShape;
   /** Coefficient of friction of the surface, for the simulator's contact model. */
   friction: number;
 }

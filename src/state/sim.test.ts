@@ -17,7 +17,7 @@ function boxGeometry(n: SceneNode): LinkGeometry {
   return { id: n.id, visual: [], collision: mesh, bounds: { min: [x, y, z], max: [x + w, y + d, z + h] }, props: { id: n.id, ...meshProperties(mesh), watertight: true, triangles: 12 } };
 }
 
-vi.mock('./geometry', () => ({ geometry: { prepare: async () => ({ robotGeometry: async (nodes: SceneNode[]) => nodes.map(boxGeometry) }) } }));
+vi.mock('./geometry', () => ({ geometry: { prepare: async () => ({ robotGeometry: async (nodes: SceneNode[]) => nodes.map(boxGeometry), collisionMeshes: async (nodes: SceneNode[]) => nodes.map((n) => boxGeometry(n).collision) }) } }));
 
 /** The worker the store spawns: keeps what it is sent, and answers when the test says so. */
 class FakeWorker {

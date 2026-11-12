@@ -637,7 +637,7 @@ export function Viewport() {
   // What each link collides as, drawn over it where it stands: as designed, as a tried pose has it, or as the test drive does.
   const shapesRevision = useSyncExternalStore(collisionShapes.subscribe, collisionShapes.getRevision);
   const links = useMemo(() => (robot && prefs.robotCollisions ? linkNodes(doc.scene) : null), [robot, prefs.robotCollisions, doc.scene]);
-  const kinds = useMemo(() => (links ? Object.fromEntries(links.map((n) => [n.id, linkOf(robotOf(doc), n.id).collision])) : null), [links, doc]);
+  const kinds = useMemo(() => (links ? Object.fromEntries(links.map((n) => [n.id, linkOf(robotOf(doc), n.id)])) : null), [links, doc]);
   useEffect(() => {
     if (links && kinds) collisionShapes.ensure(links, kinds, doc.assets);
   }, [links, kinds, doc.assets]);

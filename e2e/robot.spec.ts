@@ -209,4 +209,26 @@ test.describe('the test drive', { tag: '@mouse' }, () => {
     await page.getByRole('button', { name: 'Stop' }).click();
     await expect(hold).toHaveCount(0);
   });
+  test('says when a link stands on a collision shape larger than it', async ({ page }) => {
+    await openApp(page);
+    const bytes = [...readFileSync(new URL('../fixtures/robots/rover.plastikcad', import.meta.url))];
+    await store(
+      page,
+      (m, b) => {
+        // Not waited for: the import ends in a "Project added" box that holds it until OK is pressed.
+        void m.receiveFiles([{ name: 'rover.plastikcad', path: null, bytes: new Uint8Array(b) }]);
+      },
+      bytes,
+    );
+    await page.getByRole('button', { name: 'OK' }).click();
+    await expect.poll(() => store(page, (m) => m.getState().doc.robot?.joints.length ?? 0)).toBe(4);
+    await settled(page);
+    // A ball around the body reaches under the wheels.
+    await store(page, (m) => {
+      m.enterRobotMode();
+      m.updateLink(m.getState().doc.robot!.root!, { collision: 'sphere' });
+    });
+    await page.getByRole('button', { name: 'Test drive' }).click();
+    await expect(page.locator('.inspector .problem.warn')).toContainText(/"Body" stands on its collision shape, \d+ mm clear of the floor\./, { timeout: 30_000 });
+  });
 });

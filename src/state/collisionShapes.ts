@@ -5,6 +5,7 @@
 import type { MeshData } from '../geometry/mesh';
 import type { Asset, SceneNode } from '../model/types';
 import { collisionPrimitive, primitiveMesh } from '../robot/collision';
+import type { Collides } from '../robot/collision';
 import type { CollisionKind } from '../robot/types';
 import { Cancelled } from '../worker/client';
 import { geometry } from './geometry';
@@ -14,10 +15,12 @@ const KEEP = 300;
 /** A drag changes a node every frame; the kernel is asked once it settles. */
 const SETTLE_MS = 150;
 
-type Kinds = Record<string, CollisionKind>;
+/** How each link collides, by its node's id; a link not named collides as its hull. */
+type Links = Record<string, Collides>;
 
-const keyOf = (node: SceneNode, kind: CollisionKind): string => `${kind}|${propsKey(node)}`;
-const kindOf = (node: SceneNode, kinds: Kinds): CollisionKind => kinds[node.id] ?? 'hull';
+const linkOf = (node: SceneNode, links: Links): Collides => links[node.id] ?? { collision: 'hull' };
+const keyOf = (node: SceneNode, link: Collides): string => `${link.collision}|${link.shape ? JSON.stringify(link.shape) : ''}|${propsKey(node)}`;
+const kindsOf = (links: Links): Record<string, CollisionKind> => Object.fromEntries(Object.entries(links).map(([id, l]) => [id, l.collision]));
 
 class CollisionShapesStore {
   private entries = new Map<string, MeshData | null>();
@@ -25,7 +28,7 @@ class CollisionShapesStore {
   private listeners = new Set<() => void>();
   private revision = 0;
   private timer: ReturnType<typeof setTimeout> | undefined;
-  private waiting: { nodes: SceneNode[]; kinds: Kinds; assets: Record<string, Asset> } | null = null;
+  private waiting: { nodes: SceneNode[]; links: Links; assets: Record<string, Asset> } | null = null;
 
   readonly subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -35,15 +38,16 @@ class CollisionShapesStore {
   readonly getRevision = (): number => this.revision;
 
   /** The shape of every node given, by id, as far as it is known; a link that collides with nothing has none. */
-  known(nodes: SceneNode[], kinds: Kinds): Map<string, MeshData> {
+  known(nodes: SceneNode[], links: Links): Map<string, MeshData> {
     const out = new Map<string, MeshData>();
     for (const node of nodes) {
-      const kind = kindOf(node, kinds);
+      const link = linkOf(node, links);
+      const kind = link.collision;
       if (kind === 'none') continue;
-      const key = keyOf(node, kind);
+      const key = keyOf(node, link);
       let mesh = this.entries.get(key);
       if (mesh === undefined && (kind === 'box' || kind === 'cylinder' || kind === 'sphere')) {
-        mesh = primitiveMesh(collisionPrimitive(node, kind));
+        mesh = primitiveMesh(collisionPrimitive(node, link));
         this.keep(key, mesh);
       }
       if (mesh) out.set(node.id, mesh);
@@ -52,14 +56,14 @@ class CollisionShapesStore {
   }
 
   /** Asks the kernel for the hulls and meshes these nodes lack, once they have held still for a moment. */
-  ensure(nodes: SceneNode[], kinds: Kinds, assets: Record<string, Asset>): void {
+  ensure(nodes: SceneNode[], links: Links, assets: Record<string, Asset>): void {
     const missing = nodes.filter((n) => {
-      const kind = kindOf(n, kinds);
-      const key = keyOf(n, kind);
-      return (kind === 'hull' || kind === 'mesh') && !this.entries.has(key) && !this.pending.has(key);
+      const link = linkOf(n, links);
+      const key = keyOf(n, link);
+      return (link.collision === 'hull' || link.collision === 'mesh') && !this.entries.has(key) && !this.pending.has(key);
     });
     if (missing.length === 0) return;
-    this.waiting = { nodes: missing, kinds, assets };
+    this.waiting = { nodes: missing, links, assets };
     clearTimeout(this.timer);
     this.timer = setTimeout(() => void this.fetch(), SETTLE_MS);
   }
@@ -73,13 +77,13 @@ class CollisionShapesStore {
     const batch = this.waiting;
     this.waiting = null;
     if (!batch) return;
-    const nodes = batch.nodes.filter((n) => !this.entries.has(keyOf(n, kindOf(n, batch.kinds))) && !this.pending.has(keyOf(n, kindOf(n, batch.kinds))));
+    const nodes = batch.nodes.filter((n) => !this.entries.has(keyOf(n, linkOf(n, batch.links))) && !this.pending.has(keyOf(n, linkOf(n, batch.links))));
     if (nodes.length === 0) return;
-    const keys = nodes.map((n) => keyOf(n, kindOf(n, batch.kinds)));
+    const keys = nodes.map((n) => keyOf(n, linkOf(n, batch.links)));
     for (const key of keys) this.pending.add(key);
     try {
       const worker = await geometry.prepare(nodes, batch.assets);
-      const results = await worker.collisionMeshes(nodes, batch.kinds);
+      const results = await worker.collisionMeshes(nodes, kindsOf(batch.links));
       results.forEach((mesh, i) => this.keep(keys[i], mesh));
       this.revision++;
       for (const l of this.listeners) l();
@@ -87,7 +91,7 @@ class CollisionShapesStore {
       if (!(e instanceof Cancelled)) console.error(e);
       // Called off along with something else the worker was doing: asked for again.
       else if (!this.waiting) {
-        this.waiting = { nodes, kinds: batch.kinds, assets: batch.assets };
+        this.waiting = { nodes, links: batch.links, assets: batch.assets };
         clearTimeout(this.timer);
         this.timer = setTimeout(() => void this.fetch(), SETTLE_MS);
       }

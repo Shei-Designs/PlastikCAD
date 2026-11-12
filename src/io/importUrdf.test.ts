@@ -27,6 +27,35 @@ function packaged(file: string): { urdf: Uint8Array; companions: Companion[]; do
 }
 
 describe('parseUrdf', () => {
+  it('keeps a plain collision shape as the file has it where it is not the one fitted to the link', () => {
+    const link = (name: string, collision: string) => `<link name="${name}"><visual><geometry><box size="0.02 0.02 0.2"/></geometry></visual><collision>${collision}</collision></link>`;
+    const urdf = encodeText(`<robot name="t">
+      ${link('trunk', '<geometry><box size="0.02 0.02 0.2"/></geometry>')}
+      ${link('calf', '<origin xyz="0 0 0.05" rpy="0 0 1.5707963267948966"/><geometry><box size="0.01 0.012 0.06"/></geometry>')}
+      ${link('foot', '<origin xyz="0 0 -0.1"/><geometry><sphere radius="0.02"/></geometry>')}
+      <joint name="a" type="fixed"><parent link="trunk"/><child link="calf"/><origin xyz="0.1 0 0"/></joint>
+      <joint name="b" type="fixed"><parent link="trunk"/><child link="foot"/><origin xyz="0.2 0 0"/></joint>
+    </robot>`);
+    const imported = parseUrdf(urdf);
+    expect(imported.warnings).toEqual([]);
+    const [trunk, calf, foot] = imported.robot.links;
+    // The trunk's box is its own: nothing to keep.
+    expect([trunk.collision, trunk.shape]).toEqual(['box', undefined]);
+    // The calf's is smaller, higher and turned a quarter; the foot's a ball under its end, wider than the foot.
+    expect(calf.collision).toBe('box');
+    expect(calf.shape).toEqual({ size: [10, 12, 60], center: [0, 0, 50], rot: [0, 0, 90] });
+    expect(foot.collision).toBe('sphere');
+    expect(foot.shape).toEqual({ size: [40, 40, 40], center: [0, 0, -100], rot: [0, 0, 0] });
+    // And they go out again as they came in.
+    const doc = { ...ROBOTS[0].make(), scene: imported.scene, assets: imported.assets, robot: imported.robot };
+    const nodes = linkNodes(doc.scene);
+    setAssets(imported.assets);
+    const geo = robotGeometry(nodes, Object.fromEntries(nodes.map((n) => [n.id, linkOf(doc.robot, n.id).collision])), true);
+    const out = new TextDecoder().decode(buildRobotPackage(doc, new Map(geo.map((g) => [g.id, g])), doc.robot).files.find((f) => f.name.endsWith('.urdf'))!.bytes);
+    expect(out).toMatch(/<collision[^>]*>\s*<origin xyz="0 0 0.05" rpy="0 0 1.570796"\/>\s*<geometry>\s*<box size="0.01 0.012 0.06"\/>/);
+    expect(out).toMatch(/<collision[^>]*>\s*<origin xyz="0 0 -0.1"[^>]*\/>\s*<geometry>\s*<sphere radius="0.02"\/>/);
+  });
+
   it('turns an inertia given in a turned frame into the link\'s own, and leaves out one no body could have', () => {
     const link = (name: string, inertial: string) => `<link name="${name}"><inertial>${inertial}</inertial><visual><geometry><box size="0.1 0.1 0.1"/></geometry></visual></link>`;
     const urdf = encodeText(`<robot name="t">
@@ -91,6 +120,8 @@ describe('parseUrdf', () => {
     expect(robot.root).toBe(imported.scene[0].id);
     expect(robot.base).toBe('free');
     expect(robot.links.map((l) => l.collision)).toEqual(['box', 'cylinder', 'cylinder', 'cylinder', 'cylinder']);
+    // A wheel comes in as a mesh lying on its side, where a cylinder fitted along its own Z would stand upright: it keeps the file's, lying as the wheel does.
+    expect(robot.links.map((l) => Boolean(l.shape))).toEqual([false, true, true, true, true]);
     expect(robot.links[1].friction).toBe(1);
     expect(robot.links[1].mass.kind).toBe('measured');
     expect(robot.joints).toHaveLength(4);

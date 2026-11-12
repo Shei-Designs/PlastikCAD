@@ -12,13 +12,14 @@ import { apply, boxBounds, determinant, eulerOf, IDENTITY, invert, multiply, rot
 import type { Mat } from '../model/math';
 import { newId } from '../model/ops';
 import type { Asset, SceneNode, ShapeKind, Vec3 } from '../model/types';
-import { tessellate } from '../robot/collision';
+import { collisionPrimitive, primitiveMesh, shapeInOwn, tessellate } from '../robot/collision';
+import type { Collides } from '../robot/collision';
 import { jointFit } from '../robot/defaults';
 import { ownFrame, plausibleInertia, turned } from '../robot/inertia';
 import type { Tensor } from '../robot/inertia';
 import { jointInChild, linkNodes, sensorInLink } from '../robot/model';
 import { DEFAULT_MASS, defaultJoint, defaultLink, defaultSensor } from '../robot/types';
-import type { CollisionKind, DriveKind, DriveRole, JointType, Robot, RobotJoint, RobotLink, RobotSensor, SensorKind } from '../robot/types';
+import type { DriveKind, DriveRole, JointType, Robot, RobotJoint, RobotLink, RobotSensor, SensorKind } from '../robot/types';
 import { encodeFloat32, encodeUint32 } from './base64';
 import { centerMesh, checkedMesh, guarded, importFile } from './import';
 import type { Companion } from './import';
@@ -284,16 +285,40 @@ function shapeOf(link: Link, companions: Companion[], warnings: string[], missin
   return collision;
 }
 
-/** The collision setting that fits what the file gives the link. */
-function collisionOf(link: Link): CollisionKind {
-  if (link.collisions.length === 0) return 'none';
+/** The box around a mesh's points. */
+function extent(mesh: MeshData): { min: Vec3; max: Vec3 } {
+  const min: Vec3 = [Infinity, Infinity, Infinity];
+  const max: Vec3 = [-Infinity, -Infinity, -Infinity];
+  mesh.positions.forEach((v, i) => {
+    min[i % 3] = Math.min(min[i % 3], v);
+    max[i % 3] = Math.max(max[i % 3], v);
+  });
+  return { min, max };
+}
+
+/**
+ * How the link collides, from what the file gives it. A box, cylinder or sphere is the one the design fits
+ * to the object (`node`, standing where `pose` has the link's frame) where that is the file's, near enough;
+ * where the file's is smaller than its link, set apart from it or turned another way (a ball under a foot,
+ * larger than the foot looks), the link keeps the file's own.
+ */
+function collisionOf(link: Link, node: SceneNode, pose: Mat): Collides {
+  if (link.collisions.length === 0) return { collision: 'none' };
   if (link.collisions.length === 1) {
-    const g = link.collisions[0].geometry;
-    if ('box' in g) return 'box';
-    if ('cylinder' in g) return 'cylinder';
-    if ('sphere' in g) return 'sphere';
+    const { geometry: g, pose: within } = link.collisions[0];
+    const kind = 'box' in g ? 'box' : 'cylinder' in g ? 'cylinder' : 'sphere' in g ? 'sphere' : null;
+    if (kind && !('mesh' in g)) {
+      const m = multiply(pose, within);
+      const kept: Collides = { collision: kind, shape: shapeInOwn(node, g, m) };
+      const a = extent(primitiveMesh(collisionPrimitive(node, kept)));
+      const b = extent(primitiveMesh(collisionPrimitive(node, { collision: kind })));
+      // Within a twentieth of the shape's size, and a millimeter.
+      const slack = 1 + 0.05 * Math.max(...a.max.map((v, i) => v - a.min[i]));
+      const same = [0, 1, 2].every((i) => Math.abs(a.min[i] - b.min[i]) <= slack && Math.abs(a.max[i] - b.max[i]) <= slack);
+      return same ? { collision: kind } : kept;
+    }
   }
-  return 'hull';
+  return { collision: 'hull' };
 }
 
 // --- the file ----------------------------------------------------------------
@@ -549,7 +574,7 @@ function readUrdf(bytes: Uint8Array, companions: Companion[]): ImportedRobot {
     const link = links.get(name)!;
     const node = nodeOf.get(name);
     if (!node) continue;
-    const made: RobotLink = { ...defaultLink(node.id), mass: link.grams ? { kind: 'measured', grams: link.grams } : DEFAULT_MASS, collision: collisionOf(link) };
+    const made: RobotLink = { ...defaultLink(node.id), mass: link.grams ? { kind: 'measured', grams: link.grams } : DEFAULT_MASS, ...collisionOf(link, node, inDesign(name)) };
     if (made.mass.kind === 'measured' && link.inertial) {
       // The file's figures are in the link's frame; the design keeps them in the object's own.
       const own = invert(ownFrame(node));
