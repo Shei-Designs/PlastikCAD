@@ -327,6 +327,21 @@ describe('the pose a simulation begins in', () => {
     expect(text(bare.files.find((f) => f.name === 'launch/gazebo.launch.py')!.bytes)).toContain("'-z', '0.1'");
   });
 
+  it('lists the actuators in the order of the joints, so control i drives joint i', () => {
+    // The quadruped's joints run hip, knee, hip, knee down each leg in turn; its actuators must run the same way.
+    const d = ROBOTS.find((r) => r.file === 'quadruped')!.make();
+    d.robot!.joints = d.robot!.joints.map((j) => (j.name.startsWith('Hip') ? { ...j, start: 30 } : j.name.startsWith('Knee') ? { ...j, start: -60 } : j));
+    const xml = text(buildMjcfModel(d, geo(d)).files.find((f) => f.name.endsWith('.xml') && !f.name.includes('/'))!.bytes);
+    const joints = [...xml.matchAll(/<joint name="([^"]+)" type="hinge"/g)].map((m) => m[1]);
+    const actuators = [...xml.matchAll(/<position name="[^"]+" joint="([^"]+)"/g)].map((m) => m[1]);
+    expect(joints).toHaveLength(8);
+    expect(joints[0]).toMatch(/^Hip/);
+    expect(joints[1]).toMatch(/^Knee/);
+    expect(actuators).toEqual(joints);
+    // And the home pose asks each servo for its own joint's start, in that order.
+    expect(xml).toMatch(/<key name="home" qpos="[-0-9. ]+ 1 0 0 0( 0.523599 -1.047198){4}" ctrl="0.523599 -1.047198( 0.523599 -1.047198){3}"\/>/);
+  });
+
   it('is said to be missing from the formats that cannot carry it yet', () => {
     const said = "This format does not carry the joints' starts yet: the robot begins in the pose it is designed in.";
     expect(buildSdfModel(walker(90), geo(walker(90))).warnings).toEqual([said]);

@@ -367,18 +367,19 @@ export function writeMjcf(model: MjcfModel): string {
   // Only a joint the model holds, with an effort and a speed, gets an actuator or a constraint: anything else MuJoCo refuses, or reads as not a number.
   const canDrive = (name: string) => drivable(jointed.get(name)?.joint);
   const moves = (name: string) => jointed.get(name)?.joint?.type !== 'fixed' && jointed.has(name);
-  const actuators = [
-    ...model.servos.filter(canDrive).map((j) => {
-      const g = gainsOf(j);
-      return `    <position name="${escapeXml(j)}_servo" joint="${escapeXml(j)}" kp="${sig(g.kp)}" kv="${sig(g.kv)}" forcerange="-${sig(g.effort)} ${sig(g.effort)}"/>`;
-    }),
-    ...model.wheels.filter(canDrive).map((j) => {
-      const g = gainsOf(j);
-      return `    <velocity name="${escapeXml(j)}_motor" joint="${escapeXml(j)}" kv="${sig(g.effort / g.velocity)}" ctrlrange="-${sig(g.velocity)} ${sig(g.velocity)}" forcerange="-${sig(g.effort)} ${sig(g.effort)}"/>`;
-    }),
-  ];
+  // In the order of the joints, which is the order of qpos: control i then drives the i-th actuated joint, as a
+  // policy trained on the joints in order expects.
+  const servos = new Set(model.servos.filter(canDrive));
+  const wheels = new Set(model.wheels.filter(canDrive));
+  const driven = joints.map((j) => j.name).filter((j) => servos.has(j) || wheels.has(j));
+  const actuators = driven.map((j) => {
+    const g = gainsOf(j);
+    return servos.has(j)
+      ? `    <position name="${escapeXml(j)}_servo" joint="${escapeXml(j)}" kp="${sig(g.kp)}" kv="${sig(g.kv)}" forcerange="-${sig(g.effort)} ${sig(g.effort)}"/>`
+      : `    <velocity name="${escapeXml(j)}_motor" joint="${escapeXml(j)}" kv="${sig(g.effort / g.velocity)}" ctrlrange="-${sig(g.velocity)} ${sig(g.velocity)}" forcerange="-${sig(g.effort)} ${sig(g.effort)}"/>`;
+  });
   const startOf = new Map(joints.map((j) => [j.name, j.start ?? 0]));
-  const ctrl = [...model.servos.filter(canDrive).map((j) => fmt(startOf.get(j) ?? 0, 6)), ...model.wheels.filter(canDrive).map(() => '0')];
+  const ctrl = driven.map((j) => (servos.has(j) ? fmt(startOf.get(j) ?? 0, 6) : '0'));
   const equality = [
     ...model.connects.map((c) => `    <connect body1="${escapeXml(c.body1)}" body2="${escapeXml(c.body2)}" anchor="${vec(c.anchor)}"/>`),
     ...model.followers.filter((f) => moves(f.joint) && moves(f.leader)).map((f) => `    <joint joint1="${escapeXml(f.joint)}" joint2="${escapeXml(f.leader)}" polycoef="${fmt(f.offset, 6)} ${fmt(f.multiplier, 6)} 0 0 0"/>`),
