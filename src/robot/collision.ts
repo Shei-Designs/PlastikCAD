@@ -59,6 +59,17 @@ export function shapeInOwn(node: SceneNode, primitive: Primitive, frame: Mat): C
   return { size: tidyVec(size), center: tidyVec([local[9], local[10], local[11]]), rot: eulerOf(local) };
 }
 
+/** The shape a link collides as, in the object's own frame: the one it keeps, else the fitted one, for the boxes that show and change it. */
+export function shapeOf(node: SceneNode, link: Collides): CollisionShape {
+  if (link.shape) return link.shape;
+  const fitted = collisionPrimitive(node, link);
+  const frame = rotation(fitted.rot);
+  frame[9] = fitted.at[0];
+  frame[10] = fitted.at[1];
+  frame[11] = fitted.at[2];
+  return shapeInOwn(node, fitted.shape, frame);
+}
+
 /** A placed primitive as triangles in the design, for drawing. */
 export function primitiveMesh(p: PlacedPrimitive): MeshData {
   const mesh = tessellate(p.shape);

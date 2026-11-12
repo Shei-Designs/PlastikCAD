@@ -118,6 +118,47 @@ test.describe('the collision shapes', { tag: '@mouse' }, () => {
   });
 });
 
+test.describe('a plain collision shape', { tag: '@mouse' }, () => {
+  test('takes a typed size and center, and is fitted to the object again', async ({ page }) => {
+    await openApp(page);
+    // A 20 mm box as the only link, colliding as a ball.
+    await store(page, (m) => {
+      m.addShape('box');
+      m.enterRobotMode();
+      const id = m.getState().doc.scene[0].id;
+      m.select([id]);
+      m.updateLink(id, { collision: 'sphere' });
+    });
+    await settled(page);
+    const shape = () => store(page, (m) => m.getState().doc.robot?.links[0]?.shape);
+    const box = (label: string) => page.locator(`.inspector input[aria-label="${label}"]`);
+    // Until one is typed the boxes show the ball fitted to the box, and the link keeps nothing.
+    await expect(box('Collision diameter')).toHaveValue('20');
+    await expect(box('Collision center Z')).toHaveValue('0');
+    expect(await shape()).toBeUndefined();
+    await box('Collision diameter').click();
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.type('30');
+    await page.keyboard.press('Enter');
+    await box('Collision center Z').click();
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.type('-5');
+    await page.keyboard.press('Enter');
+    expect(await shape()).toEqual({ size: [30, 30, 30], center: [0, 0, -5], rot: [0, 0, 0] });
+    await page.getByRole('button', { name: 'Fit to the object' }).click();
+    expect(await shape()).toBeUndefined();
+    await expect(box('Collision diameter')).toHaveValue('20');
+    await expect(page.getByRole('button', { name: 'Fit to the object' })).toHaveCount(0);
+    // A box has a size each way.
+    await store(page, (m) => m.updateLink(m.getState().doc.scene[0].id, { collision: 'box' }));
+    await box('Collision size X').click();
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.type('12');
+    await page.keyboard.press('Enter');
+    expect(await shape()).toEqual({ size: [12, 20, 20], center: [0, 0, 0], rot: [0, 0, 0] });
+  });
+});
+
 test.describe("a joint's start", { tag: '@mouse' }, () => {
   test('is typed, or taken from the slider', async ({ page }) => {
     await openApp(page);

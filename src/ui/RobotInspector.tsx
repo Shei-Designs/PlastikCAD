@@ -14,12 +14,13 @@ import { MATERIALS, materialOf } from '../robot/materials';
 import { followFault, jointInDesign, linkOf, robotForward, sensorInDesign } from '../robot/model';
 import { MOTORS } from '../robot/motors';
 import { COLLISION_KINDS, DRIVE_KINDS, driveJoints, JOINT_TYPES, SENSOR_KINDS, WORLDS } from '../robot/types';
-import type { DriveKind, DriveRole, RobotJoint, RobotLink, RobotSensor, SensorKind, World } from '../robot/types';
+import type { CollisionShape, DriveKind, DriveRole, RobotJoint, RobotLink, RobotSensor, SensorKind, World } from '../robot/types';
+import { shapeOf } from '../robot/collision';
 import type { Problem } from '../robot/check';
 import { addJoint, addSensor, deleteJoint, deleteSensor, fitJointFollowers, placeJoint, placeSensor, select, selectJoint, selectSensor, setBase, setControl, setDriveKind, setDriveRole, setJointMotor, setPose, setPrefs, setRobotRoot, setScripts, setWorld, startJointPick, stopJointPick, updateJoint, updateLink, updateSensor, useEditor } from '../state/store';
 import { rangeOf } from '../robot/kinematics';
 import { sim } from '../state/sim';
-import { inUnit, lengthFigure, lengthText, sizeText, unitName } from '../units';
+import { inUnit, lengthFigure, lengthText, unitName } from '../units';
 import type { Unit } from '../units';
 import { formatNumber, NumberBox, selectOnFocus, SliderField } from './Fields';
 import { Hint } from './Hint';
@@ -439,6 +440,49 @@ function WeighedFigures({ node, mass, props, onChange }: { node: SceneNode; mass
   );
 }
 
+/** The size and the place of a box, a cylinder or a ball a link collides as: what is fitted to the object until one is typed. */
+function CollisionBoxes({ node, link, onChange }: { node: SceneNode; link: RobotLink; onChange: (shape: CollisionShape) => void }) {
+  const working = useEditor((s) => s.prefs.units);
+  const shape = shapeOf(node, link);
+  const kind = link.collision;
+  // A cylinder is as wide in X as in Y, a ball as wide every way: one box sets them together.
+  const sizes: { tag: string; label: string; value: number; at: number[] }[] =
+    kind === 'box'
+      ? (['X', 'Y', 'Z'] as const).map((tag, i) => ({ tag, label: tr('Collision size {axis}', { axis: tag }), value: shape.size[i], at: [i] }))
+      : kind === 'cylinder'
+        ? [
+            { tag: 'Ø', label: tr('Collision diameter'), value: shape.size[0], at: [0, 1] },
+            { tag: 'L', label: tr('Collision length'), value: shape.size[2], at: [2] },
+          ]
+        : [{ tag: 'Ø', label: tr('Collision diameter'), value: shape.size[0], at: [0, 1, 2] }];
+  return (
+    <>
+      <div className="field">
+        <label>
+          {tr('Size')}
+          <Hint text={tr('Sets how large the collision shape is ({unit}).', { unit: unitName(working) })} />
+        </label>
+        <div className="number-row spread">
+          {sizes.map((b) => (
+            <NumberBox key={b.tag} label={b.label} tag={b.tag} value={b.value} length min={0.01} step={1} places={2} onChange={(v) => onChange({ ...shape, size: shape.size.map((x, k) => (b.at.includes(k) ? v : x)) as Vec3 })} />
+          ))}
+        </div>
+      </div>
+      <div className="field">
+        <label>
+          {tr('Center')}
+          <Hint text={tr("Sets where the collision shape's center is, from the object's origin along its own axes ({unit}).", { unit: unitName(working) })} />
+        </label>
+        <div className="number-row spread">
+          {(['X', 'Y', 'Z'] as const).map((tag, i) => (
+            <NumberBox key={tag} label={tr('Collision center {axis}', { axis: tag })} tag={tag} value={shape.center[i]} length step={1} places={2} onChange={(v) => onChange({ ...shape, center: shape.center.map((x, k) => (k === i ? v : x)) as Vec3 })} />
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
 function LinkPanel({ node }: { node: SceneNode }) {
   const { robot, nodes, props, problems } = useRobot();
   const unit = useEditor((s) => s.prefs.units);
@@ -547,9 +591,9 @@ function LinkPanel({ node }: { node: SceneNode }) {
           </label>
           <Select value={link.collision} label={tr('Collision shape')} options={COLLISION_KINDS.map((k) => ({ value: k.id, label: k.name }))} onChange={(id) => set({ collision: id, shape: undefined })} />
         </div>
+        {(link.collision === 'box' || link.collision === 'cylinder' || link.collision === 'sphere') && <CollisionBoxes node={node} link={link} onChange={(shape) => set({ shape }, 'link-shape')} />}
         {link.shape && (link.collision === 'box' || link.collision === 'cylinder' || link.collision === 'sphere') && (
-          <div className="field inline">
-            <label>{tr('{size}, as its file has it', { size: sizeText(link.collision === 'box' ? link.shape.size : link.collision === 'cylinder' ? [link.shape.size[0], link.shape.size[2]] : [link.shape.size[0]], unit) })}</label>
+          <div className="field">
             <button type="button" className="chip" title={tr("Fits the shape to the object's box again")} onClick={() => set({ shape: undefined })}>
               {tr('Fit to the object')}
             </button>
