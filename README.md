@@ -334,8 +334,10 @@ in the design file and synced with it.
   and the surface's coefficient of friction for Gazebo. A group collides as
   a hull for each of its parts (down through the groups in it, a part its
   holes cut in two as each half, a part inside another left out), so the
-  space between them stays open; above 64 pieces it is one hull round all. A box, cylinder or
-  sphere is fitted to the object's box; a link that came from a robot file
+  space between them stays open; above 64 pieces it is one hull round all.
+  A box, cylinder or
+  sphere is fitted to the object's box (the cylinder along the axis the
+  object is round about, else its own Z); a link that came from a robot file
   with one of another size, place or turn (a ball under a foot, wider than
   the foot looks) keeps the file's own, until *Fit to the object* fits it
   again. The button beside

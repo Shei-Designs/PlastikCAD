@@ -23,6 +23,25 @@ describe('the primitive a link collides as', () => {
     expect(collisionPrimitive(n, { collision: 'sphere' }).shape).toEqual({ sphere: { radius: 15 } });
   });
 
+  it('lays a fitted cylinder along the axis the object is round about', () => {
+    // A roller lying along X, and a wheel whose axle is its own Y: the drawn cylinder fills the object's box.
+    for (const size of [[60, 20, 20], [40, 8, 40], [20, 20, 50]] as [number, number, number][]) {
+      for (const rot of [[0, 0, 0], [0, 0, 30], [20, 40, 60]] as [number, number, number][]) {
+        const n = node({ size, rot, pos: [5, 6, 7] });
+        const p = collisionPrimitive(n, { collision: 'cylinder' });
+        const length = size[0] === size[1] ? size[2] : size[1] === size[2] ? size[0] : size[1];
+        expect(p.shape).toEqual({ cylinder: { radius: (size[0] === size[1] ? size[0] : size[2]) / 2, length } });
+        // Turned back into the object's frame, the cylinder's box is the object's.
+        const flat = collisionPrimitive({ ...n, rot: [0, 0, 0], pos: [0, 0, 0] }, { collision: 'cylinder' });
+        const b = boundsOfPositions(primitiveMesh(flat).positions);
+        expect(round(b.max.map((v, i) => v - b.min[i]))).toEqual(size);
+        if (rot.every((r) => r === 0)) expect(p.rot).toEqual(flat.rot);
+      }
+    }
+    // Round about none: along its own Z, as wide as the wider of the two others.
+    expect(collisionPrimitive(node({ size: [10, 20, 30], rot: [0, 0, 90] }), { collision: 'cylinder' })).toEqual({ shape: { cylinder: { radius: 10, length: 30 } }, at: [0, 0, 0], rot: [0, 0, 90] });
+  });
+
   it('is the shape the link keeps for itself where it has one, in the object\'s own frame', () => {
     // A ball under the end of a leg, wider than the leg: 100 mm down the leg's own Z from its middle.
     const leg = node({ size: [10, 10, 200], pos: [50, 0, 100] });

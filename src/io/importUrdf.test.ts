@@ -120,8 +120,8 @@ describe('parseUrdf', () => {
     expect(robot.root).toBe(imported.scene[0].id);
     expect(robot.base).toBe('free');
     expect(robot.links.map((l) => l.collision)).toEqual(['box', 'cylinder', 'cylinder', 'cylinder', 'cylinder']);
-    // A wheel comes in as a mesh lying on its side, where a cylinder fitted along its own Z would stand upright: it keeps the file's, lying as the wheel does.
-    expect(robot.links.map((l) => Boolean(l.shape))).toEqual([false, true, true, true, true]);
+    // A wheel comes in as a mesh lying on its side; the cylinder fitted to it lies along the axis it is round about, as the file's does, so nothing is kept.
+    expect(robot.links.map((l) => Boolean(l.shape))).toEqual([false, false, false, false, false]);
     expect(robot.links[1].friction).toBe(1);
     expect(robot.links[1].mass.kind).toBe('measured');
     expect(robot.joints).toHaveLength(4);

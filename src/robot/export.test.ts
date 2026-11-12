@@ -458,7 +458,8 @@ describe('buildRobotPackage', () => {
     geo.set(wheel.id, boxGeometry(tilted));
     const urdf = text(buildRobotPackage(d, geo).files.find((f) => f.name === 'urdf/test_rover.urdf')!.bytes);
     // The wheel joint (4 mm inboard, in the wheel's frame) turned with the wheel, so the box center is 4 mm above it.
-    expect(urdf).toMatch(/<collision>\s*<origin xyz="0 0 0.004" rpy="1.570796 0 0"\/>\s*<geometry><cylinder radius="0.01" length="0.02"\/>/);
+    // The wheel is round about its own Y, 8 mm long: the cylinder lies along that, a quarter turn on from the wheel's own.
+    expect(urdf).toMatch(/<collision>\s*<origin xyz="0 0 0.004" rpy="3.141593 0 0"\/>\s*<geometry><cylinder radius="0.01" length="0.008"\/>/);
   });
 
   it('leaves a loop-closing joint out with a warning', () => {

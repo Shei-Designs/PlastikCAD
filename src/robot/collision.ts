@@ -23,19 +23,31 @@ export type Collides = Pick<RobotLink, 'collision' | 'shape'>;
 
 /**
  * The primitive a link collides as, in mm. Fitted to the object unless the link has a shape of its own: the
- * object's box, a cylinder filling it along its own Z, or a ball filling it. A shape of its own sits where
+ * object's box, a cylinder filling it along the axis it is round about (else its own Z), or a ball filling it. A shape of its own sits where
  * the link keeps it, in the object's own frame, and moves, turns and mirrors with the object.
  */
 export function collisionPrimitive(node: SceneNode, link: Collides): PlacedPrimitive {
   const kind = link.collision;
   const size = link.shape?.size ?? node.size;
-  const shape: Primitive = kind === 'box' ? { box: [size[0], size[1], size[2]] } : kind === 'cylinder' ? { cylinder: { radius: Math.max(size[0], size[1]) / 2, length: size[2] } } : { sphere: { radius: Math.max(...size) / 2 } };
-  if (!link.shape) return { shape, at: node.pos, rot: node.rot };
+  // A fitted cylinder lies along the axis the object is round about; one that is round about none, or about Z, stands along its own Z.
+  const along = kind === 'cylinder' && !link.shape ? roundAxis(size) : 2;
+  const [a, b] = along === 0 ? [size[1], size[2]] : along === 1 ? [size[0], size[2]] : [size[0], size[1]];
+  const shape: Primitive = kind === 'box' ? { box: [size[0], size[1], size[2]] } : kind === 'cylinder' ? { cylinder: { radius: Math.max(a, b) / 2, length: size[along] } } : { sphere: { radius: Math.max(...size) / 2 } };
+  if (!link.shape) return { shape, at: node.pos, rot: along === 2 ? node.rot : eulerOf(multiply(rotation(node.rot), rotation(along === 0 ? [0, 90, 0] : [90, 0, 0]))) };
   const own = ownFrame(node);
   const turned = multiply(own, rotation(link.shape.rot));
   // A mirrored object's frame is left-handed, which no turn is: a box, a cylinder and a ball look the same with one axis the other way.
   if (determinant(turned) < 0) for (const i of [6, 7, 8]) turned[i] = -turned[i];
   return { shape, at: apply(own, link.shape.center), rot: eulerOf(turned) };
+}
+
+/** The axis a box of this size is round about: the one whose two other sizes are equal, Z when that is so of it or of none. */
+function roundAxis(size: Vec3): 0 | 1 | 2 {
+  const same = (p: number, q: number): boolean => Math.abs(p - q) <= 1e-6 * Math.max(p, q, 1);
+  if (same(size[0], size[1])) return 2;
+  if (same(size[1], size[2])) return 0;
+  if (same(size[0], size[2])) return 1;
+  return 2;
 }
 
 /** A primitive given in the design (its frame there, sizes in mm) as the shape a link keeps for itself, in the object's own frame. */
