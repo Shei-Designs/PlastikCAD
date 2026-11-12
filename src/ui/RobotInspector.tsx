@@ -8,7 +8,8 @@ import { rich } from '../i18n/rich';
 import { eulerOf } from '../model/math';
 import type { Mat } from '../model/math';
 import type { SceneNode, Vec3 } from '../model/types';
-import { massOf, principalMoments, tensorOf } from '../robot/inertia';
+import { inertialInOwn, inertialOf, massOf, principalMoments } from '../robot/inertia';
+import type { MeshProperties, Tensor } from '../robot/inertia';
 import { MATERIALS, materialOf } from '../robot/materials';
 import { followFault, jointInDesign, linkOf, robotForward, sensorInDesign } from '../robot/model';
 import { MOTORS } from '../robot/motors';
@@ -335,12 +336,72 @@ const cm3 = (mm3: number): string => `${formatNumber(mm3 / 1000, mm3 < 10000 ? 2
 /** g·mm² shown in g·cm², the size robot parts come in. */
 const inertia = (gmm2: number): string => formatNumber(gmm2 / 100, gmm2 / 100 < 10 ? 3 : 1);
 
+const INERTIA_TAGS = ['XX', 'YY', 'ZZ', 'XY', 'XZ', 'YZ'] as const;
+
+/**
+ * The center of mass and the inertia of a weighed link, in the object's own
+ * frame. They show what the shape gives until one is typed; from then on all
+ * of that row is kept as typed, until it is given back to the shape.
+ */
+function WeighedFigures({ node, mass, props, onChange }: { node: SceneNode; mass: Extract<RobotLink['mass'], { kind: 'measured' }>; props: MeshProperties; onChange: (mass: RobotLink['mass'], merge?: string) => void }) {
+  const working = useEditor((s) => s.prefs.units);
+  const own = inertialInOwn(mass, node, props);
+  // To the thousandth, and no minus zero: what the boxes show is what is kept once one of them is typed in.
+  const round = (x: number): number => Number(x.toFixed(3)) + 0;
+  const center = own.center.map(round);
+  // g·mm² in the design, g·cm² in the boxes.
+  const shown = own.inertia.map((x) => round(x / 100));
+  const box = (i: number) => (
+    <NumberBox
+      key={INERTIA_TAGS[i]}
+      label={tr('Inertia {axes}', { axes: INERTIA_TAGS[i] })}
+      tag={INERTIA_TAGS[i]}
+      value={shown[i]}
+      min={i < 3 ? 0 : undefined}
+      step={1}
+      places={3}
+      onChange={(v) => onChange({ ...mass, inertia: shown.map((x, k) => (k === i ? v : x) * 100) as Tensor }, 'link-inertia')}
+    />
+  );
+  return (
+    <>
+      <div className="field">
+        <label>
+          {tr('Center of mass')}
+          <Hint text={tr("Sets where the center of mass is, from the object's origin along its own axes ({unit}).", { unit: unitName(working) })} />
+        </label>
+        <div className="number-row spread">
+          {(['X', 'Y', 'Z'] as const).map((tag, i) => (
+            <NumberBox key={tag} label={tr('Center of mass {axis}', { axis: tag })} tag={tag} value={center[i]} length step={1} places={2} onChange={(v) => onChange({ ...mass, center: center.map((x, k) => (k === i ? v : x)) as Vec3 }, 'link-center')} />
+          ))}
+        </div>
+      </div>
+      <div className="field">
+        <label>
+          {tr('Inertia')}
+          <Hint text={tr("Sets the inertia about the center of mass, along the object's own axes (g·cm²).")} />
+        </label>
+        <div className="number-row spread pairs">{[0, 1, 2].map(box)}</div>
+        <div className="number-row spread pairs">{[3, 4, 5].map(box)}</div>
+      </div>
+      {(mass.center || mass.inertia) && (
+        <div className="field">
+          <button type="button" className="chip" title={tr('Takes the center of mass and the inertia from the shape again')} onClick={() => onChange({ kind: 'measured', grams: mass.grams })}>
+            {tr('From the shape')}
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
 function LinkPanel({ node }: { node: SceneNode }) {
   const { robot, nodes, props, problems } = useRobot();
   const unit = useEditor((s) => s.prefs.units);
   const link = linkOf(robot, node.id);
   const p = props.get(node.id);
   const mass = p ? massOf(link.mass, p) : null;
+  const figures = p ? inertialOf(link.mass, node, p) : null;
   const material = link.mass.kind === 'material' ? materialOf(link.mass.material) : null;
   const own = problems.filter((q) => q.link === node.id);
   const others = nodes.filter((n) => n.id !== node.id);
@@ -375,10 +436,13 @@ function LinkPanel({ node }: { node: SceneNode }) {
           </div>
         </div>
         {link.mass.kind === 'measured' ? (
+          <>
           <div className="field inline">
             <label>{tr('Mass')}</label>
             <NumberBox label={tr('Mass')} value={link.mass.grams} unit="g" min={0} step={1} places={2} onChange={(v) => setMass({ grams: v }, 'link-mass')} />
           </div>
+          {p && <WeighedFigures node={node} mass={link.mass} props={p} onChange={(mass, merge) => set({ mass }, merge)} />}
+          </>
         ) : (
           <>
             <div className="field inline">
@@ -414,13 +478,13 @@ function LinkPanel({ node }: { node: SceneNode }) {
           </div>
           <div>
             <dt>{tr('Center of mass')}</dt>
-            <dd>{p ? p.centroid.map((v) => lengthFigure(v, unit, 1)).join(', ') : '…'}</dd>
+            <dd>{figures ? figures.center.map((v) => lengthFigure(v, unit, 1)).join(', ') : '…'}</dd>
           </div>
           <div>
             <dt title={tr('Principal moments of inertia, g·cm²')}>{tr('Inertia')}</dt>
             <dd>
-              {p && mass
-                ? principalMoments(tensorOf(mass, p.unit))
+              {figures && mass
+                ? principalMoments(figures.inertia)
                     .sort((a, b) => b - a)
                     .map(inertia)
                     .join(' · ') + ' g·cm²'

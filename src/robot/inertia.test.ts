@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { MeshData } from '../geometry/mesh';
-import { massOf, meshProperties, plausibleInertia, principalMoments, tensorOf } from './inertia';
+import { invert, rotation } from '../model/math';
+import type { SceneNode, Vec3 } from '../model/types';
+import { inertialInOwn, inertialOf, massOf, meshProperties, plausibleInertia, principalMoments, tensorOf, turned } from './inertia';
+import type { Tensor } from './inertia';
 
 /** A closed box, `w × d × h`, with its corner at `at`. */
 function box(w: number, d: number, h: number, at: [number, number, number] = [0, 0, 0]): MeshData {
@@ -100,5 +103,62 @@ describe('principalMoments', () => {
     expect(sorted[1]).toBeCloseTo(0.1, 9);
     expect(sorted[2]).toBeCloseTo(2.8, 9);
     expect(principalMoments([3, 2, 1, 0, 0, 0]).sort((a, b) => a - b)).toEqual([1, 2, 3]);
+  });
+});
+
+describe('the figures typed for a weighed link', () => {
+  const shapeNode = (over: Partial<SceneNode> = {}): SceneNode => ({ id: 'a', name: 'A', type: 'shape', shape: 'box', params: {}, pos: [0, 0, 0], rot: [0, 0, 0], size: [10, 20, 30], hole: false, color: '#888888', ...over }) as SceneNode;
+  const imported = (over: Partial<SceneNode> = {}): SceneNode => ({ id: 'b', name: 'B', type: 'import', asset: 'mesh-1', natural: [10, 20, 30], pos: [0, 0, 0], rot: [0, 0, 0], size: [10, 20, 30], hole: false, color: '#888888', origin: [-5, -10, -15], ...over }) as SceneNode;
+  // The shape as it stands in the design: a 10 × 20 × 30 box about (100, 0, 15).
+  const props = meshProperties(box(10, 20, 30, [95, -10, 0]));
+  const near = (a: readonly number[], b: readonly number[], digits = 6) => a.forEach((v, i) => expect(v).toBeCloseTo(b[i], digits));
+  const typed: Tensor = [500, 300, 200, 40, -30, 20];
+
+  it('turns a tensor with its axes', () => {
+    // A quarter turn about Z puts the old X along Y: xx and yy change places, and the products follow.
+    near(turned([1, 2, 3, 0, 0, 0], rotation([0, 0, 90])), [2, 1, 3, 0, 0, 0]);
+    near(turned(typed, rotation([0, 0, 90])), [300, 500, 200, -40, -20, -30]);
+    near(turned(turned(typed, rotation([10, 20, 30])), invert(rotation([10, 20, 30]))), typed);
+  });
+
+  it('are the shape\'s own until they are typed', () => {
+    const node = shapeNode({ pos: [100, 0, 15] });
+    const figures = inertialOf({ kind: 'measured', grams: 50 }, node, props);
+    expect(figures.typed).toEqual({ center: false, inertia: false });
+    near(figures.center, [100, 0, 15]);
+    near(figures.inertia, tensorOf(50, props.unit));
+    // From material the typed figures do not exist at all.
+    expect(inertialOf({ kind: 'material', material: 'pla', infill: 20, shell: 1.2 }, node, props).typed).toEqual({ center: false, inertia: false });
+  });
+
+  it('are measured from the middle of a shape\'s box, along its own axes', () => {
+    const spec = { kind: 'measured' as const, grams: 50, center: [1, 2, 3] as Vec3, inertia: typed };
+    near(inertialOf(spec, shapeNode({ pos: [100, 0, 15] }), props).center, [101, 2, 18]);
+    near(inertialOf(spec, shapeNode({ pos: [100, 0, 15] }), props).inertia, typed);
+    // Turned a quarter about Z, the object's X points along the design's Y.
+    const quarter = inertialOf(spec, shapeNode({ pos: [100, 0, 15], rot: [0, 0, 90] }), props);
+    near(quarter.center, [98, 1, 18]);
+    near(quarter.inertia, [300, 500, 200, -40, -20, -30]);
+    expect(quarter.typed).toEqual({ center: true, inertia: true });
+  });
+
+  it('are measured from the origin of an imported file, and mirror with the object', () => {
+    const spec = { kind: 'measured' as const, grams: 50, center: [1, 2, 3] as Vec3, inertia: typed };
+    // The file's origin is the low corner, at (95, -10, 0) in the design.
+    near(inertialOf(spec, imported({ pos: [100, 0, 15] }), props).center, [96, -8, 3]);
+    // Mirrored along X the corner is on the other side, and what was to its +X is to its -X.
+    const mirrored = inertialOf(spec, imported({ pos: [100, 0, 15], flip: [true, false, false] }), props);
+    near(mirrored.center, [104, -8, 3]);
+    near(mirrored.inertia, [500, 300, 200, -40, 30, 20]);
+  });
+
+  it('show in the boxes what the shape gives, and typing one of them back changes nothing', () => {
+    const node = imported({ pos: [100, 0, 15], rot: [20, 30, 40] });
+    const plain = { kind: 'measured' as const, grams: 50 };
+    const own = inertialInOwn(plain, node, props);
+    const kept = inertialOf({ ...plain, center: own.center, inertia: own.inertia }, node, props);
+    const before = inertialOf(plain, node, props);
+    near(kept.center, before.center);
+    near(kept.inertia, before.inertia, 4);
   });
 });

@@ -129,7 +129,7 @@ export function canonicalRobot(robot: Robot): Record<string, unknown> {
     links: [...robot.links].sort(byId((l: RobotLink) => l.node)).map((l) => ({
       node: l.node,
       name: l.name,
-      mass: l.mass.kind === 'measured' ? { kind: 'measured', grams: l.mass.grams } : { kind: 'material', material: l.mass.material, infill: l.mass.infill, shell: l.mass.shell },
+      mass: l.mass.kind === 'measured' ? { kind: 'measured', grams: l.mass.grams, center: l.mass.center, inertia: l.mass.inertia } : { kind: 'material', material: l.mass.material, infill: l.mass.infill, shell: l.mass.shell },
       collision: l.collision,
       friction: l.friction,
     })),
@@ -235,7 +235,7 @@ const CURVE_FIELDS = new Set(['kind', 'angle', 'flip', 'thickness']);
 export const ROBOT_FIELDS = {
   robot: new Set(['root', 'base', 'links', 'joints', 'sensors', 'drive', 'control', 'world', 'scripts']),
   link: new Set(['node', 'name', 'mass', 'collision', 'friction']),
-  mass: new Set(['kind', 'grams', 'material', 'infill', 'shell']),
+  mass: new Set(['kind', 'grams', 'center', 'inertia', 'material', 'infill', 'shell']),
   joint: new Set(['id', 'name', 'type', 'parent', 'child', 'origin', 'axis', 'lower', 'upper', 'effort', 'velocity', 'damping', 'friction', 'mimic', 'motor']),
   mimic: new Set(['joint', 'multiplier', 'offset']),
   sensor: new Set(['id', 'name', 'kind', 'link', 'origin', 'rot', 'rate', 'camera', 'lidar']),
@@ -480,7 +480,12 @@ function readSensors(raw: unknown, ids: Set<string>): RobotSensor[] {
 
 function readMass(raw: unknown): MassSpec {
   if (isRecord(raw)) only(raw, ROBOT_FIELDS.mass);
-  if (isRecord(raw) && raw.kind === 'measured') return { kind: 'measured', grams: Math.max(0, finite(raw.grams, 0)) };
+  if (isRecord(raw) && raw.kind === 'measured') {
+    const numbers = (v: unknown, n: number): number[] | null => (Array.isArray(v) && v.length === n && v.every((x) => typeof x === 'number' && Number.isFinite(x)) ? (v as number[]) : null);
+    const center = numbers(raw.center, 3);
+    const inertia = numbers(raw.inertia, 6);
+    return { kind: 'measured', grams: Math.max(0, finite(raw.grams, 0)), ...(center ? { center: center as Vec3 } : {}), ...(inertia ? { inertia: inertia as [number, number, number, number, number, number] } : {}) };
+  }
   const r = isRecord(raw) ? raw : {};
   oneOf(r.kind, (k) => k === 'material');
   return { kind: 'material', material: typeof r.material === 'string' ? r.material : 'pla', infill: Math.min(100, Math.max(0, finite(r.infill, 20))), shell: Math.max(0, finite(r.shell, 1.2)) };

@@ -6,7 +6,7 @@
 import { tr } from '../i18n';
 import type { Doc } from '../model/types';
 import type { LinkProperties } from '../worker/protocol';
-import { massOf, plausibleInertia, tensorOf } from './inertia';
+import { inertialOf, plausibleInertia } from './inertia';
 import { boxBounds } from '../model/math';
 import { followFault, jointInDesign, linkNodes, linkOf, robotOf, sensorInDesign, spanningTree } from './model';
 import type { FollowFault } from './model';
@@ -142,13 +142,15 @@ export function checkRobot(doc: Doc, props: Map<string, LinkProperties>, robot: 
     const link = linkOf(robot, node.id);
     const p = props.get(node.id);
     if (!p) continue;
-    if (!p.watertight) warn(tr('{name}: not a closed mesh, so its mass and inertia are estimates.', { name: node.name }), { link: node.id });
-    const mass = massOf(link.mass, p);
+    const { mass, inertia, typed } = inertialOf(link.mass, node, p);
+    // Nothing is estimated for a link whose mass, center and inertia were all typed.
+    if (!p.watertight && !(link.mass.kind === 'measured' && typed.center && typed.inertia)) warn(tr('{name}: not a closed mesh, so its mass and inertia are estimates.', { name: node.name }), { link: node.id });
     if (!(mass > 0)) {
       if (link.mass.kind === 'material' && !(p.volume > 0)) error(tr('"{name}" has no volume to weigh; give it a measured mass.', { name: node.name }), { link: node.id });
       else error(tr('"{name}" has no mass.', { name: node.name }), { link: node.id });
-    } else if (!plausibleInertia(tensorOf(mass, p.unit))) {
-      error(tr('"{name}" has an inertia no real body could have (is it flat or very thin?).', { name: node.name }), { link: node.id });
+    } else if (!plausibleInertia(inertia)) {
+      if (typed.inertia) error(tr('"{name}" has a typed inertia no real body could have.', { name: node.name }), { link: node.id });
+      else error(tr('"{name}" has an inertia no real body could have (is it flat or very thin?).', { name: node.name }), { link: node.id });
     }
     if (link.collision === 'mesh' && p.triangles > HEAVY_COLLISION) warn(tr('{name}: {count} triangles as an exact collision mesh will be slow. A hull is close.', { name: node.name, count: p.triangles }), { link: node.id });
   }

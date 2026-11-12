@@ -43,3 +43,41 @@ test.describe('robot mode on a tablet', { tag: '@touch' }, () => {
     expect(sticking).toEqual([]);
   });
 });
+
+test.describe('a weighed link', { tag: '@mouse' }, () => {
+  test('takes a typed center of mass and inertia, and gives them back to the shape', async ({ page }) => {
+    await openApp(page);
+    // A 20 mm box as the only link.
+    await store(page, (m) => {
+      m.addShape('box');
+      m.enterRobotMode();
+      m.select([m.getState().doc.scene[0].id]);
+    });
+    await settled(page);
+    const mass = () => store(page, (m) => m.getState().doc.robot?.links[0]?.mass);
+    const box = (label: string) => page.locator(`.inspector input[aria-label="${label}"]`);
+    await page.getByRole('radio', { name: 'Weighed' }).click();
+    await box('Mass').click();
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.type('60');
+    await page.keyboard.press('Enter');
+    // Until one is typed the boxes show what the shape gives: its middle, and a 60 g cube's 60 × (20² + 20²) / 12 g·mm² = 40 g·cm².
+    await expect(box('Center of mass Z')).toHaveValue('0');
+    await expect(box('Inertia XX')).toHaveValue('40');
+    await expect(box('Inertia XY')).toHaveValue('0');
+    expect(await mass()).toEqual({ kind: 'measured', grams: 60 });
+    await box('Center of mass Z').click();
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.type('-4');
+    await page.keyboard.press('Enter');
+    await box('Inertia ZZ').click();
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.type('55');
+    await page.keyboard.press('Enter');
+    expect(await mass()).toEqual({ kind: 'measured', grams: 60, center: [0, 0, -4], inertia: [4000, 4000, 5500, 0, 0, 0] });
+    await page.getByRole('button', { name: 'From the shape' }).click();
+    expect(await mass()).toEqual({ kind: 'measured', grams: 60 });
+    await expect(box('Inertia ZZ')).toHaveValue('40');
+    await expect(page.getByRole('button', { name: 'From the shape' })).toHaveCount(0);
+  });
+});

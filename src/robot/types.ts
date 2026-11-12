@@ -18,7 +18,17 @@ export const JOINT_TYPES: { id: JointType; name: string; help: string }[] = [
 
 /** How a link's mass is known: weighed, or figured from its material and how it is printed. */
 export type MassSpec =
-  | { kind: 'measured'; grams: number }
+  | {
+      kind: 'measured';
+      grams: number;
+      /**
+       * Where the center of mass is, typed rather than taken from the shape: mm in the object's own frame
+       * (`ownFrame`: from its file's origin when it keeps one, else from the middle of its box, along its own axes).
+       */
+      center?: Vec3;
+      /** The inertia about the center of mass, typed likewise: g·mm² along the object's own axes (xx, yy, zz, xy, xz, yz). */
+      inertia?: [number, number, number, number, number, number];
+    }
   | {
       kind: 'material';
       /** Id in `MATERIALS`. */

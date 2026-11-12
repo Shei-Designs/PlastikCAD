@@ -3558,6 +3558,15 @@ kbd {
   min-width: 0;
 }
 
+/* Tags of two letters ("XX", "XY"), and one row of them under another. */
+.number-row.pairs .number-box .tag {
+  width: 22px;
+}
+
+.number-row.pairs + .number-row.pairs {
+  margin-top: 6px;
+}
+
 .chip-row,
 .axis-row {
   display: flex;
