@@ -332,7 +332,8 @@ in the design file and synced with it.
 - **Collision.** A convex hull by default, or the object's box, a cylinder
   or a sphere filling it (turned as the object is), the exact mesh, or none;
   and the surface's coefficient of friction for Gazebo. A box, cylinder or
-  sphere is fitted to the object's box; a link that came from a robot file
+  sphere is fitted to the object's box (the cylinder along the axis the
+  object is round about, else its own Z); a link that came from a robot file
   with one of another size, place or turn (a ball under a foot, wider than
   the foot looks) keeps the file's own, until *Fit to the object* fits it
   again. The button beside
