@@ -52,8 +52,8 @@ export interface UsdJoint {
   armature?: number;
   /** Closes a loop: kept out of the articulation tree, as a plain joint between two of its bodies. */
   loop: boolean;
-  /** What the joint's drive is told: a speed (a wheel), a position (a servo), or nothing. */
-  drive: 'velocity' | 'position' | null;
+  /** What the joint's drive is told: a speed (a wheel), a position (a servo), an effort (a joint commanded by torque, which the drive does not hold), or nothing. */
+  drive: 'velocity' | 'position' | 'effort' | null;
   /** Where the joint stands when the simulation begins, radians or meters: the links are written posed so, and a servo holds it. */
   start?: number;
 }
@@ -522,6 +522,8 @@ function jointPrim(j: UsdJoint, robot: string, leader?: UsdJoint): string[] {
       `float drive:${drive}:physics:targetPosition = ${j.drive === 'position' && j.start ? fmt(j.start * (j.type === 'prismatic' ? 1 : DEG), 4) : '0'}`,
       `float drive:${drive}:physics:targetVelocity = 0`,
     );
+    // A joint commanded by torque says so, for whoever reads the stage: its drive has no gains to tell it by.
+    if (j.drive === 'effort') body.push('custom token robot:command = "effort"');
     if (j.start) body.push(`float state:${drive}:physics:position = ${fmt(j.start * (j.type === 'prismatic' ? 1 : DEG), 4)}`);
     if (j.dynamics) body.push(`float physxJoint:jointFriction = ${fmt(j.dynamics.friction, 6)}`);
     if (j.armature) body.push(`float physxJoint:armature = ${fmt(j.armature, 9)}`);
