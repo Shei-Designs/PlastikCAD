@@ -10,6 +10,7 @@ import type { Companion, Imported, ImportedImage, ImportedModel } from '../io/im
 import { parseStep } from '../io/importStep';
 import { hashString } from '../model/geomKey';
 import type { MeshAsset, OutlineAsset, Vec2, Vec3 } from '../model/types';
+import { asOne } from '../io/oneObject';
 
 /** One solid of a model as the design keeps it: the mesh centered on its box, where the box's middle was and how big it is. */
 export interface ImportedMesh {
@@ -135,7 +136,9 @@ function kept(data: Imported, scale: number): ImportResult {
       }),
     };
   }
-  const parts = data.parts.map((part) => {
+  // Parts that could not be grouped (an open shell among them) are one object from the start.
+  const one = asOne(data.parts);
+  const parts = (one ? [one] : data.parts).map((part) => {
     const { positions } = part.mesh;
     if (scale !== 1) for (let i = 0; i < positions.length; i++) positions[i] *= scale;
     const { size, center } = centerMesh(part.mesh);

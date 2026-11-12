@@ -735,6 +735,11 @@ left alone, since that is its shape.
   came along, its texture; the file's own unit and up axis are honored, so a
   Blender or ROS mesh in meters, Z up, comes in at size. Skins and morphs
   show their base mesh; animation is ignored.
+- **A file of several parts** (a part per material, in any of these formats)
+  comes in as a group when its parts are closed solids. When one of them is
+  an open shell, which cannot be grouped, the file comes in as one object
+  that wears its parts' colors; parts that carry pictures of their own stay
+  apart.
 - **STEP (.step, .stp)**: every solid of the file is a part, where the file
   put it and at its size (STEP says its unit), its curved faces cut into flat
   ones to within 0.02 mm; several solids come in as one group. The file is
