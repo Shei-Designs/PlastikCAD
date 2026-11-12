@@ -40,8 +40,12 @@ export interface UrdfLink {
 export interface UrdfExtras {
   /** Model-level Gazebo plugin elements (the drive, the joint state publisher). */
   plugins?: string[];
-  /** Joints under ros2_control, with position commands; a block is written and the Gazebo plugin for it, reading `controllersYaml`. */
-  control?: { joints: string[]; controllersYaml: string };
+  /**
+   * Joints under ros2_control, with position commands; a block is written and the Gazebo plugin for it, reading
+   * `controllersYaml`. `starts` is where each joint that does not begin at zero stands when the simulation begins
+   * (radians or meters): Gazebo puts it there, and the controller holds what it finds.
+   */
+  control?: { joints: string[]; controllersYaml: string; starts?: Record<string, number> };
   /**
    * Write xacro instead: the package name as a property, the Gazebo blocks
    * behind a `use_gazebo` argument and ros2_control behind `use_ros2_control`,
@@ -67,6 +71,8 @@ export interface UrdfJoint {
   limit?: { lower: number; upper: number; effort: number; velocity: number };
   dynamics?: { damping: number; friction: number };
   mimic?: { joint: string; multiplier: number; offset: number };
+  /** Where the joint stands when a simulation begins, radians or meters from the pose the file is written in; absent at zero. */
+  start?: number;
   /** The motor's reflected rotor inertia, kg·m²; only MuJoCo takes it (as the joint's armature). */
   armature?: number;
   /** Keep this fixed joint in Gazebo instead of folding its child into the parent, for a child whose collision a sensor names. */
@@ -167,12 +173,13 @@ export function writeUrdf(name: string, links: UrdfLink[], joints: UrdfJoint[], 
   for (const p of extras.plugins ?? []) gazebo.push('  <gazebo>', indent(p, '    '), '  </gazebo>');
   const control: string[] = [];
   if (extras.control && extras.control.joints.length) {
+    const starts = extras.control.starts ?? {};
     control.push(
       '  <ros2_control name="GazeboSimSystem" type="system">',
       '    <hardware>',
       '      <plugin>gz_ros2_control/GazeboSimSystem</plugin>',
       '    </hardware>',
-      ...extras.control.joints.flatMap((j) => [`    <joint name="${escapeXml(j)}">`, '      <command_interface name="position"/>', '      <state_interface name="position"/>', '      <state_interface name="velocity"/>', '    </joint>']),
+      ...extras.control.joints.flatMap((j) => [`    <joint name="${escapeXml(j)}">`, '      <command_interface name="position"/>', starts[j] ? `      <state_interface name="position">\n        <param name="initial_value">${fmt(starts[j], 6)}</param>\n      </state_interface>` : '      <state_interface name="position"/>', '      <state_interface name="velocity"/>', '    </joint>']),
       '  </ros2_control>',
       '  <gazebo>',
       '    <plugin filename="gz_ros2_control-system" name="gz_ros2_control::GazeboSimROS2ControlPlugin">',

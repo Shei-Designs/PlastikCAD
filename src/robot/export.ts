@@ -4,7 +4,8 @@
 // in, files go out.
 import { plural, tr } from '../i18n';
 import type { MeshData } from '../geometry/mesh';
-import { boundsCenter, boundsSize, eulerOf, multiply, ownOrigin, rotation, unionBounds } from '../model/math';
+import { apply, boundsCenter, boundsSize, eulerOf, multiply, ownOrigin, rotation, unionBounds } from '../model/math';
+import type { Mat } from '../model/math';
 import type { Doc, SceneNode, Vec3 } from '../model/types';
 import { encodeText } from '../io/format';
 import { driveXml, jointStateXml, sensorTopic, sensorXml, worldXml } from '../io/gazebo';
@@ -24,6 +25,7 @@ import { NameSet, uniqueNames, URDF_NAMES, urdfName, writeUrdf } from '../io/urd
 import type { Naming, UrdfJoint, UrdfLink, UrdfShape } from '../io/urdf';
 import type { LinkGeometry } from '../worker/protocol';
 import { inertialOf, toSI } from './inertia';
+import { startPose } from './kinematics';
 import type { Tensor } from './inertia';
 import { followFault, jointInDesign, linkNodes, linkOf, robotForward, robotOf, sensorInDesign, spanningTree } from './model';
 import { motorOf } from './motors';
@@ -126,6 +128,11 @@ interface Prepared {
   jointNames: Map<RobotJoint, string>;
   frames: Map<string, Vec3>;
   links: (UrdfLink & { frame: Vec3; node: SceneNode })[];
+  /**
+   * How much higher (m) the base stands in the pose the simulation begins in than in the pose it is designed in,
+   * for the robot's lowest point to be as far above the floor in both. Zero for a robot that starts as designed.
+   */
+  lift: number;
   /** The tree's joints, parents before children. */
   treeJoints: UrdfJoint[];
   /** The joints that close loops, which only SDF carries. */
@@ -211,10 +218,35 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
     const role = robot.drive?.roles[j.id];
     return role && !role.startsWith('steer') && axis[1] * forward[0] - axis[0] * forward[1] < 0 ? (axis.map((x) => -x) as Vec3) : axis;
   };
+  // The pose a simulation begins in, where a joint has a start: every joint's value in it, and how far the
+  // robot's lowest point moves, which the base is raised or lowered by so that it stands on the floor as designed.
+  const begun = startPose(robot, doc.scene);
+  let lift = 0;
+  if (begun) {
+    const lowest = (posed?: Map<string, Mat>): number => {
+      let low = Infinity;
+      for (const id of tree.order) {
+        const to = posed?.get(id);
+        const geo = geometry.get(id);
+        if (!geo) continue;
+        // The shape as it looks; for a model built without its looks (the test drive's), what it collides as, or its box.
+        const { min, max } = geo.bounds;
+        const corners = new Float32Array([0, 1, 2, 3, 4, 5, 6, 7].flatMap((k) => [k & 1 ? max[0] : min[0], k & 2 ? max[1] : min[1], k & 4 ? max[2] : min[2]]));
+        const shapes = geo.visual.length ? geo.visual.map((part) => part.mesh.positions) : [geo.collision?.positions ?? corners];
+        for (const at of shapes) for (let i = 0; i < at.length; i += 3) low = Math.min(low, to ? apply(to, [at[i], at[i + 1], at[i + 2]])[2] : at[i + 2]);
+      }
+      return low;
+    };
+    const [designed, started] = [lowest(), lowest(begun.frames)];
+    if (Number.isFinite(designed) && Number.isFinite(started)) lift = (designed - started) * M;
+  }
   const jointOf = (j: RobotJoint): UrdfJoint => {
     const parentFrame = frames.get(j.parent)!;
     const placed = placedJoints.get(j.id)!;
     const scale = j.type === 'prismatic' ? M : RAD;
+    const axis = forwardAxis(j, placed.axis);
+    // Measured about the axis as it is written: the other way round for a wheel whose axis was turned.
+    const start = j.type === 'fixed' ? 0 : (begun?.values.get(j.id) ?? 0) * scale * (axis === placed.axis ? 1 : -1);
     // A follower is written only against a leader the file holds and that moves; the checks stop anything else.
     const leader = j.mimic && j.type !== 'fixed' ? allJoints.find((o) => o.id === j.mimic!.joint) : undefined;
     // The multiplier is follower units per leader unit: mm per degree, for a rack on a pinion, becomes meters per radian.
@@ -225,11 +257,12 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
       parent: linkNames.get(j.parent)!,
       child: linkNames.get(j.child)!,
       origin: placed.origin.map((x, i) => (x - parentFrame[i]) * M) as Vec3,
-      axis: forwardAxis(j, placed.axis),
+      axis,
       limit: j.type === 'fixed' ? undefined : { lower: j.lower * scale, upper: j.upper * scale, effort: j.effort, velocity: j.velocity * scale },
       dynamics: j.type === 'fixed' ? undefined : { damping: j.damping, friction: j.friction },
       armature: motorOf(j.motor)?.armature,
       ...(mimic ? { mimic } : {}),
+      ...(start ? { start } : {}),
     };
   };
   const treeJoints = tree.order.slice(1).map((id) => jointOf(tree.parentJoint.get(id)!));
@@ -313,7 +346,7 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
   const driven = new Set(driveJoints(robot.drive));
   const controlled = robot.control ? tree.order.slice(1).map((id) => tree.parentJoint.get(id)!).filter((j) => j.type !== 'fixed' && !j.mimic && !driven.has(j.id)).map((j) => jointNames.get(j)!) : [];
 
-  return { pkg, robotName: urdfName(doc.name, 'robot'), files, warnings, leftOut, order: tree.order, names, naming, linkNames, jointNames, frames, links, treeJoints, loopJoints, sensors, drive, controlled };
+  return { pkg, robotName: urdfName(doc.name, 'robot'), files, warnings, leftOut, order: tree.order, names, naming, linkNames, jointNames, frames, links, lift, treeJoints, loopJoints, sensors, drive, controlled };
 }
 
 /**
@@ -321,14 +354,17 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
  * `base_footprint`, on the floor under the base link, which keeps the design's axes and is turned by `turn`
  * radians about Z in it. Nothing for an arm bolted down, or a robot without wheels to say.
  */
-function footprintOf(p: Prepared, robot: Robot): { name: string; joint: string; base: string; turn: number; height: number } | undefined {
+function footprintOf(p: Prepared, robot: Robot, lift = 0): { name: string; joint: string; base: string; turn: number; height: number } | undefined {
   if (!p.drive || robot.base === 'fixed') return undefined;
   // The frame and the joint that holds the base under it are named clear of everything the robot has.
   const name = p.names.take('base_footprint', (n) => [...p.naming.link(n), ...p.naming.joint(`${n}_joint`)]);
   const [fx, fy] = p.drive.forward;
-  // On the floor under the base link's frame.
-  return { name, joint: `${name}_joint`, base: p.linkNames.get(robot.root!)!, turn: -Math.atan2(fy, fx) || 0, height: p.frames.get(robot.root!)![2] * M };
+  // On the floor under the base link's frame, as high as that stands in the pose the simulation begins in (`lift`).
+  return { name, joint: `${name}_joint`, base: p.linkNames.get(robot.root!)!, turn: -Math.atan2(fy, fx) || 0, height: p.frames.get(robot.root!)![2] * M + lift };
 }
+
+/** Said of a format that has nowhere to put the pose a simulation begins in. */
+const NO_START = "This format does not carry the joints' starts yet: the robot begins in the pose it is designed in.";
 
 /** The prepared drive as the Gazebo plugin wants it. */
 function gazeboDrive(d: PreparedDrive, baseFrame: string): GazeboDrive {
@@ -385,7 +421,9 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
   const baseAt = p.frames.get(robot.root!)!.map((x) => x * M) as Vec3;
   const fixedToWorld = robot.base === 'fixed' ? { link: p.linkNames.get(robot.root!)!, at: baseAt } : undefined;
   const base = p.linkNames.get(robot.root!)!;
-  const footprint = footprintOf(p, robot);
+  // The joints begin at their starts where a controller holds them there; without one they begin as designed.
+  const lift = p.controlled.length ? p.lift : 0;
+  const footprint = footprintOf(p, robot, lift);
   for (const j of p.loopJoints) {
     const text = tr('"{name}" closes a loop and was left out of the URDF (the SDF export keeps it).', { name: j.name });
     warnings.push(text);
@@ -420,7 +458,11 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
   // The robot's box, for RViz to look at, as the base link's frame has it.
   const extent = unionBounds(p.links.map((l) => geometry.get(l.node.id)!.bounds));
   const plugins = [jointStateXml(), ...(p.drive ? [driveXml(gazeboDrive(p.drive, footprint?.name ?? base))] : [])];
-  const control = p.controlled.length ? { joints: p.controlled, controllersYaml: `${SHARE_PLACEHOLDER}/config/controllers.yaml` } : undefined;
+  const starts = Object.fromEntries(p.treeJoints.filter((j) => j.start && p.controlled.includes(j.name)).map((j) => [j.name, j.start!]));
+  // Only a controller can hold a joint at its start in Gazebo.
+  const loose = p.treeJoints.filter((j) => j.start && !p.controlled.includes(j.name) && !j.mimic).map((j) => j.name);
+  if (loose.length) warnings.push(`No controller holds ${loose.map((n) => `"${n}"`).join(', ')}, so ${loose.length > 1 ? 'they begin' : 'it begins'} as designed, not at ${loose.length > 1 ? 'their starts' : 'its start'}.`);
+  const control = p.controlled.length ? { joints: p.controlled, controllersYaml: `${SHARE_PLACEHOLDER}/config/controllers.yaml`, starts } : undefined;
   const controllers = control ? ['joint_state_broadcaster', 'arm_controller'] : [];
   files.unshift(
     { name: 'package.xml', bytes: encodeText(packageXml(pkg, `${doc.name} robot description`, { gazebo: true, control: Boolean(control) })) },
@@ -429,7 +471,7 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
     { name: `urdf/${pkg}.urdf`, bytes: encodeText(writeUrdf(p.robotName, links, joints, { plugins, control, fixedToWorld, footprint })) },
     { name: `urdf/${pkg}.urdf.xacro`, bytes: encodeText(writeUrdf(p.robotName, links, joints, { plugins, control, fixedToWorld, footprint, xacro: { package: pkg } })) },
     { name: 'launch/display.launch.py', bytes: encodeText(displayLaunch(pkg)) },
-    { name: 'launch/gazebo.launch.py', bytes: encodeText(gazeboLaunch(pkg, { controllers, height: footprint || fixedToWorld ? 0 : baseAt[2] })) },
+    { name: 'launch/gazebo.launch.py', bytes: encodeText(gazeboLaunch(pkg, { controllers, height: footprint || fixedToWorld ? 0 : baseAt[2] + lift })) },
     { name: 'rviz/display.rviz', bytes: encodeText(rvizConfig(base, boundsCenter(extent).map((x, i) => x * M - baseAt[i]) as Vec3, Math.max(...boundsSize(extent)) * M)) },
     { name: `worlds/${pkg}.sdf`, bytes: encodeText(worldXml(pkg)) },
     { name: 'config/bridge.yaml', bytes: encodeText(bridgeYaml(bridgeTopics(p))) },
@@ -452,6 +494,7 @@ export function buildSdfModel(doc: Doc, geometry: Map<string, LinkGeometry>, rob
     list.push(sensorXml({ ...s, pose: { xyz: s.xyz, rpy: s.rpy } }));
     sensorsByLink.set(s.link, list);
   }
+  if (p.treeJoints.some((j) => j.start)) warnings.push(NO_START);
   const links: SdfLink[] = p.links.map(({ frame, node: _n, ...l }) => ({ ...l, pose: frame.map((x) => x * M) as Vec3, sensors: sensorsByLink.get(l.name) }));
   // Loops close for real here, so a joint on a loop does not also follow another.
   const onLoop = new Set<string>();
@@ -541,6 +584,7 @@ export function exportSummary(doc: Doc, format: ExportFormat, robot: Robot = rob
 export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot = robotOf(doc)): RobotPackage {
   const p = prepare(doc, geometry, robot, (path) => path, USD_NAMES);
   const { pkg, warnings } = p;
+  if (p.treeJoints.some((j) => j.start)) warnings.push(NO_START);
   const velocity = new Set(p.drive?.wheels ?? []);
   const position = new Set([...p.controlled, ...(p.drive?.steer ?? [])]);
   // An Ackermann car in Isaac: the controller speaks for all four wheels, front left, front right, rear left, rear right,
@@ -666,7 +710,7 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
       visual: l.visual,
       collision: l.collision,
       friction: l.friction,
-      joint: joint ? { name: joint.name, type: joint.type, axis: joint.axis, limit: joint.limit, dynamics: joint.dynamics, armature: joint.armature } : undefined,
+      joint: joint ? { name: joint.name, type: joint.type, axis: joint.axis, limit: joint.limit, dynamics: joint.dynamics, armature: joint.armature, start: joint.start } : undefined,
       children: (childrenOf.get(name) ?? []).map((j) => body(j.child, j)),
       ...(cams.length ? { cameras: cams.map((s) => ({ name: s.name, pos: s.xyz, rpy: s.rpy, hfov: s.camera.hfov, aspect: s.camera.width / s.camera.height })) } : {}),
       ...(imus.length ? { imus: imus.map((s) => ({ name: s.name, pos: s.xyz, rpy: s.rpy })) } : {}),
@@ -679,6 +723,7 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
     name: p.robotName,
     base: body(base, undefined),
     floating: robot.base === 'free',
+    lift: p.lift,
     world,
     forward: robotForward(robot, new Map(p.links.map((l) => [l.node.id, l.node]))),
     // A loop joint's origin is given in its parent's frame; the connect anchor is in the first body's frame.

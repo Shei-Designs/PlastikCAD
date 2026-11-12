@@ -279,6 +279,74 @@ describe("the base link's frame", () => {
   });
 });
 
+describe('the pose a simulation begins in', () => {
+  // A body 40 mm up on one leg that hangs straight down to the plate from a hinge about Y at its top.
+  const trunk = node('trunk001', 'Trunk', [0, 0, 50], [100, 60, 20]);
+  const leg = node('leg00001', 'Leg', [0, 0, 20], [10, 10, 40]);
+  const walker = (start?: number): Doc => {
+    const d = emptyDoc();
+    d.name = 'Test Rover';
+    d.scene = [trunk, leg];
+    d.robot = { root: trunk.id, base: 'free', sensors: [], control: true, links: [], joints: [{ ...defaultJoint('j1', 'hip', trunk.id, leg.id, [0, 0, 20]), axis: [0, 1, 0], lower: -120, upper: 120, ...(start === undefined ? {} : { start }) }] };
+    return d;
+  };
+  const geo = (d: Doc) => new Map(linkNodes(d.scene).map((n) => [n.id, boxGeometry(n)]));
+  const mjcf = (d: Doc, geometry = geo(d)) => text(buildMjcfModel(d, geometry).files.find((f) => f.name === 'test_rover.xml')!.bytes);
+
+  it('is the pose it was designed in when no joint has a start', () => {
+    expect(mjcf(walker())).toMatch(/<key name="home" qpos="0 0 0.05 1 0 0 0 0"\/>/);
+  });
+
+  it('puts each joint at its start, the servo holding it there, and the base where the robot stands on the floor', () => {
+    // A quarter turn lays the leg level with its hinge, 40 mm up: 10 mm thick, its underside is at 35 mm, where the
+    // foot was at 0. The base comes down by those 35 mm, from 50 to 15.
+    const xml = mjcf(walker(90));
+    expect(xml).toMatch(/<key name="home" qpos="0 0 0.015 1 0 0 0 1.570796" ctrl="1.570796"\/>/);
+    // The bodies are still written as designed: a joint's zero is where the design has it.
+    expect(xml).toMatch(/<body name="Trunk" pos="0 0 0.05">/);
+    expect(xml).toMatch(/<body name="Leg" pos="0 0 -0.01">/);
+    // Without its looks (the test drive's model), the lowest point is taken from what the link collides as.
+    const bare = new Map([...geo(walker(90))].map(([id, g]) => [id, { ...g, visual: [] }]));
+    expect(mjcf(walker(90), bare)).toMatch(/<key name="home" qpos="0 0 0.015 1 0 0 0 1.570796" ctrl="1.570796"\/>/);
+  });
+
+  it('is where Gazebo puts the joints a controller holds, and how high it spawns the robot', () => {
+    const pkg = buildRobotPackage(walker(90), geo(walker(90)));
+    const file = (name: string) => text(pkg.files.find((f) => f.name === name)!.bytes);
+    expect(pkg.warnings).toEqual([]);
+    expect(file('urdf/test_rover.urdf')).toMatch(/<joint name="hip">\s*<command_interface name="position"\/>\s*<state_interface name="position">\s*<param name="initial_value">1.570796<\/param>\s*<\/state_interface>/);
+    // The base begins 15 mm up, and settles from 50 mm more.
+    expect(file('launch/gazebo.launch.py')).toContain("'-z', '0.065'");
+    // A joint that begins as designed says nothing.
+    expect(text(buildRobotPackage(walker(), geo(walker())).files.find((f) => f.name === 'urdf/test_rover.urdf')!.bytes)).not.toContain('initial_value');
+    // With the controllers off nothing holds the joint: it begins as designed, the robot at its designed height, and the export says so.
+    const loose = walker(90);
+    loose.robot!.control = false;
+    const bare = buildRobotPackage(loose, geo(loose));
+    expect(bare.warnings).toEqual(['No controller holds "hip", so it begins as designed, not at its start.']);
+    expect(text(bare.files.find((f) => f.name === 'launch/gazebo.launch.py')!.bytes)).toContain("'-z', '0.1'");
+  });
+
+  it('is said to be missing from the formats that cannot carry it yet', () => {
+    const said = "This format does not carry the joints' starts yet: the robot begins in the pose it is designed in.";
+    expect(buildSdfModel(walker(90), geo(walker(90))).warnings).toEqual([said]);
+    expect(buildIsaacStage(walker(90), geo(walker(90))).warnings).toEqual([said]);
+    expect(buildSdfModel(walker(), geo(walker())).warnings).toEqual([]);
+  });
+
+  it('must be inside every joint\'s limits', () => {
+    const problems = (d: Doc) => checkRobot(d, new Map([...geo(d)].map(([id, g]) => [id, g.props]))).filter((p) => p.level === 'error').map((p) => p.text);
+    expect(problems(walker(90))).toEqual([]);
+    expect(problems(walker(150))).toEqual(['"hip" starts outside its limits.']);
+    // Designed outside its range, as a leg built straight whose knee cannot straighten: it needs a start.
+    const straight = walker();
+    straight.robot!.joints[0] = { ...straight.robot!.joints[0], lower: 20, upper: 120 };
+    expect(problems(straight)).toEqual(['"hip" is outside its limits as designed. Give it a start inside them.']);
+    straight.robot!.joints[0] = { ...straight.robot!.joints[0], start: 45 };
+    expect(problems(straight)).toEqual([]);
+  });
+});
+
 describe('buildRobotPackage', () => {
   it('writes a package with the URDF, meshes and launch files, in meters and SI', () => {
     const pkg = buildRobotPackage(doc(), geometry());

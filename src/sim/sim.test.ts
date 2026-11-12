@@ -250,6 +250,25 @@ describe('the quadruped', () => {
     sim.dispose();
   });
 
+  it('begins with its knees where their start has them, and holds them there', () => {
+    const doc = make('quadruped');
+    const knees = doc.robot!.joints.filter((j) => j.name.startsWith('Knee'));
+    expect(knees).toHaveLength(4);
+    // Inside the knee's range, whichever way it bends.
+    const start = knees[0].upper > 25 ? 25 : -25;
+    doc.robot!.joints = doc.robot!.joints.map((j) => (j.name.startsWith('Knee') ? { ...j, start } : j));
+    const { sim, base } = simulate(doc);
+    const rad = (start * Math.PI) / 180;
+    for (const leg of ['front_left', 'rear_right']) expect(sim.jointValue(`Knee_${leg}`)).toBeCloseTo(rad, 5);
+    // Bent knees bring the body down: it begins lower than it was designed, on its feet, and stays there.
+    const begun = position(sim, base)[2];
+    expect(begun).toBeLessThan(bodyHeight(doc) - 0.002);
+    sim.step(2);
+    for (const leg of ['front_left', 'rear_right']) expect(Math.abs(sim.jointValue(`Knee_${leg}`) - rad)).toBeLessThan(0.1);
+    expect(Math.abs(position(sim, base)[2] - begun)).toBeLessThan(0.01);
+    sim.dispose();
+  });
+
   it('stands on the slope as it stands on the flat', () => {
     const doc = make('quadruped');
     doc.robot!.world = 'slope';
