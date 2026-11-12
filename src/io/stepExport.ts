@@ -13,8 +13,9 @@ import type { MeshData } from '../geometry/mesh';
 import { tr } from '../i18n';
 import type { Bounds } from '../model/math';
 import type { SceneNode } from '../model/types';
+import { forgetOcc, isTrap } from './occ';
 import { exactShape } from './stepExact';
-import type { ExactTools } from './stepExact';
+import type { ExactTools, Expected, PartCache } from './stepExact';
 
 /** One object to write: closed or not, placed in the design (mm, Z up). */
 export interface StepObject {
@@ -39,6 +40,13 @@ export const STEP_TRIANGLES = 60_000;
 
 type Deletable = { delete(): void };
 
+/**
+ * The objects whose rebuilding as true surfaces has ended in a trap inside the library, by what they are. The file
+ * that was being written is lost with the library (see `forgetOcc`); written again, the same object would end the
+ * same way, so from then on it goes out as its facets.
+ */
+const trapped = new Set<string>();
+
 /** Corners are taken for one place when they agree to this many parts of a millimeter: a tenth of a micron. */
 const WELD = 1e4;
 /** A triangle lower than this over its longest side, in millimeters, is a line: no face can be made of it. */
@@ -60,6 +68,8 @@ export function writeStep(oc: OpenCascadeInstance, objects: StepObject[], tools:
   };
   const warnings: string[] = [];
   const path = '/export.step';
+  // Parts of one kind are built once for the file (see `Builder.part`).
+  const parts: PartCache = new Map();
   try {
     const progress = keep(new oc.Message_ProgressRange());
     const doc = keep(new oc.TDocStd_Document(keep(new oc.TCollection_ExtendedString('XmlXCAF', false))));
@@ -70,7 +80,16 @@ export function writeStep(oc: OpenCascadeInstance, objects: StepObject[], tools:
     /** The triangles written as faces so far. */
     let sewn = 0;
     for (const object of objects) {
-      const rebuilt = object.node ? exactShape(oc, object.node, measure(object.mesh), tools, keep) : null;
+      const what = object.node ? JSON.stringify(object.node) : '';
+      let rebuilt: InstanceType<typeof oc.TopoDS_Shape> | null = null;
+      if (object.node && !trapped.has(what)) {
+        try {
+          rebuilt = exactShape(oc, object.node, measure(object.mesh), tools, keep, parts);
+        } catch (e) {
+          if (isTrap(e)) trapped.add(what);
+          throw e;
+        }
+      }
       const facets = object.facets ?? object.mesh;
       const count = facets.triangles.length / 3;
       if (rebuilt) exact++;
@@ -84,7 +103,8 @@ export function writeStep(oc: OpenCascadeInstance, objects: StepObject[], tools:
       let solid: { shape: InstanceType<typeof oc.TopoDS_Shape>; closed: boolean };
       try {
         solid = rebuilt ? { shape: rebuilt, closed: true } : facetedSolid(oc, facets, keep);
-      } catch {
+      } catch (e) {
+        if (isTrap(e)) throw e;
         // The library gave up on it (it says so by an exception of its own): the others still go out.
         warnings.push(tr('"{name}" could not be written to the STEP file and was left out.', { name: object.name }));
         continue;
@@ -111,6 +131,10 @@ export function writeStep(oc: OpenCascadeInstance, objects: StepObject[], tools:
     writer.SetColorMode(true);
     if (!writer.Perform(doc, path, progress)) throw new Error(tr('The STEP file could not be written.'));
     return { bytes: oc.FS.readFile(path).slice(), warnings, exact };
+  } catch (e) {
+    // After a trap the library is not to be used again: the next file is written with a fresh one.
+    if (isTrap(e)) forgetOcc(oc);
+    throw e;
   } finally {
     for (const o of made.reverse()) {
       try {
@@ -127,8 +151,8 @@ export function writeStep(oc: OpenCascadeInstance, objects: StepObject[], tools:
   }
 }
 
-/** The volume a mesh encloses and the box round it: what a rebuilt solid has to match. */
-function measure(mesh: MeshData): { volume: number; bounds: Bounds } {
+/** What a mesh measures: the volume it encloses, the box round it and the area of its skin. A rebuilt solid has to match them. */
+export function measure(mesh: MeshData): Expected {
   const p = mesh.positions;
   const bounds: Bounds = { min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
   for (let i = 0; i < p.length; i++) {
@@ -136,11 +160,14 @@ function measure(mesh: MeshData): { volume: number; bounds: Bounds } {
     if (p[i] > bounds.max[i % 3]) bounds.max[i % 3] = p[i];
   }
   let six = 0;
+  let area = 0;
   for (let t = 0; t < mesh.triangles.length; t += 3) {
     const [a, b, c] = [mesh.triangles[t] * 3, mesh.triangles[t + 1] * 3, mesh.triangles[t + 2] * 3];
     six += p[a] * (p[b + 1] * p[c + 2] - p[b + 2] * p[c + 1]) - p[a + 1] * (p[b] * p[c + 2] - p[b + 2] * p[c]) + p[a + 2] * (p[b] * p[c + 1] - p[b + 1] * p[c]);
+    const [ux, uy, uz, vx, vy, vz] = [p[b] - p[a], p[b + 1] - p[a + 1], p[b + 2] - p[a + 2], p[c] - p[a], p[c + 1] - p[a + 1], p[c + 2] - p[a + 2]];
+    area += Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx) / 2;
   }
-  return { volume: six / 6, bounds };
+  return { volume: six / 6, bounds, area };
 }
 
 /**
@@ -255,7 +282,8 @@ function facetedSolid(oc: OpenCascadeInstance, mesh: MeshData, keep: <T extends 
             if (face.IsDone()) sewing.Add(face.Face());
           }
         }
-      } catch {
+      } catch (e) {
+        if (isTrap(e)) throw e;
         // Left out.
       }
       for (const o of parts) o.delete();

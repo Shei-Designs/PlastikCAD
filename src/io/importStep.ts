@@ -9,6 +9,7 @@
 import type { OpenCascadeInstance } from 'replicad-opencascadejs';
 import { tr, trx } from '../i18n';
 import type { ImportedModel, ImportedPart } from './import';
+import { forgetOcc, isTrap } from './occ';
 import { sameSolids, stepSolids } from './stepText';
 import type { SolidMarks } from './stepText';
 import { MeshBuilder } from './weld';
@@ -143,6 +144,10 @@ export function parseStep(oc: OpenCascadeInstance, bytes: Uint8Array, name = trx
     if (parts.length > 1) parts.forEach((part, i) => (part.name = `${name} ${i + 1}`));
     if (marks.length === parts.length) nameParts(parts, marks, bytes);
     return { kind: 'model', parts, used: [] };
+  } catch (e) {
+    // After a trap the library is not to be used again: the next file is read with a fresh one.
+    if (isTrap(e)) forgetOcc(oc);
+    throw e;
   } finally {
     for (const o of made.reverse()) {
       try {

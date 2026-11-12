@@ -5,8 +5,8 @@
 // facets; OpenCascade (see occ.ts) can build them from the surfaces
 // themselves, which is what a CAD program wants to pick and measure.
 //
-// Not everything can be rebuilt: a thread, a tapered extrusion, an imported
-// mesh, lettering, a rounded rim, a shape stretched in a way that leaves no
+// Not everything can be rebuilt: a tapered extrusion, a worm wheel, an
+// imported mesh, lettering, a rounded rim, a shape stretched in a way that leaves no
 // simple surface (a ball into an egg, an oval cone). `exactShape` then answers null, and the
 // writer falls back on the kernel's own facets (see stepExport.ts). It also
 // falls back when what was rebuilt does not match the kernel's solid in
@@ -20,8 +20,9 @@ import type { GroupNode, PartNode, SceneNode, ShapeNode, Vec3 } from '../model/t
 import { getGenerator } from '../parts/generators';
 import { sanitizeParams } from '../parts/generators/types';
 import { QUALITY } from '../parts/types';
-import type { Polygon, Shape2D, Solid, Swept, Vec2 } from '../parts/types';
+import type { Polygon, Shape2D, Solid, Swept, Thread, Vec2 } from '../parts/types';
 import { traceArcs } from './arcs';
+import { isTrap } from './occ';
 import { signedArea } from './outline';
 
 type Oc = OpenCascadeInstance;
@@ -47,12 +48,20 @@ const SCREW_TRUE = 1e-5;
 /** Edges that agree to this, in millimeters, are one edge to the sewing of a twisted solid's faces: they are made from the same numbers, so they agree far closer. */
 const SEW = 1e-6;
 /**
- * How far the volume of a twisted solid may be from what its own outline holds over its height (turning an outline
- * as it rises leaves its area as it was): a hundredth of a percent. That is fifty times closer than a whole object
- * is held to the kernel's facets, which stand back from every curve, and at least twenty times what the worst gear
- * tried was off by (one of eight teeth, three millimeters across); a surface laid wrong is off by far more.
+ * How far the volume of a solid made of such surfaces may be from what it was made to hold (a twisted outline its
+ * area over its height, a thread what its outline sweeps in its turns): a hundredth of a percent. That is fifty
+ * times closer than a whole object is held to the kernel's facets, which stand back from every curve, at least
+ * twenty times what the worst gear tried was off by (one of eight teeth, three millimeters across) and ten times
+ * what any thread was; a surface laid wrong is off by far more.
  */
-const TWIST_SLACK = 1e-4;
+const SCREW_SLACK = 1e-4;
+/**
+ * The slack the library is given to tell touching from crossing, in millimeters, when one of two solids it is to
+ * combine has a surface swept round a helix. Such a surface is true to `SCREW_TRUE` only, and where it should just
+ * touch the other solid (a thread's root on the edge its lead-in ends on) the library, taking both at their word,
+ * has answered with nothing at all, or with a solid that had a piece too many.
+ */
+const FUZZY = 2e-5;
 
 /** A side of a traced contour: straight from `from` to `to`, or round the arc through `mid`, the point half way along it, which with its ends says which arc it is. */
 interface Side {
@@ -231,13 +240,29 @@ function mirroredOnTop(children: Solid[]): Extract<Solid, { op: 'extrude' }> | n
   return flat && near(high.translate[0], 0) && near(high.translate[1], 0) && near(high.translate[2], 2 * low.height) ? low : null;
 }
 
+/** A part as it was built for the first object that is one, for the others like it in the same file: null when it has no exact form. */
+interface BuiltPart {
+  shape: Shape;
+  helical: boolean;
+  steepest: number;
+}
+
+/** The parts built so far for one file, by what they are (see `Builder.part`). */
+export type PartCache = Map<string, BuiltPart | null>;
+
 class Builder {
+  /** Whether a surface swept round a helix has been made: from then on the solids combined are given some slack (see `FUZZY`). */
+  helical = false;
+  /** How steep the steepest thread made is (its lead over the way round it at the middle of its depth), or 0 while none has been: what holds a thread is held to the kernel's solid by its skin as well (see `skinSlack`). */
+  steepest = 0;
+
   constructor(
     readonly oc: Oc,
     readonly keep: Keep,
     readonly tools: ExactTools,
     /** Whether faces on one surface are made one (see `tidy`). */
-    readonly join = true,
+    readonly join: boolean,
+    readonly parts: PartCache,
   ) {}
 
   point(x: number, y: number, z: number): InstanceType<Oc['gp_Pnt']> {
@@ -332,17 +357,37 @@ class Builder {
 
   // --- solids ------------------------------------------------------------------------------------
 
+  /**
+   * What one of the library's operations on two solids (together, one less the other, what both hold) makes of
+   * `a` and `b`, or no exact form if it did not come off or says it met with an error.
+   */
+  private combined(operation: InstanceType<Oc['BRepAlgoAPI_BooleanOperation']>, a: Shape, b: Shape): Shape {
+    const { oc } = this;
+    this.keep(operation);
+    const [first, second] = [this.keep(new oc.NCollection_List_TopoDS_Shape()), this.keep(new oc.NCollection_List_TopoDS_Shape())];
+    first.Append(a);
+    second.Append(b);
+    operation.SetArguments(first);
+    operation.SetTools(second);
+    if (this.helical) operation.SetFuzzyValue(FUZZY);
+    operation.Build(this.keep(new oc.Message_ProgressRange()));
+    if (!operation.IsDone() || operation.HasErrors()) none();
+    return this.keep(operation.Shape());
+  }
+
   fuse(shapes: Shape[]): Shape {
     if (shapes.length === 0) none();
-    let all = shapes[0];
-    for (const next of shapes.slice(1)) all = this.result(new this.oc.BRepAlgoAPI_Fuse(all, next, this.keep(new this.oc.Message_ProgressRange())));
-    return all;
+    return shapes.reduce((all, next) => this.combined(new this.oc.BRepAlgoAPI_Fuse(), all, next));
   }
 
   cut(from: Shape, cutters: Shape[]): Shape {
-    let left = from;
-    for (const cutter of cutters) left = this.result(new this.oc.BRepAlgoAPI_Cut(left, cutter, this.keep(new this.oc.Message_ProgressRange())));
-    return left;
+    return cutters.reduce((left, cutter) => this.combined(new this.oc.BRepAlgoAPI_Cut(), left, cutter), from);
+  }
+
+  /** What all of `shapes` hold in common. */
+  common(shapes: Shape[]): Shape {
+    if (shapes.length === 0) none();
+    return shapes.reduce((all, next) => this.combined(new this.oc.BRepAlgoAPI_Common(), all, next));
   }
 
   /** A flat shape in the XY plane at `z`, raised by `height`. */
@@ -372,7 +417,7 @@ class Builder {
     return this.result(new this.oc.BRepBuilderAPI_Transform(shape, move, true, false));
   }
 
-  // --- twists: an outline turned as it rises ----------------------------------------------------
+  // --- twists and threads: an outline turned as it rises ----------------------------------------
 
   /** Numbers as a list of the library's, which counts from one. */
   private reals(values: number[]): InstanceType<Oc['NCollection_Array1_double']> {
@@ -410,30 +455,50 @@ class Builder {
   }
 
   /**
-   * The face a span of an outline sweeps as it is turned on from `turn` and lifted on from `z` the way `way` says,
-   * by `height`: across it the span's own poles, up it those of the turn.
+   * The face a span sweeps as it is turned about the Z axis and lifted by `height` the way `way` says, from where
+   * its `poles` are: across it the span's own poles (the middle one of an arc weighing `weight`), up it those of the turn.
    */
-  private screwFace(span: Span, turn: number, z: number, way: Screw, height: number): Shape {
+  private screwFace(poles: Vec3[], weight: number | undefined, way: Screw, height: number): Shape {
     const { oc } = this;
-    const [across, up] = [span.poles.length, way.factors.length];
-    const [c, s] = [Math.cos(turn), Math.sin(turn)];
-    const poles = this.keep(new oc.NCollection_Array2_gp_Pnt(1, across, 1, up));
-    const weights = span.weight === undefined ? null : this.keep(new oc.NCollection_Array2_double(1, across, 1, up));
+    const [across, up] = [poles.length, way.factors.length];
+    const points = this.keep(new oc.NCollection_Array2_gp_Pnt(1, across, 1, up));
+    const weights = weight === undefined ? null : this.keep(new oc.NCollection_Array2_double(1, across, 1, up));
     // The list takes a copy of the point it is given, so one point serves for all of them.
     const at = this.point(0, 0, 0);
-    span.poles.forEach((p, i) => {
-      const [x, y] = [c * p[0] - s * p[1], s * p[0] + c * p[1]];
+    poles.forEach(([x, y, z], i) => {
       way.factors.forEach(([re, im], j) => {
         at.SetCoord(re * x - im * y, im * x + re * y, z + height * way.rises[j]);
-        poles.SetValue(i + 1, j + 1, at);
-        weights?.SetValue(i + 1, j + 1, i === 1 ? (span.weight ?? 1) : 1);
+        points.SetValue(i + 1, j + 1, at);
+        weights?.SetValue(i + 1, j + 1, i === 1 ? (weight ?? 1) : 1);
       });
     });
     const degree = across - 1;
     const [knots, mults] = [this.reals([0, 1]), this.wholes([across, across])];
     const [upKnots, upMults] = [this.reals(way.knots), this.wholes(way.mults)];
-    const surface = this.keep(weights ? new oc.Geom_BSplineSurface(poles, weights, knots, upKnots, mults, upMults, degree, 5, false, false) : new oc.Geom_BSplineSurface(poles, knots, upKnots, mults, upMults, degree, 5, false, false));
+    const surface = this.keep(weights ? new oc.Geom_BSplineSurface(points, weights, knots, upKnots, mults, upMults, degree, 5, false, false) : new oc.Geom_BSplineSurface(points, knots, upKnots, mults, upMults, degree, 5, false, false));
+    this.helical = true;
     return this.keep(this.done(new oc.BRepBuilderAPI_MakeFace(surface, 1e-9)).Face());
+  }
+
+  /**
+   * Faces sewn along the edges they share into the one closed skin of a solid, which has to hold `volume`: what
+   * the faces were made to enclose. No exact form when they do not close, or close on something else.
+   */
+  private sewn(faces: Shape[], volume: number): Shape {
+    const { oc } = this;
+    const sewing = this.keep(new oc.BRepBuilderAPI_Sewing(SEW, true, true, true, false));
+    for (const face of faces) sewing.Add(face);
+    sewing.Perform(this.keep(new oc.Message_ProgressRange()));
+    const all = this.keep(sewing.SewedShape());
+    // One closed skin, or it is no solid: an edge left without its neighbor, or faces that hang together in several pieces, which sew into as many skins.
+    if (sewing.NbFreeEdges() > 0 || all.ShapeType() !== oc.TopAbs_ShapeEnum.TopAbs_SHELL) none();
+    const shell = this.keep(oc.TopoDS.Shell(all));
+    if (!shell.Closed()) none();
+    const solid = this.keep(this.keep(new oc.BRepBuilderAPI_MakeSolid(shell)).Solid());
+    // Outside out, whichever way the sewing left it.
+    oc.BRepLib.OrientClosedSolid(solid);
+    if (!(Math.abs(volumeOf(oc, solid, this.keep, true) - volume) <= SCREW_SLACK * volume)) none();
+    return solid;
   }
 
   /**
@@ -447,11 +512,11 @@ class Builder {
    */
   twisted(shape: Shape2D, stages: { turn: number; height: number }[]): Shape {
     const { oc } = this;
-    // Every area of the shape as its closed runs of spans: its rim first, then its holes.
+    // Every area of the shape as its closed runs of spans: its rim first, then its holes. A shape of several areas side by side would sew into as many skins, and has no exact form.
     const outlines = regions(shape).map(({ rim, holes }) => [rim, ...holes].map((contour) => sides(contour).flatMap(spans)));
     if (outlines.length === 0) none();
     const reach = shape.reduce((far, contour) => contour.reduce((f, [x, y]) => Math.max(f, Math.hypot(x, y)), far), 0);
-    const sewing = this.keep(new oc.BRepBuilderAPI_Sewing(SEW, true, true, true, false));
+    const faces: Shape[] = [];
     let [turn, z] = [0, 0];
     /** The flat end where the shape now is. */
     const end = (): void => {
@@ -460,32 +525,63 @@ class Builder {
         const face = this.done(new oc.BRepBuilderAPI_MakeFace(rim, true));
         for (const hole of holes) face.Add(hole);
         if (!face.IsDone()) none();
-        sewing.Add(this.keep(face.Face()));
+        faces.push(this.keep(face.Face()));
       }
     };
     end();
     for (const stage of stages) {
       const way = screw(stage.turn, reach);
-      for (const loops of outlines) for (const loop of loops) for (const span of loop) sewing.Add(this.screwFace(span, turn, z, way, stage.height));
+      const [c, s] = [Math.cos(turn), Math.sin(turn)];
+      for (const loops of outlines) for (const loop of loops) for (const span of loop) faces.push(this.screwFace(span.poles.map(([x, y]): Vec3 => [c * x - s * y, s * x + c * y, z]), span.weight, way, stage.height));
       turn += stage.turn;
       z += stage.height;
     }
     end();
-    sewing.Perform(this.keep(new oc.Message_ProgressRange()));
-    const sewn = this.keep(sewing.SewedShape());
-    // One closed skin, or it is no solid: an edge left without its neighbor, or a shape of several areas side by side, which sews into as many skins.
-    if (sewing.NbFreeEdges() > 0 || sewn.ShapeType() !== oc.TopAbs_ShapeEnum.TopAbs_SHELL) none();
-    const shell = this.keep(oc.TopoDS.Shell(sewn));
-    if (!shell.Closed()) none();
-    const solid = this.keep(this.keep(new oc.BRepBuilderAPI_MakeSolid(shell)).Solid());
-    // Outside out, whichever way the sewing left it.
-    oc.BRepLib.OrientClosedSolid(solid);
-    // And it has to hold what its outline says: the outline's area over the whole height.
-    const props = this.keep(new oc.GProp_GProps());
-    oc.BRepGProp.VolumeProperties(solid, props, false, false, false);
+    // Turning an outline as it rises leaves its area as it was: the solid holds that area over the whole height.
     const area = outlines.reduce((sum, [rim, ...holes]) => sum + Math.abs(enclosed(rim)) - holes.reduce((inner, hole) => inner + Math.abs(enclosed(hole)), 0), 0);
-    if (!(Math.abs(props.Mass() - area * z) <= TWIST_SLACK * area * z)) none();
-    return solid;
+    return this.sewn(faces, area * z);
+  }
+
+  /**
+   * A thread before it is cut to length, from its description: its outline over one lead, in the half plane through
+   * the axis, carried up the helix a turn at a time. Every side of the outline sweeps a face in every turn; under
+   * the first turn and over the last the skin is closed by one turn of the helicoid a line from the axis to the
+   * root sweeps, and by the flat section through the axis the outline itself bounds.
+   *
+   * The generator makes the same thread of a core and a coiled ridge, which only facets can be joined of: fused of
+   * such solids the library's answer was wrong, and took it seven seconds. And a face that went round the axis
+   * thirty times is more than the operations that cut the thread to length can be trusted with: one that goes
+   * round once is not.
+   */
+  thread({ outline, lead, leftHanded, turns }: Thread): Shape {
+    const { oc } = this;
+    const reach = outline.reduce((far, [, r]) => Math.max(far, r), 0);
+    const root = outline.reduce((near, [, r]) => Math.min(near, r), reach);
+    const way = screw(leftHanded ? -2 * Math.PI : 2 * Math.PI, reach);
+    const [z0, r0] = outline[0];
+    const faces: Shape[] = [];
+    let perTurn = 0;
+    for (let i = 0; i + 1 < outline.length; i++) {
+      const [[za, ra], [zb, rb]] = [outline[i], outline[i + 1]];
+      // Two corners in one place bound no side.
+      if (Math.hypot(zb - za, rb - ra) < 1e-7) continue;
+      for (let turn = 0; turn < turns; turn++) faces.push(this.screwFace([[ra, 0, za + turn * lead], [rb, 0, zb + turn * lead]], undefined, way, lead));
+      // What this side sweeps in one turn about the axis: a slice of a cone.
+      perTurn += (Math.PI * (zb - za) * (ra * ra + ra * rb + rb * rb)) / 3;
+    }
+    for (const up of [0, turns * lead]) {
+      faces.push(this.screwFace([[0, 0, z0 + up], [r0, 0, z0 + up]], undefined, way, lead));
+      const corners: Vec3[] = [[0, 0, z0 + up], ...outline.map(([z, r]): Vec3 => [r, 0, z + up]), [0, 0, z0 + lead + up]];
+      const section = this.keep(new oc.BRepBuilderAPI_MakeWire());
+      corners.forEach((a, i) => {
+        const b = corners[(i + 1) % corners.length];
+        if (Math.hypot(b[0] - a[0], b[2] - a[2]) >= 1e-7) section.Add(this.done(new oc.BRepBuilderAPI_MakeEdge(this.point(...a), this.point(...b))).Edge());
+      });
+      if (!section.IsDone()) none();
+      faces.push(this.keep(this.done(new oc.BRepBuilderAPI_MakeFace(this.keep(section.Wire()), true)).Face()));
+    }
+    this.steepest = Math.max(this.steepest, lead / (Math.PI * (root + reach)));
+    return this.sewn(faces, turns * perTurn);
   }
 
   // --- sweeps: a pipe's section carried along its path ------------------------------------------
@@ -605,6 +701,8 @@ class Builder {
         // Only one that says what it was lofted from has another form than its triangles.
         return solid.swept ? this.swept(solid.swept) : none();
       case 'union': {
+        // A thread before it is cut to length: made from what it is, not from the core and the coils the kernel joins it of.
+        if (solid.thread) return this.thread(solid.thread);
         // A twisted extrusion under its mirror image is one outline raised in two stages, the second turning back.
         const half = mirroredOnTop(solid.children);
         if (half) {
@@ -613,12 +711,8 @@ class Builder {
         }
         return this.fuse(solid.children.map((c) => this.described(c)));
       }
-      case 'intersection': {
-        const [first, ...rest] = solid.children.map((c) => this.described(c));
-        let all = first ?? none();
-        for (const next of rest) all = this.result(new oc.BRepAlgoAPI_Common(all, next, this.keep(new oc.Message_ProgressRange())));
-        return all;
-      }
+      case 'intersection':
+        return this.common(solid.children.map((c) => this.described(c)));
       case 'difference': {
         const [first, ...rest] = solid.children.map((c) => this.described(c));
         return this.cut(first ?? none(), rest);
@@ -639,15 +733,40 @@ class Builder {
     }
   }
 
-  /** A part as its generator describes it, centered on its box and at the size it has been given: all three axes by the one factor, or not at all. */
+  /**
+   * A part as its generator describes it, centered on its box and at the size it has been given: all three axes by
+   * the one factor, or not at all. It is built once for a file: fifty bolts of one kind are one bolt to build (the
+   * thread of each takes most of a second), and each is then put in its place as a copy.
+   */
   part(node: PartNode): Shape {
     const def = getGenerator(node.part);
-    const built = def.build(sanitizeParams(def, node.params), QUALITY.fine);
-    const box = this.tools.partBox(node) ?? none();
-    const scale = node.size[0] / node.natural[0];
-    if (!node.size.every((s, i) => near(s / node.natural[i], scale))) none();
-    const center = [0, 1, 2].map((i) => (box.min[i] + box.max[i]) / 2);
-    return this.moved(this.tidy(this.described(built.solid)), [scale, 0, 0, 0, scale, 0, 0, 0, scale, -center[0] * scale, -center[1] * scale, -center[2] * scale]);
+    const params = sanitizeParams(def, node.params);
+    const key = JSON.stringify([node.part, params, node.natural, node.size, this.join]);
+    let built = this.parts.get(key);
+    if (built === undefined) {
+      // What this part is made of is told apart from what the builder has made before it.
+      const before = { helical: this.helical, steepest: this.steepest };
+      this.helical = false;
+      this.steepest = 0;
+      built = null;
+      try {
+        const box = this.tools.partBox(node) ?? none();
+        const scale = node.size[0] / node.natural[0];
+        if (!node.size.every((s, i) => near(s / node.natural[i], scale))) none();
+        const center = [0, 1, 2].map((i) => (box.min[i] + box.max[i]) / 2);
+        const shape = this.moved(this.tidy(this.described(def.build(params, QUALITY.fine).solid)), [scale, 0, 0, 0, scale, 0, 0, 0, scale, -center[0] * scale, -center[1] * scale, -center[2] * scale]);
+        built = { shape, helical: this.helical, steepest: this.steepest };
+      } finally {
+        // Kept even when it did not come off: the next one like it need not be tried.
+        this.parts.set(key, built);
+        this.helical = before.helical;
+        this.steepest = before.steepest;
+      }
+    }
+    if (!built) return none();
+    this.helical ||= built.helical;
+    this.steepest = Math.max(this.steepest, built.steepest);
+    return built.shape;
   }
 
   /**
@@ -809,14 +928,25 @@ class Builder {
 }
 
 /**
+ * The volume a shape holds. Where it has surfaces swept round a helix (`helical`) the library works it out to a
+ * part in a million by the rule that takes as many points as that needs: its plain rule lays so many on such a
+ * surface that a bolt takes it ten times as long, for the same digits.
+ */
+function volumeOf(oc: Oc, shape: Shape, keep: Keep, helical: boolean): number {
+  const props = keep(new oc.GProp_GProps());
+  if (helical) oc.BRepGProp.VolumeProperties(shape, props, 1e-6, false, false);
+  else oc.BRepGProp.VolumeProperties(shape, props, false, false, false);
+  return props.Mass();
+}
+
+/**
  * The volume and the box of a shape, to hold against the kernel's. The box is worked out from the
  * surfaces themselves; with `facets` it is that of fine facets laid over them instead, which is the
  * one to go by where the library's own is loose (it is for an oval turned round an axis, once the
  * shape is turned off the axes).
  */
-function measured(oc: Oc, shape: Shape, keep: Keep, facets = false): { volume: number; bounds: Bounds } {
-  const props = keep(new oc.GProp_GProps());
-  oc.BRepGProp.VolumeProperties(shape, props, false, false, false);
+function measured(oc: Oc, shape: Shape, keep: Keep, helical: boolean, facets = false): { volume: number; bounds: Bounds } {
+  const volume = volumeOf(oc, shape, keep, helical);
   const box = keep(new oc.Bnd_Box());
   if (facets) {
     keep(new oc.BRepMesh_IncrementalMesh(shape, 0.01, false, 0.1, false));
@@ -824,16 +954,26 @@ function measured(oc: Oc, shape: Shape, keep: Keep, facets = false): { volume: n
   } else oc.BRepBndLib.AddOptimal(shape, box, false, false);
   const min = keep(box.CornerMin());
   const max = keep(box.CornerMax());
-  return { volume: props.Mass(), bounds: { min: [min.X(), min.Y(), min.Z()], max: [max.X(), max.Y(), max.Z()] } };
+  return { volume, bounds: { min: [min.X(), min.Y(), min.Z()], max: [max.X(), max.Y(), max.Z()] } };
+}
+
+/** The area of the skin of a shape that holds a thread, to a part in a hundred thousand (by the rule `volumeOf` uses for such shapes). */
+function skin(oc: Oc, shape: Shape, keep: Keep): number {
+  const props = keep(new oc.GProp_GProps());
+  oc.BRepGProp.SurfaceProperties(shape, props, 1e-5, false);
+  return props.Mass();
 }
 
 /**
  * Whether a shape written to a STEP file of its own is read back with the
- * volume it should have. What the library holds in memory and what it writes
+ * volume it should have, and with a skin of `expect.area` to within `skinSlack`
+ * where one is given. What the library holds in memory and what it writes
  * are not always the same thing: an oval turned round an axis is right in
- * memory and comes back from the file as nothing, or as another shape.
+ * memory and comes back from the file as nothing, or as another shape; and
+ * a nut with a piece of thread too many measured otherwise in memory than it
+ * did once written. What is read back is what the file will hold.
  */
-function survives(oc: Oc, shape: Shape, volume: number, keep: Keep): boolean {
+function survives(oc: Oc, shape: Shape, expect: Expected, keep: Keep, helical: boolean, skinSlack: number | null): boolean {
   const path = '/exact-check.step';
   try {
     const writer = keep(new oc.STEPControl_Writer());
@@ -845,10 +985,10 @@ function survives(oc: Oc, shape: Shape, volume: number, keep: Keep): boolean {
     reader.TransferRoots(progress);
     const back = keep(reader.OneShape());
     if (back.IsNull()) return false;
-    const props = keep(new oc.GProp_GProps());
-    oc.BRepGProp.VolumeProperties(back, props, false, false, false);
-    return Math.abs(props.Mass() - volume) <= 0.005 * Math.abs(volume);
-  } catch {
+    if (!(Math.abs(volumeOf(oc, back, keep, helical) - expect.volume) <= 0.005 * Math.abs(expect.volume))) return false;
+    return skinSlack === null || Math.abs(skin(oc, back, keep) - expect.area) <= skinSlack * expect.area;
+  } catch (e) {
+    if (isTrap(e)) throw e;
     return false;
   } finally {
     try {
@@ -867,37 +1007,73 @@ function survives(oc: Oc, shape: Shape, volume: number, keep: Keep): boolean {
  */
 export const boxSlack = (bounds: Bounds): number => 0.05 + 0.0025 * Math.max(bounds.max[0] - bounds.min[0], bounds.max[1] - bounds.min[1], bounds.max[2] - bounds.min[2]);
 
+/** What the kernel's own solid of an object measures: what a rebuilt one is held against. */
+export interface Expected {
+  volume: number;
+  bounds: Bounds;
+  /** The area of its skin. */
+  area: number;
+}
+
+/**
+ * How far the area of the skin of a solid that holds a thread may be from that of the kernel's facets, as a part of it.
+ *
+ * Cutting a thread to length is where the library has been seen to give a wrong answer that looks right: before
+ * it was given its slack (see `FUZZY`), four nuts in a hundred and fifteen threaded parts kept a piece of thread
+ * they should have lost. All four were closed, found valid, and within the half percent of volume every solid is
+ * allowed (three 0.34% to 0.40% over, one 0.09%). The volume cannot tell such a solid from a right one: the
+ * kernel's own facets of a steep thread of many starts hold up to half a percent more than the true thread. The
+ * skin can, since a thread is thin ridges and a piece too many moves the skin more than the volume: read back from
+ * the file, the four were 1.3% to 1.4% and 0.19% off.
+ *
+ * What a right solid is off by is what the kernel's facets are, and that grows with how steep the thread is
+ * (`steepest`: its lead over the way round it at the middle of its depth): under 0.05% for screw threads (steep by
+ * 0.04 to 0.08), 0.2% at 0.25, 0.65% at 0.9. So a part is allowed a tenth of a percent, more by the square of its
+ * steepness over a tenth, and never more than one percent, which leaves the right ones at least half as much room
+ * again as the worst of them took, and three times that where threads are not steep. Anything that is not a part
+ * by itself (a group with a threaded hole in it) is allowed the one percent, whatever else it is made of.
+ */
+const skinSlack = (steepest: number, part: boolean): number => (part ? Math.min(0.01, 0.001 * (1 + (steepest / 0.1) ** 2)) : 0.01);
+
 /**
  * The node as a true solid, placed in the design; null when it has no exact
  * form, or when the form it was given does not match `expect`, the kernel's
  * own solid: its volume to within the difference between a curve and its
- * facets, its box to within `boxSlack`.
+ * facets, its box to within `boxSlack`, and where it holds a thread the
+ * skin it has in the file as well (see `skinSlack`). `parts` holds the parts built for the
+ * file so far, so that each kind is built once.
+ *
+ * A trap inside the library is passed on (see `forgetOcc` in occ.ts): what it
+ * was asked for next would not be worth having.
  */
-export function exactShape(oc: Oc, node: SceneNode, expect: { volume: number; bounds: Bounds }, tools: ExactTools, keep: Keep): Shape | null {
+export function exactShape(oc: Oc, node: SceneNode, expect: Expected, tools: ExactTools, keep: Keep, parts: PartCache = new Map()): Shape | null {
   // With its faces joined where they lie on one surface, and failing that as it was built: two round
   // pipes of one size that cross touch along a line, and joining faces there has been seen to lose one of them.
   for (const join of [true, false]) {
+    const builder = new Builder(oc, keep, tools, join, parts);
     let shape: Shape;
     try {
-      shape = new Builder(oc, keep, tools, join).placed(node);
-    } catch {
+      shape = builder.placed(node);
+    } catch (e) {
+      if (isTrap(e)) throw e;
       // No exact form, or OpenCascade gave up on it (it says so by an exception of its own).
       continue;
     }
     try {
-      let got = measured(oc, shape, keep);
+      let got = measured(oc, shape, keep, builder.helical);
       if (!(Math.abs(got.volume - expect.volume) <= 0.005 * expect.volume)) continue;
       // A round shape turned off the axes reaches a little further than its facets do, by more the larger it is.
       const slack = boxSlack(expect.bounds);
       const off = (): boolean => [0, 1, 2].some((i) => Math.abs(got.bounds.min[i] - expect.bounds.min[i]) > slack || Math.abs(got.bounds.max[i] - expect.bounds.max[i]) > slack);
       if (off()) {
-        got = measured(oc, shape, keep, true);
+        got = measured(oc, shape, keep, builder.helical, true);
         if (off()) continue;
       }
       // And it has to come out of a STEP file as it went in: a solid that is right here has been seen to be read back as another.
-      if (!survives(oc, shape, expect.volume, keep)) continue;
+      if (!survives(oc, shape, expect, keep, builder.helical, builder.steepest > 0 ? skinSlack(builder.steepest, node.type === 'part') : null)) continue;
       return shape;
-    } catch {
+    } catch (e) {
+      if (isTrap(e)) throw e;
       continue;
     }
   }

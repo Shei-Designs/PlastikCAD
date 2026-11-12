@@ -11,16 +11,21 @@ import { defaultParams, SHAPES } from '../geometry/shapes';
 import { makeGroup } from '../model/ops';
 import type { PartNode, SceneNode, ShapeNode } from '../model/types';
 import { getGenerator } from '../parts/generators';
-import { defaultParams as partDefaults } from '../parts/generators/types';
+import { defaultParams as partDefaults, sanitizeParams } from '../parts/generators/types';
+import { evaluate, initKernel as initParts } from '../parts/testing';
+import { QUALITY } from '../parts/types';
+import type { Solid } from '../parts/types';
 import { parseStep } from './importStep';
 import { boxSlack, exactShape } from './stepExact';
+import type { PartCache } from './stepExact';
 import { loadOcc } from './occ';
-import { writeStep } from './stepExport';
+import { measure, writeStep } from './stepExport';
 
 let oc: OpenCascadeInstance;
 
 beforeAll(async () => {
   await initKernel();
+  await initParts();
   oc = await loadOcc({ wasmBinary: readFileSync(fileURLToPath(new URL('../../node_modules/replicad-opencascadejs/dist/replicad_single.wasm', import.meta.url))) });
 }, 60_000);
 
@@ -120,6 +125,43 @@ function inspect(bytes: Uint8Array): { solids: number; valid: boolean; closed: b
   }
 }
 
+/**
+ * How far the corners of the kernel's finest facets of a node are from the skin of the solid rebuilt of it, at the
+ * worst of a hundred and fifty of them taken evenly through the mesh, in millimeters. The solid has to be one the
+ * library finds no fault in.
+ */
+function offSkin(node: SceneNode): number {
+  const fine = exportColored([node], true).objects[0].parts[0].mesh;
+  const made: { delete(): void }[] = [];
+  const keep = <T extends { delete(): void }>(o: T): T => {
+    made.push(o);
+    return o;
+  };
+  try {
+    const shape = exactShape(oc, node, measure(fine), { partBox }, keep);
+    if (!shape) throw new Error(`${node.name}: not rebuilt`);
+    expect(keep(new oc.BRepCheck_Analyzer(shape, true, false, false)).IsValid()).toBe(true);
+    const skin = keep(keep(new oc.TopExp_Explorer(shape, oc.TopAbs_ShapeEnum.TopAbs_SHELL, oc.TopAbs_ShapeEnum.TopAbs_SHAPE)).Current());
+    const corners = fine.positions.length / 3;
+    const picks = 150;
+    let worst = 0;
+    for (let k = 0; k < picks; k++) {
+      const i = Math.floor(((k + 0.5) / picks) * corners);
+      const corner = keep(keep(new oc.BRepBuilderAPI_MakeVertex(keep(new oc.gp_Pnt(fine.positions[i * 3], fine.positions[i * 3 + 1], fine.positions[i * 3 + 2])))).Vertex());
+      worst = Math.max(worst, keep(new oc.BRepExtrema_DistShapeShape(corner, skin)).Value());
+    }
+    return worst;
+  } finally {
+    for (const o of made.reverse()) {
+      try {
+        o.delete();
+      } catch {
+        // Already let go with what held it.
+      }
+    }
+  }
+}
+
 describe('the design as a STEP file', () => {
   const shapeNode = (kind: ShapeNode['shape'], over: Partial<ShapeNode> = {}): ShapeNode => {
     const def = SHAPES.find((s) => s.kind === kind)!;
@@ -211,24 +253,179 @@ describe('the design as a STEP file', () => {
     }, 120_000);
   }
 
-  it('writes a part from its description where that is profiles and round bores, and from its facets where it is threaded', () => {
+  it('writes a part from its description where that is profiles and round bores, and from its facets where it says nothing of its surfaces', () => {
     // A bearing seat: two bores, one on the other.
     expect(roundTrip(partNode('bearing-seat'))).toMatchObject({ exact: true, cylinders: 2 });
-    // A threaded nut: its thread is a coil of facets cut to length, which has no exact form.
-    expect(roundTrip(partNode('metric-nut')).exact).toBe(false);
+    // A bevel gear: its teeth are a mesh of lines to the apex of its cone, which has no exact form.
+    expect(roundTrip(partNode('bevel')).exact).toBe(false);
     // Flat profiles with round holes: a gear, a pulley, a motor mount, a panel cutout, a board.
     for (const id of ['spur', 'gt2-pulley', 'stepper-mount', 'servo-mount', 'panel-connector', 'raspberry-pi', 'extrusion']) expect(roundTrip(partNode(id)).exact, id).toBe(true);
   }, 120_000);
 
-  // A thread is a coil cut to length: its mesh has corners that are one place under two numbers by
-  // the thousand, triangles of no area between them, and a few whose corners lie in a line.
-  for (const id of ['metric-bolt', 'lead-screw', 'lead-screw-nut', 'worm']) {
-    it(`writes a ${id} as one closed solid of its facets, as the app exports it`, () => {
-      const written = roundTrip(partNode(id), true);
-      expect(written.exact).toBe(false);
-      expect(written.faces).toBeGreaterThan(1000);
+  describe('threads', () => {
+    // Each with the most faces it may have. A thread is a face for every side of its outline in every turn (four
+    // to a turn of a 60° thread: root, flank, crest, flank), where its facets are tens of thousands.
+    const threaded: [string, string, Record<string, number | string | boolean>, number][] = [
+      ['metric-bolt', 'at its defaults', {}, 150],
+      // Eighty turns and more.
+      ['metric-bolt', 'long and thin', { size: 'M3', length: 40 }, 320],
+      ['metric-bolt', 'left-handed, with a socket head', { hand: 'left', head: 'socket' }, 150],
+      ['metric-nut', 'at its defaults', {}, 50],
+      ['screw-hole', 'threaded', { kind: 'tapped' }, 90],
+      ['lead-screw', 'of four starts', {}, 200],
+      ['lead-screw-nut', 'at its defaults', {}, 80],
+      ['worm', 'at its defaults', {}, 50],
+      ['worm', 'of three starts', { module: 2, starts: 3, pitchDiameter: 24, length: 60 }, 80],
+      ['inch-bolt', 'at its defaults', {}, 150],
+      ['inch-nut', 'at its defaults', {}, 50],
+      ['inch-screw-hole', 'threaded', { kind: 'tapped' }, 60],
+    ];
+    for (const [id, what, params, most] of threaded) {
+      it(`writes the ${id} ${what} as one solid of smooth faces`, () => {
+        // As the app exports it: were it not rebuilt, the screen's facets would go out, and `exact` would say so.
+        const written = roundTrip(partNode(id, params), true);
+        expect(written.exact).toBe(true);
+        expect(written.solids).toBe(1);
+        expect(written.splines).toBeGreaterThanOrEqual(12);
+        expect(written.faces).toBeLessThanOrEqual(most);
+        expect(inspect(written.bytes)).toEqual({ solids: 1, valid: true, closed: true });
+      }, 120_000);
+    }
+
+    it('cuts a threaded hole into a block, the thread being the tool of the cut', () => {
+      const hole: PartNode = { ...partNode('screw-hole', { kind: 'tapped' }), pos: [2, 1, 0], rot: [0, 0, 0], hole: true };
+      const block: ShapeNode = { ...base, id: 'b', name: 'Block', type: 'shape', shape: 'box', params: defaultParams('box'), size: [20, 16, 14], pos: [0, 0, -2], rot: [0, 0, 0] };
+      const written = roundTrip(makeGroup([block, hole], { min: [-10, -8, -9], max: [10, 8, 5] }, 'Tapped block'), true);
+      expect(written.exact).toBe(true);
+      expect(written.solids).toBe(1);
+      // The block's six sides, the thread in the hole turn by turn, its floor and its lead-in.
+      expect(written.planes).toBe(7);
+      expect(written.splines).toBeGreaterThanOrEqual(12);
+      expect(written.faces).toBeLessThanOrEqual(90);
+      expect(inspect(written.bytes)).toEqual({ solids: 1, valid: true, closed: true });
     }, 120_000);
-  }
+
+    // The volume, the box and the skin's area cannot tell a thread from its mirror image, nor from itself half a
+    // pitch further up: the corners of the kernel's finest facets can, which lie on the skin of the true solid, or
+    // (where the kernel cut the thread to length, across its flat facets) as near it as the facets are to the curve.
+    for (const [id, params] of [['metric-bolt', {}], ['metric-nut', { hand: 'left' }], ['worm', {}]] as [string, Record<string, number | string | boolean>][]) {
+      it(`rebuilds the ${id} through the corners of the kernel's own`, () => {
+        // A hundredth of a millimeter: a thread of the other hand, or out of step, is off by a good part of its pitch.
+        expect(offSkin(partNode(id, params))).toBeLessThan(0.01);
+      }, 120_000);
+    }
+
+    it('holds a solid with a thread to the skin of the kernel\'s, more closely the less steep the thread', () => {
+      const made: { delete(): void }[] = [];
+      const keep = <T extends { delete(): void }>(o: T): T => {
+        made.push(o);
+        return o;
+      };
+      // Each part is built once for all the times it is asked for here, as it is for a file.
+      const parts: PartCache = new Map();
+      /** Whether the node is rebuilt when the kernel's mesh of it is said to have `more` times the skin it has. */
+      const taken = (node: SceneNode, more: number): boolean => {
+        const want = measure(exportColored([node], true).objects[0].parts[0].mesh);
+        return exactShape(oc, node, { ...want, area: want.area * more }, { partBox }, keep, parts) !== null;
+      };
+      try {
+        // A screw thread climbs little in a turn: a fifth of a percent of skin too much is not let through.
+        const nut = partNode('metric-nut');
+        expect(taken(nut, 1)).toBe(true);
+        expect(taken(nut, 1.002)).toBe(false);
+        // A lead screw of four starts climbs its own diameter in a turn, and the kernel's facets of it are that much
+        // further from the true thread: it is given more room, and not more than one percent.
+        const screw = partNode('lead-screw', { length: 20 });
+        expect(taken(screw, 1.004)).toBe(true);
+        expect(taken(screw, 1.02)).toBe(false);
+        // A group is given the one percent, whatever its thread: what else is in it has facets of its own.
+        const hole: PartNode = { ...partNode('screw-hole', { kind: 'tapped' }), pos: [0, 0, 0], rot: [0, 0, 0], hole: true };
+        const block: ShapeNode = { ...base, id: 'b', name: 'Block', type: 'shape', shape: 'box', params: defaultParams('box'), size: [12, 12, 14], pos: [0, 0, -2], rot: [0, 0, 0] };
+        const group = makeGroup([block, hole], { min: [-6, -6, -9], max: [6, 6, 5] }, 'Tapped block');
+        expect(taken(group, 1.004)).toBe(true);
+        expect(taken(group, 1.02)).toBe(false);
+      } finally {
+        for (const o of made.reverse()) {
+          try {
+            o.delete();
+          } catch {
+            // Already let go with what held it.
+          }
+        }
+      }
+    }, 120_000);
+
+    it('builds bolts of one kind once, and puts each in its place', () => {
+      const bolt = partNode('metric-bolt');
+      const bolts: PartNode[] = [
+        { ...bolt, id: 'a', pos: [0, 0, 0], rot: [0, 0, 0] },
+        { ...bolt, id: 'b', pos: [30, 5, 2], rot: [90, 0, 40] },
+        { ...bolt, id: 'c', pos: [-20, 40, 9], rot: [10, 20, 30], flip: [true, false, false] },
+        // Another kind: a longer one.
+        { ...partNode('metric-bolt', { length: 40 }), id: 'd', pos: [60, 0, 0], rot: [0, 0, 0] },
+      ];
+      const fine = exportColored(bolts, true);
+      const shown = exportColored(bolts, false);
+      let asked = 0;
+      const { bytes, warnings, exact } = writeStep(
+        oc,
+        fine.objects.map((o, i) => ({ name: `Bolt ${i + 1}`, color: o.parts[0].color, mesh: o.parts[0].mesh, facets: shown.objects[i].parts[0].mesh, node: bolts[i] })),
+        // The builder asks for a part's box when it builds it, and only then.
+        { partBox: (node) => (asked++, partBox(node)) },
+      );
+      expect(warnings).toEqual([]);
+      expect(exact).toBe(4);
+      expect(asked).toBe(2);
+      const back = parseStep(oc, bytes, 'bolts').parts;
+      expect(back).toHaveLength(4);
+      back.forEach((part, i) => {
+        const want = measure(fine.objects[i].parts[0].mesh);
+        expect(Math.abs(volume(part.mesh) - want.volume) / want.volume, `bolt ${i + 1}: volume`).toBeLessThan(5e-3);
+        const got = box([part.mesh]);
+        [...want.bounds.min, ...want.bounds.max].forEach((v, k) => expect(Math.abs(got[k] - v), `bolt ${i + 1}: box`).toBeLessThan(boxSlack(want.bounds)));
+      });
+    }, 120_000);
+
+    // The thread's description is for the STEP writer alone: the kernel builds what it built before there was one.
+    it('leaves the kernel\'s mesh of a threaded part as it was', () => {
+      // The finest mesh of each, as recorded before the description was added: its triangles, its corners, its volume.
+      const recorded: [string, Record<string, number | string | boolean>, number, number, number][] = [
+        ['metric-bolt', {}, 54596, 27300, 1914.254308926321],
+        ['metric-bolt', { hand: 'left', head: 'socket' }, 55574, 27789, 2053.747938904587],
+        ['metric-nut', {}, 14990, 7495, 659.5703491029725],
+        ['screw-hole', { kind: 'tapped' }, 35250, 17627, 74.7932335976877],
+        ['inch-bolt', {}, 51772, 25888, 1085.2851572344787],
+        ['inch-nut', {}, 12336, 6168, 421.6226887045425],
+        ['inch-screw-hole', { kind: 'tapped' }, 18098, 9051, 283.99543556772164],
+        ['lead-screw', {}, 68678, 34341, 2078.9516745758183],
+        ['lead-screw-nut', {}, 21870, 10927, 1406.3766509891796],
+        ['worm', {}, 22272, 11136, 1711.7123625111028],
+        ['worm', { starts: 3, module: 2, pitchDiameter: 24, length: 60 }, 41008, 20504, 24985.366270414346],
+        // Its teeth are cut with a thread that is given no description: its mesh is as it was all the same.
+        ['worm-wheel', {}, 34504, 17192, 7641.740090818767],
+      ];
+      for (const [id, params, triangles, corners, holds] of recorded) {
+        const mesh = exportColored([partNode(id, params)], true).objects[0].parts[0].mesh;
+        expect(mesh.triangles.length / 3, id).toBe(triangles);
+        expect(mesh.positions.length / 3, id).toBe(corners);
+        expect(volume(mesh), id).toBeCloseTo(holds, 4);
+      }
+      // And with the description taken out again, the kernel builds the same mesh to the last bit.
+      const bare = (solid: Solid): Solid => {
+        if (solid.op === 'union') return { op: 'union', children: solid.children.map(bare) };
+        if ('children' in solid) return { ...solid, children: solid.children.map(bare) };
+        return 'child' in solid ? { ...solid, child: bare(solid.child) } : solid;
+      };
+      for (const id of ['metric-bolt', 'lead-screw']) {
+        const def = getGenerator(id);
+        const { solid } = def.build(sanitizeParams(def, partDefaults(def)), QUALITY.fine);
+        expect(JSON.stringify(solid), id).toContain('"thread"');
+        const [with_, without] = [evaluate(solid).mesh, evaluate(bare(solid)).mesh];
+        expect(Buffer.from(with_.positions.buffer).equals(Buffer.from(without.positions.buffer)), id).toBe(true);
+        expect(Buffer.from(with_.triangles.buffer).equals(Buffer.from(without.triangles.buffer)), id).toBe(true);
+      }
+    }, 120_000);
+  });
 
   describe('gears with teeth that wind', () => {
     // Each with the number of its teeth. A tooth is some seventeen faces up each stage of the gear, as the tracer reads
@@ -264,38 +461,8 @@ describe('the design as a STEP file', () => {
     ];
     for (const [id, what, params] of wound) {
       it(`rebuilds a ${id} gear ${what} through the corners of the kernel's own`, () => {
-        const node = partNode(id, params);
-        const fine = exportColored([node], true).objects[0].parts[0].mesh;
-        const [x0, y0, z0, x1, y1, z1] = box([fine]);
-        const made: { delete(): void }[] = [];
-        const keep = <T extends { delete(): void }>(o: T): T => {
-          made.push(o);
-          return o;
-        };
-        try {
-          const shape = exactShape(oc, node, { volume: volume(fine), bounds: { min: [x0, y0, z0], max: [x1, y1, z1] } }, { partBox }, keep);
-          if (!shape) throw new Error(`${id}: not rebuilt`);
-          expect(keep(new oc.BRepCheck_Analyzer(shape, true, false, false)).IsValid()).toBe(true);
-          const skin = keep(keep(new oc.TopExp_Explorer(shape, oc.TopAbs_ShapeEnum.TopAbs_SHELL, oc.TopAbs_ShapeEnum.TopAbs_SHAPE)).Current());
-          const corners = fine.positions.length / 3;
-          const picks = 150;
-          let worst = 0;
-          for (let k = 0; k < picks; k++) {
-            const i = Math.floor(((k + 0.5) / picks) * corners);
-            const corner = keep(keep(new oc.BRepBuilderAPI_MakeVertex(keep(new oc.gp_Pnt(fine.positions[i * 3], fine.positions[i * 3 + 1], fine.positions[i * 3 + 2])))).Vertex());
-            worst = Math.max(worst, keep(new oc.BRepExtrema_DistShapeShape(corner, skin)).Value());
-          }
-          // A hundredth of a millimeter: five times what the tracer lets a corner stand off the arc it reads it on.
-          expect(worst).toBeLessThan(0.01);
-        } finally {
-          for (const o of made.reverse()) {
-            try {
-              o.delete();
-            } catch {
-              // Already let go with what held it.
-            }
-          }
-        }
+        // A hundredth of a millimeter: five times what the tracer lets a corner stand off the arc it reads it on.
+        expect(offSkin(partNode(id, params))).toBeLessThan(0.01);
       }, 120_000);
     }
   });
