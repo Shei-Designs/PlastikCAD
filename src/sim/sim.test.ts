@@ -236,12 +236,16 @@ describe('the arm', () => {
   });
 });
 
+/** How high the base link's frame is in the design, in meters: the middle of the base object. */
+const bodyHeight = (doc: Doc): number => doc.scene.find((n) => n.id === doc.robot!.root)!.pos[2] / 1000;
+
 describe('the quadruped', () => {
   it('stands on its feet', () => {
-    const { sim, base } = simulate(make('quadruped'));
+    const doc = make('quadruped');
+    const { sim, base } = simulate(doc);
     sim.step(2);
-    // The base's frame sits on the floor under the body; it stays there as long as the legs hold.
-    expect(Math.abs(position(sim, base)[2])).toBeLessThan(0.01);
+    // The base's frame is in the body, as high as the design has it; it stays there as long as the legs hold.
+    expect(Math.abs(position(sim, base)[2] - bodyHeight(doc))).toBeLessThan(0.01);
     for (const leg of ['front_left', 'rear_right']) expect(Math.abs(sim.jointValue(`Knee_${leg}`))).toBeLessThan(0.2);
     sim.dispose();
   });
@@ -254,12 +258,12 @@ describe('the quadruped', () => {
     const i = sim.bodies.indexOf(base);
     const p = sim.poses();
     const [w, x, y, z] = [p[7 * i + 3], p[7 * i + 4], p[7 * i + 5], p[7 * i + 6]];
-    // The body's own up against the floor's, which is tilted 0.14 rad about X: upright on it, and the base's frame still on the floor under the body.
+    // The body's own up against the floor's, which is tilted 0.14 rad about X: upright on it, and the base's frame still as far from the floor as the design has it.
     const up = [2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y)];
     const normal = [0, -Math.sin(0.14), Math.cos(0.14)];
     expect(up[0] * normal[0] + up[1] * normal[1] + up[2] * normal[2]).toBeGreaterThan(0.99);
     const [px, py, pz] = position(sim, base);
-    expect(Math.abs(px * normal[0] + py * normal[1] + pz * normal[2])).toBeLessThan(0.01);
+    expect(Math.abs(px * normal[0] + py * normal[1] + pz * normal[2] - bodyHeight(doc))).toBeLessThan(0.01);
     for (const leg of ['front_left', 'rear_right']) expect(Math.abs(sim.jointValue(`Knee_${leg}`))).toBeLessThan(0.2);
     sim.dispose();
   });

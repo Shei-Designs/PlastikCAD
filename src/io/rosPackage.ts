@@ -156,6 +156,8 @@ export const SHARE_PLACEHOLDER = '__PACKAGE_SHARE__';
 export interface GazeboLaunchNeeds {
   /** Controllers to spawn after the robot, in order (ros2_control). */
   controllers: string[];
+  /** How far above the floor the robot's root frame is (m): it is spawned that high, and a little more to settle from. */
+  height?: number;
 }
 
 /** Gazebo through ros_gz: the package's world, the robot spawned into it, the bridge, and any controllers. */
@@ -211,7 +213,7 @@ def generate_launch_description():
         Node(
             package='ros_gz_sim',
             executable='create',
-            arguments=['-name', '${name}', '-topic', 'robot_description', '-z', '0.05'],
+            arguments=['-name', '${name}', '-topic', 'robot_description', '-z', '${fmt((needs.height ?? 0) + 0.05, 6)}'],
         ),
         Node(
             package='ros_gz_bridge',

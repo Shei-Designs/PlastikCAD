@@ -48,10 +48,10 @@ export interface UrdfExtras {
    * so one file serves RViz alone, Gazebo, and a real robot.
    */
   xacro?: { package: string };
-  /** The base link's name when the robot is bolted to the world: a `world` link and a fixed joint hold it there. */
-  fixedToWorld?: string;
-  /** A root link facing the robot's forward along +X, as ROS expects, over the base link, which is turned by `turn` radians about Z in it. */
-  footprint?: { name: string; joint: string; base: string; turn: number };
+  /** The base link when the robot is bolted to the world, and where its frame is there (m): a `world` link and a fixed joint hold it. */
+  fixedToWorld?: { link: string; at: Vec3 };
+  /** A root link facing the robot's forward along +X, as ROS expects, on the floor `height` m under the base link, which is turned by `turn` radians about Z in it. */
+  footprint?: { name: string; joint: string; base: string; turn: number; height: number };
 }
 
 export interface UrdfJoint {
@@ -150,8 +150,8 @@ export function writeUrdf(name: string, links: UrdfLink[], joints: UrdfJoint[], 
   const fp = extras.footprint;
   if (fp) body.unshift(`  <link name="${escapeXml(fp.name)}"/>`);
   const jointLines = [
-    ...(extras.fixedToWorld ? [`  <joint name="${WORLD_JOINT}" type="fixed">\n    <parent link="${WORLD_LINK}"/>\n    <child link="${escapeXml(extras.fixedToWorld)}"/>\n  </joint>`] : []),
-    ...(fp ? [`  <joint name="${escapeXml(fp.joint)}" type="fixed">\n    <parent link="${escapeXml(fp.name)}"/>\n    <child link="${escapeXml(fp.base)}"/>\n    <origin xyz="0 0 0" rpy="0 0 ${fmt(fp.turn, 6)}"/>\n  </joint>`] : []),
+    ...(extras.fixedToWorld ? [`  <joint name="${WORLD_JOINT}" type="fixed">\n    <parent link="${WORLD_LINK}"/>\n    <child link="${escapeXml(extras.fixedToWorld.link)}"/>\n    <origin xyz="${vec(extras.fixedToWorld.at)}" rpy="0 0 0"/>\n  </joint>`] : []),
+    ...(fp ? [`  <joint name="${escapeXml(fp.joint)}" type="fixed">\n    <parent link="${escapeXml(fp.name)}"/>\n    <child link="${escapeXml(fp.base)}"/>\n    <origin xyz="0 0 ${fmt(fp.height, 6)}" rpy="0 0 ${fmt(fp.turn, 6)}"/>\n  </joint>`] : []),
     ...joints.map(jointXml),
   ];
   const head = [...materials].map(([n, rgba]) => `  <material name="${n}">\n    <color rgba="${rgba}"/>\n  </material>`);

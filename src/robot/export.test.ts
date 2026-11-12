@@ -233,6 +233,52 @@ describe('a center of mass and an inertia typed for a weighed link', () => {
   });
 });
 
+describe("the base link's frame", () => {
+  const files = (d: Doc, geo = new Map(linkNodes(d.scene).map((n) => [n.id, boxGeometry(n)]))) => {
+    const pkg = buildRobotPackage(d, geo);
+    const file = (name: string) => text(pkg.files.find((f) => f.name === name)!.bytes);
+    return { urdf: file('urdf/test_rover.urdf'), launch: file('launch/gazebo.launch.py'), mjcf: text(buildMjcfModel(d, geo).files.find((f) => f.name === 'test_rover.xml')!.bytes), sdf: text(buildSdfModel(d, geo).files.find((f) => f.name === 'model.sdf')!.bytes) };
+  };
+  const moved = (d: Doc, by: [number, number, number]): Doc => ({ ...d, scene: d.scene.map((n) => ({ ...n, pos: [n.pos[0] + by[0], n.pos[1] + by[1], n.pos[2] + by[2]] as [number, number, number] })) });
+  const free = (): Doc => {
+    const d = doc();
+    d.robot!.base = 'free';
+    return d;
+  };
+
+  it('is at the base object, so the robot is the same wherever in the design it was built', () => {
+    const here = files(free());
+    const there = files(moved(free(), [300, -200, 0]));
+    expect(there.urdf).toBe(here.urdf);
+    // Its meshes are written from the body's middle: the body is 20 mm tall, so they reach 10 mm either way.
+    const obj = text(buildRobotPackage(moved(free(), [300, -200, 0]), new Map(linkNodes(moved(free(), [300, -200, 0]).scene).map((n) => [n.id, boxGeometry(n)]))).files.find((f) => f.name === 'meshes/visual/Body.obj')!.bytes);
+    expect(obj).toContain('v -0.05 -0.03 -0.01');
+    // In a simulator's world it stands where the design had it.
+    expect(there.mjcf).toMatch(/<body name="Body" pos="0.3 -0.2 0.01">\s*<freejoint name="root"\/>/);
+    expect(there.mjcf).toMatch(/<key name="home" qpos="0.3 -0.2 0.01 1 0 0 0 0 0"\/>/);
+    expect(there.sdf).toMatch(/<link name="Body">\s*<pose>0.3 -0.2 0.01 0 0 0<\/pose>/);
+  });
+
+  it('is spawned as high as the design has it, and a fixed base is held there', () => {
+    // Free, with no drive and so no footprint: the body's middle is 10 mm up, and it settles from 50 mm more.
+    expect(files(free()).launch).toContain("'-z', '0.06'");
+    // Bolted down, the world holds the base where it is in the design.
+    const fixed = files(moved(doc(), [300, -200, 0]));
+    expect(fixed.urdf).toMatch(/<joint name="world_joint" type="fixed">\s*<parent link="world"\/>\s*<child link="Body"\/>\s*<origin xyz="0.3 -0.2 0.01" rpy="0 0 0"\/>/);
+    expect(fixed.launch).toContain("'-z', '0.05'");
+    expect(fixed.mjcf).toContain('<body name="Body" pos="0.3 -0.2 0.01">');
+  });
+
+  it("is at the origin of the base object's file when it keeps one", () => {
+    const d = free();
+    // The body as an imported mesh whose file measured it from its underside.
+    d.scene = d.scene.map((n) => (n.id === body.id ? ({ id: n.id, name: n.name, type: 'import', asset: 'mesh-1', natural: n.size, origin: [0, 0, -10], pos: n.pos, rot: n.rot, size: n.size, hole: false, color: n.color } as SceneNode) : n));
+    const geo = new Map(d.scene.map((n) => [n.id, boxGeometry(n)]));
+    expect(files(d, geo).urdf).toMatch(/<joint name="left_wheel_joint" type="continuous">\s*<parent link="Body"\/>\s*<child link="Left_wheel"\/>\s*<origin xyz="0 0.036 0.01" rpy="0 0 0"\/>/);
+    expect(files(d, geo).launch).toContain("'-z', '0.05'");
+  });
+});
+
 describe('buildRobotPackage', () => {
   it('writes a package with the URDF, meshes and launch files, in meters and SI', () => {
     const pkg = buildRobotPackage(doc(), geometry());
@@ -250,9 +296,9 @@ describe('buildRobotPackage', () => {
     // The body (100 × 60 × 20 mm of PLA at 20% infill with a 1.2 mm shell) weighs what the estimate says, in kg.
     const bodyMass = 0.00124 * (2 * (6000 + 2000 + 1200) * 1.2 + 0.2 * (120000 - 2 * (6000 + 2000 + 1200) * 1.2)) / 1000;
     expect(urdf).toContain(`<mass value="${Number(bodyMass.toFixed(9))}"/>`);
-    // The wheel weighs 50 g, hangs 36 mm out along Y at 10 mm up, and its mesh is written in its own frame: its center is 4 mm further out.
+    // The wheel weighs 50 g, hangs 36 mm out along Y level with the body's middle, where the base frame is, and its mesh is written in its own frame: its center is 4 mm further out.
     expect(urdf).toContain('<mass value="0.05"/>');
-    expect(urdf).toMatch(/<joint name="left_wheel_joint" type="continuous">\s*<parent link="Body"\/>\s*<child link="Left_wheel"\/>\s*<origin xyz="0 0.036 0.01" rpy="0 0 0"\/>\s*<axis xyz="0 1 0"\/>\s*<limit effort="2" velocity="12.566371"\/>/);
+    expect(urdf).toMatch(/<joint name="left_wheel_joint" type="continuous">\s*<parent link="Body"\/>\s*<child link="Left_wheel"\/>\s*<origin xyz="0 0.036 0" rpy="0 0 0"\/>\s*<axis xyz="0 1 0"\/>\s*<limit effort="2" velocity="12.566371"\/>/);
     expect(urdf).toContain('<origin xyz="0 0.004 0" rpy="0 0 0"/>');
     // Revolute limits in radians.
     expect(urdf).toMatch(/<limit lower="-1.570796" upper="1.570796" effort="10" velocity="1.570796"\/>/);
@@ -392,11 +438,11 @@ describe('sensors, drive and control', () => {
     expect(names).toEqual(expect.arrayContaining(['worlds/test_rover.sdf', 'config/bridge.yaml']));
     expect(names).not.toContain('config/controllers.yaml');
     const urdf = text(pkg.files.find((f) => f.name === 'urdf/test_rover.urdf')!.bytes);
-    // The camera's frame hangs from the body by a fixed joint, 50 mm forward of the body's center (which is 10 mm up), with an optical frame under it.
-    expect(urdf).toMatch(/<joint name="front_cam_joint" type="fixed">\s*<parent link="Body"\/>\s*<child link="front_cam_link"\/>\s*<origin xyz="0.05 0 0.02" rpy="0 0 0"\/>/);
+    // The camera's frame hangs from the body by a fixed joint, 50 mm forward of the body's center and 10 mm above it, with an optical frame under it.
+    expect(urdf).toMatch(/<joint name="front_cam_joint" type="fixed">\s*<parent link="Body"\/>\s*<child link="front_cam_link"\/>\s*<origin xyz="0.05 0 0.01" rpy="0 0 0"\/>/);
     expect(urdf).toMatch(/<joint name="front_cam_optical_joint" type="fixed">[\s\S]*?rpy="-1.570796 0 -1.570796"/);
     // The lidar's frame is turned a quarter about Z.
-    expect(urdf).toMatch(/<child link="top_lidar_link"\/>\s*<origin xyz="0 0 0.02" rpy="0 0 1.570796"\/>/);
+    expect(urdf).toMatch(/<child link="top_lidar_link"\/>\s*<origin xyz="0 0 0.01" rpy="0 0 1.570796"\/>/);
     // Each sensor's Gazebo block sits in its own frame.
     expect(urdf).toMatch(/<gazebo reference="front_cam_link">\s*<sensor name="front_cam" type="camera">[\s\S]*?<topic>front_cam\/image<\/topic>[\s\S]*?<horizontal_fov>1.396263<\/horizontal_fov>/);
     expect(urdf).toMatch(/<sensor name="top_lidar" type="gpu_lidar">[\s\S]*?<samples>360<\/samples>[\s\S]*?<min>0.1<\/min><max>12<\/max>/);
@@ -454,7 +500,7 @@ describe('sensors, drive and control', () => {
     // The shoulder lies on the loop, so its mimic is dropped: the loop closes for real.
     expect(sdf).not.toContain('<mimic');
     // Sensors sit in the body at their own pose.
-    expect(sdf).toMatch(/<sensor name="front_cam" type="camera">\s*<pose>0.05 0 0.02 0 0 0<\/pose>/);
+    expect(sdf).toMatch(/<sensor name="front_cam" type="camera">\s*<pose>0.05 0 0.01 0 0 0<\/pose>/);
     expect(sdf).toContain('<gz_frame_id>Body</gz_frame_id>');
     expect(sdf).toContain('gz-sim-diff-drive-system');
     const world = text(model.files.find((f) => f.name === 'worlds/test_rover.sdf')!.bytes);
@@ -474,8 +520,8 @@ describe('Isaac Sim stage', () => {
     for (const link of ['Body', 'Left_wheel', 'Arm_upper']) expect(usda).toContain(`def Xform "${link}" (`);
     // The wheel joint sits where the design has it, in meters; the shoulder holds a position, the wheels run at a speed.
     expect(usda).toContain('def PhysicsRevoluteJoint "left_wheel_joint"');
-    // The wheel joint sits 4 mm inboard of the wheel's center (y 40, z 10), in the body's frame at the origin.
-    expect(usda).toMatch(/def PhysicsRevoluteJoint "left_wheel_joint"[\s\S]*?point3f physics:localPos0 = \(0, 0.036, 0.01\)/);
+    // The wheel joint sits 4 mm inboard of the wheel's center (y 40, z 10), in the body's frame at its middle (z 10).
+    expect(usda).toMatch(/def PhysicsRevoluteJoint "left_wheel_joint"[\s\S]*?point3f physics:localPos0 = \(0, 0.036, 0\)/);
     // The shoulder's servo: 10 N·m a tenth of a radian off is 100 N·m/rad, 1.745 N·m a degree as USD Physics counts it.
     expect(usda).toMatch(/def PhysicsRevoluteJoint "shoulder"[\s\S]*?float physics:lowerLimit = -90[\s\S]*?float physics:upperLimit = 90[\s\S]*?float drive:angular:physics:stiffness = 1\.7453/);
     expect(usda).toContain('def Camera "front_cam"');
@@ -560,15 +606,15 @@ describe('xacro and MuJoCo', () => {
     const names = model.files.map((f) => f.name);
     expect(names).toEqual(expect.arrayContaining(['test_rover.xml', 'README.md', 'meshes/visual/Body.obj', 'meshes/collision/Body.stl']));
     const xml = text(model.files.find((f) => f.name === 'test_rover.xml')!.bytes);
-    expect(xml).toMatch(/<site name="scan_ray0" pos="0 0 0.02" zaxis="-1 0 0" size="0.002"/);
+    expect(xml).toMatch(/<site name="scan_ray0" pos="0 0 0.01" zaxis="-1 0 0" size="0.002"/);
     expect(xml.match(/<rangefinder /g)).toHaveLength(90);
     expect(xml).toContain('<rangefinder name="scan_89" site="scan_ray89" cutoff="12"/>');
     expect(xml).toContain('<mujoco model="Test_Rover">');
     expect(xml).toContain('<compiler angle="radian" meshdir="meshes" autolimits="true"/>');
     expect(xml).toContain('<mesh name="visual_Body_obj" file="visual/Body.obj"/>');
-    // The base floats (there is a drive); the wheel hangs from it 36 mm out with a hinge about Y, no range; the arm's shoulder has one in radians.
-    expect(xml).toMatch(/<body name="Body" pos="0 0 0">\s*<freejoint name="root"\/>/);
-    expect(xml).toMatch(/<body name="Left_wheel" pos="0 0.036 0.01">\s*<joint name="left_wheel_joint" type="hinge" axis="0 1 0" damping="0.001" frictionloss="0"\/>/);
+    // The base floats (there is a drive), its frame at the body's middle, 10 mm up; the wheel hangs from it 36 mm out with a hinge about Y, no range; the arm's shoulder has one in radians.
+    expect(xml).toMatch(/<body name="Body" pos="0 0 0.01">\s*<freejoint name="root"\/>/);
+    expect(xml).toMatch(/<body name="Left_wheel" pos="0 0.036 0">\s*<joint name="left_wheel_joint" type="hinge" axis="0 1 0" damping="0.001" frictionloss="0"\/>/);
     expect(xml).toMatch(/<joint name="shoulder" type="hinge" axis="0 1 0" range="-1.570796 1.570796" limited="true"/);
     expect(xml).toMatch(/<inertial pos="0 0.004 0" mass="0.05" fullinertia="/);
     expect(xml).toContain('<geom type="mesh" mesh="visual_Body_obj" class="visual" material="color_ff8800"/>');
@@ -582,14 +628,14 @@ describe('xacro and MuJoCo', () => {
     // The loop: arm and wheel pinned at the closing joint, given in the arm's frame (the wheel's center, 40 mm out and 10 down from the shoulder).
     expect(xml).toContain('<connect body1="Arm_upper" body2="Left_wheel" anchor="0 0.04 -0.01"/>');
     // The camera 50 mm forward of the body's center, the IMU a site with a gyro and an accelerometer.
-    expect(xml).toMatch(/<camera name="cam" pos="0.05 0 0.02" quat="0.5 0.5 -0.5 -0.5" fovy="/);
-    expect(xml).toContain('<site name="imu" pos="0 0 0.01"');
+    expect(xml).toMatch(/<camera name="cam" pos="0.05 0 0.01" quat="0.5 0.5 -0.5 -0.5" fovy="/);
+    expect(xml).toContain('<site name="imu" pos="0 0 0"');
     expect(xml).toContain('<gyro name="imu_gyro" site="imu"/>');
     // For a controller: every joint's position and velocity, the free base's orientation, turn rate and velocity, the home pose, and what a foot feels.
     expect(xml).toContain('<jointpos name="left_wheel_joint_pos" joint="left_wheel_joint"/>');
     expect(xml).toContain('<jointvel name="shoulder_vel" joint="shoulder"/>');
     expect(xml).toMatch(/<framequat name="base_quat" objtype="site" objname="base_site"\/>\s*<gyro name="base_gyro" site="base_site"\/>\s*<velocimeter name="base_vel" site="base_site"\/>/);
-    expect(xml).toMatch(/<key name="home" qpos="0 0 0 1 0 0 0 0 0"\/>/);
+    expect(xml).toMatch(/<key name="home" qpos="0 0 0.01 1 0 0 0 0 0"\/>/);
     const touchy = buildMjcfModel(rover(), geometry());
     const txml = text(touchy.files.find((f) => f.name === 'test_rover.xml')!.bytes);
     // The touch sphere reaches half the wheel's diagonal: the whole tread face it sits on.
@@ -638,12 +684,13 @@ describe('the footprint ROS expects', () => {
     const geo = new Map(linkNodes(d.scene).map((n) => [n.id, boxGeometry(n)]));
     return { urdf: text(buildRobotPackage(d, geo).files.find((f) => f.name.endsWith('.urdf'))!.bytes), sdf: text(buildSdfModel(d, geo).files.find((f) => f.name === 'model.sdf')!.bytes) };
   };
-  it('puts a base_footprint facing +X over a rover built facing +Y', () => {
+  it('puts a base_footprint facing +X on the floor under a rover built facing +Y', () => {
+    // The rover's body, and so its base frame, is 80 mm up.
     const { urdf, sdf } = build('rover');
     expect(urdf).toContain('<link name="base_footprint"/>');
-    expect(urdf).toMatch(/<joint name="base_footprint_joint" type="fixed">\s*<parent link="base_footprint"\/>\s*<child link="Body"\/>\s*<origin xyz="0 0 0" rpy="0 0 -1.570796"\/>/);
+    expect(urdf).toMatch(/<joint name="base_footprint_joint" type="fixed">\s*<parent link="base_footprint"\/>\s*<child link="Body"\/>\s*<origin xyz="0 0 0.08" rpy="0 0 -1.570796"\/>/);
     expect(urdf).toContain('<child_frame_id>base_footprint</child_frame_id>');
-    expect(sdf).toContain('<frame name="base_footprint" attached_to="Body"><pose>0 0 0 0 0 1.570796</pose></frame>');
+    expect(sdf).toContain('<frame name="base_footprint" attached_to="Body"><pose>0 0 -0.08 0 0 1.570796</pose></frame>');
     expect(sdf).toContain('<child_frame_id>base_footprint</child_frame_id>');
   });
   it('leaves an arm bolted down alone', () => {

@@ -4,7 +4,7 @@
 // in, files go out.
 import { plural, tr } from '../i18n';
 import type { MeshData } from '../geometry/mesh';
-import { boundsCenter, boundsSize, eulerOf, multiply, rotation, unionBounds } from '../model/math';
+import { boundsCenter, boundsSize, eulerOf, multiply, ownOrigin, rotation, unionBounds } from '../model/math';
 import type { Doc, SceneNode, Vec3 } from '../model/types';
 import { encodeText } from '../io/format';
 import { driveXml, jointStateXml, sensorTopic, sensorXml, worldXml } from '../io/gazebo';
@@ -154,10 +154,12 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
   const linkNames = uniqueNames(tree.order, (id) => urdfName(linkOf(robot, id).name ?? nodeById.get(id)!.name), names, naming.link);
   const allJoints = [...tree.order.slice(1).map((id) => tree.parentJoint.get(id)!), ...tree.loops];
   const jointNames = uniqueNames(allJoints, (j) => urdfName(j.name, 'joint'), names, naming.joint);
-  // Each joint as it sits in the design, and where each link's frame is there (mm).
+  // Each joint as it sits in the design, and where each link's frame is there (mm). The base link's frame is at
+  // the base object's own origin, wherever in the design the robot was built: what reads the robot's
+  // kinematics takes the base frame for the body, not for a point on the floor.
   const placedJoints = new Map(allJoints.map((j) => [j.id, jointInDesign(j, nodeById.get(j.child)!)]));
   const frames = new Map<string, Vec3>();
-  for (const id of tree.order) frames.set(id, id === robot.root ? [0, 0, 0] : placedJoints.get(tree.parentJoint.get(id)!.id)!.origin);
+  for (const id of tree.order) frames.set(id, id === robot.root ? ownOrigin(nodeById.get(id)!) : placedJoints.get(tree.parentJoint.get(id)!.id)!.origin);
 
   const files: PackageFile[] = [];
   const links: Prepared['links'] = [];
@@ -316,15 +318,16 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
 
 /**
  * ROS expects a robot's base frame to face +X. A driven robot gets a root frame that does,
- * `base_footprint`, over the base link, which keeps the design's axes and is turned by `turn`
+ * `base_footprint`, on the floor under the base link, which keeps the design's axes and is turned by `turn`
  * radians about Z in it. Nothing for an arm bolted down, or a robot without wheels to say.
  */
-function footprintOf(p: Prepared, robot: Robot): { name: string; joint: string; base: string; turn: number } | undefined {
+function footprintOf(p: Prepared, robot: Robot): { name: string; joint: string; base: string; turn: number; height: number } | undefined {
   if (!p.drive || robot.base === 'fixed') return undefined;
   // The frame and the joint that holds the base under it are named clear of everything the robot has.
   const name = p.names.take('base_footprint', (n) => [...p.naming.link(n), ...p.naming.joint(`${n}_joint`)]);
   const [fx, fy] = p.drive.forward;
-  return { name, joint: `${name}_joint`, base: p.linkNames.get(robot.root!)!, turn: -Math.atan2(fy, fx) || 0 };
+  // On the floor under the base link's frame.
+  return { name, joint: `${name}_joint`, base: p.linkNames.get(robot.root!)!, turn: -Math.atan2(fy, fx) || 0, height: p.frames.get(robot.root!)![2] * M };
 }
 
 /** The prepared drive as the Gazebo plugin wants it. */
@@ -371,14 +374,16 @@ const OPTICAL: Vec3 = [-Math.PI / 2, 0, -Math.PI / 2];
 /**
  * The robot as a ROS 2 package: every link's frame is parallel to the
  * design's axes, so no file carries a rotation but the sensors' frames: the
- * base link's frame is the design's origin and each other link's sits at the
+ * base link's frame is at the base object's own origin and each other link's sits at the
  * joint that carries it, with the link's meshes written in that frame.
  * `geometry` is what the kernel made of each link, by node id.
  */
 export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot = robotOf(doc)): RobotPackage {
   const p = prepare(doc, geometry, robot, (path) => `package://${packageName(doc.name)}/${path}`, URDF_NAMES);
   const { pkg, files, warnings, leftOut } = p;
-  const fixedToWorld = robot.base === 'fixed' ? p.linkNames.get(robot.root!) : undefined;
+  // Where the base link's frame is in the design (m): a base fixed to the world stays there.
+  const baseAt = p.frames.get(robot.root!)!.map((x) => x * M) as Vec3;
+  const fixedToWorld = robot.base === 'fixed' ? { link: p.linkNames.get(robot.root!)!, at: baseAt } : undefined;
   const base = p.linkNames.get(robot.root!)!;
   const footprint = footprintOf(p, robot);
   for (const j of p.loopJoints) {
@@ -412,7 +417,7 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
       joints.push({ name: p.names.take(`${s.name}_optical_joint`, p.naming.joint), type: 'fixed', parent: frame, child: optical, origin: [0, 0, 0], rpy: OPTICAL, axis: [0, 0, 1] });
     }
   }
-  // The robot's box in the design, for RViz to look at: the base link's frame is the design's origin.
+  // The robot's box, for RViz to look at, as the base link's frame has it.
   const extent = unionBounds(p.links.map((l) => geometry.get(l.node.id)!.bounds));
   const plugins = [jointStateXml(), ...(p.drive ? [driveXml(gazeboDrive(p.drive, footprint?.name ?? base))] : [])];
   const control = p.controlled.length ? { joints: p.controlled, controllersYaml: `${SHARE_PLACEHOLDER}/config/controllers.yaml` } : undefined;
@@ -424,8 +429,8 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
     { name: `urdf/${pkg}.urdf`, bytes: encodeText(writeUrdf(p.robotName, links, joints, { plugins, control, fixedToWorld, footprint })) },
     { name: `urdf/${pkg}.urdf.xacro`, bytes: encodeText(writeUrdf(p.robotName, links, joints, { plugins, control, fixedToWorld, footprint, xacro: { package: pkg } })) },
     { name: 'launch/display.launch.py', bytes: encodeText(displayLaunch(pkg)) },
-    { name: 'launch/gazebo.launch.py', bytes: encodeText(gazeboLaunch(pkg, { controllers })) },
-    { name: 'rviz/display.rviz', bytes: encodeText(rvizConfig(base, boundsCenter(extent).map((x) => x * M) as Vec3, Math.max(...boundsSize(extent)) * M)) },
+    { name: 'launch/gazebo.launch.py', bytes: encodeText(gazeboLaunch(pkg, { controllers, height: footprint || fixedToWorld ? 0 : baseAt[2] })) },
+    { name: 'rviz/display.rviz', bytes: encodeText(rvizConfig(base, boundsCenter(extent).map((x, i) => x * M - baseAt[i]) as Vec3, Math.max(...boundsSize(extent)) * M)) },
     { name: `worlds/${pkg}.sdf`, bytes: encodeText(worldXml(pkg)) },
     { name: 'config/bridge.yaml', bytes: encodeText(bridgeYaml(bridgeTopics(p))) },
     ...(control ? [{ name: 'config/controllers.yaml', bytes: encodeText(controllersYaml(p.controlled)) }] : []),
@@ -655,7 +660,8 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
     const lidars = sensorsOf(name).filter((s) => s.kind === 'lidar');
     return {
       name,
-      pos: joint ? joint.origin : [0, 0, 0],
+      // The base stands where its frame is in the design; every other body hangs from its parent's.
+      pos: joint ? joint.origin : (l.frame.map((x) => x * M) as Vec3),
       inertial: l.inertial,
       visual: l.visual,
       collision: l.collision,
