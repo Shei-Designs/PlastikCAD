@@ -81,3 +81,40 @@ test.describe('a weighed link', { tag: '@mouse' }, () => {
     await expect(page.getByRole('button', { name: 'From the shape' })).toHaveCount(0);
   });
 });
+
+test.describe("a joint's start", { tag: '@mouse' }, () => {
+  test('is typed, or taken from the slider', async ({ page }) => {
+    await openApp(page);
+    await store(page, (m) => {
+      m.addShape('box');
+      m.addShape('box');
+      m.nudgeSelected([30, 0, 0]);
+      m.enterRobotMode();
+      const [a, b] = m.getState().doc.scene;
+      m.setRobotRoot(a.id);
+      m.addJoint(a.id, b.id);
+    });
+    await settled(page);
+    const start = () => store(page, (m) => m.getState().doc.robot!.joints[0].start);
+    const box = page.locator('.inspector input[aria-label="Start"]');
+    const take = page.getByRole('button', { name: 'Set as start' });
+    await expect(box).toHaveValue('0');
+    // Nothing to take until the slider has moved the joint.
+    await expect(take).toBeDisabled();
+    await box.click();
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.type('30');
+    await page.keyboard.press('Enter');
+    expect(await start()).toBe(30);
+    await store(page, (m) => m.setPose(-45));
+    await take.click();
+    expect(await start()).toBe(-45);
+    await expect(box).toHaveValue('-45');
+    // Zero is the pose it was designed in: nothing is kept for it.
+    await box.click();
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.type('0');
+    await page.keyboard.press('Enter');
+    expect(await start()).toBeUndefined();
+  });
+});

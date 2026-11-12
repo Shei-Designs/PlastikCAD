@@ -36,6 +36,12 @@ for xml in xmls:
         failures += 1
         continue
     d = mujoco.MjData(m)
+    # A simulation begins at the home pose: every joint at its start, every servo holding it there.
+    home = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_KEY, "home")
+    if home >= 0:
+        mujoco.mj_resetDataKeyframe(m, d, home)
+    began = d.qpos.copy()
+    held = d.ctrl.copy()
     base = 1
     free = any(m.jnt_type[j] == 0 and m.jnt_bodyid[j] == base for j in range(m.njnt))
     steps = lambda seconds: range(int(seconds / m.opt.timestep))  # noqa: E731
@@ -70,12 +76,18 @@ for xml in xmls:
             standing = height()
             notes.append(f"stood at {standing * 1000:.1f} mm of {start_height * 1000:.1f}")
             ok &= standing >= 0.9 * start_height
+        # The joints that began away from zero must still be where they began.
+        adr = [m.jnt_qposadr[m.actuator_trnid[a, 0]] for a in servos]
+        started = [i for i in adr if abs(float(began[i])) > 1e-6]
+        if started:
+            drift = max(abs(float(d.qpos[i] - began[i])) for i in started)
+            notes.append(f"{len(started)} joints held their starts within {np.degrees(drift):.1f} deg")
+            ok &= drift < 0.15
         asked = 0.1 if free else 0.3
         for a in servos:
-            d.ctrl[a] = asked
+            d.ctrl[a] = held[a] + asked
         for _ in steps(1.0):
             mujoco.mj_step(m, d)
-        adr = [m.jnt_qposadr[m.actuator_trnid[a, 0]] for a in servos]
         swung = max(abs(float(d.qpos[i] - q0[i])) for i in adr)
         notes.append(f"servos swung up to {np.degrees(swung):.1f} deg of {np.degrees(asked):.1f} asked")
         ok &= swung >= asked / 3

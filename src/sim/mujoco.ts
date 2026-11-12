@@ -101,11 +101,11 @@ export class Simulation {
     return this.data.time;
   }
 
-  /** Back to the home pose, time zero, every control off. */
+  /** Back to the home pose and time zero: every motor off, every servo holding its joint where the home pose has it. */
   reset(): void {
+    // The keyframe carries the servos' targets with the pose; a model without one starts with every control at zero.
     if (this.model.nkey > 0) this.mj.mj_resetDataKeyframe(this.model, this.data, 0);
     else this.mj.mj_resetData(this.model, this.data);
-    (this.data.ctrl as Float64Array).fill(0);
     this.owed = 0;
     this.mj.mj_forward(this.model, this.data);
   }

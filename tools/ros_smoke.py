@@ -244,6 +244,17 @@ def moving_joints(urdf_path):
     return [j.get('name') for j in tree.getroot().findall('joint') if j.get('type') != 'fixed']
 
 
+def initial_values(urdf_path):
+    """Where each joint under ros2_control begins, for those the URDF gives an initial position."""
+    out = {}
+    for joint in ET.parse(urdf_path).getroot().findall('ros2_control/joint'):
+        for state in joint.findall('state_interface'):
+            value = state.find("param[@name='initial_value']")
+            if state.get('name') == 'position' and value is not None:
+                out[joint.get('name')] = float(value.text)
+    return out
+
+
 def bridged(pkg_dir):
     with open(os.path.join(pkg_dir, 'config', 'bridge.yaml')) as f:
         return yaml.safe_load(f) or []
@@ -397,6 +408,18 @@ def check_ros_package(pkg_dir, env):
             fail(name, 'gz model finds no pose for the robot')
         else:
             ok(f'robot in Gazebo at z = {pose[2]:.3f} m')
+        # A joint with a start begins there and its controller holds it: read once the controllers have had time to come up.
+        starts = initial_values(urdf)
+        if starts:
+            time.sleep(8)
+            js = topic_once('/joint_states', 8) or {}
+            at = dict(zip(js.get('name', []), js.get('position', [])))
+            off = sorted(f'{j} at {at.get(j, float("nan")):.3f}, start {v:.3f}' for j, v in starts.items() if not abs(at.get(j, float('nan')) - v) < 0.15)
+            if off:
+                fail(name, f'joints not at their starts: {off}')
+            else:
+                settled = gz_pose(name, world_name)
+                ok(f'{len(starts)} joints hold their starts' + (f', robot at z = {settled[2]:.3f} m' if settled else ''))
 
         # Sensors: every topic bridged from Gazebo to ROS must publish.
         for t in topics:

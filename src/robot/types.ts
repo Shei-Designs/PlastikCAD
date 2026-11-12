@@ -84,6 +84,11 @@ export interface RobotJoint {
   velocity: number;
   damping: number;
   friction: number;
+  /**
+   * Where the joint stands when a simulation begins: degrees or mm, like the limits, from the pose the robot is
+   * designed in. Absent for a joint that starts as designed. A follower starts where its leader puts it.
+   */
+  start?: number;
   /** Follows another joint (a linkage's passive joint): angle = multiplier × that joint's angle + offset. */
   mimic?: { joint: string; multiplier: number; offset: number };
   /** Id in `MOTORS` of the motor the figures came from; none once they are typed by hand. */

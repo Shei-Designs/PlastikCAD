@@ -39,6 +39,8 @@ export interface MjcfJoint {
   dynamics?: { damping: number; friction: number };
   /** The motor's reflected rotor inertia, kg·m². */
   armature?: number;
+  /** Where the joint stands in the home pose, radians or meters; zero when absent. */
+  start?: number;
 }
 
 export interface MjcfModel {
@@ -46,6 +48,8 @@ export interface MjcfModel {
   base: MjcfBody;
   /** The base floats (a rover) or is welded to the world (an arm). */
   floating: boolean;
+  /** How much higher (m) a floating base stands in the home pose than in the pose the bodies are written in. */
+  lift?: number;
   /** Loops: two bodies pinned together at a point given in the first body's frame. */
   connects: { body1: string; body2: string; anchor: Vec3 }[];
   /** Followers: joint1 = offset + multiplier × joint2. */
@@ -326,7 +330,11 @@ export function writeMjcf(model: MjcfModel): string {
   const lidars = collect(model.base, (b) => b.lidars ?? []);
   // Joints in the order the file gives them, which is the order of qpos.
   const joints = collect(model.base, (b) => (b.joint && b.joint.type !== 'fixed' ? [b.joint] : []));
-  const home = [...(model.floating ? [`${vec(baseAt)} ${tilt || '1 0 0 0'}`] : []), ...joints.map(() => '0')].join(' ');
+  // The home pose: every joint at its start, the base raised or lowered to stand on the floor in it, and each
+  // position servo asked to hold its joint there (a velocity motor is asked for nothing).
+  const [bx, by, bz] = model.base.pos;
+  const homeAt = tilt ? turned([bx, by, bz + (model.lift ?? 0)], [SLOPE, 0, 0]) : ([bx, by, bz + (model.lift ?? 0)] as Vec3);
+  const home = [...(model.floating ? [`${vec(homeAt)} ${tilt || '1 0 0 0'}`] : []), ...joints.map((j) => fmt(j.start ?? 0, 6))].join(' ');
   const sensors = [
     ...joints.flatMap((j) => [`    <jointpos name="${escapeXml(j.name)}_pos" joint="${escapeXml(j.name)}"/>`, `    <jointvel name="${escapeXml(j.name)}_vel" joint="${escapeXml(j.name)}"/>`]),
     ...(model.floating
@@ -369,6 +377,8 @@ export function writeMjcf(model: MjcfModel): string {
       return `    <velocity name="${escapeXml(j)}_motor" joint="${escapeXml(j)}" kv="${sig(g.effort / g.velocity)}" ctrlrange="-${sig(g.velocity)} ${sig(g.velocity)}" forcerange="-${sig(g.effort)} ${sig(g.effort)}"/>`;
     }),
   ];
+  const startOf = new Map(joints.map((j) => [j.name, j.start ?? 0]));
+  const ctrl = [...model.servos.filter(canDrive).map((j) => fmt(startOf.get(j) ?? 0, 6)), ...model.wheels.filter(canDrive).map(() => '0')];
   const equality = [
     ...model.connects.map((c) => `    <connect body1="${escapeXml(c.body1)}" body2="${escapeXml(c.body2)}" anchor="${vec(c.anchor)}"/>`),
     ...model.followers.filter((f) => moves(f.joint) && moves(f.leader)).map((f) => `    <joint joint1="${escapeXml(f.joint)}" joint2="${escapeXml(f.leader)}" polycoef="${fmt(f.offset, 6)} ${fmt(f.multiplier, 6)} 0 0 0"/>`),
@@ -398,7 +408,7 @@ export function writeMjcf(model: MjcfModel): string {
     ...(actuators.length ? ['  <actuator>', ...actuators, '  </actuator>'] : []),
     ...(equality.length ? ['  <equality>', ...equality, '  </equality>'] : []),
     ...(sensors.length ? ['  <sensor>', ...sensors, '  </sensor>'] : []),
-    ...(home ? ['  <keyframe>', `    <key name="home" qpos="${home}"/>`, '  </keyframe>'] : []),
+    ...(home ? ['  <keyframe>', `    <key name="home" qpos="${home}"${ctrl.some((c) => c !== '0') ? ` ctrl="${ctrl.join(' ')}"` : ''}/>`, '  </keyframe>'] : []),
     '</mujoco>',
     '',
   ].join('\n');

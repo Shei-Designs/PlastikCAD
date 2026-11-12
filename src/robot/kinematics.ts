@@ -200,6 +200,15 @@ export function posedScene(scene: Scene, frames: Map<string, Mat>): Scene {
   });
 }
 
+/**
+ * The pose a simulation begins in: every joint at its start, the followers where their leaders put them and the
+ * passive joints of a loop where the loop closes. Null for a robot that starts as it is designed.
+ */
+export function startPose(robot: Robot, scene: Scene): Solved | null {
+  const driven: Pose = new Map(robot.joints.filter((j) => j.type !== 'fixed' && !j.mimic && j.start).map((j) => [j.id, j.start!]));
+  return driven.size ? solvePose(robot, scene, driven) : null;
+}
+
 /** How far a joint can go, for sweeps and sliders: its limits, or a turn for a continuous joint. */
 export function rangeOf(joint: RobotJoint): [number, number] {
   if (joint.type === 'continuous') return [-180, 180];

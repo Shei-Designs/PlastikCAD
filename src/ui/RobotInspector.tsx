@@ -303,7 +303,9 @@ function Test() {
             const joint = jointOf(a.jointId);
             const angular = joint?.type !== 'prismatic';
             const scale = angular ? 180 / Math.PI : 1000;
-            return <SliderField key={a.name} label={joint?.name ?? a.joint} value={Math.round((s.targets.get(a.name) ?? 0) * scale)} min={Math.ceil(a.min * scale)} max={Math.floor(a.max * scale)} step={1} unit={angular ? '°' : 'mm'} length={!angular} onChange={(v) => sim.setTarget(a.name, v / scale)} />;
+            // Until it is moved, a servo holds its joint where the simulation began.
+            const target = s.targets.has(a.name) ? s.targets.get(a.name)! * scale : (joint?.start ?? 0);
+            return <SliderField key={a.name} label={joint?.name ?? a.joint} value={Math.round(target)} min={Math.ceil(a.min * scale)} max={Math.floor(a.max * scale)} step={1} unit={angular ? '°' : 'mm'} length={!angular} onChange={(v) => sim.setTarget(a.name, v / scale)} />;
           })}
           <dl className="facts">
             <div>
@@ -689,6 +691,18 @@ function JointPanel({ joint }: { joint: RobotJoint }) {
             )}
           </legend>
           <SliderField label={angular ? tr('Angle') : tr('Travel')} help={tr('Moves the joint on the plate to see the robot move; the design stays as it is.')} value={posed} min={lo} max={hi} step={angular ? 1 : 0.5} unit={unit} length={!angular} onChange={(v) => setPose(v)} />
+          {!joint.mimic && (
+            <div className="field inline">
+              <label>
+                {tr('Start')}
+                <Hint text={tr('Sets where the joint stands when a simulation begins.')} />
+              </label>
+              <button type="button" className="chip" title={tr("Takes the slider's value as the start")} disabled={pose?.joint !== joint.id} onClick={() => updateJoint(joint.id, { start: posed || undefined })}>
+                {tr('Set as start')}
+              </button>
+              <NumberBox label={tr('Start')} value={joint.start ?? 0} unit={unit} length={!angular} step={angular ? 5 : 1} places={2} onChange={(v) => updateJoint(joint.id, { start: v || undefined }, 'joint-start')} />
+            </div>
+          )}
           {pose?.joint === joint.id && !pose.solved.closed && <p className="export-note problems warn">{tr('The linkage cannot close here: a loop joint is {gap} apart.', { gap: lengthText(pose.solved.error, working, 1) })}</p>}
           {inLoop && (
             <div className="field">
