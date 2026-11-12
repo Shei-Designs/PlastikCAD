@@ -263,12 +263,14 @@ export function record(merge?: string): void {
  * Replace the scene as one undoable step. Edits with the same `merge` key in
  * quick succession (typing in a field, holding an arrow key) count as one.
  */
-export function commit(scene: Scene, options: { selection?: string[]; merge?: string } = {}): void {
+export function commit(scene: Scene, options: { selection?: string[]; merge?: string; robot?: (robot: Robot) => Robot } = {}): void {
   abortAlignPreview();
   const selection = options.selection ?? state.selection;
   record(options.merge);
   // The robot lets go of objects that are gone, and of a pose, which was for the objects as they were.
-  const robot = state.doc.robot && pruned(state.doc.robot, scene);
+  // `options.robot` is what the change to the scene does to the robot (copies that carry their joints), in the same step.
+  const kept = state.doc.robot && pruned(state.doc.robot, scene);
+  const robot = kept && options.robot ? options.robot(kept) : kept;
   set({ doc: robot !== state.doc.robot ? { ...state.doc, scene, robot } : { ...state.doc, scene }, selection, pose: null });
   // The dots follow the objects, and know what is left to line up.
   if (state.aligning) refreshAlignBounds();

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { APP_VERSION } from '../appInfo';
 import { parseDoc, serializeDoc } from '../model/file';
 import { boxBounds, originOf, unionBounds } from '../model/math';
-import { jointInDesign } from '../robot/model';
+import { jointInDesign, sensorInDesign } from '../robot/model';
 import type { Bounds } from '../model/math';
 import type { GroupNode, PartNode, SceneNode } from '../model/types';
 import type { PickedFile } from '../platform';
@@ -144,6 +144,84 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+describe('copies and mirrors of links', () => {
+  const robot = () => store.getState().doc.robot!;
+  /** A body with a leg on it: the leg weighed, hung by a joint and carrying a sensor. */
+  const legged = (): { body: string; leg: string } => {
+    const { a: body, b: leg } = twoBoxes();
+    store.setRobotRoot(body);
+    store.addJoint(body, leg);
+    store.updateLink(leg, { mass: { kind: 'measured', grams: 42 }, friction: 1.1 });
+    store.addSensor(leg, 'touch');
+    return { body, leg };
+  };
+
+  it('copy a leg with its settings, its joint to the same body, and its sensor, as one step', () => {
+    const { body, leg } = legged();
+    store.select([leg]);
+    store.duplicateSelected();
+    const copy = only();
+    expect(copy).not.toBe(leg);
+    expect(robot().links.find((l) => l.node === copy)).toMatchObject({ mass: { kind: 'measured', grams: 42 }, friction: 1.1 });
+    expect(robot().joints).toHaveLength(2);
+    const [first, second] = robot().joints;
+    expect(second).toMatchObject({ parent: body, child: copy, origin: first.origin, axis: first.axis, lower: first.lower, upper: first.upper });
+    expect(second.id).not.toBe(first.id);
+    expect(second.name).toBe(`${first.name} 2`);
+    expect(robot().sensors.map((x) => [x.link, x.name])).toEqual([[leg, 'touch'], [copy, 'touch_2']]);
+    // Paste does the same, and names on.
+    store.select([leg]);
+    store.copySelected();
+    store.paste();
+    expect(robot().joints.map((j) => j.name)).toEqual([first.name, `${first.name} 2`, `${first.name} 3`]);
+    // One undo takes a copy away with everything it carried.
+    store.undo();
+    store.undo();
+    expect(robot().joints).toHaveLength(1);
+    expect(robot().sensors).toHaveLength(1);
+    expect(robot().links.filter((l) => l.node !== leg)).toEqual([]);
+  });
+
+  it('copy a body and its leg together joined to each other', () => {
+    const { body, leg } = legged();
+    store.select([body, leg]);
+    store.duplicateSelected();
+    const [newBody, newLeg] = store.getState().selection;
+    expect(robot().joints).toHaveLength(2);
+    expect(robot().joints[1]).toMatchObject({ parent: newBody, child: newLeg });
+    // The base stays the base.
+    expect(robot().root).toBe(body);
+  });
+
+  it('mirror a link with its joint and its sensor on the same spots of it', () => {
+    const { body, leg } = legged();
+    const joint = () => robot().joints[0];
+    const node = (id: string) => scene().find((n) => n.id === id)!;
+    // The joint off the leg's middle, about an axis that leans; the sensor off the middle too, looking along +Y.
+    store.updateNode(leg, { rot: [0, 0, 30] });
+    store.placeJoint(joint().id, [4, 7, 3], [1, 2, 0]);
+    store.updateSensor(robot().sensors[0].id, { origin: [2, 5, -1], rot: [0, 0, 90] });
+    const before = jointInDesign(joint(), node(leg));
+    const sensorBefore = sensorInDesign(robot().sensors[0], node(leg));
+    store.select([body, leg]);
+    const pivot = unionBounds([boxBounds(node(body)), boxBounds(node(leg))]);
+    const mid = (pivot.min[0] + pivot.max[0]) / 2;
+    store.mirrorSelected(0);
+    const after = jointInDesign(joint(), node(leg));
+    const mirror = (p: number[]) => [2 * mid - p[0], p[1], p[2]];
+    mirror(before.origin).forEach((v, i) => expect(after.origin[i]).toBeCloseTo(v, 6));
+    // The axis is the mirrored one reversed, so the same angle gives the mirror image of the motion.
+    [before.axis[0], -before.axis[1], -before.axis[2]].forEach((v, i) => expect(after.axis[i]).toBeCloseTo(v, 6));
+    const sensorAfter = sensorInDesign(robot().sensors[0], node(leg));
+    mirror(sensorBefore.origin).forEach((v, i) => expect(sensorAfter.origin[i]).toBeCloseTo(v, 6));
+    // It looked along where the leg's +Y pointed; it looks along the mirror image of that.
+    [-sensorBefore.matrix[0], sensorBefore.matrix[1], sensorBefore.matrix[2]].forEach((v, i) => expect(sensorAfter.matrix[i]).toBeCloseTo(v, 6));
+    // One undo puts the joint back with the objects.
+    store.undo();
+    jointInDesign(joint(), node(leg)).origin.forEach((v, i) => expect(v).toBeCloseTo(before.origin[i], 6));
+  });
 });
 
 describe('a joint\'s motor', () => {

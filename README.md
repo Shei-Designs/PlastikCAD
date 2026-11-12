@@ -288,6 +288,13 @@ in the design file and synced with it.
   and NEMA steppers) and those figures come from its datasheet; and whether it
   follows another joint (URDF `mimic`). A joint stays with its child: move the
   child and the joint comes along.
+- **Copies.** Duplicate and Paste copy a link with its mass, collision and
+  friction settings, its sensors, and the joint it hangs by: from the copy
+  of its parent when that was copied too, else from the same parent, so the
+  copy of a leg is on the body the leg is on. Mirror keeps a link's joint
+  and sensors on the same spots of it, the joint's axis turned so that the
+  same angle gives the mirror image of the motion. Wheel roles are not
+  copied.
 - **Start.** A joint's *Start* is where it stands when a simulation begins,
   measured like its limits from the pose the robot is designed in: type it,
   or move the slider and press *Set as start*. A robot built with its legs
