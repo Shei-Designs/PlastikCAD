@@ -7,11 +7,13 @@
 // eccentric one.
 import { tr, trx } from '../../i18n';
 import { cross, scale, unit } from '../../model/math';
+import { figureFixed, lengthFixed, unitName } from '../../units';
+import type { Unit } from '../../units';
 import { arcSegments, polar, TAU } from '../math2d';
 import { difference, union } from '../types';
 import type { Quality, Solid, Vec2, Vec3 } from '../types';
-import { mm, num, str } from './types';
-import type { BuildResult, GeneratorDef, ParamDef, ParamGroup, Params } from './types';
+import { lengthInfo, num, str, unitInfo } from './types';
+import type { BuildResult, GeneratorDef, InfoItem, ParamDef, ParamGroup, Params } from './types';
 
 /** A cross-section in its own plane, CCW. */
 type Ring = Vec2[];
@@ -184,11 +186,13 @@ function wallOf(p: Params, sections: Section[], warnings: string[]): number {
   return most;
 }
 
-const sizeText = (s: Section) => (s.round ? `Ø${s.w.toFixed(1)}` : `${s.w.toFixed(1)} × ${s.h.toFixed(1)}`);
+/** A section's size in `units`: its figures alone, and with the unit after them. */
+const sizeFigures = (s: Section, units: Unit) => (s.round ? `Ø${figureFixed(s.w, units, 1)}` : `${figureFixed(s.w, units, 1)} × ${figureFixed(s.h, units, 1)}`);
+const sizeText = (s: Section, units: Unit) => `${sizeFigures(s, units)} ${unitName(units)}`;
 
-function sizeInfo(s: Section, wall: number): { label: string; value: string }[] {
-  const out = [{ label: tr('Outside'), value: `${sizeText(s)} mm` }];
-  if (wall > 0) out.push({ label: tr('Inside'), value: `${sizeText(inner(s, wall))} mm` });
+function sizeInfo(s: Section, wall: number): InfoItem[] {
+  const out = [unitInfo(tr('Outside'), (units) => sizeText(s, units))];
+  if (wall > 0) out.push(unitInfo(tr('Inside'), (units) => sizeText(inner(s, wall), units)));
   return out;
 }
 
@@ -217,7 +221,7 @@ export const pipe: GeneratorDef = {
     const length = num(p, 'length');
     return {
       solid: sweep(along(0, length), s, wall, q),
-      info: [{ label: tr('Length'), value: mm(length, 1) }, ...sizeInfo(s, wall)],
+      info: [lengthInfo(tr('Length'), length, 1), ...sizeInfo(s, wall)],
       warnings,
     };
   },
@@ -272,8 +276,8 @@ export const elbow: GeneratorDef = {
       solid: sweep(stations, s, wall, q),
       info: [
         { label: tr('Angle'), value: `${num(p, 'angle')}°` },
-        { label: tr('Bend radius'), value: mm(radius, 1) },
-        { label: tr('Inside radius'), value: mm(radius - s.w / 2, 1) },
+        lengthInfo(tr('Bend radius'), radius, 1),
+        lengthInfo(tr('Inside radius'), radius - s.w / 2, 1),
         ...sizeInfo(s, wall),
       ],
       warnings,
@@ -320,11 +324,11 @@ export const reducer: GeneratorDef = {
     return {
       solid: sweep(stations, a, wall, q, rings),
       info: [
-        { label: tr('Length'), value: mm(length, 1) },
-        { label: trx('pipe', 'Start'), value: `${sizeText(a)} mm` },
-        { label: trx('pipe', 'End'), value: `${sizeText(b)} mm` },
+        lengthInfo(tr('Length'), length, 1),
+        unitInfo(trx('pipe', 'Start'), (units) => sizeText(a, units)),
+        unitInfo(trx('pipe', 'End'), (units) => sizeText(b, units)),
         { label: tr('Ratio'), value: `${ratio.toFixed(2)} : 1` },
-        ...(wall > 0 ? [{ label: tr('Inside'), value: tr('{from} to {to} mm', { from: sizeText(inner(a, wall)), to: sizeText(inner(b, wall)) }) }] : []),
+        ...(wall > 0 ? [unitInfo(tr('Inside'), (units) => tr('{from} to {to}', { from: sizeFigures(inner(a, wall), units), to: sizeText(inner(b, wall), units) }))] : []),
       ],
       warnings,
     };
@@ -383,9 +387,9 @@ export const tee: GeneratorDef = {
     return {
       solid,
       info: [
-        { label: trx('pipe', 'Run'), value: `${sizeText(run)} × ${length.toFixed(1)} mm` },
-        { label: tr('Branch'), value: tr('{size} mm at {angle}°', { size: sizeText(branch), angle: num(p, 'branchAngle') }) },
-        ...(wall > 0 ? [{ label: tr('Inside'), value: `${sizeText(inner(run, wall))} / ${sizeText(inner(branch, wall))} mm` }] : []),
+        unitInfo(trx('pipe', 'Run'), (units) => `${sizeFigures(run, units)} × ${lengthFixed(length, units, 1)}`),
+        unitInfo(tr('Branch'), (units) => tr('{size} at {angle}°', { size: sizeText(branch, units), angle: num(p, 'branchAngle') })),
+        ...(wall > 0 ? [unitInfo(tr('Inside'), (units) => `${sizeFigures(inner(run, wall), units)} / ${sizeText(inner(branch, wall), units)}`)] : []),
       ],
       warnings,
     };

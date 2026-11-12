@@ -109,7 +109,7 @@ export const partsFit: Catalog = {
   'Start [[pipe]]': 'Entrée',
   'End [[pipe]]': 'Sortie',
   Ratio: 'Rapport',
-  '{from} to {to} mm': '{from} à {to} mm',
+  '{from} to {to}': '{from} à {to}',
   Tee: 'Té',
   'A branch off a straight run, square or at an angle.': 'Une dérivation sur une conduite droite, d’équerre ou en biais.',
   Branch: 'Dérivation',
@@ -122,7 +122,7 @@ export const partsFit: Catalog = {
   'Branch width': 'Largeur de dérivation',
   'Branch height': 'Hauteur de dérivation',
   'Run [[pipe]]': 'Conduite',
-  '{size} mm at {angle}°': '{size} mm à {angle}°',
+  '{size} at {angle}°': '{size} à {angle}°',
 
   // Board mounts (parts/generators/boards.ts)
   'USB-C power': 'Alimentation USB-C',

@@ -75,6 +75,31 @@ describe('measure', () => {
   });
 });
 
+describe('in inches', () => {
+  it('gives a feature its lengths, its place and its area in inches', () => {
+    expect(describeFeature(point([25.4, 50.8, 0]), 'in').lines).toEqual(['Point', '(1, 2, 0)']);
+    expect(describeFeature(edge([0, 0, 0], [30, 40, 0]), 'in').lines).toEqual(['Edge 1.9685 in', 'from (0, 0, 0)', 'to (1.1811, 1.5748, 0)']);
+    expect(describeFeature(circle([0, 0, 0], 12.7), 'in').lines).toEqual(['Circle Ø 1 in', 'R 0.5 in', 'center (0, 0, 0)']);
+    expect(describeFeature(circle([0, 0, 0], 12.7), 'in').text).toBe('Ø 1 in');
+    expect(describeFeature(face([0, 0, 0], [0, 0, 1]), 'in').lines).toEqual(['Face 0.155 in²', 'normal (0, 0, 1)']);
+  });
+
+  it('measures in inches, and leaves the angles as they are', () => {
+    const m = measure(point([0, 0, 0]), point([25.4, 0, 50.8]), 'in');
+    expect(m.lines).toEqual(['Distance 2.2361 in', 'X 1 in · Z 2 in']);
+    expect(m.text).toBe('2.2361 in');
+    // The line is drawn where the points are, which no unit changes.
+    expect(m.to).toEqual([25.4, 0, 50.8]);
+    expect(measure(edge([0, 0, 0], [10, 0, 0]), edge([5, -5, 25.4], [5, 5, 25.4]), 'in').lines).toEqual(['Angle 90°', 'nearest 1 in apart']);
+    expect(measure(face([0, 0, 0], [0, 0, 1]), face([5, 5, 12.7], [0, 0, -1]), 'in').lines).toEqual(['Parallel, 0.5 in apart']);
+    expect(measure(face([0, 0, 0], [0, 0, 1]), face([0, 0, 0], [1, 0, 0]), 'in').text).toBe('90°');
+  });
+
+  it('takes what is nothing in millimeters for nothing', () => {
+    expect(measure(point([0, 0, 0]), point([0.004, 0, 0]), 'in').text).toBe('0 in');
+  });
+});
+
 describe('closestBetweenSegments', () => {
   it('finds the nearest points of crossing, skew and parallel segments', () => {
     expect(closestBetweenSegments([0, 0, 0], [10, 0, 0], [5, -5, 0], [5, 5, 0])).toEqual({ p: [5, 0, 0], q: [5, 0, 0] });

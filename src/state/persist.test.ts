@@ -20,6 +20,29 @@ describe('the settings kept between launches', () => {
     }
   });
 
+  it('start in millimeters, and remember inches once chosen', () => {
+    const store = storage();
+    vi.stubGlobal('localStorage', store);
+    expect(loadPrefs().units).toBe('mm');
+    expect(loadPrefs().snap).toBe(1);
+    savePrefs({ ...loadPrefs(), units: 'in', snap: 6.35 });
+    expect(loadPrefs().units).toBe('in');
+    expect(loadPrefs().snap).toBe(6.35);
+  });
+
+  it('keep the snap step to one of the unit\'s own', () => {
+    const store = storage();
+    vi.stubGlobal('localStorage', store);
+    const [key] = ['plastikcad:prefs:v1'];
+    savePrefs({ ...loadPrefs(), units: 'in', snap: 5 });
+    expect(loadPrefs().snap, 'a millimeter step in inches').toBe(0.79375);
+    savePrefs({ ...loadPrefs(), units: 'mm', snap: 6.35 });
+    expect(loadPrefs().snap, 'an inch step in millimeters').toBe(1);
+    store.setItem(key, JSON.stringify({ ...JSON.parse(store.getItem(key) ?? '{}'), units: 'furlong', snap: 0 }));
+    expect(loadPrefs().units, 'a unit the app does not have').toBe('mm');
+    expect(loadPrefs().snap, 'snapping turned off').toBe(0);
+  });
+
   it('fall back on STL for a format the app no longer has, or never had', () => {
     const store = storage();
     vi.stubGlobal('localStorage', store);

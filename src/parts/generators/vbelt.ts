@@ -8,7 +8,7 @@ import { addHubAndBore, boreGroup, boreRadius, boreShape, hubGroup } from '../fe
 import { arcSegments, TAU } from '../math2d';
 import { revolve } from '../types';
 import type { Polygon, Quality } from '../types';
-import { mm, num, str } from './types';
+import { lengthInfo, num, str } from './types';
 import type { BuildResult, GeneratorDef, Params } from './types';
 
 interface Section {
@@ -82,11 +82,11 @@ function build(p: Params, q: Quality): BuildResult {
     solid,
     outline: [round, ...(boreShape(p, q) ?? [])],
     info: [
-      { label: tr('Datum diameter'), value: mm(datum) },
-      { label: tr('Outside diameter'), value: mm(2 * rim) },
+      lengthInfo(tr('Datum diameter'), datum),
+      lengthInfo(tr('Outside diameter'), 2 * rim),
       { label: tr('Groove angle'), value: `${angle}°` },
-      { label: tr('Width'), value: mm(width) },
-      { label: tr('Total height'), value: mm(height) },
+      lengthInfo(tr('Width'), width),
+      lengthInfo(tr('Total height'), height),
     ],
     warnings,
   };

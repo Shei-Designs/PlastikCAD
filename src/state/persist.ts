@@ -4,6 +4,8 @@ import { FILE_FORMAT } from '../appInfo';
 import { FORMATS } from '../io/export';
 import type { FormatId } from '../io/export';
 import { newId } from '../model/ops';
+import { nearestSnap, snapSteps } from '../units';
+import type { Unit } from '../units';
 
 export type Theme = 'dark' | 'light';
 
@@ -11,7 +13,9 @@ export interface Prefs {
   theme: Theme;
   edges: boolean;
   grid: boolean;
-  /** Grid step that moves and sizes snap to, in mm; 0 turns snapping off. */
+  /** The unit lengths are shown and typed in; the design is in millimeters either way. */
+  units: Unit;
+  /** Grid step that moves and sizes snap to, in mm, one of the steps of `units`; 0 turns snapping off. */
   snap: number;
   format: FormatId;
   /** What the robot is exported as: a ROS 2 package with a URDF, a Gazebo model with an SDF, or a MuJoCo model. */
@@ -33,8 +37,6 @@ export interface Prefs {
   updateCheck: boolean;
 }
 
-export const SNAP_STEPS = [0, 0.1, 0.25, 0.5, 1, 2, 5, 10];
-
 /** Below this width the side panels lie over the plate instead of beside it (see `.app` in styles.css). */
 export const NARROW_WIDTH = 900;
 export const narrowWindow = (): boolean => typeof window !== 'undefined' && window.innerWidth <= NARROW_WIDTH;
@@ -50,11 +52,13 @@ export function loadPrefs(): Prefs {
   }
   const prefersLight = typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: light)').matches;
   const device = typeof saved.device === 'string' && /^[a-z0-9]{8,32}$/.test(saved.device) ? saved.device : newId();
+  const units: Unit = saved.units === 'in' ? 'in' : 'mm';
   const prefs: Prefs = {
     theme: saved.theme === 'light' || saved.theme === 'dark' ? saved.theme : prefersLight ? 'light' : 'dark',
     edges: saved.edges ?? true,
     grid: saved.grid ?? true,
-    snap: SNAP_STEPS.includes(saved.snap as number) ? (saved.snap as number) : 1,
+    units,
+    snap: snapSteps(units).includes(saved.snap as number) ? (saved.snap as number) : nearestSnap(1, units),
     // Any format the app exports: a list of its own here once forgot the newest of them.
     format: FORMATS.find((f) => f.id === saved.format)?.id ?? 'stl',
     robotFormat: saved.robotFormat === 'sdf' || saved.robotFormat === 'mjcf' || saved.robotFormat === 'usd' ? saved.robotFormat : 'urdf',

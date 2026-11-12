@@ -6,7 +6,7 @@ import { addHubAndBore, boreGroup, boreRadius, boreShape, hubGroup } from '../fe
 import { arc, arcN, arcSegments, dedupe, polar, rotatePoint, TAU } from '../math2d';
 import { extrude, intersection, revolve } from '../types';
 import type { Polygon, Quality, Solid, Vec2 } from '../types';
-import { bool, mm, num, str } from './types';
+import { bool, lengthInfo, mm, num, str } from './types';
 import type { BuildResult, GeneratorDef, Params } from './types';
 
 interface Chain {
@@ -121,13 +121,13 @@ function build(p: Params, q: Quality): BuildResult {
     solid,
     outline: [outline, ...(boreShape(p, q) ?? [])],
     info: [
-      { label: tr('Pitch diameter'), value: mm(2 * pitchR) },
-      { label: tr('Outside diameter'), value: mm(2 * outerR) },
-      { label: tr('Root diameter'), value: mm(2 * rootR) },
+      lengthInfo(tr('Pitch diameter'), 2 * pitchR),
+      lengthInfo(tr('Outside diameter'), 2 * outerR),
+      lengthInfo(tr('Root diameter'), 2 * rootR),
       { label: tr('Chain pitch'), value: mm(chain.pitch, 3) },
       { label: tr('Roller diameter'), value: mm(chain.roller) },
-      { label: tr('Thickness'), value: mm(t) },
-      { label: tr('Total height'), value: mm(height) },
+      lengthInfo(tr('Thickness'), t),
+      lengthInfo(tr('Total height'), height),
     ],
     warnings,
   };

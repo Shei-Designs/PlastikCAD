@@ -5,7 +5,7 @@ import { arcSegments, toDeg, TAU } from '../math2d';
 import { triangulate } from '../meshUtil';
 import { intersection, mirror, revolve, translate } from '../types';
 import type { Polygon, Quality, Solid, Vec2 } from '../types';
-import { degrees, mm, num } from './types';
+import { degrees, lengthInfo, num } from './types';
 import type { GeneratorDef, InfoItem, Params } from './types';
 
 // Straight bevel gear for shafts at 90°.
@@ -59,6 +59,7 @@ export const bevelGear: GeneratorDef = {
           max: 20,
           step: 0.1,
           unit: 'mm',
+          metric: true,
         },
         { type: 'number', key: 'teeth', label: tr('Teeth'), default: 20, min: 8, max: 200, step: 1, integer: true },
         {
@@ -201,13 +202,13 @@ export const bevelGear: GeneratorDef = {
     const solid = translate(mirror(withHub.solid, [0, 0, 1]), [0, 0, withHub.height]);
 
     const info: InfoItem[] = [
-      { label: tr('Pitch diameter'), value: mm(2 * r) },
-      { label: tr('Outside diameter'), value: mm(2 * (r + addendum * cosD)) },
+      lengthInfo(tr('Pitch diameter'), 2 * r),
+      lengthInfo(tr('Outside diameter'), 2 * (r + addendum * cosD)),
       { label: tr('Pitch cone angle'), value: degrees(toDeg(delta)) },
-      { label: tr('Cone distance'), value: mm(coneDistance) },
-      { label: tr('Apex to mounting face'), value: mm(-back[1] + (withHub.height - peak)) },
+      lengthInfo(tr('Cone distance'), coneDistance),
+      lengthInfo(tr('Apex to mounting face'), -back[1] + (withHub.height - peak)),
       { label: tr('Ratio'), value: `1 : ${(zMate / z).toFixed(3).replace(/\.?0+$/, '')}` },
-      { label: tr('Total height'), value: mm(withHub.height) },
+      lengthInfo(tr('Total height'), withHub.height),
     ];
     return { solid, info, warnings };
   },

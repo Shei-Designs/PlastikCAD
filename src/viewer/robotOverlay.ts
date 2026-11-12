@@ -8,9 +8,10 @@ import { tidyVec } from '../model/math';
 import type { Mat } from '../model/math';
 import type { Vec3 } from '../model/types';
 import { lidarAngles } from '../robot/types';
+import { lengthFigure } from '../units';
 import { alongAxis, snapTo } from './dragMath';
 import { disposeMarker, lightPad, markerObject } from './markers';
-import { THEMES, TOUCH_GRIP_SCALE, axisVector, fmt, pixelSize, toMatrix4 } from './stage';
+import { THEMES, TOUCH_GRIP_SCALE, axisVector, pixelSize, toMatrix4 } from './stage';
 import type { Stage } from './stage';
 
 /** On-screen length of a marker's unit, in pixels: the joint axis reaches this far each way from its origin. */
@@ -246,7 +247,7 @@ export class RobotOverlay {
     const d = snapTo(t - drag.grabT, this.stage.options.snap);
     const next = drag.origin.clone().addScaledVector(drag.axis, d);
     this.stage.events.onMarkerMove(tidyVec(next.toArray() as Vec3));
-    const moved = `${d >= 0 ? '+' : ''}${fmt(d)}`;
+    const moved = `${d >= 0 ? '+' : ''}${lengthFigure(d, this.stage.options.units)}`;
     this.stage.events.onReadout(drag.how === 'slide' ? tr('Along the axis {distance}', { distance: moved }) : `${'XYZ'[drag.how]} ${moved}`, event.clientX, event.clientY);
   }
 

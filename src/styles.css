@@ -2165,6 +2165,11 @@ kbd {
   min-width: 0;
 }
 
+/* In inches a figure has four decimals and its unit after it: the boxes are wider for them. */
+.transform-box.inches .transform-row {
+  grid-template-columns: 74px repeat(3, 104px);
+}
+
 .transform-label {
   display: flex;
   align-items: center;
@@ -3010,7 +3015,7 @@ kbd {
   font-size: 12.5px;
 }
 
-/* The Language box: the About box's frame round a short list, the language in use marked. */
+/* The Language box, and the Units box like it: the About box's frame round a short list, the one in use marked. */
 .about.language h2 {
   margin: 8px 0 0;
   font-size: 14px;

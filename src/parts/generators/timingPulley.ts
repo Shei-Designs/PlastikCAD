@@ -8,7 +8,7 @@ import type { BoreDefaults, HubDefaults } from '../features';
 import { arc, arcN, arcSegments, dedupe, deg, polar, rotatePoint, TAU } from '../math2d';
 import { extrude, revolve, union } from '../types';
 import type { Polygon, Quality, Solid, Vec2 } from '../types';
-import { mm, num, str } from './types';
+import { lengthInfo, mm, num, str } from './types';
 import type { BuildResult, GeneratorDef, InfoItem, Params } from './types';
 
 interface BeltBase {
@@ -216,12 +216,12 @@ function buildPulley(profiles: Record<string, BeltProfile>, p: Params, q: Qualit
   const { solid, height } = addHubAndBore(union(...parts), 0, zTop, p, q, warnings, hasBottom || hasTop ? rf : ro);
 
   const info: InfoItem[] = [
-    { label: tr('Pitch diameter'), value: mm(pitchD) },
-    { label: tr('Outside diameter'), value: mm(od) },
-    { label: tr('Root diameter'), value: mm(2 * rootR) },
+    lengthInfo(tr('Pitch diameter'), pitchD),
+    lengthInfo(tr('Outside diameter'), od),
+    lengthInfo(tr('Root diameter'), 2 * rootR),
   ];
-  if (hasBottom || hasTop) info.push({ label: tr('Flange diameter'), value: mm(2 * rf) });
-  info.push({ label: tr('Belt pitch'), value: mm(b.pitch, 3) }, { label: tr('Total height'), value: mm(height) });
+  if (hasBottom || hasTop) info.push(lengthInfo(tr('Flange diameter'), 2 * rf));
+  info.push({ label: tr('Belt pitch'), value: mm(b.pitch, 3) }, lengthInfo(tr('Total height'), height));
 
   return { solid, outline: [toothed, ...(boreShape(p, q) ?? [])], info, warnings };
 }
@@ -267,6 +267,7 @@ function makePulley(f: PulleyFamily): GeneratorDef {
             max: 100,
             step: 0.5,
             unit: 'mm',
+            metric: true,
           },
           {
             type: 'number',

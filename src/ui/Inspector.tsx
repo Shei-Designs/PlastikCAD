@@ -10,7 +10,8 @@ import { TEXT_FONTS } from '../model/types';
 import type { ImageAsset, PictureMapping, PictureNode, SceneNode, ShapeNode, TextAlign, TextNode } from '../model/types';
 import { geometry } from '../state/geometry';
 import { editPicture, editText, imageAssets, notify, pickImage, saveAsPart, setColor, setHole, setSelectedLocked, setTexture, toggleLocked, updateNode, updateSelected, useEditor } from '../state/store';
-import { CommitInput, formatNumber, NumberBox, SliderField } from './Fields';
+import { lengthText, sizeText } from '../units';
+import { CommitInput, NumberBox, SliderField } from './Fields';
 import { Hint } from './Hint';
 import { shortcutRows, tip } from './keymap';
 import { useCoarsePointer, useKeyboardAttached } from './inputMode';
@@ -121,6 +122,7 @@ function ShapeParams({ node }: { node: ShapeNode }) {
           step={p.step}
           integer={p.integer}
           unit={p.unit}
+          length={p.unit === 'mm'}
           disabled={locked}
           onChange={(v) => updateSelected((n) => (n.type === 'shape' ? withParam(n, p.key, v) : n), `param:${node.id}:${p.key}`)}
         />
@@ -220,11 +222,11 @@ function CurveFields({ node, curve }: { node: TextNode; curve: TextCurve }) {
           {bend ? tr('Fits') : tr('Circle')}
           <Hint text={bend ? tr('Sets the diameter of the cylinder the letters sit on, by changing the reach.') : tr('Sets the diameter of the circle the baseline follows, by changing the sweep.')} />
         </label>
-        <NumberBox id={`${id}-d`} label={tr('Diameter')} value={diameter} unit="mm" min={0.1} step={1} places={1} disabled={locked || flat <= 0} onChange={(d) => set({ angle: clampAngle((360 * flat) / (Math.PI * Math.max(d, 0.1))) })} />
+        <NumberBox id={`${id}-d`} label={tr('Diameter')} value={diameter} unit="mm" length min={0.1} step={1} places={1} disabled={locked || flat <= 0} onChange={(d) => set({ angle: clampAngle((360 * flat) / (Math.PI * Math.max(d, 0.1))) })} />
       </div>
       <div className="field">
         <label htmlFor={`${id}-t`}>{tr('Thickness')}</label>
-        <NumberBox id={`${id}-t`} label={tr('Thickness')} value={curve.thickness} unit="mm" min={0.1} step={0.5} places={2} disabled={locked} onChange={(t) => set({ thickness: Math.max(0.1, t) })} />
+        <NumberBox id={`${id}-t`} label={tr('Thickness')} value={curve.thickness} unit="mm" length min={0.1} step={0.5} places={2} disabled={locked} onChange={(t) => set({ thickness: Math.max(0.1, t) })} />
       </div>
       <div className="field">
         <div className="segmented" role="radiogroup" aria-label={bend ? tr('Which side of the cylinder') : tr('Which way the arc goes')}>
@@ -248,8 +250,9 @@ function PictureFields({ node }: { node: PictureNode }) {
   const asset = useEditor((s) => s.doc.assets[node.asset]);
   const image = asset?.kind === 'image' ? asset : null;
   const locked = Boolean(node.locked);
+  const unit = useEditor((s) => s.prefs.units);
   const [w, d, h] = node.size;
-  const shows = node.mapping === 'flat' ? `${formatNumber(w, 1)} × ${formatNumber(d, 1)} mm` : tr('{width} × {height} mm, {across} mm across', { width: formatNumber((Math.PI * w * node.angle) / 360, 1), height: formatNumber(h, 1), across: formatNumber(w, 1) });
+  const shows = node.mapping === 'flat' ? sizeText([w, d], unit, 1) : tr('{size}, {across} across', { size: sizeText([(Math.PI * w * node.angle) / 360, h], unit, 1), across: lengthText(w, unit, 1) });
   return (
     <fieldset className="group">
       <legend>{tr('Picture')}</legend>
@@ -346,7 +349,7 @@ function TextureFields({ node }: { node: SceneNode }) {
         </button>
       </div>
       {texture.mode === 'wrap' && <SliderField label={trx('texture', 'Turn')} help={tr('Turns the picture round the object. 0° puts its middle at the front.')} value={texture.turn} min={-180} max={180} step={1} integer unit="°" disabled={locked} onChange={(v) => setTexture({ ...texture, turn: v })} />}
-      {texture.mode === 'tile' && <SliderField label={tr('Tile size')} help={tr('Sets the size of one repeat of the picture.')} value={texture.scale} min={2} max={500} step={1} unit="mm" disabled={locked} onChange={(v) => setTexture({ ...texture, scale: v })} />}
+      {texture.mode === 'tile' && <SliderField label={tr('Tile size')} help={tr('Sets the size of one repeat of the picture.')} value={texture.scale} min={2} max={500} step={1} unit="mm" length disabled={locked} onChange={(v) => setTexture({ ...texture, scale: v })} />}
     </div>
   );
 }
@@ -355,6 +358,7 @@ const imageLabel = (image: ImageAsset) => `${image.name} (${image.width} × ${im
 
 function Overview() {
   const scene = useEditor((s) => s.doc.scene);
+  const unit = useEditor((s) => s.prefs.units);
   useSyncExternalStore(geometry.subscribe, geometry.getRevision);
   const visible = scene.filter((n) => !n.hidden && !n.hole);
   const size = visible.length ? boundsSize(unionBounds(visible.map((n) => geometry.bounds(n)))) : null;
@@ -376,7 +380,7 @@ function Overview() {
             </div>
             <div>
               <dt>{tr('Overall size')}</dt>
-              <dd>{tidyVec(size).map((v) => formatNumber(v, 1)).join(' × ')} mm</dd>
+              <dd>{sizeText(tidyVec(size), unit, 1)}</dd>
             </div>
           </dl>
         </fieldset>

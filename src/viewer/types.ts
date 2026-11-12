@@ -6,6 +6,7 @@ import type { Measurement } from '../geometry/measure';
 import type { Bounds, Mat } from '../model/math';
 import type { SceneNode, Vec3 } from '../model/types';
 import type { World } from '../robot/types';
+import type { Unit } from '../units';
 import type { BuildResult } from '../worker/protocol';
 
 export type ViewPreset = 'iso' | 'top' | 'front' | 'side';
@@ -14,6 +15,8 @@ export interface ViewerOptions {
   theme: 'dark' | 'light';
   edges: boolean;
   grid: boolean;
+  /** The unit the readouts are in and the grid's lines fall on; everything else here is in millimeters. */
+  units: Unit;
   /** Grid step that drags snap to, in mm; 0 = free. */
   snap: number;
   /**
@@ -132,7 +135,8 @@ export type HandleKind =
 
 export interface HandlePrompt {
   kind: HandleKind;
-  unit: string;
+  /** What the values are in: a length's are millimeters, whatever unit they are then shown and typed in. */
+  unit: 'mm' | '°';
   /** The middle of the object, in the scene. */
   center: Vec3;
   /** One box per value, each sitting just outside the edge of the object it measures, with its place on screen. */

@@ -301,7 +301,6 @@ export const partsDrive: Catalog = {
   'The chain is too short for these sprockets; the shortest that fits has {n} links.': 'La chaîne est trop courte pour ces pignons\u00a0; la plus courte qui convient compte {n} maillons.',
   'The belt is too short for these pulleys; the shortest that fits has {n} teeth.': 'La courroie est trop courte pour ces poulies\u00a0; la plus courte qui convient compte {n} dents.',
   'The belt is too short for these pulleys; the shortest that fits is {n} mm long.': 'La courroie est trop courte pour ces poulies\u00a0; la plus courte qui convient mesure {n} mm.',
-  'Belt length {length} mm': 'Longueur de courroie {length}\u00a0mm',
   'The part is tilted; the mate is placed as if it stood upright.': 'La pièce est inclinée\u00a0; la pièce conjuguée est placée comme si elle ne l’était pas.',
   'The part has been resized, so its teeth no longer match its pitch; the mate fits the unresized part.':
     'La pièce a été redimensionnée\u00a0: ses dents ne correspondent plus à son pas\u00a0; la pièce conjuguée convient à la pièce non redimensionnée.',

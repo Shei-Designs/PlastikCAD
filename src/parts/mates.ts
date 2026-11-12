@@ -62,6 +62,8 @@ export interface Mate {
   /** Mate teeth over gear teeth (or worm starts); NaN for a rack. */
   ratio: number;
   warnings: string[];
+  /** The length of the belt that joins a pulley to its mate, mm. */
+  belt?: number;
   /** Something worth knowing about the mate that is not a problem. */
   note?: string;
   /** What to call the part when its kind's own name would mislead (a helical gear used as a worm wheel). */
@@ -199,7 +201,7 @@ function driveMate(source: PartNode, req: MateRequest, warnings: string[]): Mate
     ratio: z2 / z1,
     warnings,
   };
-  if (kind === 'pulley') mate.note = tr('Belt length {length} mm', { length: Number(length.toFixed(2)) });
+  if (kind === 'pulley') mate.belt = length;
   return mate;
 }
 
@@ -238,7 +240,7 @@ function vBeltMate(source: PartNode, req: MateRequest, warnings: string[]): Mate
     center,
     ratio: d2 / d1,
     warnings,
-    note: tr('Belt length {length} mm', { length: Number(length.toFixed(2)) }),
+    belt: length,
   };
 }
 

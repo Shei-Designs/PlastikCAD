@@ -315,7 +315,7 @@ describe('belt and chain mates', () => {
     expect(mate.offset[1]).toBeCloseTo(80, 6);
     expect(mate.offset[2]).toBe(0);
     expect(mate.rotation).toEqual([0, 0, 15]);
-    expect(mate.note).toBe('Belt length 200 mm');
+    expect(mate.belt).toBeCloseTo(200, 9);
     expect(mate.warnings).toEqual([]);
   });
 
@@ -335,7 +335,7 @@ describe('belt and chain mates', () => {
     const source = part('sprocket', { chain: '25', teeth: 16 });
     const mate = mateOf(source, drive('sprocket', 16, 40));
     expect(mate.center).toBeCloseTo(12 * 6.35, 6);
-    expect(mate.note).toBeUndefined();
+    expect(mate.belt).toBeUndefined();
     const { a, b } = check('sprocket', { chain: '25', teeth: 16 }, 0, drive('sprocket', 16, 40));
     expect(overlap(a, b)).toBeCloseTo(0, 6);
   });
@@ -344,7 +344,7 @@ describe('belt and chain mates', () => {
     const pulley = part('gt2-pulley', { profile: '2', teeth: 20 });
     const span = usualSpan(pulley, 'pulley', 40);
     const mate = mateOf(pulley, drive('pulley', 40));
-    expect(mate.note).toBe(`Belt length ${span * 2} mm`);
+    expect(mate.belt).toBeCloseTo(span * 2, 9);
     const sum = (60 * 2) / Math.PI;
     expect(mate.center).toBeGreaterThanOrEqual(sum - 1e-9);
     expect(mate.center).toBeLessThan(sum + 2);
@@ -464,7 +464,7 @@ describe('the second pulley of a V-belt drive', () => {
     expect(mate.part).toBe('v-belt-pulley');
     expect(mate.params).toMatchObject({ section: 'A', diameter: 160 });
     expect(mate.ratio).toBe(2);
-    expect(mate.note).toBe('Belt length 1000 mm');
+    expect(mate.belt).toBe(1000);
     expect(mate.warnings).toEqual([]);
     // A belt of that length goes round the two at that distance and no other.
     expect(beltLength(80, 160, mate.center)).toBeCloseTo(1000, 6);
@@ -479,7 +479,7 @@ describe('the second pulley of a V-belt drive', () => {
     const length = usualSpan(pulley(), 'vbelt', 160);
     expect(length % 10).toBe(0);
     const mate = mateOf(pulley(), asked(160));
-    expect(mate.note).toBe(`Belt length ${length} mm`);
+    expect(mate.belt).toBe(length);
     expect(mate.center).toBeGreaterThanOrEqual(240 - 1e-9);
     expect(mate.center).toBeLessThan(246);
   });

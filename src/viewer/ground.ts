@@ -3,6 +3,8 @@
 import { BoxGeometry, BufferAttribute, BufferGeometry, DoubleSide, Group, Mesh, MeshStandardMaterial, PlaneGeometry } from 'three';
 import type { Object3D } from 'three';
 import { terrain, worldBlocks } from '../io/mjcf';
+import { fromUnit } from '../units';
+import type { Unit } from '../units';
 import type { ViewerOptions } from './types';
 
 /**
@@ -59,6 +61,20 @@ export function disposeGround(ground: Object3D): void {
     }
   });
   for (const m of materials) m.dispose();
+}
+
+/**
+ * The plate's grid for a design that reaches `wanted` mm from the middle: how far the grid runs each way, and the
+ * steps of its heavy and its light lines. The heavy lines fall on tens of millimeters, or on whole inches; with
+ * more than thirty of them each way they fall on ten times that, then a hundred. The light lines split a heavy
+ * step in ten, an inch in eight; on a big plate in two, where a line every millimeter is more lines than it is help.
+ */
+export function plateGrid(wanted: number, unit: Unit): { half: number; major: number; minor: number } {
+  const base = unit === 'in' ? fromUnit(1, 'in') : 10;
+  const major = wanted <= 30 * base ? base : wanted <= 300 * base ? 10 * base : 100 * base;
+  // Whole steps first: five inches times six is 762 mm, where 25.4 × 6 × 5 falls a hair short of it.
+  const half = Math.ceil(wanted / (major * 5)) * 5 * major;
+  return { half, major, minor: half <= 15 * base ? major / (unit === 'in' ? 8 : 10) : major / 2 };
 }
 
 export function gridLines(half: number, step: number, skipStep: number): BufferGeometry {

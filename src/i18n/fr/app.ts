@@ -17,6 +17,7 @@ export const app: Catalog = {
   'Projects…': 'Projets…',
   'Open project file…': 'Ouvrir un fichier…',
   'Save a copy…': 'Enregistrer une copie…',
+  'Units…': 'Unités…',
   'Language…': 'Langue…',
   'About {app}…': 'À propos de {app}…',
 
@@ -34,6 +35,12 @@ export const app: Catalog = {
   'Same as this device': 'Celle de l’appareil',
   '{app} starts again in the language chosen.': '{app} redémarre dans la langue choisie.',
   Close: 'Fermer',
+
+  // The Units box (Units.tsx), and the unit as it is written after a figure (units.ts)
+  Units: 'Unités',
+  Millimeters: 'Millimètres',
+  Inches: 'Pouces',
+  'in [[unit]]': 'po',
 
   // The About box (About.tsx)
   'About {app}': 'À propos de {app}',

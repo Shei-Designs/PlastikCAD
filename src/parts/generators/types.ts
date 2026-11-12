@@ -1,3 +1,5 @@
+import { lengthFixed } from '../../units';
+import type { Unit } from '../../units';
 import type { Quality, Shape2D, Solid } from '../types';
 
 export type ParamValue = number | string | boolean;
@@ -19,6 +21,8 @@ export interface NumberParam extends BaseParam {
   max: number;
   step: number;
   unit?: string;
+  /** With `unit: 'mm'`: a standard's own figure (a module, a metric pitch), which stays in millimeters when the user works in inches. */
+  metric?: boolean;
   integer?: boolean;
 }
 
@@ -43,7 +47,10 @@ export interface ParamGroup {
 
 export interface InfoItem {
   label: string;
+  /** What the row says; with lengths in it, in millimeters. */
   value: string;
+  /** The same in inches, for a row of lengths the part is sized by. A row without one is a standard's own figure, or not a length: it reads the same in both units. */
+  inches?: string;
 }
 
 export interface BuildResult {
@@ -77,8 +84,12 @@ export const num = (p: Params, key: string): number => {
 export const str = (p: Params, key: string): string => String(p[key]);
 export const bool = (p: Params, key: string): boolean => Boolean(p[key]);
 
-/** Format a length for the info panel. */
+/** Format a length for the info panel: a standard's own figure, which is in millimeters whatever unit the user works in. */
 export const mm = (v: number, digits = 2) => `${v.toFixed(digits)} mm`;
+/** A row of the info panel that holds lengths the part is sized by: `text` writes it for a unit. */
+export const unitInfo = (label: string, text: (unit: Unit) => string): InfoItem => ({ label, value: text('mm'), inches: text('in') });
+/** A row of the info panel for one such length. */
+export const lengthInfo = (label: string, v: number, digits = 2): InfoItem => unitInfo(label, (unit) => lengthFixed(v, unit, digits));
 export const degrees = (v: number, digits = 2) => `${v.toFixed(digits)}°`;
 
 export function defaultParams(def: GeneratorDef): Params {

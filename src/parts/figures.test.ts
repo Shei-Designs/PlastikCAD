@@ -27,6 +27,21 @@ describe('partFigures', () => {
     expect(partFigures(part('spur'))).toBe(figures);
   });
 
+  it('gives the lengths a part is sized by in inches as well, and a standard\'s own figures in millimeters alone', () => {
+    const row = (id: string, label: string) => partFigures(part(id)).info.find((i) => i.label === label)!;
+    // 20 teeth of module 2.
+    expect(row('spur', 'Pitch diameter')).toEqual({ label: 'Pitch diameter', value: '40.00 mm', inches: '1.5748 in' });
+    expect(row('helical', 'Transverse module').inches).toBeUndefined();
+    expect(row('rack', 'Tooth pitch').inches).toBeUndefined();
+    expect(row('rack', 'Length').inches).toMatch(/^\d+\.\d{4} in$/);
+    expect(row('gt2-pulley', 'Belt pitch')).toEqual({ label: 'Belt pitch', value: '2.000 mm' });
+    expect(row('sprocket', 'Chain pitch').inches).toBeUndefined();
+    expect(row('worm', 'Axial pitch').inches).toBeUndefined();
+    expect(row('worm', 'Lead').inches).toBeUndefined();
+    // A count and an angle are no lengths.
+    expect(row('bevel', 'Pitch cone angle').inches).toBeUndefined();
+  });
+
   it('has nothing to say about a part it cannot build', () => {
     expect(partFigures(part('spur', { part: 'no-such-part' }))).toEqual({ info: [], warnings: [] });
   });

@@ -63,15 +63,8 @@ Elsewhere:
 
 ## Next to build
 
-Smaller pieces, each of which can be built without a session.
-
-- **STEP export, what still goes out as facets**: bevel gears came out
-  right for some settings only in the trial of 2026-11-11, and come last,
-  if at all; a throated worm wheel and threads of eight starts on a thin
-  shaft stay facets. (Eggs, tall domes and oval cones cannot be done: a
-  STEP file does not keep an oval turned round an axis.)
-- **Inches as the working unit**: an option for what is shown and typed.
-  Designs stay in millimeters, and metric stays what the app starts with.
+Nothing is waiting here: what could be built without a session has been.
+The phases below are next.
 
 ## Phases that need a session first
 
@@ -99,6 +92,8 @@ Things only the real devices and accounts can show.
 - On the tablet: how long a STEP export of a helical gear and of a bolt
   takes (about a second each on the workstation).
 - A STEP file with a helical gear and a bolt opened in Fusion 360.
+- On the tablet: inches (**File → Units…**): the boxes, the entry sheet,
+  the snap steps and the grid.
 - On the tablet: a swipe that begins on a slider scrolls the inspector, and
   a drag along it or a tap still sets it (#66).
 - On the desktop: saving a STEP export through the dialog; the Mac build.
@@ -117,6 +112,14 @@ Things only the real devices and accounts can show.
 Not dropped: taken up when asked for.
 
 - Languages other than English and French.
+- True surfaces in STEP files for what still goes out as facets: bevel
+  gears (right for some settings only in the trial of 2026-11-11), a
+  throated worm wheel, threads of eight starts on a thin shaft. (Eggs, tall
+  domes and oval cones cannot be done at all: a STEP file does not keep an
+  oval turned round an axis.)
+- Fractions of an inch typed into a box, and inch figures in the warnings
+  and questions that name a length: inches are decimal, and those sentences
+  stay in millimeters.
 - The browser tests in WebKit as well as Chromium: the script that tries
   the built apps before a release (`pnpm check:apps`) runs the desktop app
   itself, which is WebKit; taken up only if a fault gets past it.

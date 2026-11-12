@@ -8,6 +8,8 @@ import type { Feature, PointKind } from './features';
 import { tr } from '../i18n';
 import { add, dot, length, normalize, scale, sub } from '../model/math';
 import type { Vec3 } from '../model/types';
+import { areaText, lengthFigure, lengthText } from '../units';
+import type { Unit } from '../units';
 
 export interface Measurement {
   /** The value that matters most, short enough for a label. */
@@ -19,11 +21,14 @@ export interface Measurement {
   to: Vec3 | null;
 }
 
-/** Millimetres to two decimals, without trailing zeros. */
-export const mm = (v: number): string => `${Number((Math.abs(v) < 5e-3 ? 0 : v).toFixed(2))} mm`;
+/** A length in `unit`, with it after. Under five thousandths of a millimeter is nothing. */
+const reading = (v: number, unit: Unit): string => lengthText(Math.abs(v) < 5e-3 ? 0 : v, unit);
 /** Degrees to one decimal. */
 export const deg = (v: number): string => `${Number(v.toFixed(1))}°`;
-const place = (p: Vec3): string => `(${[0, 1, 2].map((k) => Number(p[k].toFixed(2))).join(', ')})`;
+/** Where a point is, in `unit`. */
+const place = (p: Vec3, unit: Unit): string => `(${p.map((v) => lengthFigure(v, unit)).join(', ')})`;
+/** A direction, which has no unit. */
+const heading = (v: Vec3): string => `(${v.map((c) => Number(c.toFixed(2))).join(', ')})`;
 /** The acute angle between two lines (0–90°) and its supplement, as "45° (135°)"; a right angle alone. */
 const between = (a: Vec3, b: Vec3): { acute: number; text: string } => {
   const c = Math.min(1, Math.abs(dot(normalize(a), normalize(b))));
@@ -33,26 +38,29 @@ const between = (a: Vec3, b: Vec3): { acute: number; text: string } => {
 
 const NAMES: Record<Feature['kind'], string> = { point: tr('Point'), middle: tr('Edge middle'), quadrant: tr('Quadrant'), facecenter: tr('Face center'), center: tr('Object center'), edge: tr('Edge'), face: tr('Face'), circle: tr('Circle') };
 
-/** A feature's own figures. */
-export function describe(f: Feature): Measurement {
+/** A feature's own figures, its lengths in `unit`. */
+export function describe(f: Feature, unit: Unit = 'mm'): Measurement {
+  const len = (v: number) => reading(v, unit);
   switch (f.kind) {
     case 'point':
     case 'middle':
     case 'quadrant':
     case 'facecenter':
     case 'center':
-      return { text: NAMES[f.kind], lines: [NAMES[f.kind], place(f.at)], from: f.at, to: null };
+      return { text: NAMES[f.kind], lines: [NAMES[f.kind], place(f.at, unit)], from: f.at, to: null };
     case 'edge': {
       const l = length(sub(f.b, f.a));
-      return { text: mm(l), lines: [tr('Edge {length}', { length: mm(l) }), tr('from {point}', { point: place(f.a) }), tr('to {point}', { point: place(f.b) })], from: f.a, to: f.b };
+      return { text: len(l), lines: [tr('Edge {length}', { length: len(l) }), tr('from {point}', { point: place(f.a, unit) }), tr('to {point}', { point: place(f.b, unit) })], from: f.a, to: f.b };
     }
     case 'circle': {
       const whole = f.sweep >= 359.9;
-      const head = whole ? tr('Circle Ø {diameter}', { diameter: mm(2 * f.radius) }) : tr('Arc R {radius}, {sweep}', { radius: mm(f.radius), sweep: deg(f.sweep) });
-      return { text: whole ? `Ø ${mm(2 * f.radius)}` : `R ${mm(f.radius)}`, lines: [head, whole ? `R ${mm(f.radius)}` : `Ø ${mm(2 * f.radius)}`, tr('center {point}', { point: place(f.center) })], from: f.center, to: null };
+      const head = whole ? tr('Circle Ø {diameter}', { diameter: len(2 * f.radius) }) : tr('Arc R {radius}, {sweep}', { radius: len(f.radius), sweep: deg(f.sweep) });
+      return { text: whole ? `Ø ${len(2 * f.radius)}` : `R ${len(f.radius)}`, lines: [head, whole ? `R ${len(f.radius)}` : `Ø ${len(2 * f.radius)}`, tr('center {point}', { point: place(f.center, unit) })], from: f.center, to: null };
     }
-    case 'face':
-      return { text: `${Number(f.area.toFixed(1))} mm²`, lines: [f.flat ? tr('Face {area} mm²', { area: Number(f.area.toFixed(1)) }) : tr('Surface {area} mm²', { area: Number(f.area.toFixed(1)) }), tr('normal {vector}', { vector: place(f.normal) })], from: f.at, to: null };
+    case 'face': {
+      const area = areaText(f.area, unit);
+      return { text: area, lines: [f.flat ? tr('Face {area}', { area }) : tr('Surface {area}', { area }), tr('normal {vector}', { vector: heading(f.normal) })], from: f.at, to: null };
+    }
   }
 }
 
@@ -74,12 +82,13 @@ type AsPoint = Extract<Feature, { kind: PointKind | 'circle' }>;
 const isPoint = (f: Feature): f is AsPoint => f.kind !== 'edge' && f.kind !== 'face';
 
 /** Distance between two points, with how far apart they are along each axis; `head` words the first line around the distance. */
-function apart(a: Vec3, b: Vec3, head: (distance: string) => string): Measurement {
+function apart(a: Vec3, b: Vec3, unit: Unit, head: (distance: string) => string): Measurement {
+  const len = (v: number) => reading(v, unit);
   const d = sub(b, a);
-  const lines = [head(mm(length(d)))];
-  const parts = ['X', 'Y', 'Z'].map((axis, k) => (Math.abs(d[k]) >= 5e-3 ? `${axis} ${mm(Math.abs(d[k]))}` : null)).filter((x): x is string => x !== null);
+  const lines = [head(len(length(d)))];
+  const parts = ['X', 'Y', 'Z'].map((axis, k) => (Math.abs(d[k]) >= 5e-3 ? `${axis} ${len(Math.abs(d[k]))}` : null)).filter((x): x is string => x !== null);
   if (parts.length > 1) lines.push(parts.join(' · '));
-  return { text: mm(length(d)), lines, from: a, to: b };
+  return { text: len(length(d)), lines, from: a, to: b };
 }
 
 /** Where a point lands on a plane. */
@@ -89,11 +98,12 @@ const foot = (p: Vec3, on: Vec3, normal: Vec3): Vec3 => sub(p, scale(normal, dot
  * Two features measured against each other. Points (and circles, by their
  * centres) give distances; two edges or two faces give the angle between
  * them, or the gap when they run parallel; an edge against a face gives its
- * angle to the face.
+ * angle to the face. Lengths are in `unit`.
  */
-export function measure(a: Feature, b: Feature): Measurement {
+export function measure(a: Feature, b: Feature, unit: Unit = 'mm'): Measurement {
+  const len = (v: number) => reading(v, unit);
   if (isPoint(a) && isPoint(b)) {
-    const m = apart(pointOf(a), pointOf(b), (distance) => (a.kind === 'circle' && b.kind === 'circle' ? tr('Centers {distance}', { distance }) : tr('Distance {distance}', { distance })));
+    const m = apart(pointOf(a), pointOf(b), unit, (distance) => (a.kind === 'circle' && b.kind === 'circle' ? tr('Centers {distance}', { distance }) : tr('Distance {distance}', { distance })));
     if (a.kind === 'circle' && b.kind === 'circle') {
       const axes = between(a.normal, b.normal);
       if (axes.acute > 0.05) m.lines.push(tr('axes {angle} apart', { angle: axes.text }));
@@ -104,12 +114,12 @@ export function measure(a: Feature, b: Feature): Measurement {
   if (isPoint(a) || isPoint(b)) {
     const [p, other] = isPoint(a) ? [pointOf(a), b as Exclude<Feature, AsPoint>] : [pointOf(b), a as Exclude<Feature, AsPoint>];
     if (other.kind === 'edge') {
-      const m = apart(p, closestOnSegment(other.a, other.b, p), (distance) => tr('To the edge {distance}', { distance }));
+      const m = apart(p, closestOnSegment(other.a, other.b, p), unit, (distance) => tr('To the edge {distance}', { distance }));
       return m;
     }
     const f = foot(p, other.at, other.normal);
     const d = Math.abs(dot(sub(p, other.at), other.normal));
-    return { text: mm(d), lines: [other.flat ? tr('To the face {distance}', { distance: mm(d) }) : tr('To the surface {distance}', { distance: mm(d) })], from: p, to: f };
+    return { text: len(d), lines: [other.flat ? tr('To the face {distance}', { distance: len(d) }) : tr('To the surface {distance}', { distance: len(d) })], from: p, to: f };
   }
   if (a.kind === 'edge' && b.kind === 'edge') {
     const da = sub(a.b, a.a);
@@ -118,11 +128,11 @@ export function measure(a: Feature, b: Feature): Measurement {
     const { p, q } = closestBetweenSegments(a.a, a.b, b.a, b.b);
     const gap = length(sub(q, p));
     if (angle.acute < 0.05) {
-      const m = apart(p, q, (distance) => tr('Parallel, apart {distance}', { distance }));
+      const m = apart(p, q, unit, (distance) => tr('Parallel, apart {distance}', { distance }));
       return m;
     }
     const lines = [tr('Angle {angle}', { angle: angle.text })];
-    if (gap >= 5e-3) lines.push(tr('nearest {distance} apart', { distance: mm(gap) }));
+    if (gap >= 5e-3) lines.push(tr('nearest {distance} apart', { distance: len(gap) }));
     return { text: angle.text, lines, from: p, to: q };
   }
   if (a.kind === 'face' && b.kind === 'face') {
@@ -130,7 +140,7 @@ export function measure(a: Feature, b: Feature): Measurement {
     if (angle.acute < 0.05) {
       const f = foot(a.at, b.at, b.normal);
       const d = Math.abs(dot(sub(a.at, b.at), b.normal));
-      return { text: mm(d), lines: [tr('Parallel, {distance} apart', { distance: mm(d) })], from: a.at, to: f };
+      return { text: len(d), lines: [tr('Parallel, {distance} apart', { distance: len(d) })], from: a.at, to: f };
     }
     return { text: angle.text, lines: [tr('Angle {angle}', { angle: angle.text })], from: a.at, to: b.at };
   }
@@ -142,7 +152,7 @@ export function measure(a: Feature, b: Feature): Measurement {
   const mid = scale(add(edge.a, edge.b), 0.5);
   if (tilt < 0.05) {
     const d = Math.abs(dot(sub(mid, face.at), face.normal));
-    return { text: mm(d), lines: [tr('Along the face, {distance} off it', { distance: mm(d) })], from: mid, to: foot(mid, face.at, face.normal) };
+    return { text: len(d), lines: [tr('Along the face, {distance} off it', { distance: len(d) })], from: mid, to: foot(mid, face.at, face.normal) };
   }
   return { text: deg(tilt), lines: [tr('Angle to the face {angle}', { angle: deg(tilt) }), tr('to its normal {angle}', { angle: deg(toNormal) })], from: mid, to: face.at };
 }

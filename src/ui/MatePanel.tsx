@@ -10,6 +10,7 @@ import type { MateKind, MateRequest } from '../parts/mates';
 import type { Params } from '../parts/generators/types';
 import { V_BELT_DIAMETERS } from '../parts/generators/vbelt';
 import { cancelMate, commitMate, previewMate, useEditor } from '../state/store';
+import { lengthText } from '../units';
 import { formatNumber, NumberBox } from './Fields';
 import { Hint } from './Hint';
 
@@ -34,6 +35,7 @@ function Figure({ label, help, ...box }: { label: string; help?: string } & Omit
 
 export function MatePanel() {
   const mating = useEditor((s) => s.mating);
+  const unit = useEditor((s) => s.prefs.units);
   const source = useEditor((s) => s.doc.scene.find((n) => n.id === s.mating?.source) ?? null);
   // The mate the panel asks for is not in the scene yet: Accept would keep the one before it.
   const busy = useEditor((s) => s.busy !== null || Boolean(s.mating?.building));
@@ -109,7 +111,7 @@ export function MatePanel() {
       )}
       <div className="mate-pair">
         {vbelt ? (
-          <Figure label={tr('Datum diameter')} value={teeth} unit="mm" min={V_BELT_DIAMETERS.min} max={V_BELT_DIAMETERS.max} step={1} onChange={setCount} />
+          <Figure label={tr('Datum diameter')} value={teeth} unit="mm" length min={V_BELT_DIAMETERS.min} max={V_BELT_DIAMETERS.max} step={1} onChange={setCount} />
         ) : (
           <Figure label={planetary ? tr('Sun teeth') : tr('Teeth')} help={fixed !== null ? tr('Taken from the bevel gear’s mating tooth count.') : undefined} value={teeth} min={current === 'rack' ? 2 : current === 'pulley' ? 10 : current === 'sprocket' ? 8 : 5} max={current === 'pulley' ? 200 : current === 'sprocket' ? 120 : 400} integer disabled={fixed !== null} onChange={setCount} />
         )}
@@ -132,7 +134,7 @@ export function MatePanel() {
           />
         )}
       </div>
-      {vbelt && <Figure label={tr('Belt length')} help={tr('Sets the length of the belt, and with it how far apart the pulleys stand.')} value={span ?? 0} unit="mm" min={50} max={20000} step={10} onChange={setTypedSpan} />}
+      {vbelt && <Figure label={tr('Belt length')} help={tr('Sets the length of the belt, and with it how far apart the pulleys stand.')} value={span ?? 0} unit="mm" length min={50} max={20000} step={10} onChange={setTypedSpan} />}
       {drive && !vbelt && (
         <Figure
           label={current === 'pulley' ? tr('Belt teeth') : tr('Chain links')}
@@ -144,7 +146,7 @@ export function MatePanel() {
           onChange={setTypedSpan}
         />
       )}
-      {!drive && <Figure label={tr('Backlash')} help={tr("Sets how much thinner than ideal the mate's teeth are made.")} value={backlash} unit="mm" min={0} max={2} step={0.05} onChange={setBacklash} />}
+      {!drive && <Figure label={tr('Backlash')} help={tr("Sets how much thinner than ideal the mate's teeth are made.")} value={backlash} unit="mm" length min={0} max={2} step={0.05} onChange={setBacklash} />}
       {!drive && !planetary && <Figure
         label={current === 'bevel' ? tr('Extra mounting distance') : tr('Extra center distance')}
         help={
@@ -156,12 +158,14 @@ export function MatePanel() {
         }
         value={extra}
         unit="mm"
+        length
         min={0}
         max={5}
         step={0.05}
         onChange={setExtra}
       />}
       <Figure label={tr('Side')} help={planetary ? tr('Sets the angle around the ring where the first planet goes. 0° is +X, 90° is +Y.') : drive ? tr('Sets the angle around this part where the mate goes. 0° is +X, 90° is +Y.') : tr('Sets the angle around this gear where the mate goes. 0° is +X, 90° is +Y.')} value={angle} unit="°" min={-360} max={360} onChange={setAngle} />
+      {mate.belt !== undefined && <p className="field-note">{tr('Belt length {length}', { length: lengthText(mate.belt, unit) })}</p>}
       {mate.note && <p className="field-note">{mate.note}</p>}
       {mate.warnings.map((w) => (
         <p key={w} className="field-note warn">
@@ -170,10 +174,10 @@ export function MatePanel() {
       ))}
       <p className="field-note mate-figure">
         {current === 'rack'
-          ? tr('Pitch line {distance} mm', { distance: formatNumber(mate.center, 3) })
+          ? tr('Pitch line {distance}', { distance: lengthText(mate.center, unit, 3) })
           : current === 'bevel'
-            ? tr('Cone distance {distance} mm', { distance: formatNumber(mate.center, 3) })
-            : tr('Center distance {distance} mm', { distance: formatNumber(mate.center, 3) })}
+            ? tr('Cone distance {distance}', { distance: lengthText(mate.center, unit, 3) })
+            : tr('Center distance {distance}', { distance: lengthText(mate.center, unit, 3) })}
       </p>
       <div className="mate-actions">
         <button type="button" className="chip" onClick={() => finish(false)}>
