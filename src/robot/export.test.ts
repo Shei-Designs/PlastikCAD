@@ -345,6 +345,11 @@ describe('the pose a simulation begins in', () => {
     expect(pkg.warnings).toEqual([]);
     expect(file('urdf/test_rover.urdf')).toMatch(/<joint name="hip">\s*<command_interface name="position"\/>\s*<command_interface name="effort"\/>[\s\S]*?<state_interface name="velocity"\/>\s*<state_interface name="effort"\/>\s*<\/joint>/);
     expect(file('config/controllers.yaml')).toMatch(/command_interfaces:\s*- position\n/);
+    // The Isaac stage's drive holds nothing and says why; a joint commanded by position keeps its stiffness.
+    const stage = (doc: Doc) => text(buildIsaacStage(doc, geo(doc)).files.find((f) => f.name.endsWith('.usda'))!.bytes);
+    expect(stage(d)).toMatch(/float drive:angular:physics:stiffness = 0\n[\s\S]*?custom token robot:command = "effort"/);
+    expect(stage(walker(90))).not.toContain('robot:command');
+    expect(stage(walker(90))).not.toMatch(/float drive:angular:physics:stiffness = 0\n/);
     // A joint commanded by position says nothing of effort.
     expect(text(buildRobotPackage(walker(90), geo(walker(90))).files.find((f) => f.name === 'urdf/test_rover.urdf')!.bytes)).not.toContain('"effort"');
   });
