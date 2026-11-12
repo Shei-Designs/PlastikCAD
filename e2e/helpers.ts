@@ -505,6 +505,9 @@ export const drawnMesh = (page: Page): Promise<{ triangles: number; indexed: num
 export const edgesShown = (page: Page): Promise<boolean> =>
   viewer(page, (v) => [...v.objects.drawn.values()].filter((d: Internals) => !d.item.selected).some((d: Internals) => d.edges && d.edges.visible));
 
+/** The plate's grid: how far it runs each way from the middle, and the step of its heavy lines, in mm. */
+export const plateGrid = (page: Page): Promise<{ half: number; major: number }> => viewer(page, (v) => ({ half: v.gridHalf as number, major: v.gridStep as number }));
+
 /** Whether the box that points out a part of a group is on show. */
 export const pointingBoxShown = (page: Page): Promise<boolean> => viewer(page, (v) => v.pointer3d.visible);
 

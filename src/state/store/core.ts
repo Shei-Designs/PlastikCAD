@@ -11,6 +11,8 @@ import type { Layer } from '../../model/ops';
 import type { Doc, Scene, SceneNode, Vec3 } from '../../model/types';
 import { loadPrefs, savePrefs } from '../persist';
 import type { Prefs } from '../persist';
+import { nearestSnap } from '../../units';
+import type { Unit } from '../../units';
 import type { Solved } from '../../robot/kinematics';
 import { pruned } from '../../robot/model';
 import type { Feature, FeatureKind } from '../../geometry/features';
@@ -233,6 +235,11 @@ export function stopWork(): void {
 
 export function setPrefs(patch: Partial<Prefs>): void {
   set({ prefs: { ...state.prefs, ...patch } });
+}
+
+/** Changes the unit lengths are shown and typed in; the snap step goes to the nearest of that unit's steps. */
+export function setUnits(units: Unit): void {
+  if (units !== state.prefs.units) setPrefs({ units, snap: nearestSnap(state.prefs.snap, units) });
 }
 
 // --- scene edits and undo -------------------------------------------------

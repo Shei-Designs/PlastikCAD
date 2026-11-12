@@ -5,7 +5,7 @@ import { arc, arcSegments, circle, deg, toDeg, TAU } from '../math2d';
 import { shearedPrism } from '../meshUtil';
 import { extrude, intersection, mirror, translate, union } from '../types';
 import type { Polygon, Quality, Solid, Vec2 } from '../types';
-import { bool, mm, num } from './types';
+import { bool, lengthInfo, num } from './types';
 import type { GeneratorDef, InfoItem, ParamDef, ParamGroup, Params } from './types';
 
 const moduleParam: ParamDef = {
@@ -183,12 +183,12 @@ function involuteGear(kind: GearKind): GeneratorDef {
       const bore = boreShape(p, q);
 
       const info: InfoItem[] = [
-        { label: tr('Pitch diameter'), value: mm(2 * r) },
-        { label: tr('Outside diameter'), value: mm(2 * profile.outerRadius) },
-        { label: tr('Root diameter'), value: mm(2 * profile.rootRadius) },
+        lengthInfo(tr('Pitch diameter'), 2 * r),
+        lengthInfo(tr('Outside diameter'), 2 * profile.outerRadius),
+        lengthInfo(tr('Root diameter'), 2 * profile.rootRadius),
       ];
-      if (helical) info.push({ label: tr('Transverse module'), value: mm(spec.module, 3) });
-      info.push({ label: tr('Total height'), value: mm(height) });
+      if (helical) info.push(lengthInfo(tr('Transverse module'), spec.module, 3));
+      info.push(lengthInfo(tr('Total height'), height));
 
       return { solid, outline: bore ? [outline, ...bore] : [outline], info, warnings };
     },
@@ -251,9 +251,9 @@ export const ringGear: GeneratorDef = {
 
     const sun = Math.round(num(p, 'sunTeeth'));
     const info: InfoItem[] = [
-      { label: tr('Pitch diameter'), value: mm(2 * ring.pitchRadius) },
-      { label: tr('Inside diameter'), value: mm(2 * ring.innerRadius) },
-      { label: tr('Outside diameter'), value: mm(2 * outer) },
+      lengthInfo(tr('Pitch diameter'), 2 * ring.pitchRadius),
+      lengthInfo(tr('Inside diameter'), 2 * ring.innerRadius),
+      lengthInfo(tr('Outside diameter'), 2 * outer),
     ];
     if (sun >= z - 4) {
       warnings.push(tr('The sun gear is too large for this ring.'));
@@ -266,7 +266,7 @@ export const ringGear: GeneratorDef = {
       info.push({ label: tr('Evenly spaced planets'), value: counts.length ? counts.join(', ') : tr('none') });
       info.push({ label: tr('Ratio, sun to carrier'), value: `${(1 + z / sun).toFixed(3).replace(/\.?0+$/, '')} : 1` });
     }
-    info.push({ label: tr('Total height'), value: mm(height) });
+    info.push(lengthInfo(tr('Total height'), height));
     return { solid: extrude(shape, height), outline: shape, info, warnings };
   },
 };
@@ -417,10 +417,10 @@ export const rack: GeneratorDef = {
     }
 
     const info: InfoItem[] = [
-      { label: tr('Length'), value: mm(length) },
-      { label: tr('Tooth pitch'), value: mm(pitch, 3) },
-      { label: tr('Pitch line height'), value: mm(pitchLine) },
-      { label: tr('Total height'), value: mm(top) },
+      lengthInfo(tr('Length'), length),
+      lengthInfo(tr('Tooth pitch'), pitch, 3),
+      lengthInfo(tr('Pitch line height'), pitchLine),
+      lengthInfo(tr('Total height'), top),
     ];
     return { solid, outline: [outline], info, warnings };
   },

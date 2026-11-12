@@ -160,7 +160,7 @@ export const robot: Catalog = {
   'On the child': 'Sur l’enfant',
   'On the parent': 'Sur le parent',
   Origin: 'Origine',
-  "Where the joint sits, in the design's coordinates (mm).": 'Position de l’articulation, dans les coordonnées de la conception (mm).',
+  "Where the joint sits, in the design's coordinates ({unit}).": 'Position de l’articulation, dans les coordonnées de la conception ({unit}).',
   'Origin {axis}': 'Origine {axis}',
   Axis: 'Axe',
   "The line it turns about or slides along, in the design's coordinates.": 'La droite autour de laquelle elle tourne ou le long de laquelle elle coulisse, dans les coordonnées de la conception.',
@@ -172,7 +172,7 @@ export const robot: Catalog = {
   Angle: 'Angle',
   Travel: 'Course',
   'Moves the joint on the plate to see the robot move; the design stays as it is.': 'Bouge l’articulation sur le plateau pour voir le robot bouger\u00a0; la conception reste telle quelle.',
-  'The linkage cannot close here: a loop joint is {gap} mm apart.': 'Le mécanisme ne peut pas se fermer ici\u00a0: une articulation de boucle est écartée de {gap} mm.',
+  'The linkage cannot close here: a loop joint is {gap} apart.': 'Le mécanisme ne peut pas se fermer ici\u00a0: une articulation de boucle est écartée de {gap}.',
   'Sweeps this joint over its range with the loops closed and sets the passive joints to follow it (mimic), as URDF needs':
     'Balaie la course de cette articulation, boucles fermées, et règle les articulations passives pour qu’elles la suivent (mimic), comme l’exige URDF',
   'Set the others to follow this joint': 'Faire suivre cette articulation par les autres',
@@ -212,7 +212,7 @@ export const robot: Catalog = {
   'Shows points on the link; click one to put the sensor there.': 'Affiche des points sur le segment\u00a0; cliquez sur l’un d’eux pour y placer le capteur.',
   'Click a point on the plate…': 'Cliquez sur un point du plateau…',
   'Pick a point on the plate': 'Choisir un point sur le plateau',
-  "Where the sensor sits, in the design's coordinates (mm).": 'Position du capteur, dans les coordonnées de la conception (mm).',
+  "Where the sensor sits, in the design's coordinates ({unit}).": 'Position du capteur, dans les coordonnées de la conception ({unit}).',
   'Looks along': 'Regarde vers',
   'Sweeps about': 'Balaie autour de',
   'Up axis': 'Axe vertical',
@@ -320,9 +320,9 @@ export const robot: Catalog = {
   Slope: 'Pente',
   'A floor tilted eight degrees.': 'Un sol incliné de huit degrés.',
   Steps: 'Marches',
-  'Three 10 mm steps, 120 mm deep, starting 300 mm ahead of the robot.': 'Trois marches de 10 mm, profondes de 120 mm, à partir de 300 mm devant le robot.',
+  'Three {rise} steps, {depth} deep, starting {ahead} ahead of the robot.': 'Trois marches de {rise}, profondes de {depth}, à partir de {ahead} devant le robot.',
   Ramp: 'Rampe',
-  'A 10° ramp 600 mm long starting 300 mm ahead, onto a flat top.': 'Une rampe de 10°, longue de 600 mm, à partir de 300 mm devant, menant à un palier plat.',
+  'A 10° ramp {length} long starting {ahead} ahead, onto a flat top.': 'Une rampe de 10°, longue de {length}, à partir de {ahead} devant, menant à un palier plat.',
 
   // The checks before an export (robot/check.ts)
   '{name}: follows {leader}, which is fixed and never moves. Follow a joint that moves.': '{name}\u00a0: suit {leader}, qui est fixe et ne bouge jamais. Suivez une articulation qui bouge.',
@@ -344,8 +344,8 @@ export const robot: Catalog = {
   'The sensor "{name}" sits on an object that is hidden, a hole or gone.': 'Le capteur «\u00a0{name}\u00a0» est posé sur un objet masqué, devenu perçage ou supprimé.',
   '"{name}" sees nothing: its nearest distance must be below its farthest.': '«\u00a0{name}\u00a0» ne voit rien\u00a0: sa distance la plus proche doit être inférieure à la plus lointaine.',
   '"{name}" sees nothing: its nearest range must be below its farthest.': '«\u00a0{name}\u00a0» ne voit rien\u00a0: sa portée minimale doit être inférieure à sa portée maximale.',
-  "{name}: the floor is {distance} mm away at the picture's edge, inside the {near} mm near clip. Raise it, tilt it up or lower Nearest.":
-    '{name}\u00a0: le sol est à {distance} mm au bord de l’image, en deçà du plan proche de {near} mm. Relevez-la, inclinez-la vers le haut ou réduisez «\u00a0Plus proche\u00a0».',
+  "{name}: the floor is {distance} away at the picture's edge, inside the {near} near clip. Raise it, tilt it up or lower Nearest.":
+    '{name}\u00a0: le sol est à {distance} au bord de l’image, en deçà du plan proche de {near}. Relevez-la, inclinez-la vers le haut ou réduisez «\u00a0Plus proche\u00a0».',
   '"{name}" steers, so it must be a revolute joint with limits.': '«\u00a0{name}\u00a0» assure la direction\u00a0; ce doit donc être une articulation pivot avec des limites.',
   '"{name}" drives a wheel but does not turn.': '«\u00a0{name}\u00a0» entraîne une roue mais ne tourne pas.',
   '"{name}" is in the drive and follows another joint; it cannot do both.': '«\u00a0{name}\u00a0» fait partie de l’entraînement et suit une autre articulation\u00a0; elle ne peut pas faire les deux.',

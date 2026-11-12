@@ -21,11 +21,11 @@ test.describe('menus and boxes', { tag: '@mouse' }, () => {
     await expect(about(page)).toBeVisible();
   }
 
-  test('the File menu lists its commands with their shortcuts, and Language and About below a rule', async ({ page }) => {
+  test('the File menu lists its commands with their shortcuts, and Units, Language and About below a rule', async ({ page }) => {
     await page.locator('button[aria-label="File"]').click();
     const menu = page.locator('.file-bar .menu');
     const items = await menu.evaluate((m) => [...m.children].map((c) => (c.tagName === 'HR' ? '—' : [...c.children].map((k) => k.textContent).join(' | '))));
-    expect(items).toEqual([`New project | ${MOD}N`, `Projects… | ${MOD}O`, `Open project file… | ${MOD}Shift+O`, `Save a copy… | ${MOD}Shift+S`, '—', 'Language…', 'About PlastikCAD…']);
+    expect(items).toEqual([`New project | ${MOD}N`, `Projects… | ${MOD}O`, `Open project file… | ${MOD}Shift+O`, `Save a copy… | ${MOD}Shift+S`, '—', 'Units…', 'Language…', 'About PlastikCAD…']);
   });
 
   test('the About box opens from the File menu and has a name', async ({ page }) => {

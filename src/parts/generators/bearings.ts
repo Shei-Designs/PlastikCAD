@@ -3,7 +3,7 @@
 // on and the inner ring turns clear of. A cutter: it comes in as a hole.
 import { tr, trx } from '../../i18n';
 import { cylinder, translate, union } from '../types';
-import { bool, mm, num, str } from './types';
+import { bool, lengthInfo, num, str } from './types';
 import type { GeneratorDef, Params } from './types';
 
 interface Bearing {
@@ -96,10 +96,10 @@ export const bearingSeat: GeneratorDef = {
     const parts = [translate(cylinder(seat / 2, depth, q.circle), [0, 0, length])];
     if (length > 0) parts.push(cylinder(hole / 2, length, q.circle));
     const info = [
-      { label: tr('Seat diameter'), value: mm(seat) },
-      { label: tr('Seat depth'), value: mm(depth, 1) },
+      lengthInfo(tr('Seat diameter'), seat),
+      lengthInfo(tr('Seat depth'), depth, 1),
     ];
-    if (length > 0) info.push({ label: tr('Hole diameter'), value: mm(hole, 1) });
+    if (length > 0) info.push(lengthInfo(tr('Hole diameter'), hole, 1));
     return { solid: parts.length === 1 ? parts[0] : union(...parts), info, warnings };
   },
 };

@@ -147,7 +147,7 @@ export class MeasureOverlay {
     // Over a large object that is still being read, the pointer says to wait.
     const waiting = !feature && this.waiting;
     this.stage.renderer.domElement.style.cursor = feature ? 'crosshair' : waiting ? 'progress' : '';
-    this.stage.events.onReadout(feature ? describeFeature(feature).lines.join(' · ') : waiting ? tr('Reading the shape…') : null, event.clientX, event.clientY);
+    this.stage.events.onReadout(feature ? describeFeature(feature, this.stage.options.units).lines.join(' · ') : waiting ? tr('Reading the shape…') : null, event.clientX, event.clientY);
     if (same) return;
     this.sync();
     this.stage.requestRender();

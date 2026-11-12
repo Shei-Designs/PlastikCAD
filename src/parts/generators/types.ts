@@ -1,3 +1,5 @@
+import { figureFixed, lengthFigure, lengthFixed, unitName } from '../../units';
+import type { Unit } from '../../units';
 import type { Quality, Shape2D, Solid } from '../types';
 
 export type ParamValue = number | string | boolean;
@@ -43,7 +45,10 @@ export interface ParamGroup {
 
 export interface InfoItem {
   label: string;
+  /** What the row says; with lengths in it, in millimeters. */
   value: string;
+  /** The same in inches, for a row that holds lengths. A row without one holds none (a count, an angle, a name): it reads the same in both units. */
+  inches?: string;
 }
 
 export interface BuildResult {
@@ -77,8 +82,12 @@ export const num = (p: Params, key: string): number => {
 export const str = (p: Params, key: string): string => String(p[key]);
 export const bool = (p: Params, key: string): boolean => Boolean(p[key]);
 
-/** Format a length for the info panel. */
-export const mm = (v: number, digits = 2) => `${v.toFixed(digits)} mm`;
+/** A row of the info panel that holds lengths: `text` writes it for a unit. */
+export const unitInfo = (label: string, text: (unit: Unit) => string): InfoItem => ({ label, value: text('mm'), inches: text('in') });
+/** A row of the info panel for one such length. */
+export const lengthInfo = (label: string, v: number, digits = 2): InfoItem => unitInfo(label, (unit) => lengthFixed(v, unit, digits));
+/** Lengths side by side with their unit after them, as "40 × 40 mm": as they are, or each to `digits` decimals in millimeters. */
+export const lengthsText = (unit: Unit, values: number[], digits?: number): string => `${values.map((v) => (digits === undefined ? lengthFigure(v, unit) : figureFixed(v, unit, digits))).join(' × ')} ${unitName(unit)}`;
 export const degrees = (v: number, digits = 2) => `${v.toFixed(digits)}°`;
 
 export function defaultParams(def: GeneratorDef): Params {

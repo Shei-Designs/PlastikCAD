@@ -135,6 +135,7 @@ export function ArrayPanel() {
                   label={locked ? tr('Spacing along {axis}, from the fit', { axis: tag }) : tr('Spacing along {axis}', { axis: tag })}
                   value={locked ? fittedPitch(a) : pitch[a]}
                   unit="mm"
+                  length
                   min={-BIG}
                   max={BIG}
                   disabled={locked}
@@ -154,7 +155,7 @@ export function ArrayPanel() {
               {fit && (
                 <div className="field inline">
                   <label>{tr('Edge inset')}</label>
-                  <NumberBox label={tr('Edge inset')} value={inset} unit="mm" min={-BIG} max={BIG} onChange={setInset} />
+                  <NumberBox label={tr('Edge inset')} value={inset} unit="mm" length min={-BIG} max={BIG} onChange={setInset} />
                 </div>
               )}
             </>
@@ -187,8 +188,8 @@ export function ArrayPanel() {
                 <span>{tr('Diameter')}</span>
               </div>
               <div className="array-pair">
-                <NumberBox label={tr('Radius of the ring')} value={radius} unit="mm" min={0} max={BIG} onChange={setRadius} />
-                <NumberBox label={tr('Diameter of the ring')} value={tidy(2 * radius)} unit="mm" min={0} max={BIG} onChange={(v) => setRadius(tidy(v / 2))} />
+                <NumberBox label={tr('Radius of the ring')} value={radius} unit="mm" length min={0} max={BIG} onChange={setRadius} />
+                <NumberBox label={tr('Diameter of the ring')} value={tidy(2 * radius)} unit="mm" length min={0} max={BIG} onChange={(v) => setRadius(tidy(v / 2))} />
               </div>
             </>
           ) : around === 'frame' && frame ? null : (
@@ -198,8 +199,8 @@ export function ArrayPanel() {
                 <span>{tr('Center Y')}</span>
               </div>
               <div className="array-pair">
-                <NumberBox label={tr('X of the center of the ring')} value={point[0]} unit="mm" min={-BIG} max={BIG} onChange={(v) => setPoint([v, point[1]])} />
-                <NumberBox label={tr('Y of the center of the ring')} value={point[1]} unit="mm" min={-BIG} max={BIG} onChange={(v) => setPoint([point[0], v])} />
+                <NumberBox label={tr('X of the center of the ring')} value={point[0]} unit="mm" length min={-BIG} max={BIG} onChange={(v) => setPoint([v, point[1]])} />
+                <NumberBox label={tr('Y of the center of the ring')} value={point[1]} unit="mm" length min={-BIG} max={BIG} onChange={(v) => setPoint([point[0], v])} />
               </div>
             </>
           )}

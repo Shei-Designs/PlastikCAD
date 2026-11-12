@@ -8,8 +8,9 @@ import type { BoreDefaults, HubDefaults } from '../features';
 import { arc, arcN, arcSegments, dedupe, deg, polar, rotatePoint, TAU } from '../math2d';
 import { extrude, revolve, union } from '../types';
 import type { Polygon, Quality, Solid, Vec2 } from '../types';
-import { mm, num, str } from './types';
+import { lengthInfo, num, str } from './types';
 import type { BuildResult, GeneratorDef, InfoItem, Params } from './types';
+import { lengthFixed, lengthText, said } from '../../units';
 
 interface BeltBase {
   label: string;
@@ -183,7 +184,7 @@ function buildPulley(profiles: Record<string, BeltProfile>, p: Params, q: Qualit
     toothed = pulleyOutline(b, teeth, clearance, q);
   }
   if (!toothed) throw new Error(tr('The belt grooves overlap: use more teeth.'));
-  if (clearance < num(p, 'toothClearance')) warnings.push(tr('The tooth clearance was reduced to {clearance} mm so the grooves do not overlap.', { clearance: clearance.toFixed(2) }));
+  if (clearance < num(p, 'toothClearance')) warnings.push(said((unit) => tr('The tooth clearance was reduced to {clearance} so the grooves do not overlap.', { clearance: lengthFixed(clearance, unit, 2) })));
 
   const pitchD = (teeth * b.pitch) / Math.PI;
   const od = pitchD - 2 * b.plo;
@@ -212,16 +213,16 @@ function buildPulley(profiles: Record<string, BeltProfile>, p: Params, q: Qualit
     parts.push(revolve(dedupe([[0, z0], [rf - run, z0], [rf, z0 + run], [rf, zTop], [0, zTop]]), segs));
   }
 
-  if (boreRadius(p) > rootR - 1) warnings.push(tr('The bore leaves less than 1 mm of material below the belt grooves.'));
+  if (boreRadius(p) > rootR - 1) warnings.push(said((unit) => tr('The bore leaves less than {least} of material below the belt grooves.', { least: lengthText(1, unit, 0) })));
   const { solid, height } = addHubAndBore(union(...parts), 0, zTop, p, q, warnings, hasBottom || hasTop ? rf : ro);
 
   const info: InfoItem[] = [
-    { label: tr('Pitch diameter'), value: mm(pitchD) },
-    { label: tr('Outside diameter'), value: mm(od) },
-    { label: tr('Root diameter'), value: mm(2 * rootR) },
+    lengthInfo(tr('Pitch diameter'), pitchD),
+    lengthInfo(tr('Outside diameter'), od),
+    lengthInfo(tr('Root diameter'), 2 * rootR),
   ];
-  if (hasBottom || hasTop) info.push({ label: tr('Flange diameter'), value: mm(2 * rf) });
-  info.push({ label: tr('Belt pitch'), value: mm(b.pitch, 3) }, { label: tr('Total height'), value: mm(height) });
+  if (hasBottom || hasTop) info.push(lengthInfo(tr('Flange diameter'), 2 * rf));
+  info.push(lengthInfo(tr('Belt pitch'), b.pitch, 3), lengthInfo(tr('Total height'), height));
 
   return { solid, outline: [toothed, ...(boreShape(p, q) ?? [])], info, warnings };
 }

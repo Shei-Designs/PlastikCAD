@@ -10,6 +10,7 @@ import { boundsCenter, tidy, tidyVec } from '../model/math';
 import type { Mat } from '../model/math';
 import { rotateNodes } from '../model/ops';
 import type { SceneNode, Vec3 } from '../model/types';
+import { lengthFigure } from '../units';
 import type { CameraRig } from './camera';
 import { MIN_SIZE, ROTATE_COARSE, ROTATE_STEP, alongAxis, angleAbout, baseEdgeOn, bestBaseAxis, boxAxis, gripBox, pointOf, resizePoint, snapTo, snapTurn, stretched } from './dragMath';
 import type { GripBox } from './dragMath';
@@ -139,6 +140,9 @@ export class PointerInput {
   get editing(): boolean {
     return this.drag !== null && this.drag.mode !== 'pending-move' && this.drag.mode !== 'pending-tap' && this.drag.mode !== 'pending-pick' && this.drag.mode !== 'pending-marquee' && this.drag.mode !== 'marquee';
   }
+
+  /** A length as the readout gives it: its figure in the unit the user works in. */
+  private readonly len = (v: number): string => lengthFigure(v, this.stage.options.units);
 
   /** The live measurement beside the pointer, with a word on what the drag leaves behind. */
   private say(text: string, event: PointerEvent): void {
@@ -701,7 +705,7 @@ export class PointerInput {
       else dx = 0;
     }
     this.stage.events.onGestureChange(drag.nodes.map((n) => ({ ...n, pos: tidyVec([n.pos[0] + dx, n.pos[1] + dy, n.pos[2]]) })));
-    this.say(`${fmt(dx)}, ${fmt(dy)}`, event);
+    this.say(`${this.len(dx)}, ${this.len(dy)}`, event);
   }
 
   /** The selection follows the pointer along one of the design's axes; steps snap to the grid. */
@@ -711,7 +715,7 @@ export class PointerInput {
     const d = this.snap(t - drag.grab);
     const { x, y, z } = drag.dir;
     this.stage.events.onGestureChange(drag.nodes.map((n) => ({ ...n, pos: tidyVec([n.pos[0] + x * d, n.pos[1] + y * d, n.pos[2] + z * d]) })));
-    this.say(`${'XYZ'[drag.axis]} ${d >= 0 ? '+' : ''}${fmt(d)}`, event);
+    this.say(`${'XYZ'[drag.axis]} ${d >= 0 ? '+' : ''}${this.len(d)}`, event);
   }
 
   private resizeTo(drag: Extract<Drag, { mode: 'resize' }>, event: PointerEvent): void {
@@ -733,7 +737,7 @@ export class PointerInput {
     }
     // The side opposite the grip stays where it is; so does the base.
     this.stage.events.onGestureChange(stretched(box, drag.nodes, size, [-sx as -1 | 0 | 1, -sy as -1 | 0 | 1, event.shiftKey ? -1 : 0]));
-    this.say(event.shiftKey ? size.map(fmt).join(' × ') : `${fmt(size[0])} × ${fmt(size[1])}`, event);
+    this.say(event.shiftKey ? size.map(this.len).join(' × ') : `${this.len(size[0])} × ${this.len(size[1])}`, event);
   }
 
   private heightTo(drag: Extract<Drag, { mode: 'height' }>, event: PointerEvent): void {
@@ -746,7 +750,7 @@ export class PointerInput {
     const f = h / box.size[2];
     const size: Vec3 = event.shiftKey ? [box.size[0] * f, box.size[1] * f, h] : [box.size[0], box.size[1], h];
     this.stage.events.onGestureChange(stretched(box, drag.nodes, size, [0, 0, -side]));
-    this.say(event.shiftKey ? size.map(fmt).join(' × ') : fmt(h), event);
+    this.say(event.shiftKey ? size.map(this.len).join(' × ') : this.len(h), event);
   }
 
   private rotateTo(drag: Extract<Drag, { mode: 'rotate' }>, event: PointerEvent): void {

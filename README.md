@@ -47,6 +47,34 @@ language, with a decimal point and no thousands separator, and a comma typed
 in a number box is read as the decimal point. What is written into exported
 files (a URDF, a ROS package, a script) is in English whatever the language.
 
+## Units
+
+Lengths are shown and typed in millimeters, or in inches once **File → Units…**
+is set to them: the size and position of the selection, a size typed at a
+grip, the settings of shapes and parts and the dimensions parts work out, the
+ruler, the readout of a drag, the array and mating panels, and the lengths in
+Robot mode. Inches are decimal, to four places at the most. The snap steps
+are then 1/32 in to 1 in. The design itself is in millimeters whichever
+unit is on show, and so is every export.
+
+The plate's grid is in the unit as well, and grows with the design. Under a
+small one it has a heavy line every 10 mm and a light one every millimeter,
+or every inch and every eighth of one. With more than thirty heavy lines
+each way they move further apart: to 100 mm and then to meters, a meter in
+quarters; to feet and then to yards, a yard in feet; past that to tens of
+meters or of yards. A design the size of a room has no more lines than a
+small one.
+
+A part that is metric by its standard keeps its name as the standard writes
+it (M8, GT2 2 mm, NEMA 17, a 40 mm fan): that is what its datasheet says.
+Everything else about it is in the unit in use once it is on the plate: its
+settings, a gear's module and a thread's pitch among them, the figures it
+lists, the note under its name, and its warnings. A setting left as it reads keeps the
+exact value it has (a module of 2 mm reads 0.0787 in and stays 2 mm), and a
+slider still moves in the steps it has in millimeters. The question asked of
+a file that names no unit says what it measures as millimeters, since that
+is what it asks about.
+
 ## How it works
 
 It is the Tinkercad way of modeling, without the cloud and without the clutter:
@@ -74,7 +102,7 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
   and the belt's teeth or the chain's links, and the mate stands exactly that
   belt or chain away, with the center distance and belt length shown. A
   V-belt pulley has it too, by the mate's diameter (or the ratio) and the
-  belt's length in millimeters, since a V-belt has no teeth to count. On an
+  belt's length, since a V-belt has no teeth to count. On an
   internal ring gear the wizard makes the planetary set: the sun, by its
   tooth count, and the planets round it, meshed with both; it starts on a
   number of planets that can be spaced evenly, and says when the teeth do
@@ -85,7 +113,7 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
   to emboss; make it a hole and sink it in a little (Ctrl+Down) to engrave.
   Bend it round a cylinder (set the reach, or the diameter it has to fit,
   outside or inside) or lay it along an arc that rises or hangs, with its
-  thickness kept in millimetres; the box then follows the curve.
+  thickness set as a length of its own; the box then follows the curve.
 - **Fillet** – an edge cutter that comes in as a hole. Line it up with an edge
   (select both, then Align), group, and the edge is rounded; with one step it
   cuts a straight chamfer instead.
@@ -150,7 +178,7 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
   everywhere the picture does not reach. An object can also wear a
   **texture** over its whole surface instead (under the colors in its
   Material settings): a picture wrapped once around
-  it, bottom to top, turned to any side, or tiled every so many millimeters
+  it, bottom to top, turned to any side, or tiled at a set size
   from every side, for patterns and materials. Pictures and textures are for
   scenes and renders, not printing: they travel in GLB exports and are left
   off the others.
@@ -763,7 +791,7 @@ left alone, since that is its shape.
   60° form: the diameter in inches, the pitch as threads to the inch, coarse
   (UNC) or fine (UNF). Heads and nuts take the usual hex and socket cap
   sizes; below 1/4" the hex head and the nut are those of machine screws.
-  Everything the app shows is in millimeters.
+  Their figures are shown in the unit in use: in millimeters, or in inches.
 - **Screw holes**: clearance holes are those of ISO 273 (close, normal and
   loose are its fine, medium and coarse series). A counterbore takes the head
   of an ISO 4762 socket cap screw, a nut trap the nut of ISO 4032, and a
@@ -1059,12 +1087,9 @@ waits until someone needs it:
 
 ## Roadmap
 
-The whole of what is planned, put off and dropped is in
-[docs/ROADMAP.md](docs/ROADMAP.md). Next in the app itself:
-
-- Lettering in scripts that need shaping or thousands of characters (Arabic, Hebrew, Indic, Chinese, Japanese, Korean).
-- True surfaces in STEP files for what still goes out as facets: bevel
-  gears and stretched shapes.
+The whole of what is planned, deferred and dropped is in
+[docs/ROADMAP.md](docs/ROADMAP.md). Next are the phases it lists: robot mode
+made dependable, the release on the Play Store, the viewer for phones.
 
 ## License
 

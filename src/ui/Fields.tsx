@@ -1,6 +1,8 @@
 import { useId, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { flushSync } from 'react-dom';
+import { useEditor } from '../state/store';
+import { keyStep, lengthFigure, unitName } from '../units';
 import { Hint } from './Hint';
 import { enterByTouch } from './TouchEntry';
 import { typedNumber } from './typed';
@@ -31,6 +33,11 @@ interface NumberBoxProps {
   /** Short tag shown inside the box, in front of the number ("X", "W"). */
   tag?: string;
   unit?: string;
+  /**
+   * The value is a length, kept in millimeters like its step and limits: it is shown and typed in the unit
+   * the user works in, with two more decimals in inches. A box that names its unit then names inches.
+   */
+  length?: boolean;
   step?: number;
   min?: number;
   max?: number;
@@ -48,8 +55,13 @@ interface NumberBoxProps {
  * or the selection moving to another object that the same box now edits)
  * drops what was typed, so the text never lands on something it was not typed for.
  */
-export function NumberBox({ value, onChange, tag, unit, step = 1, min = -Infinity, max = Infinity, integer, places = 2, disabled, label, id }: NumberBoxProps) {
-  const [text, setText] = useState(formatNumber(value, places));
+export function NumberBox({ value, onChange, tag, unit, length, step = 1, min = -Infinity, max = Infinity, integer, places = 2, disabled, label, id }: NumberBoxProps) {
+  const working = useEditor((s) => s.prefs.units);
+  const inches = Boolean(length) && working === 'in';
+  const shownUnit = inches && unit ? unitName('in') : unit;
+  const show = (v: number) => (inches ? lengthFigure(v, 'in', places) : formatNumber(v, places));
+  const shown = show(value);
+  const [text, setText] = useState(shown);
   const [editing, setEditing] = useState(false);
   // The last value this box itself sent out, to tell its own commits from changes made elsewhere.
   const sent = useRef<number | null>(null);
@@ -57,9 +69,9 @@ export function NumberBox({ value, onChange, tag, unit, step = 1, min = -Infinit
   // must not show the old one for a frame. Whatever lands in it during that frame is typed into text that is then
   // swapped under it: a 3 typed into a box about to change to 3 reads 33.
   useLayoutEffect(() => {
-    if (!editing || sent.current !== value) setText(formatNumber(value, places));
+    if (!editing || sent.current !== value) setText(shown);
     sent.current = null;
-  }, [value, places, editing]);
+  }, [value, shown, editing]);
 
   const clamp = (v: number) => Math.min(max, Math.max(min, integer ? Math.round(v) : v));
   const send = (next: number) => {
@@ -68,7 +80,10 @@ export function NumberBox({ value, onChange, tag, unit, step = 1, min = -Infinit
   };
   /** Sends what was typed, within the box's limits; returns the number taken, or null when the text is not one. */
   const commit = (raw: string): number | null => {
-    const next = typedNumber(raw, { min, max, integer });
+    // The box shows the value rounded: left as it reads, that text is not a new value, and taking it would move
+    // the value by the rounding (20 mm reads 0.7874 in, which is 19.99996 mm).
+    if (raw.trim() === shown) return value;
+    const next = typedNumber(raw, { min, max, integer, unit: inches ? 'in' : 'mm' });
     if (next !== null && next !== value) send(next);
     return next;
   };
@@ -86,7 +101,7 @@ export function NumberBox({ value, onChange, tag, unit, step = 1, min = -Infinit
         disabled={disabled}
         value={text}
         // A finger does not type into the box under the keypad: the entry sheet takes the value instead (unless a keyboard is attached).
-        onPointerDown={(e) => enterByTouch(e, { label, value: formatNumber(value, places), unit, inputMode: integer ? 'numeric' : 'decimal', onCommit: (raw) => void commit(raw) })}
+        onPointerDown={(e) => enterByTouch(e, { label, value: shown, unit: shownUnit, inputMode: integer ? 'numeric' : 'decimal', onCommit: (raw) => void commit(raw) })}
         onFocus={(e) => {
           setEditing(true);
           selectOnFocus(e);
@@ -99,23 +114,23 @@ export function NumberBox({ value, onChange, tag, unit, step = 1, min = -Infinit
         onKeyDown={(e) => {
           if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
             e.preventDefault();
-            const next = clamp(Number((value + (e.key === 'ArrowUp' ? 1 : -1) * step * (e.shiftKey ? 10 : 1)).toFixed(6)));
-            setText(formatNumber(next, places));
+            const next = clamp(Number((value + (e.key === 'ArrowUp' ? 1 : -1) * keyStep(step, inches ? 'in' : 'mm') * (e.shiftKey ? 10 : 1)).toFixed(6)));
+            setText(show(next));
             if (next !== value) send(next);
           } else if (e.key === 'Enter') {
             // The box shows what was taken: a value typed past a limit reads as the limit at once, not only once the box
             // is left. Drawn before the text is selected again, or the new text would arrive unselected.
             const box = e.currentTarget;
             const taken = commit(text);
-            if (taken !== null) flushSync(() => setText(formatNumber(taken, places)));
+            if (taken !== null) flushSync(() => setText(show(taken)));
             box.select();
           } else if (e.key === 'Escape') {
-            setText(formatNumber(value, places));
+            setText(shown);
             e.currentTarget.blur();
           }
         }}
       />
-      {unit && <span className="unit">{unit}</span>}
+      {shownUnit && <span className="unit">{shownUnit}</span>}
     </span>
   );
 }
@@ -207,12 +222,14 @@ interface SliderFieldProps {
   step: number;
   integer?: boolean;
   unit?: string;
+  /** The value is a length (see `NumberBox`): the box takes the user's unit, the track stays in millimeters. */
+  length?: boolean;
   disabled?: boolean;
   onChange: (v: number) => void;
 }
 
 /** Labeled slider with a number box, for the handful of numbers a shape has besides its size. */
-export function SliderField({ label, help, value, min, max, step, integer, unit, disabled, onChange }: SliderFieldProps) {
+export function SliderField({ label, help, value, min, max, step, integer, unit, length, disabled, onChange }: SliderFieldProps) {
   const id = useId();
   const span = max - min || 1;
   // A finger that lands on the slider may be on its way up or down the panel. The slider takes a touch anywhere on
@@ -263,7 +280,7 @@ export function SliderField({ label, help, value, min, max, step, integer, unit,
             else onChange(next);
           }}
         />
-        <NumberBox id={id} label={label} value={value} min={min} max={max} step={step} integer={integer} unit={unit} places={Math.min(4, decimals(step) + (integer ? 0 : 1))} disabled={disabled} onChange={onChange} />
+        <NumberBox id={id} label={label} value={value} min={min} max={max} step={step} integer={integer} unit={unit} length={length} places={Math.min(4, decimals(step) + (integer ? 0 : 1))} disabled={disabled} onChange={onChange} />
       </div>
     </div>
   );

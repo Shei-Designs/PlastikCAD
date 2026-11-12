@@ -7,8 +7,9 @@ import { toDeg } from '../math2d';
 import { pressureAngleProfile, profileExtent, threadedRod, threadSolid } from '../threads';
 import { difference, extrude, intersection, revolve, rotate, tidy, translate, union } from '../types';
 import type { Polygon, Quality, Solid } from '../types';
-import { bool, degrees, mm, num } from './types';
+import { bool, degrees, lengthInfo, num, unitInfo } from './types';
 import type { BuildResult, GeneratorDef, Params } from './types';
+import { lengthFixed } from '../../units';
 
 export const worm: GeneratorDef = {
   id: 'worm',
@@ -123,11 +124,11 @@ export const worm: GeneratorDef = {
     return {
       solid,
       info: [
-        { label: tr('Pitch diameter'), value: mm(d) },
-        { label: tr('Outside diameter'), value: mm(rMax * 2) },
-        { label: tr('Root diameter'), value: mm(rMin * 2) },
-        { label: tr('Axial pitch'), value: mm(pitch, 3) },
-        { label: tr('Lead'), value: tr('{length} per turn', { length: mm(lead, 3) }) },
+        lengthInfo(tr('Pitch diameter'), d),
+        lengthInfo(tr('Outside diameter'), rMax * 2),
+        lengthInfo(tr('Root diameter'), rMin * 2),
+        lengthInfo(tr('Axial pitch'), pitch, 3),
+        unitInfo(tr('Lead'), (unit) => tr('{length} per turn', { length: lengthFixed(lead, unit, 3) })),
         { label: tr('Lead angle'), value: degrees(toDeg(leadAngle)) },
         {
           label: tr('Mating gear'),
@@ -240,12 +241,12 @@ function buildWheel(p: Params, q: Quality): BuildResult {
     solid,
     outline: [round, ...(boreShape(p, q) ?? [])],
     info: [
-      { label: tr('Pitch diameter'), value: mm(2 * r2) },
-      { label: tr('Outside diameter'), value: mm(2 * rim) },
-      { label: tr('Center distance'), value: mm(center) },
+      lengthInfo(tr('Pitch diameter'), 2 * r2),
+      lengthInfo(tr('Outside diameter'), 2 * rim),
+      lengthInfo(tr('Center distance'), center),
       { label: tr('Ratio'), value: `${Number((teeth / starts).toFixed(2))} : 1` },
-      { label: tr('Face width'), value: mm(b) },
-      { label: tr('Total height'), value: mm(height) },
+      lengthInfo(tr('Face width'), b),
+      lengthInfo(tr('Total height'), height),
     ],
     warnings,
   };

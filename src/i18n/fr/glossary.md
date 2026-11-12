@@ -59,6 +59,8 @@ and every catalog entry that uses it together.
 | width / depth / height | largeur / profondeur / hauteur | |
 | length / thickness | longueur / épaisseur | |
 | diameter / radius | diamètre / rayon | |
+| unit | unité | |
+| millimeter / inch | millimètre / pouce | written after a figure: mm / po |
 | align | aligner | |
 | mirror, flip | miroir | "Miroir X" |
 | array, pattern | réseau | grid: en grille; ring: en cercle |

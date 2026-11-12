@@ -15,6 +15,7 @@ export {
   dismissSyncNotes,
   stopWork,
   setPrefs,
+  setUnits,
   beginGesture,
   endGesture,
   undo,

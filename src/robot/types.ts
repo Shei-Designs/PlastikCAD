@@ -4,6 +4,8 @@
 // units (mm, degrees, grams); the exporters turn them into SI.
 import { mark, tr, trx } from '../i18n';
 import type { Vec3 } from '../model/types';
+import { lengthText } from '../units';
+import type { Unit } from '../units';
 
 export type JointType = 'fixed' | 'revolute' | 'continuous' | 'prismatic';
 
@@ -198,12 +200,13 @@ export function lidarAngles(rays: number, hfov: number): number[] {
   return Array.from({ length: rays }, (_, i) => -hfov / 2 + i * step);
 }
 
-export const WORLDS: { id: World; name: string; help: string }[] = [
-  { id: 'flat', name: trx('floor', 'Flat'), help: tr('A level floor.') },
-  { id: 'rough', name: tr('Rough'), help: tr('Gentle bumps a few centimeters high around a flat start; for walkers and rovers.') },
-  { id: 'slope', name: tr('Slope'), help: tr('A floor tilted eight degrees.') },
-  { id: 'steps', name: tr('Steps'), help: tr('Three 10 mm steps, 120 mm deep, starting 300 mm ahead of the robot.') },
-  { id: 'ramp', name: tr('Ramp'), help: tr('A 10° ramp 600 mm long starting 300 mm ahead, onto a flat top.') },
+/** The floors of the test drive. `help` names lengths, and is written for the unit the user works in. */
+export const WORLDS: { id: World; name: string; help: (unit: Unit) => string }[] = [
+  { id: 'flat', name: trx('floor', 'Flat'), help: () => tr('A level floor.') },
+  { id: 'rough', name: tr('Rough'), help: () => tr('Gentle bumps a few centimeters high around a flat start; for walkers and rovers.') },
+  { id: 'slope', name: tr('Slope'), help: () => tr('A floor tilted eight degrees.') },
+  { id: 'steps', name: tr('Steps'), help: (unit) => tr('Three {rise} steps, {depth} deep, starting {ahead} ahead of the robot.', { rise: lengthText(10, unit, 0), depth: lengthText(120, unit, 0), ahead: lengthText(300, unit, 0) }) },
+  { id: 'ramp', name: tr('Ramp'), help: (unit) => tr('A 10° ramp {length} long starting {ahead} ahead, onto a flat top.', { length: lengthText(600, unit, 0), ahead: lengthText(300, unit, 0) }) },
 ];
 
 export const emptyRobot = (): Robot => ({ root: null, base: 'free', links: [], joints: [], sensors: [], control: true });

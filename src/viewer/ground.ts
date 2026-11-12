@@ -3,6 +3,8 @@
 import { BoxGeometry, BufferAttribute, BufferGeometry, DoubleSide, Group, Mesh, MeshStandardMaterial, PlaneGeometry } from 'three';
 import type { Object3D } from 'three';
 import { terrain, worldBlocks } from '../io/mjcf';
+import { fromUnit, toUnit } from '../units';
+import type { Unit } from '../units';
 import type { ViewerOptions } from './types';
 
 /**
@@ -59,6 +61,50 @@ export function disposeGround(ground: Object3D): void {
     }
   });
   for (const m of materials) m.dispose();
+}
+
+/**
+ * The steps the heavy lines of the plate's grid can have, in the unit's own measure and smallest first, each with
+ * the step of the light lines between them: every 10 mm, every 100 mm and every meter, with a light line half
+ * way and a meter in quarters; every inch, every foot and every yard, with a light line half way and a yard in feet.
+ */
+const RUNGS: Record<Unit, readonly (readonly [major: number, minor: number])[]> = {
+  mm: [
+    [10, 5],
+    [100, 50],
+    [1000, 250],
+  ],
+  in: [
+    [1, 0.5],
+    [12, 6],
+    [36, 12],
+  ],
+};
+/** The light lines under a small design, where the smallest heavy step can be split finer: millimeters, eighths of an inch. */
+const FINE: Record<Unit, number> = { mm: 1, in: 0.125 };
+/** The most heavy lines each way before they go to the next step. */
+const MOST = 30;
+
+/**
+ * The plate's grid for a design that reaches `wanted` mm from the middle: how far the grid runs each way, and the
+ * steps of its heavy and its light lines, in millimeters. The grid grows with the design, five heavy steps at a
+ * time, and with more than thirty heavy lines each way they go to the next step of the unit (see `RUNGS`); past
+ * the last, to ten times it, and ten times that. A design the size of a room is so drawn in meters, or in yards,
+ * with no more lines than a small one has.
+ */
+export function plateGrid(wanted: number, unit: Unit): { half: number; major: number; minor: number } {
+  // In the unit's own measure, where the steps are whole: thirty inches are 762 mm, and 25.4 times thirty is not quite.
+  const reach = Number(toUnit(wanted, unit).toFixed(6));
+  const rungs = RUNGS[unit];
+  let [major, minor] = rungs.find(([step]) => reach <= MOST * step) ?? rungs[rungs.length - 1];
+  while (reach > MOST * major) {
+    major *= 10;
+    minor *= 10;
+  }
+  const half = Math.ceil(reach / (major * 5)) * 5 * major;
+  // A line every millimeter on a big plate is more lines than it is help.
+  if (major === rungs[0][0] && half <= MOST * major / 2) minor = FINE[unit];
+  return { half: fromUnit(half, unit), major: fromUnit(major, unit), minor: fromUnit(minor, unit) };
 }
 
 export function gridLines(half: number, step: number, skipStep: number): BufferGeometry {

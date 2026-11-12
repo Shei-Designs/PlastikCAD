@@ -8,8 +8,9 @@ import { addHubAndBore, boreGroup, boreRadius, boreShape, hubGroup } from '../fe
 import { arcSegments, TAU } from '../math2d';
 import { revolve } from '../types';
 import type { Polygon, Quality } from '../types';
-import { mm, num, str } from './types';
+import { lengthInfo, num, str } from './types';
 import type { BuildResult, GeneratorDef, Params } from './types';
+import { lengthText, said } from '../../units';
 
 interface Section {
   label: string;
@@ -75,18 +76,18 @@ function build(p: Params, q: Quality): BuildResult {
   }
   profile.push([rim, width], [0, width]);
 
-  if (boreRadius(p) > bottom - 1) warnings.push(tr('The bore leaves less than 1 mm of material below the belt grooves.'));
+  if (boreRadius(p) > bottom - 1) warnings.push(said((unit) => tr('The bore leaves less than {least} of material below the belt grooves.', { least: lengthText(1, unit, 0) })));
   const { solid, height } = addHubAndBore(revolve(profile, Math.max(48, arcSegments(q, TAU))), 0, width, p, q, warnings, rim);
   const round: Polygon = Array.from({ length: q.circle }, (_, i) => [rim * Math.cos((TAU * i) / q.circle), rim * Math.sin((TAU * i) / q.circle)]);
   return {
     solid,
     outline: [round, ...(boreShape(p, q) ?? [])],
     info: [
-      { label: tr('Datum diameter'), value: mm(datum) },
-      { label: tr('Outside diameter'), value: mm(2 * rim) },
+      lengthInfo(tr('Datum diameter'), datum),
+      lengthInfo(tr('Outside diameter'), 2 * rim),
       { label: tr('Groove angle'), value: `${angle}°` },
-      { label: tr('Width'), value: mm(width) },
-      { label: tr('Total height'), value: mm(height) },
+      lengthInfo(tr('Width'), width),
+      lengthInfo(tr('Total height'), height),
     ],
     warnings,
   };

@@ -9,6 +9,7 @@
 import { tr } from '../i18n';
 import { dedupe, TAU } from './math2d';
 import type { Polygon, Quality, Vec2 } from './types';
+import { lengthFixed, said } from '../units';
 
 export interface ToothSpec {
   /** Tooth count. May be fractional (virtual tooth count of a bevel gear). */
@@ -57,7 +58,7 @@ export const maxBacklash = (module: number) => 0.4 * Math.PI * module;
 export function clampBacklash(backlash: number, module: number, warnings: string[]): number {
   const limit = maxBacklash(module);
   if (backlash <= limit) return backlash;
-  warnings.push(tr('Backlash was limited to {limit} mm so the teeth keep two flanks.', { limit: limit.toFixed(2) }));
+  warnings.push(said((unit) => tr('Backlash was limited to {limit} so the teeth keep two flanks.', { limit: lengthFixed(limit, unit, 2) })));
   return limit;
 }
 

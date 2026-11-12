@@ -50,6 +50,18 @@ describe('pipes and ducts', () => {
     expect(r.info.find((i) => i.label === 'Inside')?.value).toBe('Ø21.0 mm');
   });
 
+  it('gives its sizes in inches as well', () => {
+    const inches = (def: GeneratorDef, over: Params) => new Map(def.build(params(def, over), q).info.map((i) => [i.label, i.inches]));
+    const round = inches(pipe, { diameter: 25.4, wall: 2.54, length: 50.8 });
+    expect([round.get('Length'), round.get('Outside'), round.get('Inside')]).toEqual(['2.000 in', 'Ø1.000 in', 'Ø0.800 in']);
+    expect(inches(pipe, { section: 'rect', width: 50.8, height: 25.4, wall: 0 }).get('Outside')).toBe('2.000 × 1.000 in');
+    const taper = inches(reducer, { diameter: 25.4, diameter2: 12.7, wall: 2.54 });
+    expect([taper.get('Start'), taper.get('End'), taper.get('Inside')]).toEqual(['Ø1.000 in', 'Ø0.500 in', 'Ø0.800 to Ø0.300 in']);
+    expect(taper.get('Ratio')).toBeUndefined();
+    const branch = inches(tee, { diameter: 25.4, diameter2: 12.7, length: 50.8, wall: 2.54, branchAngle: 90 });
+    expect([branch.get('Run'), branch.get('Branch'), branch.get('Inside')]).toEqual(['Ø1.000 × 2.000 in', 'Ø0.500 in at 90°', 'Ø0.800 / Ø0.300 in']);
+  });
+
   it('bends an elbow round a true arc, legs included', () => {
     const r = made(elbow, { diameter: 25, wall: 2, angle: 90, bendRadius: 30, legA: 10, legB: 10 });
     expect(r.warnings).toEqual([]);

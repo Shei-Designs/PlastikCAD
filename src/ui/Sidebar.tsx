@@ -42,6 +42,7 @@ import { useSyncStatus } from '../sync/sync';
 import { shortcut, tip } from './keymap';
 import { LanguageBox } from './Language';
 import { MenuItem } from './Menu';
+import { UnitsBox } from './Units';
 import { kindOf } from './nodeKind';
 import { Popover } from './Popover';
 import { CATEGORIES, GENERATORS, getGenerator } from '../parts/generators';
@@ -65,6 +66,7 @@ function FileBar() {
   const saving = useEditor((s) => s.saving);
   const [about, setAbout] = useState(false);
   const [languages, setLanguages] = useState(false);
+  const [unitsBox, setUnitsBox] = useState(false);
   // A newer version of the app, found among the releases.
   const update = useEditor((s) => s.update);
   const robot = useEditor((s) => s.robot);
@@ -96,6 +98,7 @@ function FileBar() {
             <MenuItem label={tr('Save a copy…')} keys={shortcut('saveCopy')} run={() => void saveCopy()} close={close} />
             <hr />
             {update && <MenuItem label={tr('Update to version {version}…', { version: update })} run={() => void updateApp()} close={close} />}
+            <MenuItem label={tr('Units…')} run={() => setUnitsBox(true)} close={close} />
             <MenuItem label={tr('Language…')} run={() => setLanguages(true)} close={close} />
             <MenuItem label={tr('About {app}…', { app: APP_NAME })} run={() => setAbout(true)} close={close} />
           </div>
@@ -103,6 +106,7 @@ function FileBar() {
       </Popover>
       <About open={about} onClose={() => setAbout(false)} />
       <LanguageBox open={languages} onClose={() => setLanguages(false)} />
+      <UnitsBox open={unitsBox} onClose={() => setUnitsBox(false)} />
     </div>
   );
 }

@@ -18,6 +18,8 @@ import type { Problem } from '../robot/check';
 import { addJoint, addSensor, deleteJoint, deleteSensor, fitJointFollowers, placeJoint, placeSensor, select, selectJoint, selectSensor, setBase, setControl, setDriveKind, setDriveRole, setJointMotor, setPose, setRobotRoot, setScripts, setWorld, startJointPick, stopJointPick, updateJoint, updateLink, updateSensor, useEditor } from '../state/store';
 import { rangeOf } from '../robot/kinematics';
 import { sim } from '../state/sim';
+import { inUnit, lengthFigure, lengthText, unitName } from '../units';
+import type { Unit } from '../units';
 import { formatNumber, NumberBox, selectOnFocus, SliderField } from './Fields';
 import { Hint } from './Hint';
 import { ChevronIcon, JointIcon, PinIcon, SensorIcon, TrashIcon, WarningIcon } from './icons';
@@ -74,13 +76,14 @@ function Select<T extends string>({ value, options, label, onChange, placeholder
 }
 
 function Problems({ problems }: { problems: Problem[] }) {
+  const unit = useEditor((s) => s.prefs.units);
   if (problems.length === 0) return <p className="empty">{tr('Nothing stands in the way of an export.')}</p>;
   return (
     <ul className="problems">
       {problems.map((p, i) => (
         <li key={i} className={p.level === 'error' ? 'problem error' : 'problem warn'}>
           <WarningIcon />
-          <span>{p.text}</span>
+          <span>{inUnit(p.text, unit)}</span>
           {(p.link || p.joint || p.sensor) && (
             <button type="button" className="chip" onClick={() => (p.joint ? selectJoint(p.joint) : p.sensor ? selectSensor(p.sensor) : select([p.link!]))}>
               {tr('Show')}
@@ -232,6 +235,7 @@ function Controllers() {
 /** The robot driven on the plate by MuJoCo, built from the design as it stands: run, pause and reset it, steer a rover by the keys, move an arm's servos by sliders. */
 function Test() {
   const { doc, robot, problems } = useRobot();
+  const unit = useEditor((s) => s.prefs.units);
   useSyncExternalStore(sim.subscribe, sim.getRevision);
   const s = sim.get();
   const stopped = problems.some((p) => p.level === 'error');
@@ -245,7 +249,7 @@ function Test() {
           <div className="field inline">
             <label>
               {tr('Floor')}
-              <Hint text={`${WORLDS.find((w) => w.id === (robot.world ?? 'flat'))?.help ?? ''} ${tr('Only under the test drive: every export stands the robot on a flat floor.')}`} />
+              <Hint text={`${WORLDS.find((w) => w.id === (robot.world ?? 'flat'))?.help(unit) ?? ''} ${tr('Only under the test drive: every export stands the robot on a flat floor.')}`} />
             </label>
             <Select value={robot.world ?? 'flat'} label={tr('Floor')} options={WORLDS.map((w) => ({ value: w.id, label: w.name }))} onChange={(w) => setWorld(w as World)} />
           </div>
@@ -298,7 +302,7 @@ function Test() {
             const joint = jointOf(a.jointId);
             const angular = joint?.type !== 'prismatic';
             const scale = angular ? 180 / Math.PI : 1000;
-            return <SliderField key={a.name} label={joint?.name ?? a.joint} value={Math.round((s.targets.get(a.name) ?? 0) * scale)} min={Math.ceil(a.min * scale)} max={Math.floor(a.max * scale)} step={1} unit={angular ? '°' : 'mm'} onChange={(v) => sim.setTarget(a.name, v / scale)} />;
+            return <SliderField key={a.name} label={joint?.name ?? a.joint} value={Math.round((s.targets.get(a.name) ?? 0) * scale)} min={Math.ceil(a.min * scale)} max={Math.floor(a.max * scale)} step={1} unit={angular ? '°' : 'mm'} length={!angular} onChange={(v) => sim.setTarget(a.name, v / scale)} />;
           })}
           <dl className="facts">
             <div>
@@ -309,7 +313,7 @@ function Test() {
               <>
                 <div>
                   <dt>{tr('Moved')}</dt>
-                  <dd>{mm(Math.hypot(s.base.pos[0], s.base.pos[1]))}</dd>
+                  <dd>{distance(Math.hypot(s.base.pos[0], s.base.pos[1]), unit)}</dd>
                 </div>
                 <div>
                   <dt>{tr('Heading')}</dt>
@@ -324,7 +328,8 @@ function Test() {
   );
 }
 
-const mm = (v: number): string => (v >= 1000 ? `${formatNumber(v / 1000, 2)} m` : `${formatNumber(v, 0)} mm`);
+/** How far the robot drove: whole millimeters, meters from a thousand of them on, or inches. */
+const distance = (v: number, unit: Unit): string => (unit === 'in' ? lengthText(v, unit, 0) : v >= 1000 ? `${formatNumber(v / 1000, 2)} m` : `${formatNumber(v, 0)} mm`);
 const grams = (g: number): string => (g >= 1000 ? `${formatNumber(g / 1000, 3)} kg` : `${formatNumber(g, g < 10 ? 2 : 1)} g`);
 const cm3 = (mm3: number): string => `${formatNumber(mm3 / 1000, mm3 < 10000 ? 2 : 1)} cm³`;
 /** g·mm² shown in g·cm², the size robot parts come in. */
@@ -332,6 +337,7 @@ const inertia = (gmm2: number): string => formatNumber(gmm2 / 100, gmm2 / 100 < 
 
 function LinkPanel({ node }: { node: SceneNode }) {
   const { robot, nodes, props, problems } = useRobot();
+  const unit = useEditor((s) => s.prefs.units);
   const link = linkOf(robot, node.id);
   const p = props.get(node.id);
   const mass = p ? massOf(link.mass, p) : null;
@@ -387,7 +393,7 @@ function LinkPanel({ node }: { node: SceneNode }) {
                     {tr('Shell')}
                     <Hint text={tr('Walls plus top and bottom layers, as one thickness.')} />
                   </label>
-                  <NumberBox label={tr('Shell thickness')} value={link.mass.shell} unit="mm" min={0} max={20} step={0.4} places={2} onChange={(v) => setMass({ shell: v }, 'link-shell')} />
+                  <NumberBox label={tr('Shell thickness')} value={link.mass.shell} unit="mm" length min={0} max={20} step={0.4} places={2} onChange={(v) => setMass({ shell: v }, 'link-shell')} />
                 </div>
               </>
             )}
@@ -408,7 +414,7 @@ function LinkPanel({ node }: { node: SceneNode }) {
           </div>
           <div>
             <dt>{tr('Center of mass')}</dt>
-            <dd>{p ? p.centroid.map((v) => formatNumber(v, 1)).join(', ') : '…'}</dd>
+            <dd>{p ? p.centroid.map((v) => lengthFigure(v, unit, 1)).join(', ') : '…'}</dd>
           </div>
           <div>
             <dt title={tr('Principal moments of inertia, g·cm²')}>{tr('Inertia')}</dt>
@@ -510,6 +516,7 @@ function JointPanel({ joint }: { joint: RobotJoint }) {
   const { robot, nodes, problems, tree } = useRobot();
   const picking = useEditor((s) => s.jointPick);
   const pose = useEditor((s) => s.pose);
+  const working = useEditor((s) => s.prefs.units);
   const [lo, hi] = rangeOf(joint);
   const posed = pose?.joint === joint.id ? pose.value : 0;
   const inLoop = tree.loops.length > 0;
@@ -577,11 +584,11 @@ function JointPanel({ joint }: { joint: RobotJoint }) {
         <div className="field">
           <label>
             {tr('Origin')}
-            <Hint text={tr("Where the joint sits, in the design's coordinates (mm).")} />
+            <Hint text={tr("Where the joint sits, in the design's coordinates ({unit}).", { unit: unitName(working) })} />
           </label>
           <div className="number-row spread">
             {(['X', 'Y', 'Z'] as const).map((tag, i) => (
-              <NumberBox key={tag} label={tr('Origin {axis}', { axis: tag })} tag={tag} value={Number(placed.origin[i].toFixed(3))} step={1} places={2} onChange={(v) => put(placed.origin.map((x, k) => (k === i ? v : x)) as Vec3, placed.axis, 'joint-origin')} />
+              <NumberBox key={tag} label={tr('Origin {axis}', { axis: tag })} tag={tag} value={Number(placed.origin[i].toFixed(3))} length step={1} places={2} onChange={(v) => put(placed.origin.map((x, k) => (k === i ? v : x)) as Vec3, placed.axis, 'joint-origin')} />
             ))}
           </div>
         </div>
@@ -617,8 +624,8 @@ function JointPanel({ joint }: { joint: RobotJoint }) {
               </button>
             )}
           </legend>
-          <SliderField label={angular ? tr('Angle') : tr('Travel')} help={tr('Moves the joint on the plate to see the robot move; the design stays as it is.')} value={posed} min={lo} max={hi} step={angular ? 1 : 0.5} unit={unit} onChange={(v) => setPose(v)} />
-          {pose?.joint === joint.id && !pose.solved.closed && <p className="export-note problems warn">{tr('The linkage cannot close here: a loop joint is {gap} mm apart.', { gap: formatNumber(pose.solved.error, 1) })}</p>}
+          <SliderField label={angular ? tr('Angle') : tr('Travel')} help={tr('Moves the joint on the plate to see the robot move; the design stays as it is.')} value={posed} min={lo} max={hi} step={angular ? 1 : 0.5} unit={unit} length={!angular} onChange={(v) => setPose(v)} />
+          {pose?.joint === joint.id && !pose.solved.closed && <p className="export-note problems warn">{tr('The linkage cannot close here: a loop joint is {gap} apart.', { gap: lengthText(pose.solved.error, working, 1) })}</p>}
           {inLoop && (
             <div className="field">
               <button type="button" className="chip" title={tr('Sweeps this joint over its range with the loops closed and sets the passive joints to follow it (mimic), as URDF needs')} onClick={() => fitJointFollowers(joint.id)}>
@@ -639,8 +646,8 @@ function JointPanel({ joint }: { joint: RobotJoint }) {
             )}
           {joint.type !== 'continuous' && (
             <>
-              {row(tr('Lower limit'), <NumberBox label={tr('Lower limit')} value={joint.lower} unit={unit} step={angular ? 5 : 1} places={2} onChange={(v) => updateJoint(joint.id, { lower: v }, 'joint-lower')} />)}
-              {row(tr('Upper limit'), <NumberBox label={tr('Upper limit')} value={joint.upper} unit={unit} step={angular ? 5 : 1} places={2} onChange={(v) => updateJoint(joint.id, { upper: v }, 'joint-upper')} />)}
+              {row(tr('Lower limit'), <NumberBox label={tr('Lower limit')} value={joint.lower} unit={unit} length={!angular} step={angular ? 5 : 1} places={2} onChange={(v) => updateJoint(joint.id, { lower: v }, 'joint-lower')} />)}
+              {row(tr('Upper limit'), <NumberBox label={tr('Upper limit')} value={joint.upper} unit={unit} length={!angular} step={angular ? 5 : 1} places={2} onChange={(v) => updateJoint(joint.id, { upper: v }, 'joint-upper')} />)}
             </>
           )}
           {row(tr('Effort'), <NumberBox label={tr('Effort')} value={joint.effort} unit={angular ? 'N·m' : 'N'} min={0} step={angular ? 0.5 : 5} places={6} onChange={(v) => updateJoint(joint.id, { effort: v }, 'joint-effort')} />, tr("The most the actuator can push with: a servo's torque, a linear actuator's force."))}
@@ -662,7 +669,7 @@ function JointPanel({ joint }: { joint: RobotJoint }) {
             <div className="field">
               <div className="number-row spread">
                 <NumberBox label={tr('Multiplier')} tag="×" value={joint.mimic.multiplier} step={0.1} places={3} onChange={(v) => updateJoint(joint.id, { mimic: { ...joint.mimic!, multiplier: v } }, 'joint-mimic')} />
-                <NumberBox label={tr('Offset')} tag="+" value={joint.mimic.offset} unit={unit} step={angular ? 5 : 1} places={2} onChange={(v) => updateJoint(joint.id, { mimic: { ...joint.mimic!, offset: v } }, 'joint-mimic')} />
+                <NumberBox label={tr('Offset')} tag="+" value={joint.mimic.offset} unit={unit} length={!angular} step={angular ? 5 : 1} places={2} onChange={(v) => updateJoint(joint.id, { mimic: { ...joint.mimic!, offset: v } }, 'joint-mimic')} />
                 <button type="button" className="chip" title={tr('Follows nothing')} onClick={() => updateJoint(joint.id, { mimic: undefined })}>
                   {tr('Clear')}
                 </button>
@@ -757,6 +764,7 @@ function frameFacing(dir: Vec3, along: 'x' | 'z'): Mat {
 function SensorPanel({ sensor }: { sensor: RobotSensor }) {
   const { nodes, problems } = useRobot();
   const picking = useEditor((s) => s.jointPick);
+  const working = useEditor((s) => s.prefs.units);
   const link = nodes.find((n) => n.id === sensor.link);
   const placed = link ? sensorInDesign(sensor, link) : null;
   const own = problems.filter((q) => q.sensor === sensor.id);
@@ -810,11 +818,11 @@ function SensorPanel({ sensor }: { sensor: RobotSensor }) {
             <div className="field">
               <label>
                 {tr('Origin')}
-                <Hint text={tr("Where the sensor sits, in the design's coordinates (mm).")} />
+                <Hint text={tr("Where the sensor sits, in the design's coordinates ({unit}).", { unit: unitName(working) })} />
               </label>
               <div className="number-row spread">
                 {(['X', 'Y', 'Z'] as const).map((tag, i) => (
-                  <NumberBox key={tag} label={tr('Origin {axis}', { axis: tag })} tag={tag} value={Number(placed.origin[i].toFixed(3))} step={1} places={2} onChange={(v) => put(placed.origin.map((x, k) => (k === i ? v : x)) as Vec3, placed.matrix, 'sensor-origin')} />
+                  <NumberBox key={tag} label={tr('Origin {axis}', { axis: tag })} tag={tag} value={Number(placed.origin[i].toFixed(3))} length step={1} places={2} onChange={(v) => put(placed.origin.map((x, k) => (k === i ? v : x)) as Vec3, placed.matrix, 'sensor-origin')} />
                 ))}
               </div>
             </div>
@@ -853,8 +861,8 @@ function SensorPanel({ sensor }: { sensor: RobotSensor }) {
           {row(tr('Field of view'), <NumberBox label={tr('Field of view')} value={sensor.camera.hfov} unit="°" min={1} max={179} step={5} places={1} onChange={(v) => setCamera({ hfov: v }, 'cam-fov')} />, tr('Horizontal, in degrees.'))}
           {row(tr('Width'), <NumberBox label={tr('Width')} value={sensor.camera.width} unit="px" min={1} max={8192} step={16} integer onChange={(v) => setCamera({ width: v }, 'cam-w')} />)}
           {row(tr('Height'), <NumberBox label={tr('Height')} value={sensor.camera.height} unit="px" min={1} max={8192} step={16} integer onChange={(v) => setCamera({ height: v }, 'cam-h')} />)}
-          {row(tr('Nearest'), <NumberBox label={tr('Nearest')} value={sensor.camera.near} unit="mm" min={1} step={10} places={0} onChange={(v) => setCamera({ near: v }, 'cam-near')} />, tr('Closer than this is not seen.'))}
-          {row(tr('Farthest'), <NumberBox label={tr('Farthest')} value={sensor.camera.far} unit="mm" min={2} step={1000} places={0} onChange={(v) => setCamera({ far: v }, 'cam-far')} />, tr('Farther than this is not seen.'))}
+          {row(tr('Nearest'), <NumberBox label={tr('Nearest')} value={sensor.camera.near} unit="mm" length min={1} step={10} places={0} onChange={(v) => setCamera({ near: v }, 'cam-near')} />, tr('Closer than this is not seen.'))}
+          {row(tr('Farthest'), <NumberBox label={tr('Farthest')} value={sensor.camera.far} unit="mm" length min={2} step={1000} places={0} onChange={(v) => setCamera({ far: v }, 'cam-far')} />, tr('Farther than this is not seen.'))}
         </fieldset>
       )}
       {sensor.kind === 'lidar' && (
@@ -862,8 +870,8 @@ function SensorPanel({ sensor }: { sensor: RobotSensor }) {
           <legend>{tr('Scan')}</legend>
           {row(tr('Rays'), <NumberBox label={tr('Rays')} value={sensor.lidar.samples} min={2} max={7200} step={10} integer onChange={(v) => setLidar({ samples: v }, 'lidar-n')} />, tr('Readings per sweep.'))}
           {row(trx('lidar', 'Sweep'), <NumberBox label={trx('lidar', 'Sweep')} value={sensor.lidar.hfov} unit="°" min={1} max={360} step={10} places={1} onChange={(v) => setLidar({ hfov: v }, 'lidar-fov')} />, tr('How wide the sweep is, centered on the X axis.'))}
-          {row(tr('Nearest'), <NumberBox label={tr('Nearest range')} value={sensor.lidar.min} unit="mm" min={1} step={10} places={0} onChange={(v) => setLidar({ min: v }, 'lidar-min')} />)}
-          {row(tr('Farthest'), <NumberBox label={tr('Farthest range')} value={sensor.lidar.max} unit="mm" min={2} step={1000} places={0} onChange={(v) => setLidar({ max: v }, 'lidar-max')} />)}
+          {row(tr('Nearest'), <NumberBox label={tr('Nearest range')} value={sensor.lidar.min} unit="mm" length min={1} step={10} places={0} onChange={(v) => setLidar({ min: v }, 'lidar-min')} />)}
+          {row(tr('Farthest'), <NumberBox label={tr('Farthest range')} value={sensor.lidar.max} unit="mm" length min={2} step={1000} places={0} onChange={(v) => setLidar({ max: v }, 'lidar-max')} />)}
         </fieldset>
       )}
       {own.length > 0 && (

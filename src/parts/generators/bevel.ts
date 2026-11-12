@@ -5,8 +5,9 @@ import { arcSegments, toDeg, TAU } from '../math2d';
 import { triangulate } from '../meshUtil';
 import { intersection, mirror, revolve, translate } from '../types';
 import type { Polygon, Quality, Solid, Vec2 } from '../types';
-import { degrees, mm, num } from './types';
+import { degrees, lengthInfo, num } from './types';
 import type { GeneratorDef, InfoItem, Params } from './types';
+import { lengthFixed, said } from '../../units';
 
 // Straight bevel gear for shafts at 90°.
 //
@@ -123,7 +124,7 @@ export const bevelGear: GeneratorDef = {
     let face = num(p, 'faceWidth');
     if (face > coneDistance / 2) {
       face = coneDistance / 2;
-      warnings.push(tr('Face width was limited to {width} mm (half the cone distance).', { width: face.toFixed(1) }));
+      warnings.push(said((unit) => tr('Face width was limited to {width} (half the cone distance).', { width: lengthFixed(face, unit, 1) })));
     } else if (face > coneDistance / 3 + 1e-6) {
       warnings.push(tr('Face width is more than a third of the cone distance; the small ends of the teeth get very thin.'));
     }
@@ -201,13 +202,13 @@ export const bevelGear: GeneratorDef = {
     const solid = translate(mirror(withHub.solid, [0, 0, 1]), [0, 0, withHub.height]);
 
     const info: InfoItem[] = [
-      { label: tr('Pitch diameter'), value: mm(2 * r) },
-      { label: tr('Outside diameter'), value: mm(2 * (r + addendum * cosD)) },
+      lengthInfo(tr('Pitch diameter'), 2 * r),
+      lengthInfo(tr('Outside diameter'), 2 * (r + addendum * cosD)),
       { label: tr('Pitch cone angle'), value: degrees(toDeg(delta)) },
-      { label: tr('Cone distance'), value: mm(coneDistance) },
-      { label: tr('Apex to mounting face'), value: mm(-back[1] + (withHub.height - peak)) },
+      lengthInfo(tr('Cone distance'), coneDistance),
+      lengthInfo(tr('Apex to mounting face'), -back[1] + (withHub.height - peak)),
       { label: tr('Ratio'), value: `1 : ${(zMate / z).toFixed(3).replace(/\.?0+$/, '')}` },
-      { label: tr('Total height'), value: mm(withHub.height) },
+      lengthInfo(tr('Total height'), withHub.height),
     ];
     return { solid, info, warnings };
   },

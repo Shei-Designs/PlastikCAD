@@ -45,7 +45,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import type { Mat } from '../model/math';
 import type { Asset, Vec3 } from '../model/types';
 import { CameraRig, VIEW_DIRECTIONS } from './camera';
-import { disposeGround, gridLines, groundMesh } from './ground';
+import { disposeGround, gridLines, groundMesh, plateGrid } from './ground';
 import { DONE_DOT, Handles } from './handles';
 import type { HandleParts } from './handles';
 import { MARKER_ARROW, moveArrow } from './markers';
@@ -63,7 +63,7 @@ import type { HandleKind, ViewItem, ViewPreset, ViewerEvents, ViewerOptions } fr
 
 export type { AlignMode, HandleKind, HandlePrompt, Marker, SnapPoint, ViewItem, ViewPreset, ViewerEvents, ViewerOptions } from './types';
 
-const DEFAULTS: ViewerOptions = { theme: 'dark', edges: true, grid: true, snap: 1, align: null, highlight: null, snaps: null, marker: null, markers: null, ground: null, preview: null, measure: null, objectAxes: false, frozen: false };
+const DEFAULTS: ViewerOptions = { theme: 'dark', edges: true, grid: true, units: 'mm', snap: 1, align: null, highlight: null, snaps: null, marker: null, markers: null, ground: null, preview: null, measure: null, objectAxes: false, frozen: false };
 export const GIZMO_SIZE = 92;
 const GIZMO_MARGIN = 8;
 const PLATE_HALF = 100;
@@ -598,6 +598,8 @@ export class Viewer {
     this.gridMajor.visible = this.gridMinor.visible = this.axes.visible = grid;
     this.handles.parts.outline.material.color.set(t.accent);
     this.robot.parts.snapAxis.material.color.set(t.accent);
+    // The grid's lines fall on the unit; at the start the grid is laid once everything else is in place.
+    if (changed?.has('units')) this.updateGrid();
     if (touched('snaps')) this.robot.syncSnaps();
     if (touched('measure', 'theme')) this.measure.sync();
     this.pointer3d.material.color.set(theme === 'dark' ? 0xffffff : 0x1b1f27);
@@ -646,19 +648,16 @@ export class Viewer {
     this.handles.updateFrame();
   }
 
-  /** Build-plate grid centered on the origin: 200 mm square, growing with the design. */
+  /** Build-plate grid centered on the origin: 200 mm square (10 in, in inches), growing with the design. */
   private updateGrid(): void {
-    const wanted = Math.max(this.reach * 1.2, PLATE_HALF);
-    const major = wanted <= 300 ? 10 : wanted <= 3000 ? 100 : 1000;
-    const half = Math.ceil(wanted / (major * 5)) * major * 5;
+    const { half, major, minor } = plateGrid(Math.max(this.reach * 1.2, PLATE_HALF), this.options.units);
     if (half === this.gridHalf && major === this.gridStep) return;
     this.gridHalf = half;
     this.gridStep = major;
     this.gridMajor.geometry.dispose();
     this.gridMinor.geometry.dispose();
     this.gridMajor.geometry = gridLines(half, major, 0);
-    // A millimeter grid on a big plate is more lines than it is help.
-    this.gridMinor.geometry = gridLines(half, half <= 150 ? major / 10 : major / 2, major);
+    this.gridMinor.geometry = gridLines(half, minor, major);
     this.axes.scale.set(half, half, 1);
   }
 

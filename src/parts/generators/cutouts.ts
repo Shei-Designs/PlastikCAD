@@ -10,8 +10,10 @@ import { tr } from '../../i18n';
 import { arc, circle, roundedRect } from '../math2d';
 import { extrude, translate } from '../types';
 import type { Polygon, Quality, Shape2D, Solid, Vec2 } from '../types';
-import { bool, num, str } from './types';
+import { bool, num, lengthsText, str, unitInfo } from './types';
 import type { BuildResult, GeneratorDef } from './types';
+import { lengthFigure, lengthText, noted } from '../../units';
+import type { Unit } from '../../units';
 
 // --- 2D -------------------------------------------------------------------------------
 
@@ -53,7 +55,7 @@ const clearanceParam = { key: 'clearance', label: tr('Clearance'), type: 'number
 /** A prism of the shapes along Z, centered on the wall. */
 const prism = (shapes: Shape2D): Solid => translate(extrude(shapes, CUTOUT_LENGTH), [0, 0, -CUTOUT_LENGTH / 2]);
 
-const sizeText = (w: number, h: number) => `${w.toFixed(2)} × ${h.toFixed(2)} mm`;
+const cutoutSize = (w: number, h: number, unit: Unit) => lengthsText(unit, [w, h], 2);
 
 // --- panel connectors ------------------------------------------------------------------------
 
@@ -103,13 +105,13 @@ function stepped(main: Opening, wings: { w: number; h: number }, grow: number): 
 // panel cut-outs, Amass's XT60E sheet.
 export const PANEL_CONNECTORS: PanelConnector[] = [
   { id: 'neutrik-d', label: tr('Neutrik D-series'), cutout: round(24), holes: { d: 3.2, across: 19, up: 24, diagonal: true }, note: tr('Fits every D-size chassis connector: XLR, speakON, powerCON, etherCON. M3 holes.') },
-  { id: 'iec-c14', label: tr('IEC C14 inlet, screw flange'), cutout: { w: 28, h: 20, r: 3 }, holes: { d: 3.5, across: 40 }, note: tr('Fits Schurter 6100 and Qualtek 703W inlets; panels up to 8 mm.') },
-  { id: 'iec-c13', label: tr('IEC C13 outlet, screw flange'), cutout: { w: 32.5, h: 24.8, r: 4 }, holes: { d: 3.5, across: 40 }, note: tr('Fits Schurter 6600 and like outlets; two M3 holes 40 mm apart.') },
-  { id: 'iec-c8', label: tr('IEC C8 inlet, snap-in'), cutout: { w: 19.5, h: 12.5, r: 0 }, wings: { w: 24.5, h: 7.5 }, note: tr('Snap-in (Qualtek 771W) for 0.6 to 1.5 mm panels; the notch takes its catches.') },
+  { id: 'iec-c14', label: tr('IEC C14 inlet, screw flange'), cutout: { w: 28, h: 20, r: 3 }, holes: { d: 3.5, across: 40 }, note: noted((unit) => tr('Fits Schurter 6100 and Qualtek 703W inlets; panels up to {a}.', { a: lengthText(8, unit) })) },
+  { id: 'iec-c13', label: tr('IEC C13 outlet, screw flange'), cutout: { w: 32.5, h: 24.8, r: 4 }, holes: { d: 3.5, across: 40 }, note: noted((unit) => tr('Fits Schurter 6600 and like outlets; two M3 holes {a} apart.', { a: lengthText(40, unit) })) },
+  { id: 'iec-c8', label: tr('IEC C8 inlet, snap-in'), cutout: { w: 19.5, h: 12.5, r: 0 }, wings: { w: 24.5, h: 7.5 }, note: noted((unit) => tr('Snap-in (Qualtek 771W) for {a} to {b} panels; the notch takes its catches.', { a: lengthFigure(0.6, unit), b: lengthText(1.5, unit) })) },
   { id: 'db9', label: 'D-sub 9 (DE-9)', cutout: { w: 20.7, h: 11.68, r: 2.4, bottom: 15.9 }, holes: { d: 3.1, across: 24.99 }, note: tr('9-pin D-sub (serial). Norcomp cut-out; the holes take #4-40 jackscrews or M3.') },
   { id: 'db15', label: 'D-sub 15 (DA-15)', cutout: { w: 29, h: 11.68, r: 2.4, bottom: 24.2 }, holes: { d: 3.1, across: 33.32 }, note: tr('15-pin D-sub in two rows (DA-15). Norcomp cut-out; holes take #4-40 jackscrews or M3.') },
   { id: 'db25', label: 'D-sub 25 (DB-25)', cutout: { w: 42.8, h: 11.68, r: 2.4, bottom: 38 }, holes: { d: 3.1, across: 47.04 }, note: tr('25-pin D-sub (parallel). Norcomp cut-out; the holes take #4-40 jackscrews or M3.') },
-  { id: 'xt60', label: tr('XT60 panel mount (XT60E)'), cutout: { w: 15.5, h: 8.1, r: 1 }, holes: { d: 3.2, across: 20 }, note: tr('Amass XT60E panel mount; two M3 holes 20 mm apart.') },
+  { id: 'xt60', label: tr('XT60 panel mount (XT60E)'), cutout: { w: 15.5, h: 8.1, r: 1 }, holes: { d: 3.2, across: 20 }, note: noted((unit) => tr('Amass XT60E panel mount; two M3 holes {a} apart.', { a: lengthText(20, unit) })) },
 ];
 
 function holeShapes(h: NonNullable<PanelConnector['holes']>, grow: number, q: Quality): { at: Vec2[]; shapes: Polygon[] } {
@@ -122,15 +124,15 @@ function holeShapes(h: NonNullable<PanelConnector['holes']>, grow: number, q: Qu
 }
 
 /** The screw holes as the inspector describes them: how many, their size, and how far apart they are each way. */
-function holesText(h: NonNullable<PanelConnector['holes']>, n: number): string {
-  const { d, across, up } = h;
+function holesText(h: NonNullable<PanelConnector['holes']>, n: number, unit: Unit): string {
+  const [d, across, up] = [lengthText(h.d, unit), h.across ? lengthText(h.across, unit) : '', h.up ? lengthText(h.up, unit) : ''];
   if (across && up) {
-    if (h.diagonal) return tr('{n} × Ø{d} mm, {across} mm across and {up} mm up, at opposite corners', { n, d, across, up });
-    return tr('{n} × Ø{d} mm, {across} mm across, {up} mm up', { n, d, across, up });
+    if (h.diagonal) return tr('{n} × Ø{d}, {across} across and {up} up, at opposite corners', { n, d, across, up });
+    return tr('{n} × Ø{d}, {across} across, {up} up', { n, d, across, up });
   }
-  if (across) return tr('{n} × Ø{d} mm, {across} mm across', { n, d, across });
-  if (up) return tr('{n} × Ø{d} mm, {up} mm up', { n, d, up });
-  return `${n} × Ø${d} mm, `;
+  if (across) return tr('{n} × Ø{d}, {across} across', { n, d, across });
+  if (up) return tr('{n} × Ø{d}, {up} up', { n, d, up });
+  return `${n} × Ø${d}, `;
 }
 
 export const panelConnector: GeneratorDef = {
@@ -155,9 +157,9 @@ export const panelConnector: GeneratorDef = {
     const shapes: Shape2D = [c.wings ? stepped(c.cutout, c.wings, grow) : outline(c.cutout, grow, q)];
     if (c.holes && bool(p, 'holes')) shapes.push(...holeShapes(c.holes, grow, q).shapes);
     const info = [
-      { label: tr('Cutout'), value: sizeText((c.wings ? Math.max(c.wings.w, c.cutout.w) : c.cutout.w) + 2 * grow, c.cutout.h + 2 * grow) },
-      { label: tr('Nominal'), value: sizeText(c.cutout.w, c.cutout.h) },
-      ...(c.holes ? [{ label: tr('Holes'), value: holesText(c.holes, holeShapes(c.holes, 0, q).at.length) }] : []),
+      unitInfo(tr('Cutout'), (unit) => cutoutSize((c.wings ? Math.max(c.wings.w, c.cutout.w) : c.cutout.w) + 2 * grow, c.cutout.h + 2 * grow, unit)),
+      unitInfo(tr('Nominal'), (unit) => cutoutSize(c.cutout.w, c.cutout.h, unit)),
+      ...(c.holes ? [unitInfo(tr('Holes'), (unit) => holesText(c.holes!, holeShapes(c.holes!, 0, q).at.length, unit))] : []),
     ];
     return { solid: prism(shapes), outline: shapes, info, warnings };
   },

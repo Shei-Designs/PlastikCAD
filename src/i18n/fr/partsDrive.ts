@@ -38,7 +38,7 @@ export const partsDrive: Catalog = {
   'The hub is too short for the set screw holes; they were skipped.': 'Le moyeu est trop court pour les perçages de vis de pression\u00a0; ils ont été omis.',
 
   // Tooth geometry (parts/involute.ts)
-  'Backlash was limited to {limit} mm so the teeth keep two flanks.': 'Jeu d’engrènement limité à {limit} mm pour que les dents gardent deux flancs.',
+  'Backlash was limited to {limit} so the teeth keep two flanks.': 'Jeu d’engrènement limité à {limit} pour que les dents gardent deux flancs.',
 
   // Spur, helical and herringbone gears, the ring gear and the rack (parts/generators/gears.ts)
   Module: 'Module',
@@ -114,7 +114,7 @@ export const partsDrive: Catalog = {
   'Base thickness': 'Épaisseur de base',
   'Sets the thickness behind the tooth roots at the large end.': 'Définit l’épaisseur derrière les pieds de dents, côté grand diamètre.',
   'Thins each tooth by this amount.': 'Amincit chaque dent de cette valeur.',
-  'Face width was limited to {width} mm (half the cone distance).': 'Largeur de denture limitée à {width} mm (la moitié de la génératrice primitive).',
+  'Face width was limited to {width} (half the cone distance).': 'Largeur de denture limitée à {width} (la moitié de la génératrice primitive).',
   'Face width is more than a third of the cone distance; the small ends of the teeth get very thin.':
     'La largeur de denture dépasse le tiers de la génératrice primitive\u00a0; les dents deviennent très fines côté petit diamètre.',
   'The teeth are undercut. More teeth or a larger pressure angle avoids it.': 'Les dents présentent une interférence de taillage. Davantage de dents ou un angle de pression plus grand l’évite.',
@@ -169,7 +169,7 @@ export const partsDrive: Catalog = {
   'Bicycle 1/2" × 1/8"': 'Vélo 1/2" × 1/8"',
   'Bicycle 1/2" × 3/32"': 'Vélo 1/2" × 3/32"',
   'The sprocket is thicker than the gap between the chain plates.': 'Le pignon est plus épais que l’espace entre les plaques de la chaîne.',
-  'The bore leaves less than 1 mm of material below the teeth.': 'L’alésage laisse moins de 1 mm de matière sous les dents.',
+  'The bore leaves less than {least} of material below the teeth.': 'L’alésage laisse moins de {least} de matière sous les dents.',
   'Chain pitch': 'Pas de la chaîne',
   'Roller diameter': 'Diamètre des rouleaux',
   Thickness: 'Épaisseur',
@@ -184,8 +184,8 @@ export const partsDrive: Catalog = {
 
   // The timing pulleys (parts/generators/timingPulley.ts)
   'The belt grooves overlap: use more teeth.': 'Les gorges de la courroie se chevauchent\u00a0: augmentez le nombre de dents.',
-  'The tooth clearance was reduced to {clearance} mm so the grooves do not overlap.': 'Jeu des dents réduit à {clearance} mm pour que les gorges ne se chevauchent pas.',
-  'The bore leaves less than 1 mm of material below the belt grooves.': 'L’alésage laisse moins de 1 mm de matière sous les gorges de la courroie.',
+  'The tooth clearance was reduced to {clearance} so the grooves do not overlap.': 'Jeu des dents réduit à {clearance} pour que les gorges ne se chevauchent pas.',
+  'The bore leaves less than {least} of material below the belt grooves.': 'L’alésage laisse moins de {least} de matière sous les gorges de la courroie.',
   'Flange diameter': 'Diamètre des flasques',
   'Belt pitch': 'Pas de la courroie',
   Belt: 'Courroie',
@@ -214,7 +214,7 @@ export const partsDrive: Catalog = {
   'Custom pitch': 'Pas personnalisé',
   'Sets the pitch. 0 takes the standard coarse pitch.': 'Définit le pas. 0 prend le pas gros standard.',
   'Thread clearance': 'Jeu du filetage',
-  'The pitch was limited to {max} mm for this diameter.': 'Pas limité à {max} mm pour ce diamètre.',
+  'The pitch was limited to {max} for this diameter.': 'Pas limité à {max} pour ce diamètre.',
   'Only {percent}% of the thread depth engages with this clearance. Reduce the clearance or use a coarser pitch.':
     'Seulement {percent}\u00a0% de la profondeur du filet est en prise avec ce jeu. Réduisez le jeu ou utilisez un pas plus gros.',
   'Metric bolt / threaded rod': 'Vis métrique / tige filetée',
@@ -287,7 +287,7 @@ export const partsDrive: Catalog = {
   'Hole diameter': 'Diamètre des perçages',
   'Bolt circle': 'Cercle de perçage',
   'Sets the diameter of the circle the mounting holes sit on.': 'Définit le diamètre du cercle sur lequel se trouvent les perçages de fixation.',
-  'The body was widened to {diameter} mm to clear the thread.': 'Corps élargi à {diameter} mm pour dégager le filetage.',
+  'The body was widened to {diameter} to clear the thread.': 'Corps élargi à {diameter} pour dégager le filetage.',
   'The body wall around the thread is very thin.': 'La paroi du corps autour du filetage est très mince.',
   'The flange is not larger than the body; it was skipped.': 'La bride n’est pas plus large que le corps\u00a0; elle a été omise.',
   'The mounting holes do not fit between the body and the flange edge.': 'Les perçages de fixation ne tiennent pas entre le corps et le bord de la bride.',
@@ -300,8 +300,7 @@ export const partsDrive: Catalog = {
   Sprocket: 'Pignon à chaîne',
   'The chain is too short for these sprockets; the shortest that fits has {n} links.': 'La chaîne est trop courte pour ces pignons\u00a0; la plus courte qui convient compte {n} maillons.',
   'The belt is too short for these pulleys; the shortest that fits has {n} teeth.': 'La courroie est trop courte pour ces poulies\u00a0; la plus courte qui convient compte {n} dents.',
-  'The belt is too short for these pulleys; the shortest that fits is {n} mm long.': 'La courroie est trop courte pour ces poulies\u00a0; la plus courte qui convient mesure {n} mm.',
-  'Belt length {length} mm': 'Longueur de courroie {length}\u00a0mm',
+  'The belt is too short for these pulleys; the shortest that fits is {length} long.': 'La courroie est trop courte pour ces poulies\u00a0; la plus courte qui convient mesure {length}.',
   'The part is tilted; the mate is placed as if it stood upright.': 'La pièce est inclinée\u00a0; la pièce conjuguée est placée comme si elle ne l’était pas.',
   'The part has been resized, so its teeth no longer match its pitch; the mate fits the unresized part.':
     'La pièce a été redimensionnée\u00a0: ses dents ne correspondent plus à son pas\u00a0; la pièce conjuguée convient à la pièce non redimensionnée.',

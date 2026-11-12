@@ -29,6 +29,7 @@ import { cancelPlacing } from './placing';
 import { cancelMate } from './parts';
 import { refreshAlignBounds, stopAligning } from './tools';
 import { exportName, reportSaved } from './exporting';
+import { inUnit } from '../../units';
 
 // --- robot mode ---------------------------------------------------------------
 
@@ -374,7 +375,7 @@ async function writeRobot(format: ExportFormat): Promise<boolean> {
   if (await stop(problems)) return false;
   // What goes out and what the checks warn of, before anything is written. Ignored objects are said in the sentence, not listed.
   const unreached = new Set(spanningTree(robot, nodes.map((n) => n.id)).unreached);
-  const lines = problems.filter((p) => !(p.link && unreached.has(p.link))).map((p) => p.text);
+  const lines = problems.filter((p) => !(p.link && unreached.has(p.link))).map((p) => inUnit(p.text, getState().prefs.units));
   const label = EXPORT_FORMATS.find((f) => f.id === format)!.label;
   set({ selection: [], joint: null, sensor: null });
   if ((await tell({ title: tr('Export {format}', { format: label }), text: exportSummary(doc, format, robot), lines, actions: [mark('Export'), mark('Cancel')] })) !== 'Export') return false;

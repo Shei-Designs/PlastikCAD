@@ -2,7 +2,7 @@
 
 What is left to do on PlastikCAD, in one place: what can be built now, what
 needs a session together first, what is waiting on a check or a decision,
-and what was put off or dropped on purpose. It is kept here, in the
+and what was deferred or dropped on purpose. It is kept here, in the
 repository, until version 1.0.0; from then on the work is tracked as public
 issues.
 
@@ -15,7 +15,7 @@ formats) are done and merged. The README says what the app does today.
 Six reviews were made on 2026-11-11; each has its section at the end of this
 file. What they found is in two lists here: what was fixed, and what is left
 to choose from. What they showed could be built has each been decided: it is
-under "Next to build", "Put off" or "Dropped".
+under "Next to build", "Deferred" or "Dropped".
 
 ### Fixed
 
@@ -57,15 +57,8 @@ By touch (review 3):
 
 ## Next to build
 
-Smaller pieces, each of which can be built without a session.
-
-- **STEP export, what still goes out as facets**: bevel gears came out
-  right for some settings only in the trial of 2026-11-11, and come last,
-  if at all; a throated worm wheel and threads of eight starts on a thin
-  shaft stay facets. (Eggs, tall domes and oval cones cannot be done: a
-  STEP file does not keep an oval turned round an axis.)
-- **Inches as the working unit**: an option for what is shown and typed.
-  Designs stay in millimeters, and metric stays what the app starts with.
+Nothing is waiting here: what could be built without a session has been.
+The phases below are next.
 
 ## Phases that need a session first
 
@@ -93,6 +86,8 @@ Things only the real devices and accounts can show.
 - On the tablet: how long a STEP export of a helical gear and of a bolt
   takes (about a second each on the workstation).
 - A STEP file with a helical gear and a bolt opened in Fusion 360.
+- On the tablet: inches (**File → Units…**): the boxes, the entry sheet,
+  the snap steps and the grid.
 - On the tablet: a swipe that begins on a slider scrolls the inspector, and
   a drag along it or a tap still sets it (#66).
 - On the desktop: saving a STEP export through the dialog; the Mac build.
@@ -106,11 +101,23 @@ Things only the real devices and accounts can show.
 - The desktop app on a Mac: STEP and compressed glTF files, then an export
   (see the first finding of review 1, fixed on Linux and not tried there).
 
-## Put off
+## Deferred
 
-Not dropped: taken up when asked for.
+Not dropped: put by, to come back to.
 
 - Languages other than English and French.
+- **Bevel gears as true surfaces in STEP files.** They go out as facets
+  today, which is right for every setting but large and not to be picked
+  in a CAD program. In the trial of 2026-11-11 the smooth form came out
+  right for larger gears and wrong for a pinion of twelve teeth (1.2% off
+  in volume; the checks would send it out as facets). To come back to:
+  find why the pinion fails, then decide whether rewriting the generator
+  is worth it.
+- True surfaces in STEP files for a throated worm wheel and for threads of
+  eight starts on a thin shaft, which also go out as facets. (Eggs, tall
+  domes and oval cones cannot be done at all: a STEP file does not keep an
+  oval turned round an axis.)
+- Fractions of an inch typed into a box: inches are decimal.
 - The browser tests in WebKit as well as Chromium: the script that tries
   the built apps before a release (`pnpm check:apps`) runs the desktop app
   itself, which is WebKit; taken up only if a fault gets past it.

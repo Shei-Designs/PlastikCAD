@@ -19,8 +19,10 @@ import { tr, trx } from '../../i18n';
 import { arc, circle, offsetPolygon, roundedRectFrom } from '../math2d';
 import { cylinder, difference, extrude, rotate, translate, union } from '../types';
 import type { Polygon, Quality, Shape2D, Solid, Vec2 } from '../types';
-import { mm, num, str } from './types';
-import type { BuildResult, GeneratorDef, ParamGroup, Params } from './types';
+import { lengthInfo, num, lengthsText, str, unitInfo } from './types';
+import type { BuildResult, GeneratorDef, InfoItem, ParamGroup, Params } from './types';
+import { figureFixed, lengthFigure, lengthFixed, lengthText, noted, said, sizeText } from '../../units';
+import type { Unit } from '../../units';
 
 /** Drill sizes for a screw in printed plastic: the screw cutting its own thread, a clearance hole, a heat-set insert. */
 const SCREWS: Record<string, { tap: number; clearance: number; insert: number }> = {
@@ -155,10 +157,10 @@ const piHoles = (width: number): Vec2[] => [
 ];
 
 export const RASPBERRY_PI: Board[] = [
-  { id: 'pi5', label: 'Raspberry Pi 5', length: 85, width: 56, corner: 3, holes: piHoles(56), holeDiameter: 2.7, screw: 'M2.5', layout: 'USB and Ethernet on the right, SD card slot on the left, GPIO header along the top, power and HDMI along the bottom.', sockets: PI5_SOCKETS, note: tr('Four M2.5 holes, 58 × 49 mm. USB and Ethernet on the right, GPIO header along the top.') },
-  { id: 'pi4', label: 'Raspberry Pi 4 Model B', length: 85, width: 56, corner: 3, holes: piHoles(56), holeDiameter: 2.7, screw: 'M2.5', layout: 'USB and Ethernet on the right, SD card slot on the left, GPIO header along the top, power, HDMI and audio along the bottom.', sockets: PI4_SOCKETS, note: tr('Four M2.5 holes, 58 × 49 mm. USB and Ethernet on the right, GPIO header along the top.') },
-  { id: 'pi3', label: 'Raspberry Pi 3 Model B / B+', length: 85, width: 56, corner: 3, holes: piHoles(56), holeDiameter: 2.75, screw: 'M2.5', layout: 'USB and Ethernet on the right, SD card slot on the left, GPIO header along the top, power, HDMI and audio along the bottom.', sockets: PI3_SOCKETS, note: tr('Four M2.5 holes, 58 × 49 mm. USB and Ethernet on the right, GPIO header along the top.') },
-  { id: 'pi-zero-2', label: 'Raspberry Pi Zero / Zero 2 W', length: 65, width: 30, corner: 3, holes: piHoles(30), holeDiameter: 2.75, screw: 'M2.5', layout: 'Mini HDMI and micro USB along the bottom long edge, SD card slot on the left. The holes sit 3.5 mm in from every edge, so the pattern is the same whichever way round.', sockets: ZERO_SOCKETS, note: tr('Four M2.5 holes, 58 × 23 mm. Ports along the bottom long edge, SD card on the left.') },
+  { id: 'pi5', label: 'Raspberry Pi 5', length: 85, width: 56, corner: 3, holes: piHoles(56), holeDiameter: 2.7, screw: 'M2.5', layout: 'USB and Ethernet on the right, SD card slot on the left, GPIO header along the top, power and HDMI along the bottom.', sockets: PI5_SOCKETS, note: noted((unit) => tr('Four M2.5 holes, {a}. USB and Ethernet on the right, GPIO header along the top.', { a: sizeText([58, 49], unit) })) },
+  { id: 'pi4', label: 'Raspberry Pi 4 Model B', length: 85, width: 56, corner: 3, holes: piHoles(56), holeDiameter: 2.7, screw: 'M2.5', layout: 'USB and Ethernet on the right, SD card slot on the left, GPIO header along the top, power, HDMI and audio along the bottom.', sockets: PI4_SOCKETS, note: noted((unit) => tr('Four M2.5 holes, {a}. USB and Ethernet on the right, GPIO header along the top.', { a: sizeText([58, 49], unit) })) },
+  { id: 'pi3', label: 'Raspberry Pi 3 Model B / B+', length: 85, width: 56, corner: 3, holes: piHoles(56), holeDiameter: 2.75, screw: 'M2.5', layout: 'USB and Ethernet on the right, SD card slot on the left, GPIO header along the top, power, HDMI and audio along the bottom.', sockets: PI3_SOCKETS, note: noted((unit) => tr('Four M2.5 holes, {a}. USB and Ethernet on the right, GPIO header along the top.', { a: sizeText([58, 49], unit) })) },
+  { id: 'pi-zero-2', label: 'Raspberry Pi Zero / Zero 2 W', length: 65, width: 30, corner: 3, holes: piHoles(30), holeDiameter: 2.75, screw: 'M2.5', layout: 'Mini HDMI and micro USB along the bottom long edge, SD card slot on the left. The holes sit 3.5 mm in from every edge, so the pattern is the same whichever way round.', sockets: ZERO_SOCKETS, note: noted((unit) => tr('Four M2.5 holes, {a}. Ports along the bottom long edge, SD card on the left.', { a: sizeText([58, 23], unit) })) },
   {
     id: 'pico',
     label: 'Raspberry Pi Pico / Pico W / Pico 2',
@@ -175,7 +177,7 @@ export const RASPBERRY_PI: Board[] = [
     screw: 'M2',
     layout: 'Micro USB on the left.',
     sockets: [{ name: 'Micro USB', socket: 'micro-usb', edge: 'left', at: 10.5, w: 8, h: 2.9, out: 1.3 }],
-    note: tr('Four M2 holes, 47 × 11.4 mm. Micro USB on the left.'),
+    note: noted((unit) => tr('Four M2 holes, {a}. Micro USB on the left.', { a: sizeText([47, 11.4], unit) })),
   },
 ];
 
@@ -244,7 +246,7 @@ export const ARDUINO: Board[] = [
     // One socket stands for the three connectors: the classic's mini-B body (the tallest and the furthest out) and an
     // opening wide enough for a USB-C plug and tall enough for a micro-B one.
     sockets: [{ name: tr('USB (mini-B; micro-B on the Every, C on the Nano ESP32)'), socket: 'mini-usb', edge: 'left', at: 8.89, w: 7.7, h: 3.9, out: 1.8, plug: { w: 12.35, h: 8.5, r: 1.5 } }],
-    note: tr('Four M1.6 holes 1.27 mm in from the corners. USB on the left, centered.'),
+    note: noted((unit) => tr('Four M1.6 holes {a} in from the corners. USB on the left, centered.', { a: lengthText(1.27, unit) })),
   },
 ];
 
@@ -261,7 +263,7 @@ export const ESP32: Board[] = [
     layout: 'Micro USB on the left. The module\'s antenna reaches 6 mm past the right-hand end of the board, which the blank, the pocket and the corner stops allow for. No mounting holes.',
     overhang: { length: 6.04, width: 18 },
     sockets: [{ name: 'Micro USB', socket: 'micro-usb', edge: 'left', at: 13.95, w: 7.4, h: 2.9, out: 0.95 }],
-    note: tr('No holes: blank, pocket or corner stops. Antenna reaches 6 mm past the right end.'),
+    note: noted((unit) => tr('No holes: blank, pocket or corner stops. Antenna reaches {a} past the right end.', { a: lengthText(6, unit) })),
   },
   {
     id: 'esp32-devkit-v1',
@@ -279,7 +281,7 @@ export const ESP32: Board[] = [
     screw: 'M2.5',
     layout: 'Micro USB on the left, centered on the board\'s width, antenna on the right. The holes sit 2.2 mm in from every edge.',
     sockets: [{ name: 'Micro USB', socket: 'micro-usb', edge: 'left', at: 14.1, w: 7.5, h: 2.9, out: 1 }],
-    note: tr('Four holes 2.2 mm in from the corners. USB on the left, antenna on the right.'),
+    note: noted((unit) => tr('Four holes {a} in from the corners. USB on the left, antenna on the right.', { a: lengthText(2.2, unit) })),
   },
   {
     id: 'nodemcu-32s',
@@ -333,7 +335,7 @@ export const JETSON: Board[] = [
     screw: 'M2.5',
     layout: `${JETSON_LAYOUT} Module and heatsink reach about 27 mm above the carrier.`,
     sockets: JETSON_PORTS(HDMI_DP, JETSON_MICRO_USB),
-    note: tr('Four M2.5 holes, 86 × 58 mm. Ports along the bottom edge.'),
+    note: noted((unit) => tr('Four M2.5 holes, {a}. Ports along the bottom edge.', { a: sizeText([86, 58], unit) })),
   },
   {
     id: 'jetson-orin-nano',
@@ -512,25 +514,25 @@ function drill(p: Params, b: Board): number {
 }
 
 /** Hole spacing as a user would quote it, when the holes sit on a rectangle. */
-function spacing(holes: Vec2[]): string | null {
+function spacing(holes: Vec2[], unit: Unit): string | null {
   const xs = [...new Set(holes.map((h) => h[0]))];
   const ys = [...new Set(holes.map((h) => h[1]))];
   if (holes.length !== 4 || xs.length !== 2 || ys.length !== 2) return null;
-  return `${Math.abs(xs[1] - xs[0]).toFixed(2)} × ${Math.abs(ys[1] - ys[0]).toFixed(2)} mm`;
+  return lengthsText(unit, [Math.abs(xs[1] - xs[0]), Math.abs(ys[1] - ys[0])], 2);
 }
 
 /** A socket as the inspector describes it: its body, where it sits along its edge, and the plug's envelope when that is what is cut. */
-function socketText(s: EdgeSocket, forPlug: boolean): string {
-  const body = { w: s.w.toFixed(1), h: s.h.toFixed(1), at: s.at.toFixed(2) };
+function socketText(s: EdgeSocket, forPlug: boolean, unit: Unit): string {
+  const body = { size: lengthsText(unit, [s.w, s.h], 1), at: lengthFixed(s.at, unit, 2) };
   if (!forPlug) {
-    if (s.edge === 'left') return tr('{w} × {h} mm, {at} mm along the left edge', body);
-    if (s.edge === 'right') return tr('{w} × {h} mm, {at} mm along the right edge', body);
-    return tr('{w} × {h} mm, {at} mm along the bottom edge', body);
+    if (s.edge === 'left') return tr('{size}, {at} along the left edge', body);
+    if (s.edge === 'right') return tr('{size}, {at} along the right edge', body);
+    return tr('{size}, {at} along the bottom edge', body);
   }
-  const plug = { ...body, pw: plugOf(s).w, ph: plugOf(s).h };
-  if (s.edge === 'left') return tr('{w} × {h} mm, {at} mm along the left edge, plug {pw} × {ph}', plug);
-  if (s.edge === 'right') return tr('{w} × {h} mm, {at} mm along the right edge, plug {pw} × {ph}', plug);
-  return tr('{w} × {h} mm, {at} mm along the bottom edge, plug {pw} × {ph}', plug);
+  const plug = { ...body, plug: `${lengthFigure(plugOf(s).w, unit)} × ${lengthFigure(plugOf(s).h, unit)}` };
+  if (s.edge === 'left') return tr('{size}, {at} along the left edge, plug {plug}', plug);
+  if (s.edge === 'right') return tr('{size}, {at} along the right edge, plug {plug}', plug);
+  return tr('{size}, {at} along the bottom edge, plug {plug}', plug);
 }
 
 function build(boards: Board[], p: Params, q: Quality): BuildResult {
@@ -542,11 +544,10 @@ function build(boards: Board[], p: Params, q: Quality): BuildResult {
     make = 'corners';
   }
   const n = q.circle;
-  const info: { label: string; value: string }[] = [{ label: tr('Board'), value: `${b.length.toFixed(2)} × ${b.width.toFixed(2)} mm` }];
+  const info: InfoItem[] = [unitInfo(tr('Board'), (unit) => lengthsText(unit, [b.length, b.width], 2))];
   if (b.holes.length) {
-    info.push({ label: tr('Holes'), value: `${b.holes.length} × Ø${b.holeDiameter} mm, ${b.screw}` });
-    const s = spacing(b.holes);
-    if (s) info.push({ label: tr('Hole spacing'), value: s });
+    info.push(unitInfo(tr('Holes'), (unit) => `${b.holes.length} × Ø${lengthText(b.holeDiameter, unit)}, ${b.screw}`));
+    if (spacing(b.holes, 'mm')) info.push(unitInfo(tr('Hole spacing'), (unit) => spacing(b.holes, unit) ?? ''));
   }
   const outline: Shape2D = [outlineOf(b, 0, q), ...b.holes.map(([x, y]) => circle(b.holeDiameter / 2, 24, x, y).reverse())];
 
@@ -560,7 +561,7 @@ function build(boards: Board[], p: Params, q: Quality): BuildResult {
     const hole = drill(p, b);
     if (hole > 0 && d < hole + 1.6) {
       d = hole + 1.6;
-      warnings.push(tr('The posts were widened to {diameter} mm to leave a wall round the {hole} mm hole.', { diameter: d.toFixed(1), hole }));
+      warnings.push(said((unit) => tr('The posts were widened to {diameter} to leave a wall round the {hole} hole.', { diameter: lengthFixed(d, unit, 1), hole: lengthText(hole, unit) })));
     }
     const posts = b.holes.map(([x, y]) => translate(cylinder(d / 2, height, n), [x, y, baseT]));
     let solid = union(...plate(), ...posts);
@@ -569,7 +570,7 @@ function build(boards: Board[], p: Params, q: Quality): BuildResult {
       const cutters = b.holes.map(([x, y]) => translate(cylinder(hole / 2, height + 1, n), [x, y, base ? baseT : -0.5]));
       solid = difference(solid, ...cutters);
     }
-    info.push({ label: tr('Posts'), value: `Ø${d.toFixed(1)} × ${height.toFixed(1)} mm` }, { label: tr('Hole'), value: hole > 0 ? mm(hole, 2) : tr('none') });
+    info.push(unitInfo(tr('Posts'), (unit) => `Ø${lengthsText(unit, [d, height], 1)}`), hole > 0 ? lengthInfo(tr('Hole'), hole, 2) : { label: tr('Hole'), value: tr('none') });
     return { solid, outline, info, warnings };
   }
 
@@ -581,7 +582,7 @@ function build(boards: Board[], p: Params, q: Quality): BuildResult {
     }
     const length = num(p, 'holeLength');
     const pins = b.holes.map(([x, y]) => translate(cylinder(hole / 2, length, n), [x, y, 0]));
-    info.push({ label: tr('Hole'), value: `Ø${hole.toFixed(2)} × ${length.toFixed(1)} mm` });
+    info.push(unitInfo(tr('Hole'), (unit) => `Ø${figureFixed(hole, unit, 2)} × ${lengthFixed(length, unit, 1)}`));
     return { solid: union(...pins), outline, info, warnings };
   }
 
@@ -615,10 +616,10 @@ function build(boards: Board[], p: Params, q: Quality): BuildResult {
     // A plug body can hang below the PCB: say so, since the part then stands that much lower than the board.
     const lowest = forPlug ? Math.min(0, ...sockets.map((s) => PCB + s.h / 2 - plugOf(s).h / 2)) : 0;
     info.push(
-      { label: 'PCB', value: tr('{thickness} mm thick, holes included', { thickness: PCB }) },
-      ...(lowest < 0 ? [{ label: tr('Base'), value: tr('{depth} mm below the PCB underside: a plug hangs lower than the board', { depth: (-lowest).toFixed(1) }) }] : []),
-      ...sockets.map((s) => ({ label: s.name, value: socketText(s, forPlug) })),
-      { label: tr('Reach'), value: mm(reach, 1) },
+      unitInfo('PCB', (unit) => tr('{thickness} thick, holes included', { thickness: lengthText(PCB, unit) })),
+      ...(lowest < 0 ? [unitInfo(tr('Base'), (unit) => tr('{depth} below the PCB underside: a plug hangs lower than the board', { depth: lengthFixed(-lowest, unit, 1) }))] : []),
+      ...sockets.map((s) => unitInfo(s.name, (unit) => socketText(s, forPlug, unit))),
+      lengthInfo(tr('Reach'), reach, 1),
     );
     return { solid: union(...pieces), outline, info, warnings };
   }
@@ -627,7 +628,7 @@ function build(boards: Board[], p: Params, q: Quality): BuildResult {
     const gap = num(p, 'blankGap');
     const t = num(p, 'blankThickness');
     const reach = b.length + (b.overhang?.length ?? 0);
-    info.push({ label: tr('Slab'), value: `${(reach + 2 * gap).toFixed(2)} × ${(b.width + 2 * gap).toFixed(2)} × ${t.toFixed(1)} mm` });
+    info.push(unitInfo(tr('Slab'), (unit) => `${figureFixed(reach + 2 * gap, unit, 2)} × ${figureFixed(b.width + 2 * gap, unit, 2)} × ${lengthFixed(t, unit, 1)}`));
     return { solid: slab(b, gap, t, gap === 0, q), outline, info, warnings };
   }
 
@@ -638,10 +639,10 @@ function build(boards: Board[], p: Params, q: Quality): BuildResult {
   const height = num(p, 'stopHeight');
   const t = num(p, 'stopThickness');
   const leg = Math.min(num(p, 'stopLength'), b.length / 2, b.width / 2);
-  if (base && num(p, 'baseMargin') < gap + t) warnings.push(tr('The stops overhang the base: a margin of at least {margin} mm covers them.', { margin: (gap + t).toFixed(1) }));
+  if (base && num(p, 'baseMargin') < gap + t) warnings.push(said((unit) => tr('The stops overhang the base: a margin of at least {margin} covers them.', { margin: lengthFixed(gap + t, unit, 1) })));
   // At an end the module reaches past, the legs across that end stop short of it.
   const endLeg = b.overhang ? Math.max(1, Math.min(leg, (b.width - b.overhang.width) / 2 - gap - 0.5)) : leg;
-  if (endLeg < leg) info.push({ label: tr('Legs at the antenna end'), value: `${endLeg.toFixed(1)} mm` });
+  if (endLeg < leg) info.push(lengthInfo(tr('Legs at the antenna end'), endLeg, 1));
   const x0 = -gap;
   const y0 = -gap;
   const x1 = b.length + gap;
@@ -656,7 +657,10 @@ function build(boards: Board[], p: Params, q: Quality): BuildResult {
   ];
   const carved = difference(union(...stops.map((s) => extrude([s], height))), translate(slab(b, gap, height + 2, false, q), [0, 0, -1]));
   const blocks = [translate(carved, [0, 0, baseT])];
-  info.push({ label: tr('Stops'), value: tr('{thickness} mm thick, {height} mm high, legs {leg} mm', { thickness: t.toFixed(1), height: height.toFixed(1), leg: leg.toFixed(1) }) }, { label: tr('Pocket'), value: `${(b.length + 2 * gap).toFixed(2)} × ${(b.width + 2 * gap).toFixed(2)} mm` });
+  info.push(
+    unitInfo(tr('Stops'), (unit) => tr('{thickness} thick, {height} high, legs {leg}', { thickness: lengthFixed(t, unit, 1), height: lengthFixed(height, unit, 1), leg: lengthFixed(leg, unit, 1) })),
+    unitInfo(tr('Pocket'), (unit) => lengthsText(unit, [b.length + 2 * gap, b.width + 2 * gap], 2)),
+  );
   return { solid: union(...plate(), ...blocks), outline, info, warnings };
 }
 

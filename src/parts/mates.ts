@@ -22,6 +22,7 @@ import { sanitizeParams } from './generators/types';
 import { V_BELT_DIAMETERS, vBeltRim } from './generators/vbelt';
 import { wormPair } from './generators/worm';
 import type { Params } from './generators/types';
+import { lengthText, said } from '../units';
 
 export type MateKind = 'gear' | 'ring' | 'rack' | 'wheel' | 'throated' | 'bevel' | 'pulley' | 'vbelt' | 'sprocket' | 'planetary';
 
@@ -62,6 +63,8 @@ export interface Mate {
   /** Mate teeth over gear teeth (or worm starts); NaN for a rack. */
   ratio: number;
   warnings: string[];
+  /** The length of the belt that joins a pulley to its mate, mm. */
+  belt?: number;
   /** Something worth knowing about the mate that is not a problem. */
   note?: string;
   /** What to call the part when its kind's own name would mislead (a helical gear used as a worm wheel). */
@@ -199,7 +202,7 @@ function driveMate(source: PartNode, req: MateRequest, warnings: string[]): Mate
     ratio: z2 / z1,
     warnings,
   };
-  if (kind === 'pulley') mate.note = tr('Belt length {length} mm', { length: Number(length.toFixed(2)) });
+  if (kind === 'pulley') mate.belt = length;
   return mate;
 }
 
@@ -217,7 +220,7 @@ function vBeltMate(source: PartNode, req: MateRequest, warnings: string[]): Mate
   const shortest = Math.ceil(wrapLength(d1, d2, least));
   let length = req.span ?? usualSpan(source, 'vbelt', d2);
   if (length < shortest) {
-    warnings.push(tr('The belt is too short for these pulleys; the shortest that fits is {n} mm long.', { n: shortest }));
+    warnings.push(said((unit) => tr('The belt is too short for these pulleys; the shortest that fits is {length} long.', { length: lengthText(shortest, unit, 0) })));
     length = shortest;
   }
   // The length grows with the distance, so the distance for a length is found by halving.
@@ -238,7 +241,7 @@ function vBeltMate(source: PartNode, req: MateRequest, warnings: string[]): Mate
     center,
     ratio: d2 / d1,
     warnings,
-    note: tr('Belt length {length} mm', { length: Number(length.toFixed(2)) }),
+    belt: length,
   };
 }
 

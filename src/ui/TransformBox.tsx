@@ -5,7 +5,8 @@ import type { SceneNode, Vec3 } from '../model/types';
 import { geometry } from '../state/geometry';
 import { partFigures } from '../parts/figures';
 import { resizeNode, updateNode, useEditor } from '../state/store';
-import { formatNumber, NumberBox } from './Fields';
+import { sizeText, unitName } from '../units';
+import { NumberBox } from './Fields';
 import { ChevronIcon, LinkIcon } from './icons';
 
 /** Whether the dimensions are unfolded; kept for the session, across selections. */
@@ -23,6 +24,7 @@ export function TransformBox() {
   const scene = useEditor((s) => s.doc.scene);
   const selection = useEditor((s) => s.selection);
   const placing = useEditor((s) => s.placing);
+  const unit = useEditor((s) => s.prefs.units);
   const nodes = useMemo(() => scene.filter((n) => selection.includes(n.id)), [scene, selection]);
   useSyncExternalStore(geometry.subscribe, geometry.getRevision);
   if (placing || nodes.length === 0) return null;
@@ -32,7 +34,7 @@ export function TransformBox() {
       <div className="transform-box" role="group" aria-label={tr('Selection')}>
         <div className="transform-row">
           <span className="transform-label">{plural(nodes.length, '{n} object', '{n} objects')}</span>
-          <span className="transform-facts">{size.map((v) => formatNumber(v, 2)).join(' × ')} mm</span>
+          <span className="transform-facts">{sizeText(size, unit)}</span>
         </div>
       </div>
     );
@@ -45,6 +47,7 @@ export function TransformBox() {
  * folded away above the size until asked for. Only parts have any.
  */
 function Dimensions({ node }: { node: SceneNode }) {
+  const unit = useEditor((s) => s.prefs.units);
   const [open, setOpen] = useState(dimsOpen);
   const info = node.type === 'part' ? partFigures(node).info : [];
   if (info.length === 0) return null;
@@ -63,7 +66,7 @@ function Dimensions({ node }: { node: SceneNode }) {
           {info.map((item) => (
             <div key={item.label}>
               <dt>{item.label}</dt>
-              <dd>{item.value}</dd>
+              <dd>{unit === 'in' ? (item.inches ?? item.value) : item.value}</dd>
             </div>
           ))}
         </dl>
@@ -73,6 +76,9 @@ function Dimensions({ node }: { node: SceneNode }) {
 }
 
 function Single({ node }: { node: SceneNode }) {
+  const unit = useEditor((s) => s.prefs.units);
+  // Millimeters go unsaid in the size and the position, as the app's own unit; inches are named.
+  const named = unit === 'in' ? unitName(unit) : undefined;
   const [linked, setLinked] = useState(false);
   const low = geometry.bounds(node).min[2];
   const locked = Boolean(node.locked);
@@ -88,7 +94,7 @@ function Single({ node }: { node: SceneNode }) {
     updateNode(node.id, { rot }, `rot:${node.id}:${axis}`);
   };
   return (
-    <div className="transform-box" role="group" aria-label={tr('Size, position and rotation')}>
+    <div className={unit === 'in' ? 'transform-box inches' : 'transform-box'} role="group" aria-label={tr('Size, position and rotation')}>
       <Dimensions node={node} />
       <div className="transform-row">
         <span className="transform-label">
@@ -98,13 +104,13 @@ function Single({ node }: { node: SceneNode }) {
           </button>
         </span>
         {SIZE_TAGS.map((tag, axis) => (
-          <NumberBox key={tag} tag={tag} label={[tr('Width (X)'), tr('Depth (Y)'), tr('Height (Z)')][axis]} value={node.size[axis]} min={0.01} max={100000} disabled={locked} onChange={(v) => resizeNode(node, axis as 0 | 1 | 2, v, linked)} />
+          <NumberBox key={tag} tag={tag} label={[tr('Width (X)'), tr('Depth (Y)'), tr('Height (Z)')][axis]} value={node.size[axis]} unit={named} length min={0.01} max={100000} disabled={locked} onChange={(v) => resizeNode(node, axis as 0 | 1 | 2, v, linked)} />
         ))}
       </div>
       <div className="transform-row">
         <span className="transform-label">{tr('Position')}</span>
         {AXES.map((tag, axis) => (
-          <NumberBox key={tag} tag={tag} label={axis === 2 ? tr('Height above the plate') : tr('{axis} of the center', { axis: tag })} value={axis === 2 ? low : node.pos[axis]} min={-100000} max={100000} disabled={locked} onChange={(v) => setPos(axis, v)} />
+          <NumberBox key={tag} tag={tag} label={axis === 2 ? tr('Height above the plate') : tr('{axis} of the center', { axis: tag })} value={axis === 2 ? low : node.pos[axis]} unit={named} length min={-100000} max={100000} disabled={locked} onChange={(v) => setPos(axis, v)} />
         ))}
       </div>
       <div className="transform-row">

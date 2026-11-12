@@ -3,7 +3,6 @@ import type { CSSProperties, JSX } from 'react';
 import { plural, tr, trx } from '../i18n';
 import { rich } from '../i18n/rich';
 import { geometry } from '../state/geometry';
-import { SNAP_STEPS } from '../state/persist';
 import {
   beginGesture,
   cancelEditing,
@@ -57,6 +56,7 @@ import { jointInDesign, sensorInDesign } from '../robot/model';
 import type { RobotJoint, RobotSensor } from '../robot/types';
 import type { EditorState } from '../state/store';
 import { sim } from '../state/sim';
+import { fromUnit, lengthFigure, snapLabel, snapSteps, unitName } from '../units';
 import { GIZMO_SIZE, Viewer } from '../viewer/Viewer';
 import type { HandlePrompt, Marker, ViewItem, ViewPreset } from '../viewer/Viewer';
 import {
@@ -289,7 +289,12 @@ const ViewWidget = memo(function ViewWidget({ viewer }: { viewer: React.RefObjec
  * Enter applies them as if the grip had been dragged there.
  */
 function HandleInput({ prompt, onClose }: { prompt: HandlePrompt; onClose: () => void }) {
-  const [texts, setTexts] = useState(prompt.fields.map((f) => String(Number(f.value.toFixed(3)))));
+  const working = useEditor((s) => s.prefs.units);
+  // A length is shown and typed in the unit the user works in; the viewer has it, and takes it back, in millimeters.
+  const unit = prompt.unit === 'mm' ? working : null;
+  const show = (value: number) => (unit ? lengthFigure(value, unit, 3) : String(Number(value.toFixed(3))));
+  const unitLabel = unit ? unitName(unit) : prompt.unit;
+  const [texts, setTexts] = useState(prompt.fields.map((f) => show(f.value)));
   /** The box being typed in, in place or in the entry sheet: it and the length it sets are lit. */
   const [focused, setFocused] = useState(0);
   const host = useRef<HTMLFormElement>(null);
@@ -300,7 +305,10 @@ function HandleInput({ prompt, onClose }: { prompt: HandlePrompt; onClose: () =>
     // A box left empty keeps the value it showed; with every box empty there is nothing to apply.
     const blank = typed.map((t) => t.trim() === '');
     if (!blank.every(Boolean)) {
-      const values = typed.map((t, i) => (blank[i] ? prompt.fields[i].value : Number(t.trim().replace(',', '.'))));
+      // So does a box left as it read: what it showed was rounded, and is not a value to put back.
+      const kept = (i: number) => blank[i] || typed[i].trim() === show(prompt.fields[i].value);
+      const taken = (text: string) => (unit ? fromUnit(Number(text), unit) : Number(text));
+      const values = typed.map((t, i) => (kept(i) ? prompt.fields[i].value : taken(t.trim().replace(',', '.'))));
       if (values.every((v) => Number.isFinite(v))) viewerRef.current?.applyTyped(prompt.kind, values);
     }
     onClose();
@@ -311,7 +319,7 @@ function HandleInput({ prompt, onClose }: { prompt: HandlePrompt; onClose: () =>
     return {
       label: prompt.fields.length > 1 ? tr('{name} ({index} of {count})', { name: f.name, index: i + 1, count: prompt.fields.length }) : f.name,
       value: texts[i],
-      unit: prompt.unit,
+      unit: unitLabel,
       inputMode: 'decimal',
       onCommit: (raw) => {
         const next = texts.map((t, j) => (j === i ? raw : t));
@@ -396,7 +404,7 @@ function HandleInput({ prompt, onClose }: { prompt: HandlePrompt; onClose: () =>
               e.stopPropagation();
             }}
           />
-          <span className="unit">{prompt.unit}</span>
+          <span className="unit">{unitLabel}</span>
         </label>
       ))}
     </form>
@@ -514,6 +522,7 @@ const Toolbar = memo(function Toolbar() {
   const edges = useEditor((s) => s.prefs.edges);
   const grid = useEditor((s) => s.prefs.grid);
   const snap = useEditor((s) => s.prefs.snap);
+  const units = useEditor((s) => s.prefs.units);
   // On a narrow stage the bar wraps onto a second row; what sits under it is told how tall it is.
   const bar = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -540,9 +549,9 @@ const Toolbar = memo(function Toolbar() {
           <label className="chip select" title={tr('Sets the step that moves and sizes snap to.')}>
             {tr('Snap')}
             <select value={snap} onChange={(e) => setPrefs({ snap: Number(e.target.value) })}>
-              {SNAP_STEPS.map((s) => (
+              {snapSteps(units).map((s) => (
                 <option key={s} value={s}>
-                  {s === 0 ? trx('snap', 'Off') : `${s} mm`}
+                  {s === 0 ? trx('snap', 'Off') : snapLabel(s, units)}
                 </option>
               ))}
             </select>
@@ -642,8 +651,8 @@ export function Viewport() {
   const measureResult = useMemo(() => {
     if (!measuring) return null;
     const [a, b] = measuring.picks;
-    return b ? measureBetween(a, b) : a ? describeFeature(a) : null;
-  }, [measuring]);
+    return b ? measureBetween(a, b, prefs.units) : a ? describeFeature(a, prefs.units) : null;
+  }, [measuring, prefs.units]);
   const measure = useMemo(() => (measuring ? { kinds: measuring.kinds, picks: measuring.picks, result: measureResult } : null), [measuring, measureResult]);
   const objectAxes = useEditor((s) => s.objectAxes);
   const arraying = useEditor((s) => s.arraying);
@@ -705,7 +714,7 @@ export function Viewport() {
           else if (robot?.sensors.some((x) => x.id === id)) selectSensor(id);
         },
       },
-      { theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap },
+      { theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, units: prefs.units, snap: prefs.snap },
     );
     viewer.current = viewerRef.current = v;
     provideThumbnail((only) => v.capture(320, 200, only));
@@ -719,8 +728,8 @@ export function Viewport() {
   }, []);
 
   useEffect(() => {
-    viewer.current?.setOptions({ theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, snap: prefs.snap, align: aligning, highlight, snaps, marker, markers, ground, preview, measure, objectAxes, frozen: arraying });
-  }, [prefs.theme, prefs.edges, prefs.grid, prefs.snap, aligning, highlight, snaps, marker, markers, ground, preview, measure, objectAxes, arraying]);
+    viewer.current?.setOptions({ theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, units: prefs.units, snap: prefs.snap, align: aligning, highlight, snaps, marker, markers, ground, preview, measure, objectAxes, frozen: arraying });
+  }, [prefs.theme, prefs.edges, prefs.grid, prefs.units, prefs.snap, aligning, highlight, snaps, marker, markers, ground, preview, measure, objectAxes, arraying]);
 
   const carrying = Boolean(placing);
   useEffect(() => {
