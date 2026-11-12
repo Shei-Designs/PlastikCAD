@@ -41,8 +41,9 @@ Everything is millimeters and Z up inside PlastikCAD; exports convert.
   articulation, Isaac sensor prims, a floor, lights and a ROS 2 action graph
   under `/World/ROS2`; the robot is the `/World/<Name>` prim, ready to be
   referenced into another stage). All in meters, Z up, every link frame
-  parallel to the design axes. A driven robot's root is `base_footprint`,
-  facing +X as ROS expects (URDF and SDF; the USD keeps the design frame).
+  parallel to the design axes, the base link's at the base object's own
+  origin. A driven robot's root is `base_footprint`, on the floor under the
+  base link, facing +X as ROS expects (URDF and SDF; the USD keeps the design frame).
 - **The design file** `.plastikcad` (JSON, `format: "plastikcad"`,
   `version` 3): the scene as shapes, parts and operations rather than
   triangles, plus the robot description under `robot`. The world builder

@@ -328,7 +328,8 @@ in the design file and synced with it.
   side, a corner. The wheel labels say which way the robot faces, and the
   track and wheel radius are measured from the design. Gazebo's matching
   plugin takes velocity commands on `cmd_vel` and reports odometry; a driven
-  robot gets a `base_footprint` root facing +X as ROS expects.
+  robot gets a `base_footprint` root on the floor under the base link,
+  facing +X as ROS expects.
 - **Controllers.** The actuated joints outside the drive go under
   `ros2_control` with a joint trajectory controller (`arm_controller`) and a
   joint state broadcaster, unless switched off, and *Scripts* whether the
@@ -382,7 +383,11 @@ in the design file and synced with it.
   rangefinders, up to 90 rays), a `home` keyframe, the floor *World* chose,
   the meshes beside it and, with *Scripts* on, `drive.py` to drive it in
   MuJoCo's viewer, a Gymnasium `env.py` and a Stable-Baselines3 `train.py`. Meters, kilograms and radians, Z up; every link's frame is parallel to the
-  design's axes and sits at its joint, with its meshes written in that frame.
+  design's axes and sits at its joint, with its meshes written in that frame;
+  the base link's frame sits at the base object's own origin (the origin of
+  an imported file, else the middle of its box), so the robot comes out the
+  same wherever in the design it was built, and stands in the simulator's
+  world where and as high as the design had it.
   The URDF says `__PACKAGE_SHARE__` where it means the package's share
   folder; the launch files fill that in, so no xacro is needed. Or an *Isaac
   Sim stage*: one `.usda` file holding the robot as a PhysX articulation

@@ -4,7 +4,7 @@
 // per unit mass about the centroid in mm², which any uniform density scales
 // to a tensor. Masses are in grams; `toSI` makes kg·m² for the exporters.
 import type { MeshData } from '../geometry/mesh';
-import { apply, flipSigns, invert, multiply, originOf, rotation, scaling } from '../model/math';
+import { apply, flipSigns, invert, multiply, ownOrigin, rotation, scaling } from '../model/math';
 import type { Mat } from '../model/math';
 import type { SceneNode, Vec3 } from '../model/types';
 import type { MassSpec } from './types';
@@ -104,7 +104,7 @@ export const tensorOf = (mass: number, unit: Tensor): Tensor => unit.map((x) => 
  */
 export function ownFrame(node: SceneNode): Mat {
   const m = multiply(rotation(node.rot), scaling(flipSigns(node.flip)));
-  const at = originOf(node) ?? node.pos;
+  const at = ownOrigin(node);
   m[9] = at[0];
   m[10] = at[1];
   m[11] = at[2];

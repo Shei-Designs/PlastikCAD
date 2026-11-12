@@ -285,8 +285,8 @@ export function writeMjcf(model: MjcfModel): string {
     return `<geom type="sphere" size="${fmt(g.sphere.radius, 6)}"${at}${rest}/>`;
   };
   const bodyXml = (b: MjcfBody, indent: string): string[] => {
-    // On the slope the robot stands tilted with the floor, about the origin its base sits at.
-    const lines = [`${indent}<body name="${escapeXml(b.name)}" pos="${vec(b.pos)}"${b === model.base && tilt ? ` quat="${tilt}"` : ''}>`];
+    // On the slope the robot stands tilted with the floor, about the world's origin, which the floor passes through.
+    const lines = [`${indent}<body name="${escapeXml(b.name)}" pos="${vec(b === model.base ? baseAt : b.pos)}"${b === model.base && tilt ? ` quat="${tilt}"` : ''}>`];
     if (b === model.base && model.floating) lines.push(`${indent}  <freejoint name="${FREE_JOINT}"/>`);
     if (b.joint && b.joint.type !== 'fixed') {
       const j = b.joint;
@@ -319,13 +319,14 @@ export function writeMjcf(model: MjcfModel): string {
     return lines;
   };
   const tilt = model.world === 'slope' ? quatOf([SLOPE, 0, 0]) : '';
+  const baseAt = tilt ? turned(model.base.pos, [SLOPE, 0, 0]) : model.base.pos;
   const body = bodyXml(model.base, '    ');
   const imus = collect(model.base, (b) => b.imus ?? []);
   const touches = collect(model.base, (b) => b.touches ?? []);
   const lidars = collect(model.base, (b) => b.lidars ?? []);
   // Joints in the order the file gives them, which is the order of qpos.
   const joints = collect(model.base, (b) => (b.joint && b.joint.type !== 'fixed' ? [b.joint] : []));
-  const home = [...(model.floating ? [`0 0 0 ${tilt || '1 0 0 0'}`] : []), ...joints.map(() => '0')].join(' ');
+  const home = [...(model.floating ? [`${vec(baseAt)} ${tilt || '1 0 0 0'}`] : []), ...joints.map(() => '0')].join(' ');
   const sensors = [
     ...joints.flatMap((j) => [`    <jointpos name="${escapeXml(j.name)}_pos" joint="${escapeXml(j.name)}"/>`, `    <jointvel name="${escapeXml(j.name)}_vel" joint="${escapeXml(j.name)}"/>`]),
     ...(model.floating
