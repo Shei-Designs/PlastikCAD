@@ -352,7 +352,14 @@ in the design file and synced with it.
 - **Controllers.** The actuated joints outside the drive go under
   `ros2_control` with a joint trajectory controller (`arm_controller`) and a
   joint state broadcaster, unless switched off, and *Scripts* whether the
-  MuJoCo export brings its Python starters.
+  MuJoCo export brings its Python starters. Each such joint has a
+  *Command*: *Position*, which its actuator holds, or *Torque* (*Force* on
+  a slider), which a controller of your own works out. A torque joint gets
+  a plain motor with no gains in the MuJoCo model, where `drive.py` holds
+  it with a spring and a damper to replace; in the ROS 2 package it offers
+  an effort command beside the position, which the package's controller
+  keeps claiming until yours takes the effort; the Isaac Sim stage keeps
+  its position drive. The test drive holds every joint by position.
 - **Checks.** The overview lists what stops an export (no base, a link no
   joint reaches, limits the wrong way round, a drive missing a wheel on a
   side, a link with no mass or an impossible inertia, a joint set to follow
@@ -396,7 +403,8 @@ in the design file and synced with it.
   `model.sdf` with every joint (loops included), `model.config`, the meshes
   and a world that includes the model, to open with `gz sim` and no ROS.
   Or a *MuJoCo model*: one MJCF file with the bodies nested down the tree,
-  position servos on the controlled joints and velocity motors on the
+  position servos on the controlled joints (torque motors on those
+  commanded by torque) and velocity motors on the
   wheels, loops closed by connect constraints, followers by joint
   constraints, cameras, IMUs, touch sensors and lidars (a fan of
   rangefinders, up to 90 rays), a `home` keyframe, the floor *World* chose,

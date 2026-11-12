@@ -129,4 +129,30 @@ test.describe("a joint's start", { tag: '@mouse' }, () => {
     await page.keyboard.press('Enter');
     expect(await start()).toBeUndefined();
   });
+
+  test('takes a torque command while the robot has controllers', async ({ page }) => {
+    await openApp(page);
+    await store(page, (m) => {
+      m.addShape('box');
+      m.addShape('box');
+      m.nudgeSelected([30, 0, 0]);
+      m.enterRobotMode();
+      const [a, b] = m.getState().doc.scene;
+      m.setRobotRoot(a.id);
+      m.addJoint(a.id, b.id);
+    });
+    await settled(page);
+    const command = () => store(page, (m) => m.getState().doc.robot!.joints[0].command);
+    const group = page.getByRole('radiogroup', { name: 'Command' });
+    await expect(group.getByRole('radio', { name: 'Position' })).toBeChecked();
+    // With the controllers off nothing commands the joint, and there is nothing to choose.
+    await store(page, (m) => m.setControl(false));
+    await expect(group).toHaveCount(0);
+    await store(page, (m) => m.setControl(true));
+    await group.getByRole('radio', { name: 'Torque' }).click();
+    expect(await command()).toBe('torque');
+    await expect(group.getByRole('radio', { name: 'Torque' })).toBeChecked();
+    await group.getByRole('radio', { name: 'Position' }).click();
+    expect(await command()).toBeUndefined();
+  });
 });

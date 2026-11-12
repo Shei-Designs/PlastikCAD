@@ -45,8 +45,24 @@ for xml in xmls:
     base = 1
     free = any(m.jnt_type[j] == 0 and m.jnt_bodyid[j] == base for j in range(m.njnt))
     steps = lambda seconds: range(int(seconds / m.opt.timestep))  # noqa: E731
-    for _ in steps(1.0):
+    # A joint commanded by torque has a plain motor, which holds nothing: a spring and a damper about where it
+    # began stand in for the controller, as the starter script's do.
+    torques = {}
+    for a in range(m.nu):
+        if m.actuator_biasprm[a, 1] == 0 and m.actuator_biasprm[a, 2] == 0:
+            j = m.actuator_trnid[a, 0]
+            inertia = max(m.dof_M0[m.jnt_dofadr[j]], 1e-9)
+            top = m.actuator_ctrlrange[a, 1]
+            kp = min(top / 0.5, 0.25 * inertia / m.opt.timestep**2)
+            torques[a] = [m.jnt_qposadr[j], m.jnt_dofadr[j], kp, 2 * np.sqrt(kp * inertia), top, float(began[m.jnt_qposadr[j]])]
+
+    def tick():
+        for a, (q, v, kp, kd, top, want) in torques.items():
+            d.ctrl[a] = np.clip(kp * (want - d.qpos[q]) - kd * d.qvel[v], -top, top)
         mujoco.mj_step(m, d)
+
+    for _ in steps(1.0):
+        tick()
     # The base frame may sit on the floor: the robot's center of mass says how high it stands, measured square to the floor when it is a tilted plane.
     floor = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_GEOM, "floor")
     up = np.array([0.0, 0.0, 1.0])
@@ -56,7 +72,7 @@ for xml in xmls:
     start = d.subtree_com[base].copy()
     start_height = height()
     q0 = d.qpos.copy()
-    servos = [a for a in range(m.nu) if m.actuator_biasprm[a, 1] != 0]
+    servos = [a for a in range(m.nu) if m.actuator_biasprm[a, 1] != 0 or a in torques]
     motors = [a for a in range(m.nu) if a not in servos]
     notes = []
     ok = True
@@ -64,7 +80,7 @@ for xml in xmls:
         for a in motors:
             d.ctrl[a] = m.actuator_ctrlrange[a, 1] if m.actuator_ctrllimited[a] else 1.0
         for _ in steps(2.0):
-            mujoco.mj_step(m, d)
+            tick()
         moved = float(np.linalg.norm((d.subtree_com[base] - start)[:2]))
         notes.append(f"drove {moved * 1000:.0f} mm in 2 s")
         ok &= moved >= 0.01
@@ -72,7 +88,7 @@ for xml in xmls:
         # A walker on its servos must first stand still at its home pose, then follow a small step; an arm follows a larger one.
         if free:
             for _ in steps(1.0):
-                mujoco.mj_step(m, d)
+                tick()
             standing = height()
             notes.append(f"stood at {standing * 1000:.1f} mm of {start_height * 1000:.1f}")
             ok &= standing >= 0.9 * start_height
@@ -85,9 +101,12 @@ for xml in xmls:
             ok &= drift < 0.15
         asked = 0.1 if free else 0.3
         for a in servos:
-            d.ctrl[a] = held[a] + asked
+            if a in torques:
+                torques[a][5] += asked
+            else:
+                d.ctrl[a] = held[a] + asked
         for _ in steps(1.0):
-            mujoco.mj_step(m, d)
+            tick()
         swung = max(abs(float(d.qpos[i] - q0[i])) for i in adr)
         notes.append(f"servos swung up to {np.degrees(swung):.1f} deg of {np.degrees(asked):.1f} asked")
         ok &= swung >= asked / 3

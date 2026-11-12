@@ -327,6 +327,28 @@ describe('the pose a simulation begins in', () => {
     expect(text(bare.files.find((f) => f.name === 'launch/gazebo.launch.py')!.bytes)).toContain("'-z', '0.1'");
   });
 
+  it('gives a joint commanded by torque a plain motor in MuJoCo and an effort interface in ROS, and a servo in the test drive', () => {
+    const d = walker(90);
+    d.robot!.joints = d.robot!.joints.map((j) => ({ ...j, command: 'torque' as const }));
+    // A motor has no gains and holds nothing: the home pose asks it for no torque.
+    const xml = mjcf(d);
+    expect(xml).toMatch(/<motor name="hip_torque" joint="hip" ctrlrange="-[0-9.]+ [0-9.]+"\/>/);
+    expect(xml).not.toContain('<position ');
+    expect(xml).toMatch(/<key name="home" qpos="0 0 0.015 1 0 0 0 1.570796"\/>/);
+    // The test drive's model holds every joint by position.
+    const driven = text(buildMjcfModel(d, geo(d), d.robot!, 'flat', true).files.find((f) => f.name.endsWith('.xml') && !f.name.includes('/'))!.bytes);
+    expect(driven).toMatch(/<position name="hip_servo" joint="hip"/);
+    expect(driven).not.toContain('<motor ');
+    // ROS offers the effort beside the position, which the package's own controller still claims: the robot stands until another takes over.
+    const pkg = buildRobotPackage(d, geo(d));
+    const file = (name: string) => text(pkg.files.find((f) => f.name === name)!.bytes);
+    expect(pkg.warnings).toEqual([]);
+    expect(file('urdf/test_rover.urdf')).toMatch(/<joint name="hip">\s*<command_interface name="position"\/>\s*<command_interface name="effort"\/>[\s\S]*?<state_interface name="velocity"\/>\s*<state_interface name="effort"\/>\s*<\/joint>/);
+    expect(file('config/controllers.yaml')).toMatch(/command_interfaces:\s*- position\n/);
+    // A joint commanded by position says nothing of effort.
+    expect(text(buildRobotPackage(walker(90), geo(walker(90))).files.find((f) => f.name === 'urdf/test_rover.urdf')!.bytes)).not.toContain('"effort"');
+  });
+
   it('lists the actuators in the order of the joints, so control i drives joint i', () => {
     // The quadruped's joints run hip, knee, hip, knee down each leg in turn; its actuators must run the same way.
     const d = ROBOTS.find((r) => r.file === 'quadruped')!.make();

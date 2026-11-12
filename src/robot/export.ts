@@ -143,6 +143,8 @@ interface Prepared {
   drive: PreparedDrive | null;
   /** Joints under ros2_control. */
   controlled: string[];
+  /** Those of them a controller sends a torque, not a position. */
+  torque: string[];
 }
 
 function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, meshUri: (path: string) => string, naming: Naming): Prepared {
@@ -349,7 +351,9 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
   const driven = new Set(driveJoints(robot.drive));
   const controlled = robot.control ? tree.order.slice(1).map((id) => tree.parentJoint.get(id)!).filter((j) => j.type !== 'fixed' && !j.mimic && !driven.has(j.id)).map((j) => jointNames.get(j)!) : [];
 
-  return { pkg, robotName: urdfName(doc.name, 'robot'), files, warnings, leftOut, order: tree.order, names, naming, linkNames, jointNames, frames, links, lift, posed: begun?.frames ?? null, treeJoints, loopJoints, sensors, drive, controlled };
+  const torque = controlled.filter((name) => allJoints.find((j) => jointNames.get(j) === name)?.command === 'torque');
+
+  return { pkg, robotName: urdfName(doc.name, 'robot'), files, warnings, leftOut, order: tree.order, names, naming, linkNames, jointNames, frames, links, lift, posed: begun?.frames ?? null, treeJoints, loopJoints, sensors, drive, controlled, torque };
 }
 
 /**
@@ -465,7 +469,7 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
   // Only a controller can hold a joint at its start in Gazebo.
   const loose = p.treeJoints.filter((j) => j.start && !p.controlled.includes(j.name) && !j.mimic).map((j) => j.name);
   if (loose.length) warnings.push(`No controller holds ${loose.map((n) => `"${n}"`).join(', ')}, so ${loose.length > 1 ? 'they begin' : 'it begins'} as designed, not at ${loose.length > 1 ? 'their starts' : 'its start'}.`);
-  const control = p.controlled.length ? { joints: p.controlled, controllersYaml: `${SHARE_PLACEHOLDER}/config/controllers.yaml`, starts } : undefined;
+  const control = p.controlled.length ? { joints: p.controlled, controllersYaml: `${SHARE_PLACEHOLDER}/config/controllers.yaml`, starts, torque: p.torque } : undefined;
   const controllers = control ? ['joint_state_broadcaster', 'arm_controller'] : [];
   files.unshift(
     { name: 'package.xml', bytes: encodeText(packageXml(pkg, `${doc.name} robot description`, { gazebo: true, control: Boolean(control) })) },
@@ -588,6 +592,8 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
   const p = prepare(doc, geometry, robot, (path) => path, USD_NAMES);
   const { pkg, warnings } = p;
   const velocity = new Set(p.drive?.wheels ?? []);
+  // A joint commanded by torque keeps its position drive here: the stage stands by itself, and a controller that
+  // sends efforts sets the gains it wants (Isaac Lab writes its own over these when it loads the robot).
   const position = new Set([...p.controlled, ...(p.drive?.steer ?? [])]);
   // An Ackermann car in Isaac: the controller speaks for all four wheels, front left, front right, rear left, rear right,
   // so the front wheels, which turn free on their knuckles in the design, get velocity drives too.
@@ -695,7 +701,7 @@ export const MAX_LIDAR_RAYS = 90;
  * world is the simulator's business, not the robot's. The test drive passes
  * the floor the user picked for it.
  */
-export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot = robotOf(doc), world: World = 'flat'): MjcfPackage {
+export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot = robotOf(doc), world: World = 'flat', servosOnly = false): MjcfPackage {
   const p = prepare(doc, geometry, robot, (path) => path, MJCF_NAMES);
   const { pkg, files, warnings } = p;
   const byName = new Map(p.links.map((l) => [l.name, l]));
@@ -739,6 +745,8 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
     connects: p.loopJoints.map((j) => ({ body1: j.parent, body2: j.child, anchor: j.origin })),
     followers: [...p.treeJoints, ...p.loopJoints].filter((j) => j.mimic && p.treeJoints.some((t) => t.name === j.name)).map((j) => ({ joint: j.name, leader: j.mimic!.joint, multiplier: j.mimic!.multiplier, offset: j.mimic!.offset })),
     servos: [...p.controlled, ...(p.drive?.steer ?? [])].filter((j) => actuated.has(j)),
+    // The test drive holds every joint by position, whatever its controller will send it.
+    torques: servosOnly ? [] : p.torque,
     // The wheels get velocity motors; steering joints position servos, as the simulator has no plugin to turn them.
     wheels: (p.drive?.wheels ?? []).filter((j) => actuated.has(j)),
   };
