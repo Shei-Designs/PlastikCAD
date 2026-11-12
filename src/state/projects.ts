@@ -314,7 +314,13 @@ export class DiskProjects implements ProjectStore {
       this.heads.delete(item.key);
       if (!item.id || left.has(item.id)) continue;
       for (const version of await this.versions(item.id)) await platform.removeFile(version.key).catch(() => {});
+      await this.dropHistory(item.id);
     }
+  }
+
+  /** Takes away the folder a project's earlier saves were kept in, once none is left in it. */
+  private async dropHistory(id: string): Promise<void> {
+    await platform.removeHistoryFolder(join(join(this.location, HISTORY_FOLDER), id)).catch(() => {});
   }
 
   /** When an earlier save was last kept of each project, by key, this session. */
@@ -352,10 +358,12 @@ export class DiskProjects implements ProjectStore {
   /** Takes over the earlier saves another folder kept of a project, when its projects move here. */
   async takeVersions(from: DiskProjects, id: string): Promise<void> {
     for (const version of await from.versions(id)) await platform.moveFile(version.key, join(join(join(this.location, HISTORY_FOLDER), id), baseName(version.key))).catch(() => {});
+    await from.dropHistory(id);
   }
 
   async versions(id: string): Promise<VersionInfo[]> {
-    const entries = await platform.listDesigns(join(join(this.location, HISTORY_FOLDER), id));
+    // Not made by being looked into: a project with no earlier save has no folder for them.
+    const entries = await platform.listDesigns(join(join(this.location, HISTORY_FOLDER), id), false);
     return entries
       .map((e) => ({ key: e.path, saved: stampTime(e.name), size: e.size }))
       .filter((v): v is VersionInfo => v.saved !== null)

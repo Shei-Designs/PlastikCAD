@@ -327,6 +327,7 @@ describe('two new projects of one name written at the same moment', () => {
         files.set(path, bytes);
       },
       moveFile: async () => {},
+      removeHistoryFolder: async () => {},
     });
     const disk = new DiskProjects('/home/me/Documents/PlastikCAD');
     const one = serializeDoc({ ...emptyDoc(), id: 'fromsync01', name: 'Untitled' });

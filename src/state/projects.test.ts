@@ -7,11 +7,15 @@ import type { DesignEntry } from '../platform';
 const files = new Map<string, Uint8Array>();
 const encoder = new TextEncoder();
 let clock = 1000;
+/** The folders of earlier saves the store asked to have taken away, and the folders it looked into without making them. */
+const dropped: string[] = [];
+const peeked: string[] = [];
 
 vi.mock('../platform', () => ({
   hasKeychain: () => false,
   isDesktop: () => true,
-  listDesigns: async (dir: string): Promise<DesignEntry[]> =>
+  listDesigns: async (dir: string, create = true): Promise<DesignEntry[]> =>
+    (create ? [] : (peeked.push(dir), [])) &&
     Array.from(files, ([path, bytes]) => ({ path, name: path.slice(dir.length + 1), size: bytes.length, modified: clock }))
       // Only the files directly inside the folder, as the real listing does: a "Parts" subfolder is not among the projects.
       .filter((e) => e.path.startsWith(`${dir}/`) && !e.name.includes('/') && e.name.toLowerCase().endsWith('.plastikcad') && !e.name.startsWith('.'))
@@ -33,6 +37,7 @@ vi.mock('../platform', () => ({
   removeFile: async (path: string) => {
     if (!files.delete(path)) throw new Error(`Could not delete ${path}`);
   },
+  removeHistoryFolder: async (path: string) => void dropped.push(path),
   moveFile: async (from: string, to: string) => {
     if (files.has(to)) throw new Error(`Could not move ${from} to ${to}: a file of that name already exists`);
     const bytes = files.get(from);
@@ -221,8 +226,12 @@ describe('the projects folder', () => {
     expect((await store.list()).map((p) => p.name)).toEqual(['Box']);
     // Deleted for good, the project takes its earlier saves with it.
     await store.discard(key);
+    dropped.length = 0;
     await store.purge();
     expect(await store.versions('p0000001')).toEqual([]);
+    // The folder they were in goes with the last of them, and looking for them again does not make it anew.
+    expect(dropped).toEqual([`${DIR}/History/p0000001`]);
+    expect(peeked).toContain(`${DIR}/History/p0000001`);
     expect([...files.keys()]).toEqual([]);
   });
 

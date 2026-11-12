@@ -367,10 +367,16 @@ struct DesignEntry {
     modified: f64,
 }
 
-/// The designs directly inside `dir`, which is created if it does not exist.
+/// The designs directly inside `dir`. A folder that does not exist is made
+/// when `create` says so (the projects folder, the trash) and otherwise holds
+/// nothing (the earlier saves of a project that has none).
 /// Hidden files (the temporaries of writes under way among them) are left out.
-fn designs_in(dir: &Path) -> io::Result<Vec<DesignEntry>> {
-    fs::create_dir_all(dir)?;
+fn designs_in(dir: &Path, create: bool) -> io::Result<Vec<DesignEntry>> {
+    if create {
+        fs::create_dir_all(dir)?;
+    } else if !dir.is_dir() {
+        return Ok(Vec::new());
+    }
     let mut out = Vec::new();
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
@@ -395,9 +401,60 @@ fn designs_in(dir: &Path) -> io::Result<Vec<DesignEntry>> {
     Ok(out)
 }
 
+/// How old a temporary file has to be before it is taken for one a write left behind: no write takes this long.
+const STALE_TEMPORARY: Duration = Duration::from_secs(10 * 60);
+
+/// Whether a file name is one `temp_sibling` gives: `.<name>.<process>.<serial>.tmp`.
+fn is_temporary(name: &str) -> bool {
+    let Some(rest) = name.strip_prefix('.').and_then(|rest| rest.strip_suffix(".tmp")) else { return false };
+    let mut parts = rest.rsplitn(3, '.');
+    let numbers = |part: Option<&str>| part.is_some_and(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()));
+    numbers(parts.next()) && numbers(parts.next()) && parts.next().is_some_and(|name| !name.is_empty())
+}
+
+/// Takes away the temporary files that writes cut short left in `dir` (the app closed, or the machine stopped,
+/// between the write and the rename): nothing else ever removes them. One young enough to be a write under way,
+/// here or in another window of the app, is left alone.
+fn sweep_temporaries(dir: &Path) {
+    let Ok(entries) = fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        if !is_temporary(&entry.file_name().to_string_lossy()) {
+            continue;
+        }
+        let old = entry.metadata().and_then(|meta| meta.modified()).ok().and_then(|at| at.elapsed().ok()).is_some_and(|age| age > STALE_TEMPORARY);
+        if old {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
+}
+
+/// `create` is false for a folder that is not to be made by being looked into; left out, it is made.
 #[tauri::command]
-async fn list_designs(dir: String) -> Result<Vec<DesignEntry>, String> {
-    designs_in(Path::new(&dir)).map_err(|err| format!("Could not read the projects folder {dir}: {err}"))
+async fn list_designs(dir: String, create: Option<bool>) -> Result<Vec<DesignEntry>, String> {
+    let folder = Path::new(&dir);
+    sweep_temporaries(folder);
+    designs_in(folder, create.unwrap_or(true)).map_err(|err| format!("Could not read the projects folder {dir}: {err}"))
+}
+
+/// The folder the earlier saves of every project are kept in, each project's in a folder of its own inside it.
+const HISTORY_FOLDER: &str = "History";
+
+/// Takes away the folder of a project's earlier saves once it holds none: only such a folder, and only an empty
+/// one. One that still holds something stays, which is no error.
+fn remove_history(dir: &Path) -> io::Result<()> {
+    if dir.parent().and_then(Path::file_name).and_then(|name| name.to_str()) != Some(HISTORY_FOLDER) {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "not a folder of earlier saves"));
+    }
+    sweep_temporaries(dir);
+    match fs::remove_dir(dir) {
+        Err(err) if err.kind() != io::ErrorKind::NotFound && err.kind() != io::ErrorKind::DirectoryNotEmpty => Err(err),
+        _ => Ok(()),
+    }
+}
+
+#[tauri::command]
+async fn remove_history_folder(path: String) -> Result<(), String> {
+    remove_history(Path::new(&path)).map_err(|err| format!("Could not remove the folder {path}: {err}"))
 }
 
 #[tauri::command]
@@ -692,12 +749,64 @@ mod keychain {
     }
 }
 
+/// How long a keychain that is not running is given to come up, once the session's bus has been asked to start it.
+#[cfg(target_os = "linux")]
+const KEYCHAIN_START: Duration = Duration::from_secs(10);
+
+/// Whether a keychain (the Secret Service) answers on the session's message bus, or comes up within `wait` of
+/// being asked for.
+///
+/// A session that has one installed and not running (a bare window manager, a login without its keyring) is
+/// asked to start it by the first call to it, and the bus then holds that call for two minutes before it says
+/// that nothing came: all that time the app did not know whether it was signed in. Here the bus is asked the
+/// same, and is not waited on for longer than a keychain takes to start.
+#[cfg(target_os = "linux")]
+fn keychain_answers(wait: Duration) -> bool {
+    use zbus::blocking::{fdo::DBusProxy, Connection};
+    use zbus::names::{BusName, WellKnownName};
+    const SERVICE: &str = "org.freedesktop.secrets";
+    let Ok(bus) = Connection::session() else { return false };
+    let Ok(names) = DBusProxy::new(&bus) else { return false };
+    let running = || BusName::try_from(SERVICE).is_ok_and(|name| names.name_has_owner(name).unwrap_or(false));
+    if running() {
+        return true;
+    }
+    // Asked to start on a thread of its own: the answer is the one that takes two minutes when nothing comes.
+    let starter = bus.clone();
+    std::thread::spawn(move || {
+        if let (Ok(names), Ok(name)) = (DBusProxy::new(&starter), WellKnownName::try_from(SERVICE)) {
+            let _ = names.start_service_by_name(name, 0);
+        }
+    });
+    let until = Instant::now() + wait;
+    while Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(200));
+        if running() {
+            return true;
+        }
+    }
+    false
+}
+
+/// Whether there is a keychain to use, found out once for as long as the app runs.
+#[cfg(target_os = "linux")]
+fn keychain_there() -> bool {
+    static THERE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *THERE.get_or_init(|| keychain_answers(KEYCHAIN_START))
+}
+
 /// A call to the keychain, off the thread the window runs on: the system may put a box up (to unlock the keychain) and wait on it.
 #[cfg(desktop)]
 async fn in_keychain<T: Send + 'static>(call: impl FnOnce() -> keyring::Result<T> + Send + 'static) -> Result<T, String> {
-    tauri::async_runtime::spawn_blocking(move || call().map_err(|err| format!("Could not use the system keychain: {err}")))
-        .await
-        .map_err(|err| err.to_string())?
+    tauri::async_runtime::spawn_blocking(move || {
+        #[cfg(target_os = "linux")]
+        if !keychain_there() {
+            return Err("Could not use the system keychain: none answers in this session".to_string());
+        }
+        call().map_err(|err| format!("Could not use the system keychain: {err}"))
+    })
+    .await
+    .map_err(|err| err.to_string())?
 }
 
 /// The sign-in kept in the system's keychain, or nothing when none is kept. An error when there is
@@ -791,6 +900,7 @@ pub fn run() {
             write_file,
             is_there,
             list_designs,
+            remove_history_folder,
             remove_file,
             move_file,
             default_projects_dir,
@@ -1060,7 +1170,7 @@ mod tests {
         fs::write(dir.path("notes.txt"), b"").unwrap();
         fs::write(dir.path(".a.plastikcad.123.0.tmp"), b"").unwrap();
         fs::create_dir(dir.path("folder.plastikcad")).unwrap();
-        let listed = designs_in(&dir.0).unwrap();
+        let listed = designs_in(&dir.0, true).unwrap();
         let names: Vec<&str> = listed.iter().map(|e| e.name.as_str()).collect();
         assert_eq!(names, vec!["A.PlastikCAD", "b.plastikcad"]);
         assert_eq!(listed[1].size, 2);
@@ -1069,11 +1179,75 @@ mod tests {
     }
 
     #[test]
-    fn designs_in_creates_a_missing_folder() {
+    fn designs_in_creates_a_missing_folder_only_when_asked() {
         let dir = TempDir::new();
         let nested = dir.path("new").join("projects");
-        assert_eq!(designs_in(&nested).unwrap(), vec![]);
+        assert_eq!(designs_in(&nested, false).unwrap(), vec![]);
+        assert!(!nested.exists());
+        assert_eq!(designs_in(&nested, true).unwrap(), vec![]);
         assert!(nested.is_dir());
+    }
+
+    /// On a bus of its own with nothing on it (`dbus-run-session`), as the checks of the built app are run: no
+    /// keychain can be started there, and the answer has to come within the wait given, not after two minutes.
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "needs a session bus with no keychain on it: run under dbus-run-session"]
+    fn no_keychain_is_known_within_the_wait_given() {
+        let asked = Instant::now();
+        assert!(!keychain_answers(Duration::from_secs(3)));
+        assert!(asked.elapsed() < Duration::from_secs(10), "{:?}", asked.elapsed());
+    }
+
+    #[test]
+    fn temporaries_are_known_by_their_name() {
+        assert!(is_temporary(".a.plastikcad.123.0.tmp"));
+        assert!(is_temporary(".My design.v2.plastikcad.4711.12.tmp"));
+        for name in ["a.plastikcad.123.0.tmp", ".a.plastikcad.tmp", ".a.plastikcad.x.0.tmp", ".123.0.tmp", ".hidden", "notes.tmp"] {
+            assert!(!is_temporary(name), "{name}");
+        }
+    }
+
+    #[test]
+    fn sweep_takes_old_temporaries_and_nothing_else() {
+        let dir = TempDir::new();
+        let long_ago = std::time::SystemTime::now() - STALE_TEMPORARY - Duration::from_secs(60);
+        let aged = |name: &str| {
+            let path = dir.path(name);
+            fs::write(&path, b"x").unwrap();
+            fs::File::options().write(true).open(&path).unwrap().set_modified(long_ago).unwrap();
+            path
+        };
+        let stale = aged(".a.plastikcad.123.0.tmp");
+        let design = aged("a.plastikcad");
+        let other = aged(".a.plastikcad.swp");
+        let under_way = dir.path(".b.plastikcad.456.1.tmp");
+        fs::write(&under_way, b"x").unwrap();
+        sweep_temporaries(&dir.0);
+        assert!(!stale.exists());
+        assert!(design.exists() && other.exists() && under_way.exists());
+    }
+
+    #[test]
+    fn remove_history_takes_an_empty_folder_of_earlier_saves_only() {
+        let dir = TempDir::new();
+        let history = dir.path("History");
+        let empty = history.join("abc123");
+        let full = history.join("def456");
+        fs::create_dir_all(&empty).unwrap();
+        fs::create_dir_all(&full).unwrap();
+        fs::write(full.join("2026-11-12 10.00.00.plastikcad"), b"{}").unwrap();
+        remove_history(&empty).unwrap();
+        assert!(!empty.exists());
+        // Gone already, or still holding a save: left as it is, and no error.
+        remove_history(&empty).unwrap();
+        remove_history(&full).unwrap();
+        assert!(full.is_dir());
+        // Any other empty folder is refused.
+        let elsewhere = dir.path("Projects").join("abc123");
+        fs::create_dir_all(&elsewhere).unwrap();
+        assert!(remove_history(&elsewhere).is_err());
+        assert!(elsewhere.is_dir());
     }
 
     #[test]
