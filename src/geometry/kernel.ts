@@ -822,8 +822,11 @@ export function exportColored(nodes: SceneNode[], fine = false, local = false): 
 
 /**
  * Volume, area, centroid and inertia of each node as placed in the design, for
- * the robot's links. An open mesh gives what its triangles say, which is not
- * to be relied on; `watertight` says so.
+ * the robot's links. An open mesh encloses nothing: what its triangles add up
+ * to changes with where it stands and can be an inertia no body has, which a
+ * simulator refuses. It is measured as the solid stretched tight round it (its
+ * convex hull), which is a real body near its size; `watertight` says that it
+ * is an estimate.
  */
 export function massProperties(nodes: SceneNode[]): LinkProperties[] {
   return operation((k) => scoped((keep) => nodes.map((node) => propertiesOf(k, node, keep, false))));
@@ -831,8 +834,17 @@ export function massProperties(nodes: SceneNode[]): LinkProperties[] {
 
 function propertiesOf(k: ManifoldToplevel, node: SceneNode, keep: Keep, fine: boolean): LinkProperties {
   const entry = builtOf(k, node, fine);
-  const mesh = entry.solid ? meshOf(placed(k, node, keep, fine)) : transformed(entry.open, nodeMatrix(node));
-  return { id: node.id, ...meshProperties(mesh), watertight: Boolean(entry.solid), triangles: mesh.triangles.length / 3 };
+  if (entry.solid) {
+    const mesh = meshOf(placed(k, node, keep, fine));
+    return { id: node.id, ...meshProperties(mesh), watertight: true, triangles: mesh.triangles.length / 3 };
+  }
+  const mesh = transformed(entry.open, nodeMatrix(node));
+  const points: [number, number, number][] = [];
+  for (let i = 0; i < mesh.positions.length; i += 3) points.push([mesh.positions[i], mesh.positions[i + 1], mesh.positions[i + 2]]);
+  // Fewer than four corners, or all in one plane, have no hull: then the triangles are all there is.
+  const hull = points.length >= 4 ? keep(k.Manifold.hull(points)) : null;
+  const measured = hull && !hull.isEmpty() ? meshOf(hull) : mesh;
+  return { id: node.id, ...meshProperties(measured), watertight: false, triangles: mesh.triangles.length / 3 };
 }
 
 /**
