@@ -20,6 +20,8 @@ export interface GazeboSensor {
   pose?: { xyz: Vec3; rpy: Vec3 };
   /** A touch sensor: the name of the collision it feels (the link's). */
   collision?: string;
+  /** How many collisions the link has, when more than one: Gazebo names those after the first "…_collision_1", "…_collision_2". */
+  collisions?: number;
 }
 
 const pad = (text: string, indent: string): string =>
@@ -54,7 +56,11 @@ export function sensorXml(s: GazeboSensor): string {
     );
   }
   // Gazebo's Contact system takes its topic from inside <contact>; the sensor's own <topic> is ignored.
-  if (s.kind === 'touch') lines.push('  <contact>', `    <collision>${escapeXml(s.collision ?? `${s.frame}_collision`)}</collision>`, `    <topic>${topic}</topic>`, '  </contact>');
+  if (s.kind === 'touch') {
+    const first = s.collision ?? `${s.frame}_collision`;
+    const names = Array.from({ length: s.collisions ?? 1 }, (_, i) => (i ? `${first}_${i}` : first));
+    lines.push('  <contact>', ...names.map((n) => `    <collision>${escapeXml(n)}</collision>`), `    <topic>${topic}</topic>`, '  </contact>');
+  }
   lines.push('</sensor>');
   return lines.join('\n');
 }

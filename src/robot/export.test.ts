@@ -517,6 +517,28 @@ describe('sensors, drive and control', () => {
     expect(text(buildRobotPackage(rover(), geometry()).files.find((f) => f.name === 'config/bridge.yaml')!.bytes)).toContain('ros_gz_interfaces/msg/Contacts');
   });
 
+  it('writes a link of several convex pieces as a collision each, all of them felt by its touch sensor', () => {
+    const d = rover();
+    d.robot!.links = d.robot!.links.map((l) => (l.node === wheel.id ? { ...l, collision: 'hull' as const } : l));
+    const geo = geometry();
+    const whole = geo.get(wheel.id)!;
+    geo.set(wheel.id, { ...whole, hulls: [whole.collision!, whole.collision!] });
+    const ros = buildRobotPackage(d, geo);
+    const urdf = text(ros.files.find((f) => f.name === 'urdf/test_rover.urdf')!.bytes);
+    expect(ros.files.filter((f) => f.name.startsWith('meshes/collision/Left_wheel')).map((f) => f.name)).toEqual(['meshes/collision/Left_wheel.stl', 'meshes/collision/Left_wheel_2.stl']);
+    expect(/<link name="Left_wheel">[\s\S]*?<\/link>/.exec(urdf)![0].match(/<collision>/g)).toHaveLength(2);
+    // Gazebo names a link's collisions after the first with a number behind.
+    expect(urdf).toMatch(/<sensor name="tread" type="contact">[\s\S]*?<contact>\s*<collision>Left_wheel_collision<\/collision>\s*<collision>Left_wheel_collision_1<\/collision>\s*<topic>/);
+    const sdf = text(buildSdfModel(d, geo).files.find((f) => f.name.endsWith('model.sdf'))!.bytes);
+    expect(sdf).toContain('<collision name="Left_wheel_collision_1">');
+    expect(sdf).toMatch(/<contact>\s*<collision>Left_wheel_collision<\/collision>\s*<collision>Left_wheel_collision_1<\/collision>/);
+    const mjcf = text(buildMjcfModel(d, geo).files.find((f) => f.name.endsWith('.xml'))!.bytes);
+    expect(mjcf.match(/<geom type="mesh" mesh="[^"]*"[^>]*class="collision"/g)!.filter((g) => /Left_wheel/.test(g))).toHaveLength(2);
+    expect(new Set(mjcf.match(/<mesh name="[^"]*"/g)).size).toBe(mjcf.match(/<mesh name="[^"]*"/g)!.length);
+    const usd = text(buildIsaacStage(d, geo).files.find((f) => f.name.endsWith('.usda'))!.bytes);
+    expect(/def Xform "Left_wheel"[\s\S]*?def Xform "/.exec(usd)![0].match(/def Mesh "collision_\d+"/g)).toHaveLength(2);
+  });
+
   it('names the base\'s collision as Gazebo renames it when a touch sensor sits on the base under a footprint', () => {
     const d = rover();
     d.robot!.sensors.push({ ...defaultSensor('s5', 'belly', 'touch', body.id, [0, 0, -10]) });
