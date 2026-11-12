@@ -59,8 +59,8 @@ const SENTENCES_KEPT = 4000;
 /**
  * A sentence that names lengths the user set (a part's warning, a robot's), which `text` writes for a unit. What
  * comes back is the sentence in millimeters: that is how it is kept, compared and dismissed. `inUnit` gives what
- * the same sentence reads in the unit the user works in. One that names a standard's own figure (the pitch a
- * metric thread may have) is written plainly, and reads the same in both.
+ * the same sentence reads in the unit the user works in. A sentence written plainly, with no length in it, reads
+ * the same in both.
  */
 export function said(text: (unit: Unit) => string): string {
   const sentence = text('mm');

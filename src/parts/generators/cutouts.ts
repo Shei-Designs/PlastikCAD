@@ -10,8 +10,10 @@ import { tr } from '../../i18n';
 import { arc, circle, roundedRect } from '../math2d';
 import { extrude, translate } from '../types';
 import type { Polygon, Quality, Shape2D, Solid, Vec2 } from '../types';
-import { bool, num, str } from './types';
+import { bool, num, lengthsText, str, unitInfo } from './types';
 import type { BuildResult, GeneratorDef } from './types';
+import { lengthText } from '../../units';
+import type { Unit } from '../../units';
 
 // --- 2D -------------------------------------------------------------------------------
 
@@ -53,7 +55,7 @@ const clearanceParam = { key: 'clearance', label: tr('Clearance'), type: 'number
 /** A prism of the shapes along Z, centered on the wall. */
 const prism = (shapes: Shape2D): Solid => translate(extrude(shapes, CUTOUT_LENGTH), [0, 0, -CUTOUT_LENGTH / 2]);
 
-const sizeText = (w: number, h: number) => `${w.toFixed(2)} × ${h.toFixed(2)} mm`;
+const sizeText = (w: number, h: number, unit: Unit) => lengthsText(unit, [w, h], 2);
 
 // --- panel connectors ------------------------------------------------------------------------
 
@@ -122,15 +124,15 @@ function holeShapes(h: NonNullable<PanelConnector['holes']>, grow: number, q: Qu
 }
 
 /** The screw holes as the inspector describes them: how many, their size, and how far apart they are each way. */
-function holesText(h: NonNullable<PanelConnector['holes']>, n: number): string {
-  const { d, across, up } = h;
+function holesText(h: NonNullable<PanelConnector['holes']>, n: number, unit: Unit): string {
+  const [d, across, up] = [lengthText(h.d, unit), h.across ? lengthText(h.across, unit) : '', h.up ? lengthText(h.up, unit) : ''];
   if (across && up) {
-    if (h.diagonal) return tr('{n} × Ø{d} mm, {across} mm across and {up} mm up, at opposite corners', { n, d, across, up });
-    return tr('{n} × Ø{d} mm, {across} mm across, {up} mm up', { n, d, across, up });
+    if (h.diagonal) return tr('{n} × Ø{d}, {across} across and {up} up, at opposite corners', { n, d, across, up });
+    return tr('{n} × Ø{d}, {across} across, {up} up', { n, d, across, up });
   }
-  if (across) return tr('{n} × Ø{d} mm, {across} mm across', { n, d, across });
-  if (up) return tr('{n} × Ø{d} mm, {up} mm up', { n, d, up });
-  return `${n} × Ø${d} mm, `;
+  if (across) return tr('{n} × Ø{d}, {across} across', { n, d, across });
+  if (up) return tr('{n} × Ø{d}, {up} up', { n, d, up });
+  return `${n} × Ø${d}, `;
 }
 
 export const panelConnector: GeneratorDef = {
@@ -155,9 +157,9 @@ export const panelConnector: GeneratorDef = {
     const shapes: Shape2D = [c.wings ? stepped(c.cutout, c.wings, grow) : outline(c.cutout, grow, q)];
     if (c.holes && bool(p, 'holes')) shapes.push(...holeShapes(c.holes, grow, q).shapes);
     const info = [
-      { label: tr('Cutout'), value: sizeText((c.wings ? Math.max(c.wings.w, c.cutout.w) : c.cutout.w) + 2 * grow, c.cutout.h + 2 * grow) },
-      { label: tr('Nominal'), value: sizeText(c.cutout.w, c.cutout.h) },
-      ...(c.holes ? [{ label: tr('Holes'), value: holesText(c.holes, holeShapes(c.holes, 0, q).at.length) }] : []),
+      unitInfo(tr('Cutout'), (unit) => sizeText((c.wings ? Math.max(c.wings.w, c.cutout.w) : c.cutout.w) + 2 * grow, c.cutout.h + 2 * grow, unit)),
+      unitInfo(tr('Nominal'), (unit) => sizeText(c.cutout.w, c.cutout.h, unit)),
+      ...(c.holes ? [unitInfo(tr('Holes'), (unit) => holesText(c.holes!, holeShapes(c.holes!, 0, q).at.length, unit))] : []),
     ];
     return { solid: prism(shapes), outline: shapes, info, warnings };
   },

@@ -65,7 +65,7 @@ function Field({ def, params, disabled, onChange }: { def: ParamDef; params: Par
   const value = params[def.key];
   switch (def.type) {
     case 'number':
-      return <SliderField label={def.label} help={def.help} value={Number(value)} min={def.min} max={def.max} step={def.step} integer={def.integer} unit={def.unit} length={def.unit === 'mm' && !def.metric} disabled={disabled} onChange={(v) => onChange(def.key, v)} />;
+      return <SliderField label={def.label} help={def.help} value={Number(value)} min={def.min} max={def.max} step={def.step} integer={def.integer} unit={def.unit} length={def.unit === 'mm'} disabled={disabled} onChange={(v) => onChange(def.key, v)} />;
     case 'select':
       return <SelectField def={def} value={String(value)} disabled={disabled} onChange={(v) => onChange(def.key, v)} />;
     case 'boolean':

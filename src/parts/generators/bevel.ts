@@ -60,7 +60,6 @@ export const bevelGear: GeneratorDef = {
           max: 20,
           step: 0.1,
           unit: 'mm',
-          metric: true,
         },
         { type: 'number', key: 'teeth', label: tr('Teeth'), default: 20, min: 8, max: 200, step: 1, integer: true },
         {

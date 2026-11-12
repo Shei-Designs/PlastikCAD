@@ -426,17 +426,20 @@ describe('inch bolt and nut', () => {
 describe('the figures of a screw in inches', () => {
   const rows = (def: GeneratorDef, overrides: Params) => new Map(build(def, overrides, draft).info.map((i) => [i.label, i.inches]));
 
-  it('keep what the metric standard lays down in millimeters', () => {
+  it('give a metric size\'s figures in inches as well: only its name stays as the standard writes it', () => {
     const bolt = rows(metricBolt, { size: 'M8', head: 'socket', length: 25.4 });
-    for (const label of ['Pitch', 'Head diameter', 'Hex key', 'Head height']) expect(bolt.get(label), label).toBeUndefined();
-    expect(rows(metricBolt, { size: 'M8', head: 'hex' }).get('Across flats')).toBeUndefined();
+    // M8 × 1.25 under a 13 mm cap head with a 6 mm key.
+    expect(bolt.get('Pitch')).toBe('0.0492 in');
+    expect(bolt.get('Head diameter')).toBe('0.512 in');
+    expect(bolt.get('Hex key')).toBe('0.236 in');
+    expect(rows(metricBolt, { size: 'M8', head: 'hex' }).get('Across flats')).toBe('0.512 in');
     // What the user sized: a 25.4 mm thread under an 8 mm head.
     expect(bolt.get('Total length')).toBe('1.315 in');
     expect(bolt.get('Major diameter')).toMatch(/^0\.\d{4} in$/);
-    expect(rows(screwHole, { size: 'M3' }).get('Hole diameter')).toBeUndefined();
+    expect(rows(screwHole, { size: 'M3' }).get('Hole diameter')).toMatch(/^0\.\d{3} in$/);
     const screw = rows(leadScrew, {});
-    for (const label of ['Pitch', 'Lead']) expect(screw.get(label), label).toBeUndefined();
-    expect(rows(leadScrewNut, {}).get('Crest clearance')).toBeUndefined();
+    for (const label of ['Pitch', 'Lead']) expect(screw.get(label), label).toMatch(/ in/);
+    expect(rows(leadScrewNut, {}).get('Crest clearance')).toMatch(/^0\.\d{4} in$/);
   });
 
   it('give what the inch standard lays down in inches', () => {

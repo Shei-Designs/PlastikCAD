@@ -8,7 +8,7 @@ import type { BoreDefaults, HubDefaults } from '../features';
 import { arc, arcN, arcSegments, dedupe, deg, polar, rotatePoint, TAU } from '../math2d';
 import { extrude, revolve, union } from '../types';
 import type { Polygon, Quality, Solid, Vec2 } from '../types';
-import { lengthInfo, mm, num, str } from './types';
+import { lengthInfo, num, str } from './types';
 import type { BuildResult, GeneratorDef, InfoItem, Params } from './types';
 import { lengthFixed, lengthText, said } from '../../units';
 
@@ -222,7 +222,7 @@ function buildPulley(profiles: Record<string, BeltProfile>, p: Params, q: Qualit
     lengthInfo(tr('Root diameter'), 2 * rootR),
   ];
   if (hasBottom || hasTop) info.push(lengthInfo(tr('Flange diameter'), 2 * rf));
-  info.push({ label: tr('Belt pitch'), value: mm(b.pitch, 3) }, lengthInfo(tr('Total height'), height));
+  info.push(lengthInfo(tr('Belt pitch'), b.pitch, 3), lengthInfo(tr('Total height'), height));
 
   return { solid, outline: [toothed, ...(boreShape(p, q) ?? [])], info, warnings };
 }
@@ -268,7 +268,6 @@ function makePulley(f: PulleyFamily): GeneratorDef {
             max: 100,
             step: 0.5,
             unit: 'mm',
-            metric: true,
           },
           {
             type: 'number',

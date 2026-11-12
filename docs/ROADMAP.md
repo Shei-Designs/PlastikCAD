@@ -118,9 +118,9 @@ Not dropped: taken up when asked for.
   domes and oval cones cannot be done at all: a STEP file does not keep an
   oval turned round an axis.)
 - Fractions of an inch typed into a box: inches are decimal.
-- The figures of mounts made for metric hardware (a board's posts, a
-  motor's plate, a fan's grill) in inches: they are listed with the
-  hardware's own figures, in millimeters.
+- The notes that describe a piece of metric hardware (where a motor's ears
+  are, how far a board's holes are in) in inches: they read as the maker
+  writes them, in millimeters.
 - The browser tests in WebKit as well as Chromium: the script that tries
   the built apps before a release (`pnpm check:apps`) runs the desktop app
   itself, which is WebKit; taken up only if a fault gets past it.

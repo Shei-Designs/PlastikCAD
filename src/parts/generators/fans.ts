@@ -11,8 +11,9 @@ import { TAU, arc, arcSegments, circle, regularPolygon, roundedRect, signedArea 
 import { cylinder, extrude, intersection, rotate, translate, union } from '../types';
 import type { Polygon, Quality, Shape2D, Solid, Vec2 } from '../types';
 import { CUTOUT_LENGTH } from './cutouts';
-import { bool, mm, num, str } from './types';
+import { bool, lengthInfo, num, lengthsText, str, unitInfo } from './types';
 import type { BuildResult, GeneratorDef, InfoItem, Params } from './types';
+import { lengthFixed, lengthText } from '../../units';
 
 export interface Fan {
   /** Frame size (square) in mm. */
@@ -236,8 +237,8 @@ export const fan: GeneratorDef = {
     const n = q.circle;
     const warnings: string[] = [];
     const info: InfoItem[] = [
-      { label: tr('Fan'), value: `${f.size} × ${f.size} mm` },
-      { label: tr('Screw holes'), value: tr('4 × Ø{hole} mm, {spacing} mm apart', { hole: f.hole, spacing: f.spacing }) },
+      unitInfo(tr('Fan'), (unit) => lengthsText(unit, [f.size, f.size])),
+      unitInfo(tr('Screw holes'), (unit) => tr('4 × Ø{hole}, {spacing} apart', { hole: lengthText(f.hole, unit), spacing: lengthText(f.spacing, unit) })),
     ];
     const holes = (d: number): Polygon[] => [-1, 1].flatMap((sx) => [-1, 1].map((sy) => circle(d / 2, n, (sx * f.spacing) / 2, (sy * f.spacing) / 2)));
     const openPercent = (openings: Polygon[], R: number) => ((100 * openings.reduce((a, o) => a + signedArea(o), 0)) / (Math.PI * R * R)).toFixed(0);
@@ -251,10 +252,10 @@ export const fan: GeneratorDef = {
       const R = f.opening / 2 + grow;
       const openings = make === 'cutout' ? fanOpenings(pattern, R, bar, gap, spokes, q) : [];
       if (make === 'cutout') {
-        info.push({ label: tr('Opening'), value: `Ø${(2 * R).toFixed(1)} mm` });
+        info.push(unitInfo(tr('Opening'), (unit) => `Ø${lengthFixed(2 * R, unit, 1)}`));
         if (pattern !== 'open') info.push({ label: trx('guard', 'Pattern'), value: plural(openings.length, '{n} opening, {percent} % of the circle open', '{n} openings, {percent} % of the circle open', { percent: openPercent(openings, R) }) });
       }
-      info.push({ label: tr('Length'), value: mm(CUTOUT_LENGTH, 0) });
+      info.push(lengthInfo(tr('Length'), CUTOUT_LENGTH, 0));
       // The screw holes can reach into a large opening: a union, not one even-odd shape, keeps the overlap cut.
       const shapes: Shape2D = [...openings, ...pins];
       const solid = openings.length ? union(slab(openings, CUTOUT_LENGTH), slab(pins, CUTOUT_LENGTH)) : slab(pins, CUTOUT_LENGTH);
@@ -266,7 +267,10 @@ export const fan: GeneratorDef = {
       const R = f.size / 2 - num(p, 'rim');
       const openings = fanOpenings(pattern, R, bar, gap, spokes, q);
       const shapes: Shape2D = [roundedSquare(f.size, bool(p, 'grillCorners') ? f.corner : 0, q), ...(bool(p, 'grillHoles') ? holes(f.hole + 2 * grow) : []), ...openings];
-      info.push({ label: tr('Grill'), value: `${f.size} × ${f.size} × ${t} mm` }, { label: tr('Opening'), value: pattern !== 'open' ? tr('Ø{diameter} mm, {percent} % of the circle open', { diameter: (2 * R).toFixed(1), percent: openPercent(openings, R) }) : `Ø${(2 * R).toFixed(1)} mm` });
+      info.push(
+        unitInfo(tr('Grill'), (unit) => lengthsText(unit, [f.size, f.size, t])),
+        unitInfo(tr('Opening'), (unit) => (pattern !== 'open' ? tr('Ø{diameter}, {percent} % of the circle open', { diameter: lengthFixed(2 * R, unit, 1), percent: openPercent(openings, R) }) : `Ø${lengthFixed(2 * R, unit, 1)}`)),
+      );
       return { solid: slab(shapes, t), outline: shapes, info, warnings };
     }
 
@@ -302,8 +306,8 @@ export const fan: GeneratorDef = {
     const bladeSet: Solid[] = [];
     for (let i = 0; i < blades; i++) bladeSet.push(rotate(translate(extrude([blade], bladeT), [0, 0, -bladeT / 2]), [pitch, 0, (360 * i) / blades]));
     pieces.push(intersection(union(...bladeSet), translate(cylinder(Rb - 0.6, span, n), [0, 0, -span / 2])));
-    info.push({ label: tr('Frame depth'), value: mm(t, 0) }, { label: tr('Hub'), value: tr('Ø{hub} mm, 7 blades', { hub: f.hub }) });
-    if (grow > 0) info.push({ label: trx('fan', 'Frame'), value: tr('{size} mm with the clearance', { size: (f.size + 2 * grow).toFixed(1) }) });
+    info.push(lengthInfo(tr('Frame depth'), t, 0), unitInfo(tr('Hub'), (unit) => tr('Ø{hub}, 7 blades', { hub: lengthText(f.hub, unit) })));
+    if (grow > 0) info.push(unitInfo(trx('fan', 'Frame'), (unit) => tr('{size} with the clearance', { size: lengthFixed(f.size + 2 * grow, unit, 1) })));
     return { solid: union(...pieces), outline: frameShape, info, warnings };
   },
 };

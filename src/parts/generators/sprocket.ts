@@ -6,7 +6,7 @@ import { addHubAndBore, boreGroup, boreRadius, boreShape, hubGroup } from '../fe
 import { arc, arcN, arcSegments, dedupe, polar, rotatePoint, TAU } from '../math2d';
 import { extrude, intersection, revolve } from '../types';
 import type { Polygon, Quality, Solid, Vec2 } from '../types';
-import { bool, lengthInfo, mm, num, str } from './types';
+import { bool, lengthInfo, num, str } from './types';
 import type { BuildResult, GeneratorDef, Params } from './types';
 import { lengthText, said } from '../../units';
 
@@ -125,8 +125,8 @@ function build(p: Params, q: Quality): BuildResult {
       lengthInfo(tr('Pitch diameter'), 2 * pitchR),
       lengthInfo(tr('Outside diameter'), 2 * outerR),
       lengthInfo(tr('Root diameter'), 2 * rootR),
-      { label: tr('Chain pitch'), value: mm(chain.pitch, 3) },
-      { label: tr('Roller diameter'), value: mm(chain.roller) },
+      lengthInfo(tr('Chain pitch'), chain.pitch, 3),
+      lengthInfo(tr('Roller diameter'), chain.roller),
       lengthInfo(tr('Thickness'), t),
       lengthInfo(tr('Total height'), height),
     ],

@@ -5,7 +5,7 @@ import { arc, arcSegments, circle, deg, toDeg, TAU } from '../math2d';
 import { shearedPrism } from '../meshUtil';
 import { extrude, intersection, mirror, translate, union } from '../types';
 import type { Polygon, Quality, Solid, Vec2 } from '../types';
-import { bool, lengthInfo, mm, num } from './types';
+import { bool, lengthInfo, num } from './types';
 import type { GeneratorDef, InfoItem, ParamDef, ParamGroup, Params } from './types';
 
 const moduleParam: ParamDef = {
@@ -18,7 +18,6 @@ const moduleParam: ParamDef = {
   max: 20,
   step: 0.1,
   unit: 'mm',
-  metric: true,
 };
 
 const teethParam = (def: number, min = 5): ParamDef => ({
@@ -188,7 +187,7 @@ function involuteGear(kind: GearKind): GeneratorDef {
         lengthInfo(tr('Outside diameter'), 2 * profile.outerRadius),
         lengthInfo(tr('Root diameter'), 2 * profile.rootRadius),
       ];
-      if (helical) info.push({ label: tr('Transverse module'), value: mm(spec.module, 3) });
+      if (helical) info.push(lengthInfo(tr('Transverse module'), spec.module, 3));
       info.push(lengthInfo(tr('Total height'), height));
 
       return { solid, outline: bore ? [outline, ...bore] : [outline], info, warnings };
@@ -419,7 +418,7 @@ export const rack: GeneratorDef = {
 
     const info: InfoItem[] = [
       lengthInfo(tr('Length'), length),
-      { label: tr('Tooth pitch'), value: mm(pitch, 3) },
+      lengthInfo(tr('Tooth pitch'), pitch, 3),
       lengthInfo(tr('Pitch line height'), pitchLine),
       lengthInfo(tr('Total height'), top),
     ];

@@ -14,9 +14,9 @@ import {
 import type { AxialProfile } from '../threads';
 import { cylinder, difference, extrude, intersection, revolve, rotate, translate, union } from '../types';
 import type { Polygon, Quality, Solid } from '../types';
-import { bool, lengthInfo, mm, num, str } from './types';
+import { bool, lengthInfo, num, str, unitInfo } from './types';
 import type { BuildResult, GeneratorDef, InfoItem, ParamDef, Params } from './types';
-import { lengthFixed, said } from '../../units';
+import { lengthFixed, lengthText, said } from '../../units';
 
 /** What a bolt and its nut are made from, whichever standard the figures are from: all in millimeters. */
 interface ThreadSize {
@@ -31,15 +31,8 @@ interface ThreadSize {
   /** Socket cap head diameter and hex key size. */
   capDiameter: number;
   socket: number;
-  /** A Unified inch size: what its standard lays down is in inches there, not in millimeters. */
-  inch?: boolean;
 }
 
-/**
- * A row for a figure the size's standard lays down (a pitch, a head, a key, a clearance hole): a metric size's
- * stays in millimeters, an inch size's is read in the unit the user works in like any other length.
- */
-const standardInfo = (size: ThreadSize, label: string, v: number, digits = 2): InfoItem => (size.inch ? lengthInfo(label, v, digits) : { label, value: mm(v, digits) });
 
 /** What a hole for a screw of a size needs to know beside the screw itself. */
 interface HoleSize extends ThreadSize {
@@ -101,7 +94,6 @@ const pitchParam: ParamDef = {
   max: 6,
   step: 0.05,
   unit: 'mm',
-  metric: true,
 };
 
 
@@ -121,7 +113,7 @@ function metricPitch(p: Params, size: MetricSize, warnings: string[]): number {
   const custom = num(p, 'pitch');
   if (custom <= 0) return size.pitch;
   const max = size.d / 2;
-  if (custom > max) warnings.push(tr('The pitch was limited to {max} mm for this diameter.', { max }));
+  if (custom > max) warnings.push(said((unit) => tr('The pitch was limited to {max} for this diameter.', { max: lengthText(max, unit) })));
   return Math.min(max, Math.max(0.2, custom));
 }
 
@@ -262,14 +254,14 @@ function buildBolt(size: ThreadSize, pitch: number, p: Params, q: Quality, warni
     const info = [
       lengthInfo(tr('Major diameter'), rMax * 2),
       lengthInfo(tr('Minor diameter'), rMin * 2),
-      standardInfo(size, tr('Pitch'), pitch),
+      lengthInfo(tr('Pitch'), pitch),
     ];
-    if (head === 'hex') info.push(standardInfo(size, tr('Across flats'), size.af, 1));
+    if (head === 'hex') info.push(lengthInfo(tr('Across flats'), size.af, 1));
     if (head === 'socket') {
-      info.push(standardInfo(size, tr('Head diameter'), size.capDiameter, 1));
-      info.push(standardInfo(size, tr('Hex key'), size.socket, 1));
+      info.push(lengthInfo(tr('Head diameter'), size.capDiameter, 1));
+      info.push(lengthInfo(tr('Hex key'), size.socket, 1));
     }
-    if (headHeight > 0) info.push(standardInfo(size, tr('Head height'), headHeight, 1));
+    if (headHeight > 0) info.push(lengthInfo(tr('Head height'), headHeight, 1));
     info.push(...more, lengthInfo(tr('Total length'), headHeight + length, 1));
     return { solid, info, warnings };
 }
@@ -342,8 +334,8 @@ function buildNut(size: ThreadSize, pitch: number, p: Params, q: Quality, warnin
       info: [
         lengthInfo(tr('Thread major diameter'), rMax * 2),
         lengthInfo(tr('Thread minor diameter'), rMin * 2),
-        standardInfo(size, tr('Pitch'), pitch),
-        standardInfo(size, tr('Across flats'), af, 1),
+        lengthInfo(tr('Pitch'), pitch),
+        lengthInfo(tr('Across flats'), af, 1),
         ...more,
         lengthInfo(tr('Height'), height, 1),
       ],
@@ -413,7 +405,7 @@ function unified(p: Params): { size: ThreadSize; pitch: number; info: InfoItem[]
   if (!u) throw new Error(`Unknown inch size "${name}"`);
   const fine = str(p, 'series') === 'fine';
   const tpi = fine ? u.fine : u.coarse;
-  const size: ThreadSize = { d: u.d * INCH, af: u.af * INCH, headHeight: u.headHeight * INCH, nutAf: u.nutAf * INCH, nutHeight: u.nutHeight * INCH, capDiameter: u.capDiameter * INCH, socket: u.socket * INCH, inch: true };
+  const size: ThreadSize = { d: u.d * INCH, af: u.af * INCH, headHeight: u.headHeight * INCH, nutAf: u.nutAf * INCH, nutHeight: u.nutHeight * INCH, capDiameter: u.capDiameter * INCH, socket: u.socket * INCH };
   return {
     size,
     pitch: INCH / tpi,
@@ -573,7 +565,7 @@ function buildHole(name: string, size: HoleSize, pitchOf: () => number, sink: nu
           ...more,
           lengthInfo(tr('Thread major diameter'), rMax * 2),
           lengthInfo(tr('Thread minor diameter'), rMin * 2),
-          standardInfo(size, tr('Pitch'), pitch),
+          lengthInfo(tr('Pitch'), pitch),
         ],
         warnings,
       };
@@ -589,7 +581,7 @@ function buildHole(name: string, size: HoleSize, pitchOf: () => number, sink: nu
     const hole = size.clearance[Math.max(0, FITS.indexOf(str(p, 'fit')))];
     const play = hole - size.d;
     const parts: Solid[] = [cylinder(hole / 2, depth, q.circle)];
-    const info = [standardInfo(size, tr('Hole diameter'), hole, 1)];
+    const info = [lengthInfo(tr('Hole diameter'), hole, 1)];
     const recess = str(p, 'recess');
     // How deep a head or nut sits: as asked, or its own height, and never deeper than the hole.
     const seat = (standard: number): number => {
@@ -673,7 +665,6 @@ const trapezoidalParams: ParamDef[] = [
     max: 60,
     step: 0.5,
     unit: 'mm',
-    metric: true,
   },
   {
     type: 'number',
@@ -685,7 +676,6 @@ const trapezoidalParams: ParamDef[] = [
     max: 12,
     step: 0.5,
     unit: 'mm',
-    metric: true,
   },
   {
     type: 'number',
@@ -705,7 +695,7 @@ function trapezoidal(p: Params, warnings: string[]) {
   let pitch = num(p, 'pitch');
   const max = diameter / 3;
   if (pitch > max) {
-    warnings.push(tr('The pitch was limited to {max} mm for this diameter.', { max: max.toFixed(2) }));
+    warnings.push(said((unit) => tr('The pitch was limited to {max} for this diameter.', { max: lengthFixed(max, unit, 2) })));
     pitch = max;
   }
   const starts = Math.max(1, Math.round(num(p, 'starts')));
@@ -755,8 +745,8 @@ export const leadScrew: GeneratorDef = {
         { label: tr('Designation'), value: trapezoidalName(diameter, pitch, starts) },
         lengthInfo(tr('Major diameter'), rMax * 2),
         lengthInfo(tr('Minor diameter'), rMin * 2),
-        { label: tr('Pitch'), value: mm(pitch) },
-        { label: tr('Lead'), value: tr('{length} per turn', { length: mm(lead) }) },
+        lengthInfo(tr('Pitch'), pitch),
+        unitInfo(tr('Lead'), (unit) => tr('{length} per turn', { length: lengthFixed(lead, unit) })),
         lengthInfo(tr('Total length'), length, 1),
       ],
       warnings,
@@ -898,9 +888,9 @@ export const leadScrewNut: GeneratorDef = {
         { label: tr('Designation'), value: trapezoidalName(diameter, pitch, starts) },
         lengthInfo(tr('Thread major diameter'), rMax * 2),
         lengthInfo(tr('Thread minor diameter'), rMin * 2),
-        { label: tr('Crest clearance'), value: mm(trapezoidalClearance(pitch)) },
-        { label: tr('Pitch'), value: mm(pitch) },
-        { label: tr('Lead'), value: tr('{length} per turn', { length: mm(lead) }) },
+        lengthInfo(tr('Crest clearance'), trapezoidalClearance(pitch)),
+        lengthInfo(tr('Pitch'), pitch),
+        unitInfo(tr('Lead'), (unit) => tr('{length} per turn', { length: lengthFixed(lead, unit) })),
         lengthInfo(tr('Total length'), length, 1),
       ],
       warnings,

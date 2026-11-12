@@ -19,9 +19,10 @@ import { tr, trx } from '../../i18n';
 import { arc, circle, offsetPolygon, roundedRectFrom } from '../math2d';
 import { cylinder, difference, extrude, rotate, translate, union } from '../types';
 import type { Polygon, Quality, Shape2D, Solid, Vec2 } from '../types';
-import { mm, num, str } from './types';
-import type { BuildResult, GeneratorDef, ParamGroup, Params } from './types';
-import { lengthFixed, said } from '../../units';
+import { lengthInfo, num, lengthsText, str, unitInfo } from './types';
+import type { BuildResult, GeneratorDef, InfoItem, ParamGroup, Params } from './types';
+import { figureFixed, lengthFigure, lengthFixed, lengthText, said } from '../../units';
+import type { Unit } from '../../units';
 
 /** Drill sizes for a screw in printed plastic: the screw cutting its own thread, a clearance hole, a heat-set insert. */
 const SCREWS: Record<string, { tap: number; clearance: number; insert: number }> = {
@@ -513,25 +514,25 @@ function drill(p: Params, b: Board): number {
 }
 
 /** Hole spacing as a user would quote it, when the holes sit on a rectangle. */
-function spacing(holes: Vec2[]): string | null {
+function spacing(holes: Vec2[], unit: Unit): string | null {
   const xs = [...new Set(holes.map((h) => h[0]))];
   const ys = [...new Set(holes.map((h) => h[1]))];
   if (holes.length !== 4 || xs.length !== 2 || ys.length !== 2) return null;
-  return `${Math.abs(xs[1] - xs[0]).toFixed(2)} × ${Math.abs(ys[1] - ys[0]).toFixed(2)} mm`;
+  return lengthsText(unit, [Math.abs(xs[1] - xs[0]), Math.abs(ys[1] - ys[0])], 2);
 }
 
 /** A socket as the inspector describes it: its body, where it sits along its edge, and the plug's envelope when that is what is cut. */
-function socketText(s: EdgeSocket, forPlug: boolean): string {
-  const body = { w: s.w.toFixed(1), h: s.h.toFixed(1), at: s.at.toFixed(2) };
+function socketText(s: EdgeSocket, forPlug: boolean, unit: Unit): string {
+  const body = { size: lengthsText(unit, [s.w, s.h], 1), at: lengthFixed(s.at, unit, 2) };
   if (!forPlug) {
-    if (s.edge === 'left') return tr('{w} × {h} mm, {at} mm along the left edge', body);
-    if (s.edge === 'right') return tr('{w} × {h} mm, {at} mm along the right edge', body);
-    return tr('{w} × {h} mm, {at} mm along the bottom edge', body);
+    if (s.edge === 'left') return tr('{size}, {at} along the left edge', body);
+    if (s.edge === 'right') return tr('{size}, {at} along the right edge', body);
+    return tr('{size}, {at} along the bottom edge', body);
   }
-  const plug = { ...body, pw: plugOf(s).w, ph: plugOf(s).h };
-  if (s.edge === 'left') return tr('{w} × {h} mm, {at} mm along the left edge, plug {pw} × {ph}', plug);
-  if (s.edge === 'right') return tr('{w} × {h} mm, {at} mm along the right edge, plug {pw} × {ph}', plug);
-  return tr('{w} × {h} mm, {at} mm along the bottom edge, plug {pw} × {ph}', plug);
+  const plug = { ...body, plug: `${lengthFigure(plugOf(s).w, unit)} × ${lengthFigure(plugOf(s).h, unit)}` };
+  if (s.edge === 'left') return tr('{size}, {at} along the left edge, plug {plug}', plug);
+  if (s.edge === 'right') return tr('{size}, {at} along the right edge, plug {plug}', plug);
+  return tr('{size}, {at} along the bottom edge, plug {plug}', plug);
 }
 
 function build(boards: Board[], p: Params, q: Quality): BuildResult {
@@ -543,11 +544,10 @@ function build(boards: Board[], p: Params, q: Quality): BuildResult {
     make = 'corners';
   }
   const n = q.circle;
-  const info: { label: string; value: string }[] = [{ label: tr('Board'), value: `${b.length.toFixed(2)} × ${b.width.toFixed(2)} mm` }];
+  const info: InfoItem[] = [unitInfo(tr('Board'), (unit) => lengthsText(unit, [b.length, b.width], 2))];
   if (b.holes.length) {
-    info.push({ label: tr('Holes'), value: `${b.holes.length} × Ø${b.holeDiameter} mm, ${b.screw}` });
-    const s = spacing(b.holes);
-    if (s) info.push({ label: tr('Hole spacing'), value: s });
+    info.push(unitInfo(tr('Holes'), (unit) => `${b.holes.length} × Ø${lengthText(b.holeDiameter, unit)}, ${b.screw}`));
+    if (spacing(b.holes, 'mm')) info.push(unitInfo(tr('Hole spacing'), (unit) => spacing(b.holes, unit) ?? ''));
   }
   const outline: Shape2D = [outlineOf(b, 0, q), ...b.holes.map(([x, y]) => circle(b.holeDiameter / 2, 24, x, y).reverse())];
 
@@ -561,8 +561,7 @@ function build(boards: Board[], p: Params, q: Quality): BuildResult {
     const hole = drill(p, b);
     if (hole > 0 && d < hole + 1.6) {
       d = hole + 1.6;
-      // The posts are the user's; the hole is the board's own, and stays in millimeters.
-      warnings.push(said((unit) => tr('The posts were widened to {diameter} to leave a wall round the {hole} mm hole.', { diameter: lengthFixed(d, unit, 1), hole })));
+      warnings.push(said((unit) => tr('The posts were widened to {diameter} to leave a wall round the {hole} hole.', { diameter: lengthFixed(d, unit, 1), hole: lengthText(hole, unit) })));
     }
     const posts = b.holes.map(([x, y]) => translate(cylinder(d / 2, height, n), [x, y, baseT]));
     let solid = union(...plate(), ...posts);
@@ -571,7 +570,7 @@ function build(boards: Board[], p: Params, q: Quality): BuildResult {
       const cutters = b.holes.map(([x, y]) => translate(cylinder(hole / 2, height + 1, n), [x, y, base ? baseT : -0.5]));
       solid = difference(solid, ...cutters);
     }
-    info.push({ label: tr('Posts'), value: `Ø${d.toFixed(1)} × ${height.toFixed(1)} mm` }, { label: tr('Hole'), value: hole > 0 ? mm(hole, 2) : tr('none') });
+    info.push(unitInfo(tr('Posts'), (unit) => `Ø${lengthsText(unit, [d, height], 1)}`), hole > 0 ? lengthInfo(tr('Hole'), hole, 2) : { label: tr('Hole'), value: tr('none') });
     return { solid, outline, info, warnings };
   }
 
@@ -583,7 +582,7 @@ function build(boards: Board[], p: Params, q: Quality): BuildResult {
     }
     const length = num(p, 'holeLength');
     const pins = b.holes.map(([x, y]) => translate(cylinder(hole / 2, length, n), [x, y, 0]));
-    info.push({ label: tr('Hole'), value: `Ø${hole.toFixed(2)} × ${length.toFixed(1)} mm` });
+    info.push(unitInfo(tr('Hole'), (unit) => `Ø${figureFixed(hole, unit, 2)} × ${lengthFixed(length, unit, 1)}`));
     return { solid: union(...pins), outline, info, warnings };
   }
 
@@ -617,10 +616,10 @@ function build(boards: Board[], p: Params, q: Quality): BuildResult {
     // A plug body can hang below the PCB: say so, since the part then stands that much lower than the board.
     const lowest = forPlug ? Math.min(0, ...sockets.map((s) => PCB + s.h / 2 - plugOf(s).h / 2)) : 0;
     info.push(
-      { label: 'PCB', value: tr('{thickness} mm thick, holes included', { thickness: PCB }) },
-      ...(lowest < 0 ? [{ label: tr('Base'), value: tr('{depth} mm below the PCB underside: a plug hangs lower than the board', { depth: (-lowest).toFixed(1) }) }] : []),
-      ...sockets.map((s) => ({ label: s.name, value: socketText(s, forPlug) })),
-      { label: tr('Reach'), value: mm(reach, 1) },
+      unitInfo('PCB', (unit) => tr('{thickness} thick, holes included', { thickness: lengthText(PCB, unit) })),
+      ...(lowest < 0 ? [unitInfo(tr('Base'), (unit) => tr('{depth} below the PCB underside: a plug hangs lower than the board', { depth: lengthFixed(-lowest, unit, 1) }))] : []),
+      ...sockets.map((s) => unitInfo(s.name, (unit) => socketText(s, forPlug, unit))),
+      lengthInfo(tr('Reach'), reach, 1),
     );
     return { solid: union(...pieces), outline, info, warnings };
   }
@@ -629,7 +628,7 @@ function build(boards: Board[], p: Params, q: Quality): BuildResult {
     const gap = num(p, 'blankGap');
     const t = num(p, 'blankThickness');
     const reach = b.length + (b.overhang?.length ?? 0);
-    info.push({ label: tr('Slab'), value: `${(reach + 2 * gap).toFixed(2)} × ${(b.width + 2 * gap).toFixed(2)} × ${t.toFixed(1)} mm` });
+    info.push(unitInfo(tr('Slab'), (unit) => `${figureFixed(reach + 2 * gap, unit, 2)} × ${figureFixed(b.width + 2 * gap, unit, 2)} × ${lengthFixed(t, unit, 1)}`));
     return { solid: slab(b, gap, t, gap === 0, q), outline, info, warnings };
   }
 
@@ -643,7 +642,7 @@ function build(boards: Board[], p: Params, q: Quality): BuildResult {
   if (base && num(p, 'baseMargin') < gap + t) warnings.push(said((unit) => tr('The stops overhang the base: a margin of at least {margin} covers them.', { margin: lengthFixed(gap + t, unit, 1) })));
   // At an end the module reaches past, the legs across that end stop short of it.
   const endLeg = b.overhang ? Math.max(1, Math.min(leg, (b.width - b.overhang.width) / 2 - gap - 0.5)) : leg;
-  if (endLeg < leg) info.push({ label: tr('Legs at the antenna end'), value: `${endLeg.toFixed(1)} mm` });
+  if (endLeg < leg) info.push(lengthInfo(tr('Legs at the antenna end'), endLeg, 1));
   const x0 = -gap;
   const y0 = -gap;
   const x1 = b.length + gap;
@@ -658,7 +657,10 @@ function build(boards: Board[], p: Params, q: Quality): BuildResult {
   ];
   const carved = difference(union(...stops.map((s) => extrude([s], height))), translate(slab(b, gap, height + 2, false, q), [0, 0, -1]));
   const blocks = [translate(carved, [0, 0, baseT])];
-  info.push({ label: tr('Stops'), value: tr('{thickness} mm thick, {height} mm high, legs {leg} mm', { thickness: t.toFixed(1), height: height.toFixed(1), leg: leg.toFixed(1) }) }, { label: tr('Pocket'), value: `${(b.length + 2 * gap).toFixed(2)} × ${(b.width + 2 * gap).toFixed(2)} mm` });
+  info.push(
+    unitInfo(tr('Stops'), (unit) => tr('{thickness} thick, {height} high, legs {leg}', { thickness: lengthFixed(t, unit, 1), height: lengthFixed(height, unit, 1), leg: lengthFixed(leg, unit, 1) })),
+    unitInfo(tr('Pocket'), (unit) => lengthsText(unit, [b.length + 2 * gap, b.width + 2 * gap], 2)),
+  );
   return { solid: union(...plate(), ...blocks), outline, info, warnings };
 }
 

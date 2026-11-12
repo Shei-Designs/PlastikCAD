@@ -214,7 +214,7 @@ export const partsDrive: Catalog = {
   'Custom pitch': 'Pas personnalisé',
   'Sets the pitch. 0 takes the standard coarse pitch.': 'Définit le pas. 0 prend le pas gros standard.',
   'Thread clearance': 'Jeu du filetage',
-  'The pitch was limited to {max} mm for this diameter.': 'Pas limité à {max} mm pour ce diamètre.',
+  'The pitch was limited to {max} for this diameter.': 'Pas limité à {max} pour ce diamètre.',
   'Only {percent}% of the thread depth engages with this clearance. Reduce the clearance or use a coarser pitch.':
     'Seulement {percent}\u00a0% de la profondeur du filet est en prise avec ce jeu. Réduisez le jeu ou utilisez un pas plus gros.',
   'Metric bolt / threaded rod': 'Vis métrique / tige filetée',

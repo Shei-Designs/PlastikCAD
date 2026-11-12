@@ -120,7 +120,7 @@ test.describe('inches as the working unit', () => {
     await expect(page.locator('.inspector .facts', { hasText: 'Overall size' })).toContainText('2 × 0.787 × 0.787 in');
   });
 
-  test('a gear\'s face width shows and takes inches, its module stays in millimeters', async ({ page }) => {
+  test('a gear\'s settings show and take inches, its module among them', async ({ page }) => {
     // A part is built anew before it takes its figures: seconds, on a machine with much else to do.
     const built = { timeout: 30_000 };
     const params = (): Promise<Record<string, unknown>> => store(page, (m) => ({ ...(m.getState().doc.scene[1] as { params: Record<string, unknown> }).params }));
@@ -130,8 +130,8 @@ test.describe('inches as the working unit', () => {
     // 10 mm wide, module 2.
     await expect(setting(page, 'Face width')).toHaveValue('0.3937');
     await expect(unitOf(setting(page, 'Face width'))).toHaveText('in');
-    await expect(setting(page, 'Module')).toHaveValue('2');
-    await expect(unitOf(setting(page, 'Module'))).toHaveText('mm');
+    await expect(setting(page, 'Module')).toHaveValue('0.0787');
+    await expect(unitOf(setting(page, 'Module'))).toHaveText('in');
     // The slider's track is the one it has in millimeters.
     const track = setting(page, 'Face width').locator('xpath=../..').locator('input[type="range"]');
     await expect(track).toHaveAttribute('min', '1');
@@ -140,16 +140,19 @@ test.describe('inches as the working unit', () => {
 
     await type(page, setting(page, 'Face width'), '0.5');
     await expect.poll(async () => (await params()).faceWidth, built).toBe(12.7);
-    await type(page, setting(page, 'Module'), '3');
-    await expect.poll(async () => (await params()).module, built).toBe(3);
+    // A module left as it reads is the 2 mm it was: what the box shows is rounded.
+    expect((await params()).module).toBe(2);
+    await type(page, setting(page, 'Module'), '0.1');
+    await expect.poll(async () => (await params()).module, built).toBe(2.54);
     await expect(setting(page, 'Face width')).toHaveValue('0.5');
 
-    // The figures the gear works out: its diameters in inches, 20 teeth of module 3 being 60 mm across.
+    // The figures the gear works out: its diameters in inches, 20 teeth of module 2.54 mm being two inches across.
     await page.locator('.transform-dims-toggle').click();
     const figures = page.locator('.transform-dims .facts');
-    await expect(figures.locator('div', { hasText: 'Pitch diameter' }).locator('dd')).toHaveText('2.3622 in');
+    await expect(figures.locator('div', { hasText: 'Pitch diameter' }).locator('dd')).toHaveText('2.0000 in');
     await chooseUnits(page, 'Millimeters');
-    await expect(figures.locator('div', { hasText: 'Pitch diameter' }).locator('dd')).toHaveText('60.00 mm');
+    await expect(figures.locator('div', { hasText: 'Pitch diameter' }).locator('dd')).toHaveText('50.80 mm');
+    await expect(setting(page, 'Module')).toHaveValue('2.54');
     await expect(setting(page, 'Face width')).toHaveValue('12.7');
     await expect(unitOf(setting(page, 'Face width'))).toHaveText('mm');
   });

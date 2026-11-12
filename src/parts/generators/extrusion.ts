@@ -25,8 +25,9 @@ import { tr } from '../../i18n';
 import { arcSegments, circle, ensureCCW, polar, signedArea } from '../math2d';
 import { difference, extrude, translate } from '../types';
 import type { Polygon, Quality, Shape2D, Solid, Vec2 } from '../types';
-import { bool, mm, num, str } from './types';
+import { bool, lengthInfo, num, lengthsText, str, unitInfo } from './types';
 import type { BuildResult, GeneratorDef, Params } from './types';
+import { areaText, lengthFixed } from '../../units';
 
 /** Built this long; the object's height is then simply stretched to the length wanted, which a prism survives exactly. */
 const STUB = 20;
@@ -400,12 +401,12 @@ export const extrusion: GeneratorDef = {
       // and corner hole sits in solid metal, so the parity works out.
       outline: [outline, ...voids, ...bores, ...cavities],
       info: [
-        { label: tr('Profile'), value: `${name}: ${Math.round(width)} × ${Math.round(height)} mm` },
-        { label: tr('Slot'), value: tr('{kind}, {width} opening', { kind: str(p, 'style') === 't' ? 'T' : 'V', width: mm(size.opening, 1) }) },
+        unitInfo(tr('Profile'), (unit) => `${name}: ${lengthsText(unit, [Math.round(width), Math.round(height)])}`),
+        unitInfo(tr('Slot'), (unit) => tr('{kind}, {width} opening', { kind: str(p, 'style') === 't' ? 'T' : 'V', width: lengthFixed(size.opening, unit, 1) })),
         { label: tr('Slots'), value: String(2 * (across + up)) },
-        { label: tr('Slot depth'), value: mm(cd) },
-        { label: tr('Center bore'), value: bool(p, 'bores') ? mm(size.bore, 1) : tr('none') },
-        { label: tr('Section'), value: `${Math.round(area)} mm²` },
+        lengthInfo(tr('Slot depth'), cd),
+        bool(p, 'bores') ? lengthInfo(tr('Center bore'), size.bore, 1) : { label: tr('Center bore'), value: tr('none') },
+        unitInfo(tr('Section'), (unit) => areaText(Math.round(area), unit, 0)),
       ],
       warnings,
     };

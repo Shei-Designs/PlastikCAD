@@ -64,14 +64,15 @@ quarters; to feet and then to yards, a yard in feet; past that to tens of
 meters or of yards. A design the size of a room has no more lines than a
 small one.
 
-What a standard lays down in millimeters stays in millimeters: a gear's
-module, the pitch of a metric thread or a belt, a belt's width, the head and
-key of a metric screw, and the figures of a rail, board, fan, motor or panel
-cutout. A warning follows the same rule: one about a length you set (a wall
-thinned, backlash limited, a bend radius raised) reads in your unit, one
-about a standard's figure (the pitch a metric thread may have) in
-millimeters. The question asked of a file that names no unit says what it
-measures as millimeters, since that is what it asks about.
+A part that is metric by its standard keeps its name as the standard writes
+it (M8, GT2 2 mm, NEMA 17, a 40 mm fan), and so do the notes that describe
+such hardware. Everything else about it is in the unit in use once it is on
+the plate: its settings, a gear's module and a thread's pitch among them,
+the figures it lists, and its warnings. A setting left as it reads keeps the
+exact value it has (a module of 2 mm reads 0.0787 in and stays 2 mm), and a
+slider still moves in the steps it has in millimeters. The question asked of
+a file that names no unit says what it measures as millimeters, since that
+is what it asks about.
 
 ## How it works
 

@@ -7,8 +7,9 @@ import { toDeg } from '../math2d';
 import { pressureAngleProfile, profileExtent, threadedRod, threadSolid } from '../threads';
 import { difference, extrude, intersection, revolve, rotate, tidy, translate, union } from '../types';
 import type { Polygon, Quality, Solid } from '../types';
-import { bool, degrees, lengthInfo, mm, num } from './types';
+import { bool, degrees, lengthInfo, num, unitInfo } from './types';
 import type { BuildResult, GeneratorDef, Params } from './types';
+import { lengthFixed } from '../../units';
 
 export const worm: GeneratorDef = {
   id: 'worm',
@@ -29,7 +30,6 @@ export const worm: GeneratorDef = {
           max: 10,
           step: 0.05,
           unit: 'mm',
-          metric: true,
         },
         {
           type: 'number',
@@ -127,8 +127,8 @@ export const worm: GeneratorDef = {
         lengthInfo(tr('Pitch diameter'), d),
         lengthInfo(tr('Outside diameter'), rMax * 2),
         lengthInfo(tr('Root diameter'), rMin * 2),
-        { label: tr('Axial pitch'), value: mm(pitch, 3) },
-        { label: tr('Lead'), value: tr('{length} per turn', { length: mm(lead, 3) }) },
+        lengthInfo(tr('Axial pitch'), pitch, 3),
+        unitInfo(tr('Lead'), (unit) => tr('{length} per turn', { length: lengthFixed(lead, unit, 3) })),
         { label: tr('Lead angle'), value: degrees(toDeg(leadAngle)) },
         {
           label: tr('Mating gear'),
@@ -261,7 +261,7 @@ export const wormWheel: GeneratorDef = {
     {
       title: tr('Wheel'),
       params: [
-        { type: 'number', key: 'module', label: tr('Module'), help: tr('Sets the axial module. Use the worm\'s.'), default: 1, min: 0.3, max: 10, step: 0.05, unit: 'mm', metric: true },
+        { type: 'number', key: 'module', label: tr('Module'), help: tr('Sets the axial module. Use the worm\'s.'), default: 1, min: 0.3, max: 10, step: 0.05, unit: 'mm' },
         { type: 'number', key: 'teeth', label: tr('Teeth'), default: 30, min: 8, max: 200, step: 1, integer: true },
         { type: 'number', key: 'faceWidth', label: tr('Face width'), help: tr('Sets the width of the rim. 0 takes three quarters of the worm\'s outside diameter.'), default: 0, min: 0, max: 100, step: 0.5, unit: 'mm' },
         { type: 'number', key: 'backlash', label: tr('Backlash'), help: tr('Widens the tooth spaces by this amount.'), default: 0.1, min: 0, max: 1, step: 0.01, unit: 'mm' },

@@ -12,9 +12,10 @@ import { plural, tr, trx } from '../../i18n';
 import { arc, circle, roundedRect } from '../math2d';
 import { cylinder, extrude, rotate, translate, union } from '../types';
 import type { Polygon, Quality, Shape2D, Solid, Vec2 } from '../types';
-import { bool, num, str } from './types';
-import type { BuildResult, GeneratorDef, ParamGroup, Params } from './types';
-import { lengthFixed, said } from '../../units';
+import { bool, num, lengthsText, str, unitInfo } from './types';
+import type { BuildResult, GeneratorDef, InfoItem, ParamGroup, Params } from './types';
+import { figureFixed, lengthFixed, lengthText, said } from '../../units';
+import type { Unit } from '../../units';
 
 /** Drill sizes for a screw in printed plastic: the screw cutting its own thread, or a clearance hole. */
 const SCREWS: Record<string, { tap: number; clearance: number }> = {
@@ -337,12 +338,13 @@ function groups(motors: Motor[]): ParamGroup[] {
 // --- build --------------------------------------------------------------------------------
 
 /** The shaft as the inspector describes it: its size, the width across its flat and how far off the middle of the face it is, where it has either. */
-function shaftText(shaft: Motor['shaft']): string {
+function shaftText(shaft: Motor['shaft'], unit: Unit): string {
   const { d, len, flat, at } = shaft;
-  if (flat && at) return tr('Ø{d} × {len} mm, {flat} mm across the flat, {off} mm off center', { d, len, flat, off: at[0] });
-  if (flat) return tr('Ø{d} × {len} mm, {flat} mm across the flat', { d, len, flat });
-  if (at) return tr('Ø{d} × {len} mm, {off} mm off center', { d, len, off: at[0] });
-  return `Ø${d} × ${len} mm`;
+  const size = `Ø${lengthsText(unit, [d, len])}`;
+  if (flat && at) return tr('{size}, {flat} across the flat, {off} off center', { size, flat: lengthText(flat, unit), off: lengthText(at[0], unit) });
+  if (flat) return tr('{size}, {flat} across the flat', { size, flat: lengthText(flat, unit) });
+  if (at) return tr('{size}, {off} off center', { size, off: lengthText(at[0], unit) });
+  return size;
 }
 
 function build(motors: Motor[], p: Params, q: Quality): BuildResult {
@@ -356,23 +358,25 @@ function build(motors: Motor[], p: Params, q: Quality): BuildResult {
   const grow = num(p, 'clearance');
   const n = q.circle;
   const screw = SCREWS[m.screw];
-  const info: { label: string; value: string }[] = [];
-  const holesText = () => {
+  const info: InfoItem[] = [];
+  const holesText = (unit: Unit) => {
     const xs = [...new Set(m.holes.map((h) => h[0]))];
     const ys = [...new Set(m.holes.map((h) => h[1]))];
     // Six holes all as far from the shaft as each other lie on a circle of twice that.
     const reach = m.holes.map(([x, y]) => Math.hypot(x, y));
     const ringed = m.holes.length === 6 && reach.every((r) => Math.abs(r - reach[0]) < 1e-6);
     const count = m.holes.length;
-    if (count === 4 && xs.length === 2 && ys.length === 2) return `${count} × ${m.screw}, ${Math.abs(xs[1] - xs[0]).toFixed(2)} × ${Math.abs(ys[1] - ys[0]).toFixed(2)} mm`;
-    if (count === 2 && ys.length === 1) return tr('{n} × {screw}, {distance} mm apart', { n: count, screw: m.screw, distance: Math.abs(xs[1] - xs[0]).toFixed(2) });
-    if (ringed) return tr('{n} × {screw}, on a {diameter} mm circle', { n: count, screw: m.screw, diameter: Number((2 * reach[0]).toFixed(2)) });
+    if (count === 4 && xs.length === 2 && ys.length === 2) return `${count} × ${m.screw}, ${lengthsText(unit, [Math.abs(xs[1] - xs[0]), Math.abs(ys[1] - ys[0])], 2)}`;
+    if (count === 2 && ys.length === 1) return tr('{n} × {screw}, {distance} apart', { n: count, screw: m.screw, distance: lengthFixed(Math.abs(xs[1] - xs[0]), unit, 2) });
+    if (ringed) return tr('{n} × {screw}, on a {diameter} circle', { n: count, screw: m.screw, diameter: lengthText(2 * reach[0], unit) });
     return plural(count, '{n} × {screw}, {n} hole', '{n} × {screw}, {n} holes', { screw: m.screw });
   };
-  if (m.holes.length) info.push({ label: tr('Bolt pattern'), value: holesText() });
-  if (m.pilot) info.push({ label: tr('Pilot'), value: `Ø${m.pilot.d} × ${m.pilot.h} mm` });
-  if (m.through) info.push({ label: tr('Body through'), value: `${m.through.w} × ${m.through.h} mm` });
-  info.push({ label: tr('Shaft'), value: shaftText(m.shaft) });
+  if (m.holes.length) info.push(unitInfo(tr('Bolt pattern'), holesText));
+  const pilot = m.pilot;
+  if (pilot) info.push(unitInfo(tr('Pilot'), (unit) => `Ø${lengthsText(unit, [pilot.d, pilot.h])}`));
+  const through = m.through;
+  if (through) info.push(unitInfo(tr('Body through'), (unit) => lengthsText(unit, [through.w, through.h])));
+  info.push(unitInfo(tr('Shaft'), (unit) => shaftText(m.shaft, unit)));
   const outline: Shape2D = [faceOutline(m, 0, q), ...m.holes.map(([x, y]) => circle(screw.clearance / 2, 24, x, y)), bore(m, 0, q)];
 
   const boltD = str(p, 'boltFit') === 'tap' ? screw.tap : screw.clearance;
@@ -382,7 +386,7 @@ function build(motors: Motor[], p: Params, q: Quality): BuildResult {
     const plate = plateOutline(m, num(p, 'margin'), num(p, 'corner'), grow, q);
     const shape: Shape2D = [plate, ...m.holes.map(([x, y]) => circle(boltD / 2, n, x, y)), bore(m, grow, q)];
     const { min, max } = extentOf(plate);
-    info.push({ label: trx('mount', 'Plate'), value: `${(max[0] - min[0]).toFixed(1)} × ${(max[1] - min[1]).toFixed(1)} × ${t} mm` });
+    info.push(unitInfo(trx('mount', 'Plate'), (unit) => `${figureFixed(max[0] - min[0], unit, 1)} × ${figureFixed(max[1] - min[1], unit, 1)} × ${lengthText(t, unit)}`));
     if (make === 'plate') return { solid: extrude(shape, t), outline, info, warnings };
 
     // The bracket: the plate stood up on its lower edge, the motor on its -Y side, a slotted foot behind.
@@ -416,7 +420,12 @@ function build(motors: Motor[], p: Params, q: Quality): BuildResult {
         pieces.push(translate(rotate(slab, [90, 0, 90]), [s * (W / 2) - (s > 0 ? t : 0), 0, 0]));
       }
     }
-    info.push({ label: tr('Foot'), value: slotLen > 0 ? tr('{width} × {length} mm, {screw} slots', { width: W.toFixed(1), length: footLen, screw: str(p, 'footScrew') }) : tr('{width} × {length} mm, {screw} holes', { width: W.toFixed(1), length: footLen, screw: str(p, 'footScrew') }) });
+    info.push(
+      unitInfo(tr('Foot'), (unit) => {
+        const size = `${figureFixed(W, unit, 1)} × ${lengthText(footLen, unit)}`;
+        return slotLen > 0 ? tr('{size}, {screw} slots', { size, screw: str(p, 'footScrew') }) : tr('{size}, {screw} holes', { size, screw: str(p, 'footScrew') });
+      }),
+    );
     return { solid: union(...pieces), outline, info, warnings };
   }
 
@@ -424,7 +433,7 @@ function build(motors: Motor[], p: Params, q: Quality): BuildResult {
     const len = num(p, 'holeLength');
     const pins: Solid[] = m.holes.map(([x, y]) => translate(cylinder(boltD / 2, len, n), [x, y, -len / 2]));
     pins.push(translate(extrude([bore(m, grow, q)], len), [0, 0, -len / 2]));
-    info.push({ label: tr('Bolt holes'), value: `Ø${boltD.toFixed(2)} mm` });
+    info.push(unitInfo(tr('Bolt holes'), (unit) => `Ø${lengthFixed(boltD, unit, 2)}`));
     return { solid: union(...pins), outline, info, warnings };
   }
 
@@ -440,7 +449,7 @@ function build(motors: Motor[], p: Params, q: Quality): BuildResult {
   const pilotH = m.pilot?.h ?? 0;
   if (shaftLen > pilotH) pieces.push(translate(extrude([shaftSection(m.shaft.d, m.shaft.flat, q)], shaftLen - pilotH), [...(m.shaft.at ?? [0, 0]), top + pilotH]));
   else warnings.push(tr('The shaft is shorter than the pilot boss, so no shaft is shown.'));
-  info.push({ label: tr('Body'), value: tr('{size} × {length} mm behind the face', { size: m.body.round ? `Ø${m.body.w}` : `${m.body.w} × ${m.body.h}`, length: below }) });
+  info.push(unitInfo(tr('Body'), (unit) => tr('{size} behind the face', { size: m.body.round ? `Ø${lengthsText(unit, [m.body.w, below])}` : lengthsText(unit, [m.body.w, m.body.h, below]) })));
   return { solid: union(...pieces), outline, info, warnings };
 }
 
