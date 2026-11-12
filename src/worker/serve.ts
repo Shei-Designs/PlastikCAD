@@ -73,9 +73,9 @@ function answer(req: WorkerRequest, occ: Occ, draco: Draco): WorkerResponse | nu
     case 'massProperties':
       return { type: 'massProperties', id: req.id, result: massProperties(req.nodes) };
     case 'collisionMeshes':
-      return { type: 'collisionMeshes', id: req.id, result: collisionMeshes(req.nodes, req.collisions) };
+      return { type: 'collisionMeshes', id: req.id, result: collisionMeshes(req.nodes, req.collisions, req.pieces) };
     case 'robotGeometry':
-      return { type: 'robotGeometry', id: req.id, result: robotGeometry(req.nodes, req.collisions, req.fine) };
+      return { type: 'robotGeometry', id: req.id, result: robotGeometry(req.nodes, req.collisions, req.fine, req.pieces) };
     case 'export':
       return { type: 'exported', id: req.id, result: exportNodes(req.nodes, req.outline, req.fine, req.local) };
   }

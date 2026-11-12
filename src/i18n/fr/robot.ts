@@ -122,6 +122,8 @@ export const robot: Catalog = {
   '"{name}" sinks {by} into the floor: it collides with nothing.': '«\u00a0{name}\u00a0» s’enfonce de {by} dans le sol\u00a0: il n’entre en collision avec rien.',
   '"{name}" sinks {by} into the floor: its collision shape is smaller than it.': '«\u00a0{name}\u00a0» s’enfonce de {by} dans le sol\u00a0: sa forme de collision est plus petite que lui.',
   Center: 'Centre',
+  Pieces: 'Morceaux',
+  'Sets how many convex pieces each part is split into at most.': 'Définit en combien de morceaux convexes au plus chaque pièce est découpée.',
   'Collision size {axis}': 'Taille de collision {axis}',
   'Collision diameter': 'Diamètre de collision',
   'Collision length': 'Longueur de collision',

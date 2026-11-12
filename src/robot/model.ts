@@ -13,6 +13,9 @@ export const linkNodes = (scene: Scene): SceneNode[] => scene.filter((n) => !n.h
 export const robotOf = (doc: Doc): Robot => doc.robot ?? emptyRobot();
 
 /** A link's settings, the defaults for an object nobody has touched. */
+/** How many convex pieces each link's parts may be split into, by node, for the links that ask for more than one. */
+export const piecesOf = (robot: Robot): Record<string, number> => Object.fromEntries(robot.links.flatMap((l) => (l.collision === 'hull' && l.pieces && l.pieces > 1 ? [[l.node, l.pieces]] : [])));
+
 export const linkOf = (robot: Robot, node: string): RobotLink => robot.links.find((l) => l.node === node) ?? defaultLink(node);
 
 /** The robot with every link and joint that names an object the scene no longer has left off. The same object when nothing changes. */

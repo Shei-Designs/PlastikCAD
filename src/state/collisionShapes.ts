@@ -19,7 +19,7 @@ const SETTLE_MS = 150;
 type Links = Record<string, Collides>;
 
 const linkOf = (node: SceneNode, links: Links): Collides => links[node.id] ?? { collision: 'hull' };
-const keyOf = (node: SceneNode, link: Collides): string => `${link.collision}|${link.shape ? JSON.stringify(link.shape) : ''}|${propsKey(node)}`;
+const keyOf = (node: SceneNode, link: Collides): string => `${link.collision}|${link.shape ? JSON.stringify(link.shape) : ''}|${link.pieces ?? 1}|${propsKey(node)}`;
 const kindsOf = (links: Links): Record<string, CollisionKind> => Object.fromEntries(Object.entries(links).map(([id, l]) => [id, l.collision]));
 
 class CollisionShapesStore {
@@ -83,7 +83,7 @@ class CollisionShapesStore {
     for (const key of keys) this.pending.add(key);
     try {
       const worker = await geometry.prepare(nodes, batch.assets);
-      const results = await worker.collisionMeshes(nodes, kindsOf(batch.links));
+      const results = await worker.collisionMeshes(nodes, kindsOf(batch.links), Object.fromEntries(Object.entries(batch.links).flatMap(([id, l]) => (l.pieces ? [[id, l.pieces]] : []))));
       results.forEach((mesh, i) => this.keep(keys[i], mesh));
       this.revision++;
       for (const l of this.listeners) l();

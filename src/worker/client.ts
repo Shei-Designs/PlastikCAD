@@ -217,13 +217,13 @@ export class GeometryClient {
   }
 
   /** What each node collides as where that is a mesh of its own, placed in the design; null for the rest. */
-  collisionMeshes(nodes: SceneNode[], collisions: Record<string, CollisionKind>): Promise<(MeshData | null)[]> {
-    return this.send({ type: 'collisionMeshes', nodes, collisions });
+  collisionMeshes(nodes: SceneNode[], collisions: Record<string, CollisionKind>, pieces: Record<string, number> = {}): Promise<(MeshData | null)[]> {
+    return this.send({ type: 'collisionMeshes', nodes, collisions, pieces });
   }
 
   /** Each node as a robot link: visual parts, collision shape and mass properties, placed in the design. */
-  robotGeometry(nodes: SceneNode[], collisions: Record<string, CollisionKind>, fine: boolean): Promise<LinkGeometry[]> {
-    return this.send({ type: 'robotGeometry', nodes, collisions, fine });
+  robotGeometry(nodes: SceneNode[], collisions: Record<string, CollisionKind>, fine: boolean, pieces: Record<string, number> = {}): Promise<LinkGeometry[]> {
+    return this.send({ type: 'robotGeometry', nodes, collisions, fine, pieces });
   }
 
   /**

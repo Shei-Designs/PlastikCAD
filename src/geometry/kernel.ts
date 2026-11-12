@@ -8,13 +8,15 @@ import Module from 'manifold-3d';
 import type { CrossSection, Manifold, ManifoldToplevel, Mat4, Mesh } from 'manifold-3d';
 import { geomKey, isTextAsset, textAssetKey, textThickness } from '../model/geomKey';
 import { paintOf } from '../model/ops';
-import { apply, determinant, emptyBounds, expandBounds, isEmptyBounds, nodeMatrix, unionBounds } from '../model/math';
+import { apply, determinant, emptyBounds, expandBounds, invert, isEmptyBounds, multiply, nodeMatrix, unionBounds } from '../model/math';
 import type { Bounds, Mat } from '../model/math';
 import type { Asset, GroupNode, ImportNode, MeshAsset, OutlineAsset, PartNode, PictureNode, Polygon, SceneNode, TextNode, Vec2 } from '../model/types';
 import type { BuildResult, ColoredExport, ColoredObject, ColoredPart, ExportResult, LinkGeometry, LinkProperties } from '../worker/protocol';
 import { meshProperties } from '../robot/inertia';
 import type { CollisionKind } from '../robot/types';
 import { buildBvh } from './bvh';
+import { splitConvex } from './convex';
+import type { Corner } from './convex';
 import { CREASE_ANGLE, creaseEdges, creasedNormals, NO_SOURCE, samePlace } from './mesh';
 import type { Faces, MeshData, MeshWithUV } from './mesh';
 import { buildSolid } from '../parts/evaluate';
@@ -848,55 +850,44 @@ function propertiesOf(k: ManifoldToplevel, node: SceneNode, keep: Keep, fine: bo
 }
 
 /**
- * Each node as a robot link, placed in the design: its visual parts by color,
- * the collision shape asked for (a convex hull, the shape itself, or nothing
- * for a box or none) and its mass properties.
- */
-/**
  * What each node collides as, placed in the design, where that is a mesh of its own: its convex hull, or the
  * shape itself. Null for a box, a cylinder or a sphere, which need no mesh, and for a link that collides with nothing.
  */
-export function collisionMeshes(nodes: SceneNode[], collisions: Record<string, CollisionKind>): (MeshData | null)[] {
-  return operation((k) =>
-    scoped((keep) =>
-      nodes.map((node) => {
-        const kind = collisions[node.id] ?? 'hull';
-        if (kind !== 'hull' && kind !== 'mesh') return null;
-        const entry = builtOf(k, node, false);
-        if (entry.solid) {
-          if (kind === 'mesh') return meshOf(placed(k, node, keep, false));
-          const hulls = hullsOf(k, node, keep, false).map(meshOf);
-          return hulls.length === 1 ? hulls[0] : joined(hulls);
-        }
-        const mesh = transformed(entry.open, nodeMatrix(node));
-        if (kind === 'mesh') return mesh;
-        const points: [number, number, number][] = [];
-        for (let i = 0; i < mesh.positions.length; i += 3) points.push([mesh.positions[i], mesh.positions[i + 1], mesh.positions[i + 2]]);
-        return points.length >= 4 ? meshOf(keep(k.Manifold.hull(points))) : null;
-      }),
-    ),
-  );
+export function collisionMeshes(nodes: SceneNode[], collisions: Record<string, CollisionKind>, pieces: Record<string, number> = {}): (MeshData | null)[] {
+  return operation((k) => scoped((keep) => nodes.map((node) => collisionOf(k, node, keep, false, collisions[node.id] ?? 'hull', pieces[node.id] ?? 1).collision)));
 }
 
-export function robotGeometry(nodes: SceneNode[], collisions: Record<string, CollisionKind>, fine: boolean): LinkGeometry[] {
+/** A link's collision mesh, and the convex pieces of it where they are several (see `LinkGeometry`). */
+function collisionOf(k: ManifoldToplevel, node: SceneNode, keep: Keep, fine: boolean, kind: CollisionKind, pieces: number): Pick<LinkGeometry, 'collision' | 'hulls'> {
+  if (kind === 'mesh') {
+    const entry = builtOf(k, node, fine);
+    return { collision: entry.solid ? meshOf(placed(k, node, keep, fine)) : transformed(entry.open, nodeMatrix(node)) };
+  }
+  if (kind !== 'hull') return { collision: null };
+  const hulls = hullsOf(k, node, keep, fine, pieces).map(meshOf);
+  return hulls.length > 1 ? { collision: joined(hulls), hulls } : { collision: hulls[0] ?? null };
+}
+
+/**
+ * Each node as a robot link, placed in the design: its visual parts by color,
+ * the collision shape asked for (convex hulls, the shape itself, or nothing
+ * for a box or none) and its mass properties. `pieces` is how many convex
+ * pieces each part of a link may be split into, one where it is not named.
+ */
+export function robotGeometry(nodes: SceneNode[], collisions: Record<string, CollisionKind>, fine: boolean, pieces: Record<string, number> = {}): LinkGeometry[] {
   return operation((k) =>
     scoped((keep) =>
       nodes.map((node): LinkGeometry => {
         const entry = builtOf(k, node, fine);
-        const kind = collisions[node.id] ?? 'hull';
+        const collision = collisionOf(k, node, keep, fine, collisions[node.id] ?? 'hull', pieces[node.id] ?? 1);
         if (!entry.solid) {
           const mesh = transformed(entry.open, nodeMatrix(node));
-          const points: [number, number, number][] = [];
-          for (let i = 0; i < mesh.positions.length; i += 3) points.push([mesh.positions[i], mesh.positions[i + 1], mesh.positions[i + 2]]);
-          const collision = kind === 'mesh' ? mesh : kind === 'hull' && points.length >= 4 ? meshOf(keep(k.Manifold.hull(points))) : null;
-          return { id: node.id, visual: [{ color: node.color, mesh }], collision, bounds: boundsOfPositions(mesh.positions), props: propertiesOf(k, node, keep, fine) };
+          return { id: node.id, visual: [{ color: node.color, mesh }], ...collision, bounds: boundsOfPositions(mesh.positions), props: propertiesOf(k, node, keep, fine) };
         }
         const matrix = mat4(nodeMatrix(node));
         const visual = coloredParts(k, node, keep, fine).map((p) => ({ color: p.color, mesh: meshOf(keep(p.solid.transform(matrix))) }));
         const solid = placed(k, node, keep, fine);
-        const hulls = kind === 'hull' ? hullsOf(k, node, keep, fine).map(meshOf) : [];
-        const collision = kind === 'mesh' ? meshOf(solid) : hulls.length === 1 ? hulls[0] : hulls.length ? joined(hulls) : null;
-        return { id: node.id, visual, collision, ...(hulls.length > 1 ? { hulls } : {}), bounds: toBounds(solid.boundingBox()), props: propertiesOf(k, node, keep, fine) };
+        return { id: node.id, visual, ...collision, bounds: toBounds(solid.boundingBox()), props: propertiesOf(k, node, keep, fine) };
       }),
     ),
   );
@@ -906,17 +897,25 @@ export function robotGeometry(nodes: SceneNode[], collisions: Record<string, Col
 const MAX_HULLS = 64;
 
 /**
- * The convex pieces a solid node collides as when it collides as its hull, placed in the design. A group gives
- * one for each of its parts, down through the groups in it, so that the space between them stays open; a part
- * its group's holes cut in two gives one for each half. A piece inside another is left out. Anything else, and
- * a group of more pieces than `MAX_HULLS`, gives the one hull round it.
+ * The convex pieces a node collides as when it collides as its hull, placed in the design. A group gives one
+ * for each of its parts, down through the groups in it, so that the space between them stays open; a part its
+ * group's holes cut in two gives one for each half. With `pieces` above one, each part is split into as many
+ * at most (see `splitConvex`). A piece inside another is left out. Anything else, and a group of more pieces
+ * than `MAX_HULLS`, gives the hull round it; a mesh with no volume to wrap gives none.
  */
-function hullsOf(k: ManifoldToplevel, node: SceneNode, keep: Keep, fine: boolean): Manifold[] {
-  const whole = (): Manifold[] => [keep(placed(k, node, keep, fine).hull())];
+function hullsOf(k: ManifoldToplevel, node: SceneNode, keep: Keep, fine: boolean, pieces: number): Manifold[] {
+  const entry = builtOf(k, node, fine);
+  const frame = nodeMatrix(node);
+  if (!entry.solid) return convexHulls(k, keep, transformed(entry.open, frame), pieces, frame);
+  const solid = placed(k, node, keep, fine);
+  const split = (part: Part, into: number): Manifold[] => (into > 1 ? convexHulls(k, keep, meshOf(part.solid), into, part.frame) : [keep(part.solid.hull())]);
+  const whole = (): Manifold[] => split({ solid, frame }, pieces);
   if (node.type !== 'group') return whole();
   const parts = partsOf(k, node, keep, fine);
   if (parts === null || parts.length > MAX_HULLS) return whole();
-  const hulls = parts.map((p) => keep(p.hull())).filter((h) => !h.isEmpty() && h.volume() > 0);
+  const wrapped = (into: number): Manifold[] => parts.flatMap((p) => split(p, into)).filter((h) => !h.isEmpty() && h.volume() > 0);
+  let hulls = wrapped(pieces);
+  if (hulls.length > MAX_HULLS && pieces > 1) hulls = wrapped(1);
   if (hulls.length === 0 || hulls.length > MAX_HULLS) return whole();
   // The largest first, so that what lies inside another is found against it.
   const sized = hulls.map((h) => ({ h, box: toBounds(h.boundingBox()), volume: h.volume() })).sort((a, b) => b.volume - a.volume);
@@ -928,19 +927,53 @@ function hullsOf(k: ManifoldToplevel, node: SceneNode, keep: Keep, fine: boolean
   return kept.map((p) => p.h);
 }
 
+/**
+ * A hull round each of the pieces a mesh is split into, `pieces` of them at most; none round corners that enclose
+ * nothing. `frame` is where the mesh's own axes lie, which the cuts go across: a part is cut the same however it is turned.
+ */
+function convexHulls(k: ManifoldToplevel, keep: Keep, mesh: MeshData, pieces: number, frame: Mat): Manifold[] {
+  const volumeOf = (points: Corner[]): number => {
+    if (points.length < 4) return 0;
+    const hull = k.Manifold.hull(points);
+    const volume = hull.volume();
+    hull.delete();
+    return volume;
+  };
+  let sets: Corner[][];
+  if (pieces > 1) {
+    const own = transformed(mesh, invert(frame));
+    sets = splitConvex(own, Math.min(pieces, MAX_HULLS), volumeOf).map((points) => points.map((p) => apply(frame, p)));
+  } else {
+    const points: Corner[] = [];
+    for (let i = 0; i < mesh.positions.length; i += 3) points.push([mesh.positions[i], mesh.positions[i + 1], mesh.positions[i + 2]]);
+    sets = [points];
+  }
+  return sets
+    .filter((points) => points.length >= 4)
+    .map((points) => keep(k.Manifold.hull(points)))
+    .filter((h) => !h.isEmpty());
+}
+
 const within = (a: Bounds, b: Bounds): boolean => a.min.every((v, i) => v >= b.min[i] - 1e-6) && a.max.every((v, i) => v <= b.max[i] + 1e-6);
+
+/** A solid piece of a link, and where the axes of the object it is a piece of lie. */
+interface Part {
+  solid: Manifold;
+  frame: Mat;
+}
 
 /**
  * The separate solid pieces of a node in its parent's coordinates: a group's parts with its holes cut from them,
  * each piece a cut leaves on its own. Null where a part is not solid, or there are too many to be worth it.
  */
-function partsOf(k: ManifoldToplevel, node: SceneNode, keep: Keep, fine: boolean): Manifold[] | null {
+function partsOf(k: ManifoldToplevel, node: SceneNode, keep: Keep, fine: boolean): Part[] | null {
+  const frame = nodeMatrix(node);
   if (node.type !== 'group') {
     const { solid } = builtOf(k, node, fine);
-    return solid ? [keep(solid.transform(mat4(nodeMatrix(node))))] : null;
+    return solid ? [{ solid: keep(solid.transform(mat4(frame))), frame }] : null;
   }
   const holes: Manifold[] = [];
-  let parts: Manifold[] = [];
+  let parts: Part[] = [];
   for (const child of node.children) {
     if (child.type === 'picture') continue;
     if (child.hole) {
@@ -954,17 +987,17 @@ function partsOf(k: ManifoldToplevel, node: SceneNode, keep: Keep, fine: boolean
   }
   if (holes.length) {
     const cutter = holes.length === 1 ? holes[0] : keep(k.Manifold.union(holes));
-    const cut: Manifold[] = [];
+    const cut: Part[] = [];
     for (const part of parts) {
-      const left = keep(part.subtract(cutter));
+      const left = keep(part.solid.subtract(cutter));
       if (left.isEmpty()) continue;
-      for (const piece of left.decompose()) cut.push(keep(piece));
+      for (const piece of left.decompose()) cut.push({ solid: keep(piece), frame: part.frame });
       if (cut.length > MAX_HULLS) return null;
     }
     parts = cut;
   }
-  const matrix = mat4(nodeMatrix(node));
-  return parts.map((p) => keep(p.transform(matrix)));
+  const matrix = mat4(frame);
+  return parts.map((p) => ({ solid: keep(p.solid.transform(matrix)), frame: multiply(frame, p.frame) }));
 }
 
 /** Several meshes as one, for drawing and measuring. */

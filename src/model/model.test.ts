@@ -718,7 +718,7 @@ describe('design files', () => {
       root: 'a',
       links: [
         { node: 'a', name: 'base', mass: { kind: 'material', material: 'pla', infill: 20, shell: 1.2 }, collision: 'sphere', shape: { size: [40, 40, 40], center: [0, 0, -10], rot: [0, 0, 90] }, friction: 0.8 },
-        { node: 'b', mass: { kind: 'measured', grams: 12, center: [1, 2, 3], inertia: [500, 300, 200, 40, -30, 20] }, collision: 'hull', friction: 0.8 },
+        { node: 'b', mass: { kind: 'measured', grams: 12, center: [1, 2, 3], inertia: [500, 300, 200, 40, -30, 20] }, collision: 'hull', pieces: 6, friction: 0.8 },
       ],
       joints: [
         { id: 'j1', name: 'j', type: 'revolute', parent: 'a', child: 'b', origin: [0, 0, 0], axis: [0, 0, 1], lower: -90, upper: 90, effort: 1, velocity: 1, damping: 0, friction: 0, start: 30, command: 'torque', motor: 'sg90' },
@@ -756,6 +756,7 @@ describe('design files', () => {
     expect(doc.robot?.joints.map((j) => j.start)).toEqual([30, undefined]);
     expect(doc.robot?.joints.map((j) => j.command)).toEqual(['torque', undefined]);
     expect(doc.robot?.links.map((l) => l.shape)).toEqual([{ size: [40, 40, 40], center: [0, 0, -10], rot: [0, 0, 90] }, undefined]);
+    expect(doc.robot?.links.map((l) => l.pieces)).toEqual([undefined, 6]);
     expect(doc.robot?.links.find((l) => l.node === 'b')?.mass).toEqual({ kind: 'measured', grams: 12, center: [1, 2, 3], inertia: [500, 300, 200, 40, -30, 20] });
   });
 

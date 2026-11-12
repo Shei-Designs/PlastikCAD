@@ -48,9 +48,9 @@ export type WorkerRequest =
   /** Volume, area, centroid and inertia of each node as placed in the design, for the robot's links. */
   | { type: 'massProperties'; id: number; nodes: SceneNode[] }
   /** What each node collides as where that is a mesh (a hull, the shape itself), placed in the design, for showing on the plate. */
-  | { type: 'collisionMeshes'; id: number; nodes: SceneNode[]; collisions: Record<string, CollisionKind> }
+  | { type: 'collisionMeshes'; id: number; nodes: SceneNode[]; collisions: Record<string, CollisionKind>; pieces: Record<string, number> }
   /** Each node placed, as the visual parts, collision shape and mass properties of a robot link. */
-  | { type: 'robotGeometry'; id: number; nodes: SceneNode[]; collisions: Record<string, CollisionKind>; fine: boolean };
+  | { type: 'robotGeometry'; id: number; nodes: SceneNode[]; collisions: Record<string, CollisionKind>; fine: boolean; pieces: Record<string, number> };
 
 export interface BuildResult {
   key: string;

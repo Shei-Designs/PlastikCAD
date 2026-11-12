@@ -9,7 +9,7 @@ import { FaultWatch, floorLinks, linkLooks } from '../robot/collisionCheck';
 import type { KeptFault } from '../robot/collisionCheck';
 import { buildMjcfModel } from '../robot/export';
 import type { DriveSpec } from '../robot/export';
-import { linkNodes, linkOf, robotOf } from '../robot/model';
+import { linkNodes, linkOf, piecesOf, robotOf } from '../robot/model';
 import type { World } from '../robot/types';
 import type { SimActuator } from '../sim/mujoco';
 import type { SimRequest, SimResponse } from '../sim/protocol';
@@ -141,7 +141,7 @@ class SimStore {
       const nodes = linkNodes(doc.scene);
       const worker = await geometry.prepare(nodes, doc.assets);
       const collisions = Object.fromEntries(nodes.map((n) => [n.id, linkOf(robot, n.id).collision]));
-      const geo = await worker.robotGeometry(nodes, collisions, false);
+      const geo = await worker.robotGeometry(nodes, collisions, false, piecesOf(robot));
       if (turn !== this.starts) return;
       // The collision shapes are watched against the floor as the drive runs, by the corners of each link's looks: its hull.
       const hulls = (robot.world ?? 'flat') === 'flat' ? await worker.collisionMeshes(nodes, {}) : [];

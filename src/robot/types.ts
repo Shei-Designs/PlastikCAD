@@ -72,6 +72,8 @@ export interface RobotLink {
   collision: CollisionKind;
   /** The box, cylinder or sphere it collides as, when not the one fitted to the object; heeded for those three kinds only. */
   shape?: CollisionShape;
+  /** How many convex pieces each of its parts may be split into, when more than one; heeded for a hull only. */
+  pieces?: number;
   /** Coefficient of friction of the surface, for the simulator's contact model. */
   friction: number;
 }
@@ -248,6 +250,9 @@ export const emptyRobot = (): Robot => ({ root: null, base: 'free', links: [], j
 export const DEFAULT_MASS: MassSpec = { kind: 'material', material: 'pla', infill: 20, shell: 1.2 };
 
 /** The settings of a link no one has touched. */
+/** The most convex pieces a part may be split into. */
+export const MAX_PIECES = 32;
+
 export const defaultLink = (node: string): RobotLink => ({ node, mass: DEFAULT_MASS, collision: 'hull', friction: 0.8 });
 
 export const defaultJoint = (id: string, name: string, parent: string, child: string, origin: Vec3): RobotJoint => ({
