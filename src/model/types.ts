@@ -91,6 +91,12 @@ export interface ImportNode extends NodeBase {
   asset: string;
   /** Bounding box of the asset as imported; `size / natural` is its scale. */
   natural: Vec3;
+  /**
+   * Where the file's own origin lies, from the center of the asset's box and in
+   * the asset's units: the point a modeller measured the mesh from, which for a
+   * robot's link is its joint. Absent on flat artwork and on older imports.
+   */
+  origin?: Vec3;
 }
 
 export type TextAlign = 'left' | 'center' | 'right';

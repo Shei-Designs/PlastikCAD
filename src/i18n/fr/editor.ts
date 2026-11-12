@@ -190,6 +190,8 @@ export const editor: Catalog = {
   Position: 'Position',
   'Height above the plate': 'Hauteur au-dessus du plateau',
   '{axis} of the center': '{axis} du centre',
+  Origin: 'Origine',
+  "{axis} of the file's origin": '{axis} de l’origine du fichier',
   Rotation: 'Rotation',
   'Rotation about {axis}': 'Rotation autour de {axis}',
 

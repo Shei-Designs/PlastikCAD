@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { APP_VERSION } from '../appInfo';
 import { parseDoc, serializeDoc } from '../model/file';
-import { boxBounds, unionBounds } from '../model/math';
+import { boxBounds, originOf, unionBounds } from '../model/math';
 import { jointInDesign } from '../robot/model';
 import type { Bounds } from '../model/math';
 import type { GroupNode, PartNode, SceneNode } from '../model/types';
@@ -1231,6 +1231,23 @@ describe('importing', () => {
     await store.receiveFiles([ascii([[0, 0, 0, 10, 0, 0, 0, 10, 2], [0, 0, 0, 0, 10, 2, 10, 0, 0]])]);
     expect(scene().length).toBe(1);
     expect(scene()[0]).toMatchObject({ type: 'import', size: [10, 10, 2] });
+  });
+
+  it("keeps the file's own origin, saves it, and starts a joint there", async () => {
+    // A wedge from the file's origin to 10 × 10 × 2: the origin is its low corner.
+    await store.receiveFiles([ascii([[0, 0, 0, 10, 0, 0, 0, 10, 2], [0, 0, 0, 0, 10, 2, 10, 0, 0]])]);
+    const wedge = scene()[0];
+    expect(wedge).toMatchObject({ pos: [0, 0, 1], origin: [-5, -5, -1] });
+    expect(originOf(wedge)).toEqual([-5, -5, 0]);
+    expect(parseDoc(serializeDoc(store.getState().doc)).scene[0]).toMatchObject({ origin: [-5, -5, -1] });
+    // Turned and moved, the origin goes with it, and a joint to the wedge starts on it rather than where the boxes meet.
+    store.updateNode(wedge.id, { pos: [40, 0, 1], rot: [0, 0, 90] });
+    store.addShape('box');
+    const box = scene()[1].id;
+    const joint = store.addJoint(box, wedge.id)!;
+    const made = store.getState().doc.robot!.joints.find((j) => j.id === joint)!;
+    const at = jointInDesign(made, scene()[0]).origin;
+    [45, -5, 0].forEach((v, i) => expect(at[i]).toBeCloseTo(v, 6));
   });
 
   it('brings in the files it can read when one among them cannot be, and names that one', async () => {

@@ -3,7 +3,7 @@
 import { zipSync } from 'fflate';
 import { mark, plural, tr } from '../../i18n';
 import { zipTime } from '../../io/format';
-import { eulerOf, tidyVec } from '../../model/math';
+import { eulerOf, originOf, tidyVec } from '../../model/math';
 import type { Mat } from '../../model/math';
 import { newId } from '../../model/ops';
 import type { Doc, SceneNode, Vec3 } from '../../model/types';
@@ -227,13 +227,14 @@ const jointName = (robot: Robot, base: string): string => {
  * Hangs `child` from `parent` by a new joint, and picks it. The joint starts
  * where the two meet (the middle of where their boxes overlap, or of the gap
  * between them: a wheel's hub on its axle, the end of an arm segment against
- * the last), with its axis along the child's Z.
+ * the last), or, for a child whose file had its own origin, at that origin,
+ * which is where a link's mesh is measured from. Its axis is along the child's Z.
  */
 export function addJoint(parent: string, child: string): string | null {
   const childNode = getState().doc.scene.find((n) => n.id === child);
   const parentNode = getState().doc.scene.find((n) => n.id === parent);
   if (!childNode || !parentNode || parent === child) return null;
-  const origin = jointInChild(meetingPoint(geometry.bounds(parentNode), geometry.bounds(childNode)), [0, 0, 1], childNode).origin;
+  const origin = jointInChild(originOf(childNode) ?? meetingPoint(geometry.bounds(parentNode), geometry.bounds(childNode)), [0, 0, 1], childNode).origin;
   const id = newId();
   // A mount from the parts library on either side says which motor turns the joint.
   const motor = motorForPart(parentNode) ?? motorForPart(childNode);

@@ -168,6 +168,11 @@ export function nodeMatrix(node: SceneNode): Mat {
   return m;
 }
 
+/** Where the origin of the file an imported object came from now lies, in the parent's coordinates; null for an object that keeps none. */
+export function originOf(node: SceneNode): Vec3 | null {
+  return node.type === 'import' && node.origin ? apply(nodeMatrix(node), node.origin) : null;
+}
+
 /** Transform from a node's local box (centered, `size` wide, unmirrored axes) to its parent: translation and rotation only. */
 export function frameMatrix(node: SceneNode): Mat {
   const m = rotation(node.rot);
