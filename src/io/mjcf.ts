@@ -167,7 +167,7 @@ const sig = (x: number): string => String(Number(x.toPrecision(4)));
 /** The simulation's step, s. */
 const TIMESTEP = 0.002;
 /** A position servo pushes with its full effort from this far off its target, rad. */
-const SERVO_BAND = 0.5;
+const SERVO_BAND = 0.1;
 /** The app's joint defaults in SI, for a joint exported without limits. */
 const DEFAULT_EFFORT = 10;
 const DEFAULT_VELOCITY = Math.PI / 2;
