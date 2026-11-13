@@ -50,6 +50,8 @@ export interface SimState {
   faults: KeptFault[];
   /** By the design sensor's id: a lidar's rays, mm from its origin, -1 where a ray hits nothing; a touch sensor's one number, the force it feels in newtons. */
   readings: Map<string, number[]>;
+  /** Where the robot touches the floor at this moment, mm, and the link that touches there. */
+  contacts: { at: Vec3; link: string | null }[];
 }
 
 /** What each key does to a rover. */
@@ -66,7 +68,7 @@ const DRIVE_KEYS: Record<string, string> = {
   e: 'slide-right',
 };
 
-const OFF: SimState = { status: 'off', error: null, running: false, time: 0, frames: new Map(), base: null, actuators: [], drive: null, world: 'flat', floating: false, held: false, targets: new Map(), command: { forward: 0, turn: 0, side: 0 }, readings: new Map(), faults: [] };
+const OFF: SimState = { status: 'off', error: null, running: false, time: 0, frames: new Map(), base: null, actuators: [], drive: null, world: 'flat', floating: false, held: false, targets: new Map(), command: { forward: 0, turn: 0, side: 0 }, readings: new Map(), contacts: [], faults: [] };
 
 /** The transform taking a link from where it is designed to where the simulation has its body: a turn by the quaternion about the body's frame origin, and a move. */
 export function frameOf(poses: Float64Array, at: number, origin: Vec3): Mat {
@@ -308,7 +310,12 @@ class SimStore {
           from += l.rays;
         }
         this.touches.forEach((t, i) => readings.set(t.id, [message.touches[i]]));
-        this.set({ frames, base, time: message.time, readings, faults: this.watch.see(frames, message.time) });
+        const contacts: SimState['contacts'] = [];
+        for (let i = 0; i + 3 < message.contacts.length; i += 4) {
+          const link = this.bodies.get(this.bodyOrder[message.contacts[i + 3]])?.node ?? null;
+          contacts.push({ at: [message.contacts[i] / M, message.contacts[i + 1] / M, message.contacts[i + 2] / M], link });
+        }
+        this.set({ frames, base, time: message.time, readings, contacts, faults: this.watch.see(frames, message.time) });
         break;
       }
       case 'error':

@@ -276,6 +276,15 @@ test.describe('the test drive', { tag: '@mouse' }, () => {
     await expect(hold).toHaveAttribute('aria-pressed', 'true');
     await hold.click();
     await expect(hold).toHaveAttribute('aria-pressed', 'false');
+    // The dots where it touches the floor are on until turned off, and stay as set.
+    const contacts = page.getByRole('button', { name: 'Contacts' });
+    await expect(contacts).toHaveAttribute('aria-pressed', 'true');
+    // It stands on its four lower legs, and the line says so.
+    await expect(page.locator('.inspector').getByText(/^On the floor: (Lower leg [a-z ]+(, )?){4}$/)).toBeVisible();
+    await contacts.click();
+    await expect(contacts).toHaveAttribute('aria-pressed', 'false');
+    await expect.poll(() => store(page, (m) => m.getState().prefs.robotContacts)).toBe(false);
+    await contacts.click();
     await page.getByRole('button', { name: 'Stop' }).click();
     await expect(hold).toHaveCount(0);
   });

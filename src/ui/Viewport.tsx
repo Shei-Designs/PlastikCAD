@@ -647,6 +647,7 @@ export function Viewport() {
     return [...collisionShapes.known(links, kinds)].map(([id, mesh]) => ({ id, mesh, frame: frames?.get(id) ?? null }));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `shapesRevision` is not read here: it changes when a shape arrives, which `known` then finds
   }, [links, kinds, simFrames, pose, shapesRevision]);
+  const contacts = useMemo(() => (simFrames && prefs.robotContacts ? driven.contacts.map((c) => c.at) : null), [simFrames, prefs.robotContacts, driven.contacts]);
   const ground = useMemo(() => (simFrames && driven.world !== 'flat' ? { world: driven.world, forward: driven.drive?.forward ?? ([0, 1, 0] as Vec3) } : null), [simFrames, driven.world, driven.drive]);
   // The view follows a driving robot: it moves by what the base moved since the last frame, and comes back when the drive ends.
   const followed = useRef<Vec3 | null>(null);
@@ -742,8 +743,8 @@ export function Viewport() {
   }, []);
 
   useEffect(() => {
-    viewer.current?.setOptions({ theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, units: prefs.units, snap: prefs.snap, align: aligning, highlight, snaps, marker, markers, collisions, ground, preview, measure, objectAxes, frozen: arraying });
-  }, [prefs.theme, prefs.edges, prefs.grid, prefs.units, prefs.snap, aligning, highlight, snaps, marker, markers, collisions, ground, preview, measure, objectAxes, arraying]);
+    viewer.current?.setOptions({ theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, units: prefs.units, snap: prefs.snap, align: aligning, highlight, snaps, marker, markers, collisions, contacts, ground, preview, measure, objectAxes, frozen: arraying });
+  }, [prefs.theme, prefs.edges, prefs.grid, prefs.units, prefs.snap, aligning, highlight, snaps, marker, markers, collisions, contacts, ground, preview, measure, objectAxes, arraying]);
 
   const carrying = Boolean(placing);
   useEffect(() => {
