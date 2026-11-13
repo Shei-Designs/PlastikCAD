@@ -487,7 +487,7 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
     { name: 'rviz/display.rviz', bytes: encodeText(rvizConfig(base, boundsCenter(extent).map((x, i) => x * M - baseAt[i]) as Vec3, Math.max(...boundsSize(extent)) * M)) },
     { name: `worlds/${pkg}.sdf`, bytes: encodeText(worldXml(pkg)) },
     { name: 'config/bridge.yaml', bytes: encodeText(bridgeYaml(bridgeTopics(p))) },
-    ...(control ? [{ name: 'config/controllers.yaml', bytes: encodeText(controllersYaml(p.controlled)) }] : []),
+    ...(control ? [{ name: 'config/controllers.yaml', bytes: encodeText(controllersYaml(p.controlled, p.torque.length > 0)) }] : []),
   );
   return { name: pkg, files, warnings, leftOut: p.leftOut };
 }

@@ -375,7 +375,9 @@ in the design file and synced with it.
   a plain motor with no gains in the MuJoCo model, where `drive.py` holds
   it with a spring and a damper to replace; in the ROS 2 package it offers
   an effort command beside the position, which the package's controller
-  keeps claiming until yours takes the effort; in the Isaac Sim stage its
+  keeps claiming until yours takes the effort (the controllers then run at
+  1000 Hz, every step of the simulation, where 100 Hz serves positions); in
+  the Isaac Sim stage its
   drive has no gains, and `/joint_command` carries its effort. The test
   drive holds every joint by position.
 - **Checks.** The overview lists what stops an export (no base, a link no
