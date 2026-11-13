@@ -310,10 +310,22 @@ export function clearCache(): void {
   for (const built of cache.values()) built.solid?.delete();
   cache.clear();
   touched.clear();
+  splits.clear();
 }
 
 /** Number of nodes whose geometry is being kept for reuse. */
 export const cacheSize = (): number => cache.size;
+
+/**
+ * The convex pieces of nodes that were split (see `hullsOf`), by geometry key and the number asked for: the corners
+ * of each piece in the node's built frame, so that they hold wherever it is moved, turned or resized to. Finding
+ * the cuts takes seconds for a large mesh, and a test drive asks at every start. Least recently used first.
+ */
+const splits = new Map<string, Corner[][]>();
+const MAX_SPLITS = 100;
+
+/** Number of nodes whose convex pieces are being kept for reuse. */
+export const splitsKept = (): number => splits.size;
 
 /**
  * Runs `fn` and then deletes every kernel object it handed to `keep`, except
@@ -901,9 +913,34 @@ const MAX_HULLS = 64;
  * for each of its parts, down through the groups in it, so that the space between them stays open; a part its
  * group's holes cut in two gives one for each half. With `pieces` above one, each part is split into as many
  * at most (see `splitConvex`). A piece inside another is left out. Anything else, and a group of more pieces
- * than `MAX_HULLS`, gives the hull round it; a mesh with no volume to wrap gives none.
+ * than `MAX_HULLS`, gives the hull round it; a mesh with no volume to wrap gives none. The pieces of a split
+ * node are kept (see `splits`).
  */
 function hullsOf(k: ManifoldToplevel, node: SceneNode, keep: Keep, fine: boolean, pieces: number): Manifold[] {
+  if (pieces <= 1) return wrappedOf(k, node, keep, fine, 1);
+  const key = `${fine ? 'fine:' : ''}${pieces}:${geomKey(node)}`;
+  const frame = nodeMatrix(node);
+  let own = splits.get(key);
+  if (own) {
+    splits.delete(key);
+  } else {
+    const back = invert(frame);
+    own = wrappedOf(k, node, keep, fine, pieces).map((h) => {
+      const { positions } = meshOf(h);
+      return Array.from({ length: positions.length / 3 }, (_, i): Corner => apply(back, [positions[3 * i], positions[3 * i + 1], positions[3 * i + 2]]));
+    });
+  }
+  splits.set(key, own);
+  for (const oldest of splits.keys()) {
+    if (splits.size <= MAX_SPLITS) break;
+    splits.delete(oldest);
+  }
+  // Kept or new, the pieces are made from their corners, so that a second asking gives what the first did.
+  return own.map((points) => keep(k.Manifold.hull(points.map((p) => apply(frame, p))))).filter((h) => !h.isEmpty());
+}
+
+/** The pieces of `hullsOf`, worked out now. */
+function wrappedOf(k: ManifoldToplevel, node: SceneNode, keep: Keep, fine: boolean, pieces: number): Manifold[] {
   const entry = builtOf(k, node, fine);
   const frame = nodeMatrix(node);
   if (!entry.solid) return convexHulls(k, keep, transformed(entry.open, frame), pieces, frame);

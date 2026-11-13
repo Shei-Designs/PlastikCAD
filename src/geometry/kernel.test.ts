@@ -1161,7 +1161,7 @@ describe('robot links', () => {
   });
 
   it('splits a bent part into convex pieces when asked for more than one, closed or not', async () => {
-    const { robotGeometry } = await import('./kernel');
+    const { robotGeometry, splitsKept } = await import('./kernel');
     // An L, 10 mm thick: two arms 40 long and 10 wide. One hull round it fills the corner between the arms.
     const outline = [[0, 0], [40, 0], [40, 10], [10, 10], [10, 40], [0, 40]];
     const positions = [...outline.map(([x, y]) => [x, y, 0]), ...outline.map(([x, y]) => [x, y, 10])].flat();
@@ -1181,6 +1181,17 @@ describe('robot links', () => {
       const [many] = robotGeometry([l], {}, false, { [l.id]: 16 });
       expect(volumes(many)).toEqual(volumes(two));
     }
+    // The pieces are kept for each part and number asked for, and serve it wherever it is moved, turned, resized or mirrored to.
+    expect(splitsKept()).toBe(4);
+    const far = imported('bent', [40, 40, 10], { size: [80, 40, 20], pos: [-30, 50, 10], rot: [90, 0, 45], flip: [true, false, false] });
+    const [again] = robotGeometry([far], {}, false, { [far.id]: 2 });
+    expect(splitsKept()).toBe(4);
+    expect(volumes(again)).toHaveLength(2);
+    expect(volumes(again)[0] + volumes(again)[1]).toBeLessThan(4 * 7070);
+    expect(volumes(again)[0] + volumes(again)[1]).toBeGreaterThan(4 * 6930);
+    // New data under the same name, and nothing kept from the old is used.
+    setAssets({ bent: meshAsset(positions.map((v) => 2 * v), triangles) });
+    expect(splitsKept()).toBe(0);
     // A part that is convex already stays whole.
     const box = shape('box', { size: [20, 30, 40] });
     expect(robotGeometry([box], {}, false, { [box.id]: 8 })[0].hulls).toBeUndefined();

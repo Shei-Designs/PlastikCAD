@@ -337,7 +337,9 @@ in the design file and synced with it.
   space between them stays open; above 64 pieces it is one hull round all.
   *Pieces* under a convex hull splits each part into as many convex pieces
   at most (a bent or forked mesh, closed or not, is cut across its own axes
-  where that takes the most off the hulls, and no further than is worth it).
+  where that takes the most off the hulls, and no further than is worth it;
+  the pieces are kept while the app is open, so only the first test drive or
+  export after a change of form waits for them).
   A box, cylinder or
   sphere is fitted to the object's box (the cylinder along the axis the
   object is round about, else its own Z); a link that came from a robot file
