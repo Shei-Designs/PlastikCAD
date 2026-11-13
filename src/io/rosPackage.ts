@@ -239,11 +239,15 @@ export function bridgeYaml(topics: BridgeTopic[]): string {
     .join('');
 }
 
-/** ros2_control: a joint state broadcaster and one trajectory controller over the given joints. */
-export function controllersYaml(joints: string[]): string {
+/**
+ * ros2_control: a joint state broadcaster and one trajectory controller over the given joints. With `torque`,
+ * a joint among them takes efforts from a controller of the user's: the controllers then run at every step of
+ * the simulation (the world's 1 ms), since a torque loop run at a tenth of that throws a light leg about.
+ */
+export function controllersYaml(joints: string[], torque = false): string {
   return `controller_manager:
   ros__parameters:
-    update_rate: 100
+    update_rate: ${torque ? 1000 : 100}
     use_sim_time: true
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
