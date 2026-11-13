@@ -833,8 +833,15 @@ describe('xacro and MuJoCo', () => {
   it('welds an arm to the world and gives its joints position servos', () => {
     const xml = text(buildMjcfModel(doc(), geometry()).files.find((f) => f.name === 'test_rover.xml')!.bytes);
     expect(xml).not.toContain('<freejoint');
-    // Full effort half a radian off target, damped so as not to overshoot, no more torque than the limit.
+    // Damped so as not to overshoot, no more torque than the limit.
     expect(xml).toMatch(/<position name="shoulder_servo" joint="shoulder" kp="[0-9.e-]+" kv="[0-9.e-]+" forcerange="-([0-9.e-]+) \1"\/>/);
+    // Full effort a tenth of a radian off target, as the Isaac Sim stage's drives have it, or as much as so light a part can take in a step.
+    const [, kp, force] = xml.match(/<position name="shoulder_servo" joint="shoulder" kp="([0-9.e-]+)" kv="[0-9.e-]+" forcerange="-([0-9.e-]+) /)!.map(Number);
+    expect(kp).toBeLessThanOrEqual(force / 0.1 + 1e-9);
+    const q = ROBOTS.find((r) => r.file === 'quadruped')!.make();
+    const walker = text(buildMjcfModel(q, new Map(linkNodes(q.scene).map((n) => [n.id, boxGeometry(n)]))).files.find((f) => f.name.endsWith('.xml') && !f.name.includes('/'))!.bytes);
+    const [, hip, top] = walker.match(/<position name="Hip_rear_left_servo" joint="Hip_rear_left" kp="([0-9.e-]+)" kv="[0-9.e-]+" forcerange="-([0-9.e-]+) /)!.map(Number);
+    expect(hip).toBeCloseTo(top / 0.1, 6);
     expect(xml).toMatch(/<position name="left_wheel_joint_servo" joint="left_wheel_joint" kp="[0-9.e-]+" kv="[0-9.e-]+" forcerange="-([0-9.e-]+) \1"\/>/);
   });
 });
