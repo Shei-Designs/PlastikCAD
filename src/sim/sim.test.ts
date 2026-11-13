@@ -447,6 +447,19 @@ describe('the quadruped', () => {
     sim.dispose();
   });
 
+  it('has its training starter reward speed the way it is set to face', () => {
+    const env = (doc: Doc): string => {
+      const nodes = linkNodes(doc.scene);
+      const geo = robotGeometry(nodes, Object.fromEntries(nodes.map((n) => [n.id, linkOf(doc.robot!, n.id).collision])), false);
+      const pkg = buildMjcfModel(doc, new Map(geo.map((g) => [g.id, { ...g, visual: [] }])), doc.robot!, 'flat');
+      return new TextDecoder().decode(pkg.files.find((f) => f.name === 'env.py')!.bytes);
+    };
+    const doc = make('quadruped');
+    // With no wheels to say, it faces +Y until set to face another way.
+    expect(env(doc)).toContain('self.forward = np.array([0,1,0], dtype=float)');
+    expect(env({ ...doc, robot: { ...doc.robot!, faces: [1, 0, 0] } })).toContain('self.forward = np.array([1,0,0], dtype=float)');
+  });
+
   it('feels the floor under every foot, and nothing under a sensor the model lacks', () => {
     const { sim } = simulate(make('quadruped'));
     sim.step(2);

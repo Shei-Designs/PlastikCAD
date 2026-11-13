@@ -226,7 +226,7 @@ if __name__ == "__main__":
 }
 
 /** A Gymnasium environment over the model, with the spaces wired and a reward to replace. */
-export function envPy(model: string): string {
+export function envPy(model: string, forward: [number, number, number] = [0, 1, 0]): string {
   return `"""A Gymnasium environment over the robot, for reinforcement learning. Made with ${APP_NAME}.
 
     pip install gymnasium mujoco
@@ -237,8 +237,8 @@ orientation, turn rate and velocity (the model's sensors, in order), then the
 touch sensors and each lidar's rays (a distance, or -1 where nothing is hit).
 Actions: one per actuator in -1..1, scaled to a servo's joint range, a
 velocity motor's speed or a torque motor's torque. The reward is a stub to replace: speed along
-the robot's own forward (the way its wheels face, from drive.json; +Y of the
-base when it has none) less a little for effort.
+the robot's own forward (the way its wheels face, from drive.json; the way it
+was set to face in the app when it has none) less a little for effort.
 """
 import json
 import os
@@ -263,8 +263,8 @@ class RobotEnv(gym.Env):
         self.max_steps = max_steps
         self.home = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_KEY, "home")
         self.base = 1
-        # The way the robot faces in its base frame: from drive.json when it has wheels, +Y otherwise.
-        self.forward = np.array([0.0, 1.0, 0.0])
+        # The way the robot faces in its base frame: from drive.json when it has wheels, as set in the app otherwise.
+        self.forward = np.array(${JSON.stringify(forward.map((v) => v || 0))}, dtype=float)
         if os.path.exists(DRIVE):
             with open(DRIVE) as f:
                 self.forward = np.array(json.load(f).get("forward", self.forward), dtype=float)

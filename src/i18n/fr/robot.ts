@@ -64,6 +64,8 @@ export const robot: Catalog = {
   'How the robot moves on its wheels; the exports write the matching plugin and motors.': 'Manière dont le robot roule\u00a0; les exportations écrivent le plugin et les moteurs correspondants.',
   'The wheel labels set which way is forward: this robot faces {direction}.': 'Les rôles des roues définissent l’avant\u00a0: ce robot est tourné vers {direction}.',
   'The wheel labels set which way is forward.': 'Les rôles des roues définissent l’avant.',
+  Forward: 'Avant',
+  'Sets which way is forward for a robot with no wheels.': 'Définit l’avant d’un robot sans roues.',
   'Drive kind': 'Type d’entraînement',
   'None [[drive]]': 'Aucun',
   'Add a turning joint for each wheel first.': 'Ajoutez d’abord une articulation tournante pour chaque roue.',

@@ -168,6 +168,9 @@ export function setDriveRole(joint: string, role: DriveRole | null): void {
 
 export const setControl = (control: boolean): void => editRobot((r) => ({ ...r, control }));
 export const setWorld = (world: World): void => editRobot((r) => ({ ...r, world }));
+/** Which way a robot with no drive faces: along ±X or ±Y of the design. */
+export const setFaces = (faces: Vec3): void => editRobot((r) => ({ ...r, faces }));
+
 export const setScripts = (scripts: boolean): void => editRobot((r) => ({ ...r, scripts }));
 
 /**

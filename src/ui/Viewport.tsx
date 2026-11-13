@@ -648,7 +648,7 @@ export function Viewport() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `shapesRevision` is not read here: it changes when a shape arrives, which `known` then finds
   }, [links, kinds, simFrames, pose, shapesRevision]);
   const contacts = useMemo(() => (simFrames && prefs.robotContacts ? driven.contacts.map((c) => c.at) : null), [simFrames, prefs.robotContacts, driven.contacts]);
-  const ground = useMemo(() => (simFrames && driven.world !== 'flat' ? { world: driven.world, forward: driven.drive?.forward ?? ([0, 1, 0] as Vec3) } : null), [simFrames, driven.world, driven.drive]);
+  const ground = useMemo(() => (simFrames && driven.world !== 'flat' ? { world: driven.world, forward: driven.forward } : null), [simFrames, driven.world, driven.forward]);
   // The view follows a driving robot: it moves by what the base moved since the last frame, and comes back when the drive ends.
   const followed = useRef<Vec3 | null>(null);
   useEffect(() => {

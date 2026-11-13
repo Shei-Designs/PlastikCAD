@@ -761,7 +761,7 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
   files.unshift({ name: `${pkg}.xml`, bytes: encodeText(writeMjcf(model)) }, { name: 'README.md', bytes: encodeText(mjcfReadme(pkg, doc.name, collisions, robot.scripts !== false, p.sensors.some((s) => s.kind === 'lidar'))) });
   if (robot.scripts !== false) {
     const kind = p.drive ? 'rover' : robot.base === 'fixed' ? 'arm' : 'walker';
-    files.push({ name: 'drive.py', bytes: encodeText(drivePy(`${pkg}.xml`, kind)) }, { name: 'env.py', bytes: encodeText(envPy(`${pkg}.xml`)) }, { name: 'train.py', bytes: encodeText(trainPy()) });
+    files.push({ name: 'drive.py', bytes: encodeText(drivePy(`${pkg}.xml`, kind)) }, { name: 'env.py', bytes: encodeText(envPy(`${pkg}.xml`, model.forward)) }, { name: 'train.py', bytes: encodeText(trainPy()) });
   }
   // What drives what, for a script: the actuator of each part, and the geometry a velocity command needs.
   let drive: DriveSpec | null = null;

@@ -414,7 +414,9 @@ in the design file and synced with it.
   follows it, so a tilt, a range or a foot that misses the floor can be
   judged on the move. *Floor* picks what it drives on: flat,
   gentle bumps, an eight-degree slope, three low steps or a ramp ahead of
-  the robot. That floor is only for the test drive. PlastikCAD builds
+  the robot. Ahead is the way the wheel labels say a rover faces; a robot
+  with no drive faces +Y until *Forward*, under *Drive*, says another way,
+  which the training starter's reward follows too. That floor is only for the test drive. PlastikCAD builds
   robots, not worlds: every export stands the robot on a flat floor, and the
   world it goes into is made in the simulator. Whatever stops the export
   stops the test drive too; the design is not touched.
