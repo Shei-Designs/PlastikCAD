@@ -71,15 +71,20 @@ function touchesNear(points: Float32Array, frame: Mat | null, at: [number, numbe
  * The links that stand on a collision shape clear of the floor, or sink into it, with the floor at z = 0 and
  * each link where `frames` has it. `looks` are the corners of every link of the robot: a shape that reaches
  * the floor where another link's looks do (a ball under a foot, at the tip the calf's mesh draws) holds nothing off it.
+ * A depth is measured from where the deepest collision shape rests, not from the floor itself (see `give`).
  */
 export function floorFaults(links: FloorLink[], frames: Map<string, Mat>, tolerance = FLOOR_TOLERANCE, looks: { id: string; points: Float32Array }[] = []): FloorFault[] {
   const out: FloorFault[] = [];
+  // How far the floor gives under the robot: a simulator's contact is soft, and lets the shape that carries a
+  // heavy robot some millimeters in. A link is in the floor only by what it is deeper than that.
+  let give = 0;
+  for (const link of links) if (link.shape) give = Math.max(give, -lowestOfPrimitive(link.shape, frames.get(link.id) ?? null));
   for (const link of links) {
     const frame = frames.get(link.id) ?? null;
     const low = lowestPoint(link.points, frame);
     if (!Number.isFinite(low)) continue;
-    if (low < -tolerance) {
-      out.push({ id: link.id, kind: 'sinks', by: -low });
+    if (low < -tolerance - give) {
+      out.push({ id: link.id, kind: 'sinks', by: -low - give });
       continue;
     }
     // On the floor, give or take: the shape is what the link stands on.
