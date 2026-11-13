@@ -226,8 +226,9 @@ export const robot: Catalog = {
   Motion: 'Mouvement',
   Motor: 'Moteur',
   'Custom [[motor]]': 'Personnalisé',
-  "Sets the effort, speed and damping to the motor's figures; typing any of them makes it custom again.":
-    'Définit l’effort, la vitesse et l’amortissement d’après les valeurs du moteur\u00a0; saisir l’un d’eux le rend de nouveau personnalisé.',
+  'Sets the effort, speed and damping to the figures of a motor or of another joint; typing any of them makes it custom again.':
+    'Définit l’effort, la vitesse et l’amortissement d’après les valeurs d’un moteur ou d’une autre articulation\u00a0; saisir l’un d’eux le rend de nouveau personnalisé.',
+  'As {name}': 'Comme {name}',
   'Lower limit': 'Limite basse',
   'Upper limit': 'Limite haute',
   Effort: 'Effort',

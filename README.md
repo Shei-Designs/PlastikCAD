@@ -285,7 +285,8 @@ in the design file and synced with it.
   prismatic, fixed), its origin and axis in the design's coordinates, its
   limits, effort, velocity, damping and friction, or pick its *Motor* (hobby
   servos, Dynamixel and Feetech smart servos, N20 to 37 mm gearmotors, 28BYJ-48
-  and NEMA steppers) and those figures come from its datasheet; and whether it
+  and NEMA steppers) and those figures come from its datasheet, or pick
+  another joint there to take the effort, velocity and damping typed for it; and whether it
   follows another joint (URDF `mimic`). A joint stays with its child: move the
   child and the joint comes along.
 - **Copies.** Duplicate and Paste copy a link with its mass, collision and
