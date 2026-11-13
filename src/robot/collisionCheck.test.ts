@@ -66,6 +66,12 @@ describe('a collision shape against the floor', () => {
     expect(floorFaults([snug], new Map())).toEqual([]);
     expect(floorFaults([snug], new Map([['s', moved(-1.5)]]))).toEqual([]);
     expect(floorFaults([snug], new Map([['s', moved(300)]]))).toEqual([]);
+    // A heavy robot presses its feet some millimeters into a soft floor: a foot that fits is not in it, and a
+    // link beside it that is deeper still is in it by the difference.
+    expect(floorFaults([snug], new Map([['s', moved(-3.5)]]))).toEqual([]);
+    const bare: FloorLink = { id: 'c', points: corners([20, 20, 20], [60, 0, 10]), shape: null };
+    const pressed = new Map([['s', moved(-3.5)], ['c', moved(-9.5)]]);
+    expect(floorFaults([snug, bare], pressed)).toEqual([{ id: 'c', kind: 'sinks', by: 6 }]);
   });
 });
 
