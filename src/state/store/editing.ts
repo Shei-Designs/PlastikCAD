@@ -256,8 +256,7 @@ export function mirrorSelected(axis: 0 | 1 | 2): void {
   const nodes = selectedNodes().filter((n) => !n.locked);
   const bounds = selectionBounds(nodes);
   if (!bounds) return;
-  const ids = new Set(nodes.map((n) => n.id));
-  replaceNodes(mirrorNodes(nodes, axis, boundsCenter(bounds)), undefined, (robot) => withMirrored(robot, ids, axis));
+  replaceNodes(mirrorNodes(nodes, axis, boundsCenter(bounds)), undefined, (robot) => withMirrored(robot, nodes, axis));
 }
 
 /** Turn the selection by `degrees` about a fixed axis through its center (a single object turns about its own). */

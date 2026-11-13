@@ -292,8 +292,10 @@ in the design file and synced with it.
   friction settings, its sensors, and the joint it hangs by: from the copy
   of its parent when that was copied too, else from the same parent, so the
   copy of a leg is on the body the leg is on. Mirror keeps a link's joint
-  and sensors on the same spots of it, the joint's axis turned so that the
-  same angle gives the mirror image of the motion. Wheel roles are not
+  and sensors on the same spots of it, and the joint moves as the mirror
+  image of what it did. Its axis keeps pointing the way it did, as the two
+  sides of a robot have theirs: a hip about +X is about +X on the other
+  side, with its limits and start the other way round. Wheel roles are not
   copied.
 - **Start.** A joint's *Start* is where it stands when a simulation begins,
   measured like its limits from the pose the robot is designed in: type it,
