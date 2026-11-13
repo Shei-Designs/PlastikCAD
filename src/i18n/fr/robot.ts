@@ -128,6 +128,8 @@ export const robot: Catalog = {
   'Collision diameter': 'Diamètre de collision',
   'Collision length': 'Longueur de collision',
   'Collision center {axis}': 'Centre de collision {axis}',
+  Along: 'Selon',
+  "Lays the cylinder along one of the object's own axes.": 'Couche le cylindre selon l’un des axes propres de l’objet.',
   'Sets how large the collision shape is ({unit}).': 'Définit la taille de la forme de collision ({unit}).',
   "Sets where the collision shape's center is, from the object's origin along its own axes ({unit}).": 'Définit le centre de la forme de collision, depuis l’origine de l’objet et selon ses propres axes ({unit}).',
   "Fits the shape to the object's box again": 'Ajuste de nouveau la forme à la boîte de l’objet',

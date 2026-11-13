@@ -70,6 +70,31 @@ export function shapeOf(node: SceneNode, link: Collides): CollisionShape {
   return shapeInOwn(node, fitted.shape, frame);
 }
 
+/** How a cylinder is turned to lie along each of the object's own axes, degrees. */
+const LAID: Vec3[] = [
+  [0, 90, 0],
+  [90, 0, 0],
+  [0, 0, 0],
+];
+
+/** Which of the object's own axes a cylinder lies along: 0, 1 or 2, or -1 when it is turned some other way. */
+export function cylinderAlong(shape: CollisionShape): number {
+  const m = rotation(shape.rot);
+  return [0, 1, 2].findIndex((k) => Math.abs(Math.abs(m[6 + k]) - 1) < 1e-6);
+}
+
+/**
+ * The cylinder a link collides as, laid along one of the object's own axes. One that was typed keeps its
+ * diameter, length and center; one still fitted to the object is fitted again that way: as long as the object's
+ * box along the axis, as wide as the box across it.
+ */
+export function cylinderLaid(node: SceneNode, link: Collides, axis: 0 | 1 | 2): CollisionShape {
+  if (link.shape) return { ...link.shape, rot: LAID[axis] };
+  const box = shapeOf(node, { ...link, collision: 'box' });
+  const across = Math.max(...box.size.filter((_, k) => k !== axis));
+  return { size: tidyVec([across, across, box.size[axis]]), center: box.center, rot: LAID[axis] };
+}
+
 /** A placed primitive as triangles in the design, for drawing. */
 export function primitiveMesh(p: PlacedPrimitive): MeshData {
   const mesh = tessellate(p.shape);
