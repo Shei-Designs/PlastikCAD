@@ -144,7 +144,13 @@ for xml in xmls:
             offset = depth.shape[0] / 2 / np.tan(np.radians(m.cam_fovy[c]) / 2) * np.tan(pitch)
             expected = depth.shape[0] / 2 + (offset if flipped else -offset)
             notes.append(f"camera {cam}: {colours} colours, depth {bottom:.2f} m at the bottom, {top:.2f} m at the top, horizon at row {horizon} (expected {expected:.0f} for a {np.degrees(pitch):.0f} deg tilt{', upside down' if flipped else ''})")
-            ok &= colours >= 2 and horizon is not None and abs(horizon - expected) <= 2 and bool(sky[0]) != bool(flipped) and (top < bottom if flipped else bottom < top)
+            # The floor is a square, not endless: a camera near the ground sees its far edge some rows short of the true horizon.
+            edge = 0.0
+            if floor >= 0 and m.geom_size[floor][0] > 0:
+                reach = max(m.geom_size[floor][0] - float(np.abs(d.cam_xpos[c][:2]).max()), 1e-6)
+                edge = np.degrees(np.arctan(max(float(d.cam_xpos[c][2]), 0.0) / reach)) / (m.cam_fovy[c] / depth.shape[0])
+            short = (expected - horizon) if flipped else (horizon - expected)
+            ok &= colours >= 2 and horizon is not None and -2 <= short <= 2 + edge and bool(sky[0]) != bool(flipped) and (top < bottom if flipped else bottom < top)
         if renderer:
             renderer.close()
     warned = [mujoco.mjtWarning(i).name for i, w in enumerate(d.warning) if w.number]

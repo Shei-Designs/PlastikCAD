@@ -54,7 +54,9 @@ def read_stage(path):
     torques = {}
     for m in re.finditer(r'def Physics(Revolute|Prismatic)Joint "([^"]+)"', text):
         after = text[m.end():]
-        block = after[:after.find('\ndef Physics')] if '\ndef Physics' in after else after[:8000]
+        # Up to the next joint, however deep it is indented: a joint with no start must not be read as having its neighbor's.
+        nxt = re.search(r'\n\s*def Physics', after)
+        block = after[:nxt.start()] if nxt else after[:8000]
         at = re.search(r'float state:(?:angular|linear):physics:position = ([-0-9.e]+)', block)
         if at:
             starts[m.group(2)] = math.radians(float(at.group(1))) if m.group(1) == 'Revolute' else float(at.group(1))
@@ -219,6 +221,8 @@ def one(path, pictures):
         run(1.0, lambda i: drive(0.0, 0.0))
         settled = np.asarray(art.get_world_poses()[0][0]).copy()
         first_scans = {k: list(v) for k, v in got['scan'].items()}
+        # The IMUs are judged standing still as well: a walker told to move one joint leans.
+        still_imu = {k: v[-1] for k, v in got['imu'].items() if v}
         # Then driven, then left to stop, so the last odometry and the pose are of the same moment.
         run(SECONDS, lambda i: drive(SPEED, 0.5))
         run(0.5, lambda i: drive(0.0, 0.5))
@@ -285,9 +289,14 @@ def one(path, pictures):
             if not msgs:
                 result['problems'].append(f'no imu from {imu}')
                 continue
-            a = msgs[-1].linear_acceleration
+            # Once it has come to rest, for a robot that fell; standing still, for one that stands.
+            a = (msgs[-1] if info['torques'] else still_imu.get(imu, msgs[-1])).linear_acceleration
             result[f'{imu}_g'] = [round(a.x, 2), round(a.y, 2), round(a.z, 2)]
-            if abs(a.z - 9.81) > 1.0 or abs(a.x) > 1.0 or abs(a.y) > 1.0:
+            # A robot whose joints wait for efforts lies where it fell: its IMU still reads gravity, whichever way up.
+            if info['torques']:
+                if abs(math.sqrt(a.x**2 + a.y**2 + a.z**2) - 9.81) > 1.0:
+                    result['problems'].append(f'{imu} reads ({a.x:.2f}, {a.y:.2f}, {a.z:.2f}), not gravity')
+            elif abs(a.z - 9.81) > 1.0 or abs(a.x) > 1.0 or abs(a.y) > 1.0:
                 result['problems'].append(f'{imu} reads ({a.x:.2f}, {a.y:.2f}, {a.z:.2f}), not gravity up')
         for cam, msgs in got['image'].items():
             if not msgs:
