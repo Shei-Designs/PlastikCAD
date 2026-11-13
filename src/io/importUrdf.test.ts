@@ -166,6 +166,34 @@ describe('parseUrdf', () => {
     expect(robot.control).toBe(false);
   });
 
+  it('brings back what the controllers send each joint and where it begins', () => {
+    const doc = ROBOTS.find((r) => r.file === 'arm')!.make();
+    const moving = doc.robot!.joints.filter((j) => j.type !== 'fixed' && !j.mimic);
+    moving[0].command = 'torque';
+    moving[1].start = 25;
+    const nodes = linkNodes(doc.scene);
+    const geo = robotGeometry(nodes, Object.fromEntries(nodes.map((n) => [n.id, linkOf(doc.robot!, n.id).collision])), true);
+    const pkg = buildRobotPackage(doc, new Map(geo.map((g) => [g.id, g])), doc.robot!);
+    const urdf = pkg.files.find((f) => f.name.endsWith('.urdf'))!;
+    const { robot } = parseUrdf(urdf.bytes, pkg.files.filter((f) => f !== urdf).map((f) => ({ name: f.name, bytes: f.bytes })));
+    const back = (name: string) => robot.joints.find((j) => j.name === name)!;
+    expect(robot.control).toBe(true);
+    expect(back(moving[0].name).command).toBe('torque');
+    expect(back(moving[0].name).start).toBeUndefined();
+    expect(back(moving[1].name).command).toBeUndefined();
+    expect(back(moving[1].name).start).toBeCloseTo(25, 3);
+    for (const j of moving.slice(2)) expect(back(j.name).command).toBeUndefined();
+  });
+
+  it('takes a joint with only an effort interface as commanded by torque', () => {
+    const urdf = `<robot name="r"><link name="a"><visual><geometry><box size="0.1 0.1 0.1"/></geometry></visual></link><link name="b"><visual><geometry><box size="0.1 0.1 0.1"/></geometry></visual></link>
+      <joint name="knee" type="revolute"><parent link="a"/><child link="b"/><axis xyz="0 1 0"/><limit lower="-1" upper="1" effort="5" velocity="2"/></joint>
+      <ros2_control name="s" type="system"><joint name="knee"><command_interface name="effort"/><state_interface name="position"><param name="initial_value">-0.5</param></state_interface></joint></ros2_control></robot>`;
+    const { robot } = parseUrdf(encodeText(urdf), []);
+    expect(robot.joints[0].command).toBe('torque');
+    expect(robot.joints[0].start).toBeCloseTo(-28.6479, 3);
+  });
+
   it('reads a link drawn with a Collada mesh, in the units the file declares', () => {
     const dae = `<?xml version="1.0"?><COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
       <asset><unit meter="1"/><up_axis>Z_UP</up_axis></asset>

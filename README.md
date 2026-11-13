@@ -477,7 +477,8 @@ in the design file and synced with it.
   it (several, or a mesh, become its convex hull);
   the joints, their `mimic` lines, and the sensors, friction and drive in
   the `<gazebo>` blocks come along, and `ros2_control` switches the
-  controllers on. Links without a shape (`base_footprint`, `world`, frames)
+  controllers on, sets **Command** to Torque for a joint with an effort
+  command interface, and gives each joint its **Start**. Links without a shape (`base_footprint`, `world`, frames)
   fold into the link they are fixed to; floating and planar joints are made
   fixed; a link two joints reach keeps the first; a xacro file must be run
   through `xacro` first. Whatever was dropped or stood in for is said in the
