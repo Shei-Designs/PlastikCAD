@@ -39,6 +39,8 @@ export interface ViewerOptions {
    * `frame` (from where the link was designed to where the test drive has it) when there is one. Null to draw none.
    */
   collisions: { id: string; mesh: MeshData; frame: Mat | null }[] | null;
+  /** Where the test drive's robot touches the floor, a dot drawn at each, mm. Null to draw none. */
+  contacts: Vec3[] | null;
   /** The floor of a test drive when it is not the plate itself, with which way the robot faces for a course of steps or a ramp. */
   ground: { world: Exclude<World, 'flat'>; forward: Vec3 } | null;
   /**

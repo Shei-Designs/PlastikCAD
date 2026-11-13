@@ -218,6 +218,21 @@ export class Simulation {
     });
   }
 
+  /** Where the robot touches the floor or anything else that stands still: for each point of contact its xyz, meters, then which body touches there, as `bodies` counts them. */
+  floorContacts(): Float32Array {
+    const body = this.model.geom_bodyid as Int32Array;
+    const out: number[] = [];
+    const contacts = this.data.contact;
+    for (let i = 0; i < this.data.ncon; i++) {
+      const c = contacts.get(i);
+      if (!c) continue;
+      // The world is body 0: a contact of the robot with itself has it on neither side.
+      if (!c.exclude && (body[c.geom1] === 0) !== (body[c.geom2] === 0)) out.push(...(c.pos as Float64Array), body[c.geom1] || body[c.geom2]);
+      c.delete();
+    }
+    return Float32Array.from(out);
+  }
+
   /** A sensor's reading as it stands; empty for a sensor the model lacks. */
   sensorValue(sensor: string): number[] {
     const s = this.sensors.get(sensor);
