@@ -137,6 +137,23 @@ export function jointStateXml(topic = 'joint_states'): string {
   return `<plugin filename="gz-sim-joint-state-publisher-system" name="gz::sim::systems::JointStatePublisher">\n  <topic>${topic}</topic>\n</plugin>`;
 }
 
+/**
+ * Gazebo's own position controller on one joint, for a model that no ROS controller holds: it takes a position
+ * on `/model/<model>/joint/<joint>/0/cmd_pos` and begins by going to `start` (radians or meters). It commands the
+ * joint's speed, up to `velocity`, which the physics follows within the joint's effort limit: no gains to tune,
+ * and none that a light link could be shaken by.
+ */
+export function positionXml(joint: string, velocity: number, start = 0): string {
+  return [
+    '<plugin filename="gz-sim-joint-position-controller-system" name="gz::sim::systems::JointPositionController">',
+    `  <joint_name>${escapeXml(joint)}</joint_name>`,
+    '  <use_velocity_commands>true</use_velocity_commands>',
+    `  <cmd_max>${fmt(velocity, 6)}</cmd_max>`,
+    `  <initial_position>${fmt(start, 6)}</initial_position>`,
+    '</plugin>',
+  ].join('\n');
+}
+
 /** Friction of a collision surface, as Gazebo's ODE parameters. */
 export function surfaceXml(friction: number): string {
   return `<surface><friction><ode><mu>${fmt(friction, 4)}</mu><mu2>${fmt(friction, 4)}</mu2></ode></friction></surface>`;

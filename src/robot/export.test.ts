@@ -394,10 +394,26 @@ describe('the pose a simulation begins in', () => {
     expect(plain).toContain('float drive:angular:physics:targetPosition = 0');
   });
 
-  it('is said to be missing from the formats that cannot carry it yet', () => {
-    const said = "This format does not carry the joints' starts yet: the robot begins in the pose it is designed in.";
-    expect(buildSdfModel(walker(90), geo(walker(90))).warnings).toEqual([said]);
-    expect(buildSdfModel(walker(), geo(walker())).warnings).toEqual([]);
+  it('is where Gazebo\'s own controller sends each joint of the Gazebo model that it holds', () => {
+    const sdf = (d: Doc) => {
+      const built = buildSdfModel(d, geo(d));
+      return { warnings: built.warnings, xml: text(built.files.find((f) => f.name === 'model.sdf')!.bytes), readme: text(built.files.find((f) => f.name === 'README.md')!.bytes) };
+    };
+    const started = sdf(walker(90));
+    expect(started.warnings).toEqual([]);
+    expect(started.xml).toMatch(/<plugin filename="gz-sim-joint-position-controller-system" name="gz::sim::systems::JointPositionController">\s*<joint_name>hip<\/joint_name>\s*<use_velocity_commands>true<\/use_velocity_commands>\s*<cmd_max>[0-9.]+<\/cmd_max>\s*<initial_position>1\.570796<\/initial_position>/);
+    expect(started.readme).toMatch(/gz topic -t \/model\/\w+\/joint\/hip\/0\/cmd_pos -m gz\.msgs\.Double/);
+    // A robot that starts as designed is held where it is.
+    expect(sdf(walker()).xml).toContain('<initial_position>0</initial_position>');
+    // A joint commanded by torque is held by nothing here, and so begins as designed: the export says so.
+    const torque = walker(90);
+    torque.robot!.joints[0].command = 'torque';
+    expect(sdf(torque).xml).not.toContain('JointPositionController');
+    expect(sdf(torque).warnings).toEqual(['No controller holds "hip", so it begins as designed, not at its start.']);
+    // Nor is anything held when the robot's controllers are turned off.
+    const bare = walker(90);
+    bare.robot!.control = false;
+    expect(sdf(bare).xml).not.toContain('JointPositionController');
   });
 
   it('must be inside every joint\'s limits', () => {
@@ -864,7 +880,8 @@ function siblingClashes(xml: string): string[] {
     const seen = new Set<string>();
     for (const c of e.children) {
       const name = c.attrs.name;
-      if (name === undefined) continue;
+      // A plugin's name is the class it loads, which one model may load once per joint.
+      if (name === undefined || c.name === 'plugin') continue;
       if (seen.has(name)) out.push(`${e.name} > ${name}`);
       seen.add(name);
     }
