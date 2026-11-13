@@ -217,9 +217,9 @@ export function driveForward(kind: DriveKind, at: Partial<Record<DriveRole, Vec3
   return Math.abs(ahead[0]) > Math.abs(ahead[1]) ? [ahead[0] > 0 ? 1 : -1, 0, 0] : [0, ahead[1] > 0 ? 1 : -1, 0];
 }
 
-/** `driveForward` for a robot as designed, its wheel joints placed in the design. */
+/** The way the robot faces as designed: `driveForward` by its wheel joints placed in the design, or what it is set to face when it has no drive. */
 export function robotForward(robot: Robot, nodeById: Map<string, SceneNode>): Vec3 {
-  if (!robot.drive) return [0, 1, 0];
+  if (!robot.drive) return robot.faces ?? [0, 1, 0];
   const at: Partial<Record<DriveRole, Vec3[]>> = {};
   for (const j of robot.joints) {
     const role = robot.drive.roles[j.id];

@@ -216,6 +216,8 @@ export interface Robot {
   joints: RobotJoint[];
   sensors: RobotSensor[];
   drive?: Drive;
+  /** The way a robot with no drive faces, a unit vector along ±X or ±Y of the design; +Y when left out. A drive's wheel labels say it instead. */
+  faces?: Vec3;
   /** Write ros2_control for every actuated joint not driven as a wheel, with a trajectory controller over them. */
   control: boolean;
   /** The floor the MuJoCo model stands on; flat when left out. Gazebo's world stays flat. */

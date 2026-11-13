@@ -168,6 +168,7 @@ export function canonicalRobot(robot: Robot): Record<string, unknown> {
         }))
       : undefined,
     drive: robot.drive ? { kind: robot.drive.kind, roles: Object.fromEntries(Object.entries(robot.drive.roles).sort(([a], [b]) => a.localeCompare(b))) } : undefined,
+    faces: robot.faces && !(robot.faces[0] === 0 && robot.faces[1] === 1) ? robot.faces : undefined,
     control: robot.control ? undefined : false,
     world: robot.world && robot.world !== 'flat' ? robot.world : undefined,
     scripts: robot.scripts === false ? false : undefined,
@@ -237,7 +238,7 @@ const TEXTURE_FIELDS = new Set(['asset', 'mode', 'scale', 'turn']);
 const CURVE_FIELDS = new Set(['kind', 'angle', 'flip', 'thickness']);
 /** The fields this build writes for a robot and what is in it (see `canonicalRobot`; a test holds the two together). */
 export const ROBOT_FIELDS = {
-  robot: new Set(['root', 'base', 'links', 'joints', 'sensors', 'drive', 'control', 'world', 'scripts']),
+  robot: new Set(['root', 'base', 'links', 'joints', 'sensors', 'drive', 'faces', 'control', 'world', 'scripts']),
   link: new Set(['node', 'name', 'mass', 'collision', 'shape', 'pieces', 'friction']),
   shape: new Set(['size', 'center', 'rot']),
   mass: new Set(['kind', 'grams', 'center', 'inertia', 'material', 'infill', 'shell']),
@@ -249,6 +250,14 @@ export const ROBOT_FIELDS = {
   // `left` and `right` are how files once held the two sides of a differential drive.
   drive: new Set(['kind', 'roles', 'left', 'right']),
 } as const;
+/** The ways a robot with no drive may face. */
+const FACINGS: Vec3[] = [
+  [1, 0, 0],
+  [-1, 0, 0],
+  [0, 1, 0],
+  [0, -1, 0],
+];
+
 /** The fields of a design file itself (`versions` is what files of the first version of the format carried). */
 const FILE_FIELDS = new Set(['format', 'version', 'units', 'id', 'name', 'revision', 'parent', 'device', 'saved', 'thumb', 'scene', 'assets', 'robot', 'versions']);
 
@@ -581,6 +590,9 @@ function readRobot(raw: unknown, scene: Scene): Robot | undefined {
   // A follower whose leader is gone follows nothing.
   for (const j of joints) if (j.mimic && !seenJoints.has(j.mimic.joint)) delete j.mimic;
   const drive = readDrive(raw.drive, seenJoints);
+  // Along ±X or ±Y of the design, and nothing else.
+  const told: unknown[] = Array.isArray(raw.faces) ? raw.faces : [];
+  const faces = FACINGS.find((f) => told.length === 3 && f.every((v, i) => v === told[i]));
   const world = oneOf<NonNullable<Robot['world']>>(raw.world, (w) => WORLDS.some((known) => known.id === w));
   return {
     root: typeof raw.root === 'string' && ids.has(raw.root) ? raw.root : null,
@@ -590,6 +602,7 @@ function readRobot(raw: unknown, scene: Scene): Robot | undefined {
     joints,
     sensors: readSensors(raw.sensors, ids),
     ...(drive ? { drive } : {}),
+    ...(faces && faces[1] !== 1 ? { faces: [...faces] as Vec3 } : {}),
     control: raw.control !== false,
     ...(world && world !== 'flat' ? { world } : {}),
     ...(raw.scripts === false ? { scripts: false } : {}),

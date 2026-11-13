@@ -9,7 +9,7 @@ import { FaultWatch, floorLinks, linkLooks } from '../robot/collisionCheck';
 import type { KeptFault } from '../robot/collisionCheck';
 import { buildMjcfModel } from '../robot/export';
 import type { DriveSpec } from '../robot/export';
-import { linkNodes, linkOf, piecesOf, robotOf } from '../robot/model';
+import { linkNodes, linkOf, piecesOf, robotForward, robotOf } from '../robot/model';
 import type { World } from '../robot/types';
 import type { SimActuator } from '../sim/mujoco';
 import type { SimRequest, SimResponse } from '../sim/protocol';
@@ -34,6 +34,8 @@ export interface SimState {
   /** The controls the model offers: servos by the design joint they move, motors by theirs. */
   actuators: (SimActuator & { jointId: string | null })[];
   drive: DriveSpec | null;
+  /** The way the robot faces, along ±X or ±Y of the design: a course of steps or a ramp lies ahead of it. */
+  forward: Vec3;
   world: World;
   /** The base is free to move, and so can be held in the air. */
   floating: boolean;
@@ -66,7 +68,7 @@ const DRIVE_KEYS: Record<string, string> = {
   e: 'slide-right',
 };
 
-const OFF: SimState = { status: 'off', error: null, running: false, time: 0, frames: new Map(), base: null, actuators: [], drive: null, world: 'flat', floating: false, held: false, targets: new Map(), command: { forward: 0, turn: 0, side: 0 }, readings: new Map(), faults: [] };
+const OFF: SimState = { status: 'off', error: null, running: false, time: 0, frames: new Map(), base: null, actuators: [], drive: null, forward: [0, 1, 0], world: 'flat', floating: false, held: false, targets: new Map(), command: { forward: 0, turn: 0, side: 0 }, readings: new Map(), faults: [] };
 
 /** The transform taking a link from where it is designed to where the simulation has its body: a turn by the quaternion about the body's frame origin, and a move. */
 export function frameOf(poses: Float64Array, at: number, origin: Vec3): Mat {
@@ -155,7 +157,7 @@ class SimStore {
       this.jointIds = new Map(pkg.joints.map((j) => [j.name, j.id]));
       this.lidars = pkg.lidars;
       this.touches = pkg.touches;
-      this.set({ drive: pkg.drive });
+      this.set({ drive: pkg.drive, forward: robotForward(robot, new Map(nodes.map((n) => [n.id, n]))) });
       this.send({ type: 'load', id: turn, xml, files, drive: pkg.drive, lidars: pkg.lidars.map(({ name, rays }) => ({ name, rays })), touches: pkg.touches.map((t) => t.name) });
       this.listen(true);
     } catch (e) {

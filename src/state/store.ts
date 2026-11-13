@@ -160,6 +160,7 @@ export {
   setControl,
   setWorld,
   setScripts,
+  setFaces,
   setPose,
   fitJointFollowers,
   setRobotRoot,

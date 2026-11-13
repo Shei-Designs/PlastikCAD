@@ -726,6 +726,7 @@ describe('design files', () => {
       ],
       sensors: [defaultSensor('s1', 'cam', 'camera', 'a', [0, 0, 0]), defaultSensor('s2', 'scan', 'lidar', 'a', [0, 0, 0])],
       drive: { kind: 'differential', roles: { j1: 'left' } },
+      faces: [-1, 0, 0],
       control: false,
       world: 'slope',
       scripts: false,
@@ -753,6 +754,9 @@ describe('design files', () => {
     const doc = parseDoc(serializeDoc({ ...sample(), scene: [{ ...shape('box'), id: 'a' }, { ...shape('box'), id: 'b' }], assets: {}, robot }));
     expect(doc.robot?.joints.length).toBe(2);
     expect(doc.robot?.sensors.length).toBe(2);
+    expect(doc.robot?.faces).toEqual([-1, 0, 0]);
+    // A facing that is no way a robot can face is not one.
+    expect(parseDoc(serializeDoc({ ...sample(), scene: [{ ...shape('box'), id: 'a' }], assets: {}, robot: { ...emptyRobot(), root: 'a', faces: [0, 0, 1] } })).robot?.faces).toBeUndefined();
     expect(doc.robot?.joints.map((j) => j.start)).toEqual([30, undefined]);
     expect(doc.robot?.joints.map((j) => j.command)).toEqual(['torque', undefined]);
     expect(doc.robot?.links.map((l) => l.shape)).toEqual([{ size: [40, 40, 40], center: [0, 0, -10], rot: [0, 0, 90] }, undefined]);

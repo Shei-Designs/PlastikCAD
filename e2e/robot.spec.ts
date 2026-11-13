@@ -268,6 +268,12 @@ test.describe('the test drive', { tag: '@mouse' }, () => {
     await expect.poll(() => store(page, (m) => m.getState().doc.robot?.joints.length ?? 0)).toBe(8);
     await settled(page);
     await store(page, (m) => m.enterRobotMode());
+    // With no wheels to say which way it faces, it faces +Y until told another way.
+    const forward = (way: string) => page.getByRole('radiogroup', { name: 'Forward' }).getByRole('radio', { name: way });
+    await expect(forward('+Y')).toHaveAttribute('aria-checked', 'true');
+    await forward('+X').click();
+    await expect(forward('+X')).toHaveAttribute('aria-checked', 'true');
+    expect(await store(page, (m) => m.getState().doc.robot?.faces)).toEqual([1, 0, 0]);
     await page.getByRole('button', { name: 'Test drive' }).click();
     // The engine is fetched and the model built before the controls show.
     const hold = page.getByRole('button', { name: 'Hold in the air' });

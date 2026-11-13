@@ -17,7 +17,7 @@ import { COLLISION_KINDS, DRIVE_KINDS, driveJoints, JOINT_TYPES, MAX_PIECES, SEN
 import type { CollisionShape, DriveKind, DriveRole, RobotJoint, RobotLink, RobotSensor, SensorKind, World } from '../robot/types';
 import { shapeOf } from '../robot/collision';
 import type { Problem } from '../robot/check';
-import { addJoint, addSensor, deleteJoint, deleteSensor, fitJointFollowers, placeJoint, placeSensor, select, selectJoint, selectSensor, setBase, setControl, setDriveKind, setDriveRole, setJointMotor, setPose, setPrefs, setRobotRoot, setScripts, setWorld, startJointPick, stopJointPick, updateJoint, updateLink, updateSensor, useEditor } from '../state/store';
+import { addJoint, addSensor, deleteJoint, deleteSensor, fitJointFollowers, placeJoint, placeSensor, select, selectJoint, selectSensor, setBase, setControl, setDriveKind, setFaces, setDriveRole, setJointMotor, setPose, setPrefs, setRobotRoot, setScripts, setWorld, startJointPick, stopJointPick, updateJoint, updateLink, updateSensor, useEditor } from '../state/store';
 import { rangeOf } from '../robot/kinematics';
 import { sim } from '../state/sim';
 import { inUnit, lengthFigure, lengthText, unitName } from '../units';
@@ -180,6 +180,24 @@ function Drive() {
         </label>
         <Select value={robot.drive?.kind ?? 'none'} label={tr('Drive kind')} options={[{ value: 'none', label: trx('drive', 'None') }, ...DRIVE_KINDS.map((k) => ({ value: k.id, label: k.name }))]} onChange={(v) => setDriveKind(v === 'none' ? null : (v as DriveKind))} />
       </div>
+      {!kind && robot.base === 'free' && (
+        <div className="field inline">
+          <label>
+            {tr('Forward')}
+            <Hint text={tr('Sets which way is forward for a robot with no wheels.')} />
+          </label>
+          <div className="segmented small" role="radiogroup" aria-label={tr('Forward')}>
+            {DIRECTIONS.slice(0, 4).map((d) => {
+              const on = d.vector.every((v, i) => v === (robot.faces ?? [0, 1, 0])[i]);
+              return (
+                <button key={d.label} type="button" role="radio" aria-checked={on} className={on ? 'on' : ''} onClick={() => setFaces(d.vector)}>
+                  {d.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
       {kind &&
         (wheels.length === 0 ? (
           <p className="empty">{tr('Add a turning joint for each wheel first.')}</p>
