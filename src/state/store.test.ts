@@ -203,6 +203,8 @@ describe('copies and mirrors of links', () => {
     store.updateNode(leg, { rot: [0, 0, 30] });
     store.placeJoint(joint().id, [4, 7, 3], [1, 2, 0]);
     store.updateSensor(robot().sensors[0].id, { origin: [2, 5, -1], rot: [0, 0, 90] });
+    store.updateJoint(joint().id, { lower: -20, upper: 70, start: 15 });
+    const limits = [joint().lower, joint().upper, joint().start!];
     const before = jointInDesign(joint(), node(leg));
     const sensorBefore = sensorInDesign(robot().sensors[0], node(leg));
     store.select([body, leg]);
@@ -212,8 +214,9 @@ describe('copies and mirrors of links', () => {
     const after = jointInDesign(joint(), node(leg));
     const mirror = (p: number[]) => [2 * mid - p[0], p[1], p[2]];
     mirror(before.origin).forEach((v, i) => expect(after.origin[i]).toBeCloseTo(v, 6));
-    // The axis is the mirrored one reversed, so the same angle gives the mirror image of the motion.
-    [before.axis[0], -before.axis[1], -before.axis[2]].forEach((v, i) => expect(after.axis[i]).toBeCloseTo(v, 6));
+    // The axis lies across the mirror: it is the mirrored one, pointing much as it did, and the angles are the other way round.
+    [-before.axis[0], before.axis[1], before.axis[2]].forEach((v, i) => expect(after.axis[i]).toBeCloseTo(v, 6));
+    expect([joint().lower, joint().upper, joint().start]).toEqual([-limits[1], -limits[0], -limits[2]]);
     const sensorAfter = sensorInDesign(robot().sensors[0], node(leg));
     mirror(sensorBefore.origin).forEach((v, i) => expect(sensorAfter.origin[i]).toBeCloseTo(v, 6));
     // It looked along where the leg's +Y pointed; it looks along the mirror image of that.
@@ -221,6 +224,31 @@ describe('copies and mirrors of links', () => {
     // One undo puts the joint back with the objects.
     store.undo();
     jointInDesign(joint(), node(leg)).origin.forEach((v, i) => expect(v).toBeCloseTo(before.origin[i], 6));
+  });
+
+  it('mirror a joint along its own axis and it turns about the same axis, within the same limits', () => {
+    const { body, leg } = legged();
+    const joint = () => robot().joints[0];
+    const node = (id: string) => scene().find((n) => n.id === id)!;
+    // A thigh's joint about the robot's side-to-side axis, mirrored to the other side.
+    store.placeJoint(joint().id, [4, 7, 3], [0, 1, 0]);
+    store.updateJoint(joint().id, { lower: -20, upper: 70, start: 15 });
+    store.select([body, leg]);
+    store.mirrorSelected(1);
+    jointInDesign(joint(), node(leg)).axis.forEach((v, i) => expect(v).toBeCloseTo([0, 1, 0][i], 6));
+    expect([joint().lower, joint().upper, joint().start]).toEqual([-20, 70, 15]);
+  });
+
+  it('mirror a follower across its axis without its leader and it follows the other way', () => {
+    const { body } = legged();
+    const { a: second } = twoBoxes();
+    store.addJoint(body, second);
+    const [lead, follower] = robot().joints;
+    store.placeJoint(follower.id, [0, 0, 0], [1, 0, 0]);
+    store.updateJoint(follower.id, { mimic: { joint: lead.id, multiplier: 2, offset: 5 } });
+    store.select([second]);
+    store.mirrorSelected(1);
+    expect(robot().joints[1].mimic).toEqual({ joint: lead.id, multiplier: -2, offset: -5 });
   });
 });
 

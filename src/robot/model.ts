@@ -108,12 +108,27 @@ export function withCopies(robot: Robot, copies: Map<string, string>, newId: () 
 /**
  * The robot after the objects in `nodes` were mirrored along `axis` where they stand (`mirrorNodes`): what is
  * kept in a mirrored object's own frame is mirrored with it. A joint and a sensor stay on the spot of the
- * object they were on. A joint's axis is turned so that the same angle gives the mirror image of the motion,
- * and its limits still hold; a sensor looks the mirrored way.
+ * object they were on, and a joint moves as the mirror image of what it did; a sensor looks the mirrored way.
+ *
+ * A turning joint's mirror image is written so that its axis points the way it did before, as the two sides of
+ * a robot are by custom: a hip about +X stays about +X on the other side. Mirrored along its own axis, the
+ * mirrored axis reversed is that one, and the same angle gives the mirror image of the motion. Mirrored across
+ * its axis, the mirrored axis is that one and the angles change sign instead: the limits change places, the
+ * start is the other way, and a follower follows the other way when only it or only its leader was so mirrored.
+ * `stood` is the mirrored objects as they stood before.
  */
 const SIDE_REVERSED: Mat = [1, 0, 0, 0, -1, 0, 0, 0, 1, 0, 0, 0];
 
-export function withMirrored(robot: Robot, nodes: Set<string>, axis: 0 | 1 | 2): Robot {
+export function withMirrored(robot: Robot, stood: SceneNode[], axis: 0 | 1 | 2): Robot {
+  const nodes = new Map(stood.map((n) => [n.id, n]));
+  /** The turning joints whose angles change sign: those whose axis lies nearer the mirror's plane than its normal. */
+  const signed = new Set<string>();
+  for (const j of robot.joints) {
+    const child = nodes.get(j.child);
+    if (!child || j.type === 'prismatic') continue;
+    const along = jointInDesign(j, child).axis[axis];
+    if (along * along < 0.5) signed.add(j.id);
+  }
   const flip = (v: Vec3): Vec3 => v.map((x, i) => (i === axis ? -x || 0 : x)) as Vec3;
   const reflect: Mat = [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0];
   reflect[axis * 4] = -1;
@@ -121,8 +136,18 @@ export function withMirrored(robot: Robot, nodes: Set<string>, axis: 0 | 1 | 2):
   const joints = robot.joints.map((j) => {
     if (!nodes.has(j.child)) return j;
     changed = true;
-    // A slide is mirrored by its mirrored direction; a turn by its mirrored axis reversed.
-    return { ...j, origin: flip(j.origin), axis: j.type === 'prismatic' ? flip(j.axis) : (flip(j.axis).map((x) => -x || 0) as Vec3) };
+    // A slide is mirrored by its mirrored direction; a turn by its mirrored axis reversed, or by its mirrored axis and its angles the other way.
+    if (j.type === 'prismatic') return { ...j, origin: flip(j.origin), axis: flip(j.axis) };
+    if (!signed.has(j.id)) return { ...j, origin: flip(j.origin), axis: flip(j.axis).map((x) => -x || 0) as Vec3 };
+    return { ...j, origin: flip(j.origin), axis: flip(j.axis), lower: -j.upper || 0, upper: -j.lower || 0, ...(j.start !== undefined ? { start: -j.start || 0 } : {}) };
+  });
+  // A follower's angle is its leader's times a ratio, plus an offset: either changing sign alone turns the ratio round, the follower's the offset too.
+  const followers = joints.map((j) => {
+    if (!j.mimic || (!signed.has(j.id) && !signed.has(j.mimic.joint))) return j;
+    changed = true;
+    const own = signed.has(j.id) ? -1 : 1;
+    const lead = signed.has(j.mimic.joint) ? -1 : 1;
+    return { ...j, mimic: { ...j.mimic, multiplier: j.mimic.multiplier * own * lead || 0, offset: j.mimic.offset * own || 0 } };
   });
   const sensors = robot.sensors.map((x) => {
     if (!nodes.has(x.link)) return x;
@@ -130,7 +155,7 @@ export function withMirrored(robot: Robot, nodes: Set<string>, axis: 0 | 1 | 2):
     // Its line of sight (X) and its up (Z) are mirrored; its Y is turned round to keep the frame right-handed.
     return { ...x, origin: flip(x.origin), rot: eulerOf(multiply(reflect, multiply(rotation(x.rot), SIDE_REVERSED))) };
   });
-  return changed ? { ...robot, joints, sensors } : robot;
+  return changed ? { ...robot, joints: followers, sensors } : robot;
 }
 
 export interface Tree {
