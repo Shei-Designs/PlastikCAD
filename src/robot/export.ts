@@ -8,7 +8,7 @@ import { apply, boundsCenter, boundsSize, eulerOf, multiply, ownOrigin, rotation
 import type { Mat } from '../model/math';
 import type { Doc, SceneNode, Vec3 } from '../model/types';
 import { encodeText } from '../io/format';
-import { driveXml, jointStateXml, sensorTopic, sensorXml, worldXml } from '../io/gazebo';
+import { driveXml, jointStateXml, positionXml, sensorTopic, sensorXml, worldXml } from '../io/gazebo';
 import type { GazeboDrive } from '../io/gazebo';
 import type { BridgeTopic } from '../io/rosPackage';
 import type { GazeboSensor } from '../io/gazebo';
@@ -375,9 +375,6 @@ function footprintOf(p: Prepared, robot: Robot, lift = 0): { name: string; joint
   return { name, joint: `${name}_joint`, base: p.linkNames.get(robot.root!)!, turn: -Math.atan2(fy, fx) || 0, height: p.frames.get(robot.root!)![2] * M + lift };
 }
 
-/** Said of a format that has nowhere to put the pose a simulation begins in. */
-const NO_START = "This format does not carry the joints' starts yet: the robot begins in the pose it is designed in.";
-
 /** The prepared drive as the Gazebo plugin wants it. */
 function gazeboDrive(d: PreparedDrive, baseFrame: string): GazeboDrive {
   const shared = { baseFrame, wheelRadius: d.wheelRadius, wheelSeparation: d.wheelSeparation };
@@ -507,7 +504,10 @@ export function buildSdfModel(doc: Doc, geometry: Map<string, LinkGeometry>, rob
     list.push(sensorXml({ ...s, pose: { xyz: s.xyz, rpy: s.rpy }, ...(pieces > 1 ? { collisions: pieces } : {}) }));
     sensorsByLink.set(s.link, list);
   }
-  if (p.treeJoints.some((j) => j.start)) warnings.push(NO_START);
+  // Gazebo's own controller holds each joint a ROS controller would, at its start; one commanded by torque is left to whatever sends the torque.
+  const held = p.treeJoints.filter((j) => p.controlled.includes(j.name) && !p.torque.includes(j.name));
+  const loose = p.treeJoints.filter((j) => j.start && !held.includes(j) && !j.mimic).map((j) => j.name);
+  if (loose.length) warnings.push(`No controller holds ${loose.map((n) => `"${n}"`).join(', ')}, so ${loose.length > 1 ? 'they begin' : 'it begins'} as designed, not at ${loose.length > 1 ? 'their starts' : 'its start'}.`);
   const links: SdfLink[] = p.links.map(({ frame, node: _n, ...l }) => ({ ...l, pose: frame.map((x) => x * M) as Vec3, sensors: sensorsByLink.get(l.name) }));
   // Loops close for real here, so a joint on a loop does not also follow another.
   const onLoop = new Set<string>();
@@ -531,17 +531,17 @@ export function buildSdfModel(doc: Doc, geometry: Map<string, LinkGeometry>, rob
   });
   const base = p.linkNames.get(robot.root!)!;
   const footprint = footprintOf(p, robot);
-  const plugins = [jointStateXml(), ...(p.drive ? [driveXml(gazeboDrive(p.drive, footprint?.name ?? base))] : [])];
+  const plugins = [jointStateXml(), ...(p.drive ? [driveXml(gazeboDrive(p.drive, footprint?.name ?? base))] : []), ...held.map((j) => positionXml(j.name, j.limit?.velocity ?? 1, j.start ?? 0))];
   files.unshift(
     { name: 'model.config', bytes: encodeText(modelConfig(pkg, `${doc.name}, made with PlastikCAD`)) },
     { name: 'model.sdf', bytes: encodeText(writeSdf(p.robotName, links, joints, plugins, robot.base === 'fixed' ? p.linkNames.get(robot.root!) : undefined, footprint)) },
     { name: `worlds/${pkg}.sdf`, bytes: encodeText(worldXml(pkg, pkg, p.robotName)) },
-    { name: 'README.md', bytes: encodeText(sdfReadme(pkg, doc.name, footprint)) },
+    { name: 'README.md', bytes: encodeText(sdfReadme(pkg, doc.name, footprint, held.length ? { model: p.robotName, joint: held[0].name } : undefined)) },
   );
   return { name: pkg, files, warnings, leftOut: p.leftOut };
 }
 
-function sdfReadme(name: string, robot: string, footprint: { name: string; base: string } | undefined): string {
+function sdfReadme(name: string, robot: string, footprint: { name: string; base: string } | undefined, held?: { model: string; joint: string }): string {
   return `# ${robot}
 
 A Gazebo model made with PlastikCAD. With this folder's parent on Gazebo's
@@ -555,7 +555,13 @@ Every joint is in \`model.sdf\`, loops included.${footprint ? ` The drive takes 
 commands on the \`cmd_vel\` topic and publishes odometry against \`${footprint.name}\`,
 a frame on \`${footprint.base}\` facing the robot's forward along +X as ROS expects:
 
-    gz topic -t /cmd_vel -m gz.msgs.Twist -p 'linear: {x: 0.2}'` : ''}
+    gz topic -t /cmd_vel -m gz.msgs.Twist -p 'linear: {x: 0.2}'` : ''}${held ? `
+
+Gazebo's own position controller holds each joint that is not a wheel or
+commanded by torque: it goes to the joint's start when the world begins, and
+then to whatever position its topic is sent, in radians or meters:
+
+    gz topic -t /model/${held.model}/joint/${held.joint}/0/cmd_pos -m gz.msgs.Double -p 'data: 0.3'` : ''}
 `;
 }
 

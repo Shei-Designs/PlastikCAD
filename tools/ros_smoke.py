@@ -593,6 +593,51 @@ def check_ros_package(pkg_dir, env):
         os.unlink(tmp.name)
 
 
+def gz_joint_positions(env):
+    """Every joint's position as the model's joint state publisher has it, by name; None when nothing is heard."""
+    try:
+        r = run(['gz', 'topic', '-e', '-n', '1', '-t', '/joint_states'], timeout=15, env=env)
+    except subprocess.TimeoutExpired:
+        return None
+    found = {}
+    for block in r.stdout.split('joint {')[1:]:
+        name = re.search(r'name: "([^"]+)"', block)
+        at = re.search(r'axis1 \{.*?position: ([-\d.e+]+)', block, re.S)
+        if name:
+            found[name.group(1)] = float(at.group(1)) if at else 0.0
+    return found or None
+
+
+def check_sdf_holders(name, model, model_name, env):
+    """The joints Gazebo's own position controller holds: each must reach its start, stay there, and follow a command."""
+    plugins = [p for p in ET.parse(model).getroot().iter('plugin') if 'JointPositionController' in (p.get('name') or '')]
+    starts = {p.findtext('joint_name'): float(p.findtext('initial_position') or 0) for p in plugins}
+    if not starts:
+        return
+    def off():
+        now = gz_joint_positions(env)
+        return None if now is None else max(abs(now.get(j, float('inf')) - at) for j, at in starts.items())
+    time.sleep(3)
+    worst = wait_for(lambda: (lambda v: v is not None and v < 0.05 and [v])(off()), 20)
+    if not worst:
+        return fail(name, f'the joints did not reach their starts: off by {off()} rad')
+    began = sum(1 for at in starts.values() if at)
+    ok(f'{len(starts)} joints held by Gazebo within {worst[0]:.3f} rad of their starts ({began} away from zero)')
+    pose = gz_pose(model_name, None)
+    if pose and (abs(pose[3]) > 0.3 or abs(pose[4]) > 0.3):
+        fail(name, f'the model fell over at its starts: roll {pose[3]:.2f}, pitch {pose[4]:.2f}')
+    # One joint sent a little further follows.
+    joint, at = next(iter(starts.items()))
+    want = at + 0.1
+    topic = f'/model/{model_name}/joint/{joint}/0/cmd_pos'
+    run(['gz', 'topic', '-t', topic, '-m', 'gz.msgs.Double', '-p', f'data: {want}'], timeout=10, env=env)
+    reached = wait_for(lambda: (lambda now: now is not None and abs(now.get(joint, 9) - want) < 0.03)(gz_joint_positions(env)), 15)
+    if reached:
+        ok(f'"{joint}" follows a position sent on {topic}')
+    else:
+        fail(name, f'"{joint}" did not follow {topic}: at {(gz_joint_positions(env) or {}).get(joint)} of {want:.3f}')
+
+
 def check_sdf_package(pkg_dir, env):
     name = os.path.basename(pkg_dir)
     print(f'\n== {name} (SDF model)', flush=True)
@@ -617,6 +662,7 @@ def check_sdf_package(pkg_dir, env):
             fail(name, f'model "{model_name}" did not appear in the world')
         else:
             ok(f'model in the world at z = {pose[2]:.3f} m')
+            check_sdf_holders(name, model, model_name, env)
             with open(model) as f:
                 if 'cmd_vel' in f.read():
                     def publish(x, seconds):
