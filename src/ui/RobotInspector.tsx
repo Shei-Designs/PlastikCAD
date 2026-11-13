@@ -238,10 +238,14 @@ function Controllers() {
 function Test() {
   const { doc, robot, nodes, problems } = useRobot();
   const unit = useEditor((s) => s.prefs.units);
+  const contacts = useEditor((s) => s.prefs.robotContacts);
   useSyncExternalStore(sim.subscribe, sim.getRevision);
   const s = sim.get();
   const stopped = problems.some((p) => p.level === 'error');
   const servos = s.actuators.filter((a) => a.kind === 'servo');
+  // The links touching the floor at this moment, in the design's order so that the line does not shuffle.
+  const touching = new Set(s.contacts.map((c) => c.link));
+  const on = nodes.filter((n) => touching.has(n.id));
   const jointOf = (id: string | null) => robot.joints.find((j) => j.id === id);
   return (
     <fieldset className="group">
@@ -294,10 +298,14 @@ function Test() {
                 {tr('Hold in the air')}
               </button>
             )}
+            <button type="button" className={contacts ? 'chip on' : 'chip'} aria-pressed={contacts} title={tr('Shows where the robot touches the floor')} onClick={() => setPrefs({ robotContacts: !contacts })}>
+              {tr('Contacts')}
+            </button>
             <button type="button" className="chip" title={tr('Ends the test drive; the plate shows the design again')} onClick={() => sim.stop()}>
               {tr('Stop')}
             </button>
           </div>
+          {contacts && on.length > 0 && <p className="export-note">{tr('On the floor: {names}', { names: on.map((n) => n.name).join(', ') })}</p>}
           {s.drive && (
             <p className="export-note">
               {s.drive.kind === 'mecanum'

@@ -63,7 +63,7 @@ import type { HandleKind, ViewItem, ViewPreset, ViewerEvents, ViewerOptions } fr
 
 export type { AlignMode, HandleKind, HandlePrompt, Marker, SnapPoint, ViewItem, ViewPreset, ViewerEvents, ViewerOptions } from './types';
 
-const DEFAULTS: ViewerOptions = { theme: 'dark', edges: true, grid: true, units: 'mm', snap: 1, align: null, highlight: null, snaps: null, marker: null, markers: null, collisions: null, ground: null, preview: null, measure: null, objectAxes: false, frozen: false };
+const DEFAULTS: ViewerOptions = { theme: 'dark', edges: true, grid: true, units: 'mm', snap: 1, align: null, highlight: null, snaps: null, marker: null, markers: null, collisions: null, contacts: null, ground: null, preview: null, measure: null, objectAxes: false, frozen: false };
 export const GIZMO_SIZE = 92;
 const GIZMO_MARGIN = 8;
 const PLATE_HALF = 100;
@@ -613,6 +613,7 @@ export class Viewer {
     this.pointer3d.visible = Boolean(h);
     this.robot.syncMarkers();
     this.robot.syncCollisions();
+    if (touched('contacts')) this.robot.syncContacts();
     const groundKey = this.options.ground ? `${theme}:${this.options.ground.world}:${this.options.ground.forward.join(',')}` : '';
     if (groundKey !== this.groundKey) {
       this.groundKey = groundKey;
@@ -748,6 +749,7 @@ export class Viewer {
       this.handles.layout();
       this.handles.layoutLockBadges(this.input.editing);
       this.robot.layoutSnaps();
+      this.robot.layoutContacts();
       this.measure.layout();
       this.robot.layoutMarker();
       renderer.clearDepth();

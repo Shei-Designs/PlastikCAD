@@ -66,8 +66,16 @@ describe('the test drive', () => {
     const bodies = [...second.xml.matchAll(/<body name=/g)].length;
     const poses = new Float64Array(7 * (bodies + 1));
     for (let i = 0; i <= bodies; i++) poses[7 * i + 3] = 1;
-    worker.answer({ type: 'frame', time: 0.1, poses, ranges: new Float32Array(0), touches: new Float32Array(4) });
+    worker.answer({ type: 'frame', time: 0.1, poses, ranges: new Float32Array(0), touches: new Float32Array(4), contacts: new Float32Array([0.1, -0.2, 0, 1, 0.3, 0.4, 0.001, 0]) });
     expect(sim.get().frames.size).toBe(9);
+    // Where it touches the floor arrives in meters and is kept in millimeters, with the link whose body touches: the first body is the base, the world none.
+    const touching = sim.get().contacts;
+    expect(touching.map((c) => c.at.map((v) => Math.round(v)))).toEqual([
+      [100, -200, 0],
+      [300, 400, 1],
+    ]);
+    expect(touching.map((c) => typeof c.link)).toEqual(['string', 'object']);
+    expect(touching[1].link).toBeNull();
     sim.stop();
     expect(sim.get().status).toBe('off');
     expect(worker.sent[worker.sent.length - 1]).toEqual({ type: 'unload' });

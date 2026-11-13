@@ -26,6 +26,8 @@ export interface Prefs {
   robotMarkers: boolean;
   /** Robot mode: what each link collides as is drawn over it. */
   robotCollisions: boolean;
+  /** The test drive: a dot is drawn wherever the robot touches the floor. */
+  robotContacts: boolean;
   /** Which tab the left panel shows: the library of shapes and parts, or the design's objects. */
   sidebar: 'library' | 'objects' | 'structure';
   /** Whether each side panel is on show; hidden, its room goes to the plate. */
@@ -69,6 +71,7 @@ export function loadPrefs(): Prefs {
     inertiaUnit: saved.inertiaUnit === 'kgm2' ? 'kgm2' : 'gcm2',
     robotMarkers: saved.robotMarkers ?? true,
     robotCollisions: saved.robotCollisions === true,
+    robotContacts: saved.robotContacts !== false,
     sidebar: saved.sidebar === 'objects' || saved.sidebar === 'structure' ? saved.sidebar : 'library',
     // On a window too narrow for the panels and the plate side by side, they start out of the way.
     leftPanel: typeof saved.leftPanel === 'boolean' ? saved.leftPanel : !narrowWindow(),

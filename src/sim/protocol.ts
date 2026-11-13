@@ -23,8 +23,9 @@ export type SimResponse =
   | { type: 'loaded'; id: number; bodies: string[]; actuators: SimActuator[]; timestep: number; floating: boolean }
   /**
    * Where every body is: 7 numbers each in `bodies` order, position xyz (m) then quaternion wxyz; every lidar's rays in `lidars`
-   * order, meters, -1 where a ray hits nothing; and every touch sensor's force in `touches` order, newtons, -1 where the model lacks it.
+   * order, meters, -1 where a ray hits nothing; and every touch sensor's force in `touches` order, newtons, -1 where the model lacks it;
+   * and every point where the robot touches the floor: xyz, meters, then the body touching there, as `bodies` counts them.
    */
-  | { type: 'frame'; time: number; poses: Float64Array; ranges: Float32Array; touches: Float32Array }
+  | { type: 'frame'; time: number; poses: Float64Array; ranges: Float32Array; touches: Float32Array; contacts: Float32Array }
   /** `id` is the load that failed, when it was a load. */
   | { type: 'error'; message: string; id?: number };

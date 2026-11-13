@@ -387,6 +387,7 @@ describe('the quadruped', () => {
     expect(position(sim, base)).toEqual(hung);
     expect(Math.abs(sim.jointValue('Knee_front_left'))).toBeGreaterThan(1);
     expect(sim.touchForces(['Foot_front_left', 'Foot_rear_right'])).toEqual(new Float32Array([0, 0]));
+    expect(sim.floorContacts().length).toBe(0);
     // A reset leaves it hanging, at its start.
     sim.reset();
     expect(position(sim, base)).toEqual(hung);
@@ -453,6 +454,29 @@ describe('the quadruped', () => {
     // Each foot carries a share of the body: a few newtons; a name the model has no sensor for reads -1.
     for (let i = 0; i < 4; i++) expect(forces[i]).toBeGreaterThan(0.1);
     expect(forces[4]).toBe(-1);
+    sim.dispose();
+  });
+
+  it('touches the floor under its four lower legs and nowhere else', () => {
+    const doc = make('quadruped');
+    const { sim, base } = simulate(doc);
+    sim.step(2);
+    const at = sim.floorContacts();
+    expect(at.length % 4).toBe(0);
+    expect(at.length).toBeGreaterThanOrEqual(16);
+    const [bx, by] = position(sim, base);
+    const corners = new Set<string>();
+    const touching = new Set<string>();
+    for (let i = 0; i < at.length; i += 4) {
+      // Each point is at the floor, and out at a corner of the body: under a leg, not under the trunk.
+      expect(Math.abs(at[i + 2])).toBeLessThan(0.005);
+      expect(Math.abs(at[i] - bx)).toBeGreaterThan(0.02);
+      expect(Math.abs(at[i + 1] - by)).toBeGreaterThan(0.02);
+      corners.add(`${Math.sign(at[i] - bx)},${Math.sign(at[i + 1] - by)}`);
+      touching.add(sim.bodies[at[i + 3]]);
+    }
+    expect(corners.size).toBe(4);
+    expect([...touching].sort()).toEqual(['Lower_leg_front_left', 'Lower_leg_front_right', 'Lower_leg_rear_left', 'Lower_leg_rear_right']);
     sim.dispose();
   });
 });

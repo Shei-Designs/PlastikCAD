@@ -57,6 +57,8 @@ export class RobotOverlay {
   /** Dots at the snap points on offer, one sprite each, and the hovered one. */
   private snapDots: Sprite[] = [];
   private snapHot: number | null = null;
+  /** Dots where the test drive's robot touches the floor. */
+  private contactDots: Sprite[] = [];
 
   constructor(
     private readonly stage: Pick<Stage, 'overlay' | 'camera' | 'raycaster' | 'events' | 'grips' | 'options' | 'height' | 'gripScale' | 'requestRender'>,
@@ -65,7 +67,7 @@ export class RobotOverlay {
 
   /** Whether there is anything of Robot mode to lay out and draw. */
   get shown(): boolean {
-    return this.parts.marker.visible || this.dimMarkers.size > 0 || this.snapDots.length > 0;
+    return this.parts.marker.visible || this.dimMarkers.size > 0 || this.snapDots.length > 0 || this.contactDots.length > 0;
   }
 
   /** Rebuilds the picked marker and the small ones when what they show has changed; where they stand is laid out every frame. */
@@ -171,6 +173,28 @@ export class RobotOverlay {
     }
     if (this.snapHot !== null && this.snapHot >= wanted) this.hoverSnap(null);
     this.parts.snapAxis.visible = false;
+  }
+
+  /** One dot per point where the robot touches the floor, kept from frame to frame and only made or dropped as their number changes. */
+  syncContacts(): void {
+    const wanted = this.stage.options.contacts?.length ?? 0;
+    while (this.contactDots.length > wanted) this.stage.overlay.remove(this.contactDots.pop()!);
+    while (this.contactDots.length < wanted) {
+      const dot = new Sprite(this.stage.grips.dotHot);
+      dot.renderOrder = 10;
+      dot.raycast = () => {};
+      this.stage.overlay.add(dot);
+      this.contactDots.push(dot);
+    }
+  }
+
+  layoutContacts(): void {
+    this.stage.options.contacts?.forEach((at, i) => {
+      const dot = this.contactDots[i];
+      if (!dot) return;
+      dot.position.set(at[0], at[1], at[2]);
+      dot.scale.setScalar(9 * pixelSize(this.stage, dot.position));
+    });
   }
 
   /** The markers at their origins, each unit scaled to its pixel size on screen; the picked one's grips beside it. */

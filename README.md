@@ -401,7 +401,9 @@ in the design file and synced with it.
   from its start pose. On the flat floor the drive watches what the links
   collide as: a link that stands on its collision shape clear of the floor,
   or sinks into the floor because the shape is smaller than it or missing,
-  is named under the controls. The sensors ride their links while it
+  is named under the controls. *Contacts* draws a dot wherever the robot
+  touches the floor and names the links that touch it, so that a robot
+  standing on a shin where a foot was meant shows at once. The sensors ride their links while it
   drives, a lidar's rays reach to whatever they measure, a touch sensor's
   pad lights while it presses on something and a picked camera's picture
   follows it, so a tilt, a range or a foot that misses the floor can be

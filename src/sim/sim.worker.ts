@@ -30,7 +30,8 @@ function frame(): void {
   const poses = sim.poses();
   const ranges = sim.lidarRanges(lidars);
   const forces = sim.touchForces(touches);
-  post({ type: 'frame', time: sim.time, poses, ranges, touches: forces }, [poses.buffer, ranges.buffer, forces.buffer]);
+  const contacts = sim.floorContacts();
+  post({ type: 'frame', time: sim.time, poses, ranges, touches: forces, contacts }, [poses.buffer, ranges.buffer, forces.buffer, contacts.buffer]);
 }
 
 function tick(): void {
