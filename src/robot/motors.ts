@@ -53,6 +53,23 @@ export function motorFigures(m: Motor): Pick<RobotJoint, 'motor' | 'effort' | 'v
   return { motor: m.id, effort: m.torque, velocity: m.speed, damping: Number(((0.05 * m.torque) / ((m.speed * Math.PI) / 180)).toPrecision(3)) };
 }
 
+/** The start of a Motor choice that names another joint of the design, to take its figures from. */
+export const AS_JOINT = 'joint:';
+
+/**
+ * The joints whose hand-typed figures `joint` could take: the other turning joints with no motor from the table,
+ * one for each set of figures that differs from its own.
+ */
+export function figureSources(joints: RobotJoint[], joint: RobotJoint): RobotJoint[] {
+  const key = (j: RobotJoint) => `${j.effort}/${j.velocity}/${j.damping}`;
+  const seen = new Set([key(joint)]);
+  return joints.filter((j) => {
+    if (j.id === joint.id || j.motor || (j.type !== 'revolute' && j.type !== 'continuous') || seen.has(key(j))) return false;
+    seen.add(key(j));
+    return true;
+  });
+}
+
 /** The parts library's motor mount generators, whose `motor` parameter names a motor. */
 const MOUNTS = new Set(['stepper-mount', 'gearmotor-mount', 'servo-mount', 'dc-motor-mount']);
 

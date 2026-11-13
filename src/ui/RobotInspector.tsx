@@ -12,7 +12,7 @@ import { inertialInOwn, inertialOf, massOf, principalMoments } from '../robot/in
 import type { MeshProperties, Tensor } from '../robot/inertia';
 import { MATERIALS, materialOf } from '../robot/materials';
 import { followFault, jointInDesign, linkOf, robotForward, sensorInDesign } from '../robot/model';
-import { MOTORS } from '../robot/motors';
+import { AS_JOINT, figureSources, MOTORS } from '../robot/motors';
 import { COLLISION_KINDS, DRIVE_KINDS, driveJoints, JOINT_TYPES, MAX_PIECES, SENSOR_KINDS, WORLDS } from '../robot/types';
 import type { CollisionShape, DriveKind, DriveRole, RobotJoint, RobotLink, RobotSensor, SensorKind, World } from '../robot/types';
 import { cylinderAlong, cylinderLaid, shapeOf } from '../robot/collision';
@@ -865,8 +865,8 @@ function JointPanel({ joint }: { joint: RobotJoint }) {
           {angular &&
             row(
               tr('Motor'),
-              <Select value={joint.motor ?? ''} label={tr('Motor')} placeholder={trx('motor', 'Custom')} options={MOTORS.map((m) => ({ value: m.id, label: `${m.name} · ${m.torque} N·m, ${m.speed}°/s` }))} onChange={(id) => setJointMotor(joint.id, id)} />,
-              tr("Sets the effort, speed and damping to the motor's figures; typing any of them makes it custom again."),
+              <Select value={joint.motor ?? ''} label={tr('Motor')} placeholder={trx('motor', 'Custom')} options={[...MOTORS.map((m) => ({ value: m.id, label: `${m.name} · ${m.torque} N·m, ${m.speed}°/s` })), ...figureSources(robot.joints, joint).map((j) => ({ value: AS_JOINT + j.id, label: `${tr('As {name}', { name: j.name })} · ${j.effort} N·m, ${j.velocity}°/s` }))]} onChange={(id) => setJointMotor(joint.id, id)} />,
+              tr("Sets the effort, speed and damping to the figures of a motor or of another joint; typing any of them makes it custom again."),
             )}
           {robot.control &&
             !joint.mimic &&

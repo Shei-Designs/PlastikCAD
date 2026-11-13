@@ -18,7 +18,7 @@ import { jointInChild, jointInDesign as jointInDesignOf, linkNodes, linkOf, meet
 import { snapPointsOf } from '../../robot/snaps';
 import type { SnapPoint } from '../../viewer/Viewer';
 import { jointFit } from '../../robot/defaults';
-import { motorFigures, motorForPart, motorOf } from '../../robot/motors';
+import { AS_JOINT, motorFigures, motorForPart, motorOf } from '../../robot/motors';
 import { massOf } from '../../robot/inertia';
 import { DRIVE_KINDS, defaultJoint, defaultSensor, SENSOR_KINDS } from '../../robot/types';
 import type { DriveKind, DriveRole, Robot, RobotJoint, RobotLink, RobotSensor, SensorKind, World } from '../../robot/types';
@@ -263,8 +263,13 @@ export function updateJoint(id: string, patch: Partial<Omit<RobotJoint, 'id'>>, 
   editRobot((r) => ({ ...r, joints: r.joints.map((j) => (j.id === id ? { ...j, ...typed } : j)) }), merge);
 }
 
-/** Gives the joint a motor from the table, and its figures. */
+/** Gives the joint a motor from the table, and its figures; or the figures of another joint (`joint:<id>`). */
 export function setJointMotor(id: string, motor: string): void {
+  if (motor.startsWith(AS_JOINT)) {
+    const from = robotOf(getState().doc).joints.find((j) => j.id === motor.slice(AS_JOINT.length));
+    if (from) updateJoint(id, { motor: from.motor, effort: from.effort, velocity: from.velocity, damping: from.damping });
+    return;
+  }
   const m = motorOf(motor);
   if (m) updateJoint(id, motorFigures(m));
 }

@@ -5,6 +5,7 @@ import { APP_VERSION } from '../appInfo';
 import { parseDoc, serializeDoc } from '../model/file';
 import { boxBounds, originOf, unionBounds } from '../model/math';
 import { jointInDesign, sensorInDesign } from '../robot/model';
+import { AS_JOINT, figureSources } from '../robot/motors';
 import type { Bounds } from '../model/math';
 import type { GroupNode, PartNode, SceneNode } from '../model/types';
 import type { PickedFile } from '../platform';
@@ -265,6 +266,15 @@ describe('a joint\'s motor', () => {
     store.updateJoint(jointOf().id, { effort: 0.25 });
     expect(jointOf().motor).toBeUndefined();
     expect(jointOf().effort).toBe(0.25);
+    // Another joint's typed figures can be taken, and leave the motor custom.
+    store.addShape('box');
+    const c = only();
+    const second = store.addJoint(b, c)!;
+    expect(figureSources(store.getState().doc.robot!.joints, store.getState().doc.robot!.joints[1]).map((j) => j.id)).toEqual([jointOf().id]);
+    store.updateJoint(jointOf().id, { velocity: 123, damping: 0.5 });
+    store.setJointMotor(second, AS_JOINT + jointOf().id);
+    expect(store.getState().doc.robot!.joints[1]).toMatchObject({ motor: undefined, effort: 0.25, velocity: 123, damping: 0.5 });
+    expect(figureSources(store.getState().doc.robot!.joints, store.getState().doc.robot!.joints[1])).toEqual([]);
     // The motor survives a save.
     expect(parseDoc(serializeDoc({ ...store.getState().doc, robot: { ...store.getState().doc.robot!, joints: [{ ...jointOf(), motor: 'nema17' }] } })).robot!.joints[0].motor).toBe('nema17');
   });
