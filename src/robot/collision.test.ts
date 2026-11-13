@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ShapeNode } from '../model/types';
-import { collisionPrimitive, primitiveMesh, shapeInOwn, shapeOf } from './collision';
+import { collisionPrimitive, cylinderAlong, cylinderLaid, primitiveMesh, shapeInOwn, shapeOf } from './collision';
 
 const node = (over: Partial<ShapeNode>): ShapeNode => ({ id: 'a', name: 'A', type: 'shape', shape: 'box', params: {}, hole: false, color: '#888888', pos: [0, 0, 0], rot: [0, 0, 0], size: [20, 20, 20], ...over });
 const round = (v: number[]) => v.map((x) => +x.toFixed(3));
@@ -59,6 +59,25 @@ describe('the primitive a link collides as', () => {
     // One it keeps is read as it is.
     const own = { size: [4, 4, 4] as [number, number, number], center: [0, 0, -9] as [number, number, number], rot: [0, 0, 0] as [number, number, number] };
     expect(shapeOf(node({}), { collision: 'sphere', shape: own })).toBe(own);
+  });
+
+  it('lays a cylinder along another of the object\'s own axes', () => {
+    // A hip motor: a box 80 long in X, 60 by 50 across. Fitted, its cylinder stands along Z.
+    const hip = node({ size: [80, 60, 50], pos: [10, 20, 30] });
+    const link = { collision: 'cylinder' as const };
+    expect(cylinderAlong(shapeOf(hip, link))).toBe(2);
+    // Laid along X while still fitted, it is fitted that way: as long as the box in X, as wide as the box across.
+    const laid = cylinderLaid(hip, link, 0);
+    expect(laid).toEqual({ size: [60, 60, 80], center: [0, 0, 0], rot: [0, 90, 0] });
+    expect(cylinderAlong(laid)).toBe(0);
+    // In the design it reaches the box's length along X.
+    const b = boundsOfPositions(primitiveMesh(collisionPrimitive(hip, { ...link, shape: laid })).positions);
+    expect(round([b.min[0], b.max[0]])).toEqual([-30, 50]);
+    expect(round([b.min[2], b.max[2]])).toEqual([0, 60]);
+    // One that was typed keeps its size and center, and is only turned.
+    const typed = { size: [46, 46, 40] as [number, number, number], center: [0, 8, 0] as [number, number, number], rot: [0, 0, 0] as [number, number, number] };
+    expect(cylinderLaid(hip, { ...link, shape: typed }, 1)).toEqual({ ...typed, rot: [90, 0, 0] });
+    expect(cylinderAlong({ ...typed, rot: [30, 0, 0] })).toBe(-1);
   });
 
   it('is the shape the link keeps for itself where it has one, in the object\'s own frame', () => {

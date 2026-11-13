@@ -149,8 +149,15 @@ test.describe('a plain collision shape', { tag: '@mouse' }, () => {
     expect(await shape()).toBeUndefined();
     await expect(box('Collision diameter')).toHaveValue('20');
     await expect(page.getByRole('button', { name: 'Fit to the object' })).toHaveCount(0);
+    // A cylinder stands along the object's Z until laid along another of its axes.
+    await store(page, (m) => m.updateLink(m.getState().doc.scene[0].id, { collision: 'cylinder' }));
+    const along = (axis: string) => page.getByRole('radiogroup', { name: 'Along' }).getByRole('radio', { name: axis });
+    await expect(along('Z')).toHaveAttribute('aria-checked', 'true');
+    await along('X').click();
+    await expect(along('X')).toHaveAttribute('aria-checked', 'true');
+    expect(await shape()).toEqual({ size: [20, 20, 20], center: [0, 0, 0], rot: [0, 90, 0] });
     // A box has a size each way.
-    await store(page, (m) => m.updateLink(m.getState().doc.scene[0].id, { collision: 'box' }));
+    await store(page, (m) => m.updateLink(m.getState().doc.scene[0].id, { collision: 'box', shape: undefined }));
     await box('Collision size X').click();
     await page.keyboard.press('ControlOrMeta+a');
     await page.keyboard.type('12');

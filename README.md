@@ -344,7 +344,8 @@ in the design file and synced with it.
   sphere is fitted to the object's box (the cylinder along the axis the
   object is round about, else its own Z); a link that came from a robot file
   with one of another size, place or turn (a ball under a foot, wider than
-  the foot looks) keeps the file's own. The *Size* and *Center* boxes show
+  the foot looks) keeps the file's own. *Along* lays a cylinder along
+  another of the object's own axes. The *Size* and *Center* boxes show
   the shape and take another, measured from the object's own origin along
   its own axes; *Fit to the object* fits it again. The button beside
   the joints' in the Robot mode bar draws what every link collides as over

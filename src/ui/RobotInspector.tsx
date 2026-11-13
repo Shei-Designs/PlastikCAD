@@ -15,7 +15,7 @@ import { followFault, jointInDesign, linkOf, robotForward, sensorInDesign } from
 import { MOTORS } from '../robot/motors';
 import { COLLISION_KINDS, DRIVE_KINDS, driveJoints, JOINT_TYPES, MAX_PIECES, SENSOR_KINDS, WORLDS } from '../robot/types';
 import type { CollisionShape, DriveKind, DriveRole, RobotJoint, RobotLink, RobotSensor, SensorKind, World } from '../robot/types';
-import { shapeOf } from '../robot/collision';
+import { cylinderAlong, cylinderLaid, shapeOf } from '../robot/collision';
 import type { Problem } from '../robot/check';
 import { addJoint, addSensor, deleteJoint, deleteSensor, fitJointFollowers, placeJoint, placeSensor, select, selectJoint, selectSensor, setBase, setControl, setDriveKind, setDriveRole, setJointMotor, setPose, setPrefs, setRobotRoot, setScripts, setWorld, startJointPick, stopJointPick, updateJoint, updateLink, updateSensor, useEditor } from '../state/store';
 import { rangeOf } from '../robot/kinematics';
@@ -455,8 +455,24 @@ function CollisionBoxes({ node, link, onChange }: { node: SceneNode; link: Robot
             { tag: 'L', label: tr('Collision length'), value: shape.size[2], at: [2] },
           ]
         : [{ tag: 'Ø', label: tr('Collision diameter'), value: shape.size[0], at: [0, 1, 2] }];
+  const along = kind === 'cylinder' ? cylinderAlong(shape) : -1;
   return (
     <>
+      {kind === 'cylinder' && (
+        <div className="field inline">
+          <label>
+            {tr('Along')}
+            <Hint text={tr("Lays the cylinder along one of the object's own axes.")} />
+          </label>
+          <div className="segmented small" role="radiogroup" aria-label={tr('Along')}>
+            {(['X', 'Y', 'Z'] as const).map((tag, i) => (
+              <button key={tag} type="button" role="radio" aria-checked={along === i} className={along === i ? 'on' : ''} onClick={() => along !== i && onChange(cylinderLaid(node, link, i as 0 | 1 | 2))}>
+                {tag}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="field">
         <label>
           {tr('Size')}
