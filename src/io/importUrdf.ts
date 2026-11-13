@@ -706,6 +706,18 @@ function readUrdf(bytes: Uint8Array, companions: Companion[]): ImportedRobot {
     }
   }
   robot.control = hasElement(root, 'ros2_control');
+  // What the controllers send each joint and where it begins, from the ros2_control blocks.
+  for (const block of childrenOf(root, 'ros2_control')) {
+    for (const entry of childrenOf(block, 'joint')) {
+      const made = robotJoints.find((j) => j.id === jointIds.get(entry.attrs.name ?? ''));
+      if (!made || made.type === 'fixed' || made.mimic) continue;
+      const commands = childrenOf(entry, 'command_interface').map((c) => c.attrs.name);
+      if (commands.includes('effort')) made.command = 'torque';
+      const position = childrenOf(entry, 'state_interface').find((s) => s.attrs.name === 'position');
+      const initial = position && num(childrenOf(position, 'param').find((p) => p.attrs.name === 'initial_value')?.text);
+      if (initial) made.start = round(initial * (made.type === 'prismatic' ? MM : DEG));
+    }
+  }
 
   return { name: readable(root.attrs.name ?? tr('Robot')), scene, assets, robot, warnings, missing: [...missing] };
 }
