@@ -15,7 +15,7 @@
 //   80 mm   37.4 wide, 9 rollers   Yahboom 80 mm wheel, from a reseller's listing: unverified
 //   100 mm  50 wide, 9 rollers     Nexus Robot datasheet (part 14092)
 //   152 mm  55.5 wide, 15 rollers  Nexus Robot datasheet and SuperDroid listing
-//   203 mm  67 wide, 12 rollers    Nexus Robot datasheet; a reseller gives 78 wide: the width is unverified
+//   203 mm  78 wide, 12 rollers    SuperDroid listing of the Nexus wheel; the Nexus Robot datasheet gives 67 wide: the width is unverified
 // The roller's own diameter and length are not taken from any vendor: they
 // follow from the diameter, the width and the count.
 import { tr, trx } from '../../i18n';
@@ -107,12 +107,14 @@ const SIZES: Record<string, Size> = {
   '80': { diameter: 80, width: 37.4, rollers: 9 },
   '100': { diameter: 100, width: 50, rollers: 9 },
   '152': { diameter: 152, width: 55.5, rollers: 15 },
-  '203': { diameter: 203, width: 67, rollers: 12 },
+  '203': { diameter: 203, width: 78, rollers: 12 },
 };
 
 export const MECANUM_SIZES = Object.keys(SIZES);
 
 const isCustom = (p: Params) => !(str(p, 'size') in SIZES);
+/** A figure of the size chosen, for its control to read while the size holds it. */
+const ofSize = (key: keyof Size) => (p: Params) => SIZES[str(p, 'size')]?.[key] ?? num(p, key);
 
 /**
  * A mecanum wheel's rollers, in the wheel's own frame: the axle is Z, the wheel spans `width` along it
@@ -291,9 +293,9 @@ export const mecanumWheel: GeneratorDef = {
           default: '100',
           options: [...MECANUM_SIZES.map((value) => ({ value, label: `${value} mm` })), { value: 'custom', label: trx('wheel', 'Custom') }],
         },
-        { type: 'number', key: 'diameter', label: tr('Diameter'), default: 100, min: MECANUM.diameter.min, max: MECANUM.diameter.max, step: 1, unit: 'mm', visible: isCustom },
-        { type: 'number', key: 'width', label: tr('Width'), default: 50, min: MECANUM.width.min, max: MECANUM.width.max, step: 0.5, unit: 'mm', visible: isCustom },
-        { type: 'number', key: 'rollers', label: tr('Rollers'), default: 9, min: MECANUM.rollers.min, max: MECANUM.rollers.max, step: 1, integer: true, visible: isCustom },
+        { type: 'number', key: 'diameter', label: tr('Diameter'), default: 100, min: MECANUM.diameter.min, max: MECANUM.diameter.max, step: 1, unit: 'mm', visible: isCustom, shown: ofSize('diameter') },
+        { type: 'number', key: 'width', label: tr('Width'), default: 50, min: MECANUM.width.min, max: MECANUM.width.max, step: 0.5, unit: 'mm', visible: isCustom, shown: ofSize('width') },
+        { type: 'number', key: 'rollers', label: tr('Rollers'), default: 9, min: MECANUM.rollers.min, max: MECANUM.rollers.max, step: 1, integer: true, visible: isCustom, shown: ofSize('rollers') },
         {
           type: 'select',
           key: 'hand',
@@ -310,6 +312,8 @@ export const mecanumWheel: GeneratorDef = {
     hubGroup({ height: 0, diameter: 20, setScrews: 1, setScrewDiameter: 3.3 }),
     boreGroup({ type: 'round', diameter: 6 }),
   ],
+  // The other hand's wheel is this one's mirror image in Y: the rollers stand evenly round from +X, and the bore's flat and key face +X.
+  mirrored: (p) => ({ ...p, hand: str(p, 'hand') === 'right' ? 'left' : 'right' }),
   build: buildMecanum,
 };
 
