@@ -37,8 +37,7 @@ describe.each(ROBOTS)('the reference $file', ({ file, make }) => {
     const nodes = linkNodes(doc.scene);
     const geo = robotGeometry(nodes, Object.fromEntries(nodes.map((n) => [n.id, linkOf(robot, n.id).collision])), true);
     const geometry = new Map(geo.map((g) => [g.id, g]));
-    // The linkage's loop is told of, as a warning, for as long as the checks tell of loops that close.
-    expect(checkRobot(doc, new Map(geo.map((g) => [g.id, g.props])), robot).filter((p) => !/closes a loop\./.test(p.text))).toEqual([]);
+    expect(checkRobot(doc, new Map(geo.map((g) => [g.id, g.props])), robot)).toEqual([]);
     const packages = [buildRobotPackage(doc, geometry, robot), buildSdfModel(doc, geometry, robot), buildMjcfModel(doc, geometry, robot, world === 'rough' || world === 'slope' ? world : 'flat'), buildIsaacStage(doc, geometry, robot)];
     for (const pkg of packages) expect(pkg.warnings).toEqual([]);
     const out = process.env.ROBOT_FIXTURES_OUT;
