@@ -40,6 +40,31 @@ export const partsFit: Catalog = {
   'Motor mounts': 'Fixations de moteur',
   'Mounting plates and brackets for steppers, gearmotors, servos and DC motors.': 'Plaques de fixation et équerres pour moteurs pas à pas, motoréducteurs, servomoteurs et moteurs CC.',
 
+  Wheels: 'Roues',
+  'Plain and mecanum wheels for robots.': 'Roues simples et roues mecanum pour robots.',
+
+  // Wheels (parts/generators/wheels.ts)
+  'Wheel [[part]]': 'Roue',
+  'Plain wheel with a flat or rounded tread.': 'Roue simple à bande de roulement plate ou arrondie.',
+  'Rounds the edges of the tread. 0 leaves them sharp.': 'Arrondit les bords de la bande de roulement. 0 les laisse vifs.',
+  'Web thickness': 'Épaisseur du voile',
+  'Sets the thickness of the disc between the hub and the rim. 0 makes the wheel solid.': 'Définit l’épaisseur du disque entre le moyeu et la jante. 0 rend la roue pleine.',
+  'Travel per turn': 'Avance par tour',
+  'Mecanum wheel': 'Roue mecanum',
+  'Wheel with rollers set at 45°, for a robot that drives sideways.': 'Roue à rouleaux inclinés à 45°, pour un robot qui se déplace latéralement.',
+  Size: 'Taille',
+  'Custom [[wheel]]': 'Personnalisée',
+  Rollers: 'Rouleaux',
+  'Hand [[wheel]]': 'Côté',
+  'Selects which way the rollers lean.': 'Sélectionne le sens d’inclinaison des rouleaux.',
+  'Left [[wheel]]': 'Gauche',
+  'For the front left and rear right corners.': 'Pour les coins avant gauche et arrière droit.',
+  'Right [[wheel]]': 'Droite',
+  'For the front right and rear left corners.': 'Pour les coins avant droit et arrière gauche.',
+  'Roller length': 'Longueur des rouleaux',
+  'The rollers leave gaps between them. Add rollers or make the wheel wider.': 'Les rouleaux laissent des vides entre eux. Ajoutez des rouleaux ou élargissez la roue.',
+  'The bore is as wide as the drum the rollers sit round.': 'L’alésage est aussi large que le tambour qui porte les rouleaux.',
+
   // Aluminum rails (parts/generators/extrusion.ts)
   'Aluminum rail': 'Profilé aluminium',
   'Slotted aluminum extrusion in standard profile sizes.': 'Profilé aluminium à rainures, aux tailles de profil standard.',

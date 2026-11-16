@@ -120,6 +120,20 @@ const GLYPHS: Record<string, ReactNode> = {
       <circle cx="28" cy="18" r="1.4" />
     </>,
   ),
+  wheel: glyph(
+    <>
+      <circle cx="18" cy="18" r="14" />
+      <circle cx="18" cy="18" r="9.5" />
+      <circle cx="18" cy="18" r="2.5" />
+      <path d="M18 8.5v7M18 20.5v7M8.5 18h7M20.5 18h7" />
+    </>,
+  ),
+  'mecanum-wheel': glyph(
+    <>
+      <rect x="9" y="4" width="18" height="28" rx="3" />
+      <path d="M9 12l9-8M9 19l18-15M9 26l18-15M9 32l18-14M17 32l10-7" />
+    </>,
+  ),
   'panel-connector': glyph(
     <>
       <rect x="3" y="6" width="30" height="24" rx="2" />

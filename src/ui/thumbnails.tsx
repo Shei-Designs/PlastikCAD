@@ -167,6 +167,14 @@ export const PART_THUMBNAILS: Record<string, ReactNode> = {
       <rect x="8" y="22" width="20" height="3" rx="1" />
     </>,
   ),
+  wheels: glyph(
+    <>
+      <circle cx="18" cy="18" r="14" />
+      <circle cx="18" cy="18" r="9.5" />
+      <circle cx="18" cy="18" r="2.5" />
+      <path d="M18 8.5v7M18 20.5v7M8.5 18h7M20.5 18h7" />
+    </>,
+  ),
   motors: glyph(
     <>
       <rect x="5" y="5" width="26" height="26" rx="4" />
