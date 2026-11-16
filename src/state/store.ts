@@ -181,6 +181,7 @@ export {
   confirmLoopMotors,
   cancelLoopMotors,
   testDrive,
+  replaceWithMecanum,
 } from './store/robot';
 export {
   applySyncReport,

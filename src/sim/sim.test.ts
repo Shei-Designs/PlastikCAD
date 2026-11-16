@@ -8,7 +8,11 @@ import { encodeFloat32, encodeUint32 } from '../io/base64';
 import { makeGroup } from '../model/ops';
 import type { Doc, SceneNode } from '../model/types';
 import { defaultLink } from '../robot/types';
-import { buildMjcfModel } from '../robot/export';
+import { buildMjcfModel, buildRobotPackage } from '../robot/export';
+import { checkRobot } from '../robot/check';
+import { withMecanumWheel } from '../robot/replaceWheel';
+import { parseUrdf } from '../io/importUrdf';
+import { emptyDoc } from '../model/file';
 import { ROBOTS } from '../robot/fixtures';
 import { forward } from '../robot/kinematics';
 import { linkNodes, linkOf, piecesOf } from '../robot/model';
@@ -567,5 +571,59 @@ describe('the linkage', () => {
     expect(Math.abs(p[7 * i + 3])).toBeCloseTo(1, 3);
     expect(p[7 * i + 2]).toBeCloseTo(0.015 + 0.1 * Math.cos(0.5), 3);
     sim.dispose();
+  });
+});
+
+describe('a mecanum drive on wheels that are not the part, each replaced by one', () => {
+  /** Every wheel the checks offer to replace, replaced; the design must then have nothing against it. */
+  const replaced = (doc: Doc): Doc => {
+    let next = doc;
+    const offered = checkRobot(doc, new Map()).filter((p) => p.fix === 'mecanum-wheel');
+    expect(offered.length).toBe(4);
+    for (const p of offered) next = { ...next, ...withMecanumWheel(next.scene, next.robot!, p.link!)! };
+    expect(checkRobot(next, new Map()).filter((p) => p.level === 'error')).toEqual([]);
+    return next;
+  };
+  const slides = (doc: Doc): void => {
+    const { sim, base } = simulate(doc);
+    expect(sim.bodies.filter((b) => b.includes('_roller_')).length).toBe(36);
+    sim.step(0.5);
+    const start = position(sim, base);
+    const turned = yaw(sim, base);
+    sim.drive(0, 0, 1);
+    sim.step(2);
+    const end = position(sim, base);
+    // It faces +Y, so its left is -X: as far as the reference rover on the part goes.
+    expect(start[0] - end[0]).toBeGreaterThan(1);
+    expect(Math.abs(end[1] - start[1])).toBeLessThan(0.05);
+    expect(Math.abs(yaw(sim, base) - turned)).toBeLessThan(5);
+    sim.dispose();
+  };
+
+  it('slides on wheels that were plain cylinders', () => {
+    const doc = make('mecanum');
+    doc.scene = doc.scene.map((n): SceneNode => (n.type === 'part' ? { id: n.id, name: n.name, type: 'shape', shape: 'cylinder', params: {}, pos: n.pos, rot: n.rot, size: n.size, hole: false, color: n.color } : n));
+    slides(replaced(doc));
+  });
+
+  it('slides on a robot brought in from a ROS package, whose wheels come as meshes', () => {
+    const source = make('mecanum');
+    const nodes = linkNodes(source.scene);
+    const geo = robotGeometry(nodes, Object.fromEntries(nodes.map((n) => [n.id, linkOf(source.robot!, n.id).collision])), true);
+    const pkg = buildRobotPackage(source, new Map(geo.map((g) => [g.id, g])), source.robot!);
+    const urdf = pkg.files.find((f) => f.name.endsWith('.urdf'))!;
+    const imported = parseUrdf(urdf.bytes, pkg.files.filter((f) => f !== urdf).map((f) => ({ name: f.name, bytes: f.bytes })));
+    expect(imported.robot.drive?.kind).toBe('mecanum');
+    expect(imported.scene.filter((n) => n.type === 'part').length).toBe(0);
+    setAssets(imported.assets);
+    const doc: Doc = { ...emptyDoc(), name: imported.name, scene: imported.scene, assets: imported.assets, robot: imported.robot };
+    const after = replaced(doc);
+    // Each wheel is the 100 mm wheel again, where the mesh was.
+    for (const w of after.scene.filter((n) => n.type === 'part')) {
+      expect(w.type === 'part' && w.params.size).toBe('100');
+      const was = imported.scene.find((n) => n.id === w.id)!;
+      w.pos.forEach((x, i) => expect(x).toBeCloseTo(was.pos[i], 1));
+    }
+    slides(after);
   });
 });

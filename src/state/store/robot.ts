@@ -15,6 +15,7 @@ import { buildIsaacStage, buildMjcfModel, buildRobotPackage, buildSdfModel, expo
 import type { ExportFormat } from '../../robot/export';
 import { fitFollowers, solvePose } from '../../robot/kinematics';
 import { jointInChild, jointInDesign as jointInDesignOf, linkNodes, linkOf, meetingPoint, motorsOnLoopJoints, openLoops, piecesOf, robotOf, sensorInDesign, sensorInLink, spanningTree, withMotors } from '../../robot/model';
+import { withMecanumWheel } from '../../robot/replaceWheel';
 import { snapPointsOf } from '../../robot/snaps';
 import type { SnapPoint } from '../../viewer/Viewer';
 import { jointFit } from '../../robot/defaults';
@@ -24,7 +25,7 @@ import { DRIVE_KINDS, defaultJoint, defaultSensor, SENSOR_KINDS } from '../../ro
 import type { DriveKind, DriveRole, Robot, RobotJoint, RobotLink, RobotSensor, SensorKind, World } from '../../robot/types';
 import { massProps } from '../massProps';
 import { sim } from '../sim';
-import { endMerge, endWork, fail, getState, notify, previewingAlign, record, set, startWork } from './core';
+import { commit, endMerge, endWork, fail, getState, notify, previewingAlign, record, set, startWork } from './core';
 import type { EditorState } from './core';
 import { cancelPlacing } from './placing';
 import { cancelMate } from './parts';
@@ -295,6 +296,17 @@ export function setRobotRoot(node: string | null): void {
 
 export function updateLink(node: string, patch: Partial<Omit<RobotLink, 'node'>>, merge?: string): void {
   editRobot((r) => ({ ...r, links: [...r.links.filter((l) => l.node !== node), { ...linkOf(r, node, getState().doc.scene.find((n) => n.id === node)), ...patch }] }), merge);
+}
+
+/**
+ * Makes the link's object a Mecanum wheel part where it stands, as one step: what the checks offer for a wheel of
+ * a mecanum drive that is not one. What is picked stays picked: the checks stay in view for the next wheel.
+ */
+export function replaceWithMecanum(link: string): void {
+  const { doc } = getState();
+  const next = doc.robot && withMecanumWheel(doc.scene, doc.robot, link);
+  if (!next) return;
+  commit(next.scene, { robot: () => next.robot });
 }
 
 const jointName = (robot: Robot, base: string): string => {

@@ -324,6 +324,9 @@ export const robot: Catalog = {
   'Exact mesh': 'Maillage exact',
   'The visual shape itself: slow, and most simulators approximate it anyway.': 'La forme visuelle elle-même\u00a0: lent, et la plupart des simulateurs l’approximent de toute façon.',
   'None [[collision]]': 'Aucune',
+  'Rollers [[collision]]': 'Rouleaux',
+  'Its rollers, each turning freely: what a mecanum wheel slides on.': 'Ses rouleaux, chacun libre de tourner\u00a0: ce sur quoi une roue mecanum glisse.',
+  'Replaces the object with a Mecanum wheel part of its size': 'Remplace l’objet par une pièce Roue mecanum de sa taille',
   'Passes through everything.': 'Traverse tout.',
 
   // Sensor kinds; the lowercase ones are the kinds as the tree shows them (robot/types.ts)
