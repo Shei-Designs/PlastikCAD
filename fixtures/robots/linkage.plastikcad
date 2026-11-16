@@ -1,0 +1,178 @@
+{
+  "format": "plastikcad",
+  "version": 3,
+  "units": "mm",
+  "id": "fxreferencelinkage",
+  "name": "Reference linkage",
+  "scene": [
+    {
+      "id": "fx000056",
+      "type": "shape",
+      "name": "Plate",
+      "shape": "box",
+      "params": {
+        "radius": 0
+      },
+      "pos": [0,0,7.5],
+      "rot": [0,0,0],
+      "size": [60,200,15],
+      "color": "#8fa3bf"
+    },
+    {
+      "id": "fx000057",
+      "type": "shape",
+      "name": "Crank",
+      "shape": "box",
+      "params": {
+        "radius": 0
+      },
+      "pos": [0,-50,65],
+      "rot": [0,0,0],
+      "size": [10,10,100],
+      "color": "#e8853a"
+    },
+    {
+      "id": "fx000058",
+      "type": "shape",
+      "name": "Rocker",
+      "shape": "box",
+      "params": {
+        "radius": 0
+      },
+      "pos": [0,50,65],
+      "rot": [0,0,0],
+      "size": [10,10,100],
+      "color": "#8fa3bf"
+    },
+    {
+      "id": "fx000059",
+      "type": "shape",
+      "name": "Coupler",
+      "shape": "box",
+      "params": {
+        "radius": 0
+      },
+      "pos": [14,0,115],
+      "rot": [0,0,0],
+      "size": [10,110,10],
+      "color": "#8fa3bf"
+    }
+  ],
+  "assets": {},
+  "robot": {
+    "root": "fx000056",
+    "base": "fixed",
+    "links": [
+      {
+        "node": "fx000056",
+        "mass": {
+          "kind": "material",
+          "material": "pla",
+          "infill": 20,
+          "shell": 1.2
+        },
+        "collision": "box",
+        "friction": 0.8
+      },
+      {
+        "node": "fx000057",
+        "mass": {
+          "kind": "material",
+          "material": "pla",
+          "infill": 20,
+          "shell": 1.2
+        },
+        "collision": "box",
+        "friction": 0.8
+      },
+      {
+        "node": "fx000058",
+        "mass": {
+          "kind": "material",
+          "material": "pla",
+          "infill": 20,
+          "shell": 1.2
+        },
+        "collision": "box",
+        "friction": 0.8
+      },
+      {
+        "node": "fx000059",
+        "mass": {
+          "kind": "material",
+          "material": "pla",
+          "infill": 20,
+          "shell": 1.2
+        },
+        "collision": "box",
+        "friction": 0.8
+      }
+    ],
+    "joints": [
+      {
+        "id": "fx000060",
+        "name": "Crank joint",
+        "type": "revolute",
+        "parent": "fx000056",
+        "child": "fx000057",
+        "origin": [0,0,-50],
+        "axis": [1,0,0],
+        "lower": -60,
+        "upper": 60,
+        "effort": 1.9,
+        "velocity": 270,
+        "damping": 0.0202,
+        "friction": 0,
+        "motor": "sts3215"
+      },
+      {
+        "id": "fx000061",
+        "name": "Rocker joint",
+        "type": "revolute",
+        "parent": "fx000056",
+        "child": "fx000058",
+        "origin": [0,0,-50],
+        "axis": [1,0,0],
+        "lower": -60,
+        "upper": 60,
+        "effort": 0.358,
+        "velocity": 90,
+        "damping": 0.0114,
+        "friction": 0,
+        "passive": true
+      },
+      {
+        "id": "fx000062",
+        "name": "Coupler joint",
+        "type": "revolute",
+        "parent": "fx000057",
+        "child": "fx000059",
+        "origin": [-14,-50,0],
+        "axis": [1,0,0],
+        "lower": -120,
+        "upper": 120,
+        "effort": 0.358,
+        "velocity": 90,
+        "damping": 0.0114,
+        "friction": 0,
+        "passive": true
+      },
+      {
+        "id": "fx000063",
+        "name": "Closing joint",
+        "type": "revolute",
+        "parent": "fx000058",
+        "child": "fx000059",
+        "origin": [-14,50,0],
+        "axis": [1,0,0],
+        "lower": -120,
+        "upper": 120,
+        "effort": 0.358,
+        "velocity": 90,
+        "damping": 0.0114,
+        "friction": 0,
+        "passive": true
+      }
+    ]
+  }
+}

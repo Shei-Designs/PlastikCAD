@@ -21,6 +21,7 @@ import {
   dragMarker,
   endMarkerDrag,
   selectJoint,
+  toggleLoopMotor,
   selectSensor,
   groupSelected,
   mirrorSelected,
@@ -93,6 +94,7 @@ import { enterByTouch, keyboardAttached, openTouchEntry } from './TouchEntry';
 import { groupKeys, tip } from './keymap';
 import type { CommandId } from './keymap';
 import { Popover } from './Popover';
+import { LoopMotorsPanel } from './LoopMotorsPanel';
 import { MatePanel } from './MatePanel';
 import { placeReadout } from './readout';
 import { TransformBox } from './TransformBox';
@@ -469,10 +471,11 @@ function jointMarkerOf(joint: RobotJoint, child: SceneNode): Marker {
 }
 
 /** What of the editor's state the markers are worked out from. */
-type MarkerState = Pick<EditorState, 'doc' | 'robot' | 'joint' | 'sensor' | 'prefs'>;
+type MarkerState = Pick<EditorState, 'doc' | 'robot' | 'joint' | 'sensor' | 'prefs' | 'loopMotors'>;
 
 /** The picked joint or sensor. */
 function robotMarker(s: MarkerState): Marker | null {
+  if (s.loopMotors) return null;
   const sensor = s.sensor ? s.doc.robot?.sensors.find((x) => x.id === s.sensor) : undefined;
   const link = sensor && s.doc.scene.find((n) => n.id === sensor.link);
   if (sensor && link) return sensorMarkerOf(sensor, link);
@@ -483,9 +486,21 @@ function robotMarker(s: MarkerState): Marker | null {
 
 /** Every other joint and sensor, for Robot mode when it shows them all. */
 function robotMarkers(s: MarkerState): { id: string; marker: Marker }[] | null {
-  if (!s.robot || !s.prefs.robotMarkers || !s.doc.robot) return null;
+  if (!s.doc.robot) return null;
   const byId = new Map(s.doc.scene.map((n) => [n.id, n]));
   const out: { id: string; marker: Marker }[] = [];
+  // While the motors of a loop are asked for, the loop's joints alone, to click on: those picked so far lit.
+  if (s.loopMotors) {
+    for (const j of s.doc.robot.joints) {
+      const child = s.loopMotors.joints.includes(j.id) ? byId.get(j.child) : undefined;
+      if (!child) continue;
+      const marker = jointMarkerOf(j, child);
+      if (marker.kind === 'joint') marker.lit = s.loopMotors.motors.includes(j.id);
+      out.push({ id: j.id, marker });
+    }
+    return out;
+  }
+  if (!s.robot || !s.prefs.robotMarkers) return null;
   for (const j of s.doc.robot.joints) {
     const child = j.id !== s.joint ? byId.get(j.child) : undefined;
     if (child) out.push({ id: j.id, marker: jointMarkerOf(j, child) });
@@ -616,7 +631,8 @@ export function Viewport() {
   const joint = useEditor((s) => s.joint);
   const sensor = useEditor((s) => s.sensor);
   const jointPick = useEditor((s) => s.jointPick);
-  const state = useMemo(() => ({ doc, robot, joint, sensor, prefs }), [doc, robot, joint, sensor, prefs]);
+  const loopMotors = useEditor((s) => s.loopMotors);
+  const state = useMemo(() => ({ doc, robot, joint, sensor, prefs, loopMotors }), [doc, robot, joint, sensor, prefs, loopMotors]);
   // The test drive: while it runs, the links are drawn where the simulation has them.
   useSyncExternalStore(sim.subscribe, sim.getRevision);
   const driven = sim.get();
@@ -725,7 +741,8 @@ export function Viewport() {
         },
         onMarkerPick: (id) => {
           const robot = getState().doc.robot;
-          if (robot?.joints.some((j) => j.id === id)) selectJoint(id);
+          if (getState().loopMotors) toggleLoopMotor(id);
+          else if (robot?.joints.some((j) => j.id === id)) selectJoint(id);
           else if (robot?.sensors.some((x) => x.id === id)) selectSensor(id);
         },
       },
@@ -829,6 +846,7 @@ export function Viewport() {
 
       {mating && <MatePanel key={mating.id} />}
       {arraying && <ArrayPanel />}
+      {loopMotors && <LoopMotorsPanel />}
 
       <div className="corner">
         <div className="overlay">

@@ -66,7 +66,8 @@ export interface ViewerOptions {
  * looks along its X, a lidar sweeps about its Z.
  */
 export type Marker =
-  | { kind: 'joint'; type: 'fixed' | 'revolute' | 'continuous' | 'prismatic'; matrix: Mat }
+  /** `lit`: drawn at full strength among the markers not picked, as one that is chosen from them. */
+  | { kind: 'joint'; type: 'fixed' | 'revolute' | 'continuous' | 'prismatic'; matrix: Mat; lit?: boolean }
   /** `hfov` degrees across the picture; `near` and `far` the clip distances, mm. */
   | { kind: 'camera'; matrix: Mat; hfov: number; aspect: number; depth: boolean; near: number; far: number }
   /** `ranges`: what each ray measures while the test drive runs, mm from the origin, -1 for a miss; drawn as rays in the design's own scale. */

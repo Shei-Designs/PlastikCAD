@@ -172,12 +172,19 @@ export interface Tree {
 /** Whether a joint turns about its axis: the only kind that can close a loop, in the app's own solver and in every export. */
 export const isHinge = (j: RobotJoint): boolean => j.type === 'revolute' || j.type === 'continuous';
 
+/** Whether a motor moves the joint: it moves, is not passive and follows no other. A joint that closes a loop has none either way. */
+export const hasMotor = (j: RobotJoint): boolean => j.type !== 'fixed' && !j.passive && !j.mimic;
+
+/** How well a joint does as the one that closes a loop: not at all unless a hinge, and a passive hinge before one with a motor, which a loop joint cannot have. */
+const closes = (j: RobotJoint): number => (!isHinge(j) ? 0 : j.passive ? 2 : 1);
+
 /**
  * The links as a tree from the base: a breadth-first walk down the joints,
  * taking each link the first time a joint reaches it. Any joint that would
  * reach a link again closes a loop, which URDF cannot hold. Only a hinge can
- * close one, so where the joint that comes second is not a hinge and the one
- * that came first is, the two change places: the hinge closes the loop.
+ * close one, and a passive one before one with a motor, so where the joint
+ * that came first into a link closes a loop better than the one that comes
+ * second, the two change places.
  */
 export function spanningTree(robot: Robot, links: string[]): Tree {
   const order: string[] = [];
@@ -199,7 +206,7 @@ export function spanningTree(robot: Robot, links: string[]): Tree {
             for (let at: string | undefined = link; at; at = parentJoint.get(at)?.parent) if (at === j.child) return true;
             return false;
           };
-          if (!isHinge(j) && first && isHinge(first) && !below(j.parent)) {
+          if (first && closes(first) > closes(j) && !below(j.parent)) {
             parentJoint.set(j.child, j);
             loops.push(first);
             swapped = true;
@@ -219,6 +226,58 @@ export function spanningTree(robot: Robot, links: string[]): Tree {
   }
   // A joint whose parent is never reached cannot be walked over, but still counts as a loop if its child was reached otherwise.
   return { order, parentJoint, loops, unreached: links.filter((id) => !reached.has(id)) };
+}
+
+/** The joints of the tree round the loop `loop` closes: those on the way up from each of its two links to where the ways meet. */
+export function loopJoints(tree: Tree, loop: RobotJoint): RobotJoint[] {
+  const up = (link: string): RobotJoint[] => {
+    const path: RobotJoint[] = [];
+    for (let j = tree.parentJoint.get(link); j && path.length <= tree.order.length; j = tree.parentJoint.get(j.parent)) path.push(j);
+    return path;
+  };
+  const a = up(loop.parent);
+  const b = up(loop.child);
+  return [...a.filter((j) => !b.includes(j)), ...b.filter((j) => !a.includes(j))];
+}
+
+/**
+ * The loops nobody has said the motors of: every moving joint round one still has a motor, and the motors
+ * would pull the loop apart. Each as its moving joints, the one that closes it last. None for a robot whose
+ * joints get no controllers. A loop with a passive joint or a follower on it has been seen to.
+ */
+export function openLoops(robot: Robot, links: string[]): RobotJoint[][] {
+  if (!robot.control) return [];
+  const tree = spanningTree(robot, links);
+  const out: RobotJoint[][] = [];
+  for (const loop of tree.loops) {
+    if (loop.passive) continue;
+    const round = loopJoints(tree, loop).filter((j) => j.type !== 'fixed');
+    if (round.length && round.every(hasMotor)) out.push([...round, loop]);
+  }
+  return out;
+}
+
+/** The robot with `motors` the only joints among `joints` that have a motor: the rest are passive. */
+export function withMotors(robot: Robot, joints: string[], motors: string[]): Robot {
+  const among = new Set(joints);
+  const driven = new Set(motors);
+  return {
+    ...robot,
+    joints: robot.joints.map((j) => {
+      if (!among.has(j.id) || j.type === 'fixed') return j;
+      // A passive joint starts where its loop puts it, not at a start of its own.
+      const { passive: _passive, ...rest } = j;
+      if (driven.has(j.id)) return rest;
+      const { start: _start, command: _command, ...free } = rest;
+      return { ...free, passive: true as const };
+    }),
+  };
+}
+
+/** The joints among `joints` that close a loop in `robot` and have a motor all the same: a loop joint cannot carry one. */
+export function motorsOnLoopJoints(robot: Robot, links: string[], joints: string[]): RobotJoint[] {
+  const among = new Set(joints);
+  return spanningTree(robot, links).loops.filter((j) => among.has(j.id) && !j.passive && !j.mimic);
 }
 
 /** Why a joint cannot follow another: the leader never moves, closes a loop, is left out of the robot, or follows the follower in turn. */

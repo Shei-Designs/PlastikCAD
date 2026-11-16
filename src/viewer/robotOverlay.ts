@@ -97,7 +97,7 @@ export class RobotOverlay {
       this.dimMarkers.clear();
       this.disposeRays();
       for (const d of dims) {
-        const g = markerObject(d.marker, t.accent, true);
+        const g = markerObject(d.marker, t.accent, true, !(d.marker.kind === 'joint' && d.marker.lit));
         this.stage.overlay.add(g);
         this.dimMarkers.set(d.id, g);
         if (d.marker.kind === 'lidar' && d.marker.ranges) {

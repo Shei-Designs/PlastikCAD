@@ -73,7 +73,7 @@ export function checkRobot(doc: Doc, props: Map<string, LinkProperties>, robot: 
     if ((j.type === 'revolute' || j.type === 'prismatic') && !(j.lower < j.upper)) error(tr('"{name}": the lower limit must be below the upper one.', { name: j.name }), { joint: j.id });
     // A simulator pushes a joint that begins past a limit back inside it at once, hard enough to throw the robot over.
     if ((j.type === 'revolute' || j.type === 'prismatic') && j.lower < j.upper && !j.mimic && ((j.start ?? 0) < j.lower || (j.start ?? 0) > j.upper)) error(j.start === undefined ? tr('"{name}" is outside its limits as designed. Give it a start inside them.', { name: j.name }) : tr('"{name}" starts outside its limits.', { name: j.name }), { joint: j.id });
-    if (j.type !== 'fixed' && !(j.effort > 0 && j.velocity > 0)) warn(tr('{name}: Effort or Velocity is 0, so nothing can move it.', { name: j.name }), { joint: j.id });
+    if (j.type !== 'fixed' && !j.passive && !(j.effort > 0 && j.velocity > 0)) warn(tr('{name}: Effort or Velocity is 0, so nothing can move it.', { name: j.name }), { joint: j.id });
     if (j.mimic) {
       const leader = jointById.get(j.mimic.joint);
       if (j.mimic.joint === j.id) error(tr('"{name}" follows itself.', { name: j.name }), { joint: j.id });

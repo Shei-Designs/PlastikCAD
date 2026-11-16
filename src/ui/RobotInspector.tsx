@@ -11,13 +11,13 @@ import type { SceneNode, Vec3 } from '../model/types';
 import { inertialInOwn, inertialOf, massOf, principalMoments } from '../robot/inertia';
 import type { MeshProperties, Tensor } from '../robot/inertia';
 import { MATERIALS, materialOf } from '../robot/materials';
-import { followFault, jointInDesign, linkOf, robotForward, sensorInDesign } from '../robot/model';
+import { followFault, hasMotor, jointInDesign, linkOf, robotForward, sensorInDesign, spanningTree } from '../robot/model';
 import { AS_JOINT, figureSources, MOTORS } from '../robot/motors';
 import { COLLISION_KINDS, DRIVE_KINDS, driveJoints, JOINT_TYPES, MAX_PIECES, SENSOR_KINDS, WORLDS } from '../robot/types';
 import type { CollisionShape, DriveKind, DriveRole, RobotJoint, RobotLink, RobotSensor, SensorKind, World } from '../robot/types';
 import { cylinderAlong, cylinderLaid, shapeOf } from '../robot/collision';
 import type { Problem } from '../robot/check';
-import { addJoint, addSensor, deleteJoint, deleteSensor, fitJointFollowers, placeJoint, placeSensor, select, selectJoint, selectSensor, setBase, setControl, setDriveKind, setFaces, setDriveRole, setJointMotor, setPose, setPrefs, setRobotRoot, setScripts, setWorld, startJointPick, stopJointPick, updateJoint, updateLink, updateSensor, useEditor } from '../state/store';
+import { addJoint, addSensor, deleteJoint, deleteSensor, fitJointFollowers, placeJoint, placeSensor, select, selectJoint, selectSensor, setBase, setControl, setDriveKind, setFaces, setDriveRole, setJointMotor, setPose, setPrefs, setRobotRoot, setScripts, setWorld, startJointPick, stopJointPick, testDrive, updateJoint, updateLink, updateSensor, useEditor } from '../state/store';
 import { rangeOf } from '../robot/kinematics';
 import { sim } from '../state/sim';
 import { inUnit, lengthFigure, lengthText, unitName } from '../units';
@@ -229,7 +229,7 @@ function Drive() {
 function Controllers() {
   const { robot } = useRobot();
   const driven = new Set(driveJoints(robot.drive));
-  const rest = robot.joints.filter((j) => j.type !== 'fixed' && !j.mimic && !driven.has(j.id));
+  const rest = robot.joints.filter((j) => hasMotor(j) && !driven.has(j.id));
   return (
     <fieldset className="group">
       <legend>{tr('Controllers')}</legend>
@@ -278,7 +278,7 @@ function Test() {
             <Select value={robot.world ?? 'flat'} label={tr('Floor')} options={WORLDS.map((w) => ({ value: w.id, label: w.name }))} onChange={(w) => setWorld(w as World)} />
           </div>
           <div className="field">
-            <button type="button" className="chip" disabled={stopped || !robot.root} title={tr("Builds the robot's MuJoCo model and runs it on the plate")} onClick={() => void sim.start(doc)}>
+            <button type="button" className="chip" disabled={stopped || !robot.root} title={tr("Builds the robot's MuJoCo model and runs it on the plate")} onClick={() => void testDrive()}>
               {tr('Test drive')}
             </button>
             {stopped && <p className="export-note">{tr('The problems below stop the test drive, as they do the export.')}</p>}
@@ -732,6 +732,10 @@ function JointPanel({ joint }: { joint: RobotJoint }) {
   const [lo, hi] = rangeOf(joint);
   const posed = pose?.joint === joint.id ? pose.value : 0;
   const inLoop = tree.loops.length > 0;
+  // A joint that closes a loop has no motor, whatever it is set to; it can have one only where another joint can close the loop in its place.
+  const loopJoint = tree.loops.some((j) => j.id === joint.id);
+  const moved = !joint.passive && !loopJoint;
+  const stuck = !moved && (joint.passive ? spanningTree({ ...robot, joints: robot.joints.map((j) => (j.id === joint.id ? { ...j, passive: undefined } : j)) }, nodes.map((n) => n.id)).loops.some((j) => j.id === joint.id) : loopJoint);
   const child = nodes.find((n) => n.id === joint.child);
   const parent = nodes.find((n) => n.id === joint.parent);
   const placed = child ? jointInDesign(joint, child) : { origin: joint.origin, axis: joint.axis };
@@ -837,7 +841,7 @@ function JointPanel({ joint }: { joint: RobotJoint }) {
             )}
           </legend>
           <SliderField label={angular ? tr('Angle') : tr('Travel')} help={tr('Moves the joint on the plate to see the robot move; the design stays as it is.')} value={posed} min={lo} max={hi} step={angular ? 1 : 0.5} unit={unit} length={!angular} onChange={(v) => setPose(v)} />
-          {!joint.mimic && (
+          {!joint.mimic && !joint.passive && (
             <div className="field inline">
               <label>
                 {tr('Start')}
@@ -868,8 +872,23 @@ function JointPanel({ joint }: { joint: RobotJoint }) {
               <Select value={joint.motor ?? ''} label={tr('Motor')} placeholder={trx('motor', 'Custom')} options={[...MOTORS.map((m) => ({ value: m.id, label: `${m.name} · ${m.torque} N·m, ${m.speed}°/s` })), ...figureSources(robot.joints, joint).map((j) => ({ value: AS_JOINT + j.id, label: `${tr('As {name}', { name: j.name })} · ${j.effort} N·m, ${j.velocity}°/s` }))]} onChange={(id) => setJointMotor(joint.id, id)} />,
               tr("Sets the effort, speed and damping to the figures of a motor or of another joint; typing any of them makes it custom again."),
             )}
+          {!joint.mimic &&
+            !driveJoints(robot.drive).includes(joint.id) &&
+            row(
+              tr('Moved by'),
+              <div className="segmented small" role="radiogroup" aria-label={tr('Moved by')}>
+                <button type="button" role="radio" aria-checked={moved} className={moved ? 'on' : ''} disabled={stuck} title={stuck ? tr('The loop has to close here, so it cannot have a motor') : tr('A motor moves the joint')} onClick={() => !moved && updateJoint(joint.id, { passive: undefined })}>
+                  {tr('Motor')}
+                </button>
+                <button type="button" role="radio" aria-checked={!moved} className={moved ? '' : 'on'} title={tr('No motor: the joint swings free, or goes where its linkage takes it')} onClick={() => moved && updateJoint(joint.id, { passive: true, start: undefined, command: undefined })}>
+                  {tr('Nothing')}
+                </button>
+              </div>,
+              tr('Sets whether a motor moves the joint.'),
+            )}
           {robot.control &&
             !joint.mimic &&
+            moved &&
             !driveJoints(robot.drive).includes(joint.id) &&
             row(
               tr('Command'),
