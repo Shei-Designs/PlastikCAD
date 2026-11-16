@@ -761,7 +761,8 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
     const turn = to ? quatOfMatrix(to) : undefined;
     return { name: l.name, pos: [at[0], at[1], at[2] + p.lift], ...(turn && Math.abs(turn[0]) < 1 - 1e-9 ? { rot: turn } : {}), inertial: l.inertial, visual: geo.visual.map((v) => ({ mesh: inFrame(v.mesh, l.frame), color: rgb(v.color) })), collision, friction: l.friction ?? 0.5 };
   });
-  // A mecanum wheel's rollers: bodies of the articulation on free hinges, standing with their wheels in the pose the simulation begins in.
+  // A mecanum wheel's rollers: bodies on free hinges, standing with their wheels in the pose the simulation begins in. Their
+  // hinges are kept out of the articulation, so the joint states and the transform tree, which tell of it, hold the robot's own alone.
   const rollerJoints: UsdJoint[] = [];
   for (const r of p.rollers) {
     const wheel = p.links.find((l) => l.name === r.wheel)!;
@@ -770,7 +771,7 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
     const at = (to ? apply(to, designed) : designed).map((x) => x * M) as Vec3;
     const turn = to ? quatOfMatrix(to) : undefined;
     links.push({ name: r.name, pos: [at[0], at[1], at[2] + p.lift], ...(turn && Math.abs(turn[0]) < 1 - 1e-9 ? { rot: turn } : {}), inertial: r.inertial, visual: [], collision: r.balls.map((b) => ({ sphere: { radius: b.radius }, origin: b.at, rpy: [0, 0, 0] as Vec3 })), friction: r.friction });
-    rollerJoints.push({ name: r.joint, type: 'continuous', parent: r.wheel, child: r.name, origin: r.at, axis: r.axis, dynamics: { damping: ROLLER_DAMPING, friction: 0 }, loop: false, drive: null });
+    rollerJoints.push({ name: r.joint, type: 'continuous', parent: r.wheel, child: r.name, origin: r.at, axis: r.axis, dynamics: { damping: ROLLER_DAMPING, friction: 0 }, loop: false, outside: true, drive: null });
   }
   let drive: UsdModel['drive'] = null;
   if (p.drive) {

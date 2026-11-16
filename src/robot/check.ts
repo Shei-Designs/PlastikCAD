@@ -142,9 +142,9 @@ export function checkRobot(doc: Doc, props: Map<string, LinkProperties>, robot: 
         if (!wheel || role.startsWith('steer')) continue;
         const found = mecanumOf(wheel);
         const name = wheel.name;
-        if (found === 'stretched') warn(tr('{name}: stretched unevenly, so it cannot slide sideways. Scale it the same on every side.', { name }), { link: wheel.id });
-        else if (found === 'gaps') warn(tr('{name}: its rollers leave gaps, so it cannot slide sideways. Add rollers or make the wheel wider.', { name }), { link: wheel.id });
-        else if (typeof found === 'string') warn(tr('{name}: not a Mecanum wheel part, so it cannot slide sideways. Use a Mecanum wheel from the parts.', { name }), { link: wheel.id });
+        if (found === 'stretched') error(tr('{name}: stretched unevenly, so it cannot slide sideways. Scale it the same on every side.', { name }), { link: wheel.id });
+        else if (found === 'gaps') error(tr('{name}: its rollers leave gaps, so it cannot slide sideways. Add rollers or make the wheel wider.', { name }), { link: wheel.id });
+        else if (typeof found === 'string') error(tr('{name}: not a Mecanum wheel part, so it cannot slide sideways. Use a Mecanum wheel from the parts.', { name }), { link: wheel.id });
         else if (linkOf(robot, wheel.id).collision !== 'none' && !leansRight(found, role, forward)) {
           const corner = DRIVE_KINDS.find((k) => k.id === 'mecanum')!.roles.find((r) => r.id === role)!.name;
           error(tr('{name}: its rollers lean the wrong way for the corner {corner}. Set its Hand to {hand}.', { name, corner, hand: found.part.params.hand === 'right' ? trx('wheel', 'Left') : trx('wheel', 'Right') }), { link: wheel.id });

@@ -52,6 +52,8 @@ export interface UsdJoint {
   armature?: number;
   /** Closes a loop: kept out of the articulation tree, as a plain joint between two of its bodies. */
   loop: boolean;
+  /** A joint the articulation leaves out though it closes no loop: its child is a body of its own, which no joint state or transform tells of. */
+  outside?: boolean;
   /** Where the joint is in its child's frame (m), for a joint that closes a loop: any other is at its child's origin. */
   inChild?: Vec3;
   /** What the joint's drive is told: a speed (a wheel), a position (a servo), an effort (a joint commanded by torque, which the drive does not hold), or nothing. */
@@ -587,7 +589,7 @@ function jointPrim(j: UsdJoint, robot: string, leader?: UsdJoint): string[] {
       body.push(`rel physxMimicJoint:${axis}:referenceJoint = </World/${robot}/${JOINTS_SCOPE}/${j.mimic.joint}>`, `uniform token physxMimicJoint:${axis}:referenceJointAxis = "${leaderAxis}"`, `float physxMimicJoint:${axis}:gearing = ${fmt(gearing, 9)}`, `float physxMimicJoint:${axis}:offset = ${fmt(-j.mimic.offset * degrees(j.type), 6)}`);
     }
   }
-  if (j.loop) body.push('bool physics:excludeFromArticulation = 1');
+  if (j.loop || j.outside) body.push('bool physics:excludeFromArticulation = 1');
   return [`def ${type} "${j.name}" (`, `    prepend apiSchemas = [${apis.join(', ')}]`, ')', '{', ...indent(body, 1), '}'];
 }
 

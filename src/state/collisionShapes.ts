@@ -7,6 +7,7 @@ import type { Asset, SceneNode } from '../model/types';
 import { collisionPrimitive, primitiveMesh } from '../robot/collision';
 import type { Collides } from '../robot/collision';
 import type { CollisionKind } from '../robot/types';
+import { mecanumOf, rollersMesh } from '../robot/wheels';
 import { Cancelled } from '../worker/client';
 import { geometry } from './geometry';
 import { propsKey } from './massProps';
@@ -19,6 +20,12 @@ const SETTLE_MS = 150;
 type Links = Record<string, Collides>;
 
 const linkOf = (node: SceneNode, links: Links): Collides => links[node.id] ?? { collision: 'hull' };
+/** A mecanum wheel that collides at all collides as its rollers, whatever kind its link is set to: the exports give it nothing else. */
+const rolls = (node: SceneNode, link: Collides) => {
+  if (link.collision === 'none') return null;
+  const found = mecanumOf(node);
+  return typeof found === 'string' ? null : found;
+};
 const keyOf = (node: SceneNode, link: Collides): string => `${link.collision}|${link.shape ? JSON.stringify(link.shape) : ''}|${link.pieces ?? 1}|${propsKey(node)}`;
 const kindsOf = (links: Links): Record<string, CollisionKind> => Object.fromEntries(Object.entries(links).map(([id, l]) => [id, l.collision]));
 
@@ -44,8 +51,13 @@ class CollisionShapesStore {
       const link = linkOf(node, links);
       const kind = link.collision;
       if (kind === 'none') continue;
-      const key = keyOf(node, link);
+      const wheel = rolls(node, link);
+      const key = wheel ? `rollers|${propsKey(node)}` : keyOf(node, link);
       let mesh = this.entries.get(key);
+      if (mesh === undefined && wheel) {
+        mesh = rollersMesh(wheel);
+        this.keep(key, mesh);
+      }
       if (mesh === undefined && (kind === 'box' || kind === 'cylinder' || kind === 'sphere')) {
         mesh = primitiveMesh(collisionPrimitive(node, link));
         this.keep(key, mesh);
@@ -60,7 +72,7 @@ class CollisionShapesStore {
     const missing = nodes.filter((n) => {
       const link = linkOf(n, links);
       const key = keyOf(n, link);
-      return (link.collision === 'hull' || link.collision === 'mesh') && !this.entries.has(key) && !this.pending.has(key);
+      return (link.collision === 'hull' || link.collision === 'mesh') && !rolls(n, link) && !this.entries.has(key) && !this.pending.has(key);
     });
     if (missing.length === 0) return;
     this.waiting = { nodes: missing, links, assets };

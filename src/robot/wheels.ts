@@ -4,6 +4,7 @@
 // where it stands, never from its mesh, so a hole drilled in the wheel or a
 // hub glued to it changes nothing. A wheel stretched unevenly, or one whose
 // rollers leave gaps, is no longer the wheel its settings describe.
+import type { MeshData } from '../geometry/mesh';
 import { apply, multiply, nodeMatrix, translation } from '../model/math';
 import type { Mat } from '../model/math';
 import type { PartNode, SceneNode, Vec3 } from '../model/types';
@@ -115,6 +116,39 @@ export function rollersOf(w: MecanumWheel): Roller[] {
       inertia: { along, across },
     };
   });
+}
+
+/**
+ * What a mecanum wheel collides as, as triangles in the design, for the plate to draw: every ball of every roller,
+ * coarse, since it is only looked at.
+ */
+export function rollersMesh(w: MecanumWheel): MeshData {
+  const AROUND = 8;
+  const RINGS = 3;
+  const positions: number[] = [];
+  const triangles: number[] = [];
+  for (const r of rollersOf(w)) {
+    for (const b of r.balls) {
+      const c: Vec3 = [r.center[0] + b.at[0], r.center[1] + b.at[1], r.center[2] + b.at[2]];
+      const first = positions.length / 3;
+      positions.push(c[0], c[1], c[2] - b.radius);
+      for (let i = 1; i <= RINGS; i++) {
+        const lat = (i / (RINGS + 1) - 0.5) * Math.PI;
+        for (let j = 0; j < AROUND; j++) {
+          const lon = (j / AROUND) * 2 * Math.PI;
+          positions.push(c[0] + b.radius * Math.cos(lat) * Math.cos(lon), c[1] + b.radius * Math.cos(lat) * Math.sin(lon), c[2] + b.radius * Math.sin(lat));
+        }
+      }
+      const top = positions.length / 3;
+      positions.push(c[0], c[1], c[2] + b.radius);
+      const at = (ring: number, j: number) => first + 1 + ring * AROUND + (j % AROUND);
+      for (let j = 0; j < AROUND; j++) {
+        triangles.push(first, at(0, j + 1), at(0, j), top, at(RINGS - 1, j), at(RINGS - 1, j + 1));
+        for (let i = 0; i + 1 < RINGS; i++) triangles.push(at(i, j), at(i, j + 1), at(i + 1, j + 1), at(i, j), at(i + 1, j + 1), at(i + 1, j));
+      }
+    }
+  }
+  return { positions: new Float32Array(positions), triangles: new Uint32Array(triangles) };
 }
 
 /** The line on the floor a wheel grips along where it touches it: the axis of its lowest roller, flattened. A unit vector in the design. */

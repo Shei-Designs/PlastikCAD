@@ -306,6 +306,10 @@ def one(path, pictures):
             result['problems'].append('no joint_states arrived')
         elif set(got['joint_states'][-1].name) != set(names):
             result['problems'].append(f"joint_states names {list(got['joint_states'][-1].name)} are not the articulation's {names}")
+        # A mecanum wheel's rollers are the simulator's alone: no joint state and no transform tells of one.
+        told = sorted(n for n in set(got['joint_states'][-1].name if got['joint_states'] else []) | frames if '_roller_' in n)
+        if told:
+            result['problems'].append(f'the rollers are published: {told[:4]}')
         if not got['clock']:
             result['problems'].append('no clock arrived')
         if not info['fixed_base']:
