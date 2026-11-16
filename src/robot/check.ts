@@ -3,14 +3,15 @@
 // or will misbehave in the file, never for how the robot might be designed
 // better. Each problem points at the link or joint it is about, so the panel
 // can take the user there.
-import { tr } from '../i18n';
+import { tr, trx } from '../i18n';
 import type { Doc } from '../model/types';
 import type { LinkProperties } from '../worker/protocol';
 import { inertialOf, plausibleInertia } from './inertia';
 import { boxBounds } from '../model/math';
-import { followFault, isHinge, jointInDesign, linkNodes, linkOf, robotOf, sensorInDesign, spanningTree } from './model';
+import { followFault, isHinge, jointInDesign, linkNodes, linkOf, robotForward, robotOf, sensorInDesign, spanningTree } from './model';
 import type { FollowFault } from './model';
-import { JOINT_TYPES, withRole } from './types';
+import { DRIVE_KINDS, JOINT_TYPES, withRole } from './types';
+import { leansRight, mecanumOf } from './wheels';
 import type { Robot, RobotJoint } from './types';
 import { lengthText, said } from '../units';
 
@@ -132,6 +133,24 @@ export function checkRobot(doc: Doc, props: Map<string, LinkProperties>, robot: 
     if (drive.kind === 'differential' && (count('left') === 0 || count('right') === 0)) error(tr('The drive needs at least one wheel joint on each side.'));
     if (drive.kind === 'ackermann' && (count('left') === 0 || count('right') === 0 || count('steer-left') !== 1 || count('steer-right') !== 1)) error(tr('An Ackermann drive needs a driven wheel on each side and one steering joint on each side.'));
     if (drive.kind === 'mecanum' && (['front-left', 'front-right', 'rear-left', 'rear-right'] as const).some((r) => count(r) !== 1)) error(tr('A mecanum drive needs one wheel at each corner.'));
+    if (drive.kind === 'mecanum') {
+      // A mecanum drive slides on its wheels' rollers, which the simulators are given from the Mecanum wheel part alone;
+      // and it counts on each wheel's rollers leaning the way its corner needs, or the robot goes another way than told.
+      const forward = robotForward(robot, new Map(nodes.map((n) => [n.id, n])));
+      for (const [id, role] of Object.entries(drive.roles)) {
+        const wheel = nodes.find((n) => n.id === joint(id)?.child);
+        if (!wheel || role.startsWith('steer')) continue;
+        const found = mecanumOf(wheel);
+        const name = wheel.name;
+        if (found === 'stretched') warn(tr('{name}: stretched unevenly, so it cannot slide sideways. Scale it the same on every side.', { name }), { link: wheel.id });
+        else if (found === 'gaps') warn(tr('{name}: its rollers leave gaps, so it cannot slide sideways. Add rollers or make the wheel wider.', { name }), { link: wheel.id });
+        else if (typeof found === 'string') warn(tr('{name}: not a Mecanum wheel part, so it cannot slide sideways. Use a Mecanum wheel from the parts.', { name }), { link: wheel.id });
+        else if (linkOf(robot, wheel.id).collision !== 'none' && !leansRight(found, role, forward)) {
+          const corner = DRIVE_KINDS.find((k) => k.id === 'mecanum')!.roles.find((r) => r.id === role)!.name;
+          error(tr('{name}: its rollers lean the wrong way for the corner {corner}. Set its Hand to {hand}.', { name, corner, hand: found.part.params.hand === 'right' ? trx('wheel', 'Left') : trx('wheel', 'Right') }), { link: wheel.id });
+        }
+      }
+    }
     // The drive controller turns every wheel about one axle direction; a wheel turned another way drags.
     // A wheel whose object is hidden, a hole or gone has no axle to compare; its joint is faulted above.
     const wheels = Object.entries(drive.roles).filter(([, role]) => !role.startsWith('steer')).map(([id]) => joint(id)).filter((j): j is RobotJoint => Boolean(j));

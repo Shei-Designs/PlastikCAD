@@ -86,6 +86,8 @@ export interface UsdDrive {
   /** Ackermann: the steering joints, left then right, and every wheel as Isaac's controller lists them: front left, front right, rear left, rear right. */
   steer: string[];
   ackermannWheels?: string[];
+  /** Mecanum: the four wheels' joints by corner: front left, front right, rear left, rear right. */
+  corners?: string[];
   wheelRadius: number;
   wheelSeparation: number;
   wheelBase?: number;
@@ -113,6 +115,8 @@ export interface UsdModel {
   drive: UsdDrive | null;
   /** Joints a joint_command topic positions: an arm's. */
   controlled: string[];
+  /** Physics steps a second, where the robot needs finer ones than Isaac Sim's sixty (a mecanum wheel's rollers). */
+  stepsPerSecond?: number;
 }
 
 const DEG = 180 / Math.PI;
@@ -589,7 +593,11 @@ function jointPrim(j: UsdJoint, robot: string, leader?: UsdJoint): string[] {
 
 // --- the ROS 2 action graph ---------------------------------------------------
 
-type Attr = { type: string; value?: string; from?: string; rel?: string };
+/**
+ * An attribute of a graph node. `any` is a constant given to an input that takes whatever type it is handed (a math
+ * node's): the graph keeps such a value beside the attribute with the type it is to be read as, not in it.
+ */
+type Attr = { type: string; value?: string; from?: string; rel?: string; any?: { usd: string; as: string; value: string } };
 interface GraphNode {
   name: string;
   type: string;
@@ -609,6 +617,10 @@ function nodePrim(n: GraphNode, graph: string): string[] {
   for (const [name, a] of Object.entries(n.attrs).sort(([x], [y]) => x.localeCompare(y))) {
     if (a.rel !== undefined) {
       body.push(`custom rel ${name} = ${a.rel} (`, '    customData = {', '        dictionary omni = {', '            dictionary graph = {', '                string relType = "target"', '            }', '        }', '    }', ')');
+      continue;
+    }
+    if (a.any) {
+      body.push(`custom token ${name} (`, '    customData = {', '        dictionary omni = {', '            dictionary graph = {', `                ${a.any.usd} attrValue = ${a.any.value}`, `                string resolvedType = "${a.any.as}"`, '            }', '        }', '    }', ')');
       continue;
     }
     const exec = a.type === 'uint' && (name === 'inputs:execIn' || name.startsWith('outputs:exec'));
@@ -682,7 +694,35 @@ function rosGraph(model: UsdModel, robotPath: string, linkPath: (link: string) =
     );
   }
   const d = model.drive;
-  if (d && (d.kind === 'differential' || d.kind === 'mecanum')) {
+  if (d && d.kind === 'mecanum' && d.corners?.length === 4) {
+    // cmd_vel → each wheel's speed, by the mixing every mecanum controller uses: with k half the wheelbase plus half
+    // the track, a wheel turns at (forward ∓ left ∓ k × turn) / radius. Each speed is the command's linear part
+    // measured along one fixed vector plus its angular part along another, so two dot products and a sum give it.
+    const k = ((d.wheelBase ?? d.wheelSeparation) + d.wheelSeparation) / 2;
+    const r = d.wheelRadius;
+    // Front left, front right, rear left, rear right: the signs of the sideways and the turning parts.
+    const signs: [number, number][] = [[-1, -1], [1, 1], [1, -1], [-1, 1]];
+    const vector = (v: Vec3): Attr => ({ type: 'token', any: { usd: 'double3', as: 'vectord[3]', value: v3(v, 9) } });
+    const limit = (v: number): Attr => ({ type: 'token', any: { usd: 'double', as: 'double', value: fmt(v, 6) } });
+    nodes.push({ name: 'cmd_vel', type: 'isaacsim.ros2.bridge.ROS2SubscribeTwist', version: 1, attrs: { 'inputs:execIn': from('uint', 'tick.outputs:tick'), 'inputs:context': from('uint64', 'context.outputs:context'), 'inputs:topicName': text('cmd_vel'), 'outputs:execOut': EXEC, 'outputs:linearVelocity': { type: 'vector3d' }, 'outputs:angularVelocity': { type: 'vector3d' } } });
+    signs.forEach(([side, turn], i) => {
+      nodes.push(
+        { name: `wheel${i}_linear`, type: 'omni.graph.nodes.DotProduct', version: 1, attrs: { 'inputs:a': from('vector3d', 'cmd_vel.outputs:linearVelocity'), 'inputs:b': vector([1 / r, side / r, 0]), 'outputs:product': { type: 'double' } } },
+        { name: `wheel${i}_angular`, type: 'omni.graph.nodes.DotProduct', version: 1, attrs: { 'inputs:a': from('vector3d', 'cmd_vel.outputs:angularVelocity'), 'inputs:b': vector([0, 0, (turn * k) / r]), 'outputs:product': { type: 'double' } } },
+        { name: `wheel${i}_sum`, type: 'omni.graph.nodes.Add', version: 2, attrs: { 'inputs:a': from('double', `wheel${i}_linear.outputs:product`), 'inputs:b': from('double', `wheel${i}_angular.outputs:product`), 'outputs:sum': { type: 'double' } } },
+        { name: `wheel${i}_speed`, type: 'omni.graph.nodes.Clamp', version: 1, attrs: { 'inputs:input': from('double', `wheel${i}_sum.outputs:sum`), 'inputs:lower': limit(-d.maxWheelSpeed), 'inputs:upper': limit(d.maxWheelSpeed), 'outputs:result': { type: 'double' } } },
+      );
+    });
+    nodes.push(
+      {
+        name: 'speeds',
+        type: 'omni.graph.nodes.ConstructArray',
+        version: 1,
+        attrs: { 'inputs:arraySize': num('int', 4), 'inputs:arrayType': { type: 'token', value: '"double[]"' }, ...Object.fromEntries(signs.map((_, i) => [`inputs:input${i}`, from('double', `wheel${i}_speed.outputs:result`)])), 'outputs:array': { type: 'double[]' } },
+      },
+      { name: 'wheels', type: 'isaacsim.core.nodes.IsaacArticulationController', version: 1, attrs: { 'inputs:execIn': from('uint', 'tick.outputs:tick'), 'inputs:targetPrim': target(robotPath), 'inputs:jointNames': tokens(d.corners), 'inputs:velocityCommand': from('double[]', 'speeds.outputs:array') } },
+    );
+  } else if (d && (d.kind === 'differential' || d.kind === 'mecanum')) {
     // cmd_vel → wheel speeds for the left and right sides → every wheel of each side.
     const wheels = [...d.left, ...d.right];
     nodes.push(
@@ -828,10 +868,11 @@ export function writeUsda(model: UsdModel): string {
   const footprint = model.footprint && !model.fixedBase ? footprintPrims(model, robot) : null;
 
   const world: string[] = [
-    'def PhysicsScene "physicsScene"',
+    ...(model.stepsPerSecond ? ['def PhysicsScene "physicsScene" (', '    prepend apiSchemas = ["PhysxSceneAPI"]', ')'] : ['def PhysicsScene "physicsScene"']),
     '{',
     '    vector3f physics:gravityDirection = (0, 0, -1)',
     '    float physics:gravityMagnitude = 9.81',
+    ...(model.stepsPerSecond ? [`    uint physxScene:timeStepsPerSecond = ${model.stepsPerSecond}`] : []),
     '}',
     '',
     'def DomeLight "Dome"',

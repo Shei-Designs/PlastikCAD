@@ -8,7 +8,7 @@ import { apply, boundsCenter, boundsSize, eulerOf, multiply, ownOrigin, rotation
 import type { Mat } from '../model/math';
 import type { Doc, SceneNode, Vec3 } from '../model/types';
 import { encodeText } from '../io/format';
-import { driveXml, jointStateXml, PIN, positionXml, sensorTopic, sensorXml, weldXml, worldXml } from '../io/gazebo';
+import { driveXml, jointStateXml, PIN, positionXml, rollerXml, sensorTopic, sensorXml, weldXml, worldXml } from '../io/gazebo';
 import type { GazeboDrive } from '../io/gazebo';
 import type { BridgeTopic } from '../io/rosPackage';
 import type { GazeboSensor } from '../io/gazebo';
@@ -31,9 +31,11 @@ import { followFault, hasMotor, jointInDesign, linkNodes, linkOf, robotForward, 
 import { motorOf } from './motors';
 import { drivePy, envPy, trainPy } from '../io/scripts';
 import { collisionPrimitive } from './collision';
+import { mecanumOf, rollersOf } from './wheels';
 import { DRIVE_KINDS, driveJoints, withRole } from './types';
 import { APP_NAME } from '../appInfo';
 import type { DriveKind, DriveRole, Robot, RobotJoint, World } from './types';
+import type { MecanumWheel } from './wheels';
 export interface PackageFile {
   /** Path inside the package folder. */
   name: string;
@@ -142,12 +144,31 @@ interface Prepared {
   loopJoints: UrdfJoint[];
   sensors: (GazeboSensor & { id: string; link: string; xyz: Vec3; rpy: Vec3; touch: number })[];
   drive: PreparedDrive | null;
+  /** The rollers of the mecanum wheels: bodies of the export's own, which the robot's lists do not show. */
+  rollers: PreparedRoller[];
   /** Joints under ros2_control. */
   controlled: string[];
   /** Those of them a controller sends a torque, not a position. */
   torque: string[];
   /** Joints no motor moves: a loop takes them where they begin, and nothing has to hold them there. */
   passive: string[];
+}
+
+/**
+ * A mecanum wheel's roller as the files get it: a link on a free hinge to its wheel, its frame parallel to the
+ * design's axes like every link's, colliding as a row of balls. Meters, kilograms.
+ */
+export interface PreparedRoller {
+  name: string;
+  joint: string;
+  /** The wheel link it turns on, and where its middle is in that link's frame. */
+  wheel: string;
+  at: Vec3;
+  axis: Vec3;
+  inertial: { mass: number; origin: Vec3; inertia: Tensor };
+  /** Each ball's center in the roller's frame, and its radius. */
+  balls: { at: Vec3; radius: number }[];
+  friction: number;
 }
 
 function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, meshUri: (path: string) => string, naming: Naming): Prepared {
@@ -177,9 +198,10 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
 
   const files: PackageFile[] = [];
   const links: Prepared['links'] = [];
+  const wheels: { id: string; wheel: MecanumWheel }[] = [];
   for (const id of tree.order) {
     const node = nodeById.get(id)!;
-    const link = linkOf(robot, id);
+    const link = linkOf(robot, id, node);
     const name = linkNames.get(id)!;
     const frame = frames.get(id)!;
     const geo = geometry.get(id);
@@ -193,7 +215,12 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
       if (written.mtl) files.push({ name: `meshes/visual/${written.mtlName}`, bytes: written.mtl });
       visual.push({ geometry: { mesh: meshUri(`meshes/visual/${name}.obj`) }, color: rgb(geo.visual[0].color) });
     }
-    if (link.collision === 'box' || link.collision === 'cylinder' || link.collision === 'sphere') {
+    // A mecanum wheel meets the floor by its rollers, which follow below, and has no shape of its own to collide as.
+    const mecanum = link.collision === 'none' ? null : mecanumOf(node);
+    const wheel = mecanum && typeof mecanum !== 'string' ? mecanum : null;
+    if (wheel) {
+      wheels.push({ id, wheel });
+    } else if (link.collision === 'box' || link.collision === 'cylinder' || link.collision === 'sphere') {
       // The primitive fitted to the object, where it stands and turned as it is (URDF's roll, pitch, yaw are the design's X, Y, Z turns).
       const fitted = collisionPrimitive(node, link);
       const origin = fitted.at.map((x, i) => (x - frame[i]) * M) as Vec3;
@@ -219,6 +246,37 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
     }
     if (!geo.props.watertight && !(figures.typed.center && figures.typed.inertia)) warnings.push(`"${node.name}" is not a closed mesh; its inertia is an estimate.`);
     links.push({ name, inertial, visual, collision, friction: link.friction, frame, node });
+  }
+
+  // The rollers, named after their wheels once every link has its name. They weigh what rubber ones would, and no
+  // more between them than half their wheel, whose own mass and inertia are lessened by as much: the wheel's mesh
+  // was weighed rollers and all.
+  const rollers: PreparedRoller[] = [];
+  for (const { id, wheel } of wheels) {
+    const l = links.find((o) => o.node.id === id)!;
+    const made = rollersOf(wheel);
+    const whole = l.inertial ? l.inertial.mass * 1000 : Infinity;
+    const share = Math.min(1, (0.5 * whole) / made.reduce((sum, r) => sum + r.mass, 0));
+    if (l.inertial) {
+      const left = 1 - made.reduce((sum, r) => sum + r.mass * share, 0) / whole;
+      l.inertial = { mass: l.inertial.mass * left, origin: l.inertial.origin, inertia: l.inertial.inertia.map((x) => x * left) as Tensor };
+    }
+    made.forEach((r, i) => {
+      const rname = names.take(`${l.name}_roller_${i + 1}`, naming.link);
+      const [ax, ay, az] = r.axis;
+      const [along, across] = [toSI(r.inertia.along * share), toSI(r.inertia.across * share)];
+      const d = along - across;
+      rollers.push({
+        name: rname,
+        joint: names.take(`${rname}_joint`, naming.joint),
+        wheel: l.name,
+        at: r.center.map((x, k) => (x - l.frame[k]) * M) as Vec3,
+        axis: r.axis,
+        inertial: { mass: (r.mass * share) / 1000, origin: [0, 0, 0], inertia: [across + d * ax * ax, across + d * ay * ay, across + d * az * az, d * ax * ay, d * ax * az, d * ay * az] },
+        balls: r.balls.map((b) => ({ at: b.at.map((x) => x * M) as Vec3, radius: b.radius * M })),
+        friction: l.friction ?? 1,
+      });
+    });
   }
 
   // A drive wheel rolls forward on a positive command: its axis is written the way round that a positive
@@ -361,7 +419,7 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
   const torque = controlled.filter((name) => allJoints.find((j) => jointNames.get(j) === name)?.command === 'torque');
   const passive = allJoints.filter((j) => j.passive).map((j) => jointNames.get(j)!);
 
-  return { pkg, robotName: urdfName(doc.name, 'robot'), files, warnings, leftOut, order: tree.order, names, naming, linkNames, jointNames, frames, links, lift, posed: begun?.frames ?? null, treeJoints, loopJoints, sensors, drive, controlled, torque, passive };
+  return { pkg, robotName: urdfName(doc.name, 'robot'), files, warnings, leftOut, order: tree.order, names, naming, linkNames, jointNames, frames, links, lift, posed: begun?.frames ?? null, treeJoints, loopJoints, sensors, drive, rollers, controlled, torque, passive };
 }
 
 /**
@@ -504,7 +562,10 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
   }
   // The robot's box, for RViz to look at, as the base link's frame has it.
   const extent = unionBounds(p.links.map((l) => geometry.get(l.node.id)!.bounds));
-  const plugins = [jointStateXml(), ...welds, ...(p.drive ? [driveXml(gazeboDrive(p.drive, footprint?.name ?? base))] : [])];
+  // A mecanum wheel's rollers are Gazebo's alone: SDF links and joints beside the plugins, which RViz, the robot's
+  // state publisher and a real robot never see. The joint states are then those of the robot's own joints.
+  const own = p.rollers.length ? joints.filter((j) => j.type !== 'fixed').map((j) => j.name) : undefined;
+  const plugins = [jointStateXml('joint_states', own), ...p.rollers.map(rollerXml), ...welds, ...(p.drive ? [driveXml(gazeboDrive(p.drive, footprint?.name ?? base))] : [])];
   // A start is a place the joint is put in as Gazebo loads the robot, before the weld that closes a loop is made:
   // the weld would hold the loop as it then stood, pulled out of shape. So the joints on a loop begin as designed,
   // and the launch sends the controller to every start once it runs, no faster than the slowest of them can go.
@@ -575,7 +636,8 @@ export function buildSdfModel(doc: Doc, geometry: Map<string, LinkGeometry>, rob
   joints.push(...pinned);
   const base = p.linkNames.get(robot.root!)!;
   const footprint = footprintOf(p, robot);
-  const plugins = [jointStateXml(), ...welds, ...(p.drive ? [driveXml(gazeboDrive(p.drive, footprint?.name ?? base))] : []), ...held.map((j) => positionXml(j.name, j.limit?.velocity ?? 1, j.start ?? 0))];
+  const own = p.rollers.length ? joints.filter((j) => j.type !== 'fixed').map((j) => j.name) : undefined;
+  const plugins = [...p.rollers.map(rollerXml), jointStateXml('joint_states', own), ...welds, ...(p.drive ? [driveXml(gazeboDrive(p.drive, footprint?.name ?? base))] : []), ...held.map((j) => positionXml(j.name, j.limit?.velocity ?? 1, j.start ?? 0))];
   files.unshift(
     { name: 'model.config', bytes: encodeText(modelConfig(pkg, `${doc.name}, made with PlastikCAD`)) },
     { name: 'model.sdf', bytes: encodeText(writeSdf(p.robotName, links, joints, plugins, robot.base === 'fixed' ? p.linkNames.get(robot.root!) : undefined, footprint)) },
@@ -699,6 +761,17 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
     const turn = to ? quatOfMatrix(to) : undefined;
     return { name: l.name, pos: [at[0], at[1], at[2] + p.lift], ...(turn && Math.abs(turn[0]) < 1 - 1e-9 ? { rot: turn } : {}), inertial: l.inertial, visual: geo.visual.map((v) => ({ mesh: inFrame(v.mesh, l.frame), color: rgb(v.color) })), collision, friction: l.friction ?? 0.5 };
   });
+  // A mecanum wheel's rollers: bodies of the articulation on free hinges, standing with their wheels in the pose the simulation begins in.
+  const rollerJoints: UsdJoint[] = [];
+  for (const r of p.rollers) {
+    const wheel = p.links.find((l) => l.name === r.wheel)!;
+    const to = p.posed?.get(wheel.node.id);
+    const designed = wheel.frame.map((x, i) => x + r.at[i] / M) as Vec3;
+    const at = (to ? apply(to, designed) : designed).map((x) => x * M) as Vec3;
+    const turn = to ? quatOfMatrix(to) : undefined;
+    links.push({ name: r.name, pos: [at[0], at[1], at[2] + p.lift], ...(turn && Math.abs(turn[0]) < 1 - 1e-9 ? { rot: turn } : {}), inertial: r.inertial, visual: [], collision: r.balls.map((b) => ({ sphere: { radius: b.radius }, origin: b.at, rpy: [0, 0, 0] as Vec3 })), friction: r.friction });
+    rollerJoints.push({ name: r.joint, type: 'continuous', parent: r.wheel, child: r.name, origin: r.at, axis: r.axis, dynamics: { damping: ROLLER_DAMPING, friction: 0 }, loop: false, drive: null });
+  }
   let drive: UsdModel['drive'] = null;
   if (p.drive) {
     const r = p.drive.roles;
@@ -706,8 +779,9 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
     const right = r.right ?? [...(r['front-right'] ?? []), ...(r['rear-right'] ?? [])];
     const speeds = p.treeJoints.filter((j) => p.drive!.wheels.includes(j.name) && j.limit?.velocity).map((j) => j.limit!.velocity);
     const steer = p.drive.kind === 'ackermann' ? [r['steer-left']?.[0], r['steer-right']?.[0]].filter((n): n is string => Boolean(n)) : p.drive.steer;
-    drive = { kind: p.drive.kind, left, right, steer, ackermannWheels, wheelRadius: p.drive.wheelRadius, wheelSeparation: p.drive.wheelSeparation, wheelBase: p.drive.wheelBase, maxWheelSpeed: speeds.length ? Math.min(...speeds) : 10, steeringLimit: p.drive.steeringLimit };
-    if (p.drive.kind === 'mecanum') warnings.push('Isaac Sim drives the mecanum wheels like a differential pair: cmd_vel moves it forward and turns it, not sideways.');
+    // A mecanum drive's wheels by corner: front left, front right, rear left, rear right.
+    const corners = p.drive.kind === 'mecanum' ? [r['front-left']![0], r['front-right']![0], r['rear-left']![0], r['rear-right']![0]] : undefined;
+    drive = { kind: p.drive.kind, left, right, steer, ackermannWheels, corners, wheelRadius: p.drive.wheelRadius, wheelSeparation: p.drive.wheelSeparation, wheelBase: p.drive.wheelBase, maxWheelSpeed: speeds.length ? Math.min(...speeds) : 10, steeringLimit: p.drive.steeringLimit };
   }
   // The frames the readings are stamped with are named as the ROS package names them, clear of the links.
   const sensors: UsdModel['sensors'] = p.sensors.map((s) => {
@@ -722,10 +796,12 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
     fixedBase: robot.base === 'fixed',
     ...(footprint ? { footprint: { name: footprint.name, joint: footprint.joint, yaw: -footprint.turn } } : {}),
     links,
-    joints: [...p.treeJoints.map((j) => jointOf(j, false)), ...p.loopJoints.map((j) => jointOf(j, true))],
+    joints: [...p.treeJoints.map((j) => jointOf(j, false)), ...rollerJoints, ...p.loopJoints.map((j) => jointOf(j, true))],
     sensors,
     drive,
     controlled: p.controlled,
+    // Rollers pass the floor from one to the next many times a second: PhysX keeps them true at twice its usual step rate.
+    ...(p.rollers.length ? { stepsPerSecond: ROLLER_STEPS } : {}),
   };
   const files: PackageFile[] = [{ name: `${pkg}.usda`, bytes: encodeText(writeUsda(model)) }, { name: 'README.md', bytes: encodeText(usdReadme(pkg, doc.name, model)) }];
   return { name: pkg, files, warnings, leftOut: p.leftOut };
@@ -762,6 +838,12 @@ referencing this stage, or copy the \`${robotPrim(model.name)}\` prim into it.
 `;
 }
 
+/** Physics steps a second for an Isaac Sim stage whose robot has rollers. */
+const ROLLER_STEPS = 120;
+
+/** What a roller's hinge resists its turning by, N·m·s/rad: next to nothing, and enough to keep it from ringing. */
+const ROLLER_DAMPING = 1e-5;
+
 /** A lidar's rays in MuJoCo, at most: each is a ray cast every step, and a policy wants a coarse scan anyway. */
 export const MAX_LIDAR_RAYS = 90;
 
@@ -780,6 +862,18 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
   for (const j of p.treeJoints) childrenOf.set(j.parent, [...(childrenOf.get(j.parent) ?? []), j]);
   const sensorsOf = (link: string) => p.sensors.filter((s) => s.link === link);
   for (const s of p.sensors) if (s.kind === 'lidar' && s.lidar.samples > MAX_LIDAR_RAYS) warnings.push(`"${s.name}" sweeps ${s.lidar.samples} rays; MuJoCo gets ${MAX_LIDAR_RAYS} of them, spread over the same sweep, to keep it quick.`);
+  // A mecanum wheel's roller: a body in its wheel on a free hinge, a row of balls to meet the floor. A trace of
+  // damping keeps the hinge of so light a body steady.
+  const roller = (r: PreparedRoller): MjcfBody => ({
+    name: r.name,
+    pos: r.at,
+    inertial: r.inertial,
+    visual: [],
+    collision: r.balls.map((b) => ({ geometry: { sphere: { radius: b.radius } }, origin: b.at })),
+    friction: r.friction,
+    joint: { name: r.joint, type: 'continuous', axis: r.axis, dynamics: { damping: ROLLER_DAMPING, friction: 0 }, internal: true },
+    children: [],
+  });
   const body = (name: string, joint: UrdfJoint | undefined): MjcfBody => {
     const l = byName.get(name)!;
     const cams = sensorsOf(name).filter((s) => s.kind === 'camera' || s.kind === 'depth');
@@ -795,7 +889,7 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
       collision: l.collision,
       friction: l.friction,
       joint: joint ? { name: joint.name, type: joint.type, axis: joint.axis, limit: joint.limit, dynamics: joint.dynamics, armature: joint.armature, start: joint.start } : undefined,
-      children: (childrenOf.get(name) ?? []).map((j) => body(j.child, j)),
+      children: [...(childrenOf.get(name) ?? []).map((j) => body(j.child, j)), ...p.rollers.filter((r) => r.wheel === name).map(roller)],
       ...(cams.length ? { cameras: cams.map((s) => ({ name: s.name, pos: s.xyz, rpy: s.rpy, hfov: s.camera.hfov, aspect: s.camera.width / s.camera.height })) } : {}),
       ...(imus.length ? { imus: imus.map((s) => ({ name: s.name, pos: s.xyz, rpy: s.rpy })) } : {}),
       ...(touches.length ? { touches: touches.map((s) => ({ name: s.name, pos: s.xyz, size: s.touch })) } : {}),

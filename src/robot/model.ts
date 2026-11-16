@@ -5,6 +5,7 @@ import type { Bounds, Mat } from '../model/math';
 import type { Doc, Scene, SceneNode, Vec3 } from '../model/types';
 import { defaultLink, emptyRobot } from './types';
 import type { DriveKind, DriveRole, Robot, RobotJoint, RobotLink, RobotSensor } from './types';
+import { isWheel, WHEEL_FRICTION } from './wheels';
 
 /** The objects that are links: every top-level solid that is shown. Holes cut nothing at the top level, and pictures are flat. */
 export const linkNodes = (scene: Scene): SceneNode[] => scene.filter((n) => !n.hidden && !n.hole && n.type !== 'picture');
@@ -12,11 +13,14 @@ export const linkNodes = (scene: Scene): SceneNode[] => scene.filter((n) => !n.h
 /** The design's robot, or an untouched one named after the design. */
 export const robotOf = (doc: Doc): Robot => doc.robot ?? emptyRobot();
 
-/** A link's settings, the defaults for an object nobody has touched. */
 /** How many convex pieces each link's parts may be split into, by node, for the links that ask for more than one. */
 export const piecesOf = (robot: Robot): Record<string, number> => Object.fromEntries(robot.links.flatMap((l) => (l.collision === 'hull' && l.pieces && l.pieces > 1 ? [[l.node, l.pieces]] : [])));
 
-export const linkOf = (robot: Robot, node: string): RobotLink => robot.links.find((l) => l.node === node) ?? defaultLink(node);
+/**
+ * A link's settings, the defaults for an object nobody has touched. Given the object, a wheel from the Wheels parts
+ * grips like the rubber it stands for until a friction is typed for it.
+ */
+export const linkOf = (robot: Robot, node: string, object?: SceneNode): RobotLink => robot.links.find((l) => l.node === node) ?? { ...defaultLink(node), ...(object && isWheel(object) ? { friction: WHEEL_FRICTION } : {}) };
 
 /** The robot with every link and joint that names an object the scene no longer has left off. The same object when nothing changes. */
 export function pruned(robot: Robot, scene: Scene): Robot {

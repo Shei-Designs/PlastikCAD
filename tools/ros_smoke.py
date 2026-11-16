@@ -35,6 +35,11 @@ WS = '/tmp/ros_smoke_ws'
 failures = []
 
 
+# A mecanum drive told to slide goes at least this share of what it went when told forward, and strays no more than
+# this share of it along its own forward.
+MECANUM_LEAST, MECANUM_STRAY = 0.8, 0.1
+
+
 def fail(pkg, what):
     failures.append(f'{pkg}: {what}')
     print(f'  FAIL {what}', flush=True)
@@ -276,6 +281,36 @@ def drive_and_measure(model, world, publish, seconds=3.0):
         return None, None, None
     dx, dy, dz = after[0] - before[0], after[1] - before[1], after[2] - before[2]
     return math.hypot(dx, dy), after, before
+
+
+def check_mecanum(name, model, world, twist, forward, after, before):
+    """A mecanum drive, after its run forward (`before` to `after`, `forward` m): told to slide to its left it goes
+    sideways about as far as it went forward, and told to turn it turns on the spot. `twist(x, y, z, seconds)`
+    sends a velocity command for a while and then a stop. Measured against the run forward, which the same
+    clock timed, not against the clock."""
+    ahead = ((after[0] - before[0]) / forward, (after[1] - before[1]) / forward)
+    left = (-ahead[1], ahead[0])
+    twist(0.0, 0.2, 0.0, 3.0)
+    slid = gz_pose(model, world)
+    if not slid:
+        return fail(name, 'could not read the pose after the slide')
+    d = (slid[0] - after[0], slid[1] - after[1])
+    sideways, along = d[0] * left[0] + d[1] * left[1], d[0] * ahead[0] + d[1] * ahead[1]
+    yawed = (slid[5] - after[5] + math.pi) % (2 * math.pi) - math.pi
+    if sideways < MECANUM_LEAST * forward or abs(along) > MECANUM_STRAY * forward or abs(yawed) > 0.15:
+        fail(name, f'told to slide left, the robot went {sideways:.3f} m to its left, {along:.3f} m forward and turned {math.degrees(yawed):.0f}° (it went {forward:.3f} m forward when told to)')
+    else:
+        ok(f'cmd_vel y slid the robot {sideways:.3f} m to its left ({along:+.3f} m forward, turned {math.degrees(yawed):+.0f}°)')
+    twist(0.0, 0.0, 0.5, 3.0)
+    spun = gz_pose(model, world)
+    if not spun:
+        return fail(name, 'could not read the pose after the turn')
+    turned = (spun[5] - slid[5] + math.pi) % (2 * math.pi) - math.pi
+    drift = math.hypot(spun[0] - slid[0], spun[1] - slid[1])
+    if turned < 0.8 or drift > 0.05:
+        fail(name, f'told to turn left on the spot, the robot turned {math.degrees(turned):.0f}° and moved {drift:.3f} m')
+    else:
+        ok(f'cmd_vel z turned the robot {math.degrees(turned):.0f}° to the left on the spot ({drift:.3f} m of drift)')
 
 
 def check_rviz(name, urdf, env):
@@ -536,6 +571,16 @@ def check_ros_package(pkg_dir, env):
                 tipped = abs(after[3]) > 0.3 or abs(after[4]) > 0.3
                 if tipped:
                     fail(name, f'robot tipped: roll {math.degrees(after[3]):.0f}°, pitch {math.degrees(after[4]):.0f}°')
+                with open(urdf) as f:
+                    mecanum = 'MecanumDrive' in f.read()
+                if mecanum and not tipped:
+                    def twist(x, y, z, seconds):
+                        run(['ros2', 'topic', 'pub', '-r', '20', '-t', str(int(seconds * 20)), '/cmd_vel', 'geometry_msgs/msg/Twist', f'{{linear: {{x: {x}, y: {y}}}, angular: {{z: {z}}}}}'], timeout=seconds + 20, env=env)
+                        run(['ros2', 'topic', 'pub', '-1', '-w', '1', '/cmd_vel', 'geometry_msgs/msg/Twist', '{}'], timeout=20, env=env)
+                        time.sleep(0.5)
+
+                    time.sleep(0.5)
+                    check_mecanum(name, name, world_name, twist, dist, gz_pose(name, world_name) or after, before)
             if odom0 and odom1 and not isinstance(odom0.get('pose'), type(None)):
                 p0, p1 = odom0['pose']['pose']['position'], odom1['pose']['pose']['position']
                 od = math.hypot(p1['x'] - p0['x'], p1['y'] - p0['y'])
@@ -705,6 +750,19 @@ def check_sdf_package(pkg_dir, env):
                     else:
                         heading = math.degrees(math.atan2(after[1] - before[1], after[0] - before[0]))
                         ok(f'cmd_vel drove the model {dist:.3f} m, heading {heading:.0f}°')
+                        with open(model) as f:
+                            mecanum = 'MecanumDrive' in f.read()
+                        if mecanum:
+                            def twist(x, y, z, seconds):
+                                end = time.time() + seconds
+                                while time.time() < end:
+                                    run(['gz', 'topic', '-t', '/cmd_vel', '-m', 'gz.msgs.Twist', '-p', f'linear: {{x: {x}, y: {y}}}, angular: {{z: {z}}}'], timeout=10, env=env)
+                                    time.sleep(0.1)
+                                run(['gz', 'topic', '-t', '/cmd_vel', '-m', 'gz.msgs.Twist', '-p', 'linear: {x: 0}'], timeout=10, env=env)
+                                time.sleep(0.5)
+
+                            time.sleep(0.5)
+                            check_mecanum(name, model_name, world_name, twist, dist, gz_pose(model_name, world_name) or after, before)
     finally:
         errs = launched.errors()
         launched.stop()
