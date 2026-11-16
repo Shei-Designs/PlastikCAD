@@ -287,7 +287,10 @@ in the design file and synced with it.
   servos, Dynamixel and Feetech smart servos, N20 to 37 mm gearmotors, 28BYJ-48
   and NEMA steppers) and those figures come from its datasheet, or pick
   another joint there to take the effort, velocity and damping typed for it; and whether it
-  follows another joint (URDF `mimic`). A joint stays with its child: move the
+  follows another joint (URDF `mimic`). *Moved by* says whether a motor moves
+  the joint at all: one moved by *Nothing* is passive, a caster's swivel or a
+  bar of a linkage, and gets no actuator, servo or controller in any export
+  or in the test drive. A joint stays with its child: move the
   child and the joint comes along.
 - **Copies.** Duplicate and Paste copy a link with its mass, collision and
   friction settings, its sensors, and the joint it hangs by: from the copy
@@ -318,7 +321,11 @@ in the design file and synced with it.
 - **Linkages.** Loops (a four-bar, a parallel gripper) are built as they
   are, with a joint closing each: a revolute or continuous one, which the
   app picks where it can and asks for where it cannot. The slider solves the loops, so the
-  linkage moves as the real one does, and says when it cannot close. *Set
+  linkage moves as the real one does, and says when it cannot close. A loop
+  whose joints all have a motor would be pulled apart by them, so before an
+  export or a test drive the app asks once which of its joints a motor
+  moves: click them on the plate or in the list, and the others become
+  passive, moved by the loop itself in MuJoCo, Gazebo and Isaac Sim. *Set
   the others to follow this joint* sweeps the driven joint over its range
   and writes each passive joint's motion as a URDF `mimic` line: exact for a
   parallelogram, a fit with a reported error for other four-bars. A URDF is

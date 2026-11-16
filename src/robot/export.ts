@@ -27,7 +27,7 @@ import type { LinkGeometry } from '../worker/protocol';
 import { inertialOf, toSI } from './inertia';
 import { startPose } from './kinematics';
 import type { Tensor } from './inertia';
-import { followFault, jointInDesign, linkNodes, linkOf, robotForward, robotOf, sensorInDesign, spanningTree } from './model';
+import { followFault, hasMotor, jointInDesign, linkNodes, linkOf, robotForward, robotOf, sensorInDesign, spanningTree } from './model';
 import { motorOf } from './motors';
 import { drivePy, envPy, trainPy } from '../io/scripts';
 import { collisionPrimitive } from './collision';
@@ -354,7 +354,7 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
     }
   }
   const driven = new Set(driveJoints(robot.drive));
-  const controlled = robot.control ? tree.order.slice(1).map((id) => tree.parentJoint.get(id)!).filter((j) => j.type !== 'fixed' && !j.mimic && !driven.has(j.id)).map((j) => jointNames.get(j)!) : [];
+  const controlled = robot.control ? tree.order.slice(1).map((id) => tree.parentJoint.get(id)!).filter((j) => hasMotor(j) && !driven.has(j.id)).map((j) => jointNames.get(j)!) : [];
 
   const torque = controlled.filter((name) => allJoints.find((j) => jointNames.get(j) === name)?.command === 'torque');
 
@@ -640,6 +640,7 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
     for (const n of ackermannWheels) velocity.add(n);
     if (ackermannWheels.length !== 4) warnings.push('Isaac Sim steers a car by four wheels, two on the knuckles and two behind; this one has another layout, so cmd_vel will not drive it there.');
   }
+  const frameOf = (link: string): Vec3 => p.frames.get([...p.linkNames].find(([, n]) => n === link)![0])!;
   const jointOf = (j: UrdfJoint, loop: boolean): UsdJoint => ({
     name: j.name,
     type: j.type,
@@ -653,6 +654,8 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
     mimic: loop ? undefined : j.mimic,
     armature: j.armature,
     loop,
+    // A loop joint's child hangs from another joint, and has its frame there: the joint is where its parent has it, as the child's frame sees that.
+    ...(loop ? { inChild: j.origin.map((x, i) => x + (frameOf(j.parent)[i] - frameOf(j.child)[i]) * M) as Vec3 } : {}),
     drive: velocity.has(j.name) ? 'velocity' : position.has(j.name) ? 'position' : torque.has(j.name) ? 'effort' : null,
     ...(j.start ? { start: j.start } : {}),
   });

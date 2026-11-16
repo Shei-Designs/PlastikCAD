@@ -110,6 +110,11 @@ export interface RobotJoint {
    * position its actuator then holds, where absent. Only the exports heed it: the test drive holds positions.
    */
   command?: 'torque';
+  /**
+   * No motor moves the joint: it swings free, or goes where the loop it is on takes it. No export gives it an
+   * actuator or a controller, and the test drive no servo. Absent for a joint with a motor.
+   */
+  passive?: true;
   /** Follows another joint (a linkage's passive joint): angle = multiplier × that joint's angle + offset. */
   mimic?: { joint: string; multiplier: number; offset: number };
   /** Id in `MOTORS` of the motor the figures came from; none once they are typed by hand. */

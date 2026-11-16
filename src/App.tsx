@@ -6,6 +6,7 @@ import {
   alignSelected,
   alignSelectedOn,
   cancelArray,
+  cancelLoopMotors,
   cancelMate,
   cancelPlacing,
   clearMeasure,
@@ -114,7 +115,8 @@ const ACTIONS: Record<CommandId, (e: KeyboardEvent) => void> = {
   cancel: () => {
     if (viewerRef.current?.cancelGesture()) return;
     const s = getState();
-    if (s.arraying) cancelArray();
+    if (s.loopMotors) cancelLoopMotors();
+    else if (s.arraying) cancelArray();
     else if (s.mating) cancelMate();
     else if (s.measuring?.picks.length) clearMeasure();
     else if (s.measuring) stopMeasuring();

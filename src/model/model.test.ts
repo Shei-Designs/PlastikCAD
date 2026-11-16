@@ -723,6 +723,7 @@ describe('design files', () => {
       joints: [
         { id: 'j1', name: 'j', type: 'revolute', parent: 'a', child: 'b', origin: [0, 0, 0], axis: [0, 0, 1], lower: -90, upper: 90, effort: 1, velocity: 1, damping: 0, friction: 0, start: 30, command: 'torque', motor: 'sg90' },
         { id: 'j2', name: 'k', type: 'revolute', parent: 'a', child: 'b', origin: [0, 0, 0], axis: [0, 0, 1], lower: -90, upper: 90, effort: 1, velocity: 1, damping: 0, friction: 0, mimic: { joint: 'j1', multiplier: 1, offset: 0 } },
+        { id: 'j3', name: 'p', type: 'revolute', parent: 'a', child: 'b', origin: [0, 0, 0], axis: [0, 0, 1], lower: -90, upper: 90, effort: 1, velocity: 1, damping: 0, friction: 0, passive: true },
       ],
       sensors: [defaultSensor('s1', 'cam', 'camera', 'a', [0, 0, 0]), defaultSensor('s2', 'scan', 'lidar', 'a', [0, 0, 0])],
       drive: { kind: 'differential', roles: { j1: 'left' } },
@@ -752,13 +753,15 @@ describe('design files', () => {
     check([written.drive], ROBOT_FIELDS.drive, 'drive');
     // And the design with it is read back as this build's own.
     const doc = parseDoc(serializeDoc({ ...sample(), scene: [{ ...shape('box'), id: 'a' }, { ...shape('box'), id: 'b' }], assets: {}, robot }));
-    expect(doc.robot?.joints.length).toBe(2);
+    expect(doc.robot?.joints.length).toBe(3);
+    // A joint without a motor is read back as one; the others have theirs.
+    expect(doc.robot?.joints.map((j) => j.passive)).toEqual([undefined, undefined, true]);
     expect(doc.robot?.sensors.length).toBe(2);
     expect(doc.robot?.faces).toEqual([-1, 0, 0]);
     // A facing that is no way a robot can face is not one.
     expect(parseDoc(serializeDoc({ ...sample(), scene: [{ ...shape('box'), id: 'a' }], assets: {}, robot: { ...emptyRobot(), root: 'a', faces: [0, 0, 1] } })).robot?.faces).toBeUndefined();
-    expect(doc.robot?.joints.map((j) => j.start)).toEqual([30, undefined]);
-    expect(doc.robot?.joints.map((j) => j.command)).toEqual(['torque', undefined]);
+    expect(doc.robot?.joints.map((j) => j.start)).toEqual([30, undefined, undefined]);
+    expect(doc.robot?.joints.map((j) => j.command)).toEqual(['torque', undefined, undefined]);
     expect(doc.robot?.links.map((l) => l.shape)).toEqual([{ size: [40, 40, 40], center: [0, 0, -10], rot: [0, 0, 90] }, undefined]);
     expect(doc.robot?.links.map((l) => l.pieces)).toEqual([undefined, 6]);
     expect(doc.robot?.links.find((l) => l.node === 'b')?.mass).toEqual({ kind: 'measured', grams: 12, center: [1, 2, 3], inertia: [500, 300, 200, 40, -30, 20] });

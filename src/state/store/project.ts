@@ -241,6 +241,7 @@ export function adopt(doc: Doc, key: string | null): void {
     joint: null,
     sensor: null,
     jointPick: null,
+    loopMotors: null,
     pose: null,
     mating: null,
     editing: null,

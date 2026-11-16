@@ -14,7 +14,7 @@ import { checkRobot } from '../../robot/check';
 import { buildIsaacStage, buildMjcfModel, buildRobotPackage, buildSdfModel, exportSummary, EXPORT_FORMATS, packageName } from '../../robot/export';
 import type { ExportFormat } from '../../robot/export';
 import { fitFollowers, solvePose } from '../../robot/kinematics';
-import { jointInChild, jointInDesign as jointInDesignOf, linkNodes, linkOf, meetingPoint, piecesOf, robotOf, sensorInDesign, sensorInLink, spanningTree } from '../../robot/model';
+import { jointInChild, jointInDesign as jointInDesignOf, linkNodes, linkOf, meetingPoint, motorsOnLoopJoints, openLoops, piecesOf, robotOf, sensorInDesign, sensorInLink, spanningTree, withMotors } from '../../robot/model';
 import { snapPointsOf } from '../../robot/snaps';
 import type { SnapPoint } from '../../viewer/Viewer';
 import { jointFit } from '../../robot/defaults';
@@ -23,6 +23,7 @@ import { massOf } from '../../robot/inertia';
 import { DRIVE_KINDS, defaultJoint, defaultSensor, SENSOR_KINDS } from '../../robot/types';
 import type { DriveKind, DriveRole, Robot, RobotJoint, RobotLink, RobotSensor, SensorKind, World } from '../../robot/types';
 import { massProps } from '../massProps';
+import { sim } from '../sim';
 import { endMerge, endWork, fail, getState, notify, previewingAlign, record, set, startWork } from './core';
 import type { EditorState } from './core';
 import { cancelPlacing } from './placing';
@@ -43,6 +44,7 @@ export function enterRobotMode(): void {
 
 export function leaveRobotMode(): void {
   if (getState().aligning) stopAligning();
+  cancelLoopMotors();
   set({ robot: false, joint: null, sensor: null, jointPick: null, pose: null });
 }
 export const toggleRobotMode = (): void => (getState().robot ? leaveRobotMode() : enterRobotMode());
@@ -55,6 +57,76 @@ export function selectJoint(id: string | null): void {
 export function selectSensor(id: string | null): void {
   if (getState().aligning) stopAligning();
   set(id ? { sensor: id, joint: null, selection: [], jointPick: null, pose: null } : { sensor: null, jointPick: null });
+}
+
+// --- the motors of a loop -------------------------------------------------------
+
+/** What waits on the open question of the loops' motors. */
+let settleLoopMotors: ((answered: boolean) => void) | null = null;
+
+/**
+ * Before an export or a test drive: where the joints round a loop all still have a motor, asks which of them
+ * do, on the plate, and makes the rest passive. Resolves once no loop is left without its answer: at once for a
+ * robot with none, false if the user backed out.
+ */
+export function askLoopMotors(): Promise<boolean> {
+  const doc = getState().doc;
+  const open = openLoops(robotOf(doc), linkNodes(doc.scene).map((n) => n.id));
+  if (open.length === 0) return Promise.resolve(true);
+  cancelLoopMotors();
+  if (getState().aligning) stopAligning();
+  set({ loopMotors: { joints: [...new Set(open.flat().map((j) => j.id))], motors: [] }, selection: [], joint: null, sensor: null, jointPick: null, pose: null });
+  return new Promise((resolve) => {
+    settleLoopMotors = resolve;
+  });
+}
+
+/** Picks a joint of the open loops as one with a motor, or lets it go again. */
+export function toggleLoopMotor(id: string): void {
+  const asked = getState().loopMotors;
+  if (!asked || !asked.joints.includes(id)) return;
+  set({ loopMotors: { ...asked, motors: asked.motors.includes(id) ? asked.motors.filter((m) => m !== id) : [...asked.motors, id] } });
+}
+
+/**
+ * Why the joints picked so far cannot be the answer, or null when they can: none is picked, a loop would have a
+ * motor on every joint, or a picked joint is where a loop has to close. `names` is told of that last.
+ */
+export function loopMotorsFault(s: EditorState = getState()): { kind: 'none' | 'all' } | { kind: 'closes'; name: string } | null {
+  const asked = s.loopMotors;
+  if (!asked) return null;
+  if (asked.motors.length === 0) return { kind: 'none' };
+  const links = linkNodes(s.doc.scene).map((n) => n.id);
+  const robot = robotOf(s.doc);
+  if (openLoops(robot, links).some((loop) => loop.every((j) => asked.motors.includes(j.id)))) return { kind: 'all' };
+  const stuck = motorsOnLoopJoints(withMotors(robot, asked.joints, asked.motors), links, asked.joints)[0];
+  return stuck ? { kind: 'closes', name: stuck.name } : null;
+}
+
+/** Takes the picked joints as the motors: every other joint round the loops becomes passive, as one undoable step. */
+export function confirmLoopMotors(): void {
+  const asked = getState().loopMotors;
+  if (!asked || loopMotorsFault()) return;
+  // Let go of first: the box closing must not be taken for backing out.
+  const settle = settleLoopMotors;
+  settleLoopMotors = null;
+  set({ loopMotors: null });
+  editRobot((r) => withMotors(r, asked.joints, asked.motors));
+  settle?.(true);
+}
+
+/** Drops the question; what waited on it does not go ahead. */
+export function cancelLoopMotors(): void {
+  if (getState().loopMotors) set({ loopMotors: null });
+  const settle = settleLoopMotors;
+  settleLoopMotors = null;
+  settle?.(false);
+}
+
+/** Starts the test drive, once any loop has its motors. */
+export async function testDrive(): Promise<void> {
+  if (!(await askLoopMotors())) return;
+  await sim.start(getState().doc);
 }
 
 /** Replaces the robot as one undoable step, like `commit` does the scene. A pose was for the robot as it was. */
@@ -370,6 +442,8 @@ export async function exportRobot(format: ExportFormat = getState().prefs.robotF
 }
 
 async function writeRobot(format: ExportFormat): Promise<boolean> {
+  // A loop whose joints all have a motor would be pulled apart in every simulator: which of them do is asked first.
+  if (!(await askLoopMotors())) return false;
   const doc = getState().doc;
   const robot = robotOf(doc);
   const nodes = linkNodes(doc.scene);

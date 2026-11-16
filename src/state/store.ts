@@ -175,6 +175,12 @@ export {
   fixLooseLinks,
   deleteJoint,
   exportRobot,
+  askLoopMotors,
+  toggleLoopMotor,
+  loopMotorsFault,
+  confirmLoopMotors,
+  cancelLoopMotors,
+  testDrive,
 } from './store/robot';
 export {
   applySyncReport,

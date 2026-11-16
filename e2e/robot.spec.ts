@@ -1,7 +1,7 @@
 // Robot mode with fingers. Robot mode is experimental and its panels are not being polished yet;
 // what is known to be wrong is written down here so that it is not forgotten.
 import { readFileSync } from 'node:fs';
-import { expect, openApp, settled, started, store, test } from './helpers';
+import { expect, fitView, openApp, screenPoint, settled, started, store, test } from './helpers';
 
 test.describe('robot mode on a tablet', { tag: '@touch' }, () => {
   // Known to fail: with a joint picked, the "Fixed" button of the base's Free / Fixed row ends
@@ -322,5 +322,116 @@ test.describe('the test drive', { tag: '@mouse' }, () => {
     });
     await page.getByRole('button', { name: 'Test drive' }).click();
     await expect(page.locator('.inspector .problem.warn')).toContainText(/"Body" stands on its collision shape, \d+ mm clear of the floor\./, { timeout: 30_000 });
+  });
+});
+
+test.describe("a loop's motors", { tag: '@mouse' }, () => {
+  test('are asked for before the test drive, on the plate or in the list, and the other joints become passive', async ({ page }) => {
+    await openApp(page);
+    // The reference linkage, read here and handed to the page: the built app does not serve the repository.
+    const bytes = [...readFileSync(new URL('../fixtures/robots/linkage.plastikcad', import.meta.url))];
+    await store(
+      page,
+      (m, b) => {
+        // Not waited for: the import ends in a "Project added" box that holds it until OK is pressed.
+        void m.receiveFiles([{ name: 'linkage.plastikcad', path: null, bytes: new Uint8Array(b) }]);
+      },
+      bytes,
+    );
+    await page.getByRole('button', { name: 'OK' }).click();
+    await expect.poll(() => store(page, (m) => m.getState().doc.robot?.joints.length ?? 0)).toBe(4);
+    await settled(page);
+    // As it is first built: every joint with a motor.
+    await store(page, (m) => {
+      m.enterRobotMode();
+      for (const j of m.getState().doc.robot!.joints) m.updateJoint(j.id, { passive: undefined });
+    });
+    await fitView(page);
+    const passive = () => store(page, (m) => m.getState().doc.robot!.joints.filter((j) => j.passive).map((j) => j.name));
+    const panel = page.getByRole('dialog', { name: 'Which joint has the motor?' });
+    const row = (name: string) => panel.getByRole('button', { name: new RegExp(`^${name}`) });
+    const ok = panel.getByRole('button', { name: 'OK' });
+    const drive = page.getByRole('button', { name: 'Test drive' });
+
+    // Escape drops the question, and the drive with it.
+    await drive.click();
+    await expect(panel).toBeVisible();
+    await expect(ok).toBeDisabled();
+    await page.keyboard.press('Escape');
+    await expect(panel).toHaveCount(0);
+    await expect(drive).toBeVisible();
+    expect(await passive()).toEqual([]);
+
+    await drive.click();
+    // Every joint picked leaves the loop none to move by: the box says so and does not go on.
+    for (const name of ['Crank joint', 'Rocker joint', 'Coupler joint', 'Closing joint']) await row(name).click();
+    await expect(panel.getByText('Leave a joint of each loop without a motor.')).toBeVisible();
+    await expect(ok).toBeDisabled();
+    for (const name of ['Crank joint', 'Rocker joint', 'Coupler joint', 'Closing joint']) await row(name).click();
+    await expect(ok).toBeDisabled();
+    // A click on the joint on the plate picks it: the crank's hinge is on top of the plate, 50 mm to the -Y side.
+    const [x, y] = await screenPoint(page, [0, -50, 15]);
+    await page.mouse.click(x, y);
+    await expect(row('Crank joint')).toHaveAttribute('aria-pressed', 'true');
+    await expect(row('Rocker joint')).toHaveAttribute('aria-pressed', 'false');
+    await expect(ok).toBeEnabled();
+    await ok.click();
+    await expect(panel).toHaveCount(0);
+    expect(await passive()).toEqual(['Rocker joint', 'Coupler joint', 'Closing joint']);
+    // The drive goes ahead, with a slider for the crank alone.
+    await expect(page.getByRole('button', { name: 'Stop' })).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('.inspector label').getByText('Crank joint')).toBeVisible();
+    await expect(page.locator('.inspector label').getByText('Rocker joint')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Stop' }).click();
+    // Asked once: the answer is the robot's.
+    await drive.click();
+    await expect(page.getByRole('button', { name: 'Stop' })).toBeVisible({ timeout: 30_000 });
+    await expect(panel).toHaveCount(0);
+    await page.getByRole('button', { name: 'Stop' }).click();
+    // One step back takes the answer away, and the question comes again, before an export as well.
+    await store(page, (m) => m.undo());
+    expect(await passive()).toEqual([]);
+    await page.getByRole('button', { name: 'Export package' }).or(page.getByRole('button', { name: 'Export model' })).or(page.getByRole('button', { name: 'Export stage' })).click();
+    await expect(panel).toBeVisible();
+    await panel.getByRole('button', { name: 'Cancel' }).click();
+    await expect(panel).toHaveCount(0);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+
+  test("a joint's motor is taken away and given back in its settings", async ({ page }) => {
+    await openApp(page);
+    const bytes = [...readFileSync(new URL('../fixtures/robots/linkage.plastikcad', import.meta.url))];
+    await store(
+      page,
+      (m, b) => {
+        void m.receiveFiles([{ name: 'linkage.plastikcad', path: null, bytes: new Uint8Array(b) }]);
+      },
+      bytes,
+    );
+    await page.getByRole('button', { name: 'OK' }).click();
+    await expect.poll(() => store(page, (m) => m.getState().doc.robot?.joints.length ?? 0)).toBe(4);
+    await settled(page);
+    const joint = (name: string) => store(page, (m, n) => m.getState().doc.robot!.joints.find((j) => j.name === n)!, name);
+    await store(page, (m) => {
+      m.enterRobotMode();
+      m.selectJoint(m.getState().doc.robot!.joints.find((j) => j.name === 'Rocker joint')!.id);
+    });
+    const moved = page.getByRole('radiogroup', { name: 'Moved by' });
+    await expect(moved.getByRole('radio', { name: 'Nothing' })).toHaveAttribute('aria-checked', 'true');
+    // A passive joint is sent nothing: it has no command to choose.
+    await expect(page.getByRole('radiogroup', { name: 'Command' })).toHaveCount(0);
+    await moved.getByRole('radio', { name: 'Motor' }).click();
+    await expect(moved.getByRole('radio', { name: 'Motor' })).toHaveAttribute('aria-checked', 'true');
+    expect((await joint('Rocker joint')).passive).toBeUndefined();
+    await expect(page.getByRole('radiogroup', { name: 'Command' })).toBeVisible();
+    await moved.getByRole('radio', { name: 'Nothing' }).click();
+    expect((await joint('Rocker joint')).passive).toBe(true);
+    // The joint the loop closes on cannot have a motor while the other joint into its link has one.
+    await store(page, (m) => {
+      const joints = m.getState().doc.robot!.joints;
+      m.updateJoint(joints.find((j) => j.name === 'Coupler joint')!.id, { passive: undefined });
+      m.selectJoint(joints.find((j) => j.name === 'Closing joint')!.id);
+    });
+    await expect(moved.getByRole('radio', { name: 'Motor' })).toBeDisabled();
   });
 });

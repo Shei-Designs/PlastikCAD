@@ -10,7 +10,7 @@ import { checkRobot } from './check';
 import { buildIsaacStage, buildMjcfModel, buildRobotPackage, buildSdfModel, exportSummary } from './export';
 import type { RobotPackage } from './export';
 import { meshProperties } from './inertia';
-import { driveForward, jointInChild, jointInDesign, linkNodes, spanningTree } from './model';
+import { driveForward, jointInChild, jointInDesign, linkNodes, motorsOnLoopJoints, openLoops, spanningTree, withMotors } from './model';
 import { defaultJoint, defaultLink, defaultSensor, DRIVE_KINDS, SENSOR_KINDS } from './types';
 import { ROBOTS } from './fixtures';
 import type { Robot } from './types';
@@ -1156,5 +1156,98 @@ describe('what goes beside the robot', () => {
     const drive = file(buildMjcfModel(rover(), geometry()), /drive\.py$/);
     expect(drive.indexOf('mj_forward(')).toBeGreaterThan(-1);
     expect(drive.indexOf('mj_forward(')).toBeLessThan(drive.indexOf('subtree_com['));
+  });
+});
+
+describe('the motors of a loop', () => {
+  const linkage = () => ROBOTS.find((r) => r.file === 'linkage')!.make();
+  /** The linkage as it is first built: every joint with a motor. */
+  const built = () => {
+    const d = linkage();
+    d.robot = { ...d.robot!, joints: d.robot!.joints.map(({ passive: _passive, ...j }) => j) };
+    return d;
+  };
+  const ids = (d: Doc) => linkNodes(d.scene).map((n) => n.id);
+  const named = (d: Doc, name: string) => d.robot!.joints.find((j) => j.name === name)!;
+  const geo = (d: Doc) => new Map(linkNodes(d.scene).map((n) => [n.id, boxGeometry(n)]));
+
+  it('finds the loop whose joints all still have a motor, and none once one is passive or follows', () => {
+    const d = built();
+    expect(openLoops(d.robot!, ids(d)).map((loop) => loop.map((j) => j.name).sort())).toEqual([['Closing joint', 'Coupler joint', 'Crank joint', 'Rocker joint']]);
+    expect(openLoops(linkage().robot!, ids(d))).toEqual([]);
+    // A robot whose joints get no controllers has no motors to pull the loop apart.
+    expect(openLoops({ ...d.robot!, control: false }, ids(d))).toEqual([]);
+    // A design from before, with its followers set, is not asked again.
+    const followed = { ...d.robot!, joints: d.robot!.joints.map((j) => (j.name === 'Rocker joint' ? { ...j, mimic: { joint: named(d, 'Crank joint').id, multiplier: 1, offset: 0 } } : j)) };
+    expect(openLoops(followed, ids(d))).toEqual([]);
+  });
+
+  it('makes every joint round the loop passive but the motors picked, and a passive joint starts where the loop puts it', () => {
+    const d = built();
+    d.robot!.joints = d.robot!.joints.map((j) => (j.name === 'Rocker joint' ? { ...j, start: 10 } : j));
+    const all = d.robot!.joints.map((j) => j.id);
+    const answered = withMotors(d.robot!, all, [named(d, 'Crank joint').id]);
+    expect(answered.joints.map((j) => [j.name, j.passive ?? false, j.start])).toEqual([
+      ['Crank joint', false, undefined],
+      ['Rocker joint', true, undefined],
+      ['Coupler joint', true, undefined],
+      ['Closing joint', true, undefined],
+    ]);
+    expect(openLoops(answered, ids(d))).toEqual([]);
+    // Picked again as a motor, a joint is one.
+    expect(withMotors(answered, all, all).joints.every((j) => !j.passive)).toBe(true);
+  });
+
+  it('closes the loop on a passive hinge, so that a joint with a motor stays in the tree', () => {
+    const d = built();
+    const all = d.robot!.joints.map((j) => j.id);
+    // The motor on the joint that would have closed the loop: the passive hinge into the same link closes it instead.
+    const moved = withMotors(d.robot!, all, [named(d, 'Closing joint').id]);
+    const tree = spanningTree(moved, ids(d));
+    expect(tree.loops.map((j) => j.name)).toEqual(['Coupler joint']);
+    expect(tree.parentJoint.get(named(d, 'Closing joint').child)?.name).toBe('Closing joint');
+    expect(motorsOnLoopJoints(moved, ids(d), all)).toEqual([]);
+    // Both joints into the coupler with a motor: one of them has to close the loop, and cannot carry its motor.
+    const both = withMotors(d.robot!, all, [named(d, 'Closing joint').id, named(d, 'Coupler joint').id]);
+    expect(motorsOnLoopJoints(both, ids(d), all).map((j) => j.name)).toEqual(['Closing joint']);
+  });
+
+  it('gives a passive joint no actuator and no controller in any export', () => {
+    const d = linkage();
+    const ros = buildRobotPackage(d, geo(d));
+    const urdf = text(ros.files.find((f) => f.name.endsWith('.urdf'))!.bytes);
+    const control = urdf.slice(urdf.indexOf('<ros2_control'), urdf.indexOf('</ros2_control>'));
+    expect([...control.matchAll(/<joint name="([^"]+)"/g)].map((m) => m[1])).toEqual(['Crank_joint']);
+    // Every joint is still in the URDF, for its state to be published.
+    expect([...urdf.matchAll(/<joint name="([^"]+)" type="revolute"/g)].map((m) => m[1]).sort()).toEqual(['Closing_joint', 'Coupler_joint', 'Crank_joint', 'Rocker_joint']);
+    expect(text(ros.files.find((f) => f.name === 'config/controllers.yaml')!.bytes)).toMatch(/joints:\n\s+- Crank_joint\n\s+command_interfaces/);
+    const sdf = text(buildSdfModel(d, geo(d)).files.find((f) => f.name === 'model.sdf')!.bytes);
+    expect([...sdf.matchAll(/JointPositionController">\s*<joint_name>([^<]+)/g)].map((m) => m[1])).toEqual(['Crank_joint']);
+    const mjcf = text(buildMjcfModel(d, geo(d)).files.find((f) => f.name.endsWith('.xml'))!.bytes);
+    const actuators = mjcf.slice(mjcf.indexOf('<actuator>'), mjcf.indexOf('</actuator>'));
+    expect([...actuators.matchAll(/joint="([^"]+)"/g)].map((m) => m[1])).toEqual(['Crank_joint']);
+    // No follower either: the loop itself moves them.
+    const equality = mjcf.slice(mjcf.indexOf('<equality>'), mjcf.indexOf('</equality>'));
+    expect([...equality.matchAll(/<(connect|joint) /g)].map((m) => m[1])).toEqual(['connect']);
+    const usd = text(buildIsaacStage(d, geo(d)).files.find((f) => f.name.endsWith('.usda'))!.bytes);
+    const stiffness = Object.fromEntries([...usd.matchAll(/def PhysicsRevoluteJoint "([^"]+)"[\s\S]*?physics:stiffness = ([-0-9.e]+)/g)].map((m) => [m[1], Number(m[2])]));
+    expect(stiffness.Crank_joint).toBeGreaterThan(0);
+    expect([stiffness.Rocker_joint, stiffness.Coupler_joint, stiffness.Closing_joint]).toEqual([0, 0, 0]);
+  });
+
+  it("pins the joint that closes a loop where it is on its child in the Isaac stage, not at the child's own joint", () => {
+    const d = linkage();
+    const usd = text(buildIsaacStage(d, geo(d)).files.find((f) => f.name.endsWith('.usda'))!.bytes);
+    const closing = usd.slice(usd.indexOf('def PhysicsRevoluteJoint "Closing_joint"'));
+    // On the rocker 100 mm up from its hinge; on the coupler 100 mm along from the crank's pin, where its frame is.
+    expect(closing).toMatch(/point3f physics:localPos0 = \(0, 0, 0\.1\)/);
+    expect(closing).toMatch(/point3f physics:localPos1 = \(0, 0\.1, 0\)/);
+  });
+
+  it('does not warn that nothing can move a passive joint with no effort', () => {
+    const d = linkage();
+    d.robot!.joints = d.robot!.joints.map((j) => (j.passive ? { ...j, effort: 0 } : j));
+    const props = new Map([...geo(d)].map(([id, g]) => [id, g.props]));
+    expect(checkRobot(d, props).filter((p) => /nothing can move it/.test(p.text))).toEqual([]);
   });
 });

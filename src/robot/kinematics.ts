@@ -205,7 +205,7 @@ export function posedScene(scene: Scene, frames: Map<string, Mat>): Scene {
  * passive joints of a loop where the loop closes. Null for a robot that starts as it is designed.
  */
 export function startPose(robot: Robot, scene: Scene): Solved | null {
-  const driven: Pose = new Map(robot.joints.filter((j) => j.type !== 'fixed' && !j.mimic && j.start).map((j) => [j.id, j.start!]));
+  const driven: Pose = new Map(robot.joints.filter((j) => j.type !== 'fixed' && !j.mimic && !j.passive && j.start).map((j) => [j.id, j.start!]));
   return driven.size ? solvePose(robot, scene, driven) : null;
 }
 

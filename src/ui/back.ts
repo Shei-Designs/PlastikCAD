@@ -15,7 +15,7 @@ export function backOut(): boolean {
   const sheet = document.getElementById('touch-entry-box');
   const dropped = document.querySelector('.popover.open') !== null;
   const s = getState();
-  const underWay = Boolean(s.arraying || s.mating || s.measuring || s.aligning || s.placing || s.jointPick || s.joint || s.sensor) || s.selection.length > 0;
+  const underWay = Boolean(s.loopMotors || s.arraying || s.mating || s.measuring || s.aligning || s.placing || s.jointPick || s.joint || s.sensor) || s.selection.length > 0;
   if (!sheet && !dropped && !underWay) return false;
   const target: EventTarget = sheet ?? (document.activeElement instanceof HTMLElement ? document.activeElement : document.body);
   target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
