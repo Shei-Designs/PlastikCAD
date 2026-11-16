@@ -10,7 +10,7 @@ import { buildIsaacStage, buildMjcfModel, buildRobotPackage, buildSdfModel } fro
 import { mecanumRover, ROBOTS } from './fixtures';
 import { linkNodes, linkOf } from './model';
 import type { DriveRole } from './types';
-import { gripLine, isWheel, leansRight, mecanumOf, rollersOf, WHEEL_FRICTION } from './wheels';
+import { gripLine, isWheel, leansRight, mecanumOf, rollersMesh, rollersOf, WHEEL_FRICTION } from './wheels';
 import type { MecanumWheel } from './wheels';
 
 beforeAll(async () => {
@@ -155,12 +155,12 @@ describe('the checks on a mecanum drive', () => {
     expect(problems).toEqual([{ level: 'error', text: `${w.name}: its rollers lean the wrong way for the corner Rear left. Set its Hand to Right.`, link: w.id }]);
   });
 
-  it('warn of a wheel that is not the part, is stretched or has gaps, since the robot will not slide', () => {
+  it('stop the export for a wheel that is not the part, is stretched or has gaps, since the robot will not slide', () => {
     const rover = ROBOTS.find((r) => r.file === 'rover')!.make();
     const byId = new Map(rover.scene.map((n) => [n.id, n]));
     rover.robot!.drive = { kind: 'mecanum', roles: Object.fromEntries(rover.robot!.joints.map((j) => [j.id, `${byId.get(j.child)!.pos[1] > 0 ? 'front' : 'rear'}-${byId.get(j.child)!.pos[0] < 0 ? 'left' : 'right'}` as DriveRole])) };
     const plain = checkRobot(rover, new Map());
-    expect(plain.map((p) => p.level)).toEqual(['warning', 'warning', 'warning', 'warning']);
+    expect(plain.map((p) => p.level)).toEqual(['error', 'error', 'error', 'error']);
     expect(plain[0].text).toMatch(/^Wheel left back: not a Mecanum wheel part, so it cannot slide sideways\. Use a Mecanum wheel from the parts\.$/);
 
     const doc = mecanumRover();
@@ -168,7 +168,24 @@ describe('the checks on a mecanum drive', () => {
     a.size = [a.size[0], a.size[1], a.size[2] * 1.5];
     b.params = { ...b.params, size: 'custom', diameter: 100, width: 12, rollers: 6 };
     const texts = checkRobot(doc, new Map()).map((p) => `${p.level} ${p.text}`);
-    expect(texts).toEqual([`warning ${a.name}: stretched unevenly, so it cannot slide sideways. Scale it the same on every side.`, `warning ${b.name}: its rollers leave gaps, so it cannot slide sideways. Add rollers or make the wheel wider.`]);
+    expect(texts).toEqual([`error ${a.name}: stretched unevenly, so it cannot slide sideways. Scale it the same on every side.`, `error ${b.name}: its rollers leave gaps, so it cannot slide sideways. Add rollers or make the wheel wider.`]);
+  });
+});
+
+describe('the shape the plate draws a mecanum wheel colliding as', () => {
+  it('is its balls, none reaching past the wheel\'s box', () => {
+    const [w] = wheelsOf(mecanumRover());
+    const wheel = mecanumOf(w) as MecanumWheel;
+    const mesh = rollersMesh(wheel);
+    const balls = rollersOf(wheel).reduce((n, r) => n + r.balls.length, 0);
+    expect(mesh.positions.length / 3).toBe(balls * 26);
+    expect(mesh.triangles.length / 3).toBe(balls * 48);
+    expect(Math.max(...mesh.triangles)).toBe(mesh.positions.length / 3 - 1);
+    const box = boxBounds(w);
+    for (let i = 0; i < mesh.positions.length; i += 3) for (let k = 0; k < 3; k++) {
+      expect(mesh.positions[i + k]).toBeGreaterThan(box.min[k] - 0.01);
+      expect(mesh.positions[i + k]).toBeLessThan(box.max[k] + 0.01);
+    }
   });
 });
 
@@ -252,6 +269,8 @@ describe('what the exports write for a mecanum wheel', () => {
     const usda = text(pkg, '.usda');
     expect(usda.match(/def Xform "Wheel_\w+_roller_\d+"/g)?.length).toBe(36);
     expect(usda.match(/def PhysicsRevoluteJoint "Wheel_\w+_roller_\d+_joint"/g)?.length).toBe(36);
+    // The rollers' hinges are outside the articulation, whose joint states and transforms are then the robot's own.
+    expect(usda.match(/bool physics:excludeFromArticulation = 1/g)?.length).toBe(36);
     expect(usda).toContain('uint physxScene:timeStepsPerSecond = 120');
     expect(usda).not.toContain('DifferentialController');
     // Front left: forward less sideways, less the turn; the wheel is 50 mm in radius, so 20 a meter.

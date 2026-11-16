@@ -426,13 +426,13 @@ in the design file and synced with it.
 - **Checks.** The overview lists what stops an export (no base, a link no
   joint reaches, limits the wrong way round, a drive missing a wheel on a
   side, a mecanum wheel whose rollers lean the wrong way for its corner,
+  a wheel of a mecanum drive that is not the Mecanum wheel part, is
+  stretched unevenly or has gaps between its rollers, and so cannot slide,
   a link with no mass or an impossible inertia, a joint set to follow
   one that is fixed, closes a loop, is left out or follows it back) and what
   goes through
   with a note (a joint with no effort or speed,
-  drive wheels whose axles do not run the same way, a wheel of a mecanum
-  drive that is not the Mecanum wheel part, is stretched unevenly or has
-  gaps between its rollers, and so cannot slide, a camera whose near
+  drive wheels whose axles do not run the same way, a camera whose near
   plane clips the floor out of its picture, an open mesh, a heavy collision
   mesh), each with a *Show* button. Neither says how the robot might be
   designed better: a motor far stronger than its part needs is the builder's
@@ -505,9 +505,11 @@ in the design file and synced with it.
   `base_footprint`, each sensor's own frame and a camera's optical frame.
   A mecanum drive's graph mixes each wheel's speed from the command's
   forward, sideways and turning parts, and a stage whose robot has rollers
-  asks for 120 physics steps a second, which keeps them true; there the
-  rollers are bodies of the articulation, so their joints and frames are
-  among those it publishes.
+  asks for 120 physics steps a second, which keeps them true: a stage of
+  your own that the robot is referenced into needs the same rate
+  (`physxScene:timeStepsPerSecond = 120` on its physics scene), or it
+  slides short. The rollers are bodies outside the articulation, so its
+  joint states and transforms are the robot's own alone.
   *File > Open*, Play, and it runs; nothing is imported or set up on
   the Isaac side. Isaac Sim can still import the ROS 2 package's URDF, but
   the stage carries what the importer cannot read from URDF: drive gains, a

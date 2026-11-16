@@ -6,7 +6,7 @@
   "name": "Reference mecanum rover",
   "scene": [
     {
-      "id": "fx000056",
+      "id": "fx000064",
       "type": "shape",
       "name": "Body",
       "shape": "box",
@@ -19,7 +19,7 @@
       "color": "#8fa3bf"
     },
     {
-      "id": "fx000057",
+      "id": "fx000065",
       "type": "part",
       "name": "Wheel rear left",
       "part": "mecanum-wheel",
@@ -47,7 +47,7 @@
       "color": "#e8853a"
     },
     {
-      "id": "fx000058",
+      "id": "fx000066",
       "type": "part",
       "name": "Wheel front left",
       "part": "mecanum-wheel",
@@ -75,7 +75,7 @@
       "color": "#e8853a"
     },
     {
-      "id": "fx000059",
+      "id": "fx000067",
       "type": "part",
       "name": "Wheel rear right",
       "part": "mecanum-wheel",
@@ -103,7 +103,7 @@
       "color": "#e8853a"
     },
     {
-      "id": "fx000060",
+      "id": "fx000068",
       "type": "part",
       "name": "Wheel front right",
       "part": "mecanum-wheel",
@@ -133,11 +133,11 @@
   ],
   "assets": {},
   "robot": {
-    "root": "fx000056",
+    "root": "fx000064",
     "base": "free",
     "links": [
       {
-        "node": "fx000056",
+        "node": "fx000064",
         "mass": {
           "kind": "material",
           "material": "pla",
@@ -150,11 +150,11 @@
     ],
     "joints": [
       {
-        "id": "fx000061",
+        "id": "fx000069",
         "name": "Wheel rear left joint",
         "type": "continuous",
-        "parent": "fx000056",
-        "child": "fx000057",
+        "parent": "fx000064",
+        "child": "fx000065",
         "origin": [0,0,0],
         "axis": [0,0,1],
         "lower": -90,
@@ -166,11 +166,11 @@
         "motor": "37d-70"
       },
       {
-        "id": "fx000062",
+        "id": "fx000070",
         "name": "Wheel front left joint",
         "type": "continuous",
-        "parent": "fx000056",
-        "child": "fx000058",
+        "parent": "fx000064",
+        "child": "fx000066",
         "origin": [0,0,0],
         "axis": [0,0,1],
         "lower": -90,
@@ -182,11 +182,11 @@
         "motor": "37d-70"
       },
       {
-        "id": "fx000063",
+        "id": "fx000071",
         "name": "Wheel rear right joint",
         "type": "continuous",
-        "parent": "fx000056",
-        "child": "fx000059",
+        "parent": "fx000064",
+        "child": "fx000067",
         "origin": [0,0,0],
         "axis": [0,0,1],
         "lower": -90,
@@ -198,11 +198,11 @@
         "motor": "37d-70"
       },
       {
-        "id": "fx000064",
+        "id": "fx000072",
         "name": "Wheel front right joint",
         "type": "continuous",
-        "parent": "fx000056",
-        "child": "fx000060",
+        "parent": "fx000064",
+        "child": "fx000068",
         "origin": [0,0,0],
         "axis": [0,0,1],
         "lower": -90,
@@ -216,10 +216,10 @@
     ],
     "sensors": [
       {
-        "id": "fx000065",
+        "id": "fx000073",
         "name": "IMU",
         "kind": "imu",
-        "link": "fx000056",
+        "link": "fx000064",
         "origin": [0,0,0],
         "rot": [0,0,0],
         "rate": 100
@@ -228,10 +228,10 @@
     "drive": {
       "kind": "mecanum",
       "roles": {
-        "fx000061": "rear-left",
-        "fx000062": "front-left",
-        "fx000063": "rear-right",
-        "fx000064": "front-right"
+        "fx000069": "rear-left",
+        "fx000070": "front-left",
+        "fx000071": "rear-right",
+        "fx000072": "front-right"
       }
     }
   }
