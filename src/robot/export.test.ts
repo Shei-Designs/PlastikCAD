@@ -549,8 +549,20 @@ describe('buildRobotPackage', () => {
     d.robot!.joints.push({ ...defaultJoint('j3', 'closing', arm.id, wheel.id, [0, 0, 0]) });
     const closed = buildRobotPackage(d, geometry());
     expect(urdfOf(closed)).not.toContain('initial_value');
-    // The wheel's joint is on the loop too, and its place in the starting pose is the one the loop gives it.
-    expect(closed.warnings).toEqual(['"left_wheel_joint", "shoulder" are on a loop, which Gazebo closes as the robot is designed, so they begin as designed, not at their starts.']);
+    expect(closed.warnings).toEqual([]);
+    // Once the controller runs, the launch sends it to the starts: the wheel's joint is on the loop too, and its place
+    // in the starting pose is the one the loop gives it.
+    const launchOf = (pkg: RobotPackage) => text(pkg.files.find((f) => f.name === 'launch/gazebo.launch.py')!.bytes);
+    expect(launchOf(open)).not.toContain('to_starts');
+    const launch = launchOf(closed);
+    expect(launch).toContain('to_starts = RegisterEventHandler(OnProcessExit(target_action=arm_spawner');
+    expect(launch).toMatch(/\n {8}arm_spawner,\n {8}to_starts,\n/);
+    expect(launch).toContain('from launch.event_handlers import OnProcessExit');
+    const sent = /\{joint_names: \[([^\]]+)\], points: \[\{positions: \[([^\]]+)\], time_from_start: \{sec: (\d+), nanosec: \d+\}\}\]\}/.exec(launch)!;
+    const names = sent[1].split(', ');
+    expect(names.sort()).toEqual(['left_wheel_joint', 'shoulder']);
+    expect(sent[2].split(', ').map(Number)[sent[1].split(', ').indexOf('shoulder')]).toBeCloseTo(0.349066, 5);
+    expect(Number(sent[3])).toBeGreaterThanOrEqual(1);
   });
 
   it('writes mimic against the followed joint', () => {
@@ -1233,6 +1245,21 @@ describe('the motors of a loop', () => {
     expect(withMotors(answered, all, all).joints.every((j) => !j.passive)).toBe(true);
   });
 
+  it('takes a loop no motor moves as answered, and exports it with no controller at all', () => {
+    const d = built();
+    const all = d.robot!.joints.map((j) => j.id);
+    d.robot = withMotors(d.robot!, all, []);
+    expect(d.robot.joints.every((j) => j.passive)).toBe(true);
+    expect(openLoops(d.robot, ids(d))).toEqual([]);
+    const ros = buildRobotPackage(d, geo(d));
+    const urdf = text(ros.files.find((f) => f.name.endsWith('.urdf'))!.bytes);
+    expect(urdf).not.toMatch(/<ros2_control/);
+    expect(ros.files.some((f) => f.name === 'config/controllers.yaml')).toBe(false);
+    expect(text(buildSdfModel(d, geo(d)).files.find((f) => f.name === 'model.sdf')!.bytes)).not.toMatch(/JointPositionController/);
+    expect(text(buildMjcfModel(d, geo(d)).files.find((f) => f.name.endsWith('.xml'))!.bytes)).not.toMatch(/<position /);
+    expect(() => buildIsaacStage(d, geo(d))).not.toThrow();
+  });
+
   it('closes the loop on a passive hinge, so that a joint with a motor stays in the tree', () => {
     const d = built();
     const all = d.robot!.joints.map((j) => j.id);
@@ -1245,6 +1272,14 @@ describe('the motors of a loop', () => {
     // Both joints into the coupler with a motor: one of them has to close the loop, and cannot carry its motor.
     const both = withMotors(d.robot!, all, [named(d, 'Closing joint').id, named(d, 'Coupler joint').id]);
     expect(motorsOnLoopJoints(both, ids(d), all).map((j) => j.name)).toEqual(['Closing joint']);
+  });
+
+  it("asks Gazebo for its iterative solver in the worlds of a robot with a loop, and leaves the others' worlds alone", () => {
+    const d = linkage();
+    const world = (pkg: RobotPackage) => text(pkg.files.find((f) => f.name.startsWith('worlds/'))!.bytes);
+    for (const pkg of [buildRobotPackage(d, geo(d)), buildSdfModel(d, geo(d))]) expect(world(pkg)).toContain('<dart><solver><solver_type>pgs</solver_type></solver></dart></physics>');
+    const rover = ROBOTS.find((r) => r.file === 'rover')!.make();
+    for (const pkg of [buildRobotPackage(rover, geo(rover)), buildSdfModel(rover, geo(rover))]) expect(world(pkg)).not.toContain('<dart>');
   });
 
   it('gives a passive joint no actuator and no controller in any export', () => {

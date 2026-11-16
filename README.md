@@ -290,7 +290,8 @@ in the design file and synced with it.
   follows another joint (URDF `mimic`). *Moved by* says whether a motor moves
   the joint at all: one moved by *Nothing* is passive, a caster's swivel or a
   bar of a linkage, and gets no actuator, servo or controller in any export
-  or in the test drive. A joint stays with its child: move the
+  or in the test drive; a joint given a part in the drive has its motor
+  again. A joint stays with its child: move the
   child and the joint comes along.
 - **Copies.** Duplicate and Paste copy a link with its mass, collision and
   friction settings, its sensors, and the joint it hangs by: from the copy
@@ -325,7 +326,8 @@ in the design file and synced with it.
   whose joints all have a motor would be pulled apart by them, so before an
   export or a test drive the app asks once which of its joints a motor
   moves: click them on the plate or in the list, and the others become
-  passive, moved by the loop itself in MuJoCo, Gazebo and Isaac Sim. *Set
+  passive, moved by the loop itself in MuJoCo, Gazebo and Isaac Sim; *No
+  motor* answers for a loop nothing drives, like a suspension. *Set
   the others to follow this joint* sweeps the driven joint over its range
   and writes each passive joint's motion as a URDF `mimic` line: exact for a
   parallelogram, a fit with a reported error for other four-bars. A URDF is
@@ -337,9 +339,13 @@ in the design file and synced with it.
   joint sliders. Gazebo is not told what the joints on the loop follow,
   since the loop moves them: the Gazebo model drops their mimic, and the
   ROS package's launch file spawns the robot without it while the URDF
-  keeps it. In the ROS package the joints on a loop begin as designed and
-  not at their starts, which the export says: a start is set as the robot
-  loads, before the weld, and the loop would be held out of shape.
+  keeps it. In the ROS package the joints on a loop begin as designed, since
+  a start set as the robot loads comes before the weld and would hold the
+  loop out of shape; the launch file sends `arm_controller` to the starts
+  once it runs. The worlds of a robot with a loop ask Gazebo's physics for
+  its iterative solver (`<dart><solver><solver_type>pgs`): with the default
+  one a welded loop that also touches the floor is thrown apart, so a world
+  of your own needs the same line.
 - **Mass.** Each link is weighed from its shape and material: pick a material
   (filaments, resin, metals, acrylic, wood, foam...) and, for a printed part,
   the infill and the shell thickness, or type the mass you weighed. The

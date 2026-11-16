@@ -160,20 +160,35 @@ export interface GazeboLaunchNeeds {
   height?: number;
   /** Joints on a loop Gazebo closes, whose mimic the robot is spawned without: the loop moves them, and Gazebo's physics takes no followers. */
   unfollowed?: string[];
+  /**
+   * Where `arm_controller` is sent once it runs: every joint of its own and the place it begins in (radians or
+   * meters), reached in `seconds`. For the joints a start cannot be loaded with, those on a loop Gazebo welds shut.
+   */
+  goTo?: { joints: string[]; positions: number[]; seconds: number };
 }
 
 /** Gazebo through ros_gz: the package's world, the robot spawned into it, the bridge, and any controllers. */
 export function gazeboLaunch(name: string, needs: GazeboLaunchNeeds = { controllers: [] }): string {
-  const spawners = needs.controllers
-    .map(
-      (c) => `
-        Node(
-            package='controller_manager',
-            executable='spawner',
-            arguments=['${c}', '--controller-manager', '/controller_manager'],
-        ),`,
-    )
-    .join('');
+  const goTo = needs.goTo && needs.controllers.includes('arm_controller') ? needs.goTo : undefined;
+  const spawner = (c: string, pad: string): string => `Node(
+${pad}    package='controller_manager',
+${pad}    executable='spawner',
+${pad}    arguments=['${c}', '--controller-manager', '/controller_manager'],
+${pad})`;
+  // The arm's spawner has a name where something waits on it.
+  const spawners = needs.controllers.map((c) => (goTo && c === 'arm_controller' ? '\n        arm_spawner,\n        to_starts,' : `\n        ${spawner(c, '        ')},`)).join('');
+  const sec = goTo ? Math.floor(goTo.seconds) : 0;
+  const starts = goTo
+    ? `
+    # The joints on a loop begin as designed, for Gazebo to weld the loop shut as it is built; once the controller
+    # runs it takes them to their starts, and the loop takes its other joints along.
+    arm_spawner = ${spawner('arm_controller', '    ')}
+    to_starts = RegisterEventHandler(OnProcessExit(target_action=arm_spawner, on_exit=[ExecuteProcess(cmd=[
+        'ros2', 'topic', 'pub', '--once', '/arm_controller/joint_trajectory', 'trajectory_msgs/msg/JointTrajectory',
+        '{joint_names: [${goTo.joints.join(', ')}], points: [{positions: [${goTo.positions.map((x) => fmt(x, 6)).join(', ')}], time_from_start: {sec: ${sec}, nanosec: ${Math.round((goTo.seconds - sec) * 1e9)}}}]}',
+    ])]))
+`
+    : '';
   const unfollowed = needs.unfollowed ?? [];
   // The robot Gazebo is given: the one on the topic, or its own where it must differ.
   const strip = unfollowed.length
@@ -197,7 +212,7 @@ import os${unfollowed.length ? '\nimport re' : ''}
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import AppendEnvironmentVariable, DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import AppendEnvironmentVariable, DeclareLaunchArgument, ${goTo ? 'ExecuteProcess, ' : ''}IncludeLaunchDescription${goTo ? ', RegisterEventHandler\nfrom launch.event_handlers import OnProcessExit' : ''}
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
@@ -216,7 +231,7 @@ ${strip}
         PythonLaunchDescriptionSource(os.path.join(get_package_share_directory('ros_gz_sim'), 'launch', 'gz_sim.launch.py')),
         launch_arguments={'gz_args': [PythonExpression(["'-r -s --headless-rendering' if '", headless, "' == 'true' else '-r'"]), f' {world}']}.items(),
     )
-
+${starts}
     return LaunchDescription([
         DeclareLaunchArgument('headless', default_value='false', description='Run the Gazebo server without the window'),
         # So that Gazebo can find package://${name}/meshes/..., beside whatever is on its path already
