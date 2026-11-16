@@ -209,13 +209,13 @@ describe('checkRobot', () => {
     expect(errors(fixed)).toEqual([]);
   });
 
-  it('warns about loops and open meshes', () => {
+  it('lets a hinge close a loop without a word, and warns about an open mesh', () => {
     const d = doc();
     d.robot!.joints.push({ ...defaultJoint('j3', 'closing', arm.id, wheel.id, [0, 0, 0]) });
     const props = new Map([...geometry()].map(([id, g]) => [id, { ...g.props, watertight: id === arm.id ? false : true }]));
     const problems = checkRobot(d, props);
     expect(problems.every((p) => p.level === 'warning')).toBe(true);
-    expect(problems.find((p) => p.joint === 'j3')?.text).toMatch(/loop/);
+    expect(problems.filter((p) => p.joint === 'j3')).toEqual([]);
     expect(problems.find((p) => p.link === arm.id)?.text).toMatch(/not a closed mesh/);
   });
 });
@@ -516,6 +516,41 @@ describe('buildRobotPackage', () => {
     expect(urdf).toMatch(/<gazebo>\s*<plugin filename="gz-sim-detachable-joint-system" name="gz::sim::systems::DetachableJoint">\s*<parent_link>closing_pin<\/parent_link>\s*<child_model>test_rover<\/child_model>\s*<child_link>closing_pin_2<\/child_link>/);
     // No controller is given the joint: the loop moves it.
     expect(text(pkg.files.find((f) => f.name === 'config/controllers.yaml')!.bytes)).not.toContain('closing');
+  });
+
+  it('spawns a robot in Gazebo without what the joints on a loop follow, and keeps it in the URDF', () => {
+    const d = doc();
+    const launchOf = () => text(buildRobotPackage(d, geometry()).files.find((f) => f.name === 'launch/gazebo.launch.py')!.bytes);
+    // Without a loop the follower is Gazebo's to hear of, and the robot comes off the topic as it is.
+    d.robot!.joints[1].mimic = { joint: 'j1', multiplier: 1, offset: 0 };
+    expect(launchOf()).toContain("'-topic', 'robot_description'");
+    expect(launchOf()).not.toContain('import re');
+    // With the loop closed the shoulder is on it: the loop moves it, and Gazebo's physics refuses a follower.
+    d.robot!.joints.push({ ...defaultJoint('j3', 'closing', arm.id, wheel.id, [0, 0, 0]) });
+    const pkg = buildRobotPackage(d, geometry());
+    expect(text(pkg.files.find((f) => f.name === 'urdf/test_rover.urdf')!.bytes)).toMatch(/<joint name="shoulder"[\s\S]*?<mimic joint="left_wheel_joint" multiplier="1" offset="0"\/>/);
+    const launch = launchOf();
+    expect(launch).toContain('import os\nimport re\n');
+    expect(launch).toContain("    for joint in ['shoulder']:\n        gazebo_description = re.sub(r'(<joint name=\"' + re.escape(joint) + r'\".*?)\\s*<mimic [^>]*/>', r'\\1', gazebo_description, count=1, flags=re.S)");
+    expect(launch).toMatch(/arguments=\['-name', 'test_rover', '-param', 'robot_description', '-z', '[\d.]+'\],\s*parameters=\[\{'robot_description': gazebo_description\}\],/);
+    // A loop none of whose joints follows leaves the launch as it was.
+    d.robot!.joints[1].mimic = undefined;
+    expect(launchOf()).toContain("'-topic', 'robot_description'");
+  });
+
+  it('begins the joints on a loop as designed in Gazebo through ROS, where a start would be welded out of shape', () => {
+    const d = doc();
+    d.robot!.joints[1] = { ...d.robot!.joints[1], start: 20 };
+    const urdfOf = (pkg: RobotPackage) => text(pkg.files.find((f) => f.name === 'urdf/test_rover.urdf')!.bytes);
+    // Off a loop the shoulder is put at its start as the robot loads.
+    const open = buildRobotPackage(d, geometry());
+    expect(urdfOf(open)).toContain('<param name="initial_value">0.349066</param>');
+    expect(open.warnings).toEqual([]);
+    d.robot!.joints.push({ ...defaultJoint('j3', 'closing', arm.id, wheel.id, [0, 0, 0]) });
+    const closed = buildRobotPackage(d, geometry());
+    expect(urdfOf(closed)).not.toContain('initial_value');
+    // The wheel's joint is on the loop too, and its place in the starting pose is the one the loop gives it.
+    expect(closed.warnings).toEqual(['"left_wheel_joint", "shoulder" are on a loop, which Gazebo closes as the robot is designed, so they begin as designed, not at their starts.']);
   });
 
   it('writes mimic against the followed joint', () => {

@@ -158,6 +158,8 @@ export interface GazeboLaunchNeeds {
   controllers: string[];
   /** How far above the floor the robot's root frame is (m): it is spawned that high, and a little more to settle from. */
   height?: number;
+  /** Joints on a loop Gazebo closes, whose mimic the robot is spawned without: the loop moves them, and Gazebo's physics takes no followers. */
+  unfollowed?: string[];
 }
 
 /** Gazebo through ros_gz: the package's world, the robot spawned into it, the bridge, and any controllers. */
@@ -172,11 +174,26 @@ export function gazeboLaunch(name: string, needs: GazeboLaunchNeeds = { controll
         ),`,
     )
     .join('');
+  const unfollowed = needs.unfollowed ?? [];
+  // The robot Gazebo is given: the one on the topic, or its own where it must differ.
+  const strip = unfollowed.length
+    ? `
+    # Gazebo closes the robot's loops, which move these joints: it is not told what they follow.
+    gazebo_description = robot_description
+    for joint in [${unfollowed.map((j) => `'${j}'`).join(', ')}]:
+        gazebo_description = re.sub(r'(<joint name="' + re.escape(joint) + r'".*?)\\s*<mimic [^>]*/>', r'\\1', gazebo_description, count=1, flags=re.S)
+`
+    : '';
+  const source = unfollowed.length ? "'-param', 'robot_description'" : "'-topic', 'robot_description'";
+  const sourceParams = unfollowed.length
+    ? `
+            parameters=[{'robot_description': gazebo_description}],`
+    : '';
   return `# Made with ${APP_NAME}. Spawns the robot in Gazebo (Harmonic or later, through ros_gz) with the bridge to ROS 2:
 #   ros2 launch ${name} gazebo.launch.py
 # On a machine without a display, headless:=true runs the server alone, sensors included:
 #   ros2 launch ${name} gazebo.launch.py headless:=true
-import os
+import os${unfollowed.length ? '\nimport re' : ''}
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -193,7 +210,7 @@ def generate_launch_description():
     bridge_config = os.path.join(share, 'config', 'bridge.yaml')
     with open(urdf, 'r') as f:
         robot_description = f.read().replace('${SHARE_PLACEHOLDER}', share)
-
+${strip}
     headless = LaunchConfiguration('headless')
     gz_sim = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(get_package_share_directory('ros_gz_sim'), 'launch', 'gz_sim.launch.py')),
@@ -213,7 +230,7 @@ def generate_launch_description():
         Node(
             package='ros_gz_sim',
             executable='create',
-            arguments=['-name', '${name}', '-topic', 'robot_description', '-z', '${fmt((needs.height ?? 0) + 0.05, 6)}'],
+            arguments=['-name', '${name}', ${source}, '-z', '${fmt((needs.height ?? 0) + 0.05, 6)}'],${sourceParams}
         ),
         Node(
             package='ros_gz_bridge',

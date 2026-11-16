@@ -327,7 +327,12 @@ in the design file and synced with it.
   light pin link where its child would be, and Gazebo welds the pin to that
   child (`gz-sim-detachable-joint-system`): the loop closes for real in
   Gazebo, and stays open where the URDF is read alone, as in RViz with the
-  joint sliders. The Gazebo model drops the mimic of joints on the loop.
+  joint sliders. Gazebo is not told what the joints on the loop follow,
+  since the loop moves them: the Gazebo model drops their mimic, and the
+  ROS package's launch file spawns the robot without it while the URDF
+  keeps it. In the ROS package the joints on a loop begin as designed and
+  not at their starts, which the export says: a start is set as the robot
+  loads, before the weld, and the loop would be held out of shape.
 - **Mass.** Each link is weighed from its shape and material: pick a material
   (filaments, resin, metals, acrylic, wood, foam...) and, for a printed part,
   the infill and the shell thickness, or type the mass you weighed. The
@@ -397,7 +402,7 @@ in the design file and synced with it.
   side, a link with no mass or an impossible inertia, a joint set to follow
   one that is fixed, closes a loop, is left out or follows it back) and what
   goes through
-  with a note (a joint that closes a loop, a joint with no effort or speed,
+  with a note (a joint with no effort or speed,
   drive wheels whose axles do not run the same way, a camera whose near
   plane clips the floor out of its picture, an open mesh, a heavy collision
   mesh), each with a *Show* button. Neither says how the robot might be
