@@ -68,6 +68,7 @@ def read_stage(path):
         'torques': torques,
         'topics': topics,
         'cameras': re.findall(r'def Camera "([^"]+)"', text),
+        'base_frame': (re.search(r'inputs:chassisFrameId = "([^"]+)"', text) or [None, None])[1],
         'imus': re.findall(r'def IsaacImuSensor "([^"]+)"', text),
         'touches': re.findall(r'def IsaacContactSensor "([^"]+)"', text),
         'lidars': lidars,
@@ -135,6 +136,9 @@ def one(path, pictures):
         # Which way the robot faces: the drive's forward is where the wall goes; without a drive, +Y.
         forward = np.array([0.0, 1.0, 0.0])
         robot = stage.GetPrimAtPath(root)
+        # A driven robot's articulation begins at its footprint, a body among the links: the robot is the prim that holds them.
+        if robot.HasAPI(UsdPhysics.RigidBodyAPI):
+            robot = robot.GetParent()
         drive_kind = 'ackermann' if 'ackermann_cmd' in info['topics'] else 'twist' if 'cmd_vel' in info['topics'] else 'joints' if 'joint_command' in info['topics'] else None
         # A wall a meter ahead, half a meter wide and high, for the lidar to see.
         wall = UsdGeom.Cube.Define(stage, '/World/Wall')
@@ -171,6 +175,16 @@ def one(path, pictures):
             got['image'][cam] = []
             topic = f'{cam}/image' if f'{cam}/image' in info['topics'] else f'{cam}/depth'
             node.create_subscription(Image, topic, (lambda l: lambda m: got['image'][l].append(m))(cam), 10)
+        # Every frame a message is stamped with has to be in the transform tree, or nothing can place what it carries.
+        from rclpy.qos import DurabilityPolicy, QoSProfile
+        from tf2_msgs.msg import TFMessage
+        frames = set()
+
+        def on_tf(m):
+            for t in m.transforms:
+                frames.update((t.header.frame_id, t.child_frame_id))
+        node.create_subscription(TFMessage, 'tf', on_tf, 50)
+        node.create_subscription(TFMessage, 'tf_static', on_tf, QoSProfile(depth=50, durability=DurabilityPolicy.TRANSIENT_LOCAL))
         twist_pub = node.create_publisher(Twist, 'cmd_vel', 10)
         joint_pub = node.create_publisher(JointState, 'joint_command', 10)
         ackermann_pub = None
@@ -268,7 +282,18 @@ def one(path, pictures):
                 result['problems'].append('no odom arrived')
             else:
                 o = got['odom'][-1].pose.pose.position
-                off = float(np.linalg.norm(np.array([o.x, o.y]) - (end[:2] - start[:2])))
+                if drive_kind in ('twist', 'ackermann'):
+                    # A driven robot's odometry is given for its footprint, +X the way it faces: told to go
+                    # forward, it has gone along +X by as far as it moved, whichever way the design faces.
+                    off = float(np.hypot(o.x - moved, o.y))
+                    result['odom_xy_mm'] = [round(o.x * 1000), round(o.y * 1000)]
+                    child = got['odom'][-1].child_frame_id
+                    if child != info['base_frame'] or 'def Xform "%s"' % child not in open(path, encoding='utf-8').read():
+                        result['problems'].append(f'odom is given for "{child}", not the footprint "{info["base_frame"]}"')
+                    if child not in frames or 'odom' not in frames:
+                        result['problems'].append(f'the transform tree lacks odom or "{child}" ({", ".join(sorted(frames))})')
+                else:
+                    off = float(np.linalg.norm(np.array([o.x, o.y]) - (end[:2] - start[:2])))
                 result['odom_error_mm'] = round(off * 1000)
                 if off > 0.03:
                     result['problems'].append(f'odom is {off * 1000:.0f} mm off the pose')
@@ -303,6 +328,14 @@ def one(path, pictures):
                 result['problems'].append(f'no pictures from {cam}')
             else:
                 result[f'{cam}_px'] = f'{msgs[-1].width}x{msgs[-1].height}'
+                # ROS reads a picture in the camera's optical frame: Z out along the line of sight.
+                if msgs[-1].header.frame_id != f'{cam}_optical_frame':
+                    result['problems'].append(f'{cam} stamps its pictures with "{msgs[-1].header.frame_id}", not its optical frame')
+        stamped = {f'{kind} of {k}': v[-1].header.frame_id for kind in ('scan', 'imu', 'image') for k, v in got[kind].items() if v}
+        result['frames'] = len(frames)
+        for what, frame in stamped.items():
+            if frame not in frames:
+                result['problems'].append(f'the {what} is stamped with "{frame}", which the transform tree does not have ({", ".join(sorted(frames))})')
         # Touch sensors: Isaac's contact sensor interface must read a force on each pad that stands on the floor.
         if info['touches']:
             touched = {}

@@ -463,7 +463,9 @@ in the design file and synced with it.
   IMUs, contact sensors), a floor, lights, and a ROS 2 action graph
   that drives it from `cmd_vel` (`ackermann_cmd` for a car, `joint_command`
   for an arm) and publishes joint states, clock, odometry, TF and every
-  sensor. *File > Open*, Play, and it runs; nothing is imported or set up on
+  sensor, in the frames the ROS 2 package names: a driven robot's
+  `base_footprint`, each sensor's own frame and a camera's optical frame.
+  *File > Open*, Play, and it runs; nothing is imported or set up on
   the Isaac side. Isaac Sim can still import the ROS 2 package's URDF, but
   the stage carries what the importer cannot read from URDF: drive gains, a
   free base, sensors and clip planes.

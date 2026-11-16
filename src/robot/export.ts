@@ -669,13 +669,21 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
     drive = { kind: p.drive.kind, left, right, steer, ackermannWheels, wheelRadius: p.drive.wheelRadius, wheelSeparation: p.drive.wheelSeparation, wheelBase: p.drive.wheelBase, maxWheelSpeed: speeds.length ? Math.min(...speeds) : 10, steeringLimit: p.drive.steeringLimit };
     if (p.drive.kind === 'mecanum') warnings.push('Isaac Sim drives the mecanum wheels like a differential pair: cmd_vel moves it forward and turns it, not sideways.');
   }
+  // The frames the readings are stamped with are named as the ROS package names them, clear of the links.
+  const sensors: UsdModel['sensors'] = p.sensors.map((s) => {
+    const frame = s.kind === 'touch' ? undefined : p.names.take(`${s.name}_link`, p.naming.link);
+    const optical = s.kind === 'camera' || s.kind === 'depth' ? p.names.take(`${s.name}_optical_frame`, p.naming.link) : undefined;
+    return { name: s.name, ...(frame ? { frame } : {}), ...(optical ? { optical } : {}), kind: s.kind, link: s.link, xyz: s.xyz, rpy: s.rpy, rate: s.rate, camera: s.camera, lidar: s.lidar, touch: s.touch };
+  });
+  const footprint = footprintOf(p, robot);
   const model: UsdModel = {
     name: p.robotName,
     root: p.linkNames.get(robot.root!)!,
     fixedBase: robot.base === 'fixed',
+    ...(footprint ? { footprint: { name: footprint.name, joint: footprint.joint, yaw: -footprint.turn } } : {}),
     links,
     joints: [...p.treeJoints.map((j) => jointOf(j, false)), ...p.loopJoints.map((j) => jointOf(j, true))],
-    sensors: p.sensors.map((s) => ({ name: s.name, kind: s.kind, link: s.link, xyz: s.xyz, rpy: s.rpy, rate: s.rate, camera: s.camera, lidar: s.lidar, touch: s.touch })),
+    sensors,
     drive,
     controlled: p.controlled,
   };
@@ -706,7 +714,8 @@ Humble; without one, Isaac's bundled libraries serve). It publishes:
 
 ${topics.map((t) => `- ${t}`).join('\n')}
 
-Sensor frames are named after the sensors; the base frame is \`${model.root}\`.${model.sensors.some((s) => s.kind === 'lidar') ? ' A lidar\nscans the whole circle in Isaac Sim, at the angular step of the design.' : ''}
+Each sensor's readings are in its own frame, \`<sensor>_link\`, and a camera's
+pictures in \`<sensor>_optical_frame\`, as in the ROS package. ${model.footprint && !model.fixedBase ? `The base frame is \`${model.footprint.name}\`, on the floor under \`${model.root}\`\nand facing the robot's forward along +X; the odometry is given for it.` : `The base frame is \`${model.root}\`.`}${model.sensors.some((s) => s.kind === 'lidar') ? ' A lidar\nscans the whole circle in Isaac Sim, at the angular step of the design.' : ''}
 ${model.sensors.some((s) => s.kind === 'touch') ? '\nTouch sensors are Isaac contact sensors on their links; read them from a\nscript or the Contact Sensor window, as the ROS 2 bridge has no publisher\nfor them.\n' : ''}
 The floor is a stand-in: place the robot in a world of your own by
 referencing this stage, or copy the \`${robotPrim(model.name)}\` prim into it.

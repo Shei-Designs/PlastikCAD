@@ -60,6 +60,10 @@ export interface UsdJoint {
 
 export interface UsdSensor {
   name: string;
+  /** The frame its readings are stamped with, as ROS has it: X out along the line of sight, Z up. Not for a touch sensor. */
+  frame?: string;
+  /** A camera's optical frame, which its pictures are stamped with: Z out along the line of sight, X to the right. */
+  optical?: string;
   kind: SensorKind;
   link: string;
   /** In the link's frame, m and radians. A camera looks along its X, a lidar sweeps about its Z. */
@@ -95,6 +99,11 @@ export interface UsdModel {
   root: string;
   /** Bolted to the world, or standing free. */
   fixedBase: boolean;
+  /**
+   * A driven robot's frame on the floor under the base link, +X the way the robot faces (`yaw` from the stage's +X,
+   * radians): the frame its odometry is given for, as in the ROS package.
+   */
+  footprint?: { name: string; joint: string; yaw: number };
   links: UsdLink[];
   /** Tree joints first, parents before children, then the loops. */
   joints: UsdJoint[];
@@ -474,6 +483,42 @@ function sensorPrim(s: UsdSensor): string[] {
   }
 }
 
+/** The optical frame in the sensor's own: Z out along the sensor's X, X to its right. */
+const OPTICAL: Vec3 = [-Math.PI / 2, 0, -Math.PI / 2];
+
+/** A sensor's frames as plain prims in its link, for the transform tree: its own and, for a camera, the optical one in it. */
+function framePrim(s: UsdSensor): string[] {
+  const optical = s.optical ? ['', `def Xform "${s.optical}"`, '{', ...indent(xformOps([0, 0, 0], quatOfRpy(OPTICAL)), 1), '}'] : [];
+  return [`def Xform "${s.frame}"`, '{', ...indent([...xformOps(s.xyz, quatOfRpy(s.rpy)), ...optical], 1), '}'];
+}
+
+/**
+ * The footprint: a body of next to no mass on the floor under the base link, held to it by a fixed joint, so that
+ * the transform tree hangs from it and Isaac measures the odometry at it.
+ */
+const yawQuat = (yaw: number): Quat => [Math.cos(yaw / 2), 0, 0, Math.sin(yaw / 2)];
+function footprintPrims(model: UsdModel, robot: string): { body: string[]; joint: string[] } {
+  const f = model.footprint!;
+  const base = model.links.find((l) => l.name === model.root)!;
+  const turn = base.rot ? mul(yawQuat(-f.yaw), base.rot) : yawQuat(-f.yaw);
+  return {
+    body: [
+      `def Xform "${f.name}" (`,
+      '    prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI", "PhysicsArticulationRootAPI", "PhysxArticulationAPI"]',
+      ')',
+      '{',
+      ...indent(['bool physxArticulation:enabledSelfCollisions = 0', 'float3 physics:diagonalInertia = (1e-9, 1e-9, 1e-9)', 'float physics:mass = 0.0001', ...xformOps([base.pos[0], base.pos[1], 0], yawQuat(f.yaw))], 1),
+      '}',
+    ],
+    joint: [
+      `def PhysicsFixedJoint "${f.joint}"`,
+      '{',
+      ...indent([`rel physics:body0 = </World/${robot}/${f.name}>`, `rel physics:body1 = </World/${robot}/${model.root}>`, `point3f physics:localPos0 = ${v3([0, 0, base.pos[2]])}`, 'point3f physics:localPos1 = (0, 0, 0)', `quatf physics:localRot0 = ${q4(turn)}`, 'quatf physics:localRot1 = (1, 0, 0, 0)'], 1),
+      '}',
+    ],
+  };
+}
+
 function linkPrim(l: UsdLink, sensors: UsdSensor[], touched: boolean): string[] {
   const apis = ['"PhysicsRigidBodyAPI"', ...(l.inertial ? ['"PhysicsMassAPI"'] : []), ...(touched ? ['"PhysxContactReportAPI"'] : [])];
   const body: string[] = [];
@@ -487,7 +532,7 @@ function linkPrim(l: UsdLink, sensors: UsdSensor[], touched: boolean): string[] 
     body.push('', `def Mesh "visual_${i}" (`, '    prepend apiSchemas = ["MaterialBindingAPI"]', ')', '{', ...indent([`rel material:binding = </World/Looks/${colorKey(v.color)}>`, ...meshLines(v.mesh)], 1), '}');
   });
   l.collision.forEach((c, i) => body.push('', ...collisionPrim(c, i, frictionKey(l.friction))));
-  for (const s of sensors) body.push('', ...sensorPrim(s));
+  for (const s of sensors) body.push('', ...sensorPrim(s), ...(s.frame ? ['', ...framePrim(s)] : []));
   return [`def Xform "${l.name}" (`, `    prepend apiSchemas = [${apis.join(', ')}]`, ')', '{', ...indent(body, 1), '}'];
 }
 
@@ -555,13 +600,13 @@ const text = (s: string): Attr => ({ type: 'string', value: str(s) });
 const num = (type: string, v: number): Attr => ({ type, value: fmt(v, 6) });
 const tokens = (list: string[]): Attr => ({ type: 'token[]', value: `[${list.map(str).join(', ')}]` });
 const from = (type: string, source: string): Attr => ({ type, from: source });
-const target = (path: string): Attr => ({ type: 'rel', rel: path });
+const target = (...paths: string[]): Attr => ({ type: 'rel', rel: paths.length === 1 ? `<${paths[0]}>` : `[${paths.map((p) => `<${p}>`).join(', ')}]` });
 
 function nodePrim(n: GraphNode, graph: string): string[] {
   const body: string[] = [];
   for (const [name, a] of Object.entries(n.attrs).sort(([x], [y]) => x.localeCompare(y))) {
     if (a.rel !== undefined) {
-      body.push(`custom rel ${name} = <${a.rel}> (`, '    customData = {', '        dictionary omni = {', '            dictionary graph = {', '                string relType = "target"', '            }', '        }', '    }', ')');
+      body.push(`custom rel ${name} = ${a.rel} (`, '    customData = {', '        dictionary omni = {', '            dictionary graph = {', '                string relType = "target"', '            }', '        }', '    }', ')');
       continue;
     }
     const exec = a.type === 'uint' && (name === 'inputs:execIn' || name.startsWith('outputs:exec'));
@@ -575,7 +620,11 @@ function nodePrim(n: GraphNode, graph: string): string[] {
 /** The graph: the robot driven from ROS 2 and everything it knows published back, as Isaac's own tutorials wire it. */
 function rosGraph(model: UsdModel, robotPath: string, linkPath: (link: string) => string): string[] {
   const graph = '/World/ROS2';
-  const base = linkPath(model.root);
+  // The tree hangs from the footprint where there is one, and the odometry is measured there.
+  const baseFrame = model.footprint?.name ?? model.root;
+  const base = linkPath(baseFrame);
+  // The sensors' frames are plain prims in their links: named here, they are published beside the links.
+  const frames = model.sensors.flatMap((s) => (s.frame ? [`${linkPath(s.link)}/${s.frame}`, ...(s.optical ? [`${linkPath(s.link)}/${s.frame}/${s.optical}`] : [])] : []));
   const nodes: GraphNode[] = [
     { name: 'tick', type: 'omni.graph.action.OnPlaybackTick', version: 2, attrs: { 'outputs:tick': EXEC } },
     { name: 'context', type: 'isaacsim.ros2.bridge.ROS2Context', version: 2, attrs: { 'outputs:context': { type: 'uint64' } } },
@@ -591,7 +640,7 @@ function rosGraph(model: UsdModel, robotPath: string, linkPath: (link: string) =
       name: 'tf',
       type: 'isaacsim.ros2.bridge.ROS2PublishTransformTree',
       version: 1,
-      attrs: { 'inputs:execIn': from('uint', 'tick.outputs:tick'), 'inputs:context': from('uint64', 'context.outputs:context'), 'inputs:timeStamp': from('double', 'time.outputs:simulationTime'), 'inputs:targetPrims': target(robotPath), 'inputs:parentPrim': target(base) },
+      attrs: { 'inputs:execIn': from('uint', 'tick.outputs:tick'), 'inputs:context': from('uint64', 'context.outputs:context'), 'inputs:timeStamp': from('double', 'time.outputs:simulationTime'), 'inputs:targetPrims': target(robotPath, ...frames), 'inputs:parentPrim': target(base) },
     },
   ];
   if (!model.fixedBase) {
@@ -609,7 +658,7 @@ function rosGraph(model: UsdModel, robotPath: string, linkPath: (link: string) =
           'inputs:orientation': from('quatd', 'odometry.outputs:orientation'),
           'inputs:linearVelocity': from('vector3d', 'odometry.outputs:linearVelocity'),
           'inputs:angularVelocity': from('vector3d', 'odometry.outputs:angularVelocity'),
-          'inputs:chassisFrameId': text(model.root),
+          'inputs:chassisFrameId': text(baseFrame),
           'inputs:odomFrameId': text('odom'),
           'inputs:topicName': text('odom'),
         },
@@ -625,7 +674,7 @@ function rosGraph(model: UsdModel, robotPath: string, linkPath: (link: string) =
           'inputs:translation': from('vector3d', 'odometry.outputs:position'),
           'inputs:rotation': from('quatd', 'odometry.outputs:orientation'),
           'inputs:parentFrameId': text('odom'),
-          'inputs:childFrameId': text(model.root),
+          'inputs:childFrameId': text(baseFrame),
         },
       },
     );
@@ -718,13 +767,13 @@ function rosGraph(model: UsdModel, robotPath: string, linkPath: (link: string) =
           name: `${n}_image`,
           type: 'isaacsim.ros2.bridge.ROS2CameraHelper',
           version: 4,
-          attrs: { 'inputs:execIn': from('uint', `${n}_render.outputs:execOut`), 'inputs:context': from('uint64', 'context.outputs:context'), 'inputs:renderProductPath': from('token', `${n}_render.outputs:renderProductPath`), 'inputs:frameId': text(n), 'inputs:topicName': text(s.kind === 'depth' ? `${n}/depth` : `${n}/image`), 'inputs:type': { type: 'token', value: s.kind === 'depth' ? '"depth"' : '"rgb"' } },
+          attrs: { 'inputs:execIn': from('uint', `${n}_render.outputs:execOut`), 'inputs:context': from('uint64', 'context.outputs:context'), 'inputs:renderProductPath': from('token', `${n}_render.outputs:renderProductPath`), 'inputs:frameId': text(s.optical ?? n), 'inputs:topicName': text(s.kind === 'depth' ? `${n}/depth` : `${n}/image`), 'inputs:type': { type: 'token', value: s.kind === 'depth' ? '"depth"' : '"rgb"' } },
         },
         {
           name: `${n}_info`,
           type: 'isaacsim.ros2.bridge.ROS2CameraInfoHelper',
           version: 1,
-          attrs: { 'inputs:execIn': from('uint', `${n}_render.outputs:execOut`), 'inputs:context': from('uint64', 'context.outputs:context'), 'inputs:renderProductPath': from('token', `${n}_render.outputs:renderProductPath`), 'inputs:frameId': text(n), 'inputs:topicName': text(`${n}/camera_info`) },
+          attrs: { 'inputs:execIn': from('uint', `${n}_render.outputs:execOut`), 'inputs:context': from('uint64', 'context.outputs:context'), 'inputs:renderProductPath': from('token', `${n}_render.outputs:renderProductPath`), 'inputs:frameId': text(s.optical ?? n), 'inputs:topicName': text(`${n}/camera_info`) },
         },
       );
     } else if (s.kind === 'lidar') {
@@ -734,7 +783,7 @@ function rosGraph(model: UsdModel, robotPath: string, linkPath: (link: string) =
           name: `${n}_scan`,
           type: 'isaacsim.ros2.bridge.ROS2RtxLidarHelper',
           version: 3,
-          attrs: { 'inputs:execIn': from('uint', `${n}_render.outputs:execOut`), 'inputs:context': from('uint64', 'context.outputs:context'), 'inputs:renderProductPath': from('token', `${n}_render.outputs:renderProductPath`), 'inputs:frameId': text(n), 'inputs:topicName': text(`${n}/scan`), 'inputs:type': { type: 'token', value: '"laser_scan"' }, 'inputs:fullScan': { type: 'bool', value: '1' } },
+          attrs: { 'inputs:execIn': from('uint', `${n}_render.outputs:execOut`), 'inputs:context': from('uint64', 'context.outputs:context'), 'inputs:renderProductPath': from('token', `${n}_render.outputs:renderProductPath`), 'inputs:frameId': text(s.frame ?? n), 'inputs:topicName': text(`${n}/scan`), 'inputs:type': { type: 'token', value: '"laser_scan"' }, 'inputs:fullScan': { type: 'bool', value: '1' } },
         },
       );
     } else if (s.kind === 'imu') {
@@ -751,7 +800,7 @@ function rosGraph(model: UsdModel, robotPath: string, linkPath: (link: string) =
             'inputs:angularVelocity': from('vector3d', `${n}_read.outputs:angVel`),
             'inputs:linearAcceleration': from('vector3d', `${n}_read.outputs:linAcc`),
             'inputs:orientation': from('quatd', `${n}_read.outputs:orientation`),
-            'inputs:frameId': text(n),
+            'inputs:frameId': text(s.frame ?? n),
             'inputs:topicName': text(`${n}/imu`),
           },
         },
@@ -774,6 +823,7 @@ export function writeUsda(model: UsdModel): string {
   }
   const touched = new Set(model.sensors.filter((s) => s.kind === 'touch').map((s) => s.link));
   const sensorsOf = (link: string) => model.sensors.filter((s) => s.link === link);
+  const footprint = model.footprint && !model.fixedBase ? footprintPrims(model, robot) : null;
 
   const world: string[] = [
     'def PhysicsScene "physicsScene"',
@@ -831,28 +881,28 @@ export function writeUsda(model: UsdModel): string {
     ...indent([...frictions].flatMap(([k, f], i) => [...(i ? [''] : []), ...physicsMaterialPrim(k, f)]), 1),
     '}',
     '',
-    `def Xform "${robot}" (`,
-    '    prepend apiSchemas = ["PhysicsArticulationRootAPI", "PhysxArticulationAPI"]',
-    ')',
+    // The articulation begins at the footprint where there is one, so that it is the root the links hang from.
+    ...(footprint ? [`def Xform "${robot}"`] : [`def Xform "${robot}" (`, '    prepend apiSchemas = ["PhysicsArticulationRootAPI", "PhysxArticulationAPI"]', ')']),
     '{',
     ...indent(
       [
-        'bool physxArticulation:enabledSelfCollisions = 0',
+        ...(footprint ? [] : ['bool physxArticulation:enabledSelfCollisions = 0']),
         ...(model.fixedBase
           ? ['', `def PhysicsFixedJoint "${ROOT_JOINT}"`, '{', `    rel physics:body1 = <${linkPath(model.root)}>`, `    point3f physics:localPos0 = ${v3(model.links.find((l) => l.name === model.root)?.pos ?? [0, 0, 0])}`, '    point3f physics:localPos1 = (0, 0, 0)', '}']
           : []),
+        ...(footprint ? ['', ...footprint.body] : []),
         ...model.links.flatMap((l) => ['', ...linkPrim(l, sensorsOf(l.name), touched.has(l.name))]),
         '',
         `def Scope "${JOINTS_SCOPE}"`,
         '{',
-        ...indent(model.joints.flatMap((j, i) => [...(i ? [''] : []), ...jointPrim(j, robot, j.mimic && model.joints.find((o) => o.name === j.mimic!.joint))]), 1),
+        ...indent([...(footprint ? [...footprint.joint, ''] : []), ...model.joints.flatMap((j, i) => [...(i ? [''] : []), ...jointPrim(j, robot, j.mimic && model.joints.find((o) => o.name === j.mimic!.joint))])], 1),
         '}',
       ],
       1,
     ),
     '}',
     '',
-    ...rosGraph(model, robotPath, linkPath),
+    ...rosGraph(model, footprint ? linkPath(model.footprint!.name) : robotPath, linkPath),
   ];
 
   return [
