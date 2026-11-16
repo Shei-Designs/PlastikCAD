@@ -581,7 +581,7 @@ function jointPrim(j: UsdJoint, robot: string, leader?: UsdJoint): string[] {
       body.push(`rel physxMimicJoint:${axis}:referenceJoint = </World/${robot}/${JOINTS_SCOPE}/${j.mimic.joint}>`, `uniform token physxMimicJoint:${axis}:referenceJointAxis = "${leaderAxis}"`, `float physxMimicJoint:${axis}:gearing = ${fmt(gearing, 9)}`, `float physxMimicJoint:${axis}:offset = ${fmt(-j.mimic.offset * degrees(j.type), 6)}`);
     }
   }
-  if (j.loop) body.push('bool physxJoint:excludeFromArticulation = 1');
+  if (j.loop) body.push('bool physics:excludeFromArticulation = 1');
   return [`def ${type} "${j.name}" (`, `    prepend apiSchemas = [${apis.join(', ')}]`, ')', '{', ...indent(body, 1), '}'];
 }
 

@@ -67,6 +67,26 @@ describe('spanningTree', () => {
     expect(tree.loops.map((j) => j.id)).toEqual(['j3']);
     expect(tree.unreached).toEqual(['stray001']);
   });
+
+  it('lets a hinge close the loop where the joint that comes second is not one', () => {
+    // The arm reaches the wheel by a slider after the body's hinge has: the wheel hangs from the slider, and the hinge closes the loop.
+    const r = robot();
+    r.joints.push({ ...defaultJoint('j3', 'slide', arm.id, wheel.id, [0, 0, 0]), type: 'prismatic' });
+    const tree = spanningTree(r, [body.id, wheel.id, arm.id]);
+    expect(tree.loops.map((j) => j.id)).toEqual(['j1']);
+    expect(tree.parentJoint.get(wheel.id)?.id).toBe('j3');
+    // Parents still come before children.
+    expect(tree.order).toEqual([body.id, arm.id, wheel.id]);
+    // Two joints that are not hinges cannot change places: the second closes the loop, and the checks stop the export.
+    const stuck = robot();
+    stuck.joints[0] = { ...stuck.joints[0], type: 'fixed' };
+    stuck.joints.push({ ...defaultJoint('j3', 'slide', arm.id, wheel.id, [0, 0, 0]), type: 'prismatic' });
+    expect(spanningTree(stuck, [body.id, wheel.id, arm.id]).loops.map((j) => j.id)).toEqual(['j3']);
+    const d = doc();
+    d.robot = stuck;
+    const problems = checkRobot(d, new Map([...geometry()].map(([id, g]) => [id, g.props])));
+    expect(problems.find((p) => p.joint === 'j3')).toMatchObject({ level: 'error', text: expect.stringMatching(/closes a loop as a prismatic joint/) });
+  });
 });
 
 describe('exportSummary', () => {
@@ -686,6 +706,14 @@ describe('sensors, drive and control', () => {
 });
 
 describe('Isaac Sim stage', () => {
+  it('keeps the joint that closes a loop out of the articulation, by the name USD Physics gives that', () => {
+    const d = doc();
+    d.robot!.joints.push({ ...defaultJoint('j3', 'closing', arm.id, wheel.id, [0, 0, 0]) });
+    const usda = text(buildIsaacStage(d, geometry()).files[0].bytes);
+    expect(usda).toMatch(/def PhysicsRevoluteJoint "closing"[\s\S]*?bool physics:excludeFromArticulation = 1/);
+    expect(usda.match(/excludeFromArticulation/g)).toHaveLength(1);
+  });
+
   it('writes one stage with the articulation, every sensor, the drive graph and a readme', () => {
     const pkg = buildIsaacStage(rover(), geometry());
     expect(pkg.name).toBe('test_rover');

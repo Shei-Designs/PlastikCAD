@@ -316,7 +316,8 @@ in the design file and synced with it.
   below it following, to see the range of motion and catch an axis pointing
   the wrong way. The design is not touched; *Reset* puts the robot back.
 - **Linkages.** Loops (a four-bar, a parallel gripper) are built as they
-  are, with a joint closing each. The slider solves the loops, so the
+  are, with a joint closing each: a revolute or continuous one, which the
+  app picks where it can and asks for where it cannot. The slider solves the loops, so the
   linkage moves as the real one does, and says when it cannot close. *Set
   the others to follow this joint* sweeps the driven joint over its range
   and writes each passive joint's motion as a URDF `mimic` line: exact for a
