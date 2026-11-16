@@ -264,6 +264,8 @@ and every catalog entry that uses it together.
 | English | French |
 | --- | --- |
 | drive (of a robot) / driven wheel / steering | entraînement / roue motrice / direction |
+| mecanum wheel / roller / hand (of a wheel) | roue mecanum / rouleau / côté |
+| tread / web / rim (of a wheel) | bande de roulement / voile / jante |
 | base link / parent / child | segment de base / parent / enfant |
 | loop / linkage / follows | boucle / mécanisme / suit |
 | attach / not attached | attacher / non attaché |

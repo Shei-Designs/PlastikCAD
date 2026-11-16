@@ -185,16 +185,16 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
 
 ## Parts
 
-| Gears | Pulleys & sprockets | Screws & threads | Bearing seats | Rails & frames | Pipes & ducts | Dev boards | Fans | Panel cutouts | Motor mounts |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Spur gear | GT2 timing pulley (2 / 3 / 5 mm) | Metric bolt / threaded rod (M3–M20) | Bearing seat: 623–626, 608, 688, 698, 6000–6002, 6200–6202, 6800–6802, LM6UU–LM12UU, or any size | Aluminum rail: 20, 30 and 40 mm series, V-slot or T-slot, one to four cells in one or two rows (2020, 2040, 4040, 3030, 3060, 6060, 4080...) | Straight pipe or duct | Raspberry Pi 5, 4, 3, Zero 2 W, Pico | Fan, 25–140 mm: the cutout (clear, or with a guard pattern of rings, slots, honeycomb or grid cut into the wall) | Panel connector: Neutrik D-series, IEC C14 / C13 / C8, D-sub 9 / 15 / 25, XT60, with their screw holes | Stepper: NEMA 8, 11, 14, 17, 23 and the 28BYJ-48 |
-| Helical gear | HTD timing pulley (3M / 5M / 8M) | Metric nut |  | | Elbow (any angle and bend radius, legs either side) | Arduino Uno R3/R4, Mega 2560, Nano | Screw holes only, for an opening of your own | | Gearmotor: N20, TT, 25 mm (JGA25), 37 mm (JGB37) |
-| Herringbone gear | T-series timing pulley (T2.5 / T5 / T10) | Trapezoidal lead screw (multi-start) |  | | Reducer (in line or eccentric) | ESP32-DevKitC V4, DevKit V1, NodeMCU-32S | Printed grill with the same patterns, to screw over the fan | | Servo: SG90, MG996R |
-| Internal ring gear | MXL / XL timing pulley | Lead screw nut (flanged) |  | | Tee / wye (branch at any angle) | NVIDIA Jetson Nano, Orin Nano / Orin NX and Xavier NX developer kits | The fan itself: frame, hub and blades of a typical fan, to check clearance | | DC motor: 775, 130 |
-| Gear rack (straight, helical, herringbone) | Chain sprocket (#25–#41, 05B–08B, bicycle) | Screw hole (M2–M20): clearance, threaded or for a heat-set insert, with a counterbore, countersink or nut trap |  | | | | | | |
-| Bevel gear (90° shafts) | V-belt pulley (Z, A, B, C, SPZ–SPC, one groove or several) | Inch bolt / threaded rod (#6–3/4", UNC or UNF) | | |  | | | | |
-| Worm | | Inch nut | | |  | | | | |
-| Throated worm wheel (its teeth wrap round the worm) | | Inch screw hole (#6–3/4"): as the metric one, with an 82° countersink | | |  | | | | |
+| Gears | Pulleys & sprockets | Screws & threads | Bearing seats | Rails & frames | Pipes & ducts | Dev boards | Fans | Panel cutouts | Motor mounts | Wheels |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Spur gear | GT2 timing pulley (2 / 3 / 5 mm) | Metric bolt / threaded rod (M3–M20) | Bearing seat: 623–626, 608, 688, 698, 6000–6002, 6200–6202, 6800–6802, LM6UU–LM12UU, or any size | Aluminum rail: 20, 30 and 40 mm series, V-slot or T-slot, one to four cells in one or two rows (2020, 2040, 4040, 3030, 3060, 6060, 4080...) | Straight pipe or duct | Raspberry Pi 5, 4, 3, Zero 2 W, Pico | Fan, 25–140 mm: the cutout (clear, or with a guard pattern of rings, slots, honeycomb or grid cut into the wall) | Panel connector: Neutrik D-series, IEC C14 / C13 / C8, D-sub 9 / 15 / 25, XT60, with their screw holes | Stepper: NEMA 8, 11, 14, 17, 23 and the 28BYJ-48 | Plain wheel: flat or rounded tread, solid or dished, with a hub and a bore |
+| Helical gear | HTD timing pulley (3M / 5M / 8M) | Metric nut |  | | Elbow (any angle and bend radius, legs either side) | Arduino Uno R3/R4, Mega 2560, Nano | Screw holes only, for an opening of your own | | Gearmotor: N20, TT, 25 mm (JGA25), 37 mm (JGB37) | Mecanum wheel, left or right: 48, 60, 80, 100, 152 and 203 mm, or any diameter, width and roller count |
+| Herringbone gear | T-series timing pulley (T2.5 / T5 / T10) | Trapezoidal lead screw (multi-start) |  | | Reducer (in line or eccentric) | ESP32-DevKitC V4, DevKit V1, NodeMCU-32S | Printed grill with the same patterns, to screw over the fan | | Servo: SG90, MG996R | |
+| Internal ring gear | MXL / XL timing pulley | Lead screw nut (flanged) |  | | Tee / wye (branch at any angle) | NVIDIA Jetson Nano, Orin Nano / Orin NX and Xavier NX developer kits | The fan itself: frame, hub and blades of a typical fan, to check clearance | | DC motor: 775, 130 | |
+| Gear rack (straight, helical, herringbone) | Chain sprocket (#25–#41, 05B–08B, bicycle) | Screw hole (M2–M20): clearance, threaded or for a heat-set insert, with a counterbore, countersink or nut trap |  | | | | | | | |
+| Bevel gear (90° shafts) | V-belt pulley (Z, A, B, C, SPZ–SPC, one groove or several) | Inch bolt / threaded rod (#6–3/4", UNC or UNF) | | |  | | | | | |
+| Worm | | Inch nut | | |  | | | | | |
+| Throated worm wheel (its teeth wrap round the worm) | | Inch screw hole (#6–3/4"): as the metric one, with an 82° countersink | | |  | | | | | |
 
 Rotating parts share the same options for the shaft: round, D-shaft, hex or
 keyed bore with a fit clearance, plus an optional hub with set-screw holes.
@@ -334,7 +334,12 @@ in the design file and synced with it.
   light pin link where its child would be, and Gazebo welds the pin to that
   child (`gz-sim-detachable-joint-system`): the loop closes for real in
   Gazebo, and stays open where the URDF is read alone, as in RViz with the
-  joint sliders. The Gazebo model drops the mimic of joints on the loop.
+  joint sliders. Gazebo is not told what the joints on the loop follow,
+  since the loop moves them: the Gazebo model drops their mimic, and the
+  ROS package's launch file spawns the robot without it while the URDF
+  keeps it. In the ROS package the joints on a loop begin as designed and
+  not at their starts, which the export says: a start is set as the robot
+  loads, before the weld, and the loop would be held out of shape.
 - **Mass.** Each link is weighed from its shape and material: pick a material
   (filaments, resin, metals, acrylic, wood, foam...) and, for a printed part,
   the infill and the shell thickness, or type the mass you weighed. The
@@ -404,7 +409,7 @@ in the design file and synced with it.
   side, a link with no mass or an impossible inertia, a joint set to follow
   one that is fixed, closes a loop, is left out or follows it back) and what
   goes through
-  with a note (a joint that closes a loop, a joint with no effort or speed,
+  with a note (a joint with no effort or speed,
   drive wheels whose axles do not run the same way, a camera whose near
   plane clips the floor out of its picture, an open mesh, a heavy collision
   mesh), each with a *Show* button. Neither says how the robot might be
