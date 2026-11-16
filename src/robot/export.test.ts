@@ -501,12 +501,21 @@ describe('buildRobotPackage', () => {
     expect(urdf).toMatch(/<collision>\s*<origin xyz="0 0 0.004" rpy="3.141593 0 0"\/>\s*<geometry><cylinder radius="0.01" length="0.008"\/>/);
   });
 
-  it('leaves a loop-closing joint out with a warning', () => {
+  it('hangs a pin from a loop-closing joint, which Gazebo welds to the link the joint closes on', () => {
     const d = doc();
     d.robot!.joints.push({ ...defaultJoint('j3', 'closing', arm.id, wheel.id, [0, 0, 0]) });
+    // The wheel is already named as the pin would be: the pin takes another name.
+    d.scene = d.scene.map((n) => (n.id === wheel.id ? { ...n, name: 'closing pin' } : n));
     const pkg = buildRobotPackage(d, geometry());
-    expect(pkg.warnings[0]).toMatch(/closes a loop/);
-    expect(text(pkg.files.find((f) => f.name === 'urdf/test_rover.urdf')!.bytes)).not.toContain('closing');
+    expect(pkg.warnings).toEqual([]);
+    const urdf = text(pkg.files.find((f) => f.name === 'urdf/test_rover.urdf')!.bytes);
+    // The URDF stays a tree: the pin is a leaf with a little mass, since Gazebo drops a link without any.
+    expect(urdf).toMatch(/<link name="closing_pin_2">\s*<inertial>\s*<origin xyz="0 0 0" rpy="0 0 0"\/>\s*<mass value="0.001"\/>/);
+    // The joint is where it was, in its parent's frame: the wheel's center, 40 mm out and 10 down from the shoulder.
+    expect(urdf).toMatch(/<joint name="closing" type="revolute">\s*<parent link="Arm_upper"\/>\s*<child link="closing_pin_2"\/>\s*<origin xyz="0 0.04 -0.01" rpy="0 0 0"\/>/);
+    expect(urdf).toMatch(/<gazebo>\s*<plugin filename="gz-sim-detachable-joint-system" name="gz::sim::systems::DetachableJoint">\s*<parent_link>closing_pin<\/parent_link>\s*<child_model>test_rover<\/child_model>\s*<child_link>closing_pin_2<\/child_link>/);
+    // No controller is given the joint: the loop moves it.
+    expect(text(pkg.files.find((f) => f.name === 'config/controllers.yaml')!.bytes)).not.toContain('closing');
   });
 
   it('writes mimic against the followed joint', () => {
@@ -685,8 +694,12 @@ describe('sensors, drive and control', () => {
     expect(sdf).toContain('<model name="Test_Rover">');
     expect(sdf).toMatch(/<link name="Left_wheel">\s*<pose>0 0.036 0.01 0 0 0<\/pose>/);
     expect(sdf).toContain('<uri>model://test_rover/meshes/visual/Body.obj</uri>');
-    // The loop joint is there, in its child's frame: the wheel's frame sits at its own joint (0, 36, 10), the closing joint at the wheel's center (0, 40, 10).
-    expect(sdf).toMatch(/<joint name="closing" type="revolute">\s*<pose relative_to="Left_wheel">0 0.004 0 0 0 0<\/pose>\s*<parent>Arm_upper<\/parent>\s*<child>Left_wheel<\/child>/);
+    // Gazebo's physics refuses a joint to a link that already hangs from one, so the loop joint carries a pin instead of
+    // the wheel: a light link at the joint's place, the wheel's center (0, 40, 10), which a weld then holds to the wheel.
+    expect(sdf).toMatch(/<link name="closing_pin">\s*<pose>0 0.04 0.01 0 0 0<\/pose>\s*<inertial>\s*<pose>0 0 0 0 0 0<\/pose>\s*<mass>0.001<\/mass>/);
+    expect(sdf).toMatch(/<joint name="closing" type="revolute">\s*<pose relative_to="closing_pin">0 0 0 0 0 0<\/pose>\s*<parent>Arm_upper<\/parent>\s*<child>closing_pin<\/child>\s*<axis>\s*<xyz expressed_in="__model__">0 0 1<\/xyz>\s*<limit><lower>/);
+    expect(sdf).toMatch(/<plugin filename="gz-sim-detachable-joint-system" name="gz::sim::systems::DetachableJoint">\s*<parent_link>Left_wheel<\/parent_link>\s*<child_model>Test_Rover<\/child_model>\s*<child_link>closing_pin<\/child_link>/);
+    expect(sdf).not.toMatch(/<child>Left_wheel<\/child>[\s\S]*<child>Left_wheel<\/child>/);
     // A continuous joint is a revolute one without limits; friction goes on the surface.
     expect(sdf).toMatch(/<joint name="left_wheel_joint" type="revolute">[\s\S]*?<limit><effort>2<\/effort><velocity>12.566371<\/velocity><\/limit>/);
     expect(sdf).toContain('<surface><friction><ode><mu>1.2</mu><mu2>1.2</mu2></ode></friction></surface>');

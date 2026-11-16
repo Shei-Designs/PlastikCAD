@@ -381,7 +381,7 @@ export const robot: Catalog = {
   'There is nothing to export: the design has no objects.': 'Rien à exporter\u00a0: la conception ne contient aucun objet.',
   'No base link is chosen. Pick the object the rest of the robot hangs from.': 'Aucun segment de base n’est choisi. Choisissez l’objet qui porte le reste du robot.',
   '{name}: not joined to the base, so it is left out.': '{name}\u00a0: non relié à la base, donc laissé de côté.',
-  '{name}: closes a loop. Kept in SDF and MuJoCo, left out of URDF.': '{name}\u00a0: ferme une boucle. Conservée en SDF et MuJoCo, omise en URDF.',
+  '{name}: closes a loop. Closed in Gazebo, MuJoCo and Isaac, open where the URDF is read alone.': '{name}\u00a0: ferme une boucle. Fermée dans Gazebo, MuJoCo et Isaac, ouverte là où l’URDF est lu seul.',
   '{name}: closes a loop as a {type} joint, and only a revolute or continuous joint can. Change its type.': '{name} : ferme une boucle en liaison {type}, ce que seule une liaison pivot ou continue peut faire. Changez son type.',
   '"{name}" joins an object that is hidden, a hole or gone.': '«\u00a0{name}\u00a0» relie un objet masqué, devenu perçage ou supprimé.',
   '"{name}" joins "{link}" to itself.': '«\u00a0{name}\u00a0» relie «\u00a0{link}\u00a0» à lui-même.',
@@ -415,7 +415,6 @@ export const robot: Catalog = {
     other: 'Entraînement\u00a0: {names} ne sont pas reliées à la base, l’entraînement est donc ignoré. Reliez chaque roue à la base.',
   },
   'Drive: a wheel or steering joint is missing, so the drive is left out. Give every part of the drive its joint.': 'Entraînement\u00a0: une roue ou une articulation de direction manque, l’entraînement est donc ignoré. Donnez son articulation à chaque élément de l’entraînement.',
-  '"{name}" closes a loop and was left out of the URDF (the SDF export keeps it).': '«\u00a0{name}\u00a0» ferme une boucle et n’a pas été écrite dans l’URDF (l’exportation SDF la conserve).',
 
   // The forms a robot is exported in, and what the box before an export says (robot/export.ts)
   'ROS 2 package': 'Paquet ROS 2',

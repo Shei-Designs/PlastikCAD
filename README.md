@@ -321,10 +321,13 @@ in the design file and synced with it.
   linkage moves as the real one does, and says when it cannot close. *Set
   the others to follow this joint* sweeps the driven joint over its range
   and writes each passive joint's motion as a URDF `mimic` line: exact for a
-  parallelogram, a fit with a reported error for other four-bars. URDF
-  cannot hold the loop-closing joint, so it is left out of the package with
-  a warning; the Gazebo model keeps it (and drops the mimic of joints on the
-  loop, since the loop then closes for real).
+  parallelogram, a fit with a reported error for other four-bars. A URDF is
+  a tree, and Gazebo's physics takes a model's joints as one too, so in the
+  ROS package and the Gazebo model the joint that closes a loop carries a
+  light pin link where its child would be, and Gazebo welds the pin to that
+  child (`gz-sim-detachable-joint-system`): the loop closes for real in
+  Gazebo, and stays open where the URDF is read alone, as in RViz with the
+  joint sliders. The Gazebo model drops the mimic of joints on the loop.
 - **Mass.** Each link is weighed from its shape and material: pick a material
   (filaments, resin, metals, acrylic, wood, foam...) and, for a printed part,
   the infill and the shell thickness, or type the mass you weighed. The

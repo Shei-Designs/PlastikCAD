@@ -132,6 +132,18 @@ export function driveXml(d: GazeboDrive): string {
   ].join('\n');
 }
 
+/** The mass and inertia of the pin that closes a loop: a 1 g ball 10 mm across, light against any link it joins. */
+export const PIN = { mass: 1e-3, inertia: [1e-8, 1e-8, 1e-8, 0, 0, 0] as [number, number, number, number, number, number] };
+
+/**
+ * Welds `pin`, a link of `model`, to `link` of the same model when the world begins. Gazebo's default physics
+ * takes a model's joints as a tree and refuses the one that closes a loop, so that joint carries a pin instead
+ * of its child, and this weld, a constraint the physics does take, holds the pin to the child.
+ */
+export function weldXml(link: string, model: string, pin: string): string {
+  return `<plugin filename="gz-sim-detachable-joint-system" name="gz::sim::systems::DetachableJoint">\n  <parent_link>${escapeXml(link)}</parent_link>\n  <child_model>${escapeXml(model)}</child_model>\n  <child_link>${escapeXml(pin)}</child_link>\n</plugin>`;
+}
+
 /** Publishes every joint's position, for robot_state_publisher when ros2_control is not in charge. */
 export function jointStateXml(topic = 'joint_states'): string {
   return `<plugin filename="gz-sim-joint-state-publisher-system" name="gz::sim::systems::JointStatePublisher">\n  <topic>${topic}</topic>\n</plugin>`;

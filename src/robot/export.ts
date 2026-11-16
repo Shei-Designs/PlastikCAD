@@ -8,7 +8,7 @@ import { apply, boundsCenter, boundsSize, eulerOf, multiply, ownOrigin, rotation
 import type { Mat } from '../model/math';
 import type { Doc, SceneNode, Vec3 } from '../model/types';
 import { encodeText } from '../io/format';
-import { driveXml, jointStateXml, positionXml, sensorTopic, sensorXml, worldXml } from '../io/gazebo';
+import { driveXml, jointStateXml, PIN, positionXml, sensorTopic, sensorXml, weldXml, worldXml } from '../io/gazebo';
 import type { GazeboDrive } from '../io/gazebo';
 import type { BridgeTopic } from '../io/rosPackage';
 import type { GazeboSensor } from '../io/gazebo';
@@ -138,7 +138,7 @@ interface Prepared {
   posed: Map<string, Mat> | null;
   /** The tree's joints, parents before children. */
   treeJoints: UrdfJoint[];
-  /** The joints that close loops, which only SDF carries. */
+  /** The joints that close loops: no joint of the tree. Each export closes them its own way. */
   loopJoints: UrdfJoint[];
   sensors: (GazeboSensor & { id: string; link: string; xyz: Vec3; rpy: Vec3; touch: number })[];
   drive: PreparedDrive | null;
@@ -425,7 +425,7 @@ const OPTICAL: Vec3 = [-Math.PI / 2, 0, -Math.PI / 2];
  */
 export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot = robotOf(doc)): RobotPackage {
   const p = prepare(doc, geometry, robot, (path) => `package://${packageName(doc.name)}/${path}`, URDF_NAMES);
-  const { pkg, files, warnings, leftOut } = p;
+  const { pkg, files, warnings } = p;
   // Where the base link's frame is in the design (m): a base fixed to the world stays there.
   const baseAt = p.frames.get(robot.root!)!.map((x) => x * M) as Vec3;
   const fixedToWorld = robot.base === 'fixed' ? { link: p.linkNames.get(robot.root!)!, at: baseAt } : undefined;
@@ -433,13 +433,17 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
   // The joints begin at their starts where a controller holds them there; without one they begin as designed.
   const lift = p.controlled.length ? p.lift : 0;
   const footprint = footprintOf(p, robot, lift);
-  for (const j of p.loopJoints) {
-    const text = tr('"{name}" closes a loop and was left out of the URDF (the SDF export keeps it).', { name: j.name });
-    warnings.push(text);
-    leftOut.push(text);
-  }
   const links: UrdfLink[] = p.links.map(({ frame: _f, node: _n, ...l }) => l);
   const joints: UrdfJoint[] = [...p.treeJoints];
+  // A URDF is a tree, and so is a model to Gazebo's physics: the joint that closes a loop carries a pin, a leaf of
+  // the tree, where its child would be, and Gazebo welds the pin to that child. Elsewhere the loop stays open.
+  const welds: string[] = [];
+  for (const j of p.loopJoints) {
+    const pin = p.names.take(`${j.name}_pin`, p.naming.link);
+    links.push({ name: pin, inertial: { mass: PIN.mass, origin: [0, 0, 0], inertia: PIN.inertia }, visual: [], collision: [] });
+    joints.push({ name: j.name, type: j.type, parent: j.parent, child: pin, origin: j.origin, axis: j.axis, limit: j.limit, dynamics: j.dynamics });
+    welds.push(weldXml(j.child, pkg, pin));
+  }
   // Each sensor is a frame of its own on a fixed joint; a camera also gets the optical frame ROS expects (Z forward, X right).
   // A touch sensor feels a collision, so it sits on the link that has one; Gazebo must then keep that link
   // as one of its own, since a link folded into its parent across a fixed joint has its collision renamed.
@@ -466,7 +470,7 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
   }
   // The robot's box, for RViz to look at, as the base link's frame has it.
   const extent = unionBounds(p.links.map((l) => geometry.get(l.node.id)!.bounds));
-  const plugins = [jointStateXml(), ...(p.drive ? [driveXml(gazeboDrive(p.drive, footprint?.name ?? base))] : [])];
+  const plugins = [jointStateXml(), ...welds, ...(p.drive ? [driveXml(gazeboDrive(p.drive, footprint?.name ?? base))] : [])];
   const starts = Object.fromEntries(p.treeJoints.filter((j) => j.start && p.controlled.includes(j.name)).map((j) => [j.name, j.start!]));
   // Only a controller can hold a joint at its start in Gazebo.
   const loose = p.treeJoints.filter((j) => j.start && !p.controlled.includes(j.name) && !j.mimic).map((j) => j.name);
@@ -522,16 +526,27 @@ export function buildSdfModel(doc: Doc, geometry: Map<string, LinkGeometry>, rob
     const b = up(loop.child);
     for (const name of [...a.filter((n) => !b.includes(n)), ...b.filter((n) => !a.includes(n))]) onLoop.add(name);
   }
-  const joints: SdfJoint[] = [...p.treeJoints, ...p.loopJoints].map((j) => {
+  // Gazebo's physics takes the joints as a tree and refuses the one that closes a loop. That joint carries a pin
+  // where its child would be, and a weld, which the physics does take, holds the pin to the child.
+  const welds: string[] = [];
+  const frameOf = (link: string): Vec3 => p.frames.get([...p.linkNames].find(([, n]) => n === link)![0])!;
+  const pinned: SdfJoint[] = p.loopJoints.map((j) => {
+    const pin = p.names.take(`${j.name}_pin`, p.naming.link);
+    links.push({ name: pin, pose: j.origin.map((x, i) => x + frameOf(j.parent)[i] * M) as Vec3, inertial: { mass: PIN.mass, origin: [0, 0, 0], inertia: PIN.inertia }, visual: [], collision: [] });
+    welds.push(weldXml(j.child, p.robotName, pin));
+    return { name: j.name, type: j.type, parent: j.parent, child: pin, pose: [0, 0, 0], axis: j.axis, limit: j.limit, dynamics: j.dynamics };
+  });
+  const joints: SdfJoint[] = p.treeJoints.map((j) => {
     const childFrame = p.frames.get([...p.linkNames].find(([, n]) => n === j.child)![0])!;
     const parentFrame = p.frames.get([...p.linkNames].find(([, n]) => n === j.parent)![0])!;
     // The joint in its child's frame: its place in the parent's frame, carried over.
     const pose = j.origin.map((x, i) => x + (parentFrame[i] - childFrame[i]) * M) as Vec3;
     return { name: j.name, type: j.type, parent: j.parent, child: j.child, pose, axis: j.axis, limit: j.limit, dynamics: j.dynamics, ...(j.mimic && !onLoop.has(j.name) ? { mimic: j.mimic } : {}) };
   });
+  joints.push(...pinned);
   const base = p.linkNames.get(robot.root!)!;
   const footprint = footprintOf(p, robot);
-  const plugins = [jointStateXml(), ...(p.drive ? [driveXml(gazeboDrive(p.drive, footprint?.name ?? base))] : []), ...held.map((j) => positionXml(j.name, j.limit?.velocity ?? 1, j.start ?? 0))];
+  const plugins = [jointStateXml(), ...welds, ...(p.drive ? [driveXml(gazeboDrive(p.drive, footprint?.name ?? base))] : []), ...held.map((j) => positionXml(j.name, j.limit?.velocity ?? 1, j.start ?? 0))];
   files.unshift(
     { name: 'model.config', bytes: encodeText(modelConfig(pkg, `${doc.name}, made with PlastikCAD`)) },
     { name: 'model.sdf', bytes: encodeText(writeSdf(p.robotName, links, joints, plugins, robot.base === 'fixed' ? p.linkNames.get(robot.root!) : undefined, footprint)) },

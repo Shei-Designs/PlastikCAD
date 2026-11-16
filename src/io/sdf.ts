@@ -1,5 +1,6 @@
-// Writes a robot as an SDF model, the format Gazebo reads natively. Unlike
-// URDF it holds loops, so every joint goes in. Every link's pose is given in
+// Writes a robot as an SDF model, the format Gazebo reads natively. The
+// format holds loops, but Gazebo's physics does not, so the exporter hands a
+// loop's closing joint over on a pin link with a weld. Every link's pose is given in
 // the model frame with no turn (the frames are parallel), and each joint's
 // pose in its child's frame. SI units.
 import { APP_NAME } from '../appInfo';
