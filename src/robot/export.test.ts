@@ -629,6 +629,10 @@ describe('sensors, drive and control', () => {
     const bridge = text(pkg.files.find((f) => f.name === 'config/bridge.yaml')!.bytes);
     expect(bridge).toContain('ros_topic_name: /cmd_vel');
     expect(bridge).toContain('ros_topic_name: /front_cam/image');
+    // The pictures and the calibration are stamped with the optical frame; nothing else is restamped.
+    expect(bridge).toMatch(/ros_topic_name: \/front_cam\/image\n(  .*\n)*?  frame_id: front_cam_optical_frame\n/);
+    expect(bridge).toMatch(/ros_topic_name: \/front_cam\/camera_info\n(  .*\n)*?  frame_id: front_cam_optical_frame\n/);
+    expect(bridge.match(/frame_id:/g)).toHaveLength(2);
     expect(bridge).toContain('ros_topic_name: /top_lidar/scan');
     expect(bridge).toContain('ros_topic_name: /imu/imu');
     const world = text(pkg.files.find((f) => f.name === 'worlds/test_rover.sdf')!.bytes);

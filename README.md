@@ -365,7 +365,8 @@ in the design file and synced with it.
   touches. A picked camera shows its picture in the corner of the plate, a
   depth camera's in greys, so what it sees and what its near plane cuts off
   can be checked before anything is exported. The export writes each as a Gazebo sensor and bridges its topics
-  to ROS 2; a camera also gets the optical frame ROS expects.
+  to ROS 2; a camera also gets the optical frame ROS expects, and its
+  pictures and calibration are stamped with it.
 - **Drive.** In the overview, pick the drive kind (differential, Ackermann
   or mecanum) and give each wheel joint its part: left or right, a steering
   side, a corner. The wheel labels say which way the robot faces, and the

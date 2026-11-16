@@ -383,8 +383,12 @@ function gazeboDrive(d: PreparedDrive, baseFrame: string): GazeboDrive {
   return { ...shared, kind: 'differential', leftJoints: d.roles.left!, rightJoints: d.roles.right! };
 }
 
-/** The Gazebo sensor topics a ROS 2 bridge carries across, and the robot's own. */
-function bridgeTopics(p: Prepared): BridgeTopic[] {
+/**
+ * The Gazebo sensor topics a ROS 2 bridge carries across, and the robot's own. A camera's pictures
+ * and its calibration are stamped with its optical frame (`optical`, by sensor name), as ROS reads
+ * them; a depth camera's cloud keeps the sensor's own frame, which is the one Gazebo's points are in.
+ */
+function bridgeTopics(p: Prepared, optical: Map<string, string>): BridgeTopic[] {
   const out: BridgeTopic[] = [
     { ros: '/clock', gz: '/clock', rosType: 'rosgraph_msgs/msg/Clock', gzType: 'gz.msgs.Clock', direction: 'GZ_TO_ROS' },
     { ros: '/joint_states', gz: '/joint_states', rosType: 'sensor_msgs/msg/JointState', gzType: 'gz.msgs.Model', direction: 'GZ_TO_ROS' },
@@ -399,8 +403,9 @@ function bridgeTopics(p: Prepared): BridgeTopic[] {
   for (const s of p.sensors) {
     const topic = `/${sensorTopic(s)}`;
     if (s.kind === 'camera' || s.kind === 'depth') {
-      out.push({ ros: topic, gz: topic, rosType: 'sensor_msgs/msg/Image', gzType: 'gz.msgs.Image', direction: 'GZ_TO_ROS' });
-      out.push({ ros: `/${s.name}/camera_info`, gz: `/${s.name}/camera_info`, rosType: 'sensor_msgs/msg/CameraInfo', gzType: 'gz.msgs.CameraInfo', direction: 'GZ_TO_ROS' });
+      const frame = optical.get(s.name);
+      out.push({ ros: topic, gz: topic, rosType: 'sensor_msgs/msg/Image', gzType: 'gz.msgs.Image', direction: 'GZ_TO_ROS', frame });
+      out.push({ ros: `/${s.name}/camera_info`, gz: `/${s.name}/camera_info`, rosType: 'sensor_msgs/msg/CameraInfo', gzType: 'gz.msgs.CameraInfo', direction: 'GZ_TO_ROS', frame });
       if (s.kind === 'depth') out.push({ ros: `${topic}/points`, gz: `${topic}/points`, rosType: 'sensor_msgs/msg/PointCloud2', gzType: 'gz.msgs.PointCloudPacked', direction: 'GZ_TO_ROS' });
     } else if (s.kind === 'lidar') {
       out.push({ ros: topic, gz: topic, rosType: 'sensor_msgs/msg/LaserScan', gzType: 'gz.msgs.LaserScan', direction: 'GZ_TO_ROS' });
@@ -445,6 +450,7 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
   // as one of its own, since a link folded into its parent across a fixed joint has its collision renamed.
   // The base under a footprint cannot be kept so: the footprint has no mass, and Gazebo drops a massless link
   // with all below it unless the base is folded in. There the sensor names the collision as Gazebo renames it.
+  const opticalFrames = new Map<string, string>();
   for (const s of p.sensors) {
     if (s.kind === 'touch') {
       const link = links.find((l) => l.name === s.link);
@@ -461,6 +467,7 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
     if (s.kind === 'camera' || s.kind === 'depth') {
       const optical = p.names.take(`${s.name}_optical_frame`, p.naming.link);
       links.push({ name: optical, inertial: null, visual: [], collision: [] });
+      opticalFrames.set(s.name, optical);
       joints.push({ name: p.names.take(`${s.name}_optical_joint`, p.naming.joint), type: 'fixed', parent: frame, child: optical, origin: [0, 0, 0], rpy: OPTICAL, axis: [0, 0, 1] });
     }
   }
@@ -483,7 +490,7 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
     { name: 'launch/gazebo.launch.py', bytes: encodeText(gazeboLaunch(pkg, { controllers, height: footprint || fixedToWorld ? 0 : baseAt[2] + lift })) },
     { name: 'rviz/display.rviz', bytes: encodeText(rvizConfig(base, boundsCenter(extent).map((x, i) => x * M - baseAt[i]) as Vec3, Math.max(...boundsSize(extent)) * M)) },
     { name: `worlds/${pkg}.sdf`, bytes: encodeText(worldXml(pkg)) },
-    { name: 'config/bridge.yaml', bytes: encodeText(bridgeYaml(bridgeTopics(p))) },
+    { name: 'config/bridge.yaml', bytes: encodeText(bridgeYaml(bridgeTopics(p, opticalFrames))) },
     ...(control ? [{ name: 'config/controllers.yaml', bytes: encodeText(controllersYaml(p.controlled, p.torque.length > 0)) }] : []),
   );
   return { name: pkg, files, warnings, leftOut: p.leftOut };
