@@ -5,7 +5,7 @@ import { cancelLoopMotors, confirmLoopMotors, getState, loopMotorsFault, toggleL
 /**
  * Asked before an export or a test drive of a robot with a loop nobody has said the motors of: which of the
  * loop's joints a motor moves. The plate shows those joints alone, and a click on one there picks it as a row
- * here does. OK makes the others passive and lets what was asked for go ahead; Cancel and Escape drop both.
+ * here does. OK makes the others passive and lets what was asked for go ahead, No motor makes them all passive; Cancel and Escape drop both.
  */
 export function LoopMotorsPanel() {
   const asked = useEditor((s) => s.loopMotors);
@@ -33,11 +33,14 @@ export function LoopMotorsPanel() {
       {fault?.kind === 'all' && <p className="field-note warn">{tr('Leave a joint of each loop without a motor.')}</p>}
       {fault?.kind === 'closes' && <p className="field-note warn">{tr('{name}: the loop has to close here, so it cannot have the motor. Pick another joint.', { name: fault.name })}</p>}
       <div className="array-foot">
+        <button type="button" className="chip" title={tr('No motor moves these joints: they swing free')} onClick={() => confirmLoopMotors(true)}>
+          {tr('No motor')}
+        </button>
         <span />
         <button type="button" className="chip" onClick={cancelLoopMotors}>
           {tr('Cancel')}
         </button>
-        <button type="button" className="primary" disabled={fault !== null} onClick={confirmLoopMotors}>
+        <button type="button" className="primary" disabled={fault !== null} onClick={() => confirmLoopMotors()}>
           {tr('OK')}
         </button>
       </div>

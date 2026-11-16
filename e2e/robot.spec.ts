@@ -396,6 +396,18 @@ test.describe("a loop's motors", { tag: '@mouse' }, () => {
     await panel.getByRole('button', { name: 'Cancel' }).click();
     await expect(panel).toHaveCount(0);
     await expect(page.getByRole('dialog')).toHaveCount(0);
+    // No motor: a loop nothing drives, every joint of it passive, and not asked about again.
+    await drive.click();
+    await row('Crank joint').click();
+    await panel.getByRole('button', { name: 'No motor' }).click();
+    await expect(panel).toHaveCount(0);
+    expect(await passive()).toEqual(['Crank joint', 'Rocker joint', 'Coupler joint', 'Closing joint']);
+    await expect(page.getByRole('button', { name: 'Stop' })).toBeVisible({ timeout: 30_000 });
+    await page.getByRole('button', { name: 'Stop' }).click();
+    await drive.click();
+    await expect(page.getByRole('button', { name: 'Stop' })).toBeVisible({ timeout: 30_000 });
+    await expect(panel).toHaveCount(0);
+    await page.getByRole('button', { name: 'Stop' }).click();
   });
 
   test("a joint's motor is taken away and given back in its settings", async ({ page }) => {

@@ -103,15 +103,19 @@ export function loopMotorsFault(s: EditorState = getState()): { kind: 'none' | '
   return stuck ? { kind: 'closes', name: stuck.name } : null;
 }
 
-/** Takes the picked joints as the motors: every other joint round the loops becomes passive, as one undoable step. */
-export function confirmLoopMotors(): void {
+/**
+ * Takes the picked joints as the motors: every other joint round the loops becomes passive, as one undoable step.
+ * With `none`, no motor moves the loops at all (a suspension, a linkage something else pushes): every joint round
+ * them becomes passive, whatever was picked.
+ */
+export function confirmLoopMotors(none = false): void {
   const asked = getState().loopMotors;
-  if (!asked || loopMotorsFault()) return;
+  if (!asked || (!none && loopMotorsFault())) return;
   // Let go of first: the box closing must not be taken for backing out.
   const settle = settleLoopMotors;
   settleLoopMotors = null;
   set({ loopMotors: null });
-  editRobot((r) => withMotors(r, asked.joints, asked.motors));
+  editRobot((r) => withMotors(r, asked.joints, none ? [] : asked.motors));
   settle?.(true);
 }
 
@@ -229,12 +233,13 @@ export function setDriveKind(kind: DriveKind | null): void {
   });
 }
 
-/** Gives a joint its part in the drive, or none. */
+/** Gives a joint its part in the drive, or none. A joint in the drive has its motor: the part takes "moved by nothing" away. */
 export function setDriveRole(joint: string, role: DriveRole | null): void {
   editRobot((r) => {
     if (!r.drive) return r;
     const { [joint]: _old, ...roles } = r.drive.roles;
-    return { ...r, drive: { ...r.drive, roles: role ? { ...roles, [joint]: role } : roles } };
+    const joints = role && r.joints.some((j) => j.id === joint && j.passive) ? r.joints.map((j) => (j.id === joint ? (({ passive: _passive, ...rest }) => rest)(j) : j)) : r.joints;
+    return { ...r, joints, drive: { ...r.drive, roles: role ? { ...roles, [joint]: role } : roles } };
   });
 }
 

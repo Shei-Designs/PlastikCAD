@@ -483,6 +483,8 @@ export const robot: Catalog = {
   Passive: 'Passive',
   'Leave a joint of each loop without a motor.': 'Laissez une articulation de chaque boucle sans moteur.',
   '{name}: the loop has to close here, so it cannot have the motor. Pick another joint.': '{name}\u00a0: la boucle doit se fermer ici, elle ne peut donc pas avoir le moteur. Choisissez une autre articulation.',
+  'No motor': 'Aucun moteur',
+  'No motor moves these joints: they swing free': 'Aucun moteur n’entraîne ces articulations\u00a0: elles tournent librement',
   'Moved by': 'Entraînée par',
   'The loop has to close here, so it cannot have a motor': 'La boucle doit se fermer ici, elle ne peut donc pas avoir de moteur',
   'A motor moves the joint': 'Un moteur entraîne l’articulation',
