@@ -12,6 +12,7 @@ import { inchBolt, inchNut, inchScrewHole, leadScrew, leadScrewNut, metricBolt, 
 import { sprocket } from './sprocket';
 import { gt2Pulley, htdPulley, mxlPulley, tPulley } from './timingPulley';
 import { vBeltPulley } from './vbelt';
+import { WHEELS } from './wheels';
 import type { Category, GeneratorDef, Params } from './types';
 import { worm, wormWheel } from './worm';
 
@@ -45,6 +46,7 @@ export const GENERATORS: GeneratorDef[] = [
   ...FAN_PARTS,
   ...CUTOUTS,
   ...MOTORS,
+  ...WHEELS,
 ];
 
 export const CATEGORIES: { id: Category; label: string; summary: string }[] = [
@@ -58,6 +60,7 @@ export const CATEGORIES: { id: Category; label: string; summary: string }[] = [
   { id: 'fans', label: tr('Fans'), summary: tr('Cutouts, grills and mounting holes for axial fans.') },
   { id: 'cutouts', label: tr('Panel cutouts'), summary: tr('Panel cutouts for common connectors and switches.') },
   { id: 'motors', label: tr('Motor mounts'), summary: tr('Mounting plates and brackets for steppers, gearmotors, servos and DC motors.') },
+  { id: 'wheels', label: tr('Wheels'), summary: tr('Plain and mecanum wheels for robots.') },
 ];
 
 /**
