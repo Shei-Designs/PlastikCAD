@@ -41,6 +41,8 @@ export interface MjcfJoint {
   armature?: number;
   /** Where the joint stands in the home pose, radians or meters; zero when absent. */
   start?: number;
+  /** A joint of the model's own making, not the robot's (a mecanum wheel's roller on its hinge): it has no readings. */
+  internal?: boolean;
 }
 
 export interface MjcfModel {
@@ -338,7 +340,7 @@ export function writeMjcf(model: MjcfModel): string {
   const homeAt = tilt ? turned([bx, by, bz + (model.lift ?? 0)], [SLOPE, 0, 0]) : ([bx, by, bz + (model.lift ?? 0)] as Vec3);
   const home = [...(model.floating ? [`${vec(homeAt)} ${tilt || '1 0 0 0'}`] : []), ...joints.map((j) => fmt(j.start ?? 0, 6))].join(' ');
   const sensors = [
-    ...joints.flatMap((j) => [`    <jointpos name="${escapeXml(j.name)}_pos" joint="${escapeXml(j.name)}"/>`, `    <jointvel name="${escapeXml(j.name)}_vel" joint="${escapeXml(j.name)}"/>`]),
+    ...joints.filter((j) => !j.internal).flatMap((j) => [`    <jointpos name="${escapeXml(j.name)}_pos" joint="${escapeXml(j.name)}"/>`, `    <jointvel name="${escapeXml(j.name)}_vel" joint="${escapeXml(j.name)}"/>`]),
     ...(model.floating
       ? [
           `    <framequat name="${BASE_SENSORS.quat}" objtype="site" objname="${BASE_SITE}"/>`,

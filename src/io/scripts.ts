@@ -103,16 +103,20 @@ class Rover:
         self.model = model
 
     def plan(self, t):
-        # Forward for two seconds, a turn for two, forward again. Replace with your own commands.
+        # Forward for two seconds, a turn for two, a slide to the left for two, forward again: a forward speed (m/s),
+        # a turn rate (rad/s) and a sideways speed (m/s, left positive), which only a mecanum drive can follow.
+        # Replace with your own commands.
         if t < 2:
-            return 0.2, 0.0
+            return 0.2, 0.0, 0.0
         if t < 4:
-            return 0.1, 1.0
-        return 0.2, 0.0
+            return 0.1, 1.0, 0.0
+        if t < 6:
+            return 0.0, 0.0, 0.2
+        return 0.2, 0.0, 0.0
 
     def apply(self, data, t):
         self.joints.apply(data)
-        v, w = self.plan(t)
+        v, w, vy = self.plan(t)
         d = self.drive
         r = d["wheelRadius"]
         sep = d["wheelSeparation"]
@@ -132,7 +136,6 @@ class Rover:
             for name in roles.get("steer-left", []) + roles.get("steer-right", []):
                 data.ctrl[self.ids[name]] = steer
         else:  # mecanum: forward, sideways (vy) and turn, lx and ly half the wheelbase and track
-            vy = 0.0
             k = (d["wheelBase"] + sep) / 2
             for role, sign_y, sign_w in (("front-left", -1, -1), ("front-right", 1, 1), ("rear-left", 1, -1), ("rear-right", -1, 1)):
                 for name in roles.get(role, []):

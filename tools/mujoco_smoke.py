@@ -5,11 +5,13 @@
 
 Needs the `mujoco` package (pip install mujoco, or a venv). Each model is
 settled for a second, then driven: velocity motors run at their limit and the
-base must travel; position servos are sent 0.3 rad and must follow; a free
+base must travel; a mecanum drive must go forward, slide and turn as told;
+position servos are sent 0.3 rad and must follow; a free
 base must not collapse; and MuJoCo must raise no warnings. Exit code 1 on any
 failure, 2 when mujoco is missing.
 """
 import glob
+import json
 import os
 import sys
 
@@ -19,6 +21,10 @@ except ImportError:
     print("mujoco is not installed: pip install mujoco (a venv is fine) and run this with that Python.")
     sys.exit(2)
 import numpy as np
+
+# A mecanum drive is run at this wheel speed (rad/s) for this long, and must go between these shares of what was
+# asked and stray no farther than this another way (m, rad).
+MECANUM_WHEEL_SPEED, MECANUM_SECONDS, MECANUM_LEAST, MECANUM_MOST, MECANUM_STRAY = 6.0, 3.0, 0.8, 1.05, 0.05
 
 root = sys.argv[1] if len(sys.argv) > 1 else "fixtures/out"
 # Each MuJoCo model is <name>/<name>.xml; the ROS and SDF packages beside them carry XML of their own.
@@ -114,6 +120,44 @@ for xml in xmls:
         now = height()
         notes.append(f"base at {now * 1000:.1f} mm, was {start_height * 1000:.1f}")
         ok &= now >= 0.7 * start_height
+    # A mecanum drive, from a fresh start each time: told to go forward, to slide to its left and to turn on the
+    # spot, it goes most of the way asked (its rollers slip a little, and it takes a moment to get going) and
+    # hardly any other way. The mixing is the one drive.py and the test drive use.
+    spec_path = os.path.join(os.path.dirname(xml), "drive.json")
+    spec = json.load(open(spec_path)) if os.path.exists(spec_path) else None
+    if spec and spec["kind"] == "mecanum":
+        r, k = spec["wheelRadius"], (spec["wheelBase"] + spec["wheelSeparation"]) / 2
+        fwd = np.array(spec["forward"][:2], float)
+        left = np.array([-fwd[1], fwd[0]])
+        mix = {"front-left": (-1, -1), "front-right": (1, 1), "rear-left": (1, -1), "rear-right": (-1, 1)}
+        ids = {role: mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_ACTUATOR, spec["roles"][role][0]) for role in mix}
+        yaw_of = lambda q: float(np.arctan2(2 * (q[0] * q[3] + q[1] * q[2]), 1 - 2 * (q[2] ** 2 + q[3] ** 2)))  # noqa: E731
+        speed = MECANUM_WHEEL_SPEED * r
+        for label, (vx, vy, wz) in {"forward": (speed, 0, 0), "left": (0, speed, 0), "turn": (0, 0, speed / k / 2)}.items():
+            e = mujoco.MjData(m)
+            if home >= 0:
+                mujoco.mj_resetDataKeyframe(m, e, home)
+            for _ in steps(0.5):
+                mujoco.mj_step(m, e)
+            at, yaw, last = e.qpos[:2].copy(), 0.0, yaw_of(e.qpos[3:7])
+            for role, (sy, sw) in mix.items():
+                e.ctrl[ids[role]] = (vx + sy * vy + sw * k * wz) / r
+            for _ in steps(MECANUM_SECONDS):
+                mujoco.mj_step(m, e)
+                now = yaw_of(e.qpos[3:7])
+                yaw += (now - last + np.pi) % (2 * np.pi) - np.pi
+                last = now
+            went = [float((e.qpos[:2] - at) @ fwd), float((e.qpos[:2] - at) @ left), yaw]
+            i = ("forward", "left", "turn").index(label)
+            ideal = (vx, vy, wz)[i] * MECANUM_SECONDS
+            stray = [abs(v) for j, v in enumerate(went) if j != i]
+            notes.append(f"mecanum {label}: {went[i]:.3f} of {ideal:.3f} {'rad' if i == 2 else 'm'}")
+            if not MECANUM_LEAST <= went[i] / ideal <= MECANUM_MOST or max(stray) > MECANUM_STRAY:
+                ok = False
+                notes.append(f"mecanum {label} FAILED: forward {went[0]:.3f} m, left {went[1]:.3f} m, turn {went[2]:.3f} rad")
+            if any(w.number for w in e.warning):
+                ok = False
+                notes.append(f"mecanum {label}: warnings " + ", ".join(mujoco.mjtWarning(i).name for i, w in enumerate(e.warning) if w.number))
     # Every camera must render a picture of something, and a depth picture of the floor that runs away to the top.
     if m.ncam:
         try:

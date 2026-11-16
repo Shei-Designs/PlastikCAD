@@ -1,0 +1,238 @@
+{
+  "format": "plastikcad",
+  "version": 3,
+  "units": "mm",
+  "id": "fxreferencemecanumrover",
+  "name": "Reference mecanum rover",
+  "scene": [
+    {
+      "id": "fx000056",
+      "type": "shape",
+      "name": "Body",
+      "shape": "box",
+      "params": {
+        "radius": 0
+      },
+      "pos": [0,0,80],
+      "rot": [0,0,0],
+      "size": [240,320,80],
+      "color": "#8fa3bf"
+    },
+    {
+      "id": "fx000057",
+      "type": "part",
+      "name": "Wheel rear left",
+      "part": "mecanum-wheel",
+      "params": {
+        "boreClearance": 0.2,
+        "boreDiameter": 6,
+        "boreFlat": 4.5,
+        "boreType": "round",
+        "diameter": 100,
+        "hand": "right",
+        "hubDiameter": 20,
+        "hubHeight": 0,
+        "keyDepth": 1,
+        "keyWidth": 2,
+        "rollers": 9,
+        "setScrewDiameter": 3.3,
+        "setScrews": 1,
+        "size": "100",
+        "width": 50
+      },
+      "natural": [100,100,50],
+      "pos": [-150,-110,50],
+      "rot": [0,90,0],
+      "size": [100,100,50],
+      "color": "#e8853a"
+    },
+    {
+      "id": "fx000058",
+      "type": "part",
+      "name": "Wheel front left",
+      "part": "mecanum-wheel",
+      "params": {
+        "boreClearance": 0.2,
+        "boreDiameter": 6,
+        "boreFlat": 4.5,
+        "boreType": "round",
+        "diameter": 100,
+        "hand": "left",
+        "hubDiameter": 20,
+        "hubHeight": 0,
+        "keyDepth": 1,
+        "keyWidth": 2,
+        "rollers": 9,
+        "setScrewDiameter": 3.3,
+        "setScrews": 1,
+        "size": "100",
+        "width": 50
+      },
+      "natural": [100,100,50],
+      "pos": [-150,110,50],
+      "rot": [0,90,0],
+      "size": [100,100,50],
+      "color": "#e8853a"
+    },
+    {
+      "id": "fx000059",
+      "type": "part",
+      "name": "Wheel rear right",
+      "part": "mecanum-wheel",
+      "params": {
+        "boreClearance": 0.2,
+        "boreDiameter": 6,
+        "boreFlat": 4.5,
+        "boreType": "round",
+        "diameter": 100,
+        "hand": "left",
+        "hubDiameter": 20,
+        "hubHeight": 0,
+        "keyDepth": 1,
+        "keyWidth": 2,
+        "rollers": 9,
+        "setScrewDiameter": 3.3,
+        "setScrews": 1,
+        "size": "100",
+        "width": 50
+      },
+      "natural": [100,100,50],
+      "pos": [150,-110,50],
+      "rot": [0,90,0],
+      "size": [100,100,50],
+      "color": "#e8853a"
+    },
+    {
+      "id": "fx000060",
+      "type": "part",
+      "name": "Wheel front right",
+      "part": "mecanum-wheel",
+      "params": {
+        "boreClearance": 0.2,
+        "boreDiameter": 6,
+        "boreFlat": 4.5,
+        "boreType": "round",
+        "diameter": 100,
+        "hand": "right",
+        "hubDiameter": 20,
+        "hubHeight": 0,
+        "keyDepth": 1,
+        "keyWidth": 2,
+        "rollers": 9,
+        "setScrewDiameter": 3.3,
+        "setScrews": 1,
+        "size": "100",
+        "width": 50
+      },
+      "natural": [100,100,50],
+      "pos": [150,110,50],
+      "rot": [0,90,0],
+      "size": [100,100,50],
+      "color": "#e8853a"
+    }
+  ],
+  "assets": {},
+  "robot": {
+    "root": "fx000056",
+    "base": "free",
+    "links": [
+      {
+        "node": "fx000056",
+        "mass": {
+          "kind": "material",
+          "material": "pla",
+          "infill": 20,
+          "shell": 1.2
+        },
+        "collision": "box",
+        "friction": 0.8
+      }
+    ],
+    "joints": [
+      {
+        "id": "fx000061",
+        "name": "Wheel rear left joint",
+        "type": "continuous",
+        "parent": "fx000056",
+        "child": "fx000057",
+        "origin": [0,0,0],
+        "axis": [0,0,1],
+        "lower": -90,
+        "upper": 90,
+        "effort": 2.6,
+        "velocity": 900,
+        "damping": 0.00828,
+        "friction": 0,
+        "motor": "37d-70"
+      },
+      {
+        "id": "fx000062",
+        "name": "Wheel front left joint",
+        "type": "continuous",
+        "parent": "fx000056",
+        "child": "fx000058",
+        "origin": [0,0,0],
+        "axis": [0,0,1],
+        "lower": -90,
+        "upper": 90,
+        "effort": 2.6,
+        "velocity": 900,
+        "damping": 0.00828,
+        "friction": 0,
+        "motor": "37d-70"
+      },
+      {
+        "id": "fx000063",
+        "name": "Wheel rear right joint",
+        "type": "continuous",
+        "parent": "fx000056",
+        "child": "fx000059",
+        "origin": [0,0,0],
+        "axis": [0,0,1],
+        "lower": -90,
+        "upper": 90,
+        "effort": 2.6,
+        "velocity": 900,
+        "damping": 0.00828,
+        "friction": 0,
+        "motor": "37d-70"
+      },
+      {
+        "id": "fx000064",
+        "name": "Wheel front right joint",
+        "type": "continuous",
+        "parent": "fx000056",
+        "child": "fx000060",
+        "origin": [0,0,0],
+        "axis": [0,0,1],
+        "lower": -90,
+        "upper": 90,
+        "effort": 2.6,
+        "velocity": 900,
+        "damping": 0.00828,
+        "friction": 0,
+        "motor": "37d-70"
+      }
+    ],
+    "sensors": [
+      {
+        "id": "fx000065",
+        "name": "IMU",
+        "kind": "imu",
+        "link": "fx000056",
+        "origin": [0,0,0],
+        "rot": [0,0,0],
+        "rate": 100
+      }
+    ],
+    "drive": {
+      "kind": "mecanum",
+      "roles": {
+        "fx000061": "rear-left",
+        "fx000062": "front-left",
+        "fx000063": "rear-right",
+        "fx000064": "front-right"
+      }
+    }
+  }
+}

@@ -529,7 +529,7 @@ function LinkPanel({ node }: { node: SceneNode }) {
   const { robot, nodes, props, problems } = useRobot();
   const unit = useEditor((s) => s.prefs.units);
   const inertiaUnit = useEditor((s) => s.prefs.inertiaUnit);
-  const link = linkOf(robot, node.id);
+  const link = linkOf(robot, node.id, node);
   const p = props.get(node.id);
   const mass = p ? massOf(link.mass, p) : null;
   const figures = p ? inertialOf(link.mass, node, p) : null;

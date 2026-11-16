@@ -383,6 +383,19 @@ in the design file and synced with it.
   plugin takes velocity commands on `cmd_vel` and reports odometry; a driven
   robot gets a `base_footprint` root on the floor under the base link,
   facing +X as ROS expects.
+- **Mecanum wheels.** A mecanum drive slides sideways on the *Mecanum
+  wheel* part from the Wheels parts, and on nothing else. A link that is
+  that part, or holds it (with a bore cut through it, a hub glued on), gets
+  its rollers in every export and in the test drive: each roller a body on a
+  free hinge to its wheel, colliding as a row of balls that touch the wheel's
+  circle, worked out from the part's settings and where it stands, never
+  from its mesh; the wheel itself then collides as nothing. The rollers are
+  the simulator's alone: no link, joint, motor or controller of the robot's.
+  In the ROS 2 package they are in Gazebo's blocks of the URDF, so RViz, the
+  transform tree and a real robot do not see them. The wheel must be scaled
+  the same on every side, and the hand its corner wants: front left and rear
+  right take a *Left* wheel, the other two a *Right* one. A link that is a
+  wheel part, plain or mecanum, has a friction of 1 until one is typed.
 - **Controllers.** The actuated joints outside the drive go under
   `ros2_control` with a joint trajectory controller (`arm_controller`) and a
   joint state broadcaster, unless switched off, and *Scripts* whether the
@@ -399,11 +412,14 @@ in the design file and synced with it.
   drive holds every joint by position.
 - **Checks.** The overview lists what stops an export (no base, a link no
   joint reaches, limits the wrong way round, a drive missing a wheel on a
-  side, a link with no mass or an impossible inertia, a joint set to follow
+  side, a mecanum wheel whose rollers lean the wrong way for its corner,
+  a link with no mass or an impossible inertia, a joint set to follow
   one that is fixed, closes a loop, is left out or follows it back) and what
   goes through
   with a note (a joint with no effort or speed,
-  drive wheels whose axles do not run the same way, a camera whose near
+  drive wheels whose axles do not run the same way, a wheel of a mecanum
+  drive that is not the Mecanum wheel part, is stretched unevenly or has
+  gaps between its rollers, and so cannot slide, a camera whose near
   plane clips the floor out of its picture, an open mesh, a heavy collision
   mesh), each with a *Show* button. Neither says how the robot might be
   designed better: a motor far stronger than its part needs is the builder's
@@ -474,6 +490,11 @@ in the design file and synced with it.
   for an arm) and publishes joint states, clock, odometry, TF and every
   sensor, in the frames the ROS 2 package names: a driven robot's
   `base_footprint`, each sensor's own frame and a camera's optical frame.
+  A mecanum drive's graph mixes each wheel's speed from the command's
+  forward, sideways and turning parts, and a stage whose robot has rollers
+  asks for 120 physics steps a second, which keeps them true; there the
+  rollers are bodies of the articulation, so their joints and frames are
+  among those it publishes.
   *File > Open*, Play, and it runs; nothing is imported or set up on
   the Isaac side. Isaac Sim can still import the ROS 2 package's URDF, but
   the stage carries what the importer cannot read from URDF: drive gains, a

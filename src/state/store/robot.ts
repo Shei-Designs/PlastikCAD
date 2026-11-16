@@ -217,7 +217,7 @@ export function setRobotRoot(node: string | null): void {
 }
 
 export function updateLink(node: string, patch: Partial<Omit<RobotLink, 'node'>>, merge?: string): void {
-  editRobot((r) => ({ ...r, links: [...r.links.filter((l) => l.node !== node), { ...linkOf(r, node), ...patch }] }), merge);
+  editRobot((r) => ({ ...r, links: [...r.links.filter((l) => l.node !== node), { ...linkOf(r, node, getState().doc.scene.find((n) => n.id === node)), ...patch }] }), merge);
 }
 
 const jointName = (robot: Robot, base: string): string => {

@@ -144,9 +144,49 @@ export function weldXml(link: string, model: string, pin: string): string {
   return `<plugin filename="gz-sim-detachable-joint-system" name="gz::sim::systems::DetachableJoint">\n  <parent_link>${escapeXml(link)}</parent_link>\n  <child_model>${escapeXml(model)}</child_model>\n  <child_link>${escapeXml(pin)}</child_link>\n</plugin>`;
 }
 
-/** Publishes every joint's position, for robot_state_publisher when ros2_control is not in charge. */
-export function jointStateXml(topic = 'joint_states'): string {
-  return `<plugin filename="gz-sim-joint-state-publisher-system" name="gz::sim::systems::JointStatePublisher">\n  <topic>${topic}</topic>\n</plugin>`;
+/**
+ * Publishes every joint's position, for robot_state_publisher when ros2_control is not in charge. Given `joints`,
+ * only theirs: a model with joints the robot does not own (a mecanum wheel's rollers) keeps those to itself.
+ */
+export function jointStateXml(topic = 'joint_states', joints?: string[]): string {
+  return `<plugin filename="gz-sim-joint-state-publisher-system" name="gz::sim::systems::JointStatePublisher">\n  <topic>${topic}</topic>${(joints ?? []).map((j) => `\n  <joint_name>${escapeXml(j)}</joint_name>`).join('')}\n</plugin>`;
+}
+
+/** A mecanum wheel's roller for Gazebo: what `rollerXml` writes. Meters, kilograms; the frames are the wheel link's. */
+export interface GazeboRoller {
+  name: string;
+  joint: string;
+  wheel: string;
+  at: Vec3;
+  axis: Vec3;
+  inertial: { mass: number; inertia: [number, number, number, number, number, number] };
+  balls: { at: Vec3; radius: number }[];
+  friction: number;
+}
+
+/**
+ * A roller of a mecanum wheel, as the SDF link and joint Gazebo gets: a body on a free hinge to its wheel, placed
+ * and turned from the wheel link's frame, colliding as a row of balls. The same two elements go into an SDF model
+ * as they are and into a URDF inside a <gazebo> block, where Gazebo alone reads them: the rollers are the
+ * simulator's business, and no frame or joint of the robot's own.
+ */
+export function rollerXml(r: GazeboRoller): string {
+  const v = (a: Vec3) => a.map((x) => fmt(x, 6)).join(' ');
+  const n = (x: number) => fmt(x, 12);
+  const [xx, yy, zz, xy, xz, yz] = r.inertial.inertia;
+  const wheel = escapeXml(r.wheel);
+  return [
+    `<link name="${escapeXml(r.name)}">`,
+    `  <pose relative_to="${wheel}">${v(r.at)} 0 0 0</pose>`,
+    `  <inertial><mass>${n(r.inertial.mass)}</mass><inertia><ixx>${n(xx)}</ixx><ixy>${n(xy)}</ixy><ixz>${n(xz)}</ixz><iyy>${n(yy)}</iyy><iyz>${n(yz)}</iyz><izz>${n(zz)}</izz></inertia></inertial>`,
+    ...r.balls.map((b, i) => `  <collision name="${escapeXml(r.name)}_collision${i ? `_${i}` : ''}"><pose>${v(b.at)} 0 0 0</pose><geometry><sphere><radius>${fmt(b.radius, 6)}</radius></sphere></geometry>${surfaceXml(r.friction)}</collision>`),
+    '</link>',
+    `<joint name="${escapeXml(r.joint)}" type="revolute">`,
+    `  <parent>${wheel}</parent>`,
+    `  <child>${escapeXml(r.name)}</child>`,
+    `  <axis><xyz expressed_in="${wheel}">${v(r.axis)}</xyz></axis>`,
+    '</joint>',
+  ].join('\n');
 }
 
 /**

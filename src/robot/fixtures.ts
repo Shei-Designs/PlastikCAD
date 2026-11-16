@@ -1,6 +1,7 @@
 // The reference robots: a rover, a car, an arm and a quadruped built from
-// shapes, which the tests export and simulate and which fixtures/robots
-// holds for opening in the app. Each is as large as the motors in the
+// shapes, and a rover on mecanum wheels from the Wheels parts, which the
+// tests export and simulate and which fixtures/robots holds for opening in
+// the app. Each is as large as the motors in the
 // catalogue can drive: the rover and car on 37 mm gearmotors (TurtleBot and
 // 1/10 RC car class), the quadruped and arm on STS3215 smart servos (Pupper
 // and SO-101 class), so that they sit at a believable size in a world.
@@ -11,7 +12,10 @@ import { jointFit } from './defaults';
 import { linkNodes } from './model';
 import { motorFigures, motorOf } from './motors';
 import { defaultJoint, defaultLink, defaultSensor } from './types';
-import type { CollisionKind, Robot, RobotJoint } from './types';
+import type { CollisionKind, DriveRole, Robot, RobotJoint } from './types';
+import { getGenerator } from '../parts/generators';
+import { sanitizeParams } from '../parts/generators/types';
+import { mecanumRollers } from '../parts/generators/wheels';
 
 let next = 0;
 const id = (): string => `fx${String(++next).padStart(6, '0')}`;
@@ -55,6 +59,39 @@ function rover(): Doc {
     joints,
     sensors: [lidar, imu, camera],
     drive: { kind: 'differential', roles: Object.fromEntries(joints.map((j, i) => [j.id, sideOf(wheels[i])])) },
+    control: true,
+  });
+}
+
+/** A part from the library as it stands in a design: `natural` is the box its generator makes. */
+function part(generator: string, name: string, params: Record<string, string | number>, natural: Vec3, pos: Vec3, rot: Vec3, color = '#e8853a'): SceneNode {
+  const def = getGenerator(generator);
+  return { id: id(), name, type: 'part', part: def.id, params: sanitizeParams(def, params), natural, pos, rot, size: natural, hole: false, color };
+}
+
+/**
+ * The rover on four mecanum wheels from the Wheels parts, each of the hand its corner wants: it drives along Y
+ * like the rover, and slides along X on its rollers. `size` is the wheel's, of those the part offers; the rover
+ * is as much larger or smaller than the one on 100 mm wheels.
+ */
+export function mecanumRover(size = '100'): Doc {
+  const figures = mecanumRollers(sanitizeParams(getGenerator('mecanum-wheel'), { size }));
+  const d = 2 * figures.radius;
+  const k = d / 100;
+  const body = shape('box', 'Body', [0, 0, 80 * k], [240 * k, 320 * k, 80 * k]);
+  const corners = [-1, 1].flatMap((sx) => [-1, 1].map((sy) => ({ sx, sy })));
+  // Front left and rear right take a left wheel, the other two a right one.
+  const wheels = corners.map(({ sx, sy }) => part('mecanum-wheel', `Wheel ${sy < 0 ? 'rear' : 'front'} ${sx < 0 ? 'left' : 'right'}`, { size, hand: sx * sy < 0 ? 'left' : 'right' }, [d, d, figures.width], [sx * (125 * k + figures.width / 2), sy * 110 * k, d / 2], [0, 90, 0]));
+  const joints = wheels.map((w) => joint(`${w.name} joint`, body, w, [0, 0, 0], { type: 'continuous', motor: '37d-70' }));
+  const imu = defaultSensor(id(), 'IMU', 'imu', body.id, [0, 0, 0]);
+  return design('Reference mecanum rover', [body, ...wheels], {
+    root: body.id,
+    base: 'free',
+    // The wheels are left as they come: robot mode gives a wheel part its rollers and its grip.
+    links: [{ ...defaultLink(body.id), collision: 'box' }],
+    joints,
+    sensors: [imu],
+    drive: { kind: 'mecanum', roles: Object.fromEntries(joints.map((j, i) => [j.id, `${corners[i].sy < 0 ? 'rear' : 'front'}-${corners[i].sx < 0 ? 'left' : 'right'}` as DriveRole])) },
     control: true,
   });
 }
@@ -131,4 +168,5 @@ export const ROBOTS: { file: string; make: () => Doc }[] = [
   { file: 'car', make: car },
   { file: 'arm', make: arm },
   { file: 'quadruped', make: quadruped },
+  { file: 'mecanum', make: () => mecanumRover() },
 ];

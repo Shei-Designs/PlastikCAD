@@ -141,7 +141,7 @@ describe('a link that is one bent mesh', () => {
 
 describe('the collision shapes against the floor', () => {
   it('finds nothing wrong with the reference robots', () => {
-    for (const file of ['rover', 'car', 'quadruped']) expect(faultsAfter(make(file), 1.5), file).toEqual([]);
+    for (const file of ['rover', 'mecanum', 'car', 'quadruped']) expect(faultsAfter(make(file), 1.5), file).toEqual([]);
   });
 
   it('finds the rover held off its wheels by a ball around its body', () => {
@@ -259,6 +259,63 @@ describe('the rover', () => {
     sim.step(0.5);
     // The controls were let go of too.
     expect(Math.abs(position(sim, base)[1])).toBeLessThan(0.01);
+    sim.dispose();
+  });
+});
+
+describe('the mecanum rover', () => {
+  it('slides to its left on its rollers, without turning or creeping forward', () => {
+    const { sim, base } = simulate(make('mecanum'));
+    // The rollers are bodies of the model, and no joint of theirs has a motor.
+    expect(sim.bodies.filter((b) => b.includes('_roller_')).length).toBe(36);
+    expect(sim.actuators.map((a) => a.kind)).toEqual(['motor', 'motor', 'motor', 'motor']);
+    sim.step(0.5);
+    const start = position(sim, base);
+    sim.drive(0, 0, 1);
+    sim.step(2);
+    const end = position(sim, base);
+    // It faces +Y, so its left is -X. A 37D motor turns a 100 mm wheel at about 0.8 m/s.
+    expect(start[0] - end[0]).toBeGreaterThan(1);
+    expect(Math.abs(end[1] - start[1])).toBeLessThan(0.05);
+    expect(Math.abs(yaw(sim, base))).toBeLessThan(5);
+    sim.dispose();
+  });
+
+  it('drives forward and turns on the spot as told', () => {
+    const { sim, base } = simulate(make('mecanum'));
+    sim.step(0.5);
+    const start = position(sim, base);
+    sim.drive(1, 0);
+    sim.step(2);
+    const end = position(sim, base);
+    expect(end[1] - start[1]).toBeGreaterThan(1);
+    expect(Math.abs(end[0] - start[0])).toBeLessThan(0.05);
+    expect(Math.abs(yaw(sim, base))).toBeLessThan(5);
+    sim.drive(0, 0.5);
+    sim.step(0.5);
+    expect(yaw(sim, base)).toBeGreaterThan(20);
+    sim.dispose();
+  });
+
+  it('stands at the height its wheels give it, and stays level as it slides', () => {
+    const { sim, base } = simulate(make('mecanum'));
+    sim.step(0.5);
+    const rest = position(sim, base)[2];
+    // The body's middle is 80 mm up in the design, the wheels' rims on the floor.
+    expect(rest).toBeGreaterThan(0.078);
+    expect(rest).toBeLessThan(0.0805);
+    sim.drive(0, 0, 1);
+    // Once it is up to speed: setting off rocks it on its wheels.
+    sim.step(1);
+    let [low, high] = [Infinity, -Infinity];
+    for (let i = 0; i < 40; i++) {
+      sim.step(0.025);
+      const z = position(sim, base)[2];
+      low = Math.min(low, z);
+      high = Math.max(high, z);
+    }
+    // The rollers' balls keep the wheel round to well under a millimeter.
+    expect(high - low).toBeLessThan(0.0005);
     sim.dispose();
   });
 });
