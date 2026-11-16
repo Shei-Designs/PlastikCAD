@@ -169,10 +169,15 @@ export interface Tree {
   unreached: string[];
 }
 
+/** Whether a joint turns about its axis: the only kind that can close a loop, in the app's own solver and in every export. */
+export const isHinge = (j: RobotJoint): boolean => j.type === 'revolute' || j.type === 'continuous';
+
 /**
  * The links as a tree from the base: a breadth-first walk down the joints,
  * taking each link the first time a joint reaches it. Any joint that would
- * reach a link again closes a loop, which URDF cannot hold and SDF can.
+ * reach a link again closes a loop, which URDF cannot hold. Only a hinge can
+ * close one, so where the joint that comes second is not a hinge and the one
+ * that came first is, the two change places: the hinge closes the loop.
  */
 export function spanningTree(robot: Robot, links: string[]): Tree {
   const order: string[] = [];
@@ -180,6 +185,7 @@ export function spanningTree(robot: Robot, links: string[]): Tree {
   const loops: RobotJoint[] = [];
   const have = new Set(links);
   const reached = new Set<string>();
+  let swapped = false;
   if (robot.root && have.has(robot.root)) {
     reached.add(robot.root);
     order.push(robot.root);
@@ -187,13 +193,28 @@ export function spanningTree(robot: Robot, links: string[]): Tree {
       for (const j of robot.joints) {
         if (j.parent !== order[i] || !have.has(j.child)) continue;
         if (reached.has(j.child)) {
-          loops.push(j);
+          const first = parentJoint.get(j.child);
+          // The link can hang from this joint instead only if this joint's parent does not itself hang from the link.
+          const below = (link: string): boolean => {
+            for (let at: string | undefined = link; at; at = parentJoint.get(at)?.parent) if (at === j.child) return true;
+            return false;
+          };
+          if (!isHinge(j) && first && isHinge(first) && !below(j.parent)) {
+            parentJoint.set(j.child, j);
+            loops.push(first);
+            swapped = true;
+          } else loops.push(j);
           continue;
         }
         reached.add(j.child);
         parentJoint.set(j.child, j);
         order.push(j.child);
       }
+    }
+    // A link that changed the joint it hangs from may now come before its parent: walk the tree again, parents first.
+    if (swapped) {
+      order.length = 1;
+      for (let i = 0; i < order.length; i++) for (const j of robot.joints) if (j.parent === order[i] && parentJoint.get(j.child) === j) order.push(j.child);
     }
   }
   // A joint whose parent is never reached cannot be walked over, but still counts as a loop if its child was reached otherwise.

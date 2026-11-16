@@ -382,6 +382,7 @@ export const robot: Catalog = {
   'No base link is chosen. Pick the object the rest of the robot hangs from.': 'Aucun segment de base n’est choisi. Choisissez l’objet qui porte le reste du robot.',
   '{name}: not joined to the base, so it is left out.': '{name}\u00a0: non relié à la base, donc laissé de côté.',
   '{name}: closes a loop. Kept in SDF and MuJoCo, left out of URDF.': '{name}\u00a0: ferme une boucle. Conservée en SDF et MuJoCo, omise en URDF.',
+  '{name}: closes a loop as a {type} joint, and only a revolute or continuous joint can. Change its type.': '{name} : ferme une boucle en liaison {type}, ce que seule une liaison pivot ou continue peut faire. Changez son type.',
   '"{name}" joins an object that is hidden, a hole or gone.': '«\u00a0{name}\u00a0» relie un objet masqué, devenu perçage ou supprimé.',
   '"{name}" joins "{link}" to itself.': '«\u00a0{name}\u00a0» relie «\u00a0{link}\u00a0» à lui-même.',
   '"{name}" has no axis.': '«\u00a0{name}\u00a0» n’a pas d’axe.',

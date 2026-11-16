@@ -228,6 +228,9 @@ def one(path, pictures):
         run(0.5, lambda i: drive(0.0, 0.5))
         end = np.asarray(art.get_world_poses()[0][0])
         q = np.asarray(art.get_joint_positions())[0]
+        # A simulation that blew up leaves no numbers, and every comparison with none passes.
+        if not (np.all(np.isfinite(end)) and np.all(np.isfinite(q))):
+            result['problems'].append('the simulation blew up: the pose or the joints are not numbers')
         moved = float(np.linalg.norm(end[:2] - start[:2]))
         dropped = float(start[2] - end[2])
         result['moved_mm'] = round(moved * 1000)
