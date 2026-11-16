@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { evaluate, initKernel } from '../testing';
-import { QUALITY, revolve } from '../types';
+import { difference, mirror, QUALITY, revolve, translate } from '../types';
+import type { Solid } from '../types';
 import type { Vec2, Vec3 } from '../types';
 import { CATEGORIES, GENERATORS } from './index';
 import { defaultParams } from './types';
@@ -228,5 +229,39 @@ describe('mecanum wheel', () => {
     }
     expect(mecanum({ boreType: 'round', boreDiameter: 6 }).warnings).toEqual([]);
     expect(mecanum({ boreType: 'round', boreDiameter: 70 }).warnings).toEqual(['The bore is as wide as the drum the rollers sit round.']);
+  });
+  it('shows the figures of the size chosen in the settings the size holds', () => {
+    const settings = mecanumWheel.groups[0].params;
+    const shown = (key: string, p: Params) => settings.find((d) => d.key === key)!.shown!({ ...defaultParams(mecanumWheel), ...p });
+    // The wheel's own figures are 100, 50 and 9; a size reads its own, and Custom the wheel's.
+    expect([shown('diameter', { size: '152' }), shown('width', { size: '152' }), shown('rollers', { size: '152' })]).toEqual([152, 55.5, 15]);
+    expect([shown('diameter', { size: '203' }), shown('width', { size: '203' }), shown('rollers', { size: '203' })]).toEqual([203, 78, 12]);
+    expect([shown('diameter', { size: 'custom', diameter: 120 }), shown('width', { size: 'custom' }), shown('rollers', { size: 'custom' })]).toEqual([120, 50, 9]);
+  });
+
+  it("is its other hand's mirror image in Y, whatever its rollers, bore and hub", () => {
+    const apart = (a: Solid, b: Solid) => evaluate(difference(a, b)).stats.volume;
+    for (const over of [{}, { size: '60' }, { size: '152' }, { boreType: 'd', boreDiameter: 8, boreFlat: 6 }, { boreType: 'keyway', boreDiameter: 10 }, { hubHeight: 10, setScrews: 1 }] as Params[]) {
+      const left = mecanum({ hand: 'left', ...over }).solid;
+      const right = mirror(mecanum({ ...mecanumWheel.mirrored!({ ...defaultParams(mecanumWheel), hand: 'left' }), boreType: 'none', ...over }).solid, [0, 1, 0]);
+      const whole = evaluate(left).stats.volume;
+      // Flat-sided rounds meet their mirror images to within a sliver.
+      expect(apart(left, right) / whole, JSON.stringify(over)).toBeLessThan(1e-3);
+      expect(apart(right, left) / whole, JSON.stringify(over)).toBeLessThan(1e-3);
+    }
+    // Mirrored along any of its own axes through the middle of its box, a wheel is its other hand flipped in that axis and in Y.
+    const hubbed = { hubHeight: 10, setScrews: 1 };
+    const left = mecanum({ hand: 'left', ...hubbed }).solid;
+    const other = mecanum({ hand: 'right', ...hubbed }).solid;
+    const top = evaluate(left).stats.max[2];
+    const flipped = (s: Solid, axes: number[]) =>
+      axes.reduce((out, k) => (k === 2 ? translate(mirror(out, [0, 0, 1]), [0, 0, top]) : mirror(out, k === 0 ? [1, 0, 0] : [0, 1, 0])), s);
+    const whole = evaluate(left).stats.volume;
+    for (const [axis, flips] of [[0, [0, 1]], [1, []], [2, [2, 1]]] as [number, number[]][]) {
+      expect(apart(flipped(left, [axis]), flipped(other, flips)) / whole, `axis ${axis}`).toBeLessThan(1e-3);
+      expect(apart(flipped(other, flips), flipped(left, [axis])) / whole, `axis ${axis}`).toBeLessThan(1e-3);
+    }
+    // The same hand in its place would not do.
+    expect(apart(flipped(left, [0]), left) / whole).toBeGreaterThan(0.02);
   });
 });

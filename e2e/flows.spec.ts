@@ -81,6 +81,34 @@ test.describe('core flows', { tag: '@mouse' }, () => {
     await noErrorNotice(page);
   });
 
+  test('a mecanum wheel shows the figures of its size, and mirrored it is the other hand', async ({ page }) => {
+    await store(page, async (m) => {
+      await m.addPart('wheels');
+      const id = m.getState().doc.scene[0].id;
+      await m.editPart(id, { part: 'mecanum-wheel', params: { size: '152' } });
+      m.select([id]);
+    });
+    await settled(page);
+    // The size holds these three, so they are greyed out; they read its figures, not the ones kept for Custom.
+    for (const [name, value] of [['Diameter', '152'], ['Width', '55.5'], ['Rollers', '15']]) {
+      const box = page.getByRole('textbox', { name, exact: true });
+      await expect(box, name).toBeDisabled();
+      await expect(box, name).toHaveValue(value);
+    }
+    const wheel = () => store(page, (m) => m.getState().doc.scene.map((n) => (n.type === 'part' ? { part: n.part, hand: n.params.hand, flip: n.flip ?? null } : null)));
+    expect(await wheel()).toEqual([{ part: 'mecanum-wheel', hand: 'left', flip: null }]);
+    await store(page, (m) => m.mirrorSelected(0));
+    await settled(page);
+    // Still the part, now the other hand; its two flips are a turn, so the setting says what the shape is.
+    expect(await wheel()).toEqual([{ part: 'mecanum-wheel', hand: 'right', flip: [true, true, false] }]);
+    await expect(page.getByRole('radio', { name: 'Right', exact: true })).toBeChecked();
+    expect(await drawnCount(page)).toBe(1);
+    await store(page, (m) => m.undo());
+    await settled(page);
+    expect(await wheel(), 'one undo takes the mirror back').toEqual([{ part: 'mecanum-wheel', hand: 'left', flip: null }]);
+    await noErrorNotice(page);
+  });
+
   test('a V-belt pulley gets its mate through the wizard, by its diameter and the length of the belt', async ({ page }) => {
     await store(page, async (m) => {
       await m.addPart('pulleys');

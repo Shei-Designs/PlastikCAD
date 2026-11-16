@@ -64,7 +64,8 @@ function BooleanField({ def, value, disabled, onChange }: { def: BooleanParam; v
 }
 
 function Field({ def, params, disabled, onChange }: { def: ParamDef; params: Params; disabled?: boolean; onChange: (key: string, v: Params[string]) => void }) {
-  const value = params[def.key];
+  // A greyed-out control reads what stands in for it, where its part says what that is.
+  const value = disabled && def.visible && !def.visible(params) && def.shown ? def.shown(params) : params[def.key];
   switch (def.type) {
     case 'number':
       return <SliderField label={def.label} help={def.help} value={Number(value)} min={def.min} max={def.max} step={def.step} integer={def.integer} unit={def.unit} length={def.unit === 'mm'} disabled={disabled} onChange={(v) => onChange(def.key, v)} />;

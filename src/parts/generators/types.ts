@@ -12,6 +12,8 @@ interface BaseParam {
   help?: string;
   /** Hide the control when this returns false. */
   visible?: (p: Params) => boolean;
+  /** What the control reads while it is hidden, when that is not its own value: the figure another choice stands for. */
+  shown?: (p: Params) => ParamValue;
 }
 
 export interface NumberParam extends BaseParam {
@@ -71,6 +73,11 @@ export interface GeneratorDef {
   groups: ParamGroup[];
   /** Made to be cut out of another object (a screw hole): the part comes in as a hole. */
   cutter?: boolean;
+  /**
+   * For a part with a hand: the settings of the part that is this one's mirror image in its own Y. Mirroring
+   * such a part changes its settings, so that they go on saying which hand it is.
+   */
+  mirrored?: (p: Params) => Params;
   build(p: Params, q: Quality): BuildResult;
 }
 

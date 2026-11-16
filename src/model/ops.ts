@@ -20,6 +20,7 @@ import {
   tidyVec,
   unionBounds,
 } from './math';
+import { GENERATORS } from '../parts/generators';
 import { boxBounds } from './math';
 import type { Bounds, Mat } from './math';
 import type { GroupNode, PictureNode, Scene, SceneNode, ShapeKind, ShapeNode, Vec2, Vec3 } from './types';
@@ -142,8 +143,23 @@ export function mirrorNodes<T extends SceneNode>(nodes: T[], axis: 0 | 1 | 2, pi
     flip[axis] = !flip[axis];
     const pos: Vec3 = [...node.pos];
     pos[axis] = 2 * pivot[axis] - pos[axis];
-    return withFlip({ ...node, rot: eulerOf(r), pos }, flip);
+    return otherHand(withFlip({ ...node, rot: eulerOf(r), pos }, flip));
   });
+}
+
+/**
+ * A mirrored object with the parts in it that have a hand (a mecanum wheel) turned into their other hand: each
+ * takes the settings of its mirror image and a flip of its own Y, which together leave its shape as the mirror
+ * made it. Its settings then say which hand it is, however often it or a group round it was mirrored.
+ */
+function otherHand<T extends SceneNode>(node: T): T {
+  if (node.type === 'group') return { ...node, children: node.children.map(otherHand) };
+  if (node.type !== 'part') return node;
+  const mirrored = GENERATORS.find((g) => g.id === node.part)?.mirrored;
+  if (!mirrored) return node;
+  const flip: [boolean, boolean, boolean] = node.flip ? [...node.flip] : [false, false, false];
+  flip[1] = !flip[1];
+  return withFlip({ ...node, params: mirrored(node.params) }, flip);
 }
 
 /** Copies in a row, a grid or a stack: `count` places along X, Y and Z, the original's included. */
