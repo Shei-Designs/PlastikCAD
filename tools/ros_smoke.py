@@ -452,6 +452,9 @@ def check_ros_package(pkg_dir, env):
                 w, h = msg.get('width') or 0, msg.get('height') or 0
                 sensor_name = t['ros_topic_name'].split('/')[1]
                 detail = f', {w}x{h} {msg.get("encoding")}, frame {msg.get("frame")}'
+                # ROS reads a picture in the camera's optical frame (Z out along the line of sight), which the URDF has.
+                if msg.get('frame') != f'{sensor_name}_optical_frame':
+                    fail(name, f'{t["ros_topic_name"]} is stamped with {msg.get("frame")}, not {sensor_name}_optical_frame')
                 if not w or not h:
                     fail(name, f'{t["ros_topic_name"]} is an empty image')
                 elif msg.get('encoding') == '32FC1':
@@ -483,6 +486,8 @@ def check_ros_package(pkg_dir, env):
                     fail(name, f'{t["ros_topic_name"]} has {msg.get("bytes")} bytes of {msg.get("encoding")} for {w}x{h}')
             elif t['ros_type_name'] == 'sensor_msgs/msg/CameraInfo':
                 detail = f', {msg.get("width")}x{msg.get("height")} fx {msg.get("fx", 0):.1f} cx {msg.get("cx", 0):.1f}, frame {msg.get("frame")}'
+                if msg.get('frame') != f'{t["ros_topic_name"].split("/")[1]}_optical_frame':
+                    fail(name, f'{t["ros_topic_name"]} is stamped with {msg.get("frame")}, not the optical frame')
                 # The focal length follows from the field of view the design gave the camera.
                 hfov = camera_hfov(urdf, t['ros_topic_name'].split('/')[1])
                 if hfov and msg.get('width'):
@@ -493,6 +498,9 @@ def check_ros_package(pkg_dir, env):
                 detail = f', {msg.get("points")} points ({", ".join(msg.get("fields") or [])}), frame {msg.get("frame")}'
                 if msg.get('nearest') is not None:
                     detail += f', nearest {msg["nearest"]:.2f} m'
+                # Gazebo's points are in the sensor's own frame (X out along the line of sight), so that is the frame they keep.
+                if msg.get('frame') != f'{t["ros_topic_name"].split("/")[1]}_link':
+                    fail(name, f'{t["ros_topic_name"]} is stamped with {msg.get("frame")}, not the sensor\'s own frame')
                 # A lidar's cloud is empty when its scan has nothing in range, as in an empty world; a depth camera always sees the floor.
                 if not msg.get('points') and not t['ros_topic_name'].endswith('scan/points'):
                     fail(name, f'{t["ros_topic_name"]} carries no points')

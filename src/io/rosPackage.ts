@@ -230,12 +230,14 @@ export interface BridgeTopic {
   rosType: string;
   gzType: string;
   direction: 'GZ_TO_ROS' | 'ROS_TO_GZ' | 'BIDIRECTIONAL';
+  /** The frame the ROS messages are stamped with, where it is not the one Gazebo gives them. */
+  frame?: string;
 }
 
 /** The ros_gz_bridge configuration: which Gazebo topics become which ROS topics. */
 export function bridgeYaml(topics: BridgeTopic[]): string {
   return topics
-    .map((t) => `- ros_topic_name: ${t.ros}\n  gz_topic_name: ${t.gz}\n  ros_type_name: ${t.rosType}\n  gz_type_name: ${t.gzType}\n  direction: ${t.direction}\n`)
+    .map((t) => `- ros_topic_name: ${t.ros}\n  gz_topic_name: ${t.gz}\n  ros_type_name: ${t.rosType}\n  gz_type_name: ${t.gzType}\n  direction: ${t.direction}\n${t.frame ? `  frame_id: ${t.frame}\n` : ''}`)
     .join('');
 }
 
