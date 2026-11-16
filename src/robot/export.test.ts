@@ -688,7 +688,18 @@ describe('Isaac Sim stage', () => {
     expect(pkg.warnings).toEqual([]);
     expect(pkg.files.map((f) => f.name)).toEqual(['test_rover.usda', 'README.md']);
     const usda = text(pkg.files[0].bytes);
-    expect(usda).toContain('def Xform "Test_Rover" (\n        prepend apiSchemas = ["PhysicsArticulationRootAPI", "PhysxArticulationAPI"]');
+    // A driven robot's articulation begins at its footprint, a body on the floor under the base that a fixed joint
+    // holds to it: the transform tree hangs from it and the odometry is measured at it, as in the ROS package.
+    expect(usda).toContain('def Xform "base_footprint" (\n            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI", "PhysicsArticulationRootAPI", "PhysxArticulationAPI"]');
+    expect(usda.match(/PhysicsArticulationRootAPI/g)).toHaveLength(1);
+    expect(usda).toMatch(/def PhysicsFixedJoint "base_footprint_joint"\s*\{\s*rel physics:body0 = <\/World\/Test_Rover\/base_footprint>\s*rel physics:body1 = <\/World\/Test_Rover\/Body>/);
+    expect(usda).toContain('custom string inputs:chassisFrameId = "base_footprint"');
+    expect(usda).toContain('custom rel inputs:chassisPrim = </World/Test_Rover/base_footprint>');
+    // Every reading is stamped with a frame the transform tree has: the sensor's own, and a camera's optical one for its pictures.
+    expect(usda).toMatch(/def Xform "front_cam_link"\s*\{[\s\S]*?def Xform "front_cam_optical_frame"/);
+    expect(usda).toMatch(/def OmniGraphNode "front_cam_image"[\s\S]*?inputs:frameId = "front_cam_optical_frame"/);
+    expect(usda).toMatch(/def OmniGraphNode "top_lidar_scan"[\s\S]*?inputs:frameId = "top_lidar_link"/);
+    expect(usda).toMatch(/def OmniGraphNode "tf"[\s\S]*?inputs:targetPrims = \[<\/World\/Test_Rover\/base_footprint>, [^\]]*front_cam_link>, [^\]]*front_cam_link\/front_cam_optical_frame>/);
     expect(usda).not.toContain('root_joint');
     for (const link of ['Body', 'Left_wheel', 'Arm_upper']) expect(usda).toContain(`def Xform "${link}" (`);
     // The wheel joint sits where the design has it, in meters; the shoulder holds a position, the wheels run at a speed.
