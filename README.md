@@ -188,7 +188,7 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
 | Gears | Pulleys & sprockets | Screws & threads | Bearing seats | Rails & frames | Pipes & ducts | Dev boards | Fans | Panel cutouts | Motor mounts | Wheels |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Spur gear | GT2 timing pulley (2 / 3 / 5 mm) | Metric bolt / threaded rod (M3–M20) | Bearing seat: 623–626, 608, 688, 698, 6000–6002, 6200–6202, 6800–6802, LM6UU–LM12UU, or any size | Aluminum rail: 20, 30 and 40 mm series, V-slot or T-slot, one to four cells in one or two rows (2020, 2040, 4040, 3030, 3060, 6060, 4080...) | Straight pipe or duct | Raspberry Pi 5, 4, 3, Zero 2 W, Pico | Fan, 25–140 mm: the cutout (clear, or with a guard pattern of rings, slots, honeycomb or grid cut into the wall) | Panel connector: Neutrik D-series, IEC C14 / C13 / C8, D-sub 9 / 15 / 25, XT60, with their screw holes | Stepper: NEMA 8, 11, 14, 17, 23 and the 28BYJ-48 | Plain wheel: flat or rounded tread, solid or dished, with a hub and a bore |
-| Helical gear | HTD timing pulley (3M / 5M / 8M) | Metric nut |  | | Elbow (any angle and bend radius, legs either side) | Arduino Uno R3/R4, Mega 2560, Nano | Screw holes only, for an opening of your own | | Gearmotor: N20, TT, 25 mm (JGA25), 37 mm (JGB37) | Mecanum wheel, left or right: 48, 60, 80, 100, 152 and 203 mm, or any diameter, width and roller count |
+| Helical gear | HTD timing pulley (3M / 5M / 8M) | Metric nut |  | | Elbow (any angle and bend radius, legs either side) | Arduino Uno R3/R4, Mega 2560, Nano | Screw holes only, for an opening of your own | | Gearmotor: N20, TT, 25 mm (JGA25), 37 mm (JGB37) | Mecanum wheel, left or right (mirroring one makes the other): 48, 60, 80, 100, 152 and 203 mm, or any diameter, width and roller count |
 | Herringbone gear | T-series timing pulley (T2.5 / T5 / T10) | Trapezoidal lead screw (multi-start) |  | | Reducer (in line or eccentric) | ESP32-DevKitC V4, DevKit V1, NodeMCU-32S | Printed grill with the same patterns, to screw over the fan | | Servo: SG90, MG996R | |
 | Internal ring gear | MXL / XL timing pulley | Lead screw nut (flanged) |  | | Tee / wye (branch at any angle) | NVIDIA Jetson Nano, Orin Nano / Orin NX and Xavier NX developer kits | The fan itself: frame, hub and blades of a typical fan, to check clearance | | DC motor: 775, 130 | |
 | Gear rack (straight, helical, herringbone) | Chain sprocket (#25–#41, 05B–08B, bicycle) | Screw hole (M2–M20): clearance, threaded or for a heat-set insert, with a counterbore, countersink or nut trap |  | | | | | | | |
@@ -287,7 +287,11 @@ in the design file and synced with it.
   servos, Dynamixel and Feetech smart servos, N20 to 37 mm gearmotors, 28BYJ-48
   and NEMA steppers) and those figures come from its datasheet, or pick
   another joint there to take the effort, velocity and damping typed for it; and whether it
-  follows another joint (URDF `mimic`). A joint stays with its child: move the
+  follows another joint (URDF `mimic`). *Moved by* says whether a motor moves
+  the joint at all: one moved by *Nothing* is passive, a caster's swivel or a
+  bar of a linkage, and gets no actuator, servo or controller in any export
+  or in the test drive; a joint given a part in the drive has its motor
+  again. A joint stays with its child: move the
   child and the joint comes along.
 - **Copies.** Duplicate and Paste copy a link with its mass, collision and
   friction settings, its sensors, and the joint it hangs by: from the copy
@@ -318,7 +322,12 @@ in the design file and synced with it.
 - **Linkages.** Loops (a four-bar, a parallel gripper) are built as they
   are, with a joint closing each: a revolute or continuous one, which the
   app picks where it can and asks for where it cannot. The slider solves the loops, so the
-  linkage moves as the real one does, and says when it cannot close. *Set
+  linkage moves as the real one does, and says when it cannot close. A loop
+  whose joints all have a motor would be pulled apart by them, so before an
+  export or a test drive the app asks once which of its joints a motor
+  moves: click them on the plate or in the list, and the others become
+  passive, moved by the loop itself in MuJoCo, Gazebo and Isaac Sim; *No
+  motor* answers for a loop nothing drives, like a suspension. *Set
   the others to follow this joint* sweeps the driven joint over its range
   and writes each passive joint's motion as a URDF `mimic` line: exact for a
   parallelogram, a fit with a reported error for other four-bars. A URDF is
@@ -330,9 +339,13 @@ in the design file and synced with it.
   joint sliders. Gazebo is not told what the joints on the loop follow,
   since the loop moves them: the Gazebo model drops their mimic, and the
   ROS package's launch file spawns the robot without it while the URDF
-  keeps it. In the ROS package the joints on a loop begin as designed and
-  not at their starts, which the export says: a start is set as the robot
-  loads, before the weld, and the loop would be held out of shape.
+  keeps it. In the ROS package the joints on a loop begin as designed, since
+  a start set as the robot loads comes before the weld and would hold the
+  loop out of shape; the launch file sends `arm_controller` to the starts
+  once it runs. The worlds of a robot with a loop ask Gazebo's physics for
+  its iterative solver (`<dart><solver><solver_type>pgs`): with the default
+  one a welded loop that also touches the floor is thrown apart, so a world
+  of your own needs the same line.
 - **Mass.** Each link is weighed from its shape and material: pick a material
   (filaments, resin, metals, acrylic, wood, foam...) and, for a printed part,
   the infill and the shell thickness, or type the mass you weighed. The

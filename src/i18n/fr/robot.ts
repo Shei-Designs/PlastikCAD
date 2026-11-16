@@ -481,6 +481,20 @@ export const robot: Catalog = {
   'Zip archive': 'Archive zip',
   'your downloads': 'vos téléchargements',
 
+  // The motors of a loop (ui/LoopMotorsPanel.tsx, ui/RobotInspector.tsx)
+  'Which joint has the motor?': 'Quelle articulation a le moteur\u00a0?',
+  'Click each joint a motor moves, here or on the plate. The linkage moves the others.': 'Cliquez sur chaque articulation entraînée par un moteur, ici ou sur le plateau. Le mécanisme entraîne les autres.',
+  Passive: 'Passive',
+  'Leave a joint of each loop without a motor.': 'Laissez une articulation de chaque boucle sans moteur.',
+  '{name}: the loop has to close here, so it cannot have the motor. Pick another joint.': '{name}\u00a0: la boucle doit se fermer ici, elle ne peut donc pas avoir le moteur. Choisissez une autre articulation.',
+  'No motor': 'Aucun moteur',
+  'No motor moves these joints: they swing free': 'Aucun moteur n’entraîne ces articulations\u00a0: elles tournent librement',
+  'Moved by': 'Entraînée par',
+  'The loop has to close here, so it cannot have a motor': 'La boucle doit se fermer ici, elle ne peut donc pas avoir de moteur',
+  'A motor moves the joint': 'Un moteur entraîne l’articulation',
+  'No motor: the joint swings free, or goes where its linkage takes it': 'Sans moteur\u00a0: l’articulation tourne librement, ou suit son mécanisme',
+  'Sets whether a motor moves the joint.': 'Définit si un moteur entraîne l’articulation.',
+
   // The test drive (state/sim.ts)
   'The simulation worker crashed': 'Le processus de simulation s’est arrêté de façon inattendue',
 };

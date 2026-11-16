@@ -12,7 +12,7 @@ Gazebo converts the URDF (gz sdf -p)
 and checks the world, then gazebo.launch.py runs headless; the robot must
 publish its joints, every bridged sensor must publish, a drive must move the
 robot in Gazebo when told to on /cmd_vel, and ros2_control's controllers must
-come up and track a trajectory. Every SDF package is checked and its world
+come up and track a trajectory, a loop taking its passive joints along. Every SDF package is checked and its world
 run, the model must appear and a drive must move it. Exits non-zero on any
 failure, and reports the [Err] lines Gazebo printed on the way.
 """
@@ -635,6 +635,23 @@ def check_ros_package(pkg_dir, env):
                     fail(name, f'{cjoints[0]} reached {last} rad of 0.3 asked through /{ctrl}')
                 else:
                     ok(f'/{ctrl} moved {cjoints[0]} to {got:.3f} rad of 0.3')
+                    # A loop, which Gazebo closes by a weld, takes its passive joints along: with the controlled
+                    # joint moved, the joints no controller has are no longer where they began.
+                    with open(urdf) as f:
+                        looped = 'gz::sim::systems::DetachableJoint' in f.read()
+                    free = [j for j in joints if j not in cjoints]
+                    if looped and free:
+                        def carried():
+                            js = topic_once('/joint_states', 10) or {}
+                            at = dict(zip(js.get('name', []), js.get('position', [])))
+                            moved = {j: at[j] for j in free if j in at and abs(at[j]) > 0.1}
+                            return moved or None
+
+                        moved = wait_for(carried, 20)
+                        if not moved:
+                            fail(name, f'the loop did not carry its passive joints {free} when {cjoints[0]} moved')
+                        else:
+                            ok('the loop carried ' + ', '.join(f'{j} to {v:.3f} rad' for j, v in sorted(moved.items())))
     finally:
         errs = launched.errors()
         launched.stop()

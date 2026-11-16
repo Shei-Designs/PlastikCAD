@@ -1,4 +1,4 @@
-// The reference robots: a rover, a car, an arm and a quadruped built from
+// The reference robots: a rover, a car, an arm, a quadruped and a linkage built from
 // shapes, and a rover on mecanum wheels from the Wheels parts, which the
 // tests export and simulate and which fixtures/robots holds for opening in
 // the app. Each is as large as the motors in the
@@ -163,10 +163,32 @@ function car(): Doc {
   });
 }
 
+/**
+ * A four-bar linkage on a plate bolted down: a crank and a rocker carry a coupler, which stays level as they swing.
+ * The crank has the motor; the other three joints are passive, and the one from the rocker to the coupler closes the loop.
+ */
+function linkage(): Doc {
+  const plate = shape('box', 'Plate', [0, 0, 7.5], [60, 200, 15]);
+  const crank = shape('box', 'Crank', [0, -50, 65], [10, 10, 100], [0, 0, 0], '#e8853a');
+  const rocker = shape('box', 'Rocker', [0, 50, 65], [10, 10, 100]);
+  // Beside the two bars, as a bar pinned to them is, so that it touches neither.
+  const coupler = shape('box', 'Coupler', [14, 0, 115], [10, 110, 10]);
+  const hinge = (name: string, parent: SceneNode, child: SceneNode, origin: Vec3, over: Partial<RobotJoint> = {}) => joint(name, parent, child, origin, { axis: [1, 0, 0], lower: -60, upper: 60, ...over });
+  const joints = [
+    hinge('Crank joint', plate, crank, [0, 0, -50], { motor: 'sts3215' }),
+    hinge('Rocker joint', plate, rocker, [0, 0, -50], { passive: true }),
+    hinge('Coupler joint', crank, coupler, [-14, -50, 0], { lower: -120, upper: 120, passive: true }),
+    hinge('Closing joint', rocker, coupler, [-14, 50, 0], { lower: -120, upper: 120, passive: true }),
+  ];
+  const scene = [plate, crank, rocker, coupler];
+  return design('Reference linkage', scene, { root: plate.id, base: 'fixed', links: scene.map((n) => ({ ...defaultLink(n.id), collision: 'box' as CollisionKind })), joints, sensors: [], control: true });
+}
+
 export const ROBOTS: { file: string; make: () => Doc }[] = [
   { file: 'rover', make: rover },
   { file: 'car', make: car },
   { file: 'arm', make: arm },
   { file: 'quadruped', make: quadruped },
+  { file: 'linkage', make: linkage },
   { file: 'mecanum', make: () => mecanumRover() },
 ];

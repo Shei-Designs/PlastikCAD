@@ -213,14 +213,16 @@ export function surfaceXml(friction: number): string {
 
 /**
  * The system plugins an empty world needs for sensors and physics, with the robot's model included when `include` is given.
- * `robot` is the name the robot goes by in the world; the light and the floor keep clear of it.
+ * `robot` is the name the robot goes by in the world; the light and the floor keep clear of it. `welded` is for a robot
+ * with a loop, which a weld holds shut: the physics' default solver (Dantzig) throws such a robot apart as soon as it
+ * also stands on the floor, and the iterative one (PGS) does not.
  */
-export function worldXml(name: string, include?: string, robot = name): string {
+export function worldXml(name: string, include?: string, robot = name, welded = false): string {
   const own = (n: string): string => (n === robot ? `${n}_2` : n);
   return `<?xml version="1.0"?>
 <sdf version="1.9">
   <world name="${escapeXml(name)}">
-    <physics name="default" type="ode"><max_step_size>0.001</max_step_size><real_time_factor>1</real_time_factor></physics>
+    <physics name="default" type="ode"><max_step_size>0.001</max_step_size><real_time_factor>1</real_time_factor>${welded ? '<dart><solver><solver_type>pgs</solver_type></solver></dart>' : ''}</physics>
     <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
     <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
     <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>

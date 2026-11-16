@@ -108,6 +108,43 @@ describe('mirroring', () => {
   });
 });
 
+describe('mirroring a part with a hand', () => {
+  const def = GENERATORS.find((g) => g.id === 'mecanum-wheel')!;
+  const wheel = (patch: Partial<SceneNode> = {}): SceneNode => ({ id: 'w', name: 'Wheel', type: 'part', part: def.id, params: defaultParams(def), natural: [100, 100, 50], size: [100, 100, 50], pos: [30, 40, 25], rot: [0, 0, 0], hole: false, color: '#888888', ...patch }) as SceneNode;
+  const hand = (n: SceneNode) => (n.type === 'part' ? n.params.hand : undefined);
+
+  it('makes it the other hand, in the mirrored place, and still a part', () => {
+    for (const axis of [0, 1, 2] as const) {
+      const node = wheel({ rot: [20, 30, 40] });
+      const [mirrored] = mirrorNodes([node], axis, [0, 0, 0]);
+      expect(mirrored.type).toBe('part');
+      expect(hand(mirrored)).toBe('right');
+      // Where the plain mirror puts it, with its own Y flipped besides: the two flips are a turn, not a mirror image.
+      const plain = [0, 1, 2].map((k) => k === axis);
+      plain[1] = !plain[1];
+      expect(mirrored.flip ?? [false, false, false]).toEqual(plain);
+      expect(determinant(nodeMatrix(mirrored))).toBeGreaterThan(0);
+      expect(mirrored.pos[axis]).toBeCloseTo(-node.pos[axis], 9);
+      const [back] = mirrorNodes([mirrored], axis, [0, 0, 0]);
+      expect(hand(back)).toBe('left');
+      expect(back.flip).toBeUndefined();
+      close(nodeMatrix(back), nodeMatrix(node));
+    }
+  });
+
+  it('reaches a wheel inside a mirrored group, and leaves other parts alone', () => {
+    const gear = GENERATORS.find((g) => g.id !== def.id && !g.mirrored)!;
+    const other = { ...wheel({ id: 'g' }), part: gear.id, params: defaultParams(gear) } as SceneNode;
+    const group: SceneNode = makeGroup([wheel(), other], { min: [-20, -10, 0], max: [80, 90, 50] }, 'Pair');
+    const [mirrored] = mirrorNodes([group], 0, [0, 0, 0]) as GroupNode[];
+    expect(mirrored.flip).toEqual([true, false, false]);
+    const [inside, kept] = mirrored.children;
+    expect(hand(inside)).toBe('right');
+    expect(inside.flip).toEqual([false, true, false]);
+    expect(kept).toEqual((group as GroupNode).children[1]);
+  });
+});
+
 describe("an imported object's own origin", () => {
   const imported = (over: Partial<SceneNode> = {}): SceneNode => {
     const node = { ...shape('box'), type: 'import', asset: 'mesh-1', natural: [10, 20, 4], size: [10, 20, 4], pos: [0, 0, 0], rot: [0, 0, 0], origin: [-5, -10, -2], ...over } as unknown as SceneNode;
@@ -723,6 +760,7 @@ describe('design files', () => {
       joints: [
         { id: 'j1', name: 'j', type: 'revolute', parent: 'a', child: 'b', origin: [0, 0, 0], axis: [0, 0, 1], lower: -90, upper: 90, effort: 1, velocity: 1, damping: 0, friction: 0, start: 30, command: 'torque', motor: 'sg90' },
         { id: 'j2', name: 'k', type: 'revolute', parent: 'a', child: 'b', origin: [0, 0, 0], axis: [0, 0, 1], lower: -90, upper: 90, effort: 1, velocity: 1, damping: 0, friction: 0, mimic: { joint: 'j1', multiplier: 1, offset: 0 } },
+        { id: 'j3', name: 'p', type: 'revolute', parent: 'a', child: 'b', origin: [0, 0, 0], axis: [0, 0, 1], lower: -90, upper: 90, effort: 1, velocity: 1, damping: 0, friction: 0, passive: true },
       ],
       sensors: [defaultSensor('s1', 'cam', 'camera', 'a', [0, 0, 0]), defaultSensor('s2', 'scan', 'lidar', 'a', [0, 0, 0])],
       drive: { kind: 'differential', roles: { j1: 'left' } },
@@ -752,13 +790,15 @@ describe('design files', () => {
     check([written.drive], ROBOT_FIELDS.drive, 'drive');
     // And the design with it is read back as this build's own.
     const doc = parseDoc(serializeDoc({ ...sample(), scene: [{ ...shape('box'), id: 'a' }, { ...shape('box'), id: 'b' }], assets: {}, robot }));
-    expect(doc.robot?.joints.length).toBe(2);
+    expect(doc.robot?.joints.length).toBe(3);
+    // A joint without a motor is read back as one; the others have theirs.
+    expect(doc.robot?.joints.map((j) => j.passive)).toEqual([undefined, undefined, true]);
     expect(doc.robot?.sensors.length).toBe(2);
     expect(doc.robot?.faces).toEqual([-1, 0, 0]);
     // A facing that is no way a robot can face is not one.
     expect(parseDoc(serializeDoc({ ...sample(), scene: [{ ...shape('box'), id: 'a' }], assets: {}, robot: { ...emptyRobot(), root: 'a', faces: [0, 0, 1] } })).robot?.faces).toBeUndefined();
-    expect(doc.robot?.joints.map((j) => j.start)).toEqual([30, undefined]);
-    expect(doc.robot?.joints.map((j) => j.command)).toEqual(['torque', undefined]);
+    expect(doc.robot?.joints.map((j) => j.start)).toEqual([30, undefined, undefined]);
+    expect(doc.robot?.joints.map((j) => j.command)).toEqual(['torque', undefined, undefined]);
     expect(doc.robot?.links.map((l) => l.shape)).toEqual([{ size: [40, 40, 40], center: [0, 0, -10], rot: [0, 0, 90] }, undefined]);
     expect(doc.robot?.links.map((l) => l.pieces)).toEqual([undefined, 6]);
     expect(doc.robot?.links.find((l) => l.node === 'b')?.mass).toEqual({ kind: 'measured', grams: 12, center: [1, 2, 3], inertia: [500, 300, 200, 40, -30, 20] });

@@ -116,6 +116,21 @@ for xml in xmls:
         swung = max(abs(float(d.qpos[i] - q0[i])) for i in adr)
         notes.append(f"servos swung up to {np.degrees(swung):.1f} deg of {np.degrees(asked):.1f} asked")
         ok &= swung >= asked / 3
+        # A loop is pinned shut by a connect constraint, and takes its passive joints along: the pin must hold, and
+        # the hinges with no actuator must have moved with the servos.
+        pins = [e for e in range(m.neq) if m.eq_type[e] == mujoco.mjtEq.mjEQ_CONNECT]
+        if pins:
+            gap = 0.0
+            for e in pins:
+                b1, b2 = m.eq_obj1id[e], m.eq_obj2id[e]
+                a1 = d.xpos[b1] + d.xmat[b1].reshape(3, 3) @ m.eq_data[e, 0:3]
+                a2 = d.xpos[b2] + d.xmat[b2].reshape(3, 3) @ m.eq_data[e, 3:6]
+                gap = max(gap, float(np.linalg.norm(a1 - a2)))
+            actuated = {m.actuator_trnid[a, 0] for a in range(m.nu)}
+            passive = [j for j in range(m.njnt) if m.jnt_type[j] == mujoco.mjtJoint.mjJNT_HINGE and j not in actuated]
+            carried = max((abs(float(d.qpos[m.jnt_qposadr[j]] - q0[m.jnt_qposadr[j]])) for j in passive), default=0.0)
+            notes.append(f"{len(pins)} loop(s) shut within {gap * 1000:.2f} mm, passive joints carried up to {np.degrees(carried):.1f} deg")
+            ok &= gap < 0.002 and (not passive or carried >= asked / 3)
     if free:
         now = height()
         notes.append(f"base at {now * 1000:.1f} mm, was {start_height * 1000:.1f}")

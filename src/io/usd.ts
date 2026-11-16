@@ -52,6 +52,8 @@ export interface UsdJoint {
   armature?: number;
   /** Closes a loop: kept out of the articulation tree, as a plain joint between two of its bodies. */
   loop: boolean;
+  /** Where the joint is in its child's frame (m), for a joint that closes a loop: any other is at its child's origin. */
+  inChild?: Vec3;
   /** What the joint's drive is told: a speed (a wheel), a position (a servo), an effort (a joint commanded by torque, which the drive does not hold), or nothing. */
   drive: 'velocity' | 'position' | 'effort' | null;
   /** Where the joint stands when the simulation begins, radians or meters: the links are written posed so, and a servo holds it. */
@@ -547,7 +549,7 @@ function jointPrim(j: UsdJoint, robot: string, leader?: UsdJoint): string[] {
   const drive = j.type === 'prismatic' ? 'linear' : 'angular';
   const mimicApi = j.mimic ? [`"PhysxMimicJointAPI:${j.type === 'prismatic' ? 'transX' : 'rotX'}"`] : [];
   const apis = ['"PhysxJointAPI"', ...(moving ? [`"PhysicsDriveAPI:${drive}"`, `"PhysicsJointStateAPI:${drive}"`] : []), ...mimicApi];
-  const body: string[] = [`rel physics:body0 = </World/${robot}/${j.parent}>`, `rel physics:body1 = </World/${robot}/${j.child}>`, `point3f physics:localPos0 = ${v3(j.origin)}`, 'point3f physics:localPos1 = (0, 0, 0)'];
+  const body: string[] = [`rel physics:body0 = </World/${robot}/${j.parent}>`, `rel physics:body1 = </World/${robot}/${j.child}>`, `point3f physics:localPos0 = ${v3(j.origin)}`, `point3f physics:localPos1 = ${v3(j.inChild ?? [0, 0, 0])}`];
   if (moving) {
     const q = quatToAxis(j.axis);
     body.push(`quatf physics:localRot0 = ${q4(q)}`, `quatf physics:localRot1 = ${q4(q)}`, 'uniform token physics:axis = "X"');

@@ -53,6 +53,8 @@ def read_stage(path):
         lidars[m.group(1)] = int(rays.group(1)) // max(int(rate.group(1)), 1) if rays and rate else None
     # Where each joint begins, radians or meters, for those the stage gives a start.
     starts = {}
+    # The joints a drive holds at a position, and those that close a loop from outside the articulation.
+    held, loops = [], []
     # The joints commanded by torque, with the most each can push: nothing holds them until efforts arrive.
     torques = {}
     for m in re.finditer(r'def Physics(Revolute|Prismatic)Joint "([^"]+)"', text):
@@ -66,9 +68,16 @@ def read_stage(path):
         top = re.search(r'float drive:(?:angular|linear):physics:maxForce = ([-0-9.e]+)', block)
         if 'custom token robot:command = "effort"' in block and top:
             torques[m.group(2)] = float(top.group(1))
+        gain = re.search(r'float drive:(?:angular|linear):physics:stiffness = ([-0-9.e]+)', block)
+        if gain and float(gain.group(1)) > 0:
+            held.append(m.group(2))
+        if 'bool physics:excludeFromArticulation = 1' in block:
+            loops.append(m.group(2))
     return {
         'starts': starts,
         'torques': torques,
+        'held': held,
+        'loops': loops,
         'topics': topics,
         'cameras': re.findall(r'def Camera "([^"]+)"', text),
         'base_frame': (re.search(r'inputs:chassisFrameId = "([^"]+)"', text) or [None, None])[1],
@@ -212,7 +221,8 @@ def one(path, pictures):
         servo = None
         if drive_kind == 'joints' and names:
             # Ask the first joint for a quarter turn (or a centimeter) and see it get there.
-            servo = next((n for n in names if n not in info['torques']), None)
+            # A passive joint has no drive to tell: the first joint a drive holds, when the stage has one.
+            servo = next((n for n in names if n in info['held']), None) or next((n for n in names if n not in info['torques']), None)
         dt = world.get_physics_dt()
 
         def run(seconds, command):
@@ -279,6 +289,12 @@ def one(path, pictures):
             result['servo_deg'] = round(float(math.degrees(q[i] - q0[i])), 1)
             if abs(q[i] - q0[i] - 0.5) > 0.1:
                 result['problems'].append(f'{servo} told to go 0.5 rad on from where it began went {q[i] - q0[i]:.2f}')
+            # A loop takes its passive joints along: with the servo moved, those no drive holds are no longer where they began.
+            if info['loops']:
+                carried = {n: round(float(q[k] - q0[k]), 3) for k, n in enumerate(names) if n not in info['held'] and n not in info['torques']}
+                result['loop_carried'] = carried
+                if carried and max(abs(v) for v in carried.values()) < 0.1:
+                    result['problems'].append(f'the loop did not carry its passive joints when {servo} moved: {carried}')
         # Every joint with a start began there, and those not told to move are still there.
         if info['starts']:
             began = {j: float(q0[names.index(j)]) for j in info['starts'] if j in names}

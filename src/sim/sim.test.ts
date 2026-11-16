@@ -550,3 +550,22 @@ describe('the quadruped', () => {
     sim.dispose();
   });
 });
+
+describe('the linkage', () => {
+  it('swings on its crank alone: the passive joints go where the loop takes them, and the coupler stays level', () => {
+    const { sim } = simulate(make('linkage'));
+    // One servo, on the crank: a passive joint has none.
+    expect(sim.actuators.map((a) => a.joint)).toEqual(['Crank_joint']);
+    sim.setTarget(sim.actuators[0].name, 0.5);
+    sim.step(2);
+    expect(sim.jointValue('Crank_joint')).toBeCloseTo(0.5, 2);
+    expect(sim.jointValue('Rocker_joint')).toBeCloseTo(0.5, 2);
+    expect(sim.jointValue('Coupler_joint')).toBeCloseTo(-0.5, 2);
+    // The loop is shut: the coupler has not turned, and sits where the crank's end carries it.
+    const i = sim.bodies.indexOf('Coupler');
+    const p = sim.poses();
+    expect(Math.abs(p[7 * i + 3])).toBeCloseTo(1, 3);
+    expect(p[7 * i + 2]).toBeCloseTo(0.015 + 0.1 * Math.cos(0.5), 3);
+    sim.dispose();
+  });
+});

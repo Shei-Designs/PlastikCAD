@@ -280,6 +280,23 @@ describe('a joint\'s motor', () => {
   });
 });
 
+describe('a joint in the drive', () => {
+  it('has its motor: the part takes "moved by nothing" away, and losing the part does not bring it back', () => {
+    const { a, b } = twoBoxes();
+    store.setRobotRoot(a);
+    const id = store.addJoint(a, b)!;
+    const jointOf = () => store.getState().doc.robot!.joints[0];
+    store.updateJoint(id, { type: 'continuous', passive: true });
+    store.setDriveKind('differential');
+    expect(jointOf().passive).toBe(true);
+    store.setDriveRole(id, 'left');
+    expect(jointOf().passive).toBeUndefined();
+    expect('passive' in jointOf()).toBe(false);
+    store.setDriveRole(id, null);
+    expect(jointOf().passive).toBeUndefined();
+  });
+});
+
 describe('lining up a joint', () => {
   /** The picked joint's place in the design. */
   const jointAt = (): number[] => {

@@ -64,6 +64,11 @@ export interface EditorState {
   /** The picked joint moved to try the robot: its value, and where every link goes for it (loops solved). */
   pose: { joint: string; value: number; solved: Solved } | null;
   /**
+   * The question of which joints of a loop have a motor is open: the moving joints round the loops that have no
+   * answer yet, and those of them picked as motors so far. The plate shows these joints alone, to click on.
+   */
+  loopMotors: { joints: string[]; motors: string[] } | null;
+  /**
    * The gear a mate is being made for while the wizard is open; the previewed mate carries
    * `id`. `building` while the preview the panel asks for is not in the scene yet.
    */
@@ -131,6 +136,7 @@ let state: EditorState = {
   sensor: null,
   jointPick: null,
   pose: null,
+  loopMotors: null,
   mating: null,
   aligning: null,
   arraying: false,

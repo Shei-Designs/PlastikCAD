@@ -15,7 +15,7 @@ import type { Marker } from './types';
  * IMU as a box on a larger triad. Drawn as tubes and cones rather than lines,
  * which WebGL keeps one pixel wide.
  */
-export function markerObject(mk: Marker, accent: number, dim = false): Group {
+export function markerObject(mk: Marker, accent: number, dim = false, faint = dim): Group {
   const group = new Group();
   group.matrixAutoUpdate = false;
   const materials = new Map<string, MeshBasicMaterial>();
@@ -23,7 +23,7 @@ export function markerObject(mk: Marker, accent: number, dim = false): Group {
     const key = String(color);
     let m = materials.get(key);
     if (!m) {
-      m = new MeshBasicMaterial({ color, transparent: true, opacity: dim ? 0.5 : 0.95, depthTest: false });
+      m = new MeshBasicMaterial({ color, transparent: true, opacity: faint ? 0.5 : 0.95, depthTest: false });
       materials.set(key, m);
     }
     return m;
@@ -130,7 +130,7 @@ export function markerObject(mk: Marker, accent: number, dim = false): Group {
       break;
     case 'touch': {
       // A pad where the link meets things: a flat disc with a short stem. The disc lights up (full strength, its own material) while the pad is pressed.
-      const pad = new Mesh(new CylinderGeometry(0.4, 0.4, 0.08, 24), new MeshBasicMaterial({ color: accent, transparent: true, opacity: dim ? 0.5 : 0.95, depthTest: false }));
+      const pad = new Mesh(new CylinderGeometry(0.4, 0.4, 0.08, 24), new MeshBasicMaterial({ color: accent, transparent: true, opacity: faint ? 0.5 : 0.95, depthTest: false }));
       pad.position.set(0, 0, 0.04);
       pad.quaternion.setFromUnitVectors(UP, new Vector3(0, 0, 1));
       pad.userData.pad = true;

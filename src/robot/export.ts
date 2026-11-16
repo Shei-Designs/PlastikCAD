@@ -27,7 +27,7 @@ import type { LinkGeometry } from '../worker/protocol';
 import { inertialOf, toSI } from './inertia';
 import { startPose } from './kinematics';
 import type { Tensor } from './inertia';
-import { followFault, jointInDesign, linkNodes, linkOf, robotForward, robotOf, sensorInDesign, spanningTree } from './model';
+import { followFault, hasMotor, jointInDesign, linkNodes, linkOf, robotForward, robotOf, sensorInDesign, spanningTree } from './model';
 import { motorOf } from './motors';
 import { drivePy, envPy, trainPy } from '../io/scripts';
 import { collisionPrimitive } from './collision';
@@ -150,6 +150,8 @@ interface Prepared {
   controlled: string[];
   /** Those of them a controller sends a torque, not a position. */
   torque: string[];
+  /** Joints no motor moves: a loop takes them where they begin, and nothing has to hold them there. */
+  passive: string[];
 }
 
 /**
@@ -412,11 +414,12 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
     }
   }
   const driven = new Set(driveJoints(robot.drive));
-  const controlled = robot.control ? tree.order.slice(1).map((id) => tree.parentJoint.get(id)!).filter((j) => j.type !== 'fixed' && !j.mimic && !driven.has(j.id)).map((j) => jointNames.get(j)!) : [];
+  const controlled = robot.control ? tree.order.slice(1).map((id) => tree.parentJoint.get(id)!).filter((j) => hasMotor(j) && !driven.has(j.id)).map((j) => jointNames.get(j)!) : [];
 
   const torque = controlled.filter((name) => allJoints.find((j) => jointNames.get(j) === name)?.command === 'torque');
+  const passive = allJoints.filter((j) => j.passive).map((j) => jointNames.get(j)!);
 
-  return { pkg, robotName: urdfName(doc.name, 'robot'), files, warnings, leftOut, order: tree.order, names, naming, linkNames, jointNames, frames, links, lift, posed: begun?.frames ?? null, treeJoints, loopJoints, sensors, drive, rollers, controlled, torque };
+  return { pkg, robotName: urdfName(doc.name, 'robot'), files, warnings, leftOut, order: tree.order, names, naming, linkNames, jointNames, frames, links, lift, posed: begun?.frames ?? null, treeJoints, loopJoints, sensors, drive, rollers, controlled, torque, passive };
 }
 
 /**
@@ -564,12 +567,14 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
   const own = p.rollers.length ? joints.filter((j) => j.type !== 'fixed').map((j) => j.name) : undefined;
   const plugins = [jointStateXml('joint_states', own), ...p.rollers.map(rollerXml), ...welds, ...(p.drive ? [driveXml(gazeboDrive(p.drive, footprint?.name ?? base))] : [])];
   // A start is a place the joint is put in as Gazebo loads the robot, before the weld that closes a loop is made:
-  // the weld would hold the loop as it then stood, pulled out of shape. So the joints on a loop begin as designed.
+  // the weld would hold the loop as it then stood, pulled out of shape. So the joints on a loop begin as designed,
+  // and the launch sends the controller to every start once it runs, no faster than the slowest of them can go.
   const starts = Object.fromEntries(p.treeJoints.filter((j) => j.start && p.controlled.includes(j.name) && !onLoop.has(j.name)).map((j) => [j.name, j.start!]));
-  const looped = p.treeJoints.filter((j) => j.start && p.controlled.includes(j.name) && onLoop.has(j.name)).map((j) => j.name);
-  if (looped.length) warnings.push(`${looped.map((n) => `"${n}"`).join(', ')} ${looped.length > 1 ? 'are' : 'is'} on a loop, which Gazebo closes as the robot is designed, so ${looped.length > 1 ? 'they begin' : 'it begins'} as designed, not at ${looped.length > 1 ? 'their starts' : 'its start'}.`);
+  const looped = p.treeJoints.filter((j) => j.start && p.controlled.includes(j.name) && onLoop.has(j.name));
+  const startOf = new Map(p.treeJoints.map((j) => [j.name, j.start ?? 0]));
+  const goTo = looped.length ? { joints: p.controlled, positions: p.controlled.map((name) => startOf.get(name) ?? 0), seconds: Math.max(1, ...looped.map((j) => Math.abs(j.start!) / (j.limit?.velocity || 1))) } : undefined;
   // Only a controller can hold a joint at its start in Gazebo.
-  const loose = p.treeJoints.filter((j) => j.start && !p.controlled.includes(j.name) && !j.mimic).map((j) => j.name);
+  const loose = p.treeJoints.filter((j) => j.start && !p.controlled.includes(j.name) && !j.mimic && !p.passive.includes(j.name)).map((j) => j.name);
   if (loose.length) warnings.push(`No controller holds ${loose.map((n) => `"${n}"`).join(', ')}, so ${loose.length > 1 ? 'they begin' : 'it begins'} as designed, not at ${loose.length > 1 ? 'their starts' : 'its start'}.`);
   const control = p.controlled.length ? { joints: p.controlled, controllersYaml: `${SHARE_PLACEHOLDER}/config/controllers.yaml`, starts, torque: p.torque } : undefined;
   const controllers = control ? ['joint_state_broadcaster', 'arm_controller'] : [];
@@ -580,9 +585,9 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
     { name: `urdf/${pkg}.urdf`, bytes: encodeText(writeUrdf(p.robotName, links, joints, { plugins, control, fixedToWorld, footprint })) },
     { name: `urdf/${pkg}.urdf.xacro`, bytes: encodeText(writeUrdf(p.robotName, links, joints, { plugins, control, fixedToWorld, footprint, xacro: { package: pkg } })) },
     { name: 'launch/display.launch.py', bytes: encodeText(displayLaunch(pkg)) },
-    { name: 'launch/gazebo.launch.py', bytes: encodeText(gazeboLaunch(pkg, { controllers, height: footprint || fixedToWorld ? 0 : baseAt[2] + lift, unfollowed })) },
+    { name: 'launch/gazebo.launch.py', bytes: encodeText(gazeboLaunch(pkg, { controllers, height: footprint || fixedToWorld ? 0 : baseAt[2] + (goTo ? Math.max(lift, 0) : lift), unfollowed, goTo })) },
     { name: 'rviz/display.rviz', bytes: encodeText(rvizConfig(base, boundsCenter(extent).map((x, i) => x * M - baseAt[i]) as Vec3, Math.max(...boundsSize(extent)) * M)) },
-    { name: `worlds/${pkg}.sdf`, bytes: encodeText(worldXml(pkg)) },
+    { name: `worlds/${pkg}.sdf`, bytes: encodeText(worldXml(pkg, undefined, pkg, p.loopJoints.length > 0)) },
     { name: 'config/bridge.yaml', bytes: encodeText(bridgeYaml(bridgeTopics(p, opticalFrames))) },
     ...(control ? [{ name: 'config/controllers.yaml', bytes: encodeText(controllersYaml(p.controlled, p.torque.length > 0)) }] : []),
   );
@@ -606,7 +611,7 @@ export function buildSdfModel(doc: Doc, geometry: Map<string, LinkGeometry>, rob
   }
   // Gazebo's own controller holds each joint a ROS controller would, at its start; one commanded by torque is left to whatever sends the torque.
   const held = p.treeJoints.filter((j) => p.controlled.includes(j.name) && !p.torque.includes(j.name));
-  const loose = p.treeJoints.filter((j) => j.start && !held.includes(j) && !j.mimic).map((j) => j.name);
+  const loose = p.treeJoints.filter((j) => j.start && !held.includes(j) && !j.mimic && !p.passive.includes(j.name)).map((j) => j.name);
   if (loose.length) warnings.push(`No controller holds ${loose.map((n) => `"${n}"`).join(', ')}, so ${loose.length > 1 ? 'they begin' : 'it begins'} as designed, not at ${loose.length > 1 ? 'their starts' : 'its start'}.`);
   const links: SdfLink[] = p.links.map(({ frame, node: _n, ...l }) => ({ ...l, pose: frame.map((x) => x * M) as Vec3, sensors: sensorsByLink.get(l.name) }));
   // Loops close for real here, so a joint on a loop does not also follow another.
@@ -636,7 +641,7 @@ export function buildSdfModel(doc: Doc, geometry: Map<string, LinkGeometry>, rob
   files.unshift(
     { name: 'model.config', bytes: encodeText(modelConfig(pkg, `${doc.name}, made with PlastikCAD`)) },
     { name: 'model.sdf', bytes: encodeText(writeSdf(p.robotName, links, joints, plugins, robot.base === 'fixed' ? p.linkNames.get(robot.root!) : undefined, footprint)) },
-    { name: `worlds/${pkg}.sdf`, bytes: encodeText(worldXml(pkg, pkg, p.robotName)) },
+    { name: `worlds/${pkg}.sdf`, bytes: encodeText(worldXml(pkg, pkg, p.robotName, p.loopJoints.length > 0)) },
     { name: 'README.md', bytes: encodeText(sdfReadme(pkg, doc.name, footprint, held.length ? { model: p.robotName, joint: held[0].name } : undefined)) },
   );
   return { name: pkg, files, warnings, leftOut: p.leftOut };
@@ -719,6 +724,7 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
     for (const n of ackermannWheels) velocity.add(n);
     if (ackermannWheels.length !== 4) warnings.push('Isaac Sim steers a car by four wheels, two on the knuckles and two behind; this one has another layout, so cmd_vel will not drive it there.');
   }
+  const frameOf = (link: string): Vec3 => p.frames.get([...p.linkNames].find(([, n]) => n === link)![0])!;
   const jointOf = (j: UrdfJoint, loop: boolean): UsdJoint => ({
     name: j.name,
     type: j.type,
@@ -732,6 +738,8 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
     mimic: loop ? undefined : j.mimic,
     armature: j.armature,
     loop,
+    // A loop joint's child hangs from another joint, and has its frame there: the joint is where its parent has it, as the child's frame sees that.
+    ...(loop ? { inChild: j.origin.map((x, i) => x + (frameOf(j.parent)[i] - frameOf(j.child)[i]) * M) as Vec3 } : {}),
     drive: velocity.has(j.name) ? 'velocity' : position.has(j.name) ? 'position' : torque.has(j.name) ? 'effort' : null,
     ...(j.start ? { start: j.start } : {}),
   });
