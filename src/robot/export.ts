@@ -422,6 +422,26 @@ function bridgeTopics(p: Prepared, optical: Map<string, string>): BridgeTopic[] 
 const OPTICAL: Vec3 = [-Math.PI / 2, 0, -Math.PI / 2];
 
 /**
+ * The names of the tree joints that lie on a loop: those between each end of a closing joint and where the two
+ * ways up to the base meet. Where a simulator closes the loop for real, the loop moves them and they follow nothing.
+ */
+function jointsOnLoops(p: Pick<Prepared, 'treeJoints' | 'loopJoints'>): Set<string> {
+  const onLoop = new Set<string>();
+  const parentOf = new Map(p.treeJoints.map((j) => [j.child, j]));
+  for (const loop of p.loopJoints) {
+    const up = (link: string): string[] => {
+      const path: string[] = [];
+      for (let j = parentOf.get(link); j; j = parentOf.get(j.parent)) path.push(j.name);
+      return path;
+    };
+    const a = up(loop.parent);
+    const b = up(loop.child);
+    for (const name of [...a.filter((n) => !b.includes(n)), ...b.filter((n) => !a.includes(n))]) onLoop.add(name);
+  }
+  return onLoop;
+}
+
+/**
  * The robot as a ROS 2 package: every link's frame is parallel to the
  * design's axes, so no file carries a rotation but the sensors' frames: the
  * base link's frame is at the base object's own origin and each other link's sits at the
@@ -449,6 +469,10 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
     joints.push({ name: j.name, type: j.type, parent: j.parent, child: pin, origin: j.origin, axis: j.axis, limit: j.limit, dynamics: j.dynamics });
     welds.push(weldXml(j.child, pkg, pin));
   }
+  // Gazebo closes the loop, so the loop moves the joints on it: Gazebo is not told what they follow, which its
+  // physics would refuse. The URDF keeps it, for where the file is read alone.
+  const onLoop = jointsOnLoops(p);
+  const unfollowed = p.treeJoints.filter((j) => j.mimic && onLoop.has(j.name)).map((j) => j.name);
   // Each sensor is a frame of its own on a fixed joint; a camera also gets the optical frame ROS expects (Z forward, X right).
   // A touch sensor feels a collision, so it sits on the link that has one; Gazebo must then keep that link
   // as one of its own, since a link folded into its parent across a fixed joint has its collision renamed.
@@ -478,7 +502,11 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
   // The robot's box, for RViz to look at, as the base link's frame has it.
   const extent = unionBounds(p.links.map((l) => geometry.get(l.node.id)!.bounds));
   const plugins = [jointStateXml(), ...welds, ...(p.drive ? [driveXml(gazeboDrive(p.drive, footprint?.name ?? base))] : [])];
-  const starts = Object.fromEntries(p.treeJoints.filter((j) => j.start && p.controlled.includes(j.name)).map((j) => [j.name, j.start!]));
+  // A start is a place the joint is put in as Gazebo loads the robot, before the weld that closes a loop is made:
+  // the weld would hold the loop as it then stood, pulled out of shape. So the joints on a loop begin as designed.
+  const starts = Object.fromEntries(p.treeJoints.filter((j) => j.start && p.controlled.includes(j.name) && !onLoop.has(j.name)).map((j) => [j.name, j.start!]));
+  const looped = p.treeJoints.filter((j) => j.start && p.controlled.includes(j.name) && onLoop.has(j.name)).map((j) => j.name);
+  if (looped.length) warnings.push(`${looped.map((n) => `"${n}"`).join(', ')} ${looped.length > 1 ? 'are' : 'is'} on a loop, which Gazebo closes as the robot is designed, so ${looped.length > 1 ? 'they begin' : 'it begins'} as designed, not at ${looped.length > 1 ? 'their starts' : 'its start'}.`);
   // Only a controller can hold a joint at its start in Gazebo.
   const loose = p.treeJoints.filter((j) => j.start && !p.controlled.includes(j.name) && !j.mimic).map((j) => j.name);
   if (loose.length) warnings.push(`No controller holds ${loose.map((n) => `"${n}"`).join(', ')}, so ${loose.length > 1 ? 'they begin' : 'it begins'} as designed, not at ${loose.length > 1 ? 'their starts' : 'its start'}.`);
@@ -491,7 +519,7 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
     { name: `urdf/${pkg}.urdf`, bytes: encodeText(writeUrdf(p.robotName, links, joints, { plugins, control, fixedToWorld, footprint })) },
     { name: `urdf/${pkg}.urdf.xacro`, bytes: encodeText(writeUrdf(p.robotName, links, joints, { plugins, control, fixedToWorld, footprint, xacro: { package: pkg } })) },
     { name: 'launch/display.launch.py', bytes: encodeText(displayLaunch(pkg)) },
-    { name: 'launch/gazebo.launch.py', bytes: encodeText(gazeboLaunch(pkg, { controllers, height: footprint || fixedToWorld ? 0 : baseAt[2] + lift })) },
+    { name: 'launch/gazebo.launch.py', bytes: encodeText(gazeboLaunch(pkg, { controllers, height: footprint || fixedToWorld ? 0 : baseAt[2] + lift, unfollowed })) },
     { name: 'rviz/display.rviz', bytes: encodeText(rvizConfig(base, boundsCenter(extent).map((x, i) => x * M - baseAt[i]) as Vec3, Math.max(...boundsSize(extent)) * M)) },
     { name: `worlds/${pkg}.sdf`, bytes: encodeText(worldXml(pkg)) },
     { name: 'config/bridge.yaml', bytes: encodeText(bridgeYaml(bridgeTopics(p, opticalFrames))) },
@@ -521,18 +549,7 @@ export function buildSdfModel(doc: Doc, geometry: Map<string, LinkGeometry>, rob
   if (loose.length) warnings.push(`No controller holds ${loose.map((n) => `"${n}"`).join(', ')}, so ${loose.length > 1 ? 'they begin' : 'it begins'} as designed, not at ${loose.length > 1 ? 'their starts' : 'its start'}.`);
   const links: SdfLink[] = p.links.map(({ frame, node: _n, ...l }) => ({ ...l, pose: frame.map((x) => x * M) as Vec3, sensors: sensorsByLink.get(l.name) }));
   // Loops close for real here, so a joint on a loop does not also follow another.
-  const onLoop = new Set<string>();
-  const parentOf = new Map(p.treeJoints.map((j) => [j.child, j]));
-  for (const loop of p.loopJoints) {
-    const up = (link: string): string[] => {
-      const path: string[] = [];
-      for (let j = parentOf.get(link); j; j = parentOf.get(j.parent)) path.push(j.name);
-      return path;
-    };
-    const a = up(loop.parent);
-    const b = up(loop.child);
-    for (const name of [...a.filter((n) => !b.includes(n)), ...b.filter((n) => !a.includes(n))]) onLoop.add(name);
-  }
+  const onLoop = jointsOnLoops(p);
   // Gazebo's physics takes the joints as a tree and refuses the one that closes a loop. That joint carries a pin
   // where its child would be, and a weld, which the physics does take, holds the pin to the child.
   const welds: string[] = [];

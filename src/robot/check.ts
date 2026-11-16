@@ -57,10 +57,9 @@ export function checkRobot(doc: Doc, props: Map<string, LinkProperties>, robot: 
   if (robot.root && ids.has(robot.root)) {
     for (const id of tree.unreached) warn(tr('{name}: not joined to the base, so it is left out.', { name: nameOf(id) }), { link: id });
   }
+  // Only a hinge closes a loop: the simulators would be handed a pin where the design has a slider or a weld.
   for (const j of tree.loops) {
-    // Only a hinge closes a loop: the simulators would be handed a pin where the design has a slider or a weld.
-    if (isHinge(j)) warn(tr('{name}: closes a loop. Closed in Gazebo, MuJoCo and Isaac, open where the URDF is read alone.', { name: j.name }), { joint: j.id });
-    else error(tr('{name}: closes a loop as a {type} joint, and only a revolute or continuous joint can. Change its type.', { name: j.name, type: (JOINT_TYPES.find((t) => t.id === j.type)?.name ?? j.type).toLowerCase() }), { joint: j.id });
+    if (!isHinge(j)) error(tr('{name}: closes a loop as a {type} joint, and only a revolute or continuous joint can. Change its type.', { name: j.name, type: (JOINT_TYPES.find((t) => t.id === j.type)?.name ?? j.type).toLowerCase() }), { joint: j.id });
   }
 
   const jointById = new Map(robot.joints.map((j) => [j.id, j]));
