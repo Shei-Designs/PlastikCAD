@@ -447,3 +447,75 @@ test.describe("a loop's motors", { tag: '@mouse' }, () => {
     await expect(moved.getByRole('radio', { name: 'Motor' })).toBeDisabled();
   });
 });
+
+test.describe('a mecanum drive on wheels that are not the part', { tag: '@mouse' }, () => {
+  test('offers to replace each with a Mecanum wheel, as one step, and the wheel then collides as rollers or nothing', async ({ page }) => {
+    await openApp(page);
+    const bytes = [...readFileSync(new URL('../fixtures/robots/mecanum.plastikcad', import.meta.url))];
+    await store(
+      page,
+      (m, b) => {
+        void m.receiveFiles([{ name: 'mecanum.plastikcad', path: null, bytes: new Uint8Array(b) }]);
+      },
+      bytes,
+    );
+    await page.getByRole('button', { name: 'OK' }).click();
+    await expect.poll(() => store(page, (m) => m.getState().doc.robot?.joints.length ?? 0)).toBe(4);
+    await settled(page);
+    // The four wheels made plain wheels of the same size: what a drawn or an imported wheel is to the drive.
+    await store(page, async (m) => {
+      for (const n of m.getState().doc.scene) if (n.type === 'part') await m.editPart(n.id, { part: 'wheel', params: { diameter: 100, width: 50 } });
+      m.enterRobotMode();
+      m.select([]);
+    });
+    await settled(page);
+    const wheels = () => store(page, (m) => m.getState().doc.scene.flatMap((n) => (n.type === 'part' ? [{ name: n.name, part: n.part, size: n.params.size, hand: n.params.hand, box: n.size.map((x) => Math.round(x * 10) / 10) }] : [])));
+    const faults = page.locator('.inspector .problem.error', { hasText: 'not a Mecanum wheel part' });
+    await expect(faults).toHaveCount(4);
+    const before = await wheels();
+    expect(before.every((w) => w.part === 'wheel')).toBe(true);
+    const roles = await store(page, (m) => m.getState().doc.robot!.drive!.roles);
+    const joints = await store(page, (m) => m.getState().doc.robot!.joints.map((j) => ({ id: j.id, child: j.child })));
+    await faults.first().getByRole('button', { name: 'Replace' }).click();
+    await expect(faults).toHaveCount(3);
+    // One step back and the wheel is the plain one again.
+    await store(page, (m) => m.undo());
+    await expect(faults).toHaveCount(4);
+    expect(await wheels()).toEqual(before);
+    for (let left = 4; left > 0; left--) {
+      await faults.first().getByRole('button', { name: 'Replace' }).click();
+      await expect(faults).toHaveCount(left - 1);
+    }
+    await settled(page);
+    await expect(page.locator('.inspector .problem.error')).toHaveCount(0);
+    // Each is the 100 mm wheel where the plain one stood, of the hand its corner wants, on the joint and in the part of the drive it had.
+    const after = await wheels();
+    expect(after.map((w) => w.name)).toEqual(before.map((w) => w.name));
+    for (const w of after) {
+      expect(w).toMatchObject({ part: 'mecanum-wheel', size: '100', box: [100, 100, 50] });
+      expect(w.hand).toBe(/front left|rear right/.test(w.name) ? 'left' : 'right');
+    }
+    expect(await store(page, (m) => m.getState().doc.robot!.drive!.roles)).toEqual(roles);
+    expect(await store(page, (m) => m.getState().doc.robot!.joints.map((j) => ({ id: j.id, child: j.child })))).toEqual(joints);
+
+    // A replaced wheel collides as its rollers or as nothing: no other shape, no size, no pieces.
+    await store(page, (m) => m.select([m.getState().doc.scene.find((n) => n.type === 'part')!.id]));
+    const shape = page.locator('.inspector select[aria-label="Collision shape"]');
+    await expect(shape).toHaveValue('rollers');
+    expect(await shape.locator('option').allTextContents()).toEqual(['Rollers', 'None']);
+    await expect(page.locator('.inspector input[aria-label="Pieces"]')).toHaveCount(0);
+    const picked = () => store(page, (m) => m.getState().doc.robot!.links.find((l) => l.node === m.getState().selection[0])?.collision);
+    await shape.selectOption('none');
+    expect(await picked()).toBe('none');
+    await expect(shape).toHaveValue('none');
+    await shape.selectOption('rollers');
+    expect(await picked()).toBe('hull');
+    // A link kept as a box from before it was a wheel reads as rollers too, and shows no box to size.
+    await store(page, (m) => m.updateLink(m.getState().selection[0], { collision: 'box' }));
+    await expect(shape).toHaveValue('rollers');
+    await expect(page.locator('.inspector input[aria-label^="Collision size"]')).toHaveCount(0);
+    // The body still has every shape to choose from.
+    await store(page, (m) => m.select([m.getState().doc.robot!.root!]));
+    await expect(shape.locator('option')).toHaveCount(6);
+  });
+});

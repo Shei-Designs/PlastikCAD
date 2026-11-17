@@ -16,8 +16,9 @@ import { AS_JOINT, figureSources, MOTORS } from '../robot/motors';
 import { COLLISION_KINDS, DRIVE_KINDS, driveJoints, JOINT_TYPES, MAX_PIECES, SENSOR_KINDS, WORLDS } from '../robot/types';
 import type { CollisionShape, DriveKind, DriveRole, RobotJoint, RobotLink, RobotSensor, SensorKind, World } from '../robot/types';
 import { cylinderAlong, cylinderLaid, shapeOf } from '../robot/collision';
+import { mecanumOf } from '../robot/wheels';
 import type { Problem } from '../robot/check';
-import { addJoint, addSensor, deleteJoint, deleteSensor, fitJointFollowers, placeJoint, placeSensor, select, selectJoint, selectSensor, setBase, setControl, setDriveKind, setFaces, setDriveRole, setJointMotor, setPose, setPrefs, setRobotRoot, setScripts, setWorld, startJointPick, stopJointPick, testDrive, updateJoint, updateLink, updateSensor, useEditor } from '../state/store';
+import { addJoint, addSensor, deleteJoint, deleteSensor, fitJointFollowers, placeJoint, placeSensor, replaceWithMecanum, select, selectJoint, selectSensor, setBase, setControl, setDriveKind, setFaces, setDriveRole, setJointMotor, setPose, setPrefs, setRobotRoot, setScripts, setWorld, startJointPick, stopJointPick, testDrive, updateJoint, updateLink, updateSensor, useEditor } from '../state/store';
 import { rangeOf } from '../robot/kinematics';
 import { sim } from '../state/sim';
 import { inUnit, lengthFigure, lengthText, unitName } from '../units';
@@ -89,6 +90,11 @@ function Problems({ problems }: { problems: Problem[] }) {
           {(p.link || p.joint || p.sensor) && (
             <button type="button" className="chip" onClick={() => (p.joint ? selectJoint(p.joint) : p.sensor ? selectSensor(p.sensor) : select([p.link!]))}>
               {tr('Show')}
+            </button>
+          )}
+          {p.fix === 'mecanum-wheel' && p.link && (
+            <button type="button" className="chip" title={tr('Replaces the object with a Mecanum wheel part of its size')} onClick={() => replaceWithMecanum(p.link!)}>
+              {tr('Replace')}
             </button>
           )}
         </li>
@@ -540,6 +546,8 @@ function LinkPanel({ node }: { node: SceneNode }) {
   const sensors = robot.sensors.filter((x) => x.link === node.id);
   const nameOf = (id: string) => nodes.find((n) => n.id === id)?.name ?? '?';
   const set = (patch: Partial<Omit<RobotLink, 'node'>>, merge?: string) => updateLink(node.id, patch, merge);
+  // A Mecanum wheel part that is whole collides as its rollers, and has no other shape to choose.
+  const rollers = typeof mecanumOf(node) !== 'string';
   const setMass = (patch: Record<string, unknown>, merge?: string) => set({ mass: { ...link.mass, ...patch } as RobotLink['mass'] }, merge);
   return (
     <>
@@ -629,11 +637,24 @@ function LinkPanel({ node }: { node: SceneNode }) {
         <div className="field inline">
           <label>
             {tr('Shape')}
-            <Hint text={COLLISION_KINDS.find((k) => k.id === link.collision)?.help ?? ''} />
+            <Hint text={rollers ? (link.collision === 'none' ? COLLISION_KINDS.find((k) => k.id === 'none')!.help : tr('Its rollers, each turning freely: what a mecanum wheel slides on.')) : (COLLISION_KINDS.find((k) => k.id === link.collision)?.help ?? '')} />
           </label>
-          <Select value={link.collision} label={tr('Collision shape')} options={COLLISION_KINDS.map((k) => ({ value: k.id, label: k.name }))} onChange={(id) => set({ collision: id, shape: undefined })} />
+          {rollers ? (
+            // A mecanum wheel collides as its rollers in every export, whatever kind its link holds: any but none.
+            <Select
+              value={link.collision === 'none' ? 'none' : 'rollers'}
+              label={tr('Collision shape')}
+              options={[
+                { value: 'rollers', label: trx('collision', 'Rollers') },
+                { value: 'none', label: trx('collision', 'None') },
+              ]}
+              onChange={(id) => set(id === 'none' ? { collision: 'none', shape: undefined } : { collision: 'hull', shape: undefined, pieces: undefined })}
+            />
+          ) : (
+            <Select value={link.collision} label={tr('Collision shape')} options={COLLISION_KINDS.map((k) => ({ value: k.id, label: k.name }))} onChange={(id) => set({ collision: id, shape: undefined })} />
+          )}
         </div>
-        {link.collision === 'hull' && (
+        {!rollers && link.collision === 'hull' && (
           <div className="field inline">
             <label>
               {tr('Pieces')}
@@ -642,8 +663,8 @@ function LinkPanel({ node }: { node: SceneNode }) {
             <NumberBox label={tr('Pieces')} value={link.pieces ?? 1} min={1} max={MAX_PIECES} step={1} places={0} onChange={(v) => set({ pieces: Math.round(v) > 1 ? Math.round(v) : undefined }, 'link-pieces')} />
           </div>
         )}
-        {(link.collision === 'box' || link.collision === 'cylinder' || link.collision === 'sphere') && <CollisionBoxes node={node} link={link} onChange={(shape) => set({ shape }, 'link-shape')} />}
-        {link.shape && (link.collision === 'box' || link.collision === 'cylinder' || link.collision === 'sphere') && (
+        {!rollers && (link.collision === 'box' || link.collision === 'cylinder' || link.collision === 'sphere') && <CollisionBoxes node={node} link={link} onChange={(shape) => set({ shape }, 'link-shape')} />}
+        {!rollers && link.shape && (link.collision === 'box' || link.collision === 'cylinder' || link.collision === 'sphere') && (
           <div className="field">
             <button type="button" className="chip" title={tr("Fits the shape to the object's box again")} onClick={() => set({ shape: undefined })}>
               {tr('Fit to the object')}

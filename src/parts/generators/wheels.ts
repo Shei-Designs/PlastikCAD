@@ -111,6 +111,8 @@ const SIZES: Record<string, Size> = {
 };
 
 export const MECANUM_SIZES = Object.keys(SIZES);
+/** Each size's figures, by the name it is chosen under. */
+export const MECANUM_PRESETS: Readonly<Record<string, Readonly<Size>>> = SIZES;
 
 const isCustom = (p: Params) => !(str(p, 'size') in SIZES);
 /** A figure of the size chosen, for its control to read while the size holds it. */
@@ -158,6 +160,7 @@ function onCircle(R: number, c: number, s: number): Vec2 {
 
 /** The widest, the narrowest and the fewest a mecanum wheel may be given. */
 const MECANUM = { diameter: { min: 30, max: 300 }, width: { min: 10, max: 150 }, rollers: { min: 6, max: 20 } };
+export const MECANUM_LIMITS: Readonly<typeof MECANUM> = MECANUM;
 
 /**
  * The rollers of a mecanum wheel part, from its settings: all a simulator needs to stand in for them.

@@ -24,6 +24,8 @@ export interface Problem {
   joint?: string;
   /** Id of the sensor it is about. */
   sensor?: string;
+  /** What the app can do about it itself, for the link it is about: make the object a Mecanum wheel part. */
+  fix?: 'mecanum-wheel';
 }
 
 /** Why a follower's leader will not do, as the checks say it of the two joints by name. */
@@ -43,7 +45,7 @@ export const HEAVY_COLLISION = 20_000;
  */
 export function checkRobot(doc: Doc, props: Map<string, LinkProperties>, robot: Robot = robotOf(doc)): Problem[] {
   const out: Problem[] = [];
-  const error = (text: string, at: { link?: string; joint?: string; sensor?: string } = {}) => out.push({ level: 'error', text, ...at });
+  const error = (text: string, at: { link?: string; joint?: string; sensor?: string; fix?: Problem['fix'] } = {}) => out.push({ level: 'error', text, ...at });
   const warn = (text: string, at: { link?: string; joint?: string; sensor?: string } = {}) => out.push({ level: 'warning', text, ...at });
   const nodes = linkNodes(doc.scene);
   const nameOf = (id: string) => nodes.find((n) => n.id === id)?.name ?? 'an object';
@@ -142,9 +144,9 @@ export function checkRobot(doc: Doc, props: Map<string, LinkProperties>, robot: 
         if (!wheel || role.startsWith('steer')) continue;
         const found = mecanumOf(wheel);
         const name = wheel.name;
-        if (found === 'stretched') error(tr('{name}: stretched unevenly, so it cannot slide sideways. Scale it the same on every side.', { name }), { link: wheel.id });
-        else if (found === 'gaps') error(tr('{name}: its rollers leave gaps, so it cannot slide sideways. Add rollers or make the wheel wider.', { name }), { link: wheel.id });
-        else if (typeof found === 'string') error(tr('{name}: not a Mecanum wheel part, so it cannot slide sideways. Use a Mecanum wheel from the parts.', { name }), { link: wheel.id });
+        if (found === 'stretched') error(tr('{name}: stretched unevenly, so it cannot slide sideways. Scale it the same on every side.', { name }), { link: wheel.id, fix: 'mecanum-wheel' });
+        else if (found === 'gaps') error(tr('{name}: its rollers leave gaps, so it cannot slide sideways. Add rollers or make the wheel wider.', { name }), { link: wheel.id, fix: 'mecanum-wheel' });
+        else if (typeof found === 'string') error(tr('{name}: not a Mecanum wheel part, so it cannot slide sideways. Use a Mecanum wheel from the parts.', { name }), { link: wheel.id, fix: 'mecanum-wheel' });
         else if (linkOf(robot, wheel.id).collision !== 'none' && !leansRight(found, role, forward)) {
           const corner = DRIVE_KINDS.find((k) => k.id === 'mecanum')!.roles.find((r) => r.id === role)!.name;
           error(tr('{name}: its rollers lean the wrong way for the corner {corner}. Set its Hand to {hand}.', { name, corner, hand: found.part.params.hand === 'right' ? trx('wheel', 'Left') : trx('wheel', 'Right') }), { link: wheel.id });

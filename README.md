@@ -409,6 +409,15 @@ in the design file and synced with it.
   the same on every side, and the hand its corner wants: front left and rear
   right take a *Left* wheel, the other two a *Right* one. A link that is a
   wheel part, plain or mecanum, has a friction of 1 until one is typed.
+  A wheel of the drive that is not the part (one drawn from shapes, or the
+  mesh a robot file brought in) has **Replace** beside its check: the object
+  becomes a Mecanum wheel as far across and as wide as it was about and
+  along its joint's axis, where it stood, of the hand its corner wants. It
+  takes the size sold under those figures where there is one, else as many
+  rollers as leave no gaps, and a disc too thin for any is made wider. Its
+  name, joint, part in the drive, friction and weighed mass are kept; a
+  mass figured from a material is figured from the new shape. A mecanum
+  wheel's **Collision** is *Rollers* or *None*, and nothing else.
 - **Controllers.** The actuated joints outside the drive go under
   `ros2_control` with a joint trajectory controller (`arm_controller`) and a
   joint state broadcaster, unless switched off, and *Scripts* whether the
