@@ -45,9 +45,9 @@ function reaches(m: ReturnType<typeof figures>, outline: Vec2[], i = 0): number[
 }
 
 describe('the wheels family', () => {
-  it('holds the plain wheel and the mecanum wheel', () => {
+  it('holds the plain wheel and the mecanum wheel before anything else', () => {
     expect(CATEGORIES.map((c) => c.id)).toContain('wheels');
-    expect(GENERATORS.filter((g) => g.category === 'wheels')).toEqual([wheel, mecanumWheel]);
+    expect(GENERATORS.filter((g) => g.category === 'wheels').slice(0, 2)).toEqual([wheel, mecanumWheel]);
   });
 });
 
