@@ -17,7 +17,10 @@
 //   152 mm  55.5 wide, 15 rollers  Nexus Robot datasheet and SuperDroid listing
 //   203 mm  78 wide, 12 rollers    SuperDroid listing of the Nexus wheel; the Nexus Robot datasheet gives 67 wide: the width is unverified
 // The roller's own diameter and length are not taken from any vendor: they
-// follow from the diameter, the width and the count.
+// follow from the diameter, the width and the count. A roller is as fat as its
+// neighbours leave room for and only a little longer than hands the wheel on
+// from one to the next, which is how the rollers of the wheels sold look. The
+// frame is a likeness of the common stamped kind, not any one vendor's.
 import { tr, trx } from '../../i18n';
 import { addHubAndBore, boreGroup, boreRadius, boreShape, hubGroup } from '../features';
 import { arc, arcSegments, circle, TAU } from '../math2d';
@@ -163,27 +166,52 @@ const MECANUM = { diameter: { min: 30, max: 300 }, width: { min: 10, max: 150 },
 export const MECANUM_LIMITS: Readonly<typeof MECANUM> = MECANUM;
 
 /**
+ * How near two neighbouring rollers come to each other: the least room left between their surfaces, for rollers
+ * of this middle radius cut from this half stretch of their axes. Below zero they run into each other.
+ */
+function between(R: number, N: number, r0: number, half: number): number {
+  const c = R - r0;
+  const steps = 32;
+  const turn = TAU / N;
+  const cos = Math.cos(turn);
+  const sin = Math.sin(turn);
+  const profile = Array.from({ length: steps + 1 }, (_, i) => onCircle(R, c, half * ((2 * i) / steps - 1)));
+  let least = Infinity;
+  for (const [a, ra] of profile) {
+    // A point of the first roller's axis, and one of its neighbour's, a step round the axle.
+    const y = a * Math.SQRT1_2;
+    for (const [b, rb] of profile) {
+      const q = b * Math.SQRT1_2;
+      least = Math.min(least, Math.hypot(c - (c * cos - q * sin), y - (c * sin + q * cos), y - q) - ra - rb);
+    }
+  }
+  return least;
+}
+
+/**
  * The rollers of a mecanum wheel part, from its settings: all a simulator needs to stand in for them.
- * A roller's thickness follows from the count (its neighbours must clear it) and its length from the
- * width (it must fit between the side plates).
+ * A roller is as fat as its neighbours let it be, and no longer than takes the wheel smoothly from one
+ * roller onto the next: a short fat barrel, like those of the wheels sold, not a long thin one.
  */
 export function mecanumRollers(p: Params): MecanumRollers {
   const size: Size = SIZES[str(p, 'size')] ?? { diameter: num(p, 'diameter'), width: num(p, 'width'), rollers: Math.round(num(p, 'rollers')) };
   const R = size.diameter / 2;
   const W = size.width;
   const N = size.rollers;
-  // The side plates take what the rollers leave; they are never thinner than this.
-  const plate = Math.max(1, Math.min(0.05 * W, 4));
-  const room = (W / 2 - plate) * Math.SQRT2;
-  /** The longest roller of this middle radius that fits between the plates: half the stretch of its axis it is cut from. */
-  const fitted = (r0: number): number => {
+  // The side plates take what the rollers leave; they are never thinner than the first of these, and where the
+  // rollers would leave them more than the second, the rollers are made longer instead.
+  const thin = Math.max(1, Math.min(0.05 * W, 4));
+  const stout = Math.max(thin, Math.min(0.085 * W, 6));
+  const room = (W / 2 - thin) * Math.SQRT2;
+  /** The longest roller of this middle radius that reaches no farther along the axle than `within`: half the stretch of its axis it is cut from. */
+  const fitted = (r0: number, within = room): number => {
     const c = R - r0;
     // A roller is no longer than leaves its ends a third of its middle's thickness.
     const longest = Math.SQRT2 * Math.sqrt(Math.max(0, (R - 0.33 * r0) ** 2 - c * c));
     // Leaning 45°, a roller reaches along the axle by its half length and its end's radius, both over √2.
     const fits = (s: number) => {
       const [at, r] = onCircle(R, c, s);
-      return at + r <= room;
+      return at + r <= within;
     };
     if (fits(longest)) return longest;
     let lo = 0;
@@ -195,23 +223,38 @@ export function mecanumRollers(p: Params): MecanumRollers {
     }
     return lo;
   };
-  const reachOf = (r0: number) => 2 * Math.atan2(fitted(r0) * Math.SQRT1_2, R - r0);
-  // Neighbours stand 2·c·sin(π/N) apart round the circle and lean 45°, so their axes pass that over √2 from each other; a tenth is kept clear.
-  const k = 0.9 * Math.SQRT1_2 * Math.sin(Math.PI / N);
+  /** How long a roller of this middle radius is made: half the stretch of its axis. */
+  const cut = (r0: number): number => {
+    // Each roller takes over from the last with a little to spare: it is seen from the axle over that much more than its share of the turn.
+    const enough = Math.SQRT2 * (R - r0) * Math.tan((1.08 * Math.PI) / N);
+    return Math.min(fitted(r0), Math.max(enough, fitted(r0, (W / 2 - stout) * Math.SQRT2)));
+  };
+  const reachOf = (r0: number, half = cut(r0)) => 2 * Math.atan2(half * Math.SQRT1_2, R - r0);
+  // Neighbours stand 2·c·sin(π/N) apart round the circle and lean 45°, so their axes pass about that over √2 from
+  // each other. Barrels are slimmer where they pass than at their middles, so they may be fatter than that says:
+  // the fattest is found that leaves a twelfth of its radius between it and its neighbour.
+  const k = Math.SQRT1_2 * Math.sin(Math.PI / N);
+  let slim = (0.9 * R * k) / (1 + 0.9 * k);
+  let fat = (1.4 * R * k) / (1 + 1.4 * k);
+  for (let i = 0; i < 24; i++) {
+    const mid = (slim + fat) / 2;
+    if (between(R, N, mid, cut(mid)) >= Math.max(0.3, mid / 12)) slim = mid;
+    else fat = mid;
+  }
   // On a wheel much narrower than it is wide across, the room between the plates sets the thickness instead.
-  const thickest = Math.min((R * k) / (1 + k), 0.6 * room);
+  const thickest = Math.min(slim, 0.6 * room);
   // The rollers are as thick as that allows. Where such rollers would be too short to take over from one another,
-  // thinner ones are tried: their ends are slimmer, so more of them fits between the plates. Where none will do,
+  // with a little to spare, thinner ones are tried: their ends are slimmer, so more of them fits between the plates. Where none will do,
   // the one that reaches farthest round is kept, and the wheel has gaps.
   let r0 = thickest;
-  for (let i = 1; i <= 24 && reachOf(r0) < TAU / N; i++) {
+  for (let i = 1; i <= 24 && reachOf(r0) < (1.05 * TAU) / N; i++) {
     const thinner = thickest * (1 - i / 40);
     if (reachOf(thinner) > reachOf(r0)) r0 = thinner;
   }
   const c = R - r0;
-  const half = fitted(r0);
+  const half = cut(r0);
   const [end, endRadius] = onCircle(R, c, half);
-  return { count: N, radius: R, width: W, circle: c, rollerRadius: r0, endRadius, rollerLength: 2 * end, lean: str(p, 'hand') === 'right' ? -1 : 1, reach: 2 * Math.atan2(half * Math.SQRT1_2, c) };
+  return { count: N, radius: R, width: W, circle: c, rollerRadius: r0, endRadius, rollerLength: 2 * end, lean: str(p, 'hand') === 'right' ? -1 : 1, reach: reachOf(r0, half) };
 }
 
 /** A roller's outline: (place along its axis from its middle, radius there), from one end to the other in `steps` steps. */
@@ -233,7 +276,7 @@ function buildMecanum(p: Params, q: Quality): BuildResult {
   const { radius: R, width: W, circle: c, rollerRadius: r0, endRadius, rollerLength: L, count: N } = m;
   if (m.reach < TAU / N - 1e-9) warnings.push(tr('The rollers leave gaps between them. Add rollers or make the wheel wider.'));
 
-  const around = Math.min(32, Math.max(12, Math.round(q.circle / 5)));
+  const around = Math.min(32, Math.max(16, Math.round(q.circle / 5)));
   const outline = rollerOutline(m, 2 * Math.max(3, Math.round(q.flank / 2)));
   // The barrel's flat sides are laid round the true roller, not inside it, and what then passes the wheel's circle is
   // cut off below: the wheel measures its diameter across, to the last bit.
@@ -243,55 +286,68 @@ function buildMecanum(p: Params, q: Quality): BuildResult {
   const place = (s: Solid): Solid => translate(rotate(s, [-45 * m.lean, 0, 0]), [c, 0, W / 2]);
   const roller = place(barrel);
 
-  // The frame is the common kind: a hub with a side plate at each end, each plate a disc with an arm out to every
-  // roller, and at the arm's end an ear square to the roller that holds its axle. The rollers stand well proud of the
-  // plates, which stop short of the floor.
-  const plate = W / 2 - (L / 2 + endRadius) * Math.SQRT1_2;
+  // The frame is the common kind: a stout hub with a side plate at each end. Each plate is a disc with an arm swept
+  // out to every roller, and the arm's edge is bent down 45° into a tab square to the roller, which holds its axle.
+  // The rollers stand well proud of the plates, which stop short of the floor.
+  const S = Math.SQRT1_2;
+  const plate = W / 2 - (L / 2 + endRadius) * S;
   const clear = Math.max(0.6, 0.03 * R);
   const hubbed = num(p, 'hubHeight') > 0;
+  const plates = 0.68 * R;
+  // What the shaft and the hub hold on to, between the plates: as stout as the rollers leave room for.
   const within = c - r0 - Math.max(0.4, 0.04 * R);
-  const plates = Math.max(0.3 * R, Math.min(within, 0.66 * R));
-  // What the shaft and the hub hold on to, between the plates.
-  const core = Math.min(plates, Math.max(boreRadius(p) + Math.max(2, 0.08 * R), hubbed ? num(p, 'hubDiameter') / 2 : 0, 0.28 * R));
+  const core = Math.min(plates, Math.max(boreRadius(p) + Math.max(2, 0.08 * R), hubbed ? num(p, 'hubDiameter') / 2 : 0, 0.28 * R, Math.min(within, 0.38 * R)));
   const pin = Math.max(0.5, 0.35 * endRadius);
-  const ear = Math.max(pin + 0.4, 0.9 * endRadius);
-  const thick = Math.max(plate, 0.08 * r0, 0.8);
+  const ear = Math.max(pin + 0.5, 0.85 * endRadius);
+  const thick = Math.max(0.8, Math.min(plate, 0.07 * R));
   const gap = Math.max(0.2, 0.04 * r0);
-  // Along the roller's axis from its middle: the ear's near face, and the ear's middle.
+  // Along the roller's axis from its middle: the tab's near face, and the tab's middle.
   const near = L / 2 + gap;
   const mid = near + thick / 2;
   const axle = translate(cylinder(pin, 2 * (near + thick), 12), [0, 0, -near - thick]);
-  const ears = union(translate(cylinder(ear, thick, 20), [0, 0, near]), translate(cylinder(ear, thick, 20), [0, 0, -near - thick]));
-  // An arm lies in its plate, from the disc out to under the ear: wide at its root, round at its tip.
+  /** A shape's corners counterclockwise, as a solid is drawn from them. */
+  const ccw = (poly: Polygon): Polygon => (poly.reduce((sum, [x, y], i) => sum + x * poly[(i + 1) % poly.length][1] - poly[(i + 1) % poly.length][0] * y, 0) < 0 ? [...poly].reverse() : poly);
+  // Where the arms and tabs spring from, inside the disc.
+  const root = 0.88 * plates;
+  // A tab, drawn standing on the roller's axis: round the axle at its tip, and from there back to the disc and up
+  // through the plate it is bent from. `side` is the roller's end it holds: 1 the upper, -1 the lower.
+  const tab = (side: 1 | -1): Solid => {
+    // How far up the tab, from the axle, the wheel's face is: the tab is cut off there, flush with its plate.
+    const face = (W / 2 - mid * S) * Math.SQRT2 + thick;
+    // Its lower edge rises from under the axle to just under the plate at the disc: a gusset, not a slab.
+    const under = Math.max(-ear, (W / 2 - plate - mid * S) * Math.SQRT2 - 1.5 * thick);
+    const shape: Polygon = [[root - c, under], ...arc(0, 0, ear, -Math.PI / 2, Math.PI / 2, 10), [-ear, face], [root - c, face]];
+    // Leant with the roller, the tab's own up is the roller's Y turned to the wheel's hand and the end it holds.
+    const up = -side * m.lean;
+    return translate(extrude([ccw(shape.map(([x, v]): Vec2 => [x, up * v]))], thick), [0, 0, side > 0 ? near : -near - thick]);
+  };
+  // An arm lies in its plate, from the disc out along the line its tab is bent on, swept back toward the roller's middle.
   const arm = (side: 1 | -1): Solid => {
-    // Where the ear's middle is, seen along the axle: the roller's axis runs along Y there, leaning to the wheel's hand.
-    const y = side * m.lean * mid * Math.SQRT1_2;
-    const angle = Math.atan2(y, c);
-    const tip = Math.min(Math.hypot(c, y), R - clear - 0.6 * ear);
-    const root = 0.9 * plates;
-    const half = 0.75 * ear;
-    const bar: Polygon = [[root, -1.6 * half], ...arc(tip, 0, half, -Math.PI / 2, Math.PI / 2, 8), [root, 1.6 * half]];
-    const turnedBar = bar.map(([px, py]): Vec2 => [px * Math.cos(angle) - py * Math.sin(angle), px * Math.sin(angle) + py * Math.cos(angle)]);
-    // The roller's upper end is the one its axis reaches going up.
-    return translate(extrude([turnedBar], plate), [0, 0, side > 0 ? W - plate : 0]);
+    const way = side * m.lean;
+    // The bend: where the tab's middle comes through the plate's.
+    const bend = 2 * mid * S - W / 2 + plate / 2;
+    const tip = Math.min(c + 0.3 * ear, Math.sqrt(Math.max(root * root, (R - clear - 0.3) ** 2 - bend * bend)));
+    const over = 0.3 * thick;
+    const shape: Polygon = [[root, bend + over], [tip, bend + over], [tip, bend - 0.5 * ear], [tip - 0.7 * ear, bend - 1.2 * ear], [root, bend - 2.6 * ear]];
+    return translate(extrude([ccw(shape.map(([x, y]): Vec2 => [x, way * y]))], plate), [0, 0, side > 0 ? W - plate : 0]);
   };
 
   const segments = Math.max(48, arcSegments(q, TAU));
   const spool: Polygon = [[0, 0], [plates, 0], [plates, plate], [core, plate], [core, W - plate], [plates, W - plate], [plates, W], [0, W]];
   const turned = (s: Solid) => Array.from({ length: N }, (_, i) => rotate(s, [0, 0, (360 * i) / N]));
-  // Ears, axles and arms are cut off where they would come out of the wheel's sides or near the floor.
-  const held = intersection(union(...turned(union(place(axle), place(ears), arm(1), arm(-1)))), cylinder(R - clear, W, segments));
+  // Tabs, axles and arms are cut off where they would come out of the wheel's sides or near the floor.
+  const held = intersection(union(...turned(union(place(union(axle, tab(1), tab(-1))), arm(1), arm(-1)))), cylinder(R - clear, W, segments));
   const rollers = intersection(union(...turned(roller)), cylinder(R, W, 4 * Math.ceil(segments / 4)));
-  // Round holes lighten the plates between the hub and the arms, where there is room for them.
-  const wall = Math.max(1, 0.04 * R);
-  const hole = (plates - core - 2 * wall) / 2;
+  // A ring of small round holes lightens the plates between the hub and the arms, where there is room for them:
+  // each no wider than leaves as much plate on either side of it, and more than its width to the next.
+  const hole = Math.min(0.09 * R, (plates - core) / 4);
   const ring = (plates + core) / 2;
-  const holes = hole >= Math.max(1.2, 0.04 * R) ? Math.max(3, Math.min(8, Math.floor((TAU * ring) / (2 * hole + wall)))) : 0;
+  const holes = hole >= Math.max(1, 0.04 * R) ? Math.max(3, Math.min(8, Math.floor((TAU * ring) / (4.5 * hole)))) : 0;
   const frame = revolve(spool, segments);
   const lightened = holes ? difference(frame, ...Array.from({ length: holes }, (_, i) => rotate(translate(cylinder(hole, W + 2, 24), [ring, 0, -1]), [0, 0, (360 * (i + 0.5)) / holes]))) : frame;
   const body = union(lightened, held, rollers);
 
-  if (boreRadius(p) > plates - 1 && boreRadius(p) < plates) warnings.push(tr('The bore is as wide as the drum the rollers sit round.'));
+  if (boreRadius(p) > plates - 1 && boreRadius(p) < plates) warnings.push(tr('The bore is as wide as the plates that hold the rollers.'));
   const { solid, height } = addHubAndBore(body, 0, W, p, q, warnings, plates);
   return {
     solid,

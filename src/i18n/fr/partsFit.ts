@@ -63,7 +63,7 @@ export const partsFit: Catalog = {
   'For the front right and rear left corners.': 'Pour les coins avant droit et arrière gauche.',
   'Roller length': 'Longueur des rouleaux',
   'The rollers leave gaps between them. Add rollers or make the wheel wider.': 'Les rouleaux laissent des vides entre eux. Ajoutez des rouleaux ou élargissez la roue.',
-  'The bore is as wide as the drum the rollers sit round.': 'L’alésage est aussi large que le tambour qui porte les rouleaux.',
+  'The bore is as wide as the plates that hold the rollers.': 'L’alésage est aussi large que les flasques qui portent les rouleaux.',
 
   // Aluminum rails (parts/generators/extrusion.ts)
   'Aluminum rail': 'Profilé aluminium',

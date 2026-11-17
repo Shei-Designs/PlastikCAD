@@ -155,6 +155,20 @@ describe("a mecanum wheel's rollers", () => {
     }
   });
 
+  it('are fat barrels that nearly touch, as on the wheels sold, and no longer than hands the wheel on', () => {
+    for (const size of MECANUM_SIZES) {
+      const m = figures({ size });
+      // A barrel's ends are well over half as thick as its middle: a long thin roller tapers to a third.
+      expect(m.endRadius / m.rollerRadius, size).toBeGreaterThan(0.6);
+      // Each takes over from the last with a little to spare, and not much more.
+      const share = (2 * Math.PI) / m.count;
+      expect(m.reach / share, size).toBeGreaterThan(1.04);
+      expect(m.reach / share, size).toBeLessThan(1.25);
+      // Middles side by side fill most of the way round the circle they sit on.
+      expect((m.count * 2 * m.rollerRadius) / (2 * Math.PI * m.circle * Math.SQRT1_2), size).toBeGreaterThan(0.6);
+    }
+  });
+
   it('clear their neighbours', () => {
     for (const size of [...MECANUM_SIZES, 'custom']) {
       const m = figures({ size });
@@ -185,7 +199,7 @@ describe('mecanum wheel', () => {
     }
   });
 
-  it('is one piece on every size and hand: hub, plates, arms, ears, axles and rollers', () => {
+  it('is one piece on every size and hand: hub, plates, arms, tabs, axles and rollers', () => {
     for (const size of MECANUM_SIZES) {
       for (const hand of ['left', 'right']) {
         const { mesh } = evaluate(mecanum({ size, hand }).solid);
@@ -204,13 +218,16 @@ describe('mecanum wheel', () => {
     }
   });
 
-  it('is an open frame with the rollers standing proud of it, not a drum', () => {
+  it('is a stout frame with the rollers standing proud of it: neither a drum nor a spindly star', () => {
     for (const size of MECANUM_SIZES) {
       const m = figures({ size });
       const { stats, mesh } = evaluate(mecanum({ size }).solid);
-      // A drum with lids filled most of the wheel's cylinder; a frame of plates and arms round a hub fills well under half.
-      expect(stats.volume / (Math.PI * m.radius ** 2 * m.width), size).toBeLessThan(0.45);
-      // On the wheel's two faces nothing but the tips of the arms reaches past the rollers' middles: the plates are small.
+      // A drum with lids filled two thirds of the wheel's cylinder, and thin plates full of holes a third of it;
+      // stout plates and tabs round a hub, with fat rollers, fill between the two.
+      const filled = stats.volume / (Math.PI * m.radius ** 2 * m.width);
+      expect(filled, size).toBeLessThan(0.55);
+      expect(filled, size).toBeGreaterThan(0.4);
+      // On the wheel's two faces nothing reaches the wheel's circle: the plates and their arms stop short of the floor.
       let far = 0;
       for (let i = 0; i < mesh.positions.length; i += 3) {
         const z = mesh.positions[i + 2];
@@ -233,7 +250,7 @@ describe('mecanum wheel', () => {
     expect(right.max[2]).toBeCloseTo(left.max[2], 6);
   });
 
-  it('says so when the rollers leave gaps, or the bore takes the drum', () => {
+  it('says so when the rollers leave gaps, or the bore takes the plates', () => {
     const gapped = mecanum({ size: 'custom', diameter: 200, width: 20, rollers: 6 });
     expect(gapped.warnings).toEqual(['The rollers leave gaps between them. Add rollers or make the wheel wider.']);
     // It is still a wheel of that size, with what rollers fit.
@@ -248,7 +265,7 @@ describe('mecanum wheel', () => {
       expect(evaluate(mecanum({ size: 'custom', diameter, width, rollers }).solid).stats.volume).toBeGreaterThan(0);
     }
     expect(mecanum({ boreType: 'round', boreDiameter: 6 }).warnings).toEqual([]);
-    expect(mecanum({ boreType: 'round', boreDiameter: 59 }).warnings).toEqual(['The bore is as wide as the drum the rollers sit round.']);
+    expect(mecanum({ boreType: 'round', boreDiameter: 67 }).warnings).toEqual(['The bore is as wide as the plates that hold the rollers.']);
   });
   it('shows the figures of the size chosen in the settings the size holds', () => {
     const settings = mecanumWheel.groups[0].params;
