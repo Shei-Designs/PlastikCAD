@@ -38,11 +38,20 @@ export function mecanumSettings(diameter: number, width: number): Params {
   const { min, max } = MECANUM_LIMITS.rollers;
   // The nearest count first, then the ones either side of it, more rollers before fewer.
   const counts = Array.from({ length: max - min + 1 }, (_, i) => min + i).sort((a, b) => Math.abs(a - near) - Math.abs(b - near) || b - a);
-  for (let wide = w; wide <= MECANUM_LIMITS.width.max + 1e-9; wide = round(wide + 0.5, 0.1)) {
-    const rollers = counts.find((n) => covers({ size: 'custom', diameter: d, width: wide, rollers: n }));
-    if (rollers !== undefined) return { size: 'custom', diameter: d, width: wide, rollers };
-  }
-  return { size: 'custom', diameter: d, width: w, rollers: near };
+  const at = (steps: number) => round(w + 0.5 * steps, 0.1);
+  const count = (wide: number) => counts.find((n) => covers({ size: 'custom', diameter: d, width: wide, rollers: n }));
+  // A wider wheel has room for longer rollers, so once some count covers, one does at every width above: the
+  // least widening, in half millimeters, is found by halving rather than by trying each in turn.
+  let most = Math.floor((MECANUM_LIMITS.width.max - w) / 0.5 + 1e-9);
+  if (count(at(0)) === undefined && count(at(most)) !== undefined) {
+    let none = 0;
+    while (most - none > 1) {
+      const mid = (none + most) >> 1;
+      if (count(at(mid)) === undefined) none = mid;
+      else most = mid;
+    }
+  } else most = 0;
+  return { size: 'custom', diameter: d, width: at(most), rollers: count(at(most)) ?? near };
 }
 
 /** The side of a wheel's box that is its width: the joint's axis is in the object's own frame, and it is the side most along it. */
