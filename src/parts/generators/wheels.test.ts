@@ -185,19 +185,39 @@ describe('mecanum wheel', () => {
     }
   });
 
-  it('is one piece: drum, plates, axles and rollers', () => {
-    const { mesh } = evaluate(mecanum().solid);
-    // Every triangle is reached from the first through shared corners.
-    const corners = mesh.positions.length / 3;
-    const group = Array.from({ length: corners }, (_, i) => i);
-    const find = (i: number): number => (group[i] === i ? i : (group[i] = find(group[i])));
-    for (let t = 0; t < mesh.triangles.length; t += 3) {
-      group[find(mesh.triangles[t])] = find(mesh.triangles[t + 1]);
-      group[find(mesh.triangles[t + 1])] = find(mesh.triangles[t + 2]);
+  it('is one piece on every size and hand: hub, plates, arms, ears, axles and rollers', () => {
+    for (const size of MECANUM_SIZES) {
+      for (const hand of ['left', 'right']) {
+        const { mesh } = evaluate(mecanum({ size, hand }).solid);
+        // Every triangle is reached from the first through shared corners.
+        const corners = mesh.positions.length / 3;
+        const group = Array.from({ length: corners }, (_, i) => i);
+        const find = (i: number): number => (group[i] === i ? i : (group[i] = find(group[i])));
+        for (let t = 0; t < mesh.triangles.length; t += 3) {
+          group[find(mesh.triangles[t])] = find(mesh.triangles[t + 1]);
+          group[find(mesh.triangles[t + 1])] = find(mesh.triangles[t + 2]);
+        }
+        const used = new Set<number>();
+        for (const i of mesh.triangles) used.add(find(i));
+        expect(used.size, `${size} ${hand}`).toBe(1);
+      }
     }
-    const used = new Set<number>();
-    for (const i of mesh.triangles) used.add(find(i));
-    expect(used.size).toBe(1);
+  });
+
+  it('is an open frame with the rollers standing proud of it, not a drum', () => {
+    for (const size of MECANUM_SIZES) {
+      const m = figures({ size });
+      const { stats, mesh } = evaluate(mecanum({ size }).solid);
+      // A drum with lids filled most of the wheel's cylinder; a frame of plates and arms round a hub fills well under half.
+      expect(stats.volume / (Math.PI * m.radius ** 2 * m.width), size).toBeLessThan(0.45);
+      // On the wheel's two faces nothing but the tips of the arms reaches past the rollers' middles: the plates are small.
+      let far = 0;
+      for (let i = 0; i < mesh.positions.length; i += 3) {
+        const z = mesh.positions[i + 2];
+        if (z < 1e-6 || z > m.width - 1e-6) far = Math.max(far, Math.hypot(mesh.positions[i], mesh.positions[i + 1]));
+      }
+      expect(far, size).toBeLessThan(m.radius - 0.5);
+    }
   });
 
   it('takes a diameter, a width and a count of its own, and the other hand', () => {
@@ -228,7 +248,7 @@ describe('mecanum wheel', () => {
       expect(evaluate(mecanum({ size: 'custom', diameter, width, rollers }).solid).stats.volume).toBeGreaterThan(0);
     }
     expect(mecanum({ boreType: 'round', boreDiameter: 6 }).warnings).toEqual([]);
-    expect(mecanum({ boreType: 'round', boreDiameter: 70 }).warnings).toEqual(['The bore is as wide as the drum the rollers sit round.']);
+    expect(mecanum({ boreType: 'round', boreDiameter: 59 }).warnings).toEqual(['The bore is as wide as the drum the rollers sit round.']);
   });
   it('shows the figures of the size chosen in the settings the size holds', () => {
     const settings = mecanumWheel.groups[0].params;

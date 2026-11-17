@@ -21,7 +21,7 @@
 import { tr, trx } from '../../i18n';
 import { addHubAndBore, boreGroup, boreRadius, boreShape, hubGroup } from '../features';
 import { arc, arcSegments, circle, TAU } from '../math2d';
-import { cylinder, intersection, revolve, rotate, translate, union } from '../types';
+import { cylinder, difference, extrude, intersection, revolve, rotate, translate, union } from '../types';
 import type { Polygon, Quality, Solid, Vec2, Vec3 } from '../types';
 import { lengthInfo, num, str } from './types';
 import type { BuildResult, GeneratorDef, Params } from './types';
@@ -239,30 +239,59 @@ function buildMecanum(p: Params, q: Quality): BuildResult {
   // cut off below: the wheel measures its diameter across, to the last bit.
   const out = 1.002 / Math.cos(Math.PI / around);
   const barrel = revolve([[0, -L / 2], ...outline.map(([s, r]): Vec2 => [r * out, s]), [0, L / 2]], around);
-  // The axle each roller turns on, long enough to run into both plates.
-  const pin = Math.max(0.5, 0.35 * endRadius);
-  const reachZ = (L / 2 + endRadius) * Math.SQRT1_2;
-  const plate = W / 2 - reachZ;
-  const axle = translate(cylinder(pin, L + 4 * plate * Math.SQRT2, 12), [0, 0, -L / 2 - 2 * plate * Math.SQRT2]);
   // Standing on Z it is leant 45° about X, to the side the wheel's hand says, and set out on +X.
   const place = (s: Solid): Solid => translate(rotate(s, [-45 * m.lean, 0, 0]), [c, 0, W / 2]);
   const roller = place(barrel);
-  const shaft = place(axle);
 
-  // The side plates reach the rollers' ends and stop short of the floor; the drum between them clears the rollers.
-  const ends = Math.hypot(c, L / 2 * Math.SQRT1_2);
-  const clear = Math.max(1, 0.05 * R);
-  const drum = Math.max(0.3 * R, c - r0 - Math.max(0.4, 0.04 * R));
-  const plates = Math.max(drum, Math.min(ends + pin + 0.5, R - clear));
+  // The frame is the common kind: a hub with a side plate at each end, each plate a disc with an arm out to every
+  // roller, and at the arm's end an ear square to the roller that holds its axle. The rollers stand well proud of the
+  // plates, which stop short of the floor.
+  const plate = W / 2 - (L / 2 + endRadius) * Math.SQRT1_2;
+  const clear = Math.max(0.6, 0.03 * R);
+  const hubbed = num(p, 'hubHeight') > 0;
+  const within = c - r0 - Math.max(0.4, 0.04 * R);
+  const plates = Math.max(0.3 * R, Math.min(within, 0.66 * R));
+  // What the shaft and the hub hold on to, between the plates.
+  const core = Math.min(plates, Math.max(boreRadius(p) + Math.max(2, 0.08 * R), hubbed ? num(p, 'hubDiameter') / 2 : 0, 0.28 * R));
+  const pin = Math.max(0.5, 0.35 * endRadius);
+  const ear = Math.max(pin + 0.4, 0.9 * endRadius);
+  const thick = Math.max(plate, 0.08 * r0, 0.8);
+  const gap = Math.max(0.2, 0.04 * r0);
+  // Along the roller's axis from its middle: the ear's near face, and the ear's middle.
+  const near = L / 2 + gap;
+  const mid = near + thick / 2;
+  const axle = translate(cylinder(pin, 2 * (near + thick), 12), [0, 0, -near - thick]);
+  const ears = union(translate(cylinder(ear, thick, 20), [0, 0, near]), translate(cylinder(ear, thick, 20), [0, 0, -near - thick]));
+  // An arm lies in its plate, from the disc out to under the ear: wide at its root, round at its tip.
+  const arm = (side: 1 | -1): Solid => {
+    // Where the ear's middle is, seen along the axle: the roller's axis runs along Y there, leaning to the wheel's hand.
+    const y = side * m.lean * mid * Math.SQRT1_2;
+    const angle = Math.atan2(y, c);
+    const tip = Math.min(Math.hypot(c, y), R - clear - 0.6 * ear);
+    const root = 0.9 * plates;
+    const half = 0.75 * ear;
+    const bar: Polygon = [[root, -1.6 * half], ...arc(tip, 0, half, -Math.PI / 2, Math.PI / 2, 8), [root, 1.6 * half]];
+    const turnedBar = bar.map(([px, py]): Vec2 => [px * Math.cos(angle) - py * Math.sin(angle), px * Math.sin(angle) + py * Math.cos(angle)]);
+    // The roller's upper end is the one its axis reaches going up.
+    return translate(extrude([turnedBar], plate), [0, 0, side > 0 ? W - plate : 0]);
+  };
+
   const segments = Math.max(48, arcSegments(q, TAU));
-  const spool: Polygon = [[0, 0], [plates, 0], [plates, plate], [drum, plate], [drum, W - plate], [plates, W - plate], [plates, W], [0, W]];
+  const spool: Polygon = [[0, 0], [plates, 0], [plates, plate], [core, plate], [core, W - plate], [plates, W - plate], [plates, W], [0, W]];
   const turned = (s: Solid) => Array.from({ length: N }, (_, i) => rotate(s, [0, 0, (360 * i) / N]));
-  // The axles are cut off where they come out of the plates.
-  const shafts = intersection(union(...turned(shaft)), cylinder(plates, W, segments));
+  // Ears, axles and arms are cut off where they would come out of the wheel's sides or near the floor.
+  const held = intersection(union(...turned(union(place(axle), place(ears), arm(1), arm(-1)))), cylinder(R - clear, W, segments));
   const rollers = intersection(union(...turned(roller)), cylinder(R, W, 4 * Math.ceil(segments / 4)));
-  const body = union(revolve(spool, segments), shafts, rollers);
+  // Round holes lighten the plates between the hub and the arms, where there is room for them.
+  const wall = Math.max(1, 0.04 * R);
+  const hole = (plates - core - 2 * wall) / 2;
+  const ring = (plates + core) / 2;
+  const holes = hole >= Math.max(1.2, 0.04 * R) ? Math.max(3, Math.min(8, Math.floor((TAU * ring) / (2 * hole + wall)))) : 0;
+  const frame = revolve(spool, segments);
+  const lightened = holes ? difference(frame, ...Array.from({ length: holes }, (_, i) => rotate(translate(cylinder(hole, W + 2, 24), [ring, 0, -1]), [0, 0, (360 * (i + 0.5)) / holes]))) : frame;
+  const body = union(lightened, held, rollers);
 
-  if (boreRadius(p) > drum - 1 && boreRadius(p) < plates) warnings.push(tr('The bore is as wide as the drum the rollers sit round.'));
+  if (boreRadius(p) > plates - 1 && boreRadius(p) < plates) warnings.push(tr('The bore is as wide as the drum the rollers sit round.'));
   const { solid, height } = addHubAndBore(body, 0, W, p, q, warnings, plates);
   return {
     solid,
