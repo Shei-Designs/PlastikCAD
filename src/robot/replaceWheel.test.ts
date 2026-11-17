@@ -61,13 +61,14 @@ describe('the settings a replaced wheel is given', () => {
         if (p.size === 'custom') {
           expect(p.diameter).toBe(d);
           expect(p.width as number).toBeGreaterThanOrEqual(w);
+          // Made wider by no more than it takes: half a millimeter less leaves gaps at every count.
+          if ((p.width as number) > w) expect(Array.from({ length: 15 }, (_, i) => whole({ ...p, width: (p.width as number) - 0.5, rollers: 6 + i })).some(Boolean), `${d} × ${w}`).toBe(false);
         }
       }
     }
     const thin = mecanumSettings(100, 12);
-    expect(thin.width as number).toBeGreaterThan(12);
-    // And no wider than it must be: half a millimeter less leaves gaps at every count.
-    expect(Array.from({ length: 15 }, (_, i) => whole({ ...thin, width: (thin.width as number) - 0.5, rollers: 6 + i })).some(Boolean)).toBe(false);
+    expect(thin).toEqual({ size: 'custom', diameter: 100, width: 19.5, rollers: 20 });
+    expect(mecanumSettings(300, 10)).toEqual({ size: 'custom', diameter: 300, width: 58, rollers: 20 });
   });
 
   it('keep to what the part can be', () => {
