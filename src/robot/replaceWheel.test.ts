@@ -184,6 +184,19 @@ describe('replacing a wheel with the Mecanum wheel part', () => {
     expect(errors({ ...stretched, ...next })).toEqual([]);
   });
 
+  it('tells of a wheel it had to widen, and of no other', () => {
+    const thin = onCylinders([100, 100, 12]);
+    const made = withMecanumWheel(thin.scene, thin.robot!, errors(thin).find((p) => p.fix === 'mecanum-wheel')!.link!)!;
+    expect(made.widened!.was).toBe(12);
+    expect(made.widened!.now).toBeGreaterThan(12);
+    expect(made.widened!.now).toBe((made.scene.find((n) => n.type === 'part') as PartNode).size[2]);
+    // A wheel of a size sold, and one wide enough as it is, keep their width and say nothing.
+    for (const size of [[100, 100, 50], [100, 100, 49.6], [90, 90, 60]] as Vec3[]) {
+      const doc = onCylinders(size);
+      expect(withMecanumWheel(doc.scene, doc.robot!, errors(doc).find((p) => p.fix === 'mecanum-wheel')!.link!)!.widened).toBeUndefined();
+    }
+  });
+
   it('does nothing for an object that is no wheel of a mecanum drive', () => {
     const doc = onCylinders();
     expect(withMecanumWheel(doc.scene, doc.robot!, doc.scene[0].id)).toBeNull();

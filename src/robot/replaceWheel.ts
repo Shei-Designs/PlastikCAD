@@ -45,6 +45,9 @@ export function mecanumSettings(diameter: number, width: number): Params {
   return { size: 'custom', diameter: d, width: w, rollers: near };
 }
 
+/** The side of a wheel's box that is its width: the joint's axis is in the object's own frame, and it is the side most along it. */
+const sideAlong = (joint: RobotJoint): number => [0, 1, 2].reduce((a, b) => (Math.abs(joint.axis[b]) > Math.abs(joint.axis[a]) ? b : a));
+
 /**
  * The Mecanum wheel part that takes a wheel's place: as far across and as wide as the old wheel's box is about and
  * along its joint's axis, its axle on that axis, its middle where the old wheel's was along it, and of the hand
@@ -52,8 +55,7 @@ export function mecanumSettings(diameter: number, width: number): Params {
  */
 export function mecanumFor(old: SceneNode, joint: RobotJoint, role: DriveRole, forward: Vec3): PartNode {
   const { origin, axis } = jointInDesign(joint, old);
-  // The joint's axis is in the object's own frame: the side of its box most along it is the wheel's width.
-  const along = [0, 1, 2].reduce((a, b) => (Math.abs(joint.axis[b]) > Math.abs(joint.axis[a]) ? b : a));
+  const along = sideAlong(joint);
   const across = [0, 1, 2].filter((i) => i !== along);
   const def = getGenerator(PART);
   const settings = mecanumSettings(Math.max(old.size[across[0]], old.size[across[1]]), old.size[along]);
@@ -96,9 +98,10 @@ export function mecanumFor(old: SceneNode, joint: RobotJoint, role: DriveRole, f
  * frame. Its link keeps its name, its friction and its mass: a weighed mass with the center and inertia typed
  * for it, turned to the part's axes; a mass figured from a material is figured from the part's shape from now on.
  * A collision box or pieces fitted to the old object go: a mecanum wheel collides as its rollers, and one that
- * collided with nothing now does.
+ * collided with nothing now does. `widened` tells the old width and the new of a wheel that was too thin for
+ * rollers and so came out wider than it was, by more than the half millimeter a size sold may differ by.
  */
-export function withMecanumWheel(scene: Scene, robot: Robot, link: string): { scene: Scene; robot: Robot } | null {
+export function withMecanumWheel(scene: Scene, robot: Robot, link: string): { scene: Scene; robot: Robot; widened?: { was: number; now: number } } | null {
   const old = scene.find((n) => n.id === link);
   const joint = robot.joints.find((j) => j.child === link && robot.drive?.roles[j.id] !== undefined);
   const role = joint && robot.drive?.roles[joint.id];
@@ -128,5 +131,7 @@ export function withMecanumWheel(scene: Scene, robot: Robot, link: string): { sc
     const back = invert(ownFrame(node));
     return { ...kept, mass: { ...l.mass, ...(l.mass.center ? { center: tidyVec(apply(back, apply(out, l.mass.center))) } : {}), ...(l.mass.inertia ? { inertia: turned(turned(l.mass.inertia, out), back) } : {}) } };
   });
-  return { scene: scene.map((n) => (n.id === link ? node : n)), robot: { ...robot, joints, sensors, links } };
+  const was = old.size[sideAlong(joint)];
+  const now = node.size[2];
+  return { scene: scene.map((n) => (n.id === link ? node : n)), robot: { ...robot, joints, sensors, links }, ...(now - was > 0.5 + 1e-6 ? { widened: { was, now } } : {}) };
 }

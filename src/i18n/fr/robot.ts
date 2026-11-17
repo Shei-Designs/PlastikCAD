@@ -327,6 +327,7 @@ export const robot: Catalog = {
   'Rollers [[collision]]': 'Rouleaux',
   'Its rollers, each turning freely: what a mecanum wheel slides on.': 'Ses rouleaux, chacun libre de tourner\u00a0: ce sur quoi une roue mecanum glisse.',
   'Replaces the object with a Mecanum wheel part of its size': 'Remplace l’objet par une pièce Roue mecanum de sa taille',
+  '{name} is {now} wide, up from {was}: its rollers need the room.': '{name} fait {now} de large au lieu de {was}\u00a0: ses rouleaux ont besoin de cette place.',
   'Passes through everything.': 'Traverse tout.',
 
   // Sensor kinds; the lowercase ones are the kinds as the tree shows them (robot/types.ts)
