@@ -482,6 +482,21 @@ test.describe('a mecanum drive on wheels that are not the part', { tag: '@mouse'
     await store(page, (m) => m.undo());
     await expect(faults).toHaveCount(4);
     expect(await wheels()).toEqual(before);
+    // A wheel too thin for rollers comes out wider, and says so.
+    const thin = before[0].name;
+    await store(page, async (m, name) => m.editPart(m.getState().doc.scene.find((n) => n.name === name)!.id, { part: 'wheel', params: { diameter: 100, width: 12 } }), thin);
+    await settled(page);
+    await faults.filter({ hasText: thin }).getByRole('button', { name: 'Replace' }).click();
+    await expect(faults).toHaveCount(3);
+    const now = await store(page, (m, name) => m.getState().doc.scene.find((n) => n.name === name)!.size[2], thin);
+    expect(now).toBeGreaterThan(12);
+    expect(await store(page, (m) => m.getState().notice?.text)).toBe(`${thin} is ${now} mm wide, up from 12 mm: its rollers need the room.`);
+    await store(page, (m) => {
+      m.undo();
+      m.undo();
+    });
+    await expect(faults).toHaveCount(4);
+    expect(await wheels()).toEqual(before);
     for (let left = 4; left > 0; left--) {
       await faults.first().getByRole('button', { name: 'Replace' }).click();
       await expect(faults).toHaveCount(left - 1);

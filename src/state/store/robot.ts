@@ -31,7 +31,7 @@ import { cancelPlacing } from './placing';
 import { cancelMate } from './parts';
 import { refreshAlignBounds, stopAligning } from './tools';
 import { exportName, reportSaved } from './exporting';
-import { inUnit } from '../../units';
+import { inUnit, lengthText } from '../../units';
 
 // --- robot mode ---------------------------------------------------------------
 
@@ -301,12 +301,18 @@ export function updateLink(node: string, patch: Partial<Omit<RobotLink, 'node'>>
 /**
  * Makes the link's object a Mecanum wheel part where it stands, as one step: what the checks offer for a wheel of
  * a mecanum drive that is not one. What is picked stays picked: the checks stay in view for the next wheel.
+ * A wheel that had to be made wider says so.
  */
 export function replaceWithMecanum(link: string): void {
   const { doc } = getState();
   const next = doc.robot && withMecanumWheel(doc.scene, doc.robot, link);
   if (!next) return;
   commit(next.scene, { robot: () => next.robot });
+  if (next.widened) {
+    const { units } = getState().prefs;
+    const name = next.scene.find((n) => n.id === link)?.name ?? '';
+    notify(tr('{name} is {now} wide, up from {was}: its rollers need the room.', { name, now: lengthText(next.widened.now, units, 1), was: lengthText(next.widened.was, units, 1) }));
+  }
 }
 
 const jointName = (robot: Robot, base: string): string => {
