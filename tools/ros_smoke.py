@@ -15,6 +15,14 @@ robot in Gazebo when told to on /cmd_vel, and ros2_control's controllers must
 come up and track a trajectory, a loop taking its passive joints along. Every SDF package is checked and its world
 run, the model must appear and a drive must move it. Exits non-zero on any
 failure, and reports the [Err] lines Gazebo printed on the way.
+
+Whatever is timed is timed by the simulation's own clock, read from the poses
+Gazebo publishes as it steps: a command is in force for so many seconds of the
+simulation, the robot is at rest before the next one, a joint is given so many
+seconds of the simulation to arrive. A busy machine slows the simulation and
+this script alike, and the figures stay what they are. The clock on the wall
+only bounds how long something may take to appear at all (a topic, a
+controller, a window), and such a bound can fail a run but never pass one.
 """
 import glob
 import json
@@ -26,13 +34,27 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import xml.etree.ElementTree as ET
 
+import rclpy
 import yaml
+from geometry_msgs.msg import Twist as RosTwist
+from gz.msgs10.double_pb2 import Double
+from gz.msgs10.model_pb2 import Model
+from gz.msgs10.pose_v_pb2 import Pose_V
+from gz.msgs10.twist_pb2 import Twist as GzTwist
+from gz.transport13 import Node as GzNode
+from nav_msgs.msg import Odometry
+from rclpy.executors import SingleThreadedExecutor
+from rclpy.qos import qos_profile_sensor_data
+from sensor_msgs.msg import JointState
+from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
 WS = '/tmp/ros_smoke_ws'
 failures = []
+ROS = None  # this script's own ROS node, made in main()
 
 
 # A mecanum drive told to slide goes at least this share of what it went when told forward, and strays no more than
@@ -42,6 +64,12 @@ MECANUM_LEAST, MECANUM_STRAY = 0.8, 0.1
 # (rad/s) for this long turns at between these shares of it, by the simulation's own time: a long contact
 # skids (Gazebo gave 75 % in the trial, plain Coulomb friction gives 70 to 80 %). It moves no farther than this (m).
 TRACK_TURN, TRACK_SECONDS, TRACK_SHARE, TRACK_DRIFT = 1.0, 3.0, (0.5, 1.05), 0.05
+# How long, by the clock on the wall, anything may take to appear or the simulation to get through a stretch of
+# its own time, on however busy a machine (s). Reaching it is a failure, so its size decides no figure.
+BOUND = 300
+# A robot is at rest when, over this much of the simulation's time (s), it has moved no more than this (m) and
+# turned no more than this (rad) about any axis.
+REST_WINDOW, REST_MOVE, REST_TURN = 0.5, 0.001, 0.003
 
 
 def fail(pkg, what):
@@ -53,7 +81,7 @@ def ok(what):
     print(f'  ok   {what}', flush=True)
 
 
-def run(cmd, timeout=60, env=None, check=False):
+def run(cmd, timeout=300, env=None, check=False):
     r = subprocess.run(cmd, shell=isinstance(cmd, str), capture_output=True, text=True, timeout=timeout, env=env)
     if check and r.returncode:
         raise RuntimeError(f'{cmd}\n{r.stdout}\n{r.stderr}')
@@ -154,6 +182,7 @@ def grab(topic, kind, env, timeout=15, save=''):
 
 
 def wait_for(predicate, timeout, step=0.5):
+    """Waits, by the clock on the wall, for something to be there at all: a bound on a failure, never a measure."""
     end = time.time() + timeout
     while time.time() < end:
         v = predicate()
@@ -163,17 +192,202 @@ def wait_for(predicate, timeout, step=0.5):
     return None
 
 
-def gz_pose(model, world, timeout=10):
-    """The model's pose in Gazebo: (x, y, z, roll, pitch, yaw), or None."""
-    try:
-        r = run(['gz', 'model', '-m', model, '-p'], timeout=timeout)
-    except subprocess.TimeoutExpired:
-        return None
-    nums = re.findall(r'\[([-\d.e+ ]+)\]', r.stdout)
-    rows = [[float(v) for v in n.split()] for n in nums if len(n.split()) == 3]
-    if len(rows) >= 2:
-        return tuple(rows[0] + rows[1])
-    return None
+class Sim:
+    """What Gazebo itself tells of a model as it steps, listened to in this process: its pose at each moment of
+    the simulation's time (some sixty a second, from the world's pose/info), and its joints where the model has
+    Gazebo's own joint state publisher. Nothing is asked of the server (asking it for a pose holds it up), and
+    the time is the simulation's own, so neither the reading nor the waiting depends on how busy the machine is."""
+
+    def __init__(self, world, model, joints_topic=None):
+        self.model, self.lock = model, threading.Lock()
+        self.track = []  # (time, x, y, z, roll, pitch, yaw)
+        self.joints, self.joints_seen, self.unrest = {}, 0, None
+        self.node = GzNode()
+        self.pubs = {}
+        self.node.subscribe(Pose_V, f'/world/{world}/pose/info', self._poses)
+        if joints_topic:
+            self.node.subscribe(Model, joints_topic, self._joints)
+
+    def _poses(self, msg):
+        t = msg.header.stamp.sec + msg.header.stamp.nsec * 1e-9
+        for p in msg.pose:
+            if p.name == self.model:
+                q = p.orientation
+                x, y, z, w = q.x, q.y, q.z, q.w
+                roll = math.atan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y))
+                pitch = math.asin(max(-1.0, min(1.0, 2 * (w * y - z * x))))
+                yaw = math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
+                with self.lock:
+                    # The stream is in the order of the simulation's time; a message out of it is of no use.
+                    if not self.track or t > self.track[-1][0]:
+                        self.track.append((t, p.position.x, p.position.y, p.position.z, roll, pitch, yaw))
+                return
+
+    def _joints(self, msg):
+        found = {j.name: j.axis1.position for j in msg.joint}
+        with self.lock:
+            self.joints, self.joints_seen = found, self.joints_seen + 1
+
+    def count(self):
+        with self.lock:
+            return len(self.track)
+
+    def since(self, index):
+        with self.lock:
+            return self.track[index:]
+
+    def now(self):
+        """The simulation's time at the last pose heard (s), or None before the first."""
+        with self.lock:
+            return self.track[-1][0] if self.track else None
+
+    def pose(self):
+        """The model's last pose: (x, y, z, roll, pitch, yaw), or None before the first."""
+        with self.lock:
+            return self.track[-1][1:] if self.track else None
+
+    def appear(self, timeout=60):
+        return wait_for(self.pose, timeout, 0.1)
+
+    def until(self, predicate, seconds):
+        """Waits for `predicate` to hold, for at most `seconds` of the simulation's time: its value, or None."""
+        start, end = self.now(), time.time() + BOUND
+        while True:
+            v = predicate()
+            if v:
+                return v
+            if start is None or self.now() - start >= seconds or time.time() > end:
+                return None
+            time.sleep(0.02)
+
+    def wait(self, seconds):
+        """Lets `seconds` of the simulation's time pass. False where the simulation did not get that far."""
+        start = self.now()
+        return bool(start is not None and self.until(lambda: self.now() - start >= seconds, seconds + 1))
+
+    def rest(self, meanwhile=None, seconds=30):
+        """Waits for the model to be at rest (see REST_WINDOW), for at most `seconds` of the simulation's time,
+        calling `meanwhile` as it waits. Returns its pose there, or None where it never came to rest."""
+        def still():
+            if meanwhile:
+                meanwhile()
+            with self.lock:
+                last = self.track[-1][0] if self.track else 0.0
+                window = [p for p in self.track[-400:] if p[0] >= last - REST_WINDOW]
+            if len(window) < 5 or window[-1][0] - window[0][0] < 0.8 * REST_WINDOW:
+                return None
+            spans = [max(p[i] for p in window) - min(p[i] for p in window) for i in range(1, 6)]
+            yaws = [(p[6] - window[0][6] + math.pi) % (2 * math.pi) - math.pi for p in window]
+            self.unrest = (max(spans[:3]), max(spans[3:] + [max(yaws) - min(yaws)]))
+            if self.unrest[0] > REST_MOVE or self.unrest[1] > REST_TURN:
+                return None
+            return window[-1][1:]
+        return self.until(still, seconds)
+
+    def moving(self):
+        """How far from rest the model was when last looked at, in words, for a failure."""
+        return f'still moving {1000 * self.unrest[0]:.1f} mm and turning {math.degrees(self.unrest[1]):.2f}° in {REST_WINDOW} s' if self.unrest else 'no pose heard'
+
+    def joint_positions(self, timeout=BOUND):
+        """Every joint's position as the model's joint state publisher next tells it, by name; None when nothing is heard."""
+        with self.lock:
+            seen = self.joints_seen
+
+        def fresh():
+            with self.lock:
+                return dict(self.joints) if self.joints_seen > seen else None
+        return wait_for(fresh, timeout, 0.02)
+
+    def publisher(self, topic, kind):
+        """A publisher on a Gazebo topic that something is listening to, or None where nothing came to listen:
+        a message sent before the listener is found is lost, and one sent after is not."""
+        if topic not in self.pubs:
+            self.pubs[topic] = self.node.advertise(topic, kind)
+        pub = self.pubs[topic]
+        return pub if wait_for(pub.has_connections, 60, 0.05) else None
+
+
+class Ros:
+    """This script's own ROS node, kept through the run: it tells /cmd_vel and a trajectory controller, and
+    hears /joint_states and /odom, without starting a process for each message (which takes seconds on a busy
+    machine, and so cannot time anything)."""
+
+    def __init__(self):
+        rclpy.init()
+        self.node = rclpy.create_node('plastikcad_smoke')
+        self.lock = threading.Lock()
+        self.joints, self.heard_at, self.messages, self.odom, self.odom_seen = {}, {}, 0, None, 0
+        self.cmd_vel = self.node.create_publisher(RosTwist, '/cmd_vel', 10)
+        self.node.create_subscription(JointState, '/joint_states', self._joints, qos_profile_sensor_data)
+        self.node.create_subscription(Odometry, '/odom', self._odom, qos_profile_sensor_data)
+        self.trajectories = {}
+        self.executor = SingleThreadedExecutor()
+        self.executor.add_node(self.node)
+        threading.Thread(target=self.executor.spin, daemon=True).start()
+
+    def _joints(self, msg):
+        with self.lock:
+            self.messages += 1
+            for joint, at in zip(msg.name, msg.position):
+                self.joints[joint], self.heard_at[joint] = at, self.messages
+
+    def _odom(self, msg):
+        with self.lock:
+            p = msg.pose.pose.position
+            self.odom, self.odom_seen = (p.x, p.y, msg.header.frame_id, msg.child_frame_id), self.odom_seen + 1
+
+    def joint_positions(self, names, timeout=BOUND):
+        """Where the joints `names` are, each as /joint_states tells it after this is asked: by name, with whatever
+        else was told meanwhile. Those not told of within `timeout` are left out. More than one node may publish
+        the topic, each its own joints (ros2_control's broadcaster those it has, Gazebo's bridge all of the
+        model's), so no single message need carry them all."""
+        with self.lock:
+            since = self.messages
+
+        def told():
+            with self.lock:
+                return dict(self.joints) if all(self.heard_at.get(j, 0) > since for j in names) else None
+
+        got = wait_for(told, timeout, 0.02)
+        if got is not None:
+            return got
+        with self.lock:
+            return {j: v for j, v in self.joints.items() if self.heard_at.get(j, 0) > since}
+
+    def odometry(self, timeout=60):
+        """The next /odom to come: (x, y, frame, child frame), or None when none comes."""
+        with self.lock:
+            seen = self.odom_seen
+
+        def fresh():
+            with self.lock:
+                return self.odom if self.odom_seen > seen else None
+        return wait_for(fresh, timeout, 0.02)
+
+    def heard(self, pub, timeout=60):
+        """Whether something has come to listen to a publisher of this node's."""
+        return bool(wait_for(lambda: pub.get_subscription_count() > 0, timeout, 0.05))
+
+    def twist(self, x, y, z):
+        m = RosTwist()
+        m.linear.x, m.linear.y, m.angular.z = float(x), float(y), float(z)
+        self.cmd_vel.publish(m)
+
+    def trajectory(self, controller, joints, positions, seconds=1):
+        """Sends a controller one point to reach; False where the controller is not listening."""
+        if controller not in self.trajectories:
+            self.trajectories[controller] = self.node.create_publisher(JointTrajectory, f'/{controller}/joint_trajectory', 10)
+        pub = self.trajectories[controller]
+        if not self.heard(pub):
+            return False
+        m = JointTrajectory()
+        m.joint_names = list(joints)
+        point = JointTrajectoryPoint()
+        point.positions = [float(v) for v in positions]
+        point.time_from_start.sec = int(seconds)
+        m.points = [point]
+        pub.publish(m)
+        return True
 
 
 class Launched:
@@ -274,76 +488,41 @@ def bridged(pkg_dir):
         return yaml.safe_load(f) or []
 
 
-def stamped_yaws(text, model):
-    """A model's turn about the vertical at each moment of Gazebo's pose stream (`gz topic -e` on a world's
-    pose/info, as text): (the simulation's time in s, yaw in radians) for each message that tells of it."""
-    out, stack, t, name, q = [], [], 0.0, None, {}
-    for line in text.splitlines():
-        line = line.strip()
-        if line.endswith('{'):
-            block = line[:-1].strip()
-            if not stack and block == 'header':
-                t = 0.0
-            if not stack and block == 'pose':
-                name, q = None, {}
-            stack.append(block)
-        elif line == '}':
-            if stack and stack.pop() == 'pose' and not stack and name == model:
-                # A field that is zero is left out of the text.
-                x, y, z, w = (q.get(k, 0.0) for k in 'xyzw')
-                out.append((t, math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))))
-        elif ':' in line:
-            key, value = (v.strip() for v in line.split(':', 1))
-            try:
-                if stack == ['header', 'stamp'] and key == 'sec':
-                    t += float(value)
-                elif stack == ['header', 'stamp'] and key == 'nsec':
-                    t += float(value) * 1e-9
-                elif stack == ['pose'] and key == 'name':
-                    name = value.strip('"')
-                elif stack == ['pose', 'orientation'] and key in 'xyzw':
-                    q[key] = float(value)
-            except ValueError:
-                pass
-    return out
-
-
-def turn_through(model, world, action):
-    """Runs `action` (a velocity command for a while, then a stop) and adds up how far the model turns about the
-    vertical meanwhile, from the poses Gazebo publishes as it steps (some sixty for each second of its own time).
-    A turn read from the pose before and the pose after comes back within half a turn either way, so one past
-    180° reads as a turn the other way; added up from poses a sixtieth of a second apart it cannot. The poses are
-    listened to, not asked for: asking for one holds the simulation up, which shortens the turn it is timing.
-    Returns (the turn in radians, the longest of the simulation's time between two poses in s, the rate of the
-    turn in rad/s), or None where no pose came. The rate is taken over the middle of the turn, from a tenth of
-    it to nine tenths, by the simulation's own time: how long the command was in force, which the machine's
-    load decides, does not enter into it."""
-    with tempfile.NamedTemporaryFile('w+', suffix='.poses') as log:
-        listener = subprocess.Popen(['gz', 'topic', '-e', '-t', f'/world/{world}/pose/info'], stdout=log, stderr=subprocess.DEVNULL)
-        try:
-            # The turn is counted from a pose taken at rest: nothing is told to move before one has come.
-            if not wait_for(lambda: os.path.getsize(log.name) > 0 or None, 20, 0.2):
-                return None
-            action()
-            time.sleep(0.5)
-        finally:
-            listener.terminate()
-            try:
-                listener.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                listener.kill()
-        with open(log.name) as f:
-            seen = stamped_yaws(f.read(), model)
-    if len(seen) < 2:
+def move(sim, send, x, y, z, seconds):
+    """Tells the robot a velocity through `send(x, y, z)` for `seconds` of the simulation's time, from rest and
+    to rest again. Returns (the pose before, the pose after, how long the command was in force by the
+    simulation's time, the poses heard from the first telling on), or None where the robot was not at rest
+    before or never came to rest after. The command is told again and again, as a teleop would, and the stop
+    likewise until the robot stands."""
+    before = sim.rest()
+    if not before:
         return None
+    first, start, end = sim.count(), sim.now(), time.time() + BOUND
+    while sim.now() - start < seconds and time.time() < end:
+        send(x, y, z)
+        time.sleep(0.02)
+    took = sim.now() - start
+    after = sim.rest(lambda: send(0.0, 0.0, 0.0))
+    if not after or took < seconds:
+        return None
+    return before, after, took, sim.since(first)
+
+
+def turn_of(seen):
+    """How far a model turned about the vertical through the poses `seen`, added up from one pose to the next.
+    A turn read from the pose before and the pose after comes back within half a turn either way, so one past
+    180° reads as a turn the other way; added up from poses a sixtieth of a second apart it cannot.
+    Returns (the turn in radians, the longest of the simulation's time between two poses in s, the rate of the
+    turn in rad/s). The rate is taken over the middle of the turn, from a tenth of it to nine tenths, by the
+    simulation's own time: neither the start nor the stop enters into it."""
     sums = [0.0]
     for a, b in zip(seen, seen[1:]):
-        sums.append(sums[-1] + (b[1] - a[1] + math.pi) % (2 * math.pi) - math.pi)
+        sums.append(sums[-1] + (b[6] - a[6] + math.pi) % (2 * math.pi) - math.pi)
     turned = sums[-1]
     middle = [i for i, v in enumerate(sums) if 0.1 * abs(turned) <= abs(v) <= 0.9 * abs(turned)]
     took = seen[middle[-1]][0] - seen[middle[0]][0] if middle else 0.0
     rate = (sums[middle[-1]] - sums[middle[0]]) / took if took > 0 else 0.0
-    return turned, max(b[0] - a[0] for a, b in zip(seen, seen[1:])), rate
+    return turned, max((b[0] - a[0] for a, b in zip(seen, seen[1:])), default=0.0), rate
 
 
 def followed(name, gap, rate):
@@ -354,45 +533,57 @@ def followed(name, gap, rate):
     return False
 
 
-def drive_and_measure(model, world, publish, seconds=3.0):
-    """Drives forward for a while through `publish(x)` and returns the distance the model moved in Gazebo."""
-    before = wait_for(lambda: gz_pose(model, world), 20)
-    if not before:
-        return None, None, None
-    publish(0.2, seconds)
-    after = gz_pose(model, world)
-    if not after:
-        return None, None, None
-    dx, dy, dz = after[0] - before[0], after[1] - before[1], after[2] - before[2]
-    return math.hypot(dx, dy), after, before
+def check_drive(name, sim, send, text, what):
+    """A drive told forward for three seconds of the simulation's time moves the robot (`what`: "robot" or
+    "model"), which stays upright; a mecanum drive then slides and turns, and one on tracks turns on the spot.
+    `text` is the robot's file, which tells the kind of drive. `send(x, y, z)` tells it a velocity once."""
+    seconds = 3.0
+    went = move(sim, send, 0.2, 0.0, 0.0, seconds)
+    if not went:
+        return fail(name, f'the {what} was not at rest before the drive, or did not come to rest after it ({sim.moving()})')
+    before, after, took, _ = went
+    # A command in force a little longer than asked moved the robot that much farther: told as for the time asked.
+    dist = math.hypot(after[0] - before[0], after[1] - before[1]) * seconds / took
+    if dist < 0.15:
+        return fail(name, f'{what} moved only {dist:.3f} m in Gazebo on cmd_vel x = 0.2 for 3 s')
+    heading = math.degrees(math.atan2(after[1] - before[1], after[0] - before[0]))
+    ok(f'cmd_vel drove the {what} {dist:.3f} m in 3 s of the simulation, heading {heading:.0f}° (yaw {math.degrees(after[5]):.0f}°)')
+    if abs(after[3]) > 0.3 or abs(after[4]) > 0.3:
+        return fail(name, f'{what} tipped: roll {math.degrees(after[3]):.0f}°, pitch {math.degrees(after[4]):.0f}°')
+    if 'MecanumDrive' in text:
+        check_mecanum(name, sim, send, dist, after, before)
+    if on_tracks(text):
+        check_tracks(name, sim, send)
 
 
-def check_mecanum(name, model, world, twist, forward, after, before):
-    """A mecanum drive, after its run forward (`before` to `after`, `forward` m): told to slide to its left it goes
-    sideways about as far as it went forward, and told to turn it turns on the spot. `twist(x, y, z, seconds)`
-    sends a velocity command for a while and then a stop. Measured against the run forward, which the same
-    clock timed, not against the clock."""
-    ahead = ((after[0] - before[0]) / forward, (after[1] - before[1]) / forward)
+def check_mecanum(name, sim, send, forward, after, before):
+    """A mecanum drive, after its run forward (`before` to `after`, `forward` m in three seconds): told to slide
+    to its left it goes sideways about as far as it went forward, and told to turn it turns on the spot. Each
+    move starts from rest and is in force for three seconds of the simulation's time, as the run forward was."""
+    seconds = 3.0
+    length = math.hypot(after[0] - before[0], after[1] - before[1])
+    ahead = ((after[0] - before[0]) / length, (after[1] - before[1]) / length)
     left = (-ahead[1], ahead[0])
-    twist(0.0, 0.2, 0.0, 3.0)
-    slid = gz_pose(model, world)
-    if not slid:
-        return fail(name, 'could not read the pose after the slide')
-    d = (slid[0] - after[0], slid[1] - after[1])
+    slide = move(sim, send, 0.0, 0.2, 0.0, seconds)
+    if not slide:
+        return fail(name, f'the robot did not come to rest around the slide ({sim.moving()})')
+    start, slid, took, _ = slide
+    d = ((slid[0] - start[0]) * seconds / took, (slid[1] - start[1]) * seconds / took)
     sideways, along = d[0] * left[0] + d[1] * left[1], d[0] * ahead[0] + d[1] * ahead[1]
-    yawed = (slid[5] - after[5] + math.pi) % (2 * math.pi) - math.pi
+    yawed = (slid[5] - start[5] + math.pi) % (2 * math.pi) - math.pi
     if sideways < MECANUM_LEAST * forward or abs(along) > MECANUM_STRAY * forward or abs(yawed) > 0.15:
         fail(name, f'told to slide left, the robot went {sideways:.3f} m to its left, {along:.3f} m forward and turned {math.degrees(yawed):.0f}° (it went {forward:.3f} m forward when told to)')
     else:
         ok(f'cmd_vel y slid the robot {sideways:.3f} m to its left ({along:+.3f} m forward, turned {math.degrees(yawed):+.0f}°)')
-    read = turn_through(model, world, lambda: twist(0.0, 0.0, 0.5, 3.0))
-    spun = gz_pose(model, world)
-    if not read or not spun:
-        return fail(name, 'could not read the pose through the turn')
-    turned, gap, _ = read
+    spin = move(sim, send, 0.0, 0.0, 0.5, seconds)
+    if not spin:
+        return fail(name, f'the robot did not come to rest around the turn ({sim.moving()})')
+    start, spun, took, seen = spin
+    turned, gap, _ = turn_of(seen)
     if not followed(name, gap, 0.5):
         return
-    drift = math.hypot(spun[0] - slid[0], spun[1] - slid[1])
+    turned *= seconds / took
+    drift = math.hypot(spun[0] - start[0], spun[1] - start[1])
     if turned < 0.8 or drift > 0.05:
         fail(name, f'told to turn left on the spot, the robot turned {math.degrees(turned):.0f}° and moved {drift:.3f} m')
     else:
@@ -404,18 +595,17 @@ def on_tracks(text):
     return 'DiffDrive' in text and min(text.count('<left_joint>'), text.count('<right_joint>')) >= 3
 
 
-def check_tracks(name, model, world, twist, after):
+def check_tracks(name, sim, send):
     """A rover on tracks, after its run forward: told to turn on the spot it turns at most of the rate it was
-    told, where it stands. The rate is read by the simulation's own time (see `turn_through`), not against the
-    clock: a busy machine leaves the command in force for longer, and the rover turns farther, but no faster."""
-    read = turn_through(model, world, lambda: twist(0.0, 0.0, TRACK_TURN, TRACK_SECONDS))
-    spun = gz_pose(model, world)
-    if not read or not spun:
-        return fail(name, 'could not read the pose through the turn')
-    turned, gap, rate = read
+    told, where it stands. The rate is read by the simulation's own time (see `turn_of`)."""
+    spin = move(sim, send, 0.0, 0.0, TRACK_TURN, TRACK_SECONDS)
+    if not spin:
+        return fail(name, f'the robot did not come to rest around the turn ({sim.moving()})')
+    start, spun, _, seen = spin
+    turned, gap, rate = turn_of(seen)
     if not followed(name, gap, TRACK_TURN):
         return
-    drift = math.hypot(spun[0] - after[0], spun[1] - after[1])
+    drift = math.hypot(spun[0] - start[0], spun[1] - start[1])
     share = rate / TRACK_TURN
     if not TRACK_SHARE[0] <= share <= TRACK_SHARE[1] or drift > TRACK_DRIFT:
         fail(name, f'told to turn left on the spot, the robot on tracks turned {math.degrees(turned):.0f}° at {rate:.2f} rad/s ({100 * share:.0f} % of the rate it was told) and moved {drift:.3f} m')
@@ -430,12 +620,12 @@ def check_rviz(name, urdf, env):
     xvfb = subprocess.Popen(['Xvfb', ':99', '-screen', '0', '1280x800x24', '-nolisten', 'tcp'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     denv = dict(env, DISPLAY=':99', LIBGL_ALWAYS_SOFTWARE='1', QT_X11_NO_MITSHM='1', XDG_RUNTIME_DIR='/tmp/runtime-smoke')
     os.makedirs('/tmp/runtime-smoke', exist_ok=True)
-    time.sleep(1)
+    wait_for(lambda: os.path.exists('/tmp/.X11-unix/X99'), 30, 0.1)
     launched = Launched(['ros2', 'launch', name, 'display.launch.py'], f'/tmp/{name}.display.log', env=denv)
     try:
         # A robot with no moving joint of its own (a rover on two tracks) has no joint states to publish: its frames are all fixed.
-        if moving_joints(urdf) and not wait_for(lambda: topic_once('/joint_states', 5), 40):
-            fail(name, 'display.launch.py published no /joint_states within 40 s (joint_state_publisher_gui)')
+        if moving_joints(urdf) and not ROS.joint_positions(moving_joints(urdf)[:1], 120):
+            fail(name, 'display.launch.py published no /joint_states within 120 s (joint_state_publisher_gui)')
             return
         # Frames: fixed joints go out once on /tf_static, moving ones with every joint state.
         def frames():
@@ -449,30 +639,41 @@ def check_rviz(name, urdf, env):
             if tf:
                 seen.update(t.get('child_frame_id') for t in tf.get('transforms', []))
             return seen
-        got = wait_for(lambda: (lambda f: f if len(f) >= len(links) - 1 else None)(frames()), 30) or frames()
+        got = wait_for(lambda: (lambda f: f if len(f) >= len(links) - 1 else None)(frames()), 120) or frames()
         missing = [l for l in links if l not in got and base.find(f"joint/child[@link='{l}']") is not None]
         if missing:
             fail(name, f"TF lacks frames for: {', '.join(missing)}")
         else:
             ok(f'robot_state_publisher gives every link a frame ({len(got)} transforms)')
-        # RViz has had time to load the meshes; the picture must show the robot, not just the grid.
-        time.sleep(20)
-        if run(['pgrep', '-f', 'rviz2'], env=denv).returncode:
-            fail(name, 'rviz2 is no longer running')
-            return
+        # RViz takes its time to load the meshes, the longer the busier the machine: its window is pictured until
+        # the picture shows the robot, not just the grid, and it must still be up then.
         picture = os.path.join(os.environ.get('SMOKE_PICTURES', '/tmp'), f'rviz_{name}.png')
-        r = run(f'xwd -root -silent -display :99 | convert xwd:- png:{picture}', timeout=30, env=denv)
-        if r.returncode or not os.path.exists(picture):
-            fail(name, f'no screenshot of RViz: {r.stderr.strip()[:200]}')
-            return
         # The robot's own colors from the URDF, so the frame axes and the grid do not pass for it.
         colors = sorted({m.get('rgba') for m in base.iter('color') if m.get('rgba')})
-        r = run(['python3', '-c', PICTURE_STATS, picture, json.dumps(colors)], timeout=60)
-        stats = json.loads(r.stdout.strip() or '{}') if r.returncode == 0 else {}
-        if stats.get('robot', 0) < 300:
-            fail(name, f"RViz's picture shows {stats.get('robot', 0)} pixels in the robot's colors: it did not render ({picture})")
+        last = {}
+
+        def shown():
+            if run(['pgrep', '-f', 'rviz2'], env=denv).returncode:
+                last.update(gone=True)
+                return last
+            r = run(f'xwd -root -silent -display :99 | convert xwd:- png:{picture}', timeout=120, env=denv)
+            if r.returncode or not os.path.exists(picture):
+                last.update(error=r.stderr.strip()[:200])
+                return None
+            r = run(['python3', '-c', PICTURE_STATS, picture, json.dumps(colors)], timeout=120)
+            last.update(json.loads(r.stdout.strip() or '{}') if r.returncode == 0 else {})
+            return last if last.get('robot', 0) >= 300 else None
+
+        wait_for(shown, BOUND, 2)
+        if last.get('gone') or run(['pgrep', '-f', 'rviz2'], env=denv).returncode:
+            fail(name, 'rviz2 is no longer running')
+            return
+        if 'robot' not in last:
+            fail(name, f"no screenshot of RViz: {last.get('error', '')}")
+        elif last['robot'] < 300:
+            fail(name, f"RViz's picture shows {last['robot']} pixels in the robot's colors: it did not render ({picture})")
         else:
-            ok(f"RViz shows the robot: {stats['robot']} pixels in its colors of {stats['total']} ({picture})")
+            ok(f"RViz shows the robot: {last['robot']} pixels in its colors of {last['total']} ({picture})")
     finally:
         errs = [l for l in launched.errors() if 'joint_state_publisher_gui' not in l or 'error' in l.lower()]
         launched.stop()
@@ -541,38 +742,62 @@ def check_ros_package(pkg_dir, env):
     topics = bridged(os.path.join(pkg_dir))
     controllers = os.path.join(share, 'config', 'controllers.yaml')
 
+    world_name = ET.parse(world).getroot().find('world').get('name')
+    sim = Sim(world_name, name)
     launched = Launched(['ros2', 'launch', name, 'gazebo.launch.py', 'headless:=true'], f'/tmp/{name}.launch.log', env=env)
     try:
-        world_name = ET.parse(world).getroot().find('world').get('name')
         # The robot is in when its joints are published.
-        js = wait_for(lambda: topic_once('/joint_states', 5), 60) if joints else None
+        js = ROS.joint_positions(joints, 180) if joints else None
         if not joints:
             ok("no moving joint of the robot's own, so no /joint_states")
         elif not js:
-            fail(name, 'no /joint_states within 60 s of launch')
+            fail(name, 'no /joint_states within 180 s of launch')
         else:
-            missing = sorted(set(joints) - set(js.get('name', [])))
+            missing = sorted(set(joints) - set(js))
             if missing:
                 fail(name, f'/joint_states lacks {missing}')
             else:
                 ok(f'/joint_states carries all {len(joints)} moving joints')
-        pose = wait_for(lambda: gz_pose(name, world_name), 20)
+        pose = sim.appear(120)
         if not pose:
-            fail(name, 'gz model finds no pose for the robot')
+            fail(name, "Gazebo's poses do not tell of the robot")
         else:
             ok(f'robot in Gazebo at z = {pose[2]:.3f} m')
-        # A joint with a start begins there and its controller holds it: read once the controllers have had time to come up.
+
+        cfg, wanted, listing = None, [], []
+        if os.path.exists(controllers):
+            with open(controllers) as f:
+                cfg = yaml.safe_load(f)
+            wanted = [k for k in cfg['controller_manager']['ros__parameters'] if isinstance(cfg['controller_manager']['ros__parameters'][k], dict)]
+
+        def controllers_up():
+            """ros2_control's own listing once every controller in it is active, or None; asked for once."""
+            def active():
+                try:
+                    r = run(['ros2', 'control', 'list_controllers'], timeout=60, env=env)
+                except subprocess.TimeoutExpired:
+                    return None
+                return r.stdout if all(re.search(rf'{c}\b.*\bactive', r.stdout) for c in wanted) else None
+            if not listing:
+                listing.append(wait_for(active, BOUND, 2))
+            return listing[0]
+
+        # A joint with a start begins there and its controller holds it: read once the controllers are up and
+        # have had three seconds of the simulation's time to pull it away, were they to.
         starts = initial_values(urdf)
-        if starts:
-            time.sleep(8)
-            js = topic_once('/joint_states', 8) or {}
-            at = dict(zip(js.get('name', []), js.get('position', [])))
+        if starts and pose and controllers_up():
+            at = ROS.joint_positions(list(starts), 60) if sim.wait(3.0) else {}
             off = sorted(f'{j} at {at.get(j, float("nan")):.3f}, start {v:.3f}' for j, v in starts.items() if not abs(at.get(j, float('nan')) - v) < 0.15)
             if off:
                 fail(name, f'joints not at their starts: {off}')
             else:
-                settled = gz_pose(name, world_name)
+                settled = sim.pose()
                 ok(f'{len(starts)} joints hold their starts' + (f', robot at z = {settled[2]:.3f} m' if settled else ''))
+
+        # The robot is put into the world a little above the floor: its sensors are read once it stands there,
+        # which its poses tell (an IMU reads gravity alone only at rest).
+        if pose and not sim.rest():
+            fail(name, f'the robot did not come to rest in the world ({sim.moving()})')
 
         # Sensors: every topic bridged from Gazebo to ROS must publish.
         for t in topics:
@@ -581,7 +806,7 @@ def check_ros_package(pkg_dir, env):
             heavy = {'sensor_msgs/msg/Image': 'image', 'sensor_msgs/msg/CameraInfo': 'info', 'sensor_msgs/msg/PointCloud2': 'cloud'}.get(t['ros_type_name'])
             # Pictures and clouds are too big to echo as YAML: a node sums them up instead.
             picture = os.path.join(os.environ['SMOKE_PICTURES'], f'{name}{t["ros_topic_name"].replace("/", "_")}.png') if heavy == 'image' and os.environ.get('SMOKE_PICTURES') else ''
-            msg = wait_for(lambda: grab(t['ros_topic_name'], heavy, env, 10, picture), 40) if heavy else wait_for(lambda: topic_once(t['ros_topic_name'], 8), 30)
+            msg = wait_for(lambda: grab(t['ros_topic_name'], heavy, env, 30, picture), 120) if heavy else wait_for(lambda: topic_once(t['ros_topic_name'], 30), 120)
             if not msg:
                 fail(name, f'{t["ros_topic_name"]} ({t["ros_type_name"]}) published nothing')
                 continue
@@ -666,69 +891,35 @@ def check_ros_package(pkg_dir, env):
             ok(f'{t["ros_topic_name"]} publishes ({t["ros_type_name"].split("/")[-1]}{detail})')
 
         # Drive.
-        if any(t['ros_topic_name'] == '/cmd_vel' for t in topics):
-            def publish(x, seconds):
-                run(['ros2', 'topic', 'pub', '-r', '20', '-t', str(int(seconds * 20)), '/cmd_vel', 'geometry_msgs/msg/Twist', f'{{linear: {{x: {x}}}}}'], timeout=seconds + 20, env=env)
-                run(['ros2', 'topic', 'pub', '-1', '-w', '1', '/cmd_vel', 'geometry_msgs/msg/Twist', '{}'], timeout=20, env=env)
-
-            odom0 = topic_once('/odom', 10)
-            dist, after, before = drive_and_measure(name, world_name, publish)
-            odom1 = topic_once('/odom', 10)
-            if dist is None:
-                fail(name, 'could not read the robot pose around the drive')
-            elif dist < 0.15:
-                fail(name, f'robot moved only {dist:.3f} m in Gazebo on cmd_vel x = 0.2 for 3 s')
+        if any(t['ros_topic_name'] == '/cmd_vel' for t in topics) and pose:
+            with open(urdf) as f:
+                text = f.read()
+            if not ROS.heard(ROS.cmd_vel):
+                fail(name, 'nothing listens to /cmd_vel')
             else:
-                heading = math.degrees(math.atan2(after[1] - before[1], after[0] - before[0]))
-                ok(f'cmd_vel drove the robot {dist:.3f} m in Gazebo, heading {heading:.0f}° (yaw {math.degrees(after[5]):.0f}°)')
-                tipped = abs(after[3]) > 0.3 or abs(after[4]) > 0.3
-                if tipped:
-                    fail(name, f'robot tipped: roll {math.degrees(after[3]):.0f}°, pitch {math.degrees(after[4]):.0f}°')
-                with open(urdf) as f:
-                    text = f.read()
-                mecanum, tracks = 'MecanumDrive' in text, on_tracks(text)
-
-                def twist(x, y, z, seconds):
-                    run(['ros2', 'topic', 'pub', '-r', '20', '-t', str(int(seconds * 20)), '/cmd_vel', 'geometry_msgs/msg/Twist', f'{{linear: {{x: {x}, y: {y}}}, angular: {{z: {z}}}}}'], timeout=seconds + 20, env=env)
-                    run(['ros2', 'topic', 'pub', '-1', '-w', '1', '/cmd_vel', 'geometry_msgs/msg/Twist', '{}'], timeout=20, env=env)
-                    time.sleep(0.5)
-
-                if mecanum and not tipped:
-                    time.sleep(0.5)
-                    check_mecanum(name, name, world_name, twist, dist, gz_pose(name, world_name) or after, before)
-                if tracks and not tipped:
-                    time.sleep(0.5)
-                    check_tracks(name, name, world_name, twist, gz_pose(name, world_name) or after)
-            if odom0 and odom1 and not isinstance(odom0.get('pose'), type(None)):
-                p0, p1 = odom0['pose']['pose']['position'], odom1['pose']['pose']['position']
-                od = math.hypot(p1['x'] - p0['x'], p1['y'] - p0['y'])
-                frames = f"{odom1['header']['frame_id']} -> {odom1['child_frame_id']}"
-                if od < 0.1:
-                    fail(name, f'/odom moved only {od:.3f} m ({frames})')
+                odom0 = ROS.odometry()
+                check_drive(name, sim, ROS.twist, text, 'robot')
+                odom1 = ROS.odometry()
+                if odom0 and odom1:
+                    od = math.hypot(odom1[0] - odom0[0], odom1[1] - odom0[1])
+                    frames = f'{odom1[2]} -> {odom1[3]}'
+                    if od < 0.1:
+                        fail(name, f'/odom moved only {od:.3f} m ({frames})')
+                    else:
+                        ok(f'/odom moved {od:.3f} m ({frames})')
                 else:
-                    ok(f'/odom moved {od:.3f} m ({frames})')
-            else:
-                fail(name, '/odom published nothing')
+                    fail(name, '/odom published nothing')
 
         # ros2_control.
-        if os.path.exists(controllers):
-            with open(controllers) as f:
-                cfg = yaml.safe_load(f)
-            wanted = [k for k in cfg['controller_manager']['ros__parameters'] if isinstance(cfg['controller_manager']['ros__parameters'][k], dict)]
-
-            def active():
-                r = run(['ros2', 'control', 'list_controllers'], timeout=15, env=env)
-                return r.stdout if all(re.search(rf'{c}\b.*\bactive', r.stdout) for c in wanted) else None
-
-            listing = wait_for(active, 60, 2)
-            if not listing:
+        if cfg:
+            if not controllers_up():
                 fail(name, f'controllers {wanted} did not all become active')
             else:
                 ok(f'controllers active: {", ".join(wanted)}')
                 # A joint commanded by torque offers its effort to a controller of the user's, beside the position this one holds.
                 efforts = effort_joints(urdf)
                 if efforts:
-                    offered = run(['ros2', 'control', 'list_hardware_interfaces'], timeout=15, env=env).stdout
+                    offered = run(['ros2', 'control', 'list_hardware_interfaces'], timeout=120, env=env).stdout
                     lacking = [j for j in efforts if not re.search(rf'{re.escape(j)}/effort \[available\]', offered)]
                     if lacking:
                         fail(name, f'no effort command interface offered for {lacking}')
@@ -737,35 +928,31 @@ def check_ros_package(pkg_dir, env):
                 ctrl = next((k for k in wanted if k != 'joint_state_broadcaster'), None)
                 cjoints = cfg[ctrl]['ros__parameters']['joints']
                 target = [0.3] + [0.0] * (len(cjoints) - 1)
-                names = ', '.join(cjoints)
-                positions = ', '.join(str(v) for v in target)
-                run(['ros2', 'topic', 'pub', '-1', '-w', '1', f'/{ctrl}/joint_trajectory', 'trajectory_msgs/msg/JointTrajectory',
-                     f'{{joint_names: [{names}], points: [{{positions: [{positions}], time_from_start: {{sec: 1}}}}]}}'], timeout=30, env=env)
-                def reached():
-                    js = topic_once('/joint_states', 10)
-                    if js and cjoints[0] in js.get('name', []):
-                        return js['position'][js['name'].index(cjoints[0])]
-                    return None
 
-                got = wait_for(lambda: (lambda v: v if v is not None and abs(v - 0.3) < 0.05 else None)(reached()), 20)
-                if got is None:
-                    last = reached()
-                    fail(name, f'{cjoints[0]} reached {last} rad of 0.3 asked through /{ctrl}')
+                def reached():
+                    return ROS.joint_positions(cjoints[:1], 60).get(cjoints[0])
+
+                # The trajectory takes one second; the joint has ten of the simulation's to be there.
+                if not ROS.trajectory(ctrl, cjoints, target):
+                    fail(name, f'nothing listens to /{ctrl}/joint_trajectory')
+                    got = None
                 else:
+                    got = sim.until(lambda: (lambda v: v if v is not None and abs(v - 0.3) < 0.05 else None)(reached()), 10)
+                    if got is None:
+                        fail(name, f'{cjoints[0]} reached {reached()} rad of 0.3 asked through /{ctrl}')
+                if got is not None:
                     ok(f'/{ctrl} moved {cjoints[0]} to {got:.3f} rad of 0.3')
                     # A loop, which Gazebo closes by a weld, takes its passive joints along: with the controlled
                     # joint moved, the joints no controller has are no longer where they began.
-                    with open(urdf) as f:
-                        looped = 'gz::sim::systems::DetachableJoint' in f.read()
+                    looped = 'gz::sim::systems::DetachableJoint' in open(urdf).read()
                     free = [j for j in joints if j not in cjoints]
                     if looped and free:
                         def carried():
-                            js = topic_once('/joint_states', 10) or {}
-                            at = dict(zip(js.get('name', []), js.get('position', [])))
+                            at = ROS.joint_positions(free, 60)
                             moved = {j: at[j] for j in free if j in at and abs(at[j]) > 0.1}
                             return moved or None
 
-                        moved = wait_for(carried, 20)
+                        moved = sim.until(carried, 10)
                         if not moved:
                             fail(name, f'the loop did not carry its passive joints {free} when {cjoints[0]} moved')
                         else:
@@ -781,49 +968,41 @@ def check_ros_package(pkg_dir, env):
         os.unlink(tmp.name)
 
 
-def gz_joint_positions(env):
-    """Every joint's position as the model's joint state publisher has it, by name; None when nothing is heard."""
-    try:
-        r = run(['gz', 'topic', '-e', '-n', '1', '-t', '/joint_states'], timeout=15, env=env)
-    except subprocess.TimeoutExpired:
-        return None
-    found = {}
-    for block in r.stdout.split('joint {')[1:]:
-        name = re.search(r'name: "([^"]+)"', block)
-        at = re.search(r'axis1 \{.*?position: ([-\d.e+]+)', block, re.S)
-        if name:
-            found[name.group(1)] = float(at.group(1)) if at else 0.0
-    return found or None
-
-
-def check_sdf_holders(name, model, model_name, env):
+def check_sdf_holders(name, model, model_name, sim):
     """The joints Gazebo's own position controller holds: each must reach its start, stay there, and follow a command."""
     plugins = [p for p in ET.parse(model).getroot().iter('plugin') if 'JointPositionController' in (p.get('name') or '')]
     starts = {p.findtext('joint_name'): float(p.findtext('initial_position') or 0) for p in plugins}
     if not starts:
         return
+
     def off():
-        now = gz_joint_positions(env)
+        now = sim.joint_positions(60)
         return None if now is None else max(abs(now.get(j, float('inf')) - at) for j, at in starts.items())
-    time.sleep(3)
-    worst = wait_for(lambda: (lambda v: v is not None and v < 0.05 and [v])(off()), 20)
+
+    # Three seconds of the simulation's time to fall away from the starts, were the joints not held, and twenty more to be there.
+    sim.wait(3.0)
+    worst = sim.until(lambda: (lambda v: v is not None and v < 0.05 and [v])(off()), 20)
     if not worst:
         return fail(name, f'the joints did not reach their starts: off by {off()} rad')
     began = sum(1 for at in starts.values() if at)
     ok(f'{len(starts)} joints held by Gazebo within {worst[0]:.3f} rad of their starts ({began} away from zero)')
-    pose = gz_pose(model_name, None)
+    pose = sim.pose()
     if pose and (abs(pose[3]) > 0.3 or abs(pose[4]) > 0.3):
         fail(name, f'the model fell over at its starts: roll {pose[3]:.2f}, pitch {pose[4]:.2f}')
-    # One joint sent a little further follows.
+    # One joint sent a little further follows: told once its controller is listening, and given fifteen
+    # seconds of the simulation's time to be there.
     joint, at = next(iter(starts.items()))
     want = at + 0.1
     topic = f'/model/{model_name}/joint/{joint}/0/cmd_pos'
-    run(['gz', 'topic', '-t', topic, '-m', 'gz.msgs.Double', '-p', f'data: {want}'], timeout=10, env=env)
-    reached = wait_for(lambda: (lambda now: now is not None and abs(now.get(joint, 9) - want) < 0.03)(gz_joint_positions(env)), 15)
+    pub = sim.publisher(topic, Double)
+    if not pub:
+        return fail(name, f'nothing listens to {topic}')
+    pub.publish(Double(data=want))
+    reached = sim.until(lambda: (lambda now: now is not None and abs(now.get(joint, 9) - want) < 0.03)(sim.joint_positions(60)), 15)
     if reached:
         ok(f'"{joint}" follows a position sent on {topic}')
     else:
-        fail(name, f'"{joint}" did not follow {topic}: at {(gz_joint_positions(env) or {}).get(joint)} of {want:.3f}')
+        fail(name, f'"{joint}" did not follow {topic}: at {(sim.joint_positions(60) or {}).get(joint)} of {want:.3f}')
 
 
 def check_sdf_package(pkg_dir, env):
@@ -843,49 +1022,29 @@ def check_sdf_package(pkg_dir, env):
     # The model carries the design's name, not the folder's.
     model_name = ET.parse(model).getroot().find('model').get('name')
     env = dict(env, GZ_SIM_RESOURCE_PATH=os.path.dirname(pkg_dir))
+    sim = Sim(world_name, model_name, '/joint_states')
     launched = Launched(['gz', 'sim', '-s', '-r', '--headless-rendering', world], f'/tmp/{name}.sdf.log', env=env)
     try:
-        pose = wait_for(lambda: gz_pose(model_name, world_name), 60)
+        pose = sim.appear(180)
         if not pose:
             fail(name, f'model "{model_name}" did not appear in the world')
         else:
             ok(f'model in the world at z = {pose[2]:.3f} m')
-            check_sdf_holders(name, model, model_name, env)
+            check_sdf_holders(name, model, model_name, sim)
             with open(model) as f:
-                if 'cmd_vel' in f.read():
-                    def publish(x, seconds):
-                        end = time.time() + seconds
-                        while time.time() < end:
-                            run(['gz', 'topic', '-t', '/cmd_vel', '-m', 'gz.msgs.Twist', '-p', f'linear: {{x: {x}}}'], timeout=10, env=env)
-                            time.sleep(0.1)
-                        run(['gz', 'topic', '-t', '/cmd_vel', '-m', 'gz.msgs.Twist', '-p', 'linear: {x: 0}'], timeout=10, env=env)
+                text = f.read()
+            if 'cmd_vel' in text:
+                pub = sim.publisher('/cmd_vel', GzTwist)
 
-                    dist, after, before = drive_and_measure(model_name, world_name, publish)
-                    if dist is None:
-                        fail(name, 'could not read the model pose around the drive')
-                    elif dist < 0.15:
-                        fail(name, f'model moved only {dist:.3f} m on cmd_vel x = 0.2 for 3 s')
-                    else:
-                        heading = math.degrees(math.atan2(after[1] - before[1], after[0] - before[0]))
-                        ok(f'cmd_vel drove the model {dist:.3f} m, heading {heading:.0f}°')
-                        with open(model) as f:
-                            text = f.read()
-                        mecanum, tracks = 'MecanumDrive' in text, on_tracks(text)
+                def send(x, y, z):
+                    m = GzTwist()
+                    m.linear.x, m.linear.y, m.angular.z = x, y, z
+                    pub.publish(m)
 
-                        def twist(x, y, z, seconds):
-                            end = time.time() + seconds
-                            while time.time() < end:
-                                run(['gz', 'topic', '-t', '/cmd_vel', '-m', 'gz.msgs.Twist', '-p', f'linear: {{x: {x}, y: {y}}}, angular: {{z: {z}}}'], timeout=10, env=env)
-                                time.sleep(0.1)
-                            run(['gz', 'topic', '-t', '/cmd_vel', '-m', 'gz.msgs.Twist', '-p', 'linear: {x: 0}'], timeout=10, env=env)
-                            time.sleep(0.5)
-
-                        if mecanum:
-                            time.sleep(0.5)
-                            check_mecanum(name, model_name, world_name, twist, dist, gz_pose(model_name, world_name) or after, before)
-                        if tracks:
-                            time.sleep(0.5)
-                            check_tracks(name, model_name, world_name, twist, gz_pose(model_name, world_name) or after)
+                if not pub:
+                    fail(name, 'nothing listens to /cmd_vel')
+                else:
+                    check_drive(name, sim, send, text, 'model')
     finally:
         errs = launched.errors()
         launched.stop()
@@ -901,6 +1060,9 @@ def main():
     sdf_dir = sys.argv[2] if len(sys.argv) > 2 else None
     env = dict(os.environ, GZ_SIM_RESOURCE_PATH=os.path.join(WS, 'install'))
     env.setdefault('ROS_DOMAIN_ID', '42')
+    os.environ.setdefault('ROS_DOMAIN_ID', '42')
+    global ROS
+    ROS = Ros()
 
     packages = sorted(d for d in glob.glob(os.path.join(ros_dir, '*')) if os.path.isfile(os.path.join(d, 'package.xml')))
     if packages:
