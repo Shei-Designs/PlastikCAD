@@ -41,7 +41,7 @@ export const partsFit: Catalog = {
   'Mounting plates and brackets for steppers, gearmotors, servos and DC motors.': 'Plaques de fixation et équerres pour moteurs pas à pas, motoréducteurs, servomoteurs et moteurs CC.',
 
   Wheels: 'Roues',
-  'Plain and mecanum wheels for robots.': 'Roues simples et roues mecanum pour robots.',
+  'Wheels and tracks for robots.': 'Roues et chenilles pour robots.',
 
   // Wheels (parts/generators/wheels.ts)
   'Wheel [[part]]': 'Roue',
@@ -64,6 +64,25 @@ export const partsFit: Catalog = {
   'Roller length': 'Longueur des rouleaux',
   'The rollers leave gaps between them. Add rollers or make the wheel wider.': 'Les rouleaux laissent des vides entre eux. Ajoutez des rouleaux ou élargissez la roue.',
   'The bore is as wide as the plates that hold the rollers.': 'L’alésage est aussi large que les flasques qui portent les rouleaux.',
+
+  // The track (parts/generators/track.ts)
+  Track: 'Chenille',
+  'Belt round a sprocket, an idler and road wheels, for a robot on tracks.': 'Bande autour d’un barbotin, d’une roue tendeuse et de galets, pour un robot à chenilles.',
+  'Sets the distance between the sprocket and idler axles.': 'Définit la distance entre les axes du barbotin et de la roue tendeuse.',
+  'Belt thickness': 'Épaisseur de la bande',
+  'Sprocket and idler diameter': 'Diamètre du barbotin et de la roue tendeuse',
+  'Road wheels': 'Galets',
+  'Road wheel diameter': 'Diamètre des galets',
+  'Sprocket rise': 'Relevage du barbotin',
+  'Lifts the sprocket off the floor. 0 leaves it on the floor.': 'Relève le barbotin au-dessus du sol. 0 le laisse au sol.',
+  'Idler rise': 'Relevage de la roue tendeuse',
+  'Lifts the idler off the floor. 0 leaves it on the floor.': 'Relève la roue tendeuse au-dessus du sol. 0 la laisse au sol.',
+  'Overall length': 'Longueur hors tout',
+  'Overall height': 'Hauteur hors tout',
+  'Length on the floor': 'Longueur au sol',
+  'Belt length [[track]]': 'Longueur de la bande',
+  'The wheels run into each other. Make the track longer or the wheels smaller.': 'Les roues se chevauchent. Allongez la chenille ou réduisez les roues.',
+  'The belt does not reach every wheel. Make the road wheels smaller.': 'La bande n’atteint pas toutes les roues. Réduisez les galets.',
 
   // Aluminum rails (parts/generators/extrusion.ts)
   'Aluminum rail': 'Profilé aluminium',

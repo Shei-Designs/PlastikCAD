@@ -134,6 +134,15 @@ const GLYPHS: Record<string, ReactNode> = {
       <path d="M9 12l9-8M9 19l18-15M9 26l18-15M9 32l18-14M17 32l10-7" />
     </>,
   ),
+  track: glyph(
+    <>
+      <path d="M10 10h16a8 8 0 0 1 0 16H10a8 8 0 0 1 0-16z" />
+      <circle cx="10" cy="18" r="4.5" />
+      <circle cx="26" cy="18" r="4.5" />
+      <circle cx="18" cy="21.5" r="2.5" />
+      <circle cx="10" cy="18" r="1.2" />
+    </>,
+  ),
   'panel-connector': glyph(
     <>
       <rect x="3" y="6" width="30" height="24" rx="2" />
