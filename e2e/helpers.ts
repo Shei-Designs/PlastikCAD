@@ -19,6 +19,7 @@ const VIEWPORT = '/src/ui/Viewport.tsx';
 const INPUT_MODE = '/src/ui/inputMode.ts';
 const BACK = '/src/ui/back.ts';
 const PROJECTS = '/src/state/projects.ts';
+const SIM = '/src/state/sim.ts';
 const APP_INFO = '/src/appInfo.ts';
 const EXPORT = '/src/io/export.ts';
 const THREEMF = '/src/io/threemf.ts';
@@ -490,6 +491,48 @@ export function screenPoint(page: Page, point: Vec3): Promise<[number, number]> 
     point,
   );
 }
+
+/** The test drive as it stands: whether a model is loaded and running, and how far each track's belt has run, mm, by the track's name. */
+export function testDrive(page: Page): Promise<{ status: string; belts: Record<string, number> }> {
+  return withModules(page, [SIM, STORE], (s: Internals, m: Store) => {
+    const state = s.sim.get();
+    const names = new Map(m.getState().doc.scene.map((n) => [n.id, n.name]));
+    return { status: state.status as string, belts: Object.fromEntries([...(state.belts as Map<string, number>)].map(([id, v]) => [names.get(id) ?? id, v])) };
+  });
+}
+
+/** A rover's command in the test drive, each part -1..1, as the keys and the pads give it. */
+export function steer(page: Page, forward: number, turn: number): Promise<void> {
+  return withModules(page, [SIM], (s: Internals, c: { forward: number; turn: number }) => s.sim.drive(c.forward, c.turn), { forward, turn });
+}
+
+/**
+ * The tracks the viewer draws with their belts running, by the track's name: whether the part's own mesh is its
+ * piece that holds still, how far each wheel is turned (radians), how many lugs are drawn and where the first
+ * one's first corner is in the part's own axes, and whether what is drawn over the part is on show with its edges.
+ */
+export function drawnBelts(page: Page): Promise<Record<string, { still: boolean; wheels: number[]; lugs: number; first: number[]; shown: boolean; edges: boolean }>> {
+  return viewer(page, (v) => {
+    const out: Record<string, unknown> = {};
+    for (const [id, h] of v.belts.held as Map<string, Internals>) {
+      const d = v.objects.drawn.get(id);
+      const at = h.lugs.geometry.getAttribute('position');
+      out[d.item.node.name] = {
+        still: String(d.shown.key).startsWith('still:'),
+        wheels: h.wheels.map((w: Internals) => w.mesh.rotation.y as number),
+        lugs: at.count / 30,
+        first: [at.getX(0), at.getY(0), at.getZ(0)],
+        shown: h.group.visible && h.group.parent !== null,
+        edges: h.lugEdges.visible,
+      };
+    }
+    return out as Record<string, { still: boolean; wheels: number[]; lugs: number; first: number[]; shown: boolean; edges: boolean }>;
+  });
+}
+
+/** The key of the geometry each object is drawn with, by the object's name. */
+export const drawnKeys = (page: Page): Promise<Record<string, string>> =>
+  viewer(page, (v) => Object.fromEntries([...v.objects.drawn.values()].map((d: Internals) => [d.item.node.name, String(d.shown?.key ?? '')])));
 
 /** How many objects the viewer has a mesh for. */
 export const drawnCount = (page: Page): Promise<number> => viewer(page, (v) => v.objects.drawn.size);

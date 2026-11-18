@@ -20,6 +20,11 @@ import { FaultWatch, floorLinks, linkLooks } from '../robot/collisionCheck';
 import { collisionMeshes } from '../geometry/kernel';
 import { frameOf } from '../state/sim';
 import type { Mat } from '../model/math';
+import { apply } from '../model/math';
+import { trackInPart } from '../parts/generators/track';
+import { standIns, trackOf } from '../robot/tracks';
+import type { Track } from '../robot/tracks';
+import { BeltWatch, beltAxis, beltWheels } from './belts';
 import { loadMujoco, Simulation } from './mujoco';
 
 let mj: MainModule;
@@ -298,6 +303,71 @@ describe('the rover on tracks', () => {
 
   it('shows no fault of its collision shapes on a flat floor', () => {
     expect(faultsAfter(make('tracked'), 1.5)).toEqual([]);
+  });
+
+  it('tells how far each belt has run: as far as the rover went, the floor run going backward, and opposite ways in a turn', () => {
+    const doc = make('tracked');
+    const { sim, base } = simulate(doc);
+    const robot = doc.robot!;
+    const nodes = linkNodes(doc.scene);
+    const geo = robotGeometry(nodes, Object.fromEntries(nodes.map((n) => [n.id, linkOf(robot, n.id).collision])), false);
+    const pkg = buildMjcfModel(doc, new Map(geo.map((g) => [g.id, { ...g, visual: [] }])), robot, 'flat');
+    const tracks = nodes.flatMap((node) => {
+      const track = trackOf(node);
+      return typeof track === 'string' ? [] : [{ node, track, name: pkg.bodies.find((b) => b.node === node.id)!.body }];
+    });
+    expect(tracks.map((t) => t.node.name)).toEqual(['Track left', 'Track right']);
+    const links = new Set(pkg.bodies.map((b) => b.body));
+    const watch = new BeltWatch(
+      tracks.map(({ node, track, name }) => ({ node: node.id, body: sim.bodies.indexOf(name), wheels: beltWheels(sim.bodies, name, (b) => links.has(b)), axis: beltAxis(track.toDesign).axis, radius: standIns(track.figures).radius })),
+    );
+    expect(tracks.map((t) => beltWheels(sim.bodies, t.name, (b) => links.has(b)).length)).toEqual([8, 8]);
+    // The way the belt's floor run goes when the belt runs forward along its path, in the design: the left track is mirrored, the path is told alike for both.
+    const floorWay = (track: Track): number => {
+      const run = track.figures.path.find((r) => r.kind === 'line' && Math.abs(r.normal + Math.PI / 2 - (r.normal > Math.PI ? 2 * Math.PI : 0)) < 1e-6);
+      if (!run || run.kind !== 'line') throw new Error('no floor run');
+      const [a, b] = [apply(track.toDesign, trackInPart(run.from, 0)), apply(track.toDesign, trackInPart(run.to, 0))];
+      return Math.sign(b[1] - a[1]);
+    };
+    const run = (seconds: number): number[] => {
+      let belts = new Map<string, number>();
+      for (let t = 0; t < seconds; t += 1 / 60) {
+        sim.step(1 / 60);
+        belts = watch.see(sim.poses());
+      }
+      return tracks.map((t) => belts.get(t.node.id)!);
+    };
+    watch.clear();
+    const settled = run(0.5);
+    // Standing still, the belts hold still.
+    for (const s of settled) expect(Math.abs(s)).toBeLessThan(2);
+    const start = position(sim, base);
+    sim.drive(1, 0);
+    const ahead = run(2);
+    const went = (position(sim, base)[1] - start[1]) * 1000;
+    expect(went).toBeGreaterThan(800);
+    tracks.forEach(({ track }, i) => {
+      const ran = ahead[i] - settled[i];
+      // The rover drives toward +Y, so the belt on the floor goes toward -Y; and it has run as far as the rover went, but for what it slipped.
+      expect(Math.sign(ran) * floorWay(track)).toBe(-1);
+      expect(Math.abs(ran)).toBeGreaterThan(went);
+      expect(Math.abs(ran)).toBeLessThan(1.15 * went);
+    });
+    // Backward, the belts run back.
+    sim.drive(-1, 0);
+    const back = run(2);
+    tracks.forEach(({ track }, i) => expect(Math.sign(back[i] - ahead[i]) * floorWay(track)).toBe(1));
+    sim.drive(0, 0);
+    const stopped = run(0.5);
+    // Turning on the spot to the left, the right belt drives ahead and the left one back.
+    sim.drive(0, 1);
+    const turned = run(1);
+    const [left, right] = tracks.map(({ track }, i) => (turned[i] - stopped[i]) * floorWay(track));
+    expect(left).toBeGreaterThan(100);
+    expect(right).toBeLessThan(-100);
+    // The start pose again, and no belt has run.
+    expect([...watch.clear().values()]).toEqual([0, 0]);
+    sim.dispose();
   });
 });
 

@@ -53,6 +53,7 @@ import { MeasureOverlay } from './measureOverlay';
 import { PointerInput } from './pointerInput';
 import { HandlePrompts } from './prompt';
 import { RobotOverlay } from './robotOverlay';
+import { TrackBelts } from './trackBelts';
 import type { RobotParts } from './robotOverlay';
 import { EMPTY_RADIUS, SceneSync, extent } from './sceneSync';
 import type { Drawn } from './sceneSync';
@@ -63,7 +64,7 @@ import type { HandleKind, ViewItem, ViewPreset, ViewerEvents, ViewerOptions } fr
 
 export type { AlignMode, HandleKind, HandlePrompt, Marker, SnapPoint, ViewItem, ViewPreset, ViewerEvents, ViewerOptions } from './types';
 
-const DEFAULTS: ViewerOptions = { theme: 'dark', edges: true, grid: true, units: 'mm', snap: 1, align: null, highlight: null, snaps: null, marker: null, markers: null, collisions: null, contacts: null, ground: null, preview: null, measure: null, objectAxes: false, frozen: false };
+const DEFAULTS: ViewerOptions = { theme: 'dark', edges: true, grid: true, units: 'mm', snap: 1, align: null, highlight: null, snaps: null, marker: null, markers: null, collisions: null, belts: null, contacts: null, ground: null, preview: null, measure: null, objectAxes: false, frozen: false };
 export const GIZMO_SIZE = 92;
 const GIZMO_MARGIN = 8;
 const PLATE_HALF = 100;
@@ -133,6 +134,7 @@ export class Viewer {
   private prompts!: HandlePrompts;
   private measure!: MeasureOverlay;
   private robot!: RobotOverlay;
+  private belts!: TrackBelts;
   private rig!: CameraRig;
   private input!: PointerInput;
 
@@ -317,6 +319,7 @@ export class Viewer {
     this.controls.removeEventListener('change', this.onCameraChange);
     this.controls.dispose();
 
+    this.belts.dispose();
     this.objects.dispose();
     this.robot.dispose();
     for (const grid of [this.gridMajor, this.gridMinor, this.axes, this.handles.parts.outline, this.pointer3d, this.handles.parts.alignLines, this.robot.parts.snapAxis]) {
@@ -439,6 +442,7 @@ export class Viewer {
     this.prompts = new HandlePrompts(this.stage, this.handles);
     this.measure = new MeasureOverlay(this.stage, this.objects, made.measureGroup);
     this.robot = new RobotOverlay(this.stage, made.robot);
+    this.belts = new TrackBelts(this.stage, this.objects.drawn);
     this.rig = new CameraRig(this.stage, {
       center: this.center,
       get radius() {
@@ -629,10 +633,13 @@ export class Viewer {
     }
     // Colors and edge lines are the only things about an object's look the options decide.
     if (touched('theme', 'edges')) for (const d of this.objects.drawn.values()) this.objects.style(d, d.item.selected);
+    // After the parts' own look: the belts are drawn with it.
+    if (touched('belts', 'theme', 'edges')) this.belts.sync();
   }
 
   private sync(): void {
     this.objects.update();
+    this.belts.sync();
     // A feature index goes with the object, or the geometry, it was made from.
     this.measure.prune();
     this.objects.release();

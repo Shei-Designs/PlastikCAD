@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { build, clearCache, exportColored, exportNodes, forgetAssets, initKernel, robotGeometry, setAssets } from '../geometry/kernel';
+import { build, clearCache, exportColored, exportNodes, forgetAssets, initKernel, robotGeometry, setAssets, trackLooks } from '../geometry/kernel';
 import { geomKey } from '../model/geomKey';
 import { makeGroup, makeShape } from '../model/ops';
 import type { ImportNode } from '../model/types';
@@ -25,6 +25,21 @@ function encode(a: Float32Array | Uint32Array): string {
 const sent = <T extends WorkerResponse>(msg: T): T => structuredClone(msg, { transfer: transferOf(msg) });
 
 describe('what a response hands over', () => {
+  it('sends a track in its pieces, each buffer once', () => {
+    const result = trackLooks({ id: 'track', type: 'part', name: 'Track', part: 'track', params: {}, natural: [1, 1, 1], size: [1, 1, 1], pos: [0, 0, 0], rot: [0, 0, 0], hole: false, color: '#ffffff' })!;
+    const msg: WorkerResponse = { type: 'trackLooks', id: 1, result };
+    const list = transferOf(msg);
+    expect(new Set(list).size).toBe(list.length);
+    // Positions, normals and edge lines of four pieces, and the still one's tree.
+    expect(list.length).toBe(4 * 3 + 3);
+    const sizes = [result.still.render.positions.length, result.sprocket.render.positions.length, result.road!.edges!.length];
+    const got = sent(msg);
+    if (got.type !== 'trackLooks' || !got.result) throw new Error('not sent');
+    expect([got.result.still.render.positions.length, got.result.sprocket.render.positions.length, got.result.road!.edges!.length]).toEqual(sizes);
+    expect(result.still.render.positions.length).toBe(0);
+    expect(transferOf({ type: 'trackLooks', id: 2, result: null })).toEqual([]);
+  });
+
   it('sends the links of a robot whose open mesh is its own collision shape', () => {
     // A box without its top: 10 triangles, every edge of the rim open.
     const positions = Float32Array.from([0, 0, 0, 10, 0, 0, 10, 10, 0, 0, 10, 0, 0, 0, 10, 10, 0, 10, 10, 10, 10, 0, 10, 10]);

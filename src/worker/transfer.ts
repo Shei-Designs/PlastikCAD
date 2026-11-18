@@ -20,6 +20,12 @@ function viewsOf(msg: WorkerResponse): View[] {
         msg.result.bvh.order,
         msg.result.edges,
       ];
+    case 'trackLooks': {
+      const r = msg.result;
+      if (!r) return [];
+      const piece = (p: { render: { positions: Float32Array; normals: Float32Array }; edges?: Float32Array } | null): View[] => (p ? [p.render.positions, p.render.normals, p.edges] : []);
+      return [...piece(r.still), r.still.bvh.boxes, r.still.bvh.nodes, r.still.bvh.order, ...piece(r.sprocket), ...piece(r.road), ...piece(r.idler)];
+    }
     case 'exportedStep':
       return [msg.result.bytes];
     case 'imported':

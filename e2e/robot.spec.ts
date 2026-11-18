@@ -1,7 +1,7 @@
 // Robot mode with fingers. Robot mode is experimental and its panels are not being polished yet;
 // what is known to be wrong is written down here so that it is not forgotten.
 import { readFileSync } from 'node:fs';
-import { expect, fitView, openApp, screenPoint, settled, started, store, test } from './helpers';
+import { drawnBelts, drawnKeys, expect, fitView, openApp, screenPoint, settled, started, steer, store, test, testDrive } from './helpers';
 
 test.describe('robot mode on a tablet', { tag: '@touch' }, () => {
   // Known to fail: with a joint picked, the "Fixed" button of the base's Free / Fixed row ends
@@ -612,5 +612,100 @@ test.describe('a rover on tracks', { tag: '@mouse' }, () => {
     await page.getByRole('button', { name: 'Test drive' }).click();
     const hold = page.getByRole('button', { name: 'Hold in the air' });
     await expect(hold).toHaveAttribute('aria-pressed', 'false', { timeout: 30_000 });
+  });
+
+  test('its belts are seen to run in the test drive: ahead, back, and opposite ways in a turn', async ({ page, errors }) => {
+    await openApp(page);
+    const bytes = [...readFileSync(new URL('../fixtures/robots/tracked.plastikcad', import.meta.url))];
+    await store(
+      page,
+      (m, b) => {
+        void m.receiveFiles([{ name: 'tracked.plastikcad', path: null, bytes: new Uint8Array(b) }]);
+      },
+      bytes,
+    );
+    await page.getByRole('button', { name: 'OK' }).click();
+    await expect.poll(() => store(page, (m) => m.getState().doc.robot?.joints.length ?? 0)).toBe(2);
+    await settled(page);
+    await store(page, (m) => {
+      m.enterRobotMode();
+      m.select([]);
+    });
+    await settled(page);
+    const whole = await drawnKeys(page);
+    expect(Object.keys(whole).sort()).toEqual(['Body', 'Track left', 'Track right']);
+    expect(await drawnBelts(page)).toEqual({});
+
+    await page.getByRole('button', { name: 'Test drive' }).click();
+    await expect.poll(async () => (await testDrive(page)).status, { timeout: 30_000 }).toBe('ready');
+    // Each track is now drawn as its belt and rail, with its wheels and its lugs over them: two lugs a pitch, as the part has.
+    await expect.poll(async () => Object.keys(await drawnBelts(page)).sort()).toEqual(['Track left', 'Track right']);
+    const TRACKS = ['Track left', 'Track right'] as const;
+    const at = async () => {
+      const [drive, drawn] = [await testDrive(page), await drawnBelts(page)];
+      return TRACKS.map((name) => ({ travel: drive.belts[name], ...drawn[name] }));
+    };
+    const rest = await at();
+    for (const t of rest) {
+      expect(t).toMatchObject({ still: true, shown: true, edges: true, lugs: 112 });
+      expect(t.wheels.length).toBe(5);
+      // Standing on its tracks, nothing has run to speak of.
+      expect(Math.abs(t.travel)).toBeLessThan(5);
+    }
+
+    // Ahead: both belts run the same way along their paths, the left track being the right one mirrored.
+    await steer(page, 1, 0);
+    await expect.poll(async () => Math.min(...(await at()).map((t) => Math.abs(t.travel)))).toBeGreaterThan(150);
+    const ahead = await at();
+    const way = Math.sign(ahead[0].travel);
+    expect(Math.sign(ahead[1].travel)).toBe(way);
+    // Back: they run back past where they stood.
+    await steer(page, -1, 0);
+    await expect.poll(async () => Math.max(...(await at()).map((t) => t.travel * way))).toBeLessThan(-150);
+    // Stopped, they hold still: two looks in a row say the same once the rover has come to rest.
+    await steer(page, 0, 0);
+    await expect
+      .poll(async () => {
+        const [a, b] = [await at(), await at()];
+        return Math.max(...a.map((t, i) => Math.abs(t.travel - b[i].travel)));
+      })
+      .toBeLessThan(0.5);
+    const stopped = await at();
+    // A turn to the left on the spot: the right belt drives ahead and the left one back.
+    await steer(page, 0, 1);
+    await expect
+      .poll(async () => {
+        const now = await at();
+        return Math.min((stopped[0].travel - now[0].travel) * way, (now[1].travel - stopped[1].travel) * way);
+      })
+      .toBeGreaterThan(100);
+    await steer(page, 0, 0);
+
+    // What is drawn is what the drive tells, at whatever moment it is looked at: each wheel turned by the belt's run over its rim, the lugs moved.
+    // Time is held for the look, so that the drive and the picture are of one moment.
+    await page.getByRole('button', { name: 'Pause' }).click();
+    await expect
+      .poll(async () => {
+        const [a, b] = [await at(), await at()];
+        return a.every((t, i) => t.travel === b[i].travel);
+      })
+      .toBe(true);
+    const held = await at();
+    held.forEach((t, i) => {
+      // The sprocket and the idler are 30 mm to the belt's inside, the road wheels 20.
+      t.wheels.forEach((w, k) => expect(w * [30, 20, 20, 20, 30][k]).toBeCloseTo(-t.travel, 6));
+      expect(t.first.some((v, k) => Math.abs(v - rest[i].first[k]) > 0.01)).toBe(true);
+      expect(t).toMatchObject({ still: true, shown: true, lugs: 112 });
+    });
+    // Back at the start pose, no belt has run and no wheel is turned.
+    await page.getByRole('button', { name: 'Reset' }).click();
+    await expect.poll(async () => (await at()).map((t) => Math.abs(t.travel) + Math.max(...t.wheels.map(Math.abs)))).toEqual([0, 0]);
+
+    // The drive ended, the tracks are the whole parts again and nothing is drawn over them.
+    await page.getByRole('button', { name: 'Stop', exact: true }).click();
+    await expect.poll(async () => (await testDrive(page)).status).toBe('off');
+    await expect.poll(() => drawnBelts(page)).toEqual({});
+    expect(await drawnKeys(page)).toEqual(whole);
+    expect(errors).toEqual([]);
   });
 });
