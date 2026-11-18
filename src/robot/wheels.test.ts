@@ -246,6 +246,26 @@ describe('what the exports write for a mecanum wheel', () => {
     expect(sdf).toContain('gz::sim::systems::MecanumDrive');
   });
 
+  it('Gazebo: a roller hinge holds still against a bearing drag that follows the load, so a stopped robot does not roll on', () => {
+    const drag = (x: string) => [...x.matchAll(/<xyz expressed_in="Wheel_\w+">[^<]+<\/xyz><dynamics><friction>([-0-9.e]+)<\/friction><\/dynamics><\/axis>/g)].map((m) => Number(m[1]));
+    const doc = mecanumRover();
+    const { geometry } = geometryOf(doc);
+    const light = drag(text(buildSdfModel(doc, geometry), 'model.sdf'));
+    expect(light.length).toBe(36);
+    // A fiftieth of what a wheel carries (about 5 N of a 2 kg robot's weight), at the roller's rim (about 10 mm).
+    expect(new Set(light).size).toBe(1);
+    expect(light[0]).toBeGreaterThan(0.0009);
+    expect(light[0]).toBeLessThan(0.0013);
+    // The ROS package hands Gazebo the same hinges.
+    expect(drag(text(buildRobotPackage(doc, geometry), '.urdf'))).toEqual(light);
+    // A heavier robot's rollers drag more, in step with its weight.
+    const body = doc.scene[0];
+    const heavy = { ...doc.robot!, links: [...doc.robot!.links.filter((l) => l.node !== body.id), { ...linkOf(doc.robot!, body.id, body), mass: { kind: 'measured' as const, grams: 10000 } }] };
+    const loaded = drag(text(buildSdfModel(doc, geometry, heavy), 'model.sdf'));
+    expect(loaded[0] / light[0]).toBeGreaterThan(4);
+    expect(loaded[0] / light[0]).toBeLessThan(6);
+  });
+
   it('ROS: the URDF keeps to the robot own links and joints, and hands Gazebo the rollers in its own blocks', () => {
     const doc = mecanumRover();
     const { geometry } = geometryOf(doc);

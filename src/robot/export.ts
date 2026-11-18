@@ -171,6 +171,8 @@ export interface PreparedRoller {
   /** Each ball's center in the roller's frame, and its radius. */
   balls: { at: Vec3; radius: number }[];
   friction: number;
+  /** What a roller's hinge holds still against, N·m: see `ROLLER_BEARING`. Gazebo alone is given it. */
+  bearing?: number;
   /** A wheel that stands in for a track's belt collides as a cylinder about its hinge instead: its size, and how it is turned from standing along Z (roll, pitch, yaw). */
   cylinder?: { radius: number; length: number; rpy: Vec3 };
   /** Such a wheel of a track in the drive is turned by the track's motor: its share of the effort (N·m), the speed (rad/s), and what the hinge resists by. */
@@ -264,6 +266,8 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
   // more between them than half their wheel, whose own mass and inertia are lessened by as much: the wheel's mesh
   // was weighed rollers and all.
   const rollers: PreparedRoller[] = [];
+  // What each mecanum wheel carries, N: the robot's weight shared among them.
+  const load = (links.reduce((sum, l) => sum + (l.inertial?.mass ?? 0), 0) * 9.81) / Math.max(1, wheels.length);
   for (const { id, wheel } of wheels) {
     const l = links.find((o) => o.node.id === id)!;
     const made = rollersOf(wheel);
@@ -287,6 +291,7 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
         inertial: { mass: (r.mass * share) / 1000, origin: [0, 0, 0], inertia: [across + d * ax * ax, across + d * ay * ay, across + d * az * az, d * ax * ay, d * ax * az, d * ay * az] },
         balls: r.balls.map((b) => ({ at: b.at.map((x) => x * M) as Vec3, radius: b.radius * M })),
         friction: l.friction ?? 1,
+        bearing: ROLLER_BEARING * load * Math.max(...r.balls.map((b) => b.radius)) * M,
       });
     });
   }
@@ -934,6 +939,14 @@ export const RIM_SHARE = 4;
 
 /** Physics steps a second for an Isaac Sim stage whose robot has rollers. */
 const ROLLER_STEPS = 120;
+
+/**
+ * What a roller's hinge holds still against, as a share of the load its wheel carries, taken at the roller's rim:
+ * a plain bearing's drag. Gazebo needs it. A robot on four wheels that are held still rests, at some angles of the
+ * wheels, on the two of a diagonal, whose rollers lean the same way; on hinges with no drag at all it then rolls
+ * along that diagonal for good. With this much it stops within a few centimeters, and slides about a hundredth less far.
+ */
+const ROLLER_BEARING = 0.02;
 
 /** What a roller's hinge resists its turning by, N·m·s/rad: next to nothing, and enough to keep it from ringing. */
 const ROLLER_DAMPING = 1e-5;

@@ -162,6 +162,8 @@ export interface GazeboRoller {
   inertial: { mass: number; inertia: [number, number, number, number, number, number] };
   balls: { at: Vec3; radius: number }[];
   friction: number;
+  /** What a roller's hinge holds still against, N·m: without it a robot at rest on two wheels of a diagonal rolls on for good. */
+  bearing?: number;
   /** A wheel that stands in for a track's belt: a cylinder about the hinge, turned from standing along Z (roll, pitch, yaw). */
   cylinder?: { radius: number; length: number; rpy: Vec3 };
   /** Such a wheel of a track in the drive: the most its motor does, and what the hinge resists by. */
@@ -192,7 +194,7 @@ export function rollerXml(r: GazeboRoller): string {
     `  <child>${escapeXml(r.name)}</child>`,
     r.driven
       ? `  <axis><xyz expressed_in="${wheel}">${v(r.axis)}</xyz><limit><effort>${fmt(r.driven.effort, 6)}</effort><velocity>${fmt(r.driven.velocity, 6)}</velocity></limit><dynamics><damping>${fmt(r.driven.damping, 6)}</damping><friction>${fmt(r.driven.friction, 6)}</friction></dynamics></axis>`
-      : `  <axis><xyz expressed_in="${wheel}">${v(r.axis)}</xyz></axis>`,
+      : `  <axis><xyz expressed_in="${wheel}">${v(r.axis)}</xyz>${r.bearing ? `<dynamics><friction>${fmt(r.bearing, 6)}</friction></dynamics>` : ''}</axis>`,
     '</joint>',
   ].join('\n');
 }
