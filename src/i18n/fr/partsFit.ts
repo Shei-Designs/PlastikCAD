@@ -67,7 +67,7 @@ export const partsFit: Catalog = {
 
   // The track (parts/generators/track.ts)
   Track: 'Chenille',
-  'Belt round a sprocket, an idler and road wheels, for a robot on tracks.': 'Bande autour d’un barbotin, d’une roue tendeuse et de galets, pour un robot à chenilles.',
+  'Belt round a sprocket, an idler and road wheels on a rail, for a robot on tracks.': 'Bande autour d’un barbotin, d’une roue tendeuse et de galets sur un longeron, pour un robot à chenilles.',
   'Sets the distance between the sprocket and idler axles.': 'Définit la distance entre les axes du barbotin et de la roue tendeuse.',
   'Belt thickness': 'Épaisseur de la bande',
   'Sprocket and idler diameter': 'Diamètre du barbotin et de la roue tendeuse',
@@ -79,6 +79,7 @@ export const partsFit: Catalog = {
   'Lifts the idler off the floor. 0 leaves it on the floor.': 'Relève la roue tendeuse au-dessus du sol. 0 la laisse au sol.',
   'Overall length': 'Longueur hors tout',
   'Overall height': 'Hauteur hors tout',
+  'Overall width': 'Largeur hors tout',
   'Length on the floor': 'Longueur au sol',
   'Belt length [[track]]': 'Longueur de la bande',
   'The wheels run into each other. Make the track longer or the wheels smaller.': 'Les roues se chevauchent. Allongez la chenille ou réduisez les roues.',
