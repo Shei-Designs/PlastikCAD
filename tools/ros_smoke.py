@@ -26,7 +26,6 @@ import signal
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 import xml.etree.ElementTree as ET
 
@@ -275,50 +274,75 @@ def bridged(pkg_dir):
         return yaml.safe_load(f) or []
 
 
-def turn_through(model, world, start, action, rate):
+def stamped_yaws(text, model):
+    """A model's turn about the vertical at each moment of Gazebo's pose stream (`gz topic -e` on a world's
+    pose/info, as text): (the simulation's time in s, yaw in radians) for each message that tells of it."""
+    out, stack, t, name, q = [], [], 0.0, None, {}
+    for line in text.splitlines():
+        line = line.strip()
+        if line.endswith('{'):
+            block = line[:-1].strip()
+            if not stack and block == 'header':
+                t = 0.0
+            if not stack and block == 'pose':
+                name, q = None, {}
+            stack.append(block)
+        elif line == '}':
+            if stack and stack.pop() == 'pose' and not stack and name == model:
+                # A field that is zero is left out of the text.
+                x, y, z, w = (q.get(k, 0.0) for k in 'xyzw')
+                out.append((t, math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))))
+        elif ':' in line:
+            key, value = (v.strip() for v in line.split(':', 1))
+            try:
+                if stack == ['header', 'stamp'] and key == 'sec':
+                    t += float(value)
+                elif stack == ['header', 'stamp'] and key == 'nsec':
+                    t += float(value) * 1e-9
+                elif stack == ['pose'] and key == 'name':
+                    name = value.strip('"')
+                elif stack == ['pose', 'orientation'] and key in 'xyzw':
+                    q[key] = float(value)
+            except ValueError:
+                pass
+    return out
+
+
+def turn_through(model, world, action):
     """Runs `action` (a velocity command for a while, then a stop) and adds up how far the model turns about the
-    vertical meanwhile, from poses read as often as Gazebo gives them. A turn read end to end comes back within
-    half a turn either way, so one past 180° reads as a turn the other way; added up from poses less than half a
-    turn apart it cannot. Returns (the turn in radians, the pose after, the longest time between two poses in s),
-    or None where no pose could be read after it. `rate` is the turn asked for (rad/s): poses so far apart that the
-    model could have turned most of half a turn between them cannot be trusted, and the caller says so."""
-    seen = {'yaw': start[5], 'sum': 0.0, 'asked': time.time(), 'gap': 0.0, 'pose': None}
-    done = threading.Event()
-
-    def read():
-        asked = time.time()
-        pose = gz_pose(model, world, timeout=5)
-        if not pose:
-            return
-        seen['sum'] += (pose[5] - seen['yaw'] + math.pi) % (2 * math.pi) - math.pi
-        # The pose is from some moment between asking and now: two poses are no farther apart than this.
-        seen['gap'] = max(seen['gap'], time.time() - seen['asked'])
-        seen['yaw'], seen['asked'], seen['pose'] = pose[5], asked, pose
-
-    def follow():
-        while not done.is_set():
-            read()
-            done.wait(0.05)
-
-    follower = threading.Thread(target=follow, daemon=True)
-    follower.start()
-    try:
-        action()
-    finally:
-        done.set()
-        follower.join()
-    seen['pose'] = None
-    read()
-    if not seen['pose']:
+    vertical meanwhile, from the poses Gazebo publishes as it steps (some sixty for each second of its own time).
+    A turn read from the pose before and the pose after comes back within half a turn either way, so one past
+    180° reads as a turn the other way; added up from poses a sixtieth of a second apart it cannot. The poses are
+    listened to, not asked for: asking for one holds the simulation up, which shortens the turn it is timing.
+    Returns (the turn in radians, the longest of the simulation's time between two poses in s), or None where
+    no pose came."""
+    with tempfile.NamedTemporaryFile('w+', suffix='.poses') as log:
+        listener = subprocess.Popen(['gz', 'topic', '-e', '-t', f'/world/{world}/pose/info'], stdout=log, stderr=subprocess.DEVNULL)
+        try:
+            # The turn is counted from a pose taken at rest: nothing is told to move before one has come.
+            if not wait_for(lambda: os.path.getsize(log.name) > 0 or None, 20, 0.2):
+                return None
+            action()
+            time.sleep(0.5)
+        finally:
+            listener.terminate()
+            try:
+                listener.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                listener.kill()
+        with open(log.name) as f:
+            seen = stamped_yaws(f.read(), model)
+    if len(seen) < 2:
         return None
-    return seen['sum'], seen['pose'], seen['gap']
+    turned = sum((b[1] - a[1] + math.pi) % (2 * math.pi) - math.pi for a, b in zip(seen, seen[1:]))
+    return turned, max(b[0] - a[0] for a, b in zip(seen, seen[1:]))
 
 
 def followed(name, gap, rate):
-    """Whether the poses came often enough to add a turn at `rate` up from them; a failure where they did not."""
-    if gap * abs(rate) < 0.8 * math.pi:
+    """Whether the poses came often enough to add a turn at `rate` (rad/s) up from them; a failure where they did not."""
+    if gap * abs(rate) < 0.5 * math.pi:
         return True
-    fail(name, f'could not follow the turn: {gap:.1f} s passed between two poses, in which a robot told to turn {abs(rate):.1f} rad/s may turn half way round')
+    fail(name, f'could not follow the turn: {gap:.2f} s of the simulation passed between two poses, in which a robot told to turn {abs(rate):.1f} rad/s may turn too far to tell which way')
     return False
 
 
@@ -353,10 +377,11 @@ def check_mecanum(name, model, world, twist, forward, after, before):
         fail(name, f'told to slide left, the robot went {sideways:.3f} m to its left, {along:.3f} m forward and turned {math.degrees(yawed):.0f}° (it went {forward:.3f} m forward when told to)')
     else:
         ok(f'cmd_vel y slid the robot {sideways:.3f} m to its left ({along:+.3f} m forward, turned {math.degrees(yawed):+.0f}°)')
-    read = turn_through(model, world, slid, lambda: twist(0.0, 0.0, 0.5, 3.0), 0.5)
-    if not read:
-        return fail(name, 'could not read the pose after the turn')
-    turned, spun, gap = read
+    read = turn_through(model, world, lambda: twist(0.0, 0.0, 0.5, 3.0))
+    spun = gz_pose(model, world)
+    if not read or not spun:
+        return fail(name, 'could not read the pose through the turn')
+    turned, gap = read
     if not followed(name, gap, 0.5):
         return
     drift = math.hypot(spun[0] - slid[0], spun[1] - slid[1])
@@ -375,10 +400,11 @@ def check_tracks(name, model, world, twist, forward, after):
     """A rover on tracks, after its run forward (`forward` m on 0.2 m/s for 3 s): told to turn on the spot it
     turns most of what it was told, where it stands. Measured against the run forward, which the same clock
     timed, not against the clock."""
-    read = turn_through(model, world, after, lambda: twist(0.0, 0.0, TRACK_TURN, TRACK_SECONDS), TRACK_TURN)
-    if not read:
-        return fail(name, 'could not read the pose after the turn')
-    turned, spun, gap = read
+    read = turn_through(model, world, lambda: twist(0.0, 0.0, TRACK_TURN, TRACK_SECONDS))
+    spun = gz_pose(model, world)
+    if not read or not spun:
+        return fail(name, 'could not read the pose through the turn')
+    turned, gap = read
     if not followed(name, gap, TRACK_TURN):
         return
     drift = math.hypot(spun[0] - after[0], spun[1] - after[1])
