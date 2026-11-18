@@ -296,6 +296,27 @@ describe('the rover on tracks', () => {
     sim.dispose();
   });
 
+  it('turns as well on motors whose figures were typed by hand: its wheels are never too light at the rim to skid steadily', () => {
+    const turn = (doc: Doc): number => {
+      const { sim, base } = simulate(doc);
+      sim.step(0.5);
+      const before = yaw(sim, base);
+      sim.drive(0, 1);
+      sim.step(1.5);
+      const turned = yaw(sim, base) - before;
+      sim.dispose();
+      return turned;
+    };
+    const listed = make('tracked');
+    // The same effort and speed, but no motor from the list, and so no rotor inertia named.
+    const typed: Doc = { ...listed, robot: { ...listed.robot!, joints: listed.robot!.joints.map(({ motor: _motor, ...j }) => j) } };
+    const [a, b] = [turn(listed), turn(typed)];
+    expect(a).toBeGreaterThan(60);
+    // With wheels as light as their own bodies it turned a quarter as far.
+    expect(b / a).toBeGreaterThan(0.85);
+    expect(b / a).toBeLessThan(1.1);
+  });
+
   it('shows no fault of its collision shapes on a flat floor', () => {
     expect(faultsAfter(make('tracked'), 1.5)).toEqual([]);
   });

@@ -437,7 +437,11 @@ in the design file and synced with it.
   on every side; mirroring one makes the track of the other side. Its
   **Collision** is *Track* or *None*, and its friction 1 until one is
   typed. A Track part with no part in the drive keeps its joint, and its
-  wheels turn free.
+  wheels turn free. A driven wheel of a track counts for at least four
+  times what it carries of the robot at its rim, whatever motor the joint
+  names, so that a track skids steadily where wheels that light would
+  chatter. A row has 24 wheels at most: a track so long on so small a
+  sprocket that they stand clear of one another is an error of the checks.
 - **Controllers.** The actuated joints outside the drive go under
   `ros2_control` with a joint trajectory controller (`arm_controller`) and a
   joint state broadcaster, unless switched off, and *Scripts* whether the
@@ -537,10 +541,12 @@ in the design file and synced with it.
   asks for 120 physics steps a second, which keeps them true: a stage of
   your own that the robot is referenced into needs the same rate
   (`physxScene:timeStepsPerSecond = 120` on its physics scene), or it
-  slides short. A robot on tracks is stepped as finely; the wheels that
-  stand in for its belts are joints of the articulation, which is what the
-  drive commands, so `/joint_states` and `/tf` tell of them there. The rollers are bodies outside the articulation, so its
-  joint states and transforms are the robot's own alone.
+  slides short. A robot on tracks is stepped as finely. The rollers, and the
+  wheels that stand in for a track's belt, are bodies outside the
+  articulation, so its joint states and transforms are the robot's own
+  alone; the graph tells each track wheel's joint its side's speed, and the
+  wheels of a row, which overlap, meet neither one another nor the robot's
+  links.
   *File > Open*, Play, and it runs; nothing is imported or set up on
   the Isaac side. Isaac Sim can still import the ROS 2 package's URDF, but
   the stage carries what the importer cannot read from URDF: drive gains, a
