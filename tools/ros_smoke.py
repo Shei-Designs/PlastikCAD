@@ -26,6 +26,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import xml.etree.ElementTree as ET
 
@@ -274,6 +275,53 @@ def bridged(pkg_dir):
         return yaml.safe_load(f) or []
 
 
+def turn_through(model, world, start, action, rate):
+    """Runs `action` (a velocity command for a while, then a stop) and adds up how far the model turns about the
+    vertical meanwhile, from poses read as often as Gazebo gives them. A turn read end to end comes back within
+    half a turn either way, so one past 180° reads as a turn the other way; added up from poses less than half a
+    turn apart it cannot. Returns (the turn in radians, the pose after, the longest time between two poses in s),
+    or None where no pose could be read after it. `rate` is the turn asked for (rad/s): poses so far apart that the
+    model could have turned most of half a turn between them cannot be trusted, and the caller says so."""
+    seen = {'yaw': start[5], 'sum': 0.0, 'asked': time.time(), 'gap': 0.0, 'pose': None}
+    done = threading.Event()
+
+    def read():
+        asked = time.time()
+        pose = gz_pose(model, world, timeout=5)
+        if not pose:
+            return
+        seen['sum'] += (pose[5] - seen['yaw'] + math.pi) % (2 * math.pi) - math.pi
+        # The pose is from some moment between asking and now: two poses are no farther apart than this.
+        seen['gap'] = max(seen['gap'], time.time() - seen['asked'])
+        seen['yaw'], seen['asked'], seen['pose'] = pose[5], asked, pose
+
+    def follow():
+        while not done.is_set():
+            read()
+            done.wait(0.05)
+
+    follower = threading.Thread(target=follow, daemon=True)
+    follower.start()
+    try:
+        action()
+    finally:
+        done.set()
+        follower.join()
+    seen['pose'] = None
+    read()
+    if not seen['pose']:
+        return None
+    return seen['sum'], seen['pose'], seen['gap']
+
+
+def followed(name, gap, rate):
+    """Whether the poses came often enough to add a turn at `rate` up from them; a failure where they did not."""
+    if gap * abs(rate) < 0.8 * math.pi:
+        return True
+    fail(name, f'could not follow the turn: {gap:.1f} s passed between two poses, in which a robot told to turn {abs(rate):.1f} rad/s may turn half way round')
+    return False
+
+
 def drive_and_measure(model, world, publish, seconds=3.0):
     """Drives forward for a while through `publish(x)` and returns the distance the model moved in Gazebo."""
     before = wait_for(lambda: gz_pose(model, world), 20)
@@ -305,11 +353,12 @@ def check_mecanum(name, model, world, twist, forward, after, before):
         fail(name, f'told to slide left, the robot went {sideways:.3f} m to its left, {along:.3f} m forward and turned {math.degrees(yawed):.0f}° (it went {forward:.3f} m forward when told to)')
     else:
         ok(f'cmd_vel y slid the robot {sideways:.3f} m to its left ({along:+.3f} m forward, turned {math.degrees(yawed):+.0f}°)')
-    twist(0.0, 0.0, 0.5, 3.0)
-    spun = gz_pose(model, world)
-    if not spun:
+    read = turn_through(model, world, slid, lambda: twist(0.0, 0.0, 0.5, 3.0), 0.5)
+    if not read:
         return fail(name, 'could not read the pose after the turn')
-    turned = (spun[5] - slid[5] + math.pi) % (2 * math.pi) - math.pi
+    turned, spun, gap = read
+    if not followed(name, gap, 0.5):
+        return
     drift = math.hypot(spun[0] - slid[0], spun[1] - slid[1])
     if turned < 0.8 or drift > 0.05:
         fail(name, f'told to turn left on the spot, the robot turned {math.degrees(turned):.0f}° and moved {drift:.3f} m')
@@ -326,11 +375,12 @@ def check_tracks(name, model, world, twist, forward, after):
     """A rover on tracks, after its run forward (`forward` m on 0.2 m/s for 3 s): told to turn on the spot it
     turns most of what it was told, where it stands. Measured against the run forward, which the same clock
     timed, not against the clock."""
-    twist(0.0, 0.0, TRACK_TURN, TRACK_SECONDS)
-    spun = gz_pose(model, world)
-    if not spun:
+    read = turn_through(model, world, after, lambda: twist(0.0, 0.0, TRACK_TURN, TRACK_SECONDS), TRACK_TURN)
+    if not read:
         return fail(name, 'could not read the pose after the turn')
-    turned = (spun[5] - after[5] + math.pi) % (2 * math.pi) - math.pi
+    turned, spun, gap = read
+    if not followed(name, gap, TRACK_TURN):
+        return
     drift = math.hypot(spun[0] - after[0], spun[1] - after[1])
     share = turned / (TRACK_TURN * TRACK_SECONDS * forward / 0.6)
     if not TRACK_SHARE[0] <= share <= TRACK_SHARE[1] or drift > TRACK_DRIFT:

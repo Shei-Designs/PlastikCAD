@@ -10,7 +10,7 @@ import type { KeptFault } from '../robot/collisionCheck';
 import { buildMjcfModel } from '../robot/export';
 import type { DriveSpec } from '../robot/export';
 import { linkNodes, linkOf, piecesOf, robotForward, robotOf } from '../robot/model';
-import { standIns, trackOf } from '../robot/tracks';
+import { standIns, standInsOnFloor, trackOf } from '../robot/tracks';
 import type { TrackFigures } from '../parts/generators/track';
 import { BeltWatch, beltAxis, beltWheels } from '../sim/belts';
 import type { BeltTrack } from '../sim/belts';
@@ -178,7 +178,8 @@ class SimStore {
         const track = trackOf(node);
         const name = pkg.bodies.find((b) => b.node === node.id)?.body;
         if (typeof track === 'string' || name === undefined) continue;
-        this.beltTracks.push({ node: node.id, name, axis: beltAxis(track.toDesign).axis, radius: standIns(track.figures).radius });
+        const stand = standIns(track.figures);
+        this.beltTracks.push({ node: node.id, name, axis: beltAxis(track.toDesign).axis, radius: stand.radius, floor: standInsOnFloor(track.figures, stand.centers) });
         if (node.type !== 'part') continue;
         const looks = await worker.trackLooks(node);
         if (turn !== this.starts) return;

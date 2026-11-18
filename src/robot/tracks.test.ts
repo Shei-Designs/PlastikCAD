@@ -13,7 +13,7 @@ import { checkRobot } from './check';
 import { buildIsaacStage, buildMjcfModel, buildRobotPackage, buildSdfModel, RIM_SHARE } from './export';
 import { ROBOTS, trackedRover } from './fixtures';
 import { jointInDesign, linkNodes, linkOf } from './model';
-import { isTrack, MAX_TRACK_WHEELS, standIns, trackAxle, trackMesh, trackOf, trackWheels } from './tracks';
+import { isTrack, MAX_TRACK_WHEELS, standIns, standInsOnFloor, trackAxle, trackMesh, trackOf, trackWheels } from './tracks';
 import type { Track } from './tracks';
 import { WHEEL_FRICTION } from './wheels';
 
@@ -121,6 +121,28 @@ describe('the wheels that stand in for a belt', () => {
       expect(centers[0], label).toEqual([0, 0]);
       const idler = f.wheels[f.wheels.length - 1].center;
       expect(Math.hypot(centers[centers.length - 1][0] - idler[0], centers[centers.length - 1][1] - idler[1]), label).toBeLessThan(1e-6);
+    }
+  });
+
+  it('are told apart: those on the run along the floor, and those up a raised end', () => {
+    // A flat track: every wheel is on the floor.
+    expect(standInsOnFloor(figuresOf({})).every(Boolean)).toBe(true);
+    for (const settings of [{ sprocketRise: 40 }, { idlerRise: 40 }, { sprocketRise: 30, idlerRise: 50 }, { idlerRise: 40, roadWheels: 0 }] as Record<string, number>[]) {
+      const f = figuresOf(settings);
+      const { radius, centers } = standIns(f);
+      const on = standInsOnFloor(f, centers);
+      const label = JSON.stringify(settings);
+      expect(on.length, label).toBe(centers.length);
+      expect(on.some(Boolean), label).toBe(true);
+      expect(on.every(Boolean), label).toBe(false);
+      centers.forEach((c, i) => {
+        // On the floor is touching it; a wheel up the nose stands clear of it.
+        if (on[i]) expect(c[1] - radius, label).toBeCloseTo(f.floor.up, 3);
+        else expect(c[1] - radius, label).toBeGreaterThan(f.floor.up + 1e-3);
+      });
+      // The raised end's own wheel is never on it.
+      if (settings.sprocketRise) expect(on[0], label).toBe(false);
+      if (settings.idlerRise && settings.roadWheels !== 0) expect(on[on.length - 1], label).toBe(false);
     }
   });
 
@@ -307,6 +329,9 @@ describe('what the exports write for a track', () => {
     // cmd_vel becomes a speed for each side, in degrees a second, written to each wheel's joint; the articulation has nothing to be told.
     expect(usda).toContain('DifferentialController');
     expect(usda).not.toContain('IsaacArticulationController');
+    // Nor a joint of its own to tell of: no joint states are published, as in the other exports.
+    expect(usda).not.toContain('ROS2PublishJointState');
+    expect(usda).toContain('ROS2PublishTransformTree');
     expect(usda.match(/token node:type = "omni.graph.nodes.WritePrimAttribute"/g)?.length).toBe(16);
     expect(usda.match(/custom token inputs:name = "drive:angular:physics:targetVelocity"/g)?.length).toBe(16);
     for (const side of ['left', 'right']) {
@@ -325,6 +350,7 @@ describe('what the exports write for a track', () => {
     expect(plain).not.toContain('CollisionGroups');
     expect(plain).not.toContain('WritePrimAttribute');
     expect(plain).toContain('IsaacArticulationController');
+    expect(plain).toContain('ROS2PublishJointState');
   });
 
   it("a track's wheels are never lighter at the rim than four times what they carry, whatever the motor", () => {

@@ -12,6 +12,8 @@ export interface BeltTrack {
   node: string;
   body: number;
   wheels: number[];
+  /** Which of the wheels stand on the track's run along the floor, one for each wheel. The belt is read from those alone: a wheel in the air, up a raised nose, spins as it is told while the ones that carry the robot may slip. Left out, or with none on the floor, every wheel counts. */
+  floor?: boolean[];
   /** The way the axles run, in the design's axes, such that a turn about it carries the belt forward along its path: a unit vector. */
   axis: Vec3;
   /** The wheels' radius as the part's settings have it: a turn of one radian carries the belt this far along its path, mm. */
@@ -55,7 +57,8 @@ function turnOf(poses: Float64Array, track: number, wheel: number, axis: Vec3): 
 
 /**
  * Follows the belts of a drive's tracks from frame to frame. A pose tells a wheel's turn only within one turn,
- * so each wheel's turn since the frame before is added up; the belt has run as far as its wheels have on average.
+ * so each wheel's turn since the frame before is added up; the belt has run as far as its wheels on the floor
+ * have on average.
  */
 export class BeltWatch {
   private last = new Map<string, number[]>();
@@ -78,14 +81,18 @@ export class BeltWatch {
       const before = this.last.get(t.node);
       let turned = 0;
       if (before && turns.length > 0) {
+        const floor = t.floor && t.floor.length === turns.length && t.floor.some(Boolean) ? t.floor : null;
+        let counted = 0;
         for (let i = 0; i < turns.length; i++) {
+          if (floor && !floor[i]) continue;
           // The short way round: a wheel turns far less than half a turn between two frames.
           let d = (turns[i] - before[i]) % (2 * Math.PI);
           if (d > Math.PI) d -= 2 * Math.PI;
           else if (d < -Math.PI) d += 2 * Math.PI;
           turned += d;
+          counted++;
         }
-        turned /= turns.length;
+        turned /= counted;
       }
       this.last.set(t.node, turns);
       next.set(t.node, (this.travel.get(t.node) ?? 0) + turned * t.radius);

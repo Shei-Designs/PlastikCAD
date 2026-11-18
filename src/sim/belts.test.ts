@@ -69,6 +69,21 @@ describe('how far a belt has run', () => {
     expect(watch.see(poses([1, 0, 0, 0], [1, 0, 0, 0], about(axis, 0.2), about(axis, 0.4))).get('t')).toBeCloseTo(0.3 * 30, 9);
   });
 
+  it('is read from the wheels on the floor alone, where some are in the air; from all where none is told to be on it', () => {
+    const still: [number, number, number, number] = [1, 0, 0, 0];
+    // The second wheel is up a raised nose and spins freely; the first carries the robot and slips.
+    const raised = new BeltWatch([{ ...track, floor: [true, false] }]);
+    raised.see(poses(still, still, still, still));
+    expect(raised.see(poses(still, still, about(axis, 0.2), about(axis, 0.9))).get('t')).toBeCloseTo(0.2 * 30, 9);
+    expect(raised.see(poses(still, still, about(axis, 0.1), about(axis, 1.9))).get('t')).toBeCloseTo(0.1 * 30, 9);
+    // None on the floor, or a list that is not one for each wheel: every wheel counts, as before.
+    for (const floor of [[false, false], [true]]) {
+      const all = new BeltWatch([{ ...track, floor }]);
+      all.see(poses(still, still, still, still));
+      expect(all.see(poses(still, still, about(axis, 0.2), about(axis, 0.4))).get('t')).toBeCloseTo(0.3 * 30, 9);
+    }
+  });
+
   it('starts again from nothing at the start pose, wherever the wheels then are', () => {
     const watch = new BeltWatch([track]);
     watch.see(poses([1, 0, 0, 0], [1, 0, 0, 0], about(axis, 1), about(axis, 1)));
