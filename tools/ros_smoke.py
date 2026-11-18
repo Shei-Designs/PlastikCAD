@@ -462,6 +462,18 @@ def camera_hfov(urdf_path, sensor):
     return float(m.group(1)) if m else None
 
 
+def check_friction_frames(name, sdf):
+    """A wheel's friction laid along a direction of its own names the link whose frame the direction is in. Gazebo
+    takes a name it does not know in silence and lays the friction along the world's axes, so the name must be a
+    link of the model as Gazebo has it (`sdf`: the model's text)."""
+    frames = set(re.findall(r"""gz:expressed_in=['"]([^'"]+)['"]""", sdf))
+    lost = sorted(frames - set(re.findall(r"""<link name=['"]([^'"]+)['"]""", sdf)))
+    if lost:
+        fail(name, f'a friction direction is told in {lost}, no link of the model as Gazebo has it')
+    elif frames:
+        ok(f'friction directions are told in the frame of {sorted(frames)}, a link Gazebo keeps')
+
+
 def moving_joints(urdf_path):
     tree = ET.parse(urdf_path)
     return [j.get('name') for j in tree.getroot().findall('joint') if j.get('type') != 'fixed']
@@ -730,6 +742,7 @@ def check_ros_package(pkg_dir, env):
         fail(name, f'gz sdf -p rejected the URDF: {r.stderr.strip() or r.stdout[-400:]}')
     else:
         ok('gz sdf -p converts the URDF to SDF')
+        check_friction_frames(name, r.stdout)
     if r.stderr.strip():
         print('       ' + r.stderr.strip().replace('\n', '\n       '))
     r = run(['gz', 'sdf', '-k', world], env=env)
@@ -1015,6 +1028,8 @@ def check_sdf_package(pkg_dir, env):
         fail(name, f'gz sdf -k rejected model.sdf: {r.stderr.strip()}')
     else:
         ok('gz sdf -k accepts model.sdf')
+    with open(model) as f:
+        check_friction_frames(name, f.read())
     if not worlds:
         return fail(name, 'no world')
     world = worlds[0]
