@@ -305,14 +305,19 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
   // the drive keeps its joint, and its wheels turn free. The wheels weigh half the track between them, and the
   // track's own mass and inertia are lessened by as much: its mesh was weighed wheels and all. The belt ties every
   // wheel to the motor, so each carries the whole of its rotor's inertia: a wheel as light as these alone would
-  // slip where a geared motor's does not, and the track would hardly turn the robot on the spot.
+  // slip where a geared motor's does not, and the track would hardly turn the robot on the spot. Nor is it ever
+  // less than `RIM_SHARE` says, whatever the motor: a joint with figures typed by hand names no rotor at all.
   const trackMotors = new Map<string, { joints: string[]; radius: number; middle: Vec3 }>();
-  for (const { id, track, collides } of tracks) {
-    const l = links.find((o) => o.node.id === id)!;
-    const made = trackWheels(track);
+  const motorOfTrack = (id: string) => {
     const carrier = tree.parentJoint.get(id);
     const role = carrier && robot.drive?.roles[carrier.id];
-    const motor = carrier && role && !role.startsWith('steer') ? carrier : undefined;
+    return carrier && role && !role.startsWith('steer') ? carrier : undefined;
+  };
+  const rows = tracks.map((t) => ({ ...t, made: trackWheels(t.track), motor: motorOfTrack(t.id) }));
+  // What each driven wheel carries of the robot, kg: its whole mass over every wheel its tracks' motors turn.
+  const carried = links.reduce((sum, l) => sum + (l.inertial?.mass ?? 0), 0) / Math.max(1, rows.reduce((n, t) => n + (t.motor ? t.made.centers.length : 0), 0));
+  for (const { id, collides, made, motor } of rows) {
+    const l = links.find((o) => o.node.id === id)!;
     // A positive turn of a driven wheel moves the base the way the robot faces, like any wheel of the drive.
     const axis = motor && made.axis[1] * forward[0] - made.axis[0] * forward[1] < 0 ? (made.axis.map((x) => -x) as Vec3) : made.axis;
     const [ax, ay, az] = axis;
@@ -343,7 +348,7 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
         balls: [],
         friction: l.friction ?? 1,
         ...(collides ? { cylinder: { radius: made.radius * M, length: made.length * M, rpy } } : {}),
-        ...(motor ? { driven: { effort: motor.effort / n, velocity: motor.velocity * RAD, damping: motor.damping / n, friction: motor.friction / n, armature: motorOf(motor.motor)?.armature } } : {}),
+        ...(motor ? { driven: { effort: motor.effort / n, velocity: motor.velocity * RAD, damping: motor.damping / n, friction: motor.friction / n, armature: Math.max(motorOf(motor.motor)?.armature ?? 0, RIM_SHARE * carried * (made.radius * M) ** 2) } } : {}),
       });
     });
     if (motor) trackMotors.set(motor.id, { joints, radius: made.radius, middle: made.middle });
@@ -842,9 +847,13 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
     const at = (to ? apply(to, designed) : designed).map((x) => x * M) as Vec3;
     const turn = to ? quatOfMatrix(to) : undefined;
     const collision: UsdCollision[] = r.cylinder ? [{ cylinder: { radius: r.cylinder.radius, length: r.cylinder.length }, origin: [0, 0, 0], rpy: r.cylinder.rpy }] : r.balls.map((b) => ({ sphere: { radius: b.radius }, origin: b.at, rpy: [0, 0, 0] as Vec3 }));
-    links.push({ name: r.name, pos: [at[0], at[1], at[2] + p.lift], ...(turn && Math.abs(turn[0]) < 1 - 1e-9 ? { rot: turn } : {}), inertial: r.inertial, visual: [], collision, friction: r.friction });
-    // A wheel the drive turns is a joint of the articulation, which is what the drive's controller commands; one that turns free is kept out of it.
-    if (r.driven) rollerJoints.push({ name: r.joint, type: 'continuous', parent: r.wheel, child: r.name, origin: r.at, axis: r.axis, limit: { lower: 0, upper: 0, effort: r.driven.effort, velocity: r.driven.velocity }, dynamics: { damping: r.driven.damping, friction: r.driven.friction }, armature: r.driven.armature, loop: false, drive: 'velocity' });
+    // A joint outside the articulation has no rotor inertia of its own to give: the wheel's body carries it, about its axle.
+    const rotor = r.driven?.armature ?? 0;
+    const [ax, ay, az] = r.axis;
+    const inertial = rotor ? { ...r.inertial, inertia: r.inertial.inertia.map((x, i) => x + rotor * [ax * ax, ay * ay, az * az, ax * ay, ax * az, ay * az][i]) as Tensor } : r.inertial;
+    links.push({ name: r.name, pos: [at[0], at[1], at[2] + p.lift], ...(turn && Math.abs(turn[0]) < 1 - 1e-9 ? { rot: turn } : {}), inertial, visual: [], collision, friction: r.friction, ...(r.cylinder ? { standIn: true } : {}) });
+    // A wheel the drive turns is kept out of the articulation like one that turns free: the stage's graph tells its joint's drive the speed.
+    if (r.driven) rollerJoints.push({ name: r.joint, type: 'continuous', parent: r.wheel, child: r.name, origin: r.at, axis: r.axis, limit: { lower: 0, upper: 0, effort: r.driven.effort, velocity: r.driven.velocity }, dynamics: { damping: r.driven.damping, friction: r.driven.friction }, loop: false, outside: true, drive: 'velocity' });
     else rollerJoints.push({ name: r.joint, type: 'continuous', parent: r.wheel, child: r.name, origin: r.at, axis: r.axis, dynamics: { damping: ROLLER_DAMPING, friction: 0 }, loop: false, outside: true, drive: null });
   }
   let drive: UsdModel['drive'] = null;
@@ -912,6 +921,16 @@ The floor is a stand-in: place the robot in a world of your own by
 referencing this stage, or copy the \`${robotPrim(model.name)}\` prim into it.
 `;
 }
+
+/**
+ * The least a driven wheel of a track weighs at its rim, as a multiple of what it carries of the robot: its rotor
+ * inertia is never less than this times that mass times its radius squared. A rim lighter than its load is
+ * brought to the floor's speed by friction within a step, whatever its motor asks, and lets go again the next:
+ * the track chatters where it should skid, and hardly turns the robot. Measured on the reference rover turning on
+ * the spot in MuJoCo, at two robot masses and three motor gains: 1 gives about four fifths of the turn that 4
+ * does, 8 a tenth more than 4, and much more makes the robot slow to start.
+ */
+export const RIM_SHARE = 4;
 
 /** Physics steps a second for an Isaac Sim stage whose robot has rollers. */
 const ROLLER_STEPS = 120;

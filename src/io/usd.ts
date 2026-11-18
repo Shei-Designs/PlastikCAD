@@ -33,6 +33,8 @@ export interface UsdLink {
   visual: { mesh: MeshData; color: [number, number, number] }[];
   collision: UsdCollision[];
   friction: number;
+  /** One of several bodies that stand in for one thing between them (a wheel of the row that is a track's belt): it overlaps its fellows, and meets neither them nor the robot's links. */
+  standIn?: boolean;
 }
 
 export interface UsdJoint {
@@ -142,6 +144,8 @@ const WORLD_PRIMS = ['physicsScene', 'Dome', 'Sun', 'Ground', 'Looks', 'PhysicsM
 /** The scope under the robot's prim that holds its joints, beside its links, and the joint that bolts a fixed base down. */
 const JOINTS_SCOPE = 'Joints';
 const ROOT_JOINT = 'root_joint';
+/** The scope under the robot's prim that holds its collision groups, where it has bodies that must not meet one another. */
+const GROUPS_SCOPE = 'CollisionGroups';
 
 /** The robot's prim under /World, clear of the stage's own prims there. */
 export const robotPrim = (name: string): string => {
@@ -151,7 +155,7 @@ export const robotPrim = (name: string): string => {
 
 /** Links are prims under the robot's, joints under its joints scope, sensors under their links beside the link's meshes. */
 export const USD_NAMES: Naming = {
-  reserved: [`link/${JOINTS_SCOPE}`, `link/${ROOT_JOINT}`, /^sensor\/(visual|collision)_\d+$/],
+  reserved: [`link/${JOINTS_SCOPE}`, `link/${GROUPS_SCOPE}`, `link/${ROOT_JOINT}`, /^sensor\/(visual|collision)_\d+$/],
   link: (name) => [`link/${name}`],
   joint: (name) => [`joint/${name}`],
   sensor: (name) => [`sensor/${name}`],
@@ -725,8 +729,14 @@ function rosGraph(model: UsdModel, robotPath: string, linkPath: (link: string) =
       { name: 'wheels', type: 'isaacsim.core.nodes.IsaacArticulationController', version: 1, attrs: { 'inputs:execIn': from('uint', 'tick.outputs:tick'), 'inputs:targetPrim': target(robotPath), 'inputs:jointNames': tokens(d.corners), 'inputs:velocityCommand': from('double[]', 'speeds.outputs:array') } },
     );
   } else if (d && (d.kind === 'differential' || d.kind === 'mecanum')) {
-    // cmd_vel → wheel speeds for the left and right sides → every wheel of each side.
-    const wheels = [...d.left, ...d.right];
+    // cmd_vel → wheel speeds for the left and right sides → every wheel of each side. A wheel on a joint the
+    // articulation leaves out (one that stands in for a track's belt) is not the articulation controller's to
+    // command: its joint's own drive is told the side's speed, which USD Physics takes in degrees a second.
+    const apart = new Set(model.joints.filter((j) => j.outside).map((j) => j.name));
+    // The joints are kept beside the links, whichever of them the articulation begins at.
+    const joints = `${linkPath(model.root).replace(/\/[^/]+$/, '')}/${JOINTS_SCOPE}`;
+    const wheels = [...d.left, ...d.right].filter((n) => !apart.has(n));
+    const sides = { left: d.left.filter((n) => apart.has(n)), right: d.right.filter((n) => apart.has(n)) };
     nodes.push(
       { name: 'cmd_vel', type: 'isaacsim.ros2.bridge.ROS2SubscribeTwist', version: 1, attrs: { 'inputs:execIn': from('uint', 'tick.outputs:tick'), 'inputs:context': from('uint64', 'context.outputs:context'), 'inputs:topicName': text('cmd_vel'), 'outputs:execOut': EXEC, 'outputs:linearVelocity': { type: 'vector3d' }, 'outputs:angularVelocity': { type: 'vector3d' } } },
       { name: 'linear', type: 'omni.graph.nodes.BreakVector3', version: 1, attrs: { 'inputs:tuple': from('vector3d', 'cmd_vel.outputs:linearVelocity'), 'outputs:x': { type: 'double' } } },
@@ -756,12 +766,29 @@ function rosGraph(model: UsdModel, robotPath: string, linkPath: (link: string) =
         attrs: {
           'inputs:arraySize': num('int', wheels.length),
           'inputs:arrayType': { type: 'token', value: '"double[]"' },
-          ...Object.fromEntries(wheels.map((_, i) => [`inputs:input${i}`, from('double', i < d.left.length ? 'left.outputs:value' : 'right.outputs:value')])),
+          ...Object.fromEntries(wheels.map((n, i) => [`inputs:input${i}`, from('double', d.left.includes(n) ? 'left.outputs:value' : 'right.outputs:value')])),
           'outputs:array': { type: 'double[]' },
         },
       },
       { name: 'wheels', type: 'isaacsim.core.nodes.IsaacArticulationController', version: 1, attrs: { 'inputs:execIn': from('uint', 'tick.outputs:tick'), 'inputs:targetPrim': target(robotPath), 'inputs:jointNames': tokens(wheels), 'inputs:velocityCommand': from('double[]', 'speeds.outputs:array') } },
     );
+    // No wheel of the articulation's (a rover on two tracks): nothing for its controller to command.
+    if (wheels.length === 0) nodes.splice(-2, 2);
+    for (const side of ['left', 'right'] as const) {
+      if (sides[side].length === 0) continue;
+      nodes.push(
+        { name: `${side}_degrees`, type: 'omni.graph.nodes.Multiply', version: 2, attrs: { 'inputs:a': from('double', `${side}.outputs:value`), 'inputs:b': { type: 'token', any: { usd: 'double', as: 'double', value: fmt(DEG, 9) } }, 'outputs:product': { type: 'double' } } },
+        { name: `${side}_speed`, type: 'omni.graph.nodes.ToFloat', version: 1, attrs: { 'inputs:value': from('double', `${side}_degrees.outputs:product`), 'outputs:converted': { type: 'float' } } },
+      );
+      sides[side].forEach((joint, i) => {
+        nodes.push({
+          name: `${side}_wheel${i}`,
+          type: 'omni.graph.nodes.WritePrimAttribute',
+          version: 3,
+          attrs: { 'inputs:execIn': from('uint', 'tick.outputs:tick'), 'inputs:prim': target(`${joints}/${joint}`), 'inputs:name': { type: 'token', value: str('drive:angular:physics:targetVelocity') }, 'inputs:value': from('float', `${side}_speed.outputs:converted`), 'inputs:usePath': { type: 'bool', value: '0' }, 'inputs:usdWriteBack': { type: 'bool', value: '1' } },
+        });
+      });
+    }
   } else if (d && d.kind === 'ackermann') {
     // ackermann_cmd (speed and steering angle) → the steering joints' angles and the wheels' speeds.
     nodes.push(
@@ -868,6 +895,7 @@ export function writeUsda(model: UsdModel): string {
   const touched = new Set(model.sensors.filter((s) => s.kind === 'touch').map((s) => s.link));
   const sensorsOf = (link: string) => model.sensors.filter((s) => s.link === link);
   const footprint = model.footprint && !model.fixedBase ? footprintPrims(model, robot) : null;
+  const standIns = model.links.filter((l) => l.standIn);
 
   const world: string[] = [
     ...(model.stepsPerSecond ? ['def PhysicsScene "physicsScene" (', '    prepend apiSchemas = ["PhysxSceneAPI"]', ')'] : ['def PhysicsScene "physicsScene"']),
@@ -937,6 +965,26 @@ export function writeUsda(model: UsdModel): string {
           : []),
         ...(footprint ? ['', ...footprint.body] : []),
         ...model.links.flatMap((l) => ['', ...linkPrim(l, sensorsOf(l.name), touched.has(l.name))]),
+        // Bodies that stand in for one thing overlap one another, and an articulation's rule that its links do not
+        // meet each other does not reach them, for they are kept out of it: two groups say it instead.
+        ...(standIns.length
+          ? [
+              '',
+              `def Scope "${GROUPS_SCOPE}"`,
+              '{',
+              '    def PhysicsCollisionGroup "stand_ins"',
+              '    {',
+              `        prepend rel collection:colliders:includes = [${standIns.map((l) => `<${linkPath(l.name)}>`).join(', ')}]`,
+              `        rel physics:filteredGroups = [<${robotPath}/${GROUPS_SCOPE}/stand_ins>, <${robotPath}/${GROUPS_SCOPE}/links>]`,
+              '    }',
+              '',
+              '    def PhysicsCollisionGroup "links"',
+              '    {',
+              `        prepend rel collection:colliders:includes = [${model.links.filter((l) => !l.standIn).map((l) => `<${linkPath(l.name)}>`).join(', ')}]`,
+              '    }',
+              '}',
+            ]
+          : []),
         '',
         `def Scope "${JOINTS_SCOPE}"`,
         '{',
