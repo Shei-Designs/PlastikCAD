@@ -34,7 +34,7 @@ MECANUM_WHEEL_SPEED, MECANUM_SECONDS, MECANUM_LEAST, MECANUM_MOST, MECANUM_STRAY
 # that did not skid would turn it (the reference rover turns 35 %; plain Coulomb friction would give 70 to 80 %).
 # It must stray no farther than this another way (m, rad).
 TRACK_SPEED, TRACK_TURN_SPEED, TRACK_SECONDS = 0.3, 0.15, 3.0
-TRACK_STRAIGHT, TRACK_TURN, TRACK_STRAY = (0.9, 1.02), (0.25, 0.85), 0.05
+TRACK_STRAIGHT, TRACK_TURN, TRACK_STRAY = (0.9, 1.02), (0.28, 0.7), 0.05
 
 root = sys.argv[1] if len(sys.argv) > 1 else "fixtures/out"
 # Each MuJoCo model is <name>/<name>.xml; the ROS and SDF packages beside them carry XML of their own.

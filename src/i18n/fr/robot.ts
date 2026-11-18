@@ -408,6 +408,8 @@ export const robot: Catalog = {
   'A mecanum drive needs one wheel at each corner.': 'Un entraînement mecanum a besoin d’une roue à chaque coin.',
   '{name}: stretched unevenly, so it cannot drive as a track. Scale it the same on every side.': '{name}\u00a0: étiré de façon inégale, donc incapable de rouler comme une chenille. Mettez-le à la même échelle sur tous les côtés.',
   '{name}: holds several Track parts, so it cannot drive as a track. Keep one Track in each object.': '{name}\u00a0: contient plusieurs pièces Chenille, donc incapable de rouler comme une chenille. Gardez une seule Chenille par objet.',
+  '{name}: its {count} wheels stand {apart} apart, more than the {across} each is across. Make the track shorter or its sprocket larger.':
+    '{name}\u00a0: ses {count} roues sont espacées de {apart}, plus que les {across} de diamètre de chacune. Raccourcissez la chenille ou agrandissez son barbotin.',
   '{name}: stretched unevenly, so it cannot slide sideways. Scale it the same on every side.': '{name}\u00a0: étiré de façon inégale, donc incapable de glisser latéralement. Mettez-le à la même échelle sur tous les côtés.',
   '{name}: its rollers leave gaps, so it cannot slide sideways. Add rollers or make the wheel wider.': '{name}\u00a0: ses rouleaux laissent des vides, donc incapable de glisser latéralement. Ajoutez des rouleaux ou élargissez la roue.',
   '{name}: not a Mecanum wheel part, so it cannot slide sideways. Use a Mecanum wheel from the parts.': '{name}\u00a0: n’est pas une pièce Roue mecanum, donc incapable de glisser latéralement. Utilisez une Roue mecanum des pièces.',

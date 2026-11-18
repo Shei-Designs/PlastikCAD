@@ -12,7 +12,7 @@ import { followFault, isHinge, jointInDesign, linkNodes, linkOf, robotForward, r
 import type { FollowFault } from './model';
 import { DRIVE_KINDS, JOINT_TYPES, withRole } from './types';
 import { leansRight, mecanumOf } from './wheels';
-import { trackOf, trackWheels } from './tracks';
+import { standIns, trackOf, trackWheels } from './tracks';
 import type { Robot, RobotJoint } from './types';
 import { lengthText, said } from '../units';
 
@@ -162,6 +162,18 @@ export function checkRobot(doc: Doc, props: Map<string, LinkProperties>, robot: 
       const found = trackOf(child);
       if (found === 'stretched') error(tr('{name}: stretched unevenly, so it cannot drive as a track. Scale it the same on every side.', { name: child.name }), { link: child.id });
       else if (found === 'several') error(tr('{name}: holds several Track parts, so it cannot drive as a track. Keep one Track in each object.', { name: child.name }), { link: child.id });
+      else if (typeof found !== 'string') {
+        // A row has only so many wheels. Where a long track on a small sprocket leaves them standing clear of one
+        // another, the floor reaches up between them and they no longer stand in for a belt.
+        const { radius, centers } = standIns(found.figures);
+        const apart = Math.max(0, ...centers.slice(1).map((c, i) => Math.hypot(c[0] - centers[i][0], c[1] - centers[i][1])));
+        if (apart > 2 * radius + 1e-6) {
+          error(
+            said((unit) => tr('{name}: its {count} wheels stand {apart} apart, more than the {across} each is across. Make the track shorter or its sprocket larger.', { name: child.name, count: centers.length, apart: lengthText(apart * found.scale, unit, 1), across: lengthText(2 * radius * found.scale, unit, 1) })),
+            { link: child.id },
+          );
+        }
+      }
     }
     // The drive controller turns every wheel about one axle direction; a wheel turned another way drags.
     // A wheel whose object is hidden, a hole or gone has no axle to compare; its joint is faulted above.

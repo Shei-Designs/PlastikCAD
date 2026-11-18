@@ -10,8 +10,8 @@ import { sanitizeParams } from '../parts/generators/types';
 import { trackFigures, trackPoint } from '../parts/generators/track';
 import type { TrackFigures } from '../parts/generators/track';
 import { checkRobot } from './check';
-import { buildIsaacStage, buildMjcfModel, buildRobotPackage, buildSdfModel } from './export';
-import { trackedRover } from './fixtures';
+import { buildIsaacStage, buildMjcfModel, buildRobotPackage, buildSdfModel, RIM_SHARE } from './export';
+import { ROBOTS, trackedRover } from './fixtures';
 import { jointInDesign, linkNodes, linkOf } from './model';
 import { isTrack, MAX_TRACK_WHEELS, standIns, trackAxle, trackMesh, trackOf, trackWheels } from './tracks';
 import type { Track } from './tracks';
@@ -183,6 +183,22 @@ describe('the checks on a track in the drive', () => {
     expect(errors[0].link).toBe(left.id);
   });
 
+  it('fault a track too long for its sprocket: the row has only so many wheels, and they come to stand clear of one another', () => {
+    // 24 wheels 30.8 mm across, on a row 1500 mm long.
+    const long = trackedRover({ length: 1500, endDiameter: 20, roadWheels: 12, roadDiameter: 10 });
+    const errors = checkRobot(long, new Map()).filter((p) => p.level === 'error');
+    expect(errors.map((p) => p.text)).toEqual([
+      'Track left: its 24 wheels stand 65.2 mm apart, more than the 30.8 mm each is across. Make the track shorter or its sprocket larger.',
+      'Track right: its 24 wheels stand 65.2 mm apart, more than the 30.8 mm each is across. Make the track shorter or its sprocket larger.',
+    ]);
+    expect(errors.map((p) => p.link).sort()).toEqual(tracksOf(long).map((t) => t.id).sort());
+    // As long as the wheels still reach one another, the row stands in for the belt and nothing is said.
+    const { radius, centers } = standIns(figuresOf({ length: 600, endDiameter: 20, roadWheels: 12, roadDiameter: 10 }));
+    expect(centers.length).toBe(MAX_TRACK_WHEELS);
+    expect(Math.hypot(centers[1][0] - centers[0][0], centers[1][1] - centers[0][1])).toBeLessThan(2 * radius);
+    expect(checkRobot(trackedRover({ length: 600, endDiameter: 20, roadWheels: 12, roadDiameter: 10 }), new Map()).filter((p) => p.level === 'error')).toEqual([]);
+  });
+
   it('take a track to turn about its axles, wherever its joint points', () => {
     const doc = trackedRover();
     const robot = { ...doc.robot!, joints: doc.robot!.joints.map((j, i) => (i === 0 ? { ...j, axis: [0, 0, 1] as PartNode['pos'] } : j)) };
@@ -277,18 +293,58 @@ describe('what the exports write for a track', () => {
     expect(pkg.warnings).toEqual([]);
   });
 
-  it('Isaac Sim: the wheels are joints of the articulation with a speed drive each, stepped finer, on a differential controller', () => {
+  it('Isaac Sim: the wheels are bodies outside the articulation, each joint told its speed by the graph, and they meet neither each other nor the links', () => {
     const doc = trackedRover();
     const pkg = buildIsaacStage(doc, geometryOf(doc).geometry);
     const usda = text(pkg, '.usda');
     expect(usda.match(/def Xform "Track_\w+_wheel_\d+"/g)?.length).toBe(16);
     expect(usda.match(/def PhysicsRevoluteJoint "Track_\w+_wheel_\d+_joint"/g)?.length).toBe(16);
-    expect(usda).not.toContain('bool physics:excludeFromArticulation = 1');
+    // No joint state and no transform tells of a wheel: every one is kept out of the articulation, with its drive.
+    expect(usda.match(/bool physics:excludeFromArticulation = 1/g)?.length).toBe(16);
+    expect(usda.match(/float drive:angular:physics:maxForce = 0.325/g)?.length).toBe(16);
     expect(usda).toContain('def PhysicsFixedJoint "Track_left_joint"');
     expect(usda).toContain('uint physxScene:timeStepsPerSecond = 120');
+    // cmd_vel becomes a speed for each side, in degrees a second, written to each wheel's joint; the articulation has nothing to be told.
     expect(usda).toContain('DifferentialController');
-    expect(usda.match(/"Track_left_wheel_\d+_joint"/g)?.length).toBeGreaterThanOrEqual(16);
+    expect(usda).not.toContain('IsaacArticulationController');
+    expect(usda.match(/token node:type = "omni.graph.nodes.WritePrimAttribute"/g)?.length).toBe(16);
+    expect(usda.match(/custom token inputs:name = "drive:angular:physics:targetVelocity"/g)?.length).toBe(16);
+    for (const side of ['left', 'right']) {
+      expect(usda.match(new RegExp(`custom rel inputs:prim = </World/Reference_tracked_rover/Joints/Track_${side}_wheel_\\d+_joint>`, 'g'))?.length).toBe(8);
+      expect(usda).toContain(`def OmniGraphNode "${side}_degrees"`);
+    }
+    // The wheels overlap along the row: one group keeps them from one another and from the robot's links.
+    const groups = usda.slice(usda.indexOf('def Scope "CollisionGroups"'), usda.indexOf('def Scope "Joints"'));
+    expect(groups.match(/Track_\w+_wheel_\d+>/g)?.length).toBe(16);
+    expect(groups).toContain('rel physics:filteredGroups = [</World/Reference_tracked_rover/CollisionGroups/stand_ins>, </World/Reference_tracked_rover/CollisionGroups/links>]');
+    expect(groups).toContain('</World/Reference_tracked_rover/Body>');
     expect(pkg.warnings).toEqual([]);
+    // A rover on plain wheels has no such groups, and its controller commands the articulation.
+    const wheeled = ROBOTS.find((r) => r.file === 'rover')!.make();
+    const plain = text(buildIsaacStage(wheeled, geometryOf(wheeled).geometry), '.usda');
+    expect(plain).not.toContain('CollisionGroups');
+    expect(plain).not.toContain('WritePrimAttribute');
+    expect(plain).toContain('IsaacArticulationController');
+  });
+
+  it("a track's wheels are never lighter at the rim than four times what they carry, whatever the motor", () => {
+    const doc = trackedRover();
+    const { geometry } = geometryOf(doc);
+    const armatures = (robot: Doc['robot']) => [...text(buildMjcfModel(doc, geometry, robot), '.xml').matchAll(/wheel_\d+_joint" type="hinge"[^>]*?(?: armature="([-0-9.e]+)")?\/>/g)].map((m) => Number(m[1] ?? 0));
+    const withMotor = (patch: Record<string, unknown>) => ({ ...doc.robot!, joints: doc.robot!.joints.map((j) => ({ ...j, ...patch })) }) as Doc['robot'];
+    // The rover's mass over its sixteen wheels, at the wheels' rim.
+    const xml = text(buildMjcfModel(doc, geometry), '.xml');
+    const mass = [...xml.matchAll(/mass="([-0-9.e]+)"/g)].reduce((sum, m) => sum + Number(m[1]), 0);
+    const least = RIM_SHARE * (mass / 16) * 0.0354 ** 2;
+    expect(least).toBeGreaterThan(2e-4);
+    expect(least).toBeLessThan(5e-4);
+    // A motor from the list with a heavier rotor keeps its own; one with a lighter rotor, and figures typed by hand, get the least.
+    expect(armatures(doc.robot)).toEqual(Array(16).fill(0.0005));
+    for (const patch of [{ motor: 'tt-48' }, { motor: undefined }]) {
+      const got = armatures(withMotor(patch));
+      expect(got.length).toBe(16);
+      for (const a of got) expect(a).toBeCloseTo(least, 6);
+    }
   });
 
   it('a raised nose has wheels up its slope', () => {

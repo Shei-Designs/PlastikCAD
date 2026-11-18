@@ -30,9 +30,9 @@ SPEED = 0.3  # m/s asked of a rover
 # rollers slip a little, and it takes a moment to get going), and strays no farther than this another way (m, rad).
 MECANUM_LEAST, MECANUM_MOST, MECANUM_STRAY = 0.8, 1.05, 0.05
 # A rover on tracks (a row of wheels each side stands in for a belt) told to go back goes between these shares of
-# what was asked, and told to turn on the spot at 1 rad/s between these shares of it: a long contact skids, and
-# PhysX lets it skid more than the others (25 to 27 % in the trial). It strays no farther than this (m, rad).
-TRACK_STRAIGHT, TRACK_TURN, TRACK_STRAY = (0.9, 1.05), (0.15, 1.05), 0.05
+# what was asked, and told to turn on the spot at 1 rad/s between these shares of it: a long contact skids (the
+# reference rover turns 47 %; plain Coulomb friction would give 70 to 80 %). It strays no farther than this (m, rad).
+TRACK_STRAIGHT, TRACK_TURN, TRACK_STRAY = (0.9, 1.05), (0.35, 0.85), 0.05
 MUST_MOVE = 0.1  # m
 MAY_SETTLE = 0.02  # m the base may drop while settling
 WALL_AT = 1.0  # m ahead
@@ -316,6 +316,10 @@ def one(path, pictures):
         told = sorted(n for n in set(got['joint_states'][-1].name if got['joint_states'] else []) | frames if '_roller_' in n)
         if told:
             result['problems'].append(f'the rollers are published: {told[:4]}')
+        # Nor of a wheel that stands in for a track's belt.
+        told = sorted(n for n in set(got['joint_states'][-1].name if got['joint_states'] else []) | frames if re.search(r'_wheel_\d+(_joint)?$', n))
+        if info['tracks'] and told:
+            result['problems'].append(f"the tracks' wheels are published: {told[:4]}")
         if not got['clock']:
             result['problems'].append('no clock arrived')
         if not info['fixed_base']:
