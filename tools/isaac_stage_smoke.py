@@ -308,7 +308,11 @@ def one(path, pictures):
             drift = [f'{j} is at {float(q[names.index(j)]):.3f}, start {v:.3f}' for j, v in info['starts'].items() if j in names and j != servo and j not in info['torques'] and abs(float(q[names.index(j)]) - v) > 0.15]
             result['starts_held'] = len(info['starts']) - len(off) - len(drift)
             result['problems'] += off + drift
-        if not got['joint_states']:
+        # A robot with no joint of its own (a rover on tracks) publishes no joint states at all.
+        if not names:
+            if got['joint_states']:
+                result['problems'].append(f"joint_states arrived ({len(got['joint_states'])}) from a robot with no joint of its own")
+        elif not got['joint_states']:
             result['problems'].append('no joint_states arrived')
         elif set(got['joint_states'][-1].name) != set(names):
             result['problems'].append(f"joint_states names {list(got['joint_states'][-1].name)} are not the articulation's {names}")
@@ -450,11 +454,28 @@ def one(path, pictures):
                 m.linear.x, m.linear.y, m.angular.z = vx, vy, wz
                 twist_pub.publish(m)
             at, yaw = footprint()
-            run(SECONDS, send)
-            run(0.5, lambda i: twist_pub.publish(Twist()))
-            to, yaw2 = footprint()
+            # The turn is added up step by step: read end to end, one past a half turn would come back as the other way.
+            spin = {'last': yaw, 'sum': 0.0}
+
+            def follow():
+                now = footprint()[1]
+                spin['sum'] += (now - spin['last'] + math.pi) % (2 * math.pi) - math.pi
+                spin['last'] = now
+
+            def sent(i):
+                send(i)
+                follow()
+
+            def stopped(i):
+                twist_pub.publish(Twist())
+                follow()
+
+            run(SECONDS, sent)
+            run(0.5, stopped)
+            to = footprint()[0]
+            follow()
             d = to - at
-            turned = (yaw2 - yaw + math.pi) % (2 * math.pi) - math.pi
+            turned = spin['sum']
             return float(d[0] * math.cos(yaw) + d[1] * math.sin(yaw)), float(-d[0] * math.sin(yaw) + d[1] * math.cos(yaw)), turned
 
         # A rover on tracks: told to go back and to turn on the spot, it does each within what a long contact that skids allows, and nothing else.

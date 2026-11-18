@@ -428,7 +428,8 @@ in the design file and synced with it.
   end, worked out from the part's settings and where it stands, never from
   its mesh. They turn together at the motor's speed and share its torque.
   In the test drive the belt is seen to run: its lugs go round as far as
-  those wheels have turned, so a track that slips or stalls shows it, and
+  the wheels on the floor have turned (not those up a raised end, which
+  spin in the air), so a track that slips or stalls shows it, and
   the sprocket, idler and road wheels turn with it. That is for a link that
   is the Track part itself, with no picture on it; a track grouped with
   other objects is drawn still. In the exports the belt is drawn and does
@@ -551,7 +552,8 @@ in the design file and synced with it.
   articulation, so its joint states and transforms are the robot's own
   alone; the graph tells each track wheel's joint its side's speed, and the
   wheels of a row, which overlap, meet neither one another nor the robot's
-  links.
+  links. A robot whose only moving joints are such wheels publishes no
+  joint states.
   *File > Open*, Play, and it runs; nothing is imported or set up on
   the Isaac side. Isaac Sim can still import the ROS 2 package's URDF, but
   the stage carries what the importer cannot read from URDF: drive gains, a

@@ -645,17 +645,24 @@ function rosGraph(model: UsdModel, robotPath: string, linkPath: (link: string) =
   const base = linkPath(baseFrame);
   // The sensors' frames are plain prims in their links: named here, they are published beside the links.
   const frames = model.sensors.flatMap((s) => (s.frame ? [`${linkPath(s.link)}/${s.frame}`, ...(s.optical ? [`${linkPath(s.link)}/${s.frame}/${s.optical}`] : [])] : []));
+  const jointed = model.joints.some((j) => j.type !== 'fixed' && !j.outside && !j.loop);
   const nodes: GraphNode[] = [
     { name: 'tick', type: 'omni.graph.action.OnPlaybackTick', version: 2, attrs: { 'outputs:tick': EXEC } },
     { name: 'context', type: 'isaacsim.ros2.bridge.ROS2Context', version: 2, attrs: { 'outputs:context': { type: 'uint64' } } },
     { name: 'time', type: 'isaacsim.core.nodes.IsaacReadSimulationTime', version: 1, attrs: { 'outputs:simulationTime': { type: 'double' } } },
     { name: 'clock', type: 'isaacsim.ros2.bridge.ROS2PublishClock', version: 1, attrs: { 'inputs:execIn': from('uint', 'tick.outputs:tick'), 'inputs:context': from('uint64', 'context.outputs:context'), 'inputs:timeStamp': from('double', 'time.outputs:simulationTime') } },
-    {
-      name: 'joint_states',
-      type: 'isaacsim.ros2.bridge.ROS2PublishJointState',
-      version: 1,
-      attrs: { 'inputs:execIn': from('uint', 'tick.outputs:tick'), 'inputs:context': from('uint64', 'context.outputs:context'), 'inputs:timeStamp': from('double', 'time.outputs:simulationTime'), 'inputs:targetPrim': target(robotPath), 'inputs:topicName': text('joint_states') },
-    },
+    // A robot whose only moving joints stand outside the articulation (a rover on tracks: the wheels under its
+    // belts) has no joint of its own to tell of, and no joint states, as in the other exports.
+    ...(jointed
+      ? [
+          {
+            name: 'joint_states',
+            type: 'isaacsim.ros2.bridge.ROS2PublishJointState',
+            version: 1,
+            attrs: { 'inputs:execIn': from('uint', 'tick.outputs:tick'), 'inputs:context': from('uint64', 'context.outputs:context'), 'inputs:timeStamp': from('double', 'time.outputs:simulationTime'), 'inputs:targetPrim': target(robotPath), 'inputs:topicName': text('joint_states') },
+          } satisfies GraphNode,
+        ]
+      : []),
     {
       name: 'tf',
       type: 'isaacsim.ros2.bridge.ROS2PublishTransformTree',

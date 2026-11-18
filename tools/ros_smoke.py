@@ -39,7 +39,7 @@ failures = []
 # this share of it along its own forward.
 MECANUM_LEAST, MECANUM_STRAY = 0.8, 0.1
 # A rover on tracks (a differential drive with a row of wheels each side) told to turn on the spot at this rate
-# (rad/s) for this long turns between these shares of it, the time taken from its run forward: a long contact
+# (rad/s) for this long turns at between these shares of it, by the simulation's own time: a long contact
 # skids (Gazebo gave 75 % in the trial, plain Coulomb friction gives 70 to 80 %). It moves no farther than this (m).
 TRACK_TURN, TRACK_SECONDS, TRACK_SHARE, TRACK_DRIFT = 1.0, 3.0, (0.5, 1.05), 0.05
 
@@ -274,6 +274,86 @@ def bridged(pkg_dir):
         return yaml.safe_load(f) or []
 
 
+def stamped_yaws(text, model):
+    """A model's turn about the vertical at each moment of Gazebo's pose stream (`gz topic -e` on a world's
+    pose/info, as text): (the simulation's time in s, yaw in radians) for each message that tells of it."""
+    out, stack, t, name, q = [], [], 0.0, None, {}
+    for line in text.splitlines():
+        line = line.strip()
+        if line.endswith('{'):
+            block = line[:-1].strip()
+            if not stack and block == 'header':
+                t = 0.0
+            if not stack and block == 'pose':
+                name, q = None, {}
+            stack.append(block)
+        elif line == '}':
+            if stack and stack.pop() == 'pose' and not stack and name == model:
+                # A field that is zero is left out of the text.
+                x, y, z, w = (q.get(k, 0.0) for k in 'xyzw')
+                out.append((t, math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))))
+        elif ':' in line:
+            key, value = (v.strip() for v in line.split(':', 1))
+            try:
+                if stack == ['header', 'stamp'] and key == 'sec':
+                    t += float(value)
+                elif stack == ['header', 'stamp'] and key == 'nsec':
+                    t += float(value) * 1e-9
+                elif stack == ['pose'] and key == 'name':
+                    name = value.strip('"')
+                elif stack == ['pose', 'orientation'] and key in 'xyzw':
+                    q[key] = float(value)
+            except ValueError:
+                pass
+    return out
+
+
+def turn_through(model, world, action):
+    """Runs `action` (a velocity command for a while, then a stop) and adds up how far the model turns about the
+    vertical meanwhile, from the poses Gazebo publishes as it steps (some sixty for each second of its own time).
+    A turn read from the pose before and the pose after comes back within half a turn either way, so one past
+    180° reads as a turn the other way; added up from poses a sixtieth of a second apart it cannot. The poses are
+    listened to, not asked for: asking for one holds the simulation up, which shortens the turn it is timing.
+    Returns (the turn in radians, the longest of the simulation's time between two poses in s, the rate of the
+    turn in rad/s), or None where no pose came. The rate is taken over the middle of the turn, from a tenth of
+    it to nine tenths, by the simulation's own time: how long the command was in force, which the machine's
+    load decides, does not enter into it."""
+    with tempfile.NamedTemporaryFile('w+', suffix='.poses') as log:
+        listener = subprocess.Popen(['gz', 'topic', '-e', '-t', f'/world/{world}/pose/info'], stdout=log, stderr=subprocess.DEVNULL)
+        try:
+            # The turn is counted from a pose taken at rest: nothing is told to move before one has come.
+            if not wait_for(lambda: os.path.getsize(log.name) > 0 or None, 20, 0.2):
+                return None
+            action()
+            time.sleep(0.5)
+        finally:
+            listener.terminate()
+            try:
+                listener.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                listener.kill()
+        with open(log.name) as f:
+            seen = stamped_yaws(f.read(), model)
+    if len(seen) < 2:
+        return None
+    sums = [0.0]
+    for a, b in zip(seen, seen[1:]):
+        sums.append(sums[-1] + (b[1] - a[1] + math.pi) % (2 * math.pi) - math.pi)
+    turned = sums[-1]
+    middle = [i for i, v in enumerate(sums) if 0.1 * abs(turned) <= abs(v) <= 0.9 * abs(turned)]
+    took = seen[middle[-1]][0] - seen[middle[0]][0] if middle else 0.0
+    rate = (sums[middle[-1]] - sums[middle[0]]) / took if took > 0 else 0.0
+    return turned, max(b[0] - a[0] for a, b in zip(seen, seen[1:])), rate
+
+
+def followed(name, gap, rate):
+    """Whether the poses came often enough to add a turn at `rate` (rad/s) up from them; a failure where they did not."""
+    if gap * abs(rate) < 0.5 * math.pi:
+        return True
+    fail(name, f'could not follow the turn: {gap:.2f} s of the simulation passed between two poses, in which a robot told to turn {abs(rate):.1f} rad/s may turn too far to tell which way')
+    return False
+
+
 def drive_and_measure(model, world, publish, seconds=3.0):
     """Drives forward for a while through `publish(x)` and returns the distance the model moved in Gazebo."""
     before = wait_for(lambda: gz_pose(model, world), 20)
@@ -305,11 +385,13 @@ def check_mecanum(name, model, world, twist, forward, after, before):
         fail(name, f'told to slide left, the robot went {sideways:.3f} m to its left, {along:.3f} m forward and turned {math.degrees(yawed):.0f}° (it went {forward:.3f} m forward when told to)')
     else:
         ok(f'cmd_vel y slid the robot {sideways:.3f} m to its left ({along:+.3f} m forward, turned {math.degrees(yawed):+.0f}°)')
-    twist(0.0, 0.0, 0.5, 3.0)
+    read = turn_through(model, world, lambda: twist(0.0, 0.0, 0.5, 3.0))
     spun = gz_pose(model, world)
-    if not spun:
-        return fail(name, 'could not read the pose after the turn')
-    turned = (spun[5] - slid[5] + math.pi) % (2 * math.pi) - math.pi
+    if not read or not spun:
+        return fail(name, 'could not read the pose through the turn')
+    turned, gap, _ = read
+    if not followed(name, gap, 0.5):
+        return
     drift = math.hypot(spun[0] - slid[0], spun[1] - slid[1])
     if turned < 0.8 or drift > 0.05:
         fail(name, f'told to turn left on the spot, the robot turned {math.degrees(turned):.0f}° and moved {drift:.3f} m')
@@ -322,21 +404,23 @@ def on_tracks(text):
     return 'DiffDrive' in text and min(text.count('<left_joint>'), text.count('<right_joint>')) >= 3
 
 
-def check_tracks(name, model, world, twist, forward, after):
-    """A rover on tracks, after its run forward (`forward` m on 0.2 m/s for 3 s): told to turn on the spot it
-    turns most of what it was told, where it stands. Measured against the run forward, which the same clock
-    timed, not against the clock."""
-    twist(0.0, 0.0, TRACK_TURN, TRACK_SECONDS)
+def check_tracks(name, model, world, twist, after):
+    """A rover on tracks, after its run forward: told to turn on the spot it turns at most of the rate it was
+    told, where it stands. The rate is read by the simulation's own time (see `turn_through`), not against the
+    clock: a busy machine leaves the command in force for longer, and the rover turns farther, but no faster."""
+    read = turn_through(model, world, lambda: twist(0.0, 0.0, TRACK_TURN, TRACK_SECONDS))
     spun = gz_pose(model, world)
-    if not spun:
-        return fail(name, 'could not read the pose after the turn')
-    turned = (spun[5] - after[5] + math.pi) % (2 * math.pi) - math.pi
+    if not read or not spun:
+        return fail(name, 'could not read the pose through the turn')
+    turned, gap, rate = read
+    if not followed(name, gap, TRACK_TURN):
+        return
     drift = math.hypot(spun[0] - after[0], spun[1] - after[1])
-    share = turned / (TRACK_TURN * TRACK_SECONDS * forward / 0.6)
+    share = rate / TRACK_TURN
     if not TRACK_SHARE[0] <= share <= TRACK_SHARE[1] or drift > TRACK_DRIFT:
-        fail(name, f'told to turn left on the spot, the robot on tracks turned {math.degrees(turned):.0f}° ({100 * share:.0f} % of what it was told) and moved {drift:.3f} m')
+        fail(name, f'told to turn left on the spot, the robot on tracks turned {math.degrees(turned):.0f}° at {rate:.2f} rad/s ({100 * share:.0f} % of the rate it was told) and moved {drift:.3f} m')
     else:
-        ok(f'cmd_vel z turned the robot on its tracks {math.degrees(turned):.0f}° to the left on the spot ({100 * share:.0f} % of what it was told, {drift:.3f} m of drift)')
+        ok(f'cmd_vel z turned the robot on its tracks {math.degrees(turned):.0f}° to the left on the spot at {rate:.2f} rad/s ({100 * share:.0f} % of the rate it was told, {drift:.3f} m of drift)')
 
 
 def check_rviz(name, urdf, env):
@@ -614,7 +698,7 @@ def check_ros_package(pkg_dir, env):
                     check_mecanum(name, name, world_name, twist, dist, gz_pose(name, world_name) or after, before)
                 if tracks and not tipped:
                     time.sleep(0.5)
-                    check_tracks(name, name, world_name, twist, dist, gz_pose(name, world_name) or after)
+                    check_tracks(name, name, world_name, twist, gz_pose(name, world_name) or after)
             if odom0 and odom1 and not isinstance(odom0.get('pose'), type(None)):
                 p0, p1 = odom0['pose']['pose']['position'], odom1['pose']['pose']['position']
                 od = math.hypot(p1['x'] - p0['x'], p1['y'] - p0['y'])
@@ -801,7 +885,7 @@ def check_sdf_package(pkg_dir, env):
                             check_mecanum(name, model_name, world_name, twist, dist, gz_pose(model_name, world_name) or after, before)
                         if tracks:
                             time.sleep(0.5)
-                            check_tracks(name, model_name, world_name, twist, dist, gz_pose(model_name, world_name) or after)
+                            check_tracks(name, model_name, world_name, twist, gz_pose(model_name, world_name) or after)
     finally:
         errs = launched.errors()
         launched.stop()

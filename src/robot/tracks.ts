@@ -105,6 +105,16 @@ export function standIns(f: TrackFigures): { radius: number; centers: [number, n
   return { radius, centers };
 }
 
+/**
+ * Which of a track's stand-in wheels are on its run along the floor, one for each of `standIns`' centers: those
+ * as low as the lowest, between the ends of the stretch of belt that lies on the floor. The rest are up a raised
+ * end, in the air on a flat floor.
+ */
+export function standInsOnFloor(f: TrackFigures, centers: [number, number][] = standIns(f).centers): boolean[] {
+  const lowest = Math.min(...centers.map((c) => c[1]));
+  return centers.map((c) => c[1] - lowest < 1e-3 && c[0] >= f.floor.from - 1e-3 && c[0] <= f.floor.to + 1e-3);
+}
+
 /** The wheels that stand in for a track, placed in the design: mm. */
 export interface TrackWheels {
   /** The way the axles run, a unit vector. */

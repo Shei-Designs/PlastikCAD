@@ -13,7 +13,7 @@ import { checkRobot } from '../robot/check';
 import { withMecanumWheel } from '../robot/replaceWheel';
 import { parseUrdf } from '../io/importUrdf';
 import { emptyDoc } from '../model/file';
-import { ROBOTS } from '../robot/fixtures';
+import { ROBOTS, trackedRover } from '../robot/fixtures';
 import { forward } from '../robot/kinematics';
 import { linkNodes, linkOf, piecesOf } from '../robot/model';
 import { FaultWatch, floorLinks, linkLooks } from '../robot/collisionCheck';
@@ -22,7 +22,7 @@ import { frameOf } from '../state/sim';
 import type { Mat } from '../model/math';
 import { apply } from '../model/math';
 import { trackInPart } from '../parts/generators/track';
-import { standIns, trackOf } from '../robot/tracks';
+import { standIns, standInsOnFloor, trackOf } from '../robot/tracks';
 import type { Track } from '../robot/tracks';
 import { BeltWatch, beltAxis, beltWheels } from './belts';
 import { loadMujoco, Simulation } from './mujoco';
@@ -388,6 +388,70 @@ describe('the rover on tracks', () => {
     expect(right).toBeLessThan(-100);
     // The start pose again, and no belt has run.
     expect([...watch.clear().values()]).toEqual([0, 0]);
+    sim.dispose();
+  });
+});
+
+describe('a rover on tracks with a raised end', () => {
+  it("tells each belt's run from the wheels on the floor, not from those that spin in the air up the raised end", () => {
+    const doc = trackedRover({ idlerRise: 40 });
+    const { sim, base } = simulate(doc);
+    const robot = doc.robot!;
+    const nodes = linkNodes(doc.scene);
+    const geo = robotGeometry(nodes, Object.fromEntries(nodes.map((n) => [n.id, linkOf(robot, n.id).collision])), false);
+    const pkg = buildMjcfModel(doc, new Map(geo.map((g) => [g.id, { ...g, visual: [] }])), robot, 'flat');
+    const links = new Set(pkg.bodies.map((b) => b.body));
+    const tracks = nodes.flatMap((node) => {
+      const track = trackOf(node);
+      if (typeof track === 'string') return [];
+      const name = pkg.bodies.find((b) => b.node === node.id)!.body;
+      const stand = standIns(track.figures);
+      return [{ node: node.id, body: sim.bodies.indexOf(name), wheels: beltWheels(sim.bodies, name, (b) => links.has(b)), axis: beltAxis(track.toDesign).axis, radius: stand.radius, floor: standInsOnFloor(track.figures, stand.centers) }];
+    });
+    // Some of each track's wheels are on the floor and some up the raised end, one flag for each wheel of the model.
+    for (const t of tracks) {
+      expect(t.floor.length).toBe(t.wheels.length);
+      expect(t.floor.filter(Boolean).length).toBeGreaterThan(1);
+      expect(t.floor.filter((on) => !on).length).toBeGreaterThan(1);
+    }
+    const [floor, all] = [new BeltWatch(tracks), new BeltWatch(tracks.map(({ floor: _floor, ...t }) => t))];
+    const run = (seconds: number): number[][] => {
+      let [a, b] = [new Map<string, number>(), new Map<string, number>()];
+      for (let t = 0; t < seconds; t += 1 / 60) {
+        sim.step(1 / 60);
+        [a, b] = [floor.see(sim.poses()), all.see(sim.poses())];
+      }
+      return tracks.map((t) => [a.get(t.node)!, b.get(t.node)!]);
+    };
+    floor.clear();
+    all.clear();
+    const settled = run(0.5);
+    const start = position(sim, base);
+    sim.drive(1, 0);
+    const ahead = run(2);
+    const went = Math.hypot(position(sim, base)[0] - start[0], position(sim, base)[1] - start[1]) * 1000;
+    expect(went).toBeGreaterThan(500);
+    ahead.forEach(([onFloor, every], i) => {
+      const [f, e] = [Math.abs(onFloor - settled[i][0]), Math.abs(every - settled[i][1])];
+      // The wheels on the floor carry the rover, and the belt has run as far as it went, but for what they slipped.
+      expect(f).toBeGreaterThan(went);
+      expect(f).toBeLessThan(1.15 * went);
+      // Going straight, the wheels in the air turn hardly faster than those: a thousandth.
+      expect(e / f).toBeGreaterThan(1);
+      expect(e / f).toBeLessThan(1.01);
+    });
+    // Turning on the spot the wheels on the floor are held back by the skid and those in the air are not: counted in,
+    // they would show the belt running some two hundredths faster than the wheels that carry the rover turn.
+    sim.drive(0, 0);
+    const stopped = run(0.5);
+    sim.drive(0, 1);
+    const turned = run(1.5);
+    turned.forEach(([onFloor, every], i) => {
+      const [f, e] = [Math.abs(onFloor - stopped[i][0]), Math.abs(every - stopped[i][1])];
+      expect(f).toBeGreaterThan(500);
+      expect(e / f).toBeGreaterThan(1.005);
+      expect(e / f).toBeLessThan(1.05);
+    });
     sim.dispose();
   });
 });
