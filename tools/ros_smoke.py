@@ -39,7 +39,7 @@ failures = []
 # this share of it along its own forward.
 MECANUM_LEAST, MECANUM_STRAY = 0.8, 0.1
 # A rover on tracks (a differential drive with a row of wheels each side) told to turn on the spot at this rate
-# (rad/s) for this long turns between these shares of it, the time taken from its run forward: a long contact
+# (rad/s) for this long turns at between these shares of it, by the simulation's own time: a long contact
 # skids (Gazebo gave 75 % in the trial, plain Coulomb friction gives 70 to 80 %). It moves no farther than this (m).
 TRACK_TURN, TRACK_SECONDS, TRACK_SHARE, TRACK_DRIFT = 1.0, 3.0, (0.5, 1.05), 0.05
 
@@ -314,8 +314,10 @@ def turn_through(model, world, action):
     A turn read from the pose before and the pose after comes back within half a turn either way, so one past
     180° reads as a turn the other way; added up from poses a sixtieth of a second apart it cannot. The poses are
     listened to, not asked for: asking for one holds the simulation up, which shortens the turn it is timing.
-    Returns (the turn in radians, the longest of the simulation's time between two poses in s), or None where
-    no pose came."""
+    Returns (the turn in radians, the longest of the simulation's time between two poses in s, the rate of the
+    turn in rad/s), or None where no pose came. The rate is taken over the middle of the turn, from a tenth of
+    it to nine tenths, by the simulation's own time: how long the command was in force, which the machine's
+    load decides, does not enter into it."""
     with tempfile.NamedTemporaryFile('w+', suffix='.poses') as log:
         listener = subprocess.Popen(['gz', 'topic', '-e', '-t', f'/world/{world}/pose/info'], stdout=log, stderr=subprocess.DEVNULL)
         try:
@@ -334,8 +336,14 @@ def turn_through(model, world, action):
             seen = stamped_yaws(f.read(), model)
     if len(seen) < 2:
         return None
-    turned = sum((b[1] - a[1] + math.pi) % (2 * math.pi) - math.pi for a, b in zip(seen, seen[1:]))
-    return turned, max(b[0] - a[0] for a, b in zip(seen, seen[1:]))
+    sums = [0.0]
+    for a, b in zip(seen, seen[1:]):
+        sums.append(sums[-1] + (b[1] - a[1] + math.pi) % (2 * math.pi) - math.pi)
+    turned = sums[-1]
+    middle = [i for i, v in enumerate(sums) if 0.1 * abs(turned) <= abs(v) <= 0.9 * abs(turned)]
+    took = seen[middle[-1]][0] - seen[middle[0]][0] if middle else 0.0
+    rate = (sums[middle[-1]] - sums[middle[0]]) / took if took > 0 else 0.0
+    return turned, max(b[0] - a[0] for a, b in zip(seen, seen[1:])), rate
 
 
 def followed(name, gap, rate):
@@ -381,7 +389,7 @@ def check_mecanum(name, model, world, twist, forward, after, before):
     spun = gz_pose(model, world)
     if not read or not spun:
         return fail(name, 'could not read the pose through the turn')
-    turned, gap = read
+    turned, gap, _ = read
     if not followed(name, gap, 0.5):
         return
     drift = math.hypot(spun[0] - slid[0], spun[1] - slid[1])
@@ -396,23 +404,23 @@ def on_tracks(text):
     return 'DiffDrive' in text and min(text.count('<left_joint>'), text.count('<right_joint>')) >= 3
 
 
-def check_tracks(name, model, world, twist, forward, after):
-    """A rover on tracks, after its run forward (`forward` m on 0.2 m/s for 3 s): told to turn on the spot it
-    turns most of what it was told, where it stands. Measured against the run forward, which the same clock
-    timed, not against the clock."""
+def check_tracks(name, model, world, twist, after):
+    """A rover on tracks, after its run forward: told to turn on the spot it turns at most of the rate it was
+    told, where it stands. The rate is read by the simulation's own time (see `turn_through`), not against the
+    clock: a busy machine leaves the command in force for longer, and the rover turns farther, but no faster."""
     read = turn_through(model, world, lambda: twist(0.0, 0.0, TRACK_TURN, TRACK_SECONDS))
     spun = gz_pose(model, world)
     if not read or not spun:
         return fail(name, 'could not read the pose through the turn')
-    turned, gap = read
+    turned, gap, rate = read
     if not followed(name, gap, TRACK_TURN):
         return
     drift = math.hypot(spun[0] - after[0], spun[1] - after[1])
-    share = turned / (TRACK_TURN * TRACK_SECONDS * forward / 0.6)
+    share = rate / TRACK_TURN
     if not TRACK_SHARE[0] <= share <= TRACK_SHARE[1] or drift > TRACK_DRIFT:
-        fail(name, f'told to turn left on the spot, the robot on tracks turned {math.degrees(turned):.0f}° ({100 * share:.0f} % of what it was told) and moved {drift:.3f} m')
+        fail(name, f'told to turn left on the spot, the robot on tracks turned {math.degrees(turned):.0f}° at {rate:.2f} rad/s ({100 * share:.0f} % of the rate it was told) and moved {drift:.3f} m')
     else:
-        ok(f'cmd_vel z turned the robot on its tracks {math.degrees(turned):.0f}° to the left on the spot ({100 * share:.0f} % of what it was told, {drift:.3f} m of drift)')
+        ok(f'cmd_vel z turned the robot on its tracks {math.degrees(turned):.0f}° to the left on the spot at {rate:.2f} rad/s ({100 * share:.0f} % of the rate it was told, {drift:.3f} m of drift)')
 
 
 def check_rviz(name, urdf, env):
@@ -690,7 +698,7 @@ def check_ros_package(pkg_dir, env):
                     check_mecanum(name, name, world_name, twist, dist, gz_pose(name, world_name) or after, before)
                 if tracks and not tipped:
                     time.sleep(0.5)
-                    check_tracks(name, name, world_name, twist, dist, gz_pose(name, world_name) or after)
+                    check_tracks(name, name, world_name, twist, gz_pose(name, world_name) or after)
             if odom0 and odom1 and not isinstance(odom0.get('pose'), type(None)):
                 p0, p1 = odom0['pose']['pose']['position'], odom1['pose']['pose']['position']
                 od = math.hypot(p1['x'] - p0['x'], p1['y'] - p0['y'])
@@ -877,7 +885,7 @@ def check_sdf_package(pkg_dir, env):
                             check_mecanum(name, model_name, world_name, twist, dist, gz_pose(model_name, world_name) or after, before)
                         if tracks:
                             time.sleep(0.5)
-                            check_tracks(name, model_name, world_name, twist, dist, gz_pose(model_name, world_name) or after)
+                            check_tracks(name, model_name, world_name, twist, gz_pose(model_name, world_name) or after)
     finally:
         errs = launched.errors()
         launched.stop()
