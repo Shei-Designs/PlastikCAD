@@ -475,6 +475,18 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
         drive = { ...base, wheelSeparation: (apart(at(fl), at(fr)) + apart(at(rl), at(rr))) / 2, wheelBase: (apart(at(fl), at(rl)) + apart(at(fr), at(rr))) / 2 };
       } else {
         drive = { ...base, wheelSeparation: apart(mean(parts.left), mean(parts.right)) };
+        // A differential drive with more than one wheel on a side turns by sliding them sideways. Gazebo's
+        // friction would hold such a rover that is longer than it is wide square to the world, however hard the
+        // wheels turned, so each wheel's friction is laid along its own diagonals (see `surfaceXml`): halfway
+        // between the axle and the way the wheel rolls, level, in the frame of the link the wheel hangs from, which
+        // does not turn with it. A track's wheels, many in a row, turn as they should without.
+        if (def.id === 'differential' && Math.max(parts.left.length, parts.right.length) > 1) {
+          for (const j of [...parts.left, ...parts.right]) {
+            const [x, y] = placedJoints.get(j.id)!.axis;
+            const link = links.find((l) => l.node.id === j.child);
+            if (link && !trackMotors.has(j.id) && Math.hypot(x, y) > 0.5) link.skid = { frame: linkNames.get(j.parent)!, along: [x + y, y - x, 0] };
+          }
+        }
         if (def.id === 'ackermann') {
           const [sl, sr] = [parts['steer-left'][0], parts['steer-right'][0]];
           drive.kingpinWidth = apart(at(sl), at(sr));
@@ -638,6 +650,17 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
       opticalFrames.set(s.name, optical);
       joints.push({ name: p.names.take(`${s.name}_optical_joint`, p.naming.joint), type: 'fixed', parent: frame, child: optical, origin: [0, 0, 0], rpy: OPTICAL, axis: [0, 0, 1] });
     }
+  }
+  // Gazebo folds a link on a fixed joint into the link above, and the base into its footprint, so a skidding
+  // wheel's direction is told in the frame of the first link above it that Gazebo keeps. The link frames are
+  // parallel, so the direction is the same in each; the footprint's is turned about Z from them.
+  for (const l of links) {
+    if (!l.skid) continue;
+    let frame = l.skid.frame;
+    for (let above = joints.find((j) => j.child === frame); above?.type === 'fixed' && !above.preserve; above = joints.find((j) => j.child === frame)) frame = above.parent;
+    const [x, y] = l.skid.along;
+    const [c, s] = footprint && frame === base ? [Math.cos(footprint.turn), Math.sin(footprint.turn)] : [1, 0];
+    l.skid = { frame: footprint && frame === base ? footprint.name : frame, along: [c * x - s * y, s * x + c * y, 0] };
   }
   // The robot's box, for RViz to look at, as the base link's frame has it.
   const extent = unionBounds(p.links.map((l) => geometry.get(l.node.id)!.bounds));

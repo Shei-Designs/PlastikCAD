@@ -6,6 +6,8 @@ import type { Vec3 } from '../model/types';
 import type { Tensor } from '../robot/inertia';
 import type { JointType, SensorKind } from '../robot/types';
 import { escapeXml, fmt } from './format';
+import { GZ_NAMESPACE, surfaceXml } from './gazebo';
+import type { Skid } from './gazebo';
 
 export interface UrdfInertial {
   /** kg. */
@@ -33,6 +35,8 @@ export interface UrdfLink {
   collision: UrdfShape[];
   /** Coefficient of friction of the surface, written for Gazebo. */
   friction?: number;
+  /** Set on a wheel that slides as its robot turns (see `surfaceXml`); the frame is a link Gazebo keeps as its own. */
+  skid?: Skid;
   /** Gazebo sensor elements fixed in this link (see `sensorXml`), written in a <gazebo> block for it. */
   sensors?: string[];
 }
@@ -166,7 +170,9 @@ export function writeUrdf(name: string, links: UrdfLink[], joints: UrdfJoint[], 
   const gazebo: string[] = [];
   for (const l of links) {
     const inner: string[] = [];
-    if (l.friction !== undefined && l.collision.length > 0) inner.push(`    <mu1>${fmt(l.friction, 4)}</mu1>`, `    <mu2>${fmt(l.friction, 4)}</mu2>`);
+    // A wheel that skids is given its friction whole, as Gazebo's own element: the short form has no place for the frame.
+    if (l.skid && l.collision.length > 0) inner.push(`    <collision>${surfaceXml(l.friction ?? 1, l.skid)}</collision>`);
+    else if (l.friction !== undefined && l.collision.length > 0) inner.push(`    <mu1>${fmt(l.friction, 4)}</mu1>`, `    <mu2>${fmt(l.friction, 4)}</mu2>`);
     for (const s of l.sensors ?? []) inner.push(indent(s, '    '));
     if (inner.length) gazebo.push(`  <gazebo reference="${escapeXml(l.name)}">`, ...inner, '  </gazebo>');
   }
@@ -190,13 +196,14 @@ export function writeUrdf(name: string, links: UrdfLink[], joints: UrdfJoint[], 
       '  </gazebo>',
     );
   }
-  if (!xacro) return [`<?xml version="1.0"?>`, `<!-- Made with ${APP_NAME}. Units: meters, kilograms, radians. -->`, `<robot name="${escapeXml(name)}">`, ...head, ...body, ...jointLines, ...gazebo, ...control, '</robot>', ''].join('\n');
+  const gz = links.some((l) => l.skid && l.collision.length > 0) ? ` ${GZ_NAMESPACE}` : '';
+  if (!xacro) return [`<?xml version="1.0"?>`, `<!-- Made with ${APP_NAME}. Units: meters, kilograms, radians. -->`, `<robot name="${escapeXml(name)}"${gz}>`, ...head, ...body, ...jointLines, ...gazebo, ...control, '</robot>', ''].join('\n');
   const guarded = (arg: string, lines: string[]): string[] => (lines.length ? [`  <xacro:if value="$(arg ${arg})">`, ...lines.map((l) => (l ? `  ${l}` : l)), '  </xacro:if>'] : []);
   return [
     `<?xml version="1.0"?>`,
     `<!-- Made with ${APP_NAME}. Units: meters, kilograms, radians. -->`,
     `<!-- xacro ${xacro.package}.urdf.xacro use_gazebo:=false   leaves out the Gazebo blocks (RViz, or a real robot); use_ros2_control:=false the controllers. -->`,
-    `<robot name="${escapeXml(name)}" xmlns:xacro="http://www.ros.org/wiki/xacro">`,
+    `<robot name="${escapeXml(name)}" xmlns:xacro="http://www.ros.org/wiki/xacro"${gz}>`,
     `  <xacro:property name="package" value="${escapeXml(xacro.package)}"/>`,
     '  <xacro:arg name="use_gazebo" default="true"/>',
     '  <xacro:arg name="use_ros2_control" default="true"/>',

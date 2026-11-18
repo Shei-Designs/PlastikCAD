@@ -1321,3 +1321,42 @@ describe('the motors of a loop', () => {
     expect(checkRobot(d, props).filter((p) => /nothing can move it/.test(p.text))).toEqual([]);
   });
 });
+
+describe('the friction of a wheel that skids', () => {
+  const geo = (d: Doc) => new Map(linkNodes(d.scene).map((n) => [n.id, boxGeometry(n)]));
+  const made = (which: string) => {
+    const d = ROBOTS.find((r) => r.file === which)!.make();
+    return { urdf: file(buildRobotPackage(d, geo(d)), /\.urdf$/), sdf: file(buildSdfModel(d, geo(d)), /^model\.sdf$/) };
+  };
+
+  it("lays a differential drive's wheels' friction along their diagonals for Gazebo, in a frame that does not turn with the wheel", () => {
+    const { urdf, sdf } = made('rover');
+    // The rover's axles lie along X and it rolls along Y: the diagonal between them, in the body's frame, at 1/√2 of the wheel's friction of 1.
+    const surfaces = [...sdf.matchAll(/<link name="(Wheel_[a-z_]+)">[\s\S]*?<surface><friction><ode><mu>([^<]+)<\/mu><mu2>([^<]+)<\/mu2><fdir1 gz:expressed_in="([^"]+)">([^<]+)<\/fdir1>/g)].map((m) => m.slice(1));
+    expect(surfaces).toHaveLength(4);
+    for (const [, mu, mu2, frame, along] of surfaces) {
+      expect([mu, mu2, frame]).toEqual(['0.707107', '0.707107', 'Body']);
+      const [x, y, z] = along.split(' ').map(Number);
+      expect([Math.abs(x), Math.abs(y), z]).toEqual([1, 1, 0]);
+    }
+    expect(sdf).toContain('<sdf version="1.11" xmlns:gz="http://gazebosim.org/schema">');
+    // The body keeps its friction as it was.
+    expect(sdf).toMatch(/<collision name="Body_collision">[\s\S]*?<surface><friction><ode><mu>[^<]+<\/mu><mu2>[^<]+<\/mu2><\/ode>/);
+    // In the ROS package Gazebo folds the body into its footprint, so the direction is told in the footprint's frame, as Gazebo's own element.
+    const blocks = [...urdf.matchAll(/<gazebo reference="(Wheel_[a-z_]+)">\s*<collision><surface><friction><ode><mu>0.707107<\/mu><mu2>0.707107<\/mu2><fdir1 gz:expressed_in="base_footprint">([^<]+)<\/fdir1>/g)];
+    expect(blocks).toHaveLength(4);
+    for (const [, , along] of blocks) expect(along.split(' ').map((v) => Math.abs(Number(v)))).toEqual([1, 1, 0]);
+    expect(urdf).toContain('<robot name="Reference_rover" xmlns:gz="http://gazebosim.org/schema">');
+    expect(urdf).not.toMatch(/<gazebo reference="Wheel_[a-z_]+">\s*<mu1>/);
+  });
+
+  it("leaves a track's wheels, a mecanum wheel's rollers and a car's wheels as they were", () => {
+    for (const name of ['tracked', 'mecanum', 'car']) {
+      const { urdf, sdf } = made(name);
+      for (const xml of [urdf, sdf]) {
+        expect(xml).not.toContain('fdir1');
+        expect(xml).not.toContain('xmlns:gz');
+      }
+    }
+  });
+});

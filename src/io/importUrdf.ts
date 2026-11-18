@@ -567,7 +567,11 @@ function readUrdf(bytes: Uint8Array, companions: Companion[]): ImportedRobot {
   const frictionOf = new Map<string, number>();
   const gazebos = childrenOf(root, 'gazebo');
   for (const g of gazebos) {
-    const mu = num(childOf(g, 'mu1')?.text);
+    // In Gazebo's short form, or whole as its own element: there a friction laid along a direction of its own is
+    // one this app wrote for a wheel that skids, 1/√2 of the wheel's (see `surfaceXml`).
+    const ode = ['collision', 'surface', 'friction', 'ode'].reduce<ReturnType<typeof childOf>>((e, name) => e && childOf(e, name), g);
+    const whole = ode && num(childOf(ode, 'mu')?.text);
+    const mu = num(childOf(g, 'mu1')?.text) ?? (whole !== undefined && whole !== null && childOf(ode!, 'fdir1') ? Number((whole * Math.SQRT2).toFixed(4)) : (whole ?? undefined));
     if (g.attrs.reference && mu !== undefined) frictionOf.set(g.attrs.reference, mu);
   }
   for (const name of keptOrder) {

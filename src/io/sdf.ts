@@ -8,7 +8,8 @@ import type { Vec3 } from '../model/types';
 import type { Tensor } from '../robot/inertia';
 import type { JointType } from '../robot/types';
 import { escapeXml, fmt } from './format';
-import { pad, surfaceXml } from './gazebo';
+import { GZ_NAMESPACE, pad, surfaceXml } from './gazebo';
+import type { Skid } from './gazebo';
 import type { Naming, UrdfGeometry } from './urdf';
 
 export interface SdfLink {
@@ -19,6 +20,8 @@ export interface SdfLink {
   visual: { geometry: UrdfGeometry; origin?: Vec3; rpy?: Vec3; color?: [number, number, number] }[];
   collision: { geometry: UrdfGeometry; origin?: Vec3; rpy?: Vec3 }[];
   friction?: number;
+  /** Set on a wheel that slides as its robot turns (see `surfaceXml`). */
+  skid?: Skid;
   /** Sensor elements fixed in this link (see `sensorXml`). */
   sensors?: string[];
 }
@@ -89,7 +92,7 @@ function linkXml(l: SdfLink): string {
     const pose = poseXml(c.origin, c.rpy);
     if (pose) lines.push(`      ${pose}`);
     lines.push(`      ${geometryXml(c.geometry)}`);
-    if (l.friction !== undefined) lines.push(`      ${surfaceXml(l.friction)}`);
+    if (l.friction !== undefined || l.skid) lines.push(`      ${surfaceXml(l.friction ?? 1, l.skid)}`);
     lines.push('    </collision>');
   });
   for (const s of l.sensors ?? []) lines.push(pad(s, '    '));
@@ -121,7 +124,7 @@ export function writeSdf(name: string, links: SdfLink[], joints: SdfJoint[], plu
   return [
     '<?xml version="1.0"?>',
     `<!-- Made with ${APP_NAME}. Units: meters, kilograms, radians. -->`,
-    '<sdf version="1.11">',
+    links.some((l) => l.skid) ? `<sdf version="1.11" ${GZ_NAMESPACE}>` : '<sdf version="1.11">',
     `<model name="${escapeXml(name)}">`,
     '  <self_collide>false</self_collide>',
     ...links.map(linkXml),
