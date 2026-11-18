@@ -267,6 +267,40 @@ describe('the rover', () => {
   });
 });
 
+describe('the rover on tracks', () => {
+  it('drives forward on the wheels that stand in for its belts, and turns on the spot', () => {
+    const { sim, base } = simulate(make('tracked'));
+    // The wheels are bodies of the model, each with a motor: eight a track.
+    expect(sim.bodies.filter((b) => b.includes('_wheel_')).length).toBe(16);
+    expect(sim.actuators.map((a) => a.kind)).toEqual(Array.from({ length: 16 }, () => 'motor'));
+    sim.step(0.5);
+    const start = position(sim, base);
+    sim.drive(1, 0);
+    sim.step(2);
+    const end = position(sim, base);
+    // A 37D motor turns a 71 mm wheel at about 0.55 m/s.
+    expect(end[1] - start[1]).toBeGreaterThan(0.8);
+    expect(Math.abs(end[0] - start[0])).toBeLessThan(0.05);
+    expect(Math.abs(yaw(sim, base))).toBeLessThan(5);
+    // It stands on its tracks as designed: the body's middle 55 mm up.
+    expect(end[2]).toBeCloseTo(0.055, 2);
+    sim.drive(0, 0);
+    sim.step(0.5);
+    const [stopped, before] = [position(sim, base), yaw(sim, base)];
+    sim.drive(0, 1);
+    sim.step(1);
+    // Its long tracks skid as they turn it: well short of the 300° a second its wheels would give without.
+    expect(yaw(sim, base) - before).toBeGreaterThan(40);
+    const turned = position(sim, base);
+    expect(Math.hypot(turned[0] - stopped[0], turned[1] - stopped[1])).toBeLessThan(0.05);
+    sim.dispose();
+  });
+
+  it('shows no fault of its collision shapes on a flat floor', () => {
+    expect(faultsAfter(make('tracked'), 1.5)).toEqual([]);
+  });
+});
+
 describe('the mecanum rover', () => {
   it('slides to its left on its rollers, without turning or creeping forward', () => {
     const { sim, base } = simulate(make('mecanum'));

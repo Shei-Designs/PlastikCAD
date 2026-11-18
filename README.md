@@ -418,6 +418,26 @@ in the design file and synced with it.
   name, joint, part in the drive, friction and weighed mass are kept; a
   mass figured from a material is figured from the new shape. A mecanum
   wheel's **Collision** is *Rollers* or *None*, and nothing else.
+- **Tracks.** A *Track* part from the Wheels parts drives as a track. Hang
+  it from the body by a joint (a new one comes on its sprocket's axle,
+  continuous) and give that joint its side in a differential drive: the
+  joint is the track's motor. In every export and in the test drive the
+  track itself is held still on the body, and a row of wheels stands in for
+  its belt: all as large as the sprocket with the belt on it, on hinges to
+  the track, from the sprocket under the track to the idler and up a raised
+  end, worked out from the part's settings and where it stands, never from
+  its mesh. They turn together at the motor's speed and share its torque;
+  the belt is drawn and does not move yet. The wheels are the simulator's
+  alone: no link or joint of the robot's, and in the ROS 2 package they are
+  in Gazebo's blocks of the URDF. The drive's wheel radius is the
+  sprocket's with its belt, and its track the distance between the two
+  tracks' middles. A long track skids as it turns the robot on the spot, as
+  a real one does, so the robot turns less than its wheels' speeds say, by
+  a share that differs between simulators. A track must be scaled the same
+  on every side; mirroring one makes the track of the other side. Its
+  **Collision** is *Track* or *None*, and its friction 1 until one is
+  typed. A Track part with no part in the drive keeps its joint, and its
+  wheels turn free.
 - **Controllers.** The actuated joints outside the drive go under
   `ros2_control` with a joint trajectory controller (`arm_controller`) and a
   joint state broadcaster, unless switched off, and *Scripts* whether the
@@ -517,7 +537,9 @@ in the design file and synced with it.
   asks for 120 physics steps a second, which keeps them true: a stage of
   your own that the robot is referenced into needs the same rate
   (`physxScene:timeStepsPerSecond = 120` on its physics scene), or it
-  slides short. The rollers are bodies outside the articulation, so its
+  slides short. A robot on tracks is stepped as finely; the wheels that
+  stand in for its belts are joints of the articulation, which is what the
+  drive commands, so `/joint_states` and `/tf` tell of them there. The rollers are bodies outside the articulation, so its
   joint states and transforms are the robot's own alone.
   *File > Open*, Play, and it runs; nothing is imported or set up on
   the Isaac side. Isaac Sim can still import the ROS 2 package's URDF, but

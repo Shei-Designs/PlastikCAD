@@ -162,13 +162,18 @@ export interface GazeboRoller {
   inertial: { mass: number; inertia: [number, number, number, number, number, number] };
   balls: { at: Vec3; radius: number }[];
   friction: number;
+  /** A wheel that stands in for a track's belt: a cylinder about the hinge, turned from standing along Z (roll, pitch, yaw). */
+  cylinder?: { radius: number; length: number; rpy: Vec3 };
+  /** Such a wheel of a track in the drive: the most its motor does, and what the hinge resists by. */
+  driven?: { effort: number; velocity: number; damping: number; friction: number };
 }
 
 /**
  * A roller of a mecanum wheel, as the SDF link and joint Gazebo gets: a body on a free hinge to its wheel, placed
  * and turned from the wheel link's frame, colliding as a row of balls. The same two elements go into an SDF model
  * as they are and into a URDF inside a <gazebo> block, where Gazebo alone reads them: the rollers are the
- * simulator's business, and no frame or joint of the robot's own.
+ * simulator's business, and no frame or joint of the robot's own. A wheel that stands in for a track's belt is
+ * written the same way: a cylinder on a hinge to its track, which the drive turns.
  */
 export function rollerXml(r: GazeboRoller): string {
   const v = (a: Vec3) => a.map((x) => fmt(x, 6)).join(' ');
@@ -180,11 +185,14 @@ export function rollerXml(r: GazeboRoller): string {
     `  <pose relative_to="${wheel}">${v(r.at)} 0 0 0</pose>`,
     `  <inertial><mass>${n(r.inertial.mass)}</mass><inertia><ixx>${n(xx)}</ixx><ixy>${n(xy)}</ixy><ixz>${n(xz)}</ixz><iyy>${n(yy)}</iyy><iyz>${n(yz)}</iyz><izz>${n(zz)}</izz></inertia></inertial>`,
     ...r.balls.map((b, i) => `  <collision name="${escapeXml(r.name)}_collision${i ? `_${i}` : ''}"><pose>${v(b.at)} 0 0 0</pose><geometry><sphere><radius>${fmt(b.radius, 6)}</radius></sphere></geometry>${surfaceXml(r.friction)}</collision>`),
+    ...(r.cylinder ? [`  <collision name="${escapeXml(r.name)}_collision"><pose>0 0 0 ${v(r.cylinder.rpy)}</pose><geometry><cylinder><radius>${fmt(r.cylinder.radius, 6)}</radius><length>${fmt(r.cylinder.length, 6)}</length></cylinder></geometry>${surfaceXml(r.friction)}</collision>`] : []),
     '</link>',
     `<joint name="${escapeXml(r.joint)}" type="revolute">`,
     `  <parent>${wheel}</parent>`,
     `  <child>${escapeXml(r.name)}</child>`,
-    `  <axis><xyz expressed_in="${wheel}">${v(r.axis)}</xyz></axis>`,
+    r.driven
+      ? `  <axis><xyz expressed_in="${wheel}">${v(r.axis)}</xyz><limit><effort>${fmt(r.driven.effort, 6)}</effort><velocity>${fmt(r.driven.velocity, 6)}</velocity></limit><dynamics><damping>${fmt(r.driven.damping, 6)}</damping><friction>${fmt(r.driven.friction, 6)}</friction></dynamics></axis>`
+      : `  <axis><xyz expressed_in="${wheel}">${v(r.axis)}</xyz></axis>`,
     '</joint>',
   ].join('\n');
 }

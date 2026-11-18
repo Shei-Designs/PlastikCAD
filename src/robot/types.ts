@@ -170,7 +170,7 @@ export const DRIVE_KINDS: { id: DriveKind; name: string; help: string; roles: { 
   {
     id: 'differential',
     name: tr('Differential'),
-    help: tr('Turns the left and right wheels together from velocity commands (cmd_vel) and reports odometry. A track is all of its wheels on one side.'),
+    help: tr('Turns the left and right wheels together from velocity commands (cmd_vel) and reports odometry. The joint of a Track part drives its whole belt.'),
     roles: [
       { id: 'left', name: tr('Left') },
       { id: 'right', name: tr('Right') },

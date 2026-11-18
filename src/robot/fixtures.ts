@@ -1,5 +1,5 @@
 // The reference robots: a rover, a car, an arm, a quadruped and a linkage built from
-// shapes, and a rover on mecanum wheels from the Wheels parts, which the
+// shapes, and a rover on mecanum wheels and one on tracks from the Wheels parts, which the
 // tests export and simulate and which fixtures/robots holds for opening in
 // the app. Each is as large as the motors in the
 // catalogue can drive: the rover and car on 37 mm gearmotors (TurtleBot and
@@ -16,6 +16,7 @@ import type { CollisionKind, DriveRole, Robot, RobotJoint } from './types';
 import { getGenerator } from '../parts/generators';
 import { sanitizeParams } from '../parts/generators/types';
 import { mecanumRollers } from '../parts/generators/wheels';
+import { trackFigures, trackInPart } from '../parts/generators/track';
 
 let next = 0;
 const id = (): string => `fx${String(++next).padStart(6, '0')}`;
@@ -92,6 +93,36 @@ export function mecanumRover(size = '100'): Doc {
     joints,
     sensors: [imu],
     drive: { kind: 'mecanum', roles: Object.fromEntries(joints.map((j, i) => [j.id, `${corners[i].sy < 0 ? 'rear' : 'front'}-${corners[i].sx < 0 ? 'left' : 'right'}` as DriveRole])) },
+    control: true,
+  });
+}
+
+/**
+ * A rover on two tracks from the Wheels parts, a Track part each side with its rail to the body: it drives along
+ * Y like the rover. The left track is the right one mirrored, as a user makes it. Each hangs from the body by a
+ * joint on its sprocket's axle, which is its part in the drive. `settings` are the Track part's.
+ */
+export function trackedRover(settings: Record<string, string | number> = {}): Doc {
+  const figures = trackFigures(sanitizeParams(getGenerator('track'), settings));
+  const { min, max } = figures.box;
+  const natural: Vec3 = [max[0] - min[0], max[1] - min[1], max[2] - min[2]];
+  const center = min.map((v, i) => (v + max[i]) / 2) as Vec3;
+  const long = Math.max(300, natural[0]);
+  const body = shape('box', 'Body', [0, 0, 30 + 25], [140, long, 50]);
+  // Standing as the part comes, turned to run along Y; the rail is then on the side toward -X, which is the body's for the track on the right.
+  const tracks = [-1, 1].map((sx): SceneNode => ({ ...part('track', `Track ${sx < 0 ? 'left' : 'right'}`, settings, natural, [sx * (75 + natural[1] / 2), 0, natural[2] / 2], [0, 0, 90]), ...(sx < 0 ? { flip: [false, true, false] as [boolean, boolean, boolean] } : {}) }));
+  // On the sprocket's axle, in the middle of the track's width, as the part's own frame has it.
+  const axle = trackInPart([0, 0], figures.width / 2).map((v, i) => v - center[i]) as Vec3;
+  const joints = tracks.map((t) => joint(`${t.name} joint`, body, t, axle, { type: 'continuous', axis: [0, 1, 0], motor: '37d-70' }));
+  const imu = defaultSensor(id(), 'IMU', 'imu', body.id, [0, 0, 0]);
+  return design('Reference tracked rover', [body, ...tracks], {
+    root: body.id,
+    base: 'free',
+    // The tracks are left as they come: robot mode gives a track part the wheels that stand in for its belt, and its grip.
+    links: [{ ...defaultLink(body.id), collision: 'box' }],
+    joints,
+    sensors: [imu],
+    drive: { kind: 'differential', roles: { [joints[0].id]: 'left', [joints[1].id]: 'right' } },
     control: true,
   });
 }
@@ -191,4 +222,5 @@ export const ROBOTS: { file: string; make: () => Doc }[] = [
   { file: 'quadruped', make: quadruped },
   { file: 'linkage', make: linkage },
   { file: 'mecanum', make: () => mecanumRover() },
+  { file: 'tracked', make: () => trackedRover() },
 ];

@@ -17,6 +17,7 @@ import { COLLISION_KINDS, DRIVE_KINDS, driveJoints, JOINT_TYPES, MAX_PIECES, SEN
 import type { CollisionShape, DriveKind, DriveRole, RobotJoint, RobotLink, RobotSensor, SensorKind, World } from '../robot/types';
 import { cylinderAlong, cylinderLaid, shapeOf } from '../robot/collision';
 import { mecanumOf } from '../robot/wheels';
+import { isTrack } from '../robot/tracks';
 import type { Problem } from '../robot/check';
 import { addJoint, addSensor, deleteJoint, deleteSensor, fitJointFollowers, placeJoint, placeSensor, replaceWithMecanum, select, selectJoint, selectSensor, setBase, setControl, setDriveKind, setFaces, setDriveRole, setJointMotor, setPose, setPrefs, setRobotRoot, setScripts, setWorld, startJointPick, stopJointPick, testDrive, updateJoint, updateLink, updateSensor, useEditor } from '../state/store';
 import { rangeOf } from '../robot/kinematics';
@@ -546,8 +547,9 @@ function LinkPanel({ node }: { node: SceneNode }) {
   const sensors = robot.sensors.filter((x) => x.link === node.id);
   const nameOf = (id: string) => nodes.find((n) => n.id === id)?.name ?? '?';
   const set = (patch: Partial<Omit<RobotLink, 'node'>>, merge?: string) => updateLink(node.id, patch, merge);
-  // A Mecanum wheel part that is whole collides as its rollers, and has no other shape to choose.
-  const rollers = typeof mecanumOf(node) !== 'string';
+  // A Mecanum wheel part that is whole collides as its rollers, and a Track part as the wheels that stand in for its belt: neither has another shape to choose.
+  const track = isTrack(node);
+  const rollers = track || typeof mecanumOf(node) !== 'string';
   const setMass = (patch: Record<string, unknown>, merge?: string) => set({ mass: { ...link.mass, ...patch } as RobotLink['mass'] }, merge);
   return (
     <>
@@ -637,15 +639,15 @@ function LinkPanel({ node }: { node: SceneNode }) {
         <div className="field inline">
           <label>
             {tr('Shape')}
-            <Hint text={rollers ? (link.collision === 'none' ? COLLISION_KINDS.find((k) => k.id === 'none')!.help : tr('Its rollers, each turning freely: what a mecanum wheel slides on.')) : (COLLISION_KINDS.find((k) => k.id === link.collision)?.help ?? '')} />
+            <Hint text={rollers ? (link.collision === 'none' ? COLLISION_KINDS.find((k) => k.id === 'none')!.help : track ? tr('A row of wheels along its belt, turning together: what a simulator drives a track on.') : tr('Its rollers, each turning freely: what a mecanum wheel slides on.')) : (COLLISION_KINDS.find((k) => k.id === link.collision)?.help ?? '')} />
           </label>
           {rollers ? (
-            // A mecanum wheel collides as its rollers in every export, whatever kind its link holds: any but none.
+            // A mecanum wheel collides as its rollers and a track as its wheels in every export, whatever kind its link holds: any but none.
             <Select
               value={link.collision === 'none' ? 'none' : 'rollers'}
               label={tr('Collision shape')}
               options={[
-                { value: 'rollers', label: trx('collision', 'Rollers') },
+                { value: 'rollers', label: track ? trx('collision', 'Track') : trx('collision', 'Rollers') },
                 { value: 'none', label: trx('collision', 'None') },
               ]}
               onChange={(id) => set(id === 'none' ? { collision: 'none', shape: undefined } : { collision: 'hull', shape: undefined, pieces: undefined })}
