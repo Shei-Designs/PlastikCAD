@@ -50,6 +50,9 @@ import { apply, cross, multiply, rotation, unit } from '../model/math';
 import { FEATURE_KINDS } from '../geometry/features';
 import type { FeatureKind } from '../geometry/features';
 import { describe as describeFeature, measure as measureBetween } from '../geometry/measure';
+import { skinOf } from '../geometry/skin';
+import type { TrackFigures } from '../parts/generators/track';
+import type { TrackLooks } from '../worker/protocol';
 import type { Mat } from '../model/math';
 import type { SceneNode, Vec3 } from '../model/types';
 import { posedScene } from '../robot/kinematics';
@@ -663,6 +666,18 @@ export function Viewport() {
     return [...collisionShapes.known(links, kinds)].map(([id, mesh]) => ({ id, mesh, frame: frames?.get(id) ?? null }));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `shapesRevision` is not read here: it changes when a shape arrives, which `known` then finds
   }, [links, kinds, simFrames, pose, shapesRevision]);
+  // A track is drawn with its belt running while the test drive has it: one that wears a picture, or is a hole, is left whole and still.
+  const driving = simFrames !== null;
+  const belted = useMemo(() => {
+    if (!driving || driven.tracks.size === 0) return null;
+    const out = new Map<string, { figures: TrackFigures; looks: TrackLooks }>();
+    for (const node of doc.scene) {
+      const track = driven.tracks.get(node.id);
+      if (track && !node.hole && !skinOf(node)) out.set(node.id, track);
+    }
+    return out.size ? out : null;
+  }, [driving, driven.tracks, doc.scene]);
+  const belts = useMemo(() => (belted ? [...belted].map(([id, t]) => ({ id, ...t, travel: driven.belts.get(id) ?? 0 })) : null), [belted, driven.belts]);
   const contacts = useMemo(() => (simFrames && prefs.robotContacts ? driven.contacts.map((c) => c.at) : null), [simFrames, prefs.robotContacts, driven.contacts]);
   const ground = useMemo(() => (simFrames && driven.world !== 'flat' ? { world: driven.world, forward: driven.forward } : null), [simFrames, driven.world, driven.forward]);
   // The view follows a driving robot: it moves by what the base moved since the last frame, and comes back when the drive ends.
@@ -760,8 +775,8 @@ export function Viewport() {
   }, []);
 
   useEffect(() => {
-    viewer.current?.setOptions({ theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, units: prefs.units, snap: prefs.snap, align: aligning, highlight, snaps, marker, markers, collisions, contacts, ground, preview, measure, objectAxes, frozen: arraying });
-  }, [prefs.theme, prefs.edges, prefs.grid, prefs.units, prefs.snap, aligning, highlight, snaps, marker, markers, collisions, contacts, ground, preview, measure, objectAxes, arraying]);
+    viewer.current?.setOptions({ theme: prefs.theme, edges: prefs.edges, grid: prefs.grid, units: prefs.units, snap: prefs.snap, align: aligning, highlight, snaps, marker, markers, collisions, belts, contacts, ground, preview, measure, objectAxes, frozen: arraying });
+  }, [prefs.theme, prefs.edges, prefs.grid, prefs.units, prefs.snap, aligning, highlight, snaps, marker, markers, collisions, belts, contacts, ground, preview, measure, objectAxes, arraying]);
 
   const carrying = Boolean(placing);
   useEffect(() => {
@@ -781,11 +796,12 @@ export function Viewport() {
     // A posed robot is drawn with its links moved; the geometry is the same, only the matrices change.
     const shown = simFrames ? posedScene(scene, simFrames) : pose ? posedScene(scene, pose.solved.frames) : scene;
     // A ghosted object is drawn faintly and ignored by picking, like a shape being placed.
-    const list: ViewItem[] = shown.map((node) => ({ node, result: ready(node), selected: picked.has(node.id), ...(node.ghost ? { ghost: true } : {}) }));
+    // A track whose belt runs is drawn as its piece that holds still, in the part's place; its wheels and lugs are drawn over it.
+    const list: ViewItem[] = shown.map((node) => ({ node, result: belted?.get(node.id)?.looks.still ?? ready(node), selected: picked.has(node.id), ...(node.ghost ? { ghost: true } : {}) }));
     if (placing) list.push({ node: placing, result: ready(placing), selected: false, ghost: true });
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `revision` is not read here: it changes when geometry arrives, which `ready` then finds
-  }, [scene, selection, placing, revision, pose, simFrames]);
+  }, [scene, selection, placing, revision, pose, simFrames, belted]);
 
   useEffect(() => {
     viewer.current?.setItems(items, assets);

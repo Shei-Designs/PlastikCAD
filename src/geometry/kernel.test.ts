@@ -8,7 +8,7 @@ import type { Asset, GroupNode, ImportNode, PictureNode, Polygon, SceneNode, Sha
 import { traceArcs } from '../io/arcs';
 import { getGenerator } from '../parts/generators';
 import { castRay } from './bvh';
-import { build, cacheSize, clearCache, decodeBase64, exportColored, exportNodes, forgetAssets, initKernel, measure, partBox, rawManifold, SHEET, setAssets } from './kernel';
+import { build, cacheSize, clearCache, decodeBase64, exportColored, exportNodes, forgetAssets, initKernel, measure, partBox, rawManifold, SHEET, setAssets, trackLooks } from './kernel';
 import type { MeshData } from './mesh';
 import { meshProperties } from '../robot/inertia';
 import { defaultParams, shapeDef } from './shapes';
@@ -991,6 +991,38 @@ describe('what a build brings for the viewer', () => {
 });
 
 describe('parts', () => {
+  it('gives a Track part in the pieces that move against each other, the still one in the part\'s place', () => {
+    const node: SceneNode = { ...base('Track'), type: 'part', part: 'track', params: {}, natural: [1, 1, 1], size: [1, 1, 1] };
+    const whole = build(geomKey(node), node);
+    const box = partBox(node)!;
+    const looks = trackLooks(node)!;
+    expect(looks.center).toEqual([0, 1, 2].map((i) => (box.min[i] + box.max[i]) / 2));
+    // The belt without its lugs and the rail: inside the part's box where the part is drawn, a lug's height short of it along and up.
+    const { bounds } = looks.still;
+    for (const i of [0, 2]) {
+      expect(whole.bounds.max[i] - bounds.max[i]).toBeCloseTo(2.4, 5);
+      expect(bounds.min[i] - whole.bounds.min[i]).toBeCloseTo(2.4, 5);
+    }
+    expect([bounds.min[1], bounds.max[1]].map((v) => +v.toFixed(5))).toEqual([whole.bounds.min[1], whole.bounds.max[1]].map((v) => +v.toFixed(5)));
+    expect(looks.still.watertight).toBe(true);
+    expect(looks.still.triangles).toBe(looks.still.render.positions.length / 9);
+    expect(looks.still.edges!.length).toBeGreaterThan(0);
+    expect(looks.still.key).not.toBe(whole.key);
+    // A ray down onto the belt's top run hits it where the lugs' feet are.
+    expect(castRay(looks.still.bvh, looks.still.render.positions, [0, 0, 500], [0, 0, -1], 1000)!.t).toBeCloseTo(500 - bounds.max[2], 3);
+    // The wheels are each about the Y axis.
+    for (const piece of [looks.sprocket, looks.road!, looks.idler]) {
+      const p = piece.render.positions;
+      let reach = 0;
+      for (let i = 0; i < p.length; i += 3) reach = Math.max(reach, Math.hypot(p[i], p[i + 2]));
+      expect(reach).toBeCloseTo(piece === looks.road ? 20 : 30, 4);
+      expect(piece.render.normals.length).toBe(p.length);
+      expect(piece.edges!.length).toBeGreaterThan(0);
+    }
+    expect(trackLooks({ ...node, params: { roadWheels: 0 } })!.road).toBeNull();
+    expect(trackLooks({ ...base('Rack'), type: 'part', part: 'rack', params: {}, natural: [1, 1, 1], size: [1, 1, 1] })).toBeNull();
+  });
+
   it('builds a part once for its box and its mesh', () => {
     clearCache();
     const def = getGenerator('rack');

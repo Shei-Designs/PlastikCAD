@@ -7,6 +7,7 @@ import * as appInfo from './appInfo';
 import * as exporting from './io/export';
 import * as threemf from './io/threemf';
 import * as projects from './state/projects';
+import * as sim from './state/sim';
 import * as store from './state/store';
 import * as back from './ui/back';
 import * as inputMode from './ui/inputMode';
@@ -18,6 +19,7 @@ const modules: Record<string, unknown> = {
   '/src/io/export.ts': exporting,
   '/src/io/threemf.ts': threemf,
   '/src/state/projects.ts': projects,
+  '/src/state/sim.ts': sim,
   '/src/state/store.ts': store,
   '/src/ui/back.ts': back,
   '/src/ui/inputMode.ts': inputMode,

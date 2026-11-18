@@ -426,8 +426,13 @@ in the design file and synced with it.
   its belt: all as large as the sprocket with the belt on it, on hinges to
   the track, from the sprocket under the track to the idler and up a raised
   end, worked out from the part's settings and where it stands, never from
-  its mesh. They turn together at the motor's speed and share its torque;
-  the belt is drawn and does not move yet. The wheels are the simulator's
+  its mesh. They turn together at the motor's speed and share its torque.
+  In the test drive the belt is seen to run: its lugs go round as far as
+  those wheels have turned, so a track that slips or stalls shows it, and
+  the sprocket, idler and road wheels turn with it. That is for a link that
+  is the Track part itself, with no picture on it; a track grouped with
+  other objects is drawn still. In the exports the belt is drawn and does
+  not move. The wheels are the simulator's
   alone: no link or joint of the robot's, and in the ROS 2 package they are
   in Gazebo's blocks of the URDF. The drive's wheel radius is the
   sprocket's with its belt, and its track the distance between the two

@@ -249,16 +249,17 @@ function stops(f: TrackFigures, out: number, q: Quality, from: number, to: numbe
   return all.filter((s, i) => i === 0 || s - all[i - 1] > 1e-9);
 }
 
+/** From where to where a lug reaches out of the belt's inside: its foot is sunk into the belt a little, to be one solid with it. */
+export const trackLugReach = (f: Pick<TrackFigures, 'thickness' | 'lug'>): { foot: number; top: number } => ({ foot: f.thickness - Math.min(0.2, f.thickness / 3), top: f.thickness + f.lug.height });
+
 /**
  * The lugs of half the belt's width, as outlines: one in two along the belt, `shift` of a pitch on from the
  * path's beginning. Each is longer than half a pitch, so the two halves' lugs together leave no place along
  * the belt without one: the track is as long and as tall as its lugs' tops all the way round.
  */
 function lugs(f: TrackFigures, shift: number, q: Quality): Polygon[] {
-  const { pitch, count, height } = f.lug;
-  const top = f.thickness + height;
-  // Sunk into the belt a little, to be one solid with it.
-  const foot = f.thickness - Math.min(0.2, f.thickness / 3);
+  const { pitch, count } = f.lug;
+  const { foot, top } = trackLugReach(f);
   return Array.from({ length: count }, (_, i) => {
     const mid = (i + shift) * pitch;
     const at = stops(f, top, q, mid - 0.3 * pitch, mid + 0.3 * pitch);
@@ -266,14 +267,13 @@ function lugs(f: TrackFigures, shift: number, q: Quality): Polygon[] {
   });
 }
 
-function buildTrack(p: Params, q: Quality): BuildResult {
-  const warnings: string[] = [];
+/** What a track is put together from, lying down: the side view in XY and across along Z, the rail's outer face at z = 0. */
+function shapes(p: Params, q: Quality) {
   const f = trackFigures(p);
   const W = f.width;
   const t = f.thickness;
   const hubbed = num(p, 'hubHeight') > 0;
 
-  // Everything is drawn lying down, the side view in XY and across along Z, and stood up at the end.
   // The rail: a bar from each axle to the next, on the body's side of the track.
   const { along, half, thickness, gap } = f.rail;
   const bar = (a: Vec2, b: Vec2): Solid => {
@@ -285,9 +285,8 @@ function buildTrack(p: Params, q: Quality): BuildResult {
   const from = thickness + gap;
   const wide = W - from;
 
-  // A wheel: a rim and a boss as wide as it is, a thinner web between them. It is sunk a little into the belt, to be one solid with it.
-  const sunk = Math.min(0.5, t / 2);
-  const wheel = (w: TrackWheel): Solid => {
+  /** A wheel about its own axle: a rim and a boss as wide as it is, a thinner web between them. It is `sunk` larger than its radius, to be one solid with a belt. */
+  const wheel = (w: TrackWheel, sunk: number): Solid => {
     const R = w.radius;
     const driven = w.kind === 'sprocket';
     const boss = driven ? Math.max(boreRadius(p) + Math.max(2, 0.08 * R), hubbed ? num(p, 'hubDiameter') / 2 : 0, 0.3 * R) : 0.3 * R;
@@ -307,12 +306,21 @@ function buildTrack(p: Params, q: Quality): BuildResult {
       solid = difference(solid, ...Array.from({ length: holes }, (_, i) => rotate(translate(cylinder(hole, wide + 2, 20), [ring, 0, -1]), [0, 0, (360 * (i + 0.5)) / holes])));
     }
     const stub = translate(cylinder(Math.min(boss, half), gap + 0.2, 20), [0, 0, -gap - 0.1]);
-    return translate(union(solid, stub), [w.center[0], w.center[1], from]);
+    return translate(union(solid, stub), [0, 0, from]);
   };
 
-  const inside = beltOutline(f, 0, q);
-  const belt = extrude([beltOutline(f, t, q), inside], W);
-  const body = union(belt, extrude(lugs(f, 0, q), W / 2), translate(extrude(lugs(f, 0.5, q), W / 2), [0, 0, W / 2]), ...rail, ...f.wheels.map(wheel));
+  const belt = extrude([beltOutline(f, t, q), beltOutline(f, 0, q)], W);
+  return { f, W, t, rail, wheel, belt };
+}
+
+function buildTrack(p: Params, q: Quality): BuildResult {
+  const warnings: string[] = [];
+  // Everything is drawn lying down, the side view in XY and across along Z, and stood up at the end.
+  const { f, W, t, rail, wheel, belt } = shapes(p, q);
+  // A wheel is sunk a little into the belt, to be one solid with it.
+  const sunk = Math.min(0.5, t / 2);
+  const wheels = f.wheels.map((w) => translate(wheel(w, sunk), [w.center[0], w.center[1], 0]));
+  const body = union(belt, extrude(lugs(f, 0, q), W / 2), translate(extrude(lugs(f, 0.5, q), W / 2), [0, 0, W / 2]), ...rail, ...wheels);
 
   const apart = f.wheels.some((a, i) => f.wheels.some((b, j) => j > i && Math.hypot(a.center[0] - b.center[0], a.center[1] - b.center[1]) < a.radius + b.radius - 1e-6));
   if (apart) warnings.push(tr('The wheels run into each other. Make the track longer or the wheels smaller.'));
@@ -335,6 +343,76 @@ function buildTrack(p: Params, q: Quality): BuildResult {
     ],
     warnings,
   };
+}
+
+/**
+ * A track in the pieces that move against each other, for showing its belt run: all the part is but its lugs,
+ * which `trackLugs` gives wherever the belt has carried them. Each is in the axes of the part as it is built
+ * (see `trackInPart`); a wheel is about its own axle, which is the Y axis, and belongs where
+ * `trackInPart(center, 0)` puts that.
+ */
+export interface TrackPieces {
+  /** The belt without its lugs, and the rail. */
+  still: Solid;
+  /** The sprocket with its hub and bore. */
+  sprocket: Solid;
+  /** One road wheel; null for a track without any. */
+  road: Solid | null;
+  idler: Solid;
+}
+
+export function trackPieces(p: Params, q: Quality): TrackPieces {
+  const { f, W, rail, wheel, belt } = shapes(p, q);
+  const sprocket = f.wheels[0].radius;
+  // As the whole part has it: a bore that would swallow the sprocket and its hub is left out.
+  const hubbed = num(p, 'hubHeight') > 0;
+  const bored = boreRadius(p) < Math.max(sprocket, hubbed ? num(p, 'hubDiameter') / 2 : 0);
+  const stand = (lying: Solid): Solid => rotate(lying, [90, 0, 0]);
+  const road = f.wheels.find((w) => w.kind === 'road');
+  return {
+    still: stand(addHubAndBore(union(belt, ...rail), 0, W, { ...p, hubHeight: 0, ...(bored ? {} : { boreType: 'none' }) }, q, []).solid),
+    sprocket: stand(addHubAndBore(wheel(f.wheels[0], 0), 0, W, p, q, [], sprocket).solid),
+    road: road ? stand(wheel(road, 0)) : null,
+    idler: stand(wheel(f.wheels[f.wheels.length - 1], 0)),
+  };
+}
+
+/** How many numbers `trackLugs` gives: eight corners of three numbers for each lug, and a lug each pitch along either half of the belt's width. */
+export const trackLugNumbers = (f: Pick<TrackFigures, 'lug'>): number => 48 * f.lug.count;
+
+/**
+ * The lugs of a track whose belt has run `travel` along its path, as boxes for drawing: the eight corners of
+ * each, in the axes of the part as it is built (see `trackInPart`). The first four are the lug's foot in the
+ * belt and the last four its top, each going round the same way. With no travel they are where the part has them.
+ */
+export function trackLugs(f: TrackFigures, travel: number, out: Float32Array = new Float32Array(trackLugNumbers(f))): Float32Array {
+  const { pitch, count } = f.lug;
+  const { foot, top } = trackLugReach(f);
+  // The lugs are all alike: only where the belt is within one pitch tells.
+  const phase = ((travel % pitch) + pitch) % pitch;
+  let o = 0;
+  const put = (e: { at: Vec2; normal: Vec2 }, r: number, across: number) => {
+    out[o++] = e.at[0] + r * e.normal[0];
+    out[o++] = -across;
+    out[o++] = e.at[1] + r * e.normal[1];
+  };
+  for (let half = 0; half < 2; half++) {
+    const near = (half * f.width) / 2;
+    const far = near + f.width / 2;
+    for (let i = 0; i < count; i++) {
+      // The lugs of the second half of the width are half a pitch on from the first's.
+      const mid = (i + 0.5 * half) * pitch + phase;
+      const a = trackPoint(f, mid - 0.3 * pitch);
+      const b = trackPoint(f, mid + 0.3 * pitch);
+      for (const r of [foot, top]) {
+        put(a, r, near);
+        put(b, r, near);
+        put(b, r, far);
+        put(a, r, far);
+      }
+    }
+  }
+  return out;
 }
 
 export const track: GeneratorDef = {

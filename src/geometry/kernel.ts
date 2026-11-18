@@ -11,7 +11,7 @@ import { paintOf } from '../model/ops';
 import { apply, determinant, emptyBounds, expandBounds, invert, isEmptyBounds, multiply, nodeMatrix, unionBounds } from '../model/math';
 import type { Bounds, Mat } from '../model/math';
 import type { Asset, GroupNode, ImportNode, MeshAsset, OutlineAsset, PartNode, PictureNode, Polygon, SceneNode, TextNode, Vec2 } from '../model/types';
-import type { BuildResult, ColoredExport, ColoredObject, ColoredPart, ExportResult, LinkGeometry, LinkProperties } from '../worker/protocol';
+import type { BuildResult, ColoredExport, ColoredObject, ColoredPart, ExportResult, LinkGeometry, LinkProperties, PieceMesh, TrackLooks } from '../worker/protocol';
 import { meshProperties } from '../robot/inertia';
 import type { CollisionKind } from '../robot/types';
 import { buildBvh } from './bvh';
@@ -22,7 +22,9 @@ import type { Faces, MeshData, MeshWithUV } from './mesh';
 import { buildSolid } from '../parts/evaluate';
 import { getGenerator } from '../parts/generators';
 import { sanitizeParams } from '../parts/generators/types';
+import { trackPieces } from '../parts/generators/track';
 import { QUALITY } from '../parts/types';
+import type { Solid as PartSolid } from '../parts/types';
 import { buildShape } from './shapes';
 import type { Keep } from './shapes';
 
@@ -523,6 +525,49 @@ export function partBox(node: PartNode): Bounds | null {
     const entry = builtOf(k, node, false);
     return (entry.solid && entry.box) ?? null;
   });
+}
+
+/**
+ * A Track part in the pieces that move against each other, for a test drive to show its belt run: null for any
+ * other part. The piece that holds still is given like the part itself, centered on the whole part's box, so
+ * that it is drawn, picked and outlined in the part's place; the wheels are each about their own axle.
+ */
+export function trackLooks(node: PartNode): TrackLooks | null {
+  if (node.part !== 'track') return null;
+  return operation((k) =>
+    scoped((keep) => {
+      const whole = builtOf(k, node, false);
+      const box = whole.solid && whole.box;
+      if (!box) return null;
+      const center: [number, number, number] = [(box.min[0] + box.max[0]) / 2, (box.min[1] + box.max[1]) / 2, (box.min[2] + box.max[2]) / 2];
+      const def = getGenerator(node.part);
+      const pieces = trackPieces(sanitizeParams(def, node.params), QUALITY.normal);
+      const piece = (solid: Manifold): PieceMesh & { mesh: MeshData } => {
+        const mesh = meshOf(solid);
+        const edges = creaseEdges(mesh.positions, mesh.triangles, CREASE_ANGLE, EDGE_LIMIT);
+        return { render: creasedNormals(mesh.positions, mesh.triangles, CREASE_ANGLE), ...(edges ? { edges } : {}), mesh };
+      };
+      // Every solid made on the way is kept by `buildSolid`, and let go when this is over.
+      const made = (solid: PartSolid): Manifold => checked(buildSolid(k, solid, keep));
+      const wheel = (solid: PartSolid): PieceMesh => {
+        const { render, edges } = piece(made(solid));
+        return { render, ...(edges ? { edges } : {}) };
+      };
+      const held = keep(made(pieces.still).translate([-center[0], -center[1], -center[2]]));
+      const { render, edges, mesh } = piece(held);
+      const still: BuildResult = {
+        key: `still:${geomKey(node)}`,
+        render,
+        bvh: buildBvh(render.positions),
+        bounds: toBounds(held.boundingBox()),
+        triangles: mesh.triangles.length / 3,
+        volume: held.volume(),
+        watertight: true,
+        ...(edges ? { edges } : {}),
+      };
+      return { still, sprocket: wheel(pieces.sprocket), road: pieces.road ? wheel(pieces.road) : null, idler: wheel(pieces.idler), center };
+    }),
+  );
 }
 
 function outlineSolid(k: ManifoldToplevel, node: SceneNode, asset: OutlineAsset, thickness = 1): Manifold {

@@ -10,6 +10,11 @@ import type { KeptFault } from '../robot/collisionCheck';
 import { buildMjcfModel } from '../robot/export';
 import type { DriveSpec } from '../robot/export';
 import { linkNodes, linkOf, piecesOf, robotForward, robotOf } from '../robot/model';
+import { standIns, trackOf } from '../robot/tracks';
+import type { TrackFigures } from '../parts/generators/track';
+import { BeltWatch, beltAxis, beltWheels } from '../sim/belts';
+import type { BeltTrack } from '../sim/belts';
+import type { TrackLooks } from '../worker/protocol';
 import type { World } from '../robot/types';
 import type { SimActuator } from '../sim/mujoco';
 import type { SimRequest, SimResponse } from '../sim/protocol';
@@ -54,6 +59,13 @@ export interface SimState {
   readings: Map<string, number[]>;
   /** Where the robot touches the floor at this moment, mm, and the link that touches there. */
   contacts: { at: Vec3; link: string | null }[];
+  /**
+   * The links that are a Track part, by object: the part's figures and the pieces it is drawn in while its belt
+   * runs. A track that is only part of its link's object is not among them: its belt is drawn still.
+   */
+  tracks: Map<string, { figures: TrackFigures; looks: TrackLooks }>;
+  /** How far each track's belt has run along its path since the start pose, mm as the part's settings have it, by object. */
+  belts: Map<string, number>;
 }
 
 /** What each key does to a rover. */
@@ -70,7 +82,7 @@ const DRIVE_KEYS: Record<string, string> = {
   e: 'slide-right',
 };
 
-const OFF: SimState = { status: 'off', error: null, running: false, time: 0, frames: new Map(), base: null, actuators: [], drive: null, forward: [0, 1, 0], world: 'flat', floating: false, held: false, targets: new Map(), command: { forward: 0, turn: 0, side: 0 }, readings: new Map(), contacts: [], faults: [] };
+const OFF: SimState = { status: 'off', error: null, running: false, time: 0, frames: new Map(), base: null, actuators: [], drive: null, forward: [0, 1, 0], world: 'flat', floating: false, held: false, targets: new Map(), command: { forward: 0, turn: 0, side: 0 }, readings: new Map(), contacts: [], faults: [], tracks: new Map(), belts: new Map() };
 
 /** The transform taking a link from where it is designed to where the simulation has its body: a turn by the quaternion about the body's frame origin, and a move. */
 export function frameOf(poses: Float64Array, at: number, origin: Vec3): Mat {
@@ -109,6 +121,9 @@ class SimStore {
   private touches: { name: string; id: string }[] = [];
   /** The links whose collision shape is a plain one, or none, to judge against the floor as the drive runs; none on a floor that is not flat. */
   private watch = new FaultWatch();
+  /** The tracks whose belts are followed, until the model's bodies are known: each track's body by name, and what turns its belt. */
+  private beltTracks: (Omit<BeltTrack, 'body' | 'wheels'> & { name: string })[] = [];
+  private beltWatch = new BeltWatch();
   /** Counts starts, so that a start overtaken by a stop or another start lets go. */
   private starts = 0;
   private held = new Set<string>();
@@ -156,6 +171,20 @@ class SimStore {
       const xml = new TextDecoder().decode(pkg.files.find((f) => f.name.endsWith('.xml'))!.bytes);
       const files = pkg.files.filter((f) => f.name.startsWith('meshes/'));
       this.bodies = new Map(pkg.bodies.map((b) => [b.body, { node: b.node, frame: b.frame }]));
+      // A link that is a Track part is drawn with its belt running: the pieces that move against each other are asked for now.
+      const tracks: SimState['tracks'] = new Map();
+      this.beltTracks = [];
+      for (const node of nodes) {
+        const track = trackOf(node);
+        const name = pkg.bodies.find((b) => b.node === node.id)?.body;
+        if (typeof track === 'string' || name === undefined) continue;
+        this.beltTracks.push({ node: node.id, name, axis: beltAxis(track.toDesign).axis, radius: standIns(track.figures).radius });
+        if (node.type !== 'part') continue;
+        const looks = await worker.trackLooks(node);
+        if (turn !== this.starts) return;
+        if (looks) tracks.set(node.id, { figures: track.figures, looks });
+      }
+      this.set({ tracks });
       this.jointIds = new Map(pkg.joints.map((j) => [j.name, j.id]));
       this.lidars = pkg.lidars;
       this.touches = pkg.touches;
@@ -195,14 +224,14 @@ class SimStore {
   reset(): void {
     if (this.state.status !== 'ready') return;
     this.send({ type: 'reset' });
-    this.set({ time: 0, targets: new Map(), command: { forward: 0, turn: 0, side: 0 }, faults: this.watch.clear() });
+    this.set({ time: 0, targets: new Map(), command: { forward: 0, turn: 0, side: 0 }, faults: this.watch.clear(), belts: this.beltWatch.clear() });
   }
 
   /** Holds the base still in the air, or lets it go: let go, the robot starts again from its start pose. */
   hold(on: boolean): void {
     if (this.state.status !== 'ready' || !this.state.floating || on === this.state.held) return;
     this.send({ type: 'hold', on });
-    this.set(on ? { held: true } : { held: false, time: 0, targets: new Map(), command: { forward: 0, turn: 0, side: 0 }, faults: this.watch.clear() });
+    this.set(on ? { held: true } : { held: false, time: 0, targets: new Map(), command: { forward: 0, turn: 0, side: 0 }, faults: this.watch.clear(), belts: this.beltWatch.clear() });
   }
 
   /** A rover's command, each part -1..1. */
@@ -288,6 +317,10 @@ class SimStore {
     switch (message.type) {
       case 'loaded': {
         this.bodyOrder = message.bodies;
+        // A track's wheels are bodies of the export's own, named after the track's.
+        this.beltWatch = new BeltWatch(
+          this.beltTracks.map(({ name, ...t }) => ({ ...t, body: message.bodies.indexOf(name), wheels: beltWheels(message.bodies, name, (b) => this.bodies.has(b)) })).filter((t) => t.body >= 0 && t.wheels.length > 0),
+        );
         const actuators = message.actuators.map((a) => ({ ...a, jointId: this.jointIds.get(a.joint) ?? null }));
         this.set({ status: 'ready', error: null, actuators, running: false, time: 0, floating: message.floating, held: false });
         // Time runs as soon as the model stands: a rover settles onto its wheels and waits for the keys.
@@ -317,7 +350,7 @@ class SimStore {
           const link = this.bodies.get(this.bodyOrder[message.contacts[i + 3]])?.node ?? null;
           contacts.push({ at: [message.contacts[i] / M, message.contacts[i + 1] / M, message.contacts[i + 2] / M], link });
         }
-        this.set({ frames, base, time: message.time, readings, contacts, faults: this.watch.see(frames, message.time) });
+        this.set({ frames, base, time: message.time, readings, contacts, faults: this.watch.see(frames, message.time), belts: this.beltWatch.see(message.poses) });
         break;
       }
       case 'error':

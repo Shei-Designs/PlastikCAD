@@ -28,6 +28,8 @@ export type WorkerRequest =
   | { type: 'measure'; id: number; nodes: SceneNode[] }
   /** Bounds of a part as its generator makes it, before it is centered: where its origin sits in its box. */
   | { type: 'partBox'; id: number; node: PartNode }
+  /** A Track part in the pieces that move against each other, for a test drive to show its belt run; null for any other part. */
+  | { type: 'trackLooks'; id: number; node: PartNode }
   /**
    * Merge the nodes (holes are ignored at the top level) into one mesh for export; `fine` rebuilds curves with
    * more facets. With `local` the geometry stays in the nodes' own built frames, unplaced (one node at a time).
@@ -68,6 +70,26 @@ export interface BuildResult {
   volume: number;
   /** False for an imported mesh that is not watertight: it can be shown and exported, but not combined. */
   watertight: boolean;
+}
+
+/** A mesh as it is drawn, with its edge lines (six numbers each) where it has few enough to be worth drawing. */
+export interface PieceMesh {
+  render: RenderMesh;
+  edges?: Float32Array;
+}
+
+/**
+ * A Track part in the pieces that move against each other (see `trackPieces`): the belt without its lugs and the
+ * rail, as the part itself is given (centered on the whole part's box, so it is drawn in the part's place), and
+ * each kind of wheel about its own axle, the Y axis. The lugs are made where they are drawn.
+ */
+export interface TrackLooks {
+  still: BuildResult;
+  sprocket: PieceMesh;
+  road: PieceMesh | null;
+  idler: PieceMesh;
+  /** The middle of the whole part's box in the axes it is built in: what the part was moved by to be centered. */
+  center: [number, number, number];
 }
 
 export interface ExportResult {
@@ -130,6 +152,7 @@ export type WorkerResponse =
   | { type: 'built'; id: number; result: BuildResult }
   | { type: 'measured'; id: number; bounds: Bounds | null }
   | { type: 'partBoxed'; id: number; bounds: Bounds | null }
+  | { type: 'trackLooks'; id: number; result: TrackLooks | null }
   | { type: 'exported'; id: number; result: ExportResult }
   | { type: 'exportedColored'; id: number; result: ColoredExport }
   | { type: 'exportedStep'; id: number; result: StepExport }

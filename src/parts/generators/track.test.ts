@@ -3,7 +3,7 @@ import { evaluate, initKernel } from '../testing';
 import { QUALITY } from '../types';
 import type { Vec2 } from '../types';
 import { GENERATORS } from './index';
-import { track, trackFigures, trackInPart, trackPoint } from './track';
+import { track, trackFigures, trackInPart, trackLugNumbers, trackLugs, trackPieces, trackPoint } from './track';
 import type { TrackFigures } from './track';
 import { defaultParams } from './types';
 import type { BuildResult, Params } from './types';
@@ -237,5 +237,93 @@ describe('track', () => {
     expect(info(build(), 'Length on the floor')).toBe(240);
     expect(info(build({ sprocketRise: 30, idlerRise: 50 }), 'Length on the floor')).toBe(120);
     expect(info(build(), 'Travel per turn')).toBeCloseTo(Math.PI * 63, 1);
+  });
+});
+
+describe('a track in the pieces that move against each other', () => {
+  it('is the belt without its lugs and the rail, and a wheel of each kind about its own axle', () => {
+    for (const [name, over] of Object.entries(SHAPES)) {
+      const f = figures(over);
+      const p = trackPieces(settings(over), q);
+      const still = evaluate(p.still);
+      // The belt, and the rail inside it: the wheels are what joins them.
+      expect(pieces(still.mesh), name).toBe(2);
+      // The belt reaches as far as the part does, less its lugs, and is as wide.
+      for (const i of [0, 2]) {
+        expect(still.stats.min[i], `${name} min ${i}`).toBeCloseTo(f.box.min[i] + f.lug.height, 6);
+        expect(still.stats.max[i], `${name} max ${i}`).toBeCloseTo(f.box.max[i] - f.lug.height, 6);
+      }
+      expect([still.stats.min[1], still.stats.max[1]].map((y) => +y.toFixed(6)), name).toEqual([-40, 0]);
+      const wheels: [string, typeof p.sprocket | null, number][] = [
+        ['sprocket', p.sprocket, f.wheels[0].radius],
+        ['road', p.road, f.wheels.find((w) => w.kind === 'road')?.radius ?? 0],
+        ['idler', p.idler, f.wheels[f.wheels.length - 1].radius],
+      ];
+      expect(p.road === null, name).toBe(!f.wheels.some((w) => w.kind === 'road'));
+      for (const [kind, solid, radius] of wheels) {
+        if (!solid) continue;
+        const { stats, mesh } = evaluate(solid);
+        expect(pieces(mesh), `${name} ${kind}`).toBe(1);
+        // About the Y axis, as large as the belt's inside there, from beyond the rail to the track's other face.
+        let reach = 0;
+        for (let i = 0; i < mesh.positions.length; i += 3) reach = Math.max(reach, Math.hypot(mesh.positions[i], mesh.positions[i + 2]));
+        expect(reach, `${name} ${kind}`).toBeCloseTo(radius, 4);
+        expect(stats.min[1], `${name} ${kind}`).toBeCloseTo(-40, 6);
+        // Its axle's stub ends just inside the rail.
+        expect(stats.max[1], `${name} ${kind}`).toBeCloseTo(-f.rail.thickness + 0.1, 6);
+      }
+    }
+  });
+
+  it('carries the hub on the sprocket, and the bore through the sprocket and the rail', () => {
+    const plain = trackPieces(settings(), q);
+    const bored = trackPieces(settings({ boreType: 'round', boreDiameter: 6, hubHeight: 8 }), q);
+    expect(evaluate(bored.sprocket).stats.min[1]).toBeCloseTo(-48, 6);
+    expect(evaluate(bored.still).stats.min[1]).toBeCloseTo(-40, 6);
+    const rail = figures().rail.thickness;
+    // The rail loses the bore's width of itself; the sprocket gains a hub and loses the bore through it.
+    const cut = evaluate(plain.still).stats.volume - evaluate(bored.still).stats.volume;
+    expect(cut).toBeGreaterThan(0.9 * Math.PI * 9 * rail);
+    expect(cut).toBeLessThan(1.2 * Math.PI * 9 * rail);
+    expect(evaluate(bored.idler).stats.volume).toBeCloseTo(evaluate(plain.idler).stats.volume, 6);
+    expect(evaluate(bored.sprocket).stats.volume).not.toBeCloseTo(evaluate(plain.sprocket).stats.volume, 0);
+  });
+
+  it('gives the lugs where the part has them when the belt has not run, and as far along its path as it has', () => {
+    for (const [name, over] of Object.entries(SHAPES)) {
+      const f = figures(over);
+      const { pitch, count, height } = f.lug;
+      const top = f.thickness + height;
+      const at = trackLugs(f, 0);
+      expect(at.length, name).toBe(trackLugNumbers(f));
+      expect(at.length, name).toBe(2 * count * 24);
+      const corner = (travel: number, lug: number, k: number): number[] => Array.from(trackLugs(f, travel).subarray(lug * 24 + 3 * k, lug * 24 + 3 * k + 3));
+      for (const [lug, mid, near] of [
+        [0, 0, 0],
+        [3, 3 * pitch, 0],
+        [count, 0.5 * pitch, 20],
+        [count + 5, 5.5 * pitch, 20],
+      ]) {
+        // The top's first corner: at the lug's beginning, on the lugs' tops, on its half of the width.
+        const want = trackInPart(trackPoint(f, mid - 0.3 * pitch, top).at, near);
+        corner(0, lug, 4).forEach((v, i) => expect(v, `${name} lug ${lug}`).toBeCloseTo(want[i], 4));
+        // After a quarter of a pitch it is a quarter of a pitch on; after a whole one, a lug stands where each stood.
+        const on = trackInPart(trackPoint(f, mid - 0.05 * pitch, top).at, near);
+        corner(0.25 * pitch, lug, 4).forEach((v, i) => expect(v, `${name} lug ${lug}`).toBeCloseTo(on[i], 4));
+        corner(pitch, lug, 4).forEach((v, i) => expect(v, `${name} lug ${lug}`).toBeCloseTo(want[i], 4));
+      }
+      // However far the belt has run, the lugs stay within the part's box: they go round with the belt.
+      for (const travel of [0, 0.37 * pitch, 123.4, -55]) {
+        const all = trackLugs(f, travel);
+        for (let i = 0; i < all.length; i += 3) {
+          expect(all[i], name).toBeGreaterThan(f.box.min[0] - 1e-3);
+          expect(all[i], name).toBeLessThan(f.box.max[0] + 1e-3);
+          expect(all[i + 1], name).toBeGreaterThan(-40 - 1e-3);
+          expect(all[i + 1], name).toBeLessThan(1e-3);
+          expect(all[i + 2], name).toBeGreaterThan(f.box.min[2] - 1e-3);
+          expect(all[i + 2], name).toBeLessThan(f.box.max[2] + 1e-3);
+        }
+      }
+    }
   });
 });

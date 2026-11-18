@@ -1,7 +1,7 @@
 // The worker's side of the protocol: requests answered one at a time, in the
 // order they arrived (so imported data is always in before the nodes that use
 // it). Apart from the worker file itself so that it can run under vitest.
-import { build, collisionMeshes, exportColored, exportNodes, forgetAssets, massProperties, measure, partBox, resetKernel, robotGeometry, setAssets } from '../geometry/kernel';
+import { build, collisionMeshes, exportColored, exportNodes, forgetAssets, massProperties, measure, partBox, resetKernel, robotGeometry, setAssets, trackLooks } from '../geometry/kernel';
 import { indexFeatures } from '../geometry/features';
 import { tr } from '../i18n';
 import { writeStep } from '../io/stepExport';
@@ -37,6 +37,8 @@ function answer(req: WorkerRequest, occ: Occ, draco: Draco): WorkerResponse | nu
       return { type: 'measured', id: req.id, bounds: measure(req.nodes) };
     case 'partBox':
       return { type: 'partBoxed', id: req.id, bounds: partBox(req.node) };
+    case 'trackLooks':
+      return { type: 'trackLooks', id: req.id, result: trackLooks(req.node) };
     case 'exportColored':
       return { type: 'exportedColored', id: req.id, result: exportColored(req.nodes, req.fine, req.local) };
     case 'features':

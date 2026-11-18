@@ -7,7 +7,7 @@ import type { Bounds } from '../model/math';
 import type { Asset, PartNode, SceneNode } from '../model/types';
 import type { CollisionKind } from '../robot/types';
 import type { ImportResult } from './importing';
-import type { BuildResult, ColoredExport, ExportResult, LinkGeometry, LinkProperties, StepExport, WorkerRequest, WorkerResponse } from './protocol';
+import type { BuildResult, ColoredExport, ExportResult, LinkGeometry, LinkProperties, StepExport, TrackLooks, WorkerRequest, WorkerResponse } from './protocol';
 
 interface Waiting {
   resolve: (value: never) => void;
@@ -204,6 +204,11 @@ export class GeometryClient {
    */
   features(positions: Float32Array, matrix: number[]): Promise<FeatureIndex> {
     return this.send({ type: 'features', positions, matrix }, [positions.buffer]);
+  }
+
+  /** A Track part in the pieces that move against each other, for showing its belt run; null for any other part. */
+  trackLooks(node: PartNode): Promise<TrackLooks | null> {
+    return this.send({ type: 'trackLooks', node });
   }
 
   /** Every node placed, as a STEP file with a solid per object and color. OpenCascade is loaded for the first one. */
