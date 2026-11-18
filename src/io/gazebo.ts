@@ -216,9 +216,30 @@ export function positionXml(joint: string, velocity: number, start = 0): string 
   ].join('\n');
 }
 
-/** Friction of a collision surface, as Gazebo's ODE parameters. */
-export function surfaceXml(friction: number): string {
-  return `<surface><friction><ode><mu>${fmt(friction, 4)}</mu><mu2>${fmt(friction, 4)}</mu2></ode></friction></surface>`;
+/** The namespace of Gazebo's own attributes, declared on the root of a file that carries one (`gz:expressed_in`). */
+export const GZ_NAMESPACE = 'xmlns:gz="http://gazebosim.org/schema"';
+
+/**
+ * A wheel that has to slide to let its robot turn (see `skid` in the export): the link whose frame keeps the
+ * wheel's heading without turning with it, and a level direction in that frame halfway between the wheel's axle
+ * and the way it rolls.
+ */
+export interface Skid {
+  frame: string;
+  along: Vec3;
+}
+
+/**
+ * Friction of a collision surface, as Gazebo's ODE parameters. Gazebo's physics limits the grip along two
+ * directions, each on its own: a square, where friction is a circle. Left to itself it lays the square along the
+ * world's axes, so a wheel pushed along and across at once holds with up to 1.4 times its grip, and how much
+ * depends on which way the robot faces. For a wheel with a `skid` the square is laid on the wheel's diagonals
+ * and made to fit inside the circle: the full grip along and across, and what is used one way is not there the other.
+ */
+export function surfaceXml(friction: number, skid?: Skid): string {
+  const mu = skid ? fmt(friction * Math.SQRT1_2, 6) : fmt(friction, 4);
+  const fdir = skid ? `<fdir1 gz:expressed_in="${escapeXml(skid.frame)}">${skid.along.map((x) => fmt(x, 6)).join(' ')}</fdir1>` : '';
+  return `<surface><friction><ode><mu>${mu}</mu><mu2>${mu}</mu2>${fdir}</ode></friction></surface>`;
 }
 
 /**

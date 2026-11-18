@@ -395,7 +395,9 @@ in the design file and synced with it.
   track and wheel radius are measured from the design. Gazebo's matching
   plugin takes velocity commands on `cmd_vel` and reports odometry; a driven
   robot gets a `base_footprint` root on the floor under the base link,
-  facing +X as ROS expects.
+  facing +X as ROS expects. A differential drive with more than one wheel
+  a side turns by skidding them, as a real one does, so it turns less than
+  its wheels' speeds say: by less the longer it is against its width.
 - **Mecanum wheels.** A mecanum drive slides sideways on the *Mecanum
   wheel* part from the Wheels parts, and on nothing else. A link that is
   that part, or holds it (with a bore cut through it, a hub glued on), gets
