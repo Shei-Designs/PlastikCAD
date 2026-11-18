@@ -1,7 +1,14 @@
 // A track for robots: a belt round a sprocket, an idler and the road wheels
-// between them, as one part. It is built on its side like the wheels, the
-// axles along Z and the sprocket's axle on the Z axis, with the floor toward -Y
-// and the idler toward +X.
+// between them, on a rail that holds their axles, as one part. It comes
+// standing on its belt: X along the track from the sprocket to the idler, Z up,
+// the axles along Y.
+//
+// Its figures are told in the track's side view: (along, up) from the
+// sprocket's axle, with `across` the way the axles run, from the rail's outer
+// face. `trackInPart` takes such a place to the part as it is built, before it
+// is centered on its box. The rail is on the +Y side, which is the side a
+// robot's body is on; the sprocket's hub is on the other, and its bore goes
+// through the rail, for a motor's shaft to come through.
 //
 // The belt follows the true path round the wheels: straight where it runs from
 // one wheel to the next, an arc where it lies on a wheel (see `wrap`). All the
@@ -9,16 +16,16 @@
 // settings (see `trackFigures`), not read off the mesh.
 //
 // It is a likeness for simulation, not a track to print: the sprocket has no
-// teeth, the belt no links, and nothing holds the axles.
+// teeth and the belt no links.
 import { tr, trx } from '../../i18n';
-import { addHubAndBore, boreGroup, boreRadius, boreShape, hubGroup } from '../features';
-import { arcN, arcSegments, circle, dedupe, ensureCCW, TAU } from '../math2d';
+import { addHubAndBore, boreGroup, boreRadius, hubGroup } from '../features';
+import { arc, arcN, arcSegments, dedupe, ensureCCW, TAU } from '../math2d';
 import { cylinder, difference, extrude, revolve, rotate, translate, union } from '../types';
 import type { Polygon, Quality, Solid, Vec2, Vec3 } from '../types';
 import { lengthInfo, num } from './types';
 import type { BuildResult, GeneratorDef, Params } from './types';
 
-/** A wheel of a track, in the part's frame as it is built: X along the track from the sprocket, Y up from the floor's side. */
+/** A wheel of a track, in its side view: along the track from the sprocket's axle, and up. */
 export interface TrackWheel {
   kind: 'sprocket' | 'road' | 'idler';
   center: Vec2;
@@ -36,7 +43,10 @@ export type TrackRun =
   | { kind: 'arc'; wheel: number; center: Vec2; radius: number; normal: number; sweep: number; start: number; length: number }
   | { kind: 'line'; from: Vec2; to: Vec2; normal: number; start: number; length: number };
 
-/** A track part's figures, from its settings. All lengths in mm, in the frame the part is built in: the sprocket's axle is the Z axis and the track spans `width` up it from z = 0. */
+/**
+ * A track part's figures, from its settings. All lengths in mm, in the track's side view: (along, up) from the
+ * sprocket's axle. Across, the track spans `width` from the rail's outer face. See `trackInPart` for the part's own axes.
+ */
 export interface TrackFigures {
   width: number;
   /** The sprocket first, then the road wheels from it to the idler, then the idler. */
@@ -49,9 +59,15 @@ export interface TrackFigures {
   thickness: number;
   /** The lugs across the belt's outside: how far they stand out, how far apart they are along the path, and how many there are. */
   lug: { height: number; pitch: number; count: number };
-  /** The floor the track stands on: its height, and from where to where along X the belt lies on it. */
-  floor: { y: number; from: number; to: number };
-  /** The box round the whole part, hub and all: the part is centered on it once built. */
+  /** The floor the track stands on: how far up it is (below the sprocket's axle, so under zero), and from where to where along the track the belt lies on it. */
+  floor: { up: number; from: number; to: number };
+  /**
+   * The rail the axles are held by, which a robot's body is fixed to: a bar of half height `half` from axle to
+   * axle through `along` (the wheels' centers in turn), `thickness` across from the track's face. The wheels
+   * begin `gap` beyond it and reach to the track's other face.
+   */
+  rail: { along: Vec2[]; half: number; thickness: number; gap: number };
+  /** The box round the whole part, hub and all, in the part's own axes as built (see `trackInPart`): the part is centered on it. */
   box: { min: Vec3; max: Vec3 };
 }
 
@@ -143,6 +159,9 @@ export function trackPoint(f: Pick<TrackFigures, 'path' | 'length'>, s: number, 
   return { at: [run.from[0] + (run.to[0] - run.from[0]) * t + out * n[0], run.from[1] + (run.to[1] - run.from[1]) * t + out * n[1]], normal: n };
 }
 
+/** A place of a track's side view, `across` from the rail's outer face, in the axes of the part as it is built: X along, Z up, the rail's face at y = 0 and the rest toward -Y. */
+export const trackInPart = (at: Vec2, across: number): Vec3 => [at[0], -across, at[1]];
+
 /** What a track part may be given. */
 const TRACK = {
   length: { min: 20, max: 1500 },
@@ -185,6 +204,9 @@ export function trackFigures(p: Params): TrackFigures {
   const height = Math.max(0.8, 0.8 * t);
   const count = Math.max(6, Math.round(length / Math.max(4, 4 * t)));
   const far = (a: number) => Math.max(...placed.map((w) => reach(w, a))) + t + height;
+  // The rail is a slice of the track's width on the body's side, no taller than the smallest wheel leaves it room for inside the belt.
+  const thickness = Math.max(1, Math.min(0.12 * W, 6));
+  const rail = { along: placed.map((w) => w.center), half: 0.45 * Math.min(Re, N > 0 ? Rr : Re), thickness, gap: Math.max(0.5, Math.min(0.04 * W, 2)) };
   return {
     width: W,
     wheels,
@@ -192,8 +214,9 @@ export function trackFigures(p: Params): TrackFigures {
     length,
     thickness: t,
     lug: { height, pitch: length / count, count },
-    floor: { y: -far(down), from: Math.min(...standing), to: Math.max(...standing) },
-    box: { min: [-far(Math.PI), -far(down), 0], max: [far(0), far(Math.PI / 2), W + Math.max(0, num(p, 'hubHeight'))] },
+    floor: { up: -far(down), from: Math.min(...standing), to: Math.max(...standing) },
+    rail,
+    box: { min: [-far(Math.PI), -W - Math.max(0, num(p, 'hubHeight')), -far(down)], max: [far(0), 0, far(Math.PI / 2)] },
   };
 }
 
@@ -250,49 +273,62 @@ function buildTrack(p: Params, q: Quality): BuildResult {
   const t = f.thickness;
   const hubbed = num(p, 'hubHeight') > 0;
 
-  // A wheel: a rim and a boss the full width, a thinner web between them. It is sunk a little into the belt, to be one solid with it.
+  // Everything is drawn lying down, the side view in XY and across along Z, and stood up at the end.
+  // The rail: a bar from each axle to the next, on the body's side of the track.
+  const { along, half, thickness, gap } = f.rail;
+  const bar = (a: Vec2, b: Vec2): Solid => {
+    const way = Math.atan2(b[1] - a[1], b[0] - a[0]);
+    return extrude([[...arc(b[0], b[1], half, way - Math.PI / 2, way + Math.PI / 2, 12), ...arc(a[0], a[1], half, way + Math.PI / 2, way + (3 * Math.PI) / 2, 12)]], thickness);
+  };
+  const rail = along.slice(1).map((b, i) => bar(along[i], b));
+  // Each wheel stands off the rail on a stub of its axle.
+  const from = thickness + gap;
+  const wide = W - from;
+
+  // A wheel: a rim and a boss as wide as it is, a thinner web between them. It is sunk a little into the belt, to be one solid with it.
   const sunk = Math.min(0.5, t / 2);
   const wheel = (w: TrackWheel): Solid => {
     const R = w.radius;
     const driven = w.kind === 'sprocket';
     const boss = driven ? Math.max(boreRadius(p) + Math.max(2, 0.08 * R), hubbed ? num(p, 'hubDiameter') / 2 : 0, 0.3 * R) : 0.3 * R;
     const inner = R - Math.max(1.2, 0.16 * R);
-    const depth = 0.3 * W;
+    const depth = 0.3 * wide;
     const dished = inner - boss > 1;
     const profile: Polygon = dished
-      ? [[0, 0], [boss, 0], [boss, depth], [inner, depth], [inner, 0], [R + sunk, 0], [R + sunk, W], [inner, W], [inner, W - depth], [boss, W - depth], [boss, W], [0, W]]
-      : [[0, 0], [R + sunk, 0], [R + sunk, W], [0, W]];
-    const segments = Math.max(24, Math.min(arcSegments(q, TAU), Math.round(arcSegments(q, TAU) * Math.sqrt(R / 60))));
+      ? [[0, 0], [boss, 0], [boss, depth], [inner, depth], [inner, 0], [R + sunk, 0], [R + sunk, wide], [inner, wide], [inner, wide - depth], [boss, wide - depth], [boss, wide], [0, wide]]
+      : [[0, 0], [R + sunk, 0], [R + sunk, wide], [0, wide]];
+    const segments = Math.max(20, Math.min(arcSegments(q, TAU), Math.round(arcSegments(q, TAU) * Math.sqrt(R / 80))));
     let solid = revolve(profile, segments);
     // The sprocket is told from the others by the holes through its web.
     const hole = Math.min(0.32 * (inner - boss), 0.2 * R);
     if (driven && dished && hole >= 1) {
       const ring = (inner + boss) / 2;
       const holes = Math.max(3, Math.min(6, Math.floor((TAU * ring) / (3.2 * hole))));
-      solid = difference(solid, ...Array.from({ length: holes }, (_, i) => rotate(translate(cylinder(hole, W + 2, 20), [ring, 0, -1]), [0, 0, (360 * (i + 0.5)) / holes])));
+      solid = difference(solid, ...Array.from({ length: holes }, (_, i) => rotate(translate(cylinder(hole, wide + 2, 20), [ring, 0, -1]), [0, 0, (360 * (i + 0.5)) / holes])));
     }
-    return translate(solid, [w.center[0], w.center[1], 0]);
+    const stub = translate(cylinder(Math.min(boss, half), gap + 0.2, 20), [0, 0, -gap - 0.1]);
+    return translate(union(solid, stub), [w.center[0], w.center[1], from]);
   };
 
   const inside = beltOutline(f, 0, q);
   const belt = extrude([beltOutline(f, t, q), inside], W);
-  const body = union(belt, extrude(lugs(f, 0, q), W / 2), translate(extrude(lugs(f, 0.5, q), W / 2), [0, 0, W / 2]), ...f.wheels.map(wheel));
+  const body = union(belt, extrude(lugs(f, 0, q), W / 2), translate(extrude(lugs(f, 0.5, q), W / 2), [0, 0, W / 2]), ...rail, ...f.wheels.map(wheel));
 
   const apart = f.wheels.some((a, i) => f.wheels.some((b, j) => j > i && Math.hypot(a.center[0] - b.center[0], a.center[1] - b.center[1]) < a.radius + b.radius - 1e-6));
   if (apart) warnings.push(tr('The wheels run into each other. Make the track longer or the wheels smaller.'));
   else if (f.wheels.some((w, i) => w.kind !== 'road' && !f.path.some((r) => r.kind === 'arc' && r.wheel === i))) warnings.push(tr('The belt does not reach every wheel. Make the road wheels smaller.'));
 
   const sprocket = f.wheels[0].radius;
-  const { solid, height } = addHubAndBore(body, 0, W, p, q, warnings, sprocket);
+  const { solid: lying, height } = addHubAndBore(body, 0, W, p, q, warnings, sprocket);
+  // Stood up: the side view's up is the part's Z, and across runs toward -Y.
+  const solid = rotate(lying, [90, 0, 0]);
   const drive = sprocket + t / 2;
   return {
     solid,
-    outline: [beltOutline(f, t, q), inside, ...f.wheels.map((w) => circle(w.radius, q.circle, w.center[0], w.center[1])), ...(boreShape(p, q) ?? [])],
     info: [
       lengthInfo(tr('Overall length'), f.box.max[0] - f.box.min[0]),
-      lengthInfo(tr('Overall height'), f.box.max[1] - f.box.min[1]),
-      lengthInfo(tr('Width'), W),
-      lengthInfo(tr('Total height'), height),
+      lengthInfo(tr('Overall height'), f.box.max[2] - f.box.min[2]),
+      lengthInfo(tr('Overall width'), height),
       lengthInfo(tr('Length on the floor'), f.floor.to - f.floor.from, 1),
       lengthInfo(trx('track', 'Belt length'), f.length + Math.PI * t, 1),
       lengthInfo(tr('Travel per turn'), TAU * drive, 1),
@@ -305,7 +341,7 @@ export const track: GeneratorDef = {
   id: 'track',
   name: tr('Track'),
   category: 'wheels',
-  summary: tr('Belt round a sprocket, an idler and road wheels, for a robot on tracks.'),
+  summary: tr('Belt round a sprocket, an idler and road wheels on a rail, for a robot on tracks.'),
   groups: [
     {
       title: tr('Track'),

@@ -122,7 +122,7 @@ test.describe('core flows', { tag: '@mouse' }, () => {
     await expect(panel).toContainText('Length on the floor240.0 mm');
     await expect(panel).toContainText('Overall height70.80 mm');
     const size = () => store(page, (m) => m.getState().doc.scene[0].size.map((x) => Math.round(x * 10) / 10));
-    expect(await size()).toEqual([310.8, 70.8, 40]);
+    expect(await size(), 'it stands on its belt: long, as wide as its belt, tall').toEqual([310.8, 40, 70.8]);
     // The idler lifted: the belt leaves the floor at the last road wheel, and the track is that much taller.
     await page.getByRole('tab', { name: 'Wheels', exact: true }).click();
     await page.getByRole('textbox', { name: 'Idler rise', exact: true }).fill('40');
@@ -130,7 +130,7 @@ test.describe('core flows', { tag: '@mouse' }, () => {
     await expect(panel).toContainText('Length on the floor180.0 mm');
     await expect(panel).toContainText('Overall height110.80 mm');
     await settled(page);
-    expect(await size()).toEqual([310.8, 110.8, 40]);
+    expect(await size()).toEqual([310.8, 40, 110.8]);
     // With no road wheels their diameter is greyed out, and the belt runs from the sprocket straight to the idler.
     await expect(page.getByRole('textbox', { name: 'Road wheel diameter', exact: true })).toHaveValue('40');
     await page.getByRole('textbox', { name: 'Road wheels', exact: true }).fill('0');

@@ -3,7 +3,7 @@ import { evaluate, initKernel } from '../testing';
 import { QUALITY } from '../types';
 import type { Vec2 } from '../types';
 import { GENERATORS } from './index';
-import { track, trackFigures, trackPoint } from './track';
+import { track, trackFigures, trackInPart, trackPoint } from './track';
 import type { TrackFigures } from './track';
 import { defaultParams } from './types';
 import type { BuildResult, Params } from './types';
@@ -65,7 +65,7 @@ describe("a track's figures", () => {
     ]);
     expect(f.wheels.every((w) => w.onFloor)).toBe(true);
     expect(f.floor).toMatchObject({ from: 0, to: 240 });
-    expect(f.floor.y).toBeCloseTo(-30 - 3 - f.lug.height, 9);
+    expect(f.floor.up).toBeCloseTo(-30 - 3 - f.lug.height, 9);
   });
 
   it('give a flat track a belt of two straight runs and two half turns', () => {
@@ -87,7 +87,7 @@ describe("a track's figures", () => {
     expect(both.wheels[1].center).toEqual([60, -40]);
     expect(both.wheels[4].center).toEqual([240, 20]);
     expect([both.floor.from, both.floor.to]).toEqual([60, 180]);
-    expect(both.floor.y).toBeCloseTo(-60 - 3 - both.lug.height, 9);
+    expect(both.floor.up).toBeCloseTo(-60 - 3 - both.lug.height, 9);
   });
 
   it('tell a rise from the lower end where there are no road wheels', () => {
@@ -166,9 +166,12 @@ describe('track', () => {
         expect(stats.min[i], `${name} min ${i}`).toBeCloseTo(f.box.min[i], 6);
         expect(stats.max[i], `${name} max ${i}`).toBeCloseTo(f.box.max[i], 6);
       }
-      expect(stats.min[1], name).toBeCloseTo(f.floor.y, 6);
+      // It stands on its belt: the floor is the lowest of it, and its width lies along Y from the rail's face.
+      expect(stats.min[2], name).toBeCloseTo(f.floor.up, 6);
+      expect([stats.min[1], stats.max[1]].map((y) => +y.toFixed(6)), name).toEqual([-40, 0]);
       expect(info(r, 'Overall length'), name).toBeCloseTo(f.box.max[0] - f.box.min[0], 2);
-      expect(info(r, 'Overall height'), name).toBeCloseTo(f.box.max[1] - f.box.min[1], 2);
+      expect(info(r, 'Overall height'), name).toBeCloseTo(f.box.max[2] - f.box.min[2], 2);
+      expect(info(r, 'Overall width'), name).toBe(40);
       expect(stats.triangles, name).toBeLessThan(20_000);
     }
   });
@@ -180,7 +183,7 @@ describe('track', () => {
   it('is open between its wheels: a belt round them, not a block', () => {
     const f = figures();
     const { stats } = evaluate(build().solid);
-    const block = (f.box.max[0] - f.box.min[0]) * (f.box.max[1] - f.box.min[1]) * f.width;
+    const block = (f.box.max[0] - f.box.min[0]) * (f.box.max[2] - f.box.min[2]) * f.width;
     expect(stats.volume).toBeLessThan(0.45 * block);
     expect(stats.volume).toBeGreaterThan(0.15 * block);
   });
@@ -190,9 +193,38 @@ describe('track', () => {
     const bored = evaluate(build({ boreType: 'round', boreDiameter: 6 }).solid).stats;
     expect(plain.volume - bored.volume).toBeGreaterThan(0.9 * Math.PI * 3 * 3 * 40);
     const hubbed = build({ hubHeight: 8 });
-    expect(evaluate(hubbed.solid).stats.max[2]).toBeCloseTo(48, 6);
-    expect(info(hubbed, 'Total height')).toBe(48);
-    expect(figures({ hubHeight: 8 }).box.max[2]).toBe(48);
+    // The hub stands out of the side away from the rail.
+    expect(evaluate(hubbed.solid).stats.min[1]).toBeCloseTo(-48, 6);
+    expect(evaluate(hubbed.solid).stats.max[1]).toBeCloseTo(0, 6);
+    expect(info(hubbed, 'Overall width')).toBe(48);
+    expect(figures({ hubHeight: 8 }).box.min[1]).toBe(-48);
+  });
+
+  it('holds its axles on a rail inside the belt, on the side away from the hub', () => {
+    for (const [name, over] of Object.entries(SHAPES)) {
+      const f = figures(over);
+      expect(f.rail.along, name).toEqual(f.wheels.map((w) => w.center));
+      // No taller than the smallest wheel, so it stays inside the belt all along and off the floor.
+      expect(f.rail.half, name).toBeLessThan(Math.min(...f.wheels.map((w) => w.radius)));
+      expect(f.rail.half, name).toBeGreaterThan(0.4 * Math.min(...f.wheels.map((w) => w.radius)));
+      expect(f.rail.thickness + f.rail.gap, name).toBeLessThan(f.width / 4);
+    }
+    // The rail's inner face is a plane of its own, `thickness` across: what lies in it is the rail, a bar no farther
+    // than its half height from the line through the axles, and it reaches every axle.
+    for (const [name, over] of Object.entries(SHAPES)) {
+      const f = figures(over);
+      const { mesh } = evaluate(build(over).solid);
+      const face: Vec2[] = [];
+      for (let i = 0; i < mesh.positions.length; i += 3) if (Math.abs(mesh.positions[i + 1] + f.rail.thickness) < 1e-6) face.push([mesh.positions[i], mesh.positions[i + 2]]);
+      expect(trackInPart([30, -5], f.rail.thickness), name).toEqual([30, -f.rail.thickness, -5]);
+      const off = (p: Vec2, a: Vec2, b: Vec2): number => {
+        const t = Math.min(1, Math.max(0, ((p[0] - a[0]) * (b[0] - a[0]) + (p[1] - a[1]) * (b[1] - a[1])) / ((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2)));
+        return Math.hypot(p[0] - a[0] - t * (b[0] - a[0]), p[1] - a[1] - t * (b[1] - a[1]));
+      };
+      expect(face.length, name).toBeGreaterThan(20);
+      for (const p of face) expect(Math.min(...f.rail.along.slice(1).map((b, i) => off(p, f.rail.along[i], b))), name).toBeLessThan(f.rail.half + 1e-4);
+      for (const c of f.rail.along) expect(face.some((p) => Math.hypot(p[0] - c[0], p[1] - c[1]) < f.rail.half + 1e-4), name).toBe(true);
+    }
   });
 
   it('says so when its wheels run into each other', () => {
