@@ -534,3 +534,83 @@ test.describe('a mecanum drive on wheels that are not the part', { tag: '@mouse'
     await expect(shape.locator('option')).toHaveCount(6);
   });
 });
+
+test.describe('a rover on tracks', { tag: '@mouse' }, () => {
+  test("mirroring a track makes the other side's, a new joint comes on its sprocket's axle, and it collides as Track or None", async ({ page }) => {
+    await openApp(page);
+    const bytes = [...readFileSync(new URL('../fixtures/robots/tracked.plastikcad', import.meta.url))];
+    await store(
+      page,
+      (m, b) => {
+        void m.receiveFiles([{ name: 'tracked.plastikcad', path: null, bytes: new Uint8Array(b) }]);
+      },
+      bytes,
+    );
+    await page.getByRole('button', { name: 'OK' }).click();
+    await expect.poll(() => store(page, (m) => m.getState().doc.robot?.joints.length ?? 0)).toBe(2);
+    await settled(page);
+    const right = await store(page, (m) => {
+      const { doc } = m.getState();
+      const node = doc.scene.find((n) => n.name === 'Track right')!;
+      return { id: node.id, flip: node.flip ?? [false, false, false], pos: node.pos, joint: doc.robot!.joints.find((j) => j.child === node.id)! };
+    });
+    // The left track taken away, and made again as a user makes it: the right one copied, mirrored and moved across.
+    const made = await store(page, (m) => {
+      m.leaveRobotMode();
+      m.select([m.getState().doc.scene.find((n) => n.name === 'Track left')!.id]);
+      m.deleteSelected();
+      m.select([m.getState().doc.scene.find((n) => n.name === 'Track right')!.id]);
+      m.duplicateSelected();
+      m.mirrorSelected(0);
+      const id = m.getState().selection[0];
+      const at = m.getState().doc.scene.find((n) => n.id === id)!.pos;
+      m.updateNode(id, { name: 'Track left', pos: [-at[0], at[1], at[2]] });
+      m.enterRobotMode();
+      return id;
+    });
+    expect(made).not.toBe(right.id);
+    await settled(page);
+    const left = await store(
+      page,
+      (m, id) => {
+        // The copy brought no joint to the body with it: one is added, and given its side.
+        const robot = m.getState().doc.robot!;
+        const joint = robot.joints.find((j) => j.child === id)?.id ?? m.addJoint(robot.root!, id)!;
+        m.setDriveRole(joint, 'left');
+        m.select([]);
+        const node = m.getState().doc.scene.find((n) => n.id === id)!;
+        return { part: node.type === 'part' ? node.part : '', flip: node.flip ?? [false, false, false], pos: node.pos, joint: m.getState().doc.robot!.joints.find((j) => j.id === joint)! };
+      },
+      made,
+    );
+    expect(left.part).toBe('track');
+    [-right.pos[0], right.pos[1], right.pos[2]].forEach((v, i) => expect(left.pos[i]).toBeCloseTo(v, 6));
+    // Mirrored: one of its own sides is flipped that the right track's is not.
+    expect(left.flip.filter((f, i) => f !== right.flip[i]).length).toBe(1);
+    // The joint is the track's motor: continuous, on the sprocket's axle, where the right track's is.
+    expect(left.joint.type).toBe('continuous');
+    left.joint.origin.forEach((v, i) => expect(Math.abs(v)).toBeCloseTo(Math.abs(right.joint.origin[i]), 3));
+    expect(left.joint.axis.map((v) => Math.abs(v))).toEqual([0, 1, 0]);
+    await settled(page);
+    // Both tracks are tracks to the checks: nothing is faulted.
+    await expect(page.locator('.inspector .problem')).toHaveCount(0);
+
+    // A track collides as the wheels that stand in for its belt, or as nothing.
+    await store(page, (m, id) => m.select([id]), made);
+    const shape = page.locator('.inspector select[aria-label="Collision shape"]');
+    await expect(shape).toHaveValue('rollers');
+    expect(await shape.locator('option').allTextContents()).toEqual(['Track', 'None']);
+    await expect(page.locator('.inspector input[aria-label="Pieces"]')).toHaveCount(0);
+    const picked = () => store(page, (m) => m.getState().doc.robot!.links.find((l) => l.node === m.getState().selection[0])?.collision);
+    await shape.selectOption('none');
+    expect(await picked()).toBe('none');
+    await shape.selectOption('rollers');
+    expect(await picked()).toBe('hull');
+
+    // The test drive takes the robot as it is: it loads, and the robot stands on its tracks.
+    await store(page, (m) => m.select([]));
+    await page.getByRole('button', { name: 'Test drive' }).click();
+    const hold = page.getByRole('button', { name: 'Hold in the air' });
+    await expect(hold).toHaveAttribute('aria-pressed', 'false', { timeout: 30_000 });
+  });
+});

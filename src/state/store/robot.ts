@@ -16,6 +16,7 @@ import type { ExportFormat } from '../../robot/export';
 import { fitFollowers, solvePose } from '../../robot/kinematics';
 import { jointInChild, jointInDesign as jointInDesignOf, linkNodes, linkOf, meetingPoint, motorsOnLoopJoints, openLoops, piecesOf, robotOf, sensorInDesign, sensorInLink, spanningTree, withMotors } from '../../robot/model';
 import { withMecanumWheel } from '../../robot/replaceWheel';
+import { trackAxle, trackOf } from '../../robot/tracks';
 import { snapPointsOf } from '../../robot/snaps';
 import type { SnapPoint } from '../../viewer/Viewer';
 import { jointFit } from '../../robot/defaults';
@@ -326,18 +327,21 @@ const jointName = (robot: Robot, base: string): string => {
  * where the two meet (the middle of where their boxes overlap, or of the gap
  * between them: a wheel's hub on its axle, the end of an arm segment against
  * the last), or, for a child whose file had its own origin, at that origin,
- * which is where a link's mesh is measured from. Its axis is along the child's Z.
+ * which is where a link's mesh is measured from. Its axis is along the child's Z. A Track part is hung by its
+ * motor: a continuous joint on its sprocket's axle.
  */
 export function addJoint(parent: string, child: string): string | null {
   const childNode = getState().doc.scene.find((n) => n.id === child);
   const parentNode = getState().doc.scene.find((n) => n.id === parent);
   if (!childNode || !parentNode || parent === child) return null;
-  const origin = jointInChild(originOf(childNode) ?? meetingPoint(geometry.bounds(parentNode), geometry.bounds(childNode)), [0, 0, 1], childNode).origin;
+  const track = trackOf(childNode);
+  const axle = typeof track === 'string' ? null : jointInChild(trackAxle(track).origin, trackAxle(track).axis, childNode);
+  const origin = axle?.origin ?? jointInChild(originOf(childNode) ?? meetingPoint(geometry.bounds(parentNode), geometry.bounds(childNode)), [0, 0, 1], childNode).origin;
   const id = newId();
   // A mount from the parts library on either side says which motor turns the joint.
   const motor = motorForPart(parentNode) ?? motorForPart(childNode);
   editRobot((r) => {
-    const made = defaultJoint(id, jointName(r, `${childNode.name} joint`), parent, child, tidyVec(origin));
+    const made: RobotJoint = { ...defaultJoint(id, jointName(r, `${childNode.name} joint`), parent, child, tidyVec(origin)), ...(axle ? { type: 'continuous', axis: tidyVec(axle.axis) } : {}) };
     return { ...r, root: r.root ?? parent, joints: [...r.joints, { ...made, ...jointFit(r, linkNodes(getState().doc.scene), made, (n) => weighed(r, n)), ...(motor ? motorFigures(motor) : {}) }] };
   });
   selectJoint(id);

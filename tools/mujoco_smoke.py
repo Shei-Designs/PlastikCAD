@@ -6,6 +6,7 @@
 Needs the `mujoco` package (pip install mujoco, or a venv). Each model is
 settled for a second, then driven: velocity motors run at their limit and the
 base must travel; a mecanum drive must go forward, slide and turn as told;
+a rover on tracks must go straight and turn on the spot;
 position servos are sent 0.3 rad and must follow; a free
 base must not collapse; and MuJoCo must raise no warnings. Exit code 1 on any
 failure, 2 when mujoco is missing.
@@ -25,6 +26,15 @@ import numpy as np
 # A mecanum drive is run at this wheel speed (rad/s) for this long, and must go between these shares of what was
 # asked and stray no farther than this another way (m, rad).
 MECANUM_WHEEL_SPEED, MECANUM_SECONDS, MECANUM_LEAST, MECANUM_MOST, MECANUM_STRAY = 6.0, 3.0, 0.8, 1.05, 0.05
+
+# A rover on tracks (a differential drive with a row of wheels each side) is run straight at this speed (m/s) and
+# turned on the spot with its tracks at the second speed, one each way, for this long. Straight, it must go between
+# these shares of what was asked: a motor here runs slower the more it is loaded, as a real one does, and its own
+# damping alone costs some 5 %. Turning, a long contact skids: it must turn between these shares of what wheels
+# that did not skid would turn it (the reference rover turns 35 %; plain Coulomb friction would give 70 to 80 %).
+# It must stray no farther than this another way (m, rad).
+TRACK_SPEED, TRACK_TURN_SPEED, TRACK_SECONDS = 0.3, 0.15, 3.0
+TRACK_STRAIGHT, TRACK_TURN, TRACK_STRAY = (0.9, 1.02), (0.25, 0.85), 0.05
 
 root = sys.argv[1] if len(sys.argv) > 1 else "fixtures/out"
 # Each MuJoCo model is <name>/<name>.xml; the ROS and SDF packages beside them carry XML of their own.
@@ -173,6 +183,41 @@ for xml in xmls:
             if any(w.number for w in e.warning):
                 ok = False
                 notes.append(f"mecanum {label}: warnings " + ", ".join(mujoco.mjtWarning(i).name for i, w in enumerate(e.warning) if w.number))
+    # A rover on tracks, from a fresh start each time: told to go straight and to turn on the spot.
+    if spec and spec["kind"] == "differential" and min(len(spec["roles"][side]) for side in ("left", "right")) >= 3:
+        r, sep = spec["wheelRadius"], spec["wheelSeparation"]
+        fwd = np.array(spec["forward"][:2], float)
+        left = np.array([-fwd[1], fwd[0]])
+        sides = {side: [mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_ACTUATOR, a) for a in spec["roles"][side]] for side in ("left", "right")}
+        yaw_of = lambda q: float(np.arctan2(2 * (q[0] * q[3] + q[1] * q[2]), 1 - 2 * (q[2] ** 2 + q[3] ** 2)))  # noqa: E731
+        runs = {"straight": (TRACK_SPEED, TRACK_SPEED, TRACK_SPEED * TRACK_SECONDS, TRACK_STRAIGHT), "turn": (-TRACK_TURN_SPEED, TRACK_TURN_SPEED, 2 * TRACK_TURN_SPEED / sep * TRACK_SECONDS, TRACK_TURN)}
+        for label, (vl, vr, ideal, (least, most)) in runs.items():
+            e = mujoco.MjData(m)
+            if home >= 0:
+                mujoco.mj_resetDataKeyframe(m, e, home)
+            for _ in steps(0.5):
+                mujoco.mj_step(m, e)
+            at, yaw, last = e.qpos[:2].copy(), 0.0, yaw_of(e.qpos[3:7])
+            heights = []
+            for side, v in (("left", vl), ("right", vr)):
+                for a in sides[side]:
+                    e.ctrl[a] = v / r
+            for _ in steps(TRACK_SECONDS):
+                mujoco.mj_step(m, e)
+                now = yaw_of(e.qpos[3:7])
+                yaw += (now - last + np.pi) % (2 * np.pi) - np.pi
+                last = now
+                heights.append(float(e.qpos[2]))
+            went = [float((e.qpos[:2] - at) @ fwd), float((e.qpos[:2] - at) @ left), yaw]
+            i = 0 if label == "straight" else 2
+            stray = [abs(v) for j, v in enumerate(went) if j != i]
+            notes.append(f"tracks {label}: {went[i]:.3f} of {ideal:.3f} {'rad' if i == 2 else 'm'} ({100 * went[i] / ideal:.0f} %), height within {(max(heights) - min(heights)) * 1000:.2f} mm")
+            if not least <= went[i] / ideal <= most or max(stray) > TRACK_STRAY:
+                ok = False
+                notes.append(f"tracks {label} FAILED: forward {went[0]:.3f} m, left {went[1]:.3f} m, turn {went[2]:.3f} rad")
+            if any(w.number for w in e.warning):
+                ok = False
+                notes.append(f"tracks {label}: warnings " + ", ".join(mujoco.mjtWarning(i).name for i, w in enumerate(e.warning) if w.number))
     # Every camera must render a picture of something, and a depth picture of the floor that runs away to the top.
     if m.ncam:
         try:

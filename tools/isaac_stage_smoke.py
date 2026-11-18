@@ -29,6 +29,10 @@ SPEED = 0.3  # m/s asked of a rover
 # A mecanum drive told to go forward, slide or turn goes this share of what was asked at least and at most (its
 # rollers slip a little, and it takes a moment to get going), and strays no farther than this another way (m, rad).
 MECANUM_LEAST, MECANUM_MOST, MECANUM_STRAY = 0.8, 1.05, 0.05
+# A rover on tracks (a row of wheels each side stands in for a belt) told to go back goes between these shares of
+# what was asked, and told to turn on the spot at 1 rad/s between these shares of it: a long contact skids, and
+# PhysX lets it skid more than the others (25 to 27 % in the trial). It strays no farther than this (m, rad).
+TRACK_STRAIGHT, TRACK_TURN, TRACK_STRAY = (0.9, 1.05), (0.15, 1.05), 0.05
 MUST_MOVE = 0.1  # m
 MAY_SETTLE = 0.02  # m the base may drop while settling
 WALL_AT = 1.0  # m ahead
@@ -89,6 +93,8 @@ def read_stage(path):
         'steps_per_second': next((int(m.group(1)) for m in re.finditer(r'uint physxScene:timeStepsPerSecond = (\d+)', text)), 0),
         # A mecanum drive's graph mixes a speed for each wheel.
         'mecanum': 'def OmniGraphNode "wheel0_linear"' in text,
+        # A track's belt is stood in for by a row of wheels on hinges to it.
+        'tracks': len(re.findall(r'def PhysicsRevoluteJoint "[^"]*_wheel_\d+_joint"', text)) >= 6,
         'meshes': len(re.findall(r'def Mesh "visual_\d+"', text)),
         'wheels': re.findall(r'custom token\[\] inputs:jointNames = \[([^\]]*)\]', text),
     }
@@ -429,25 +435,35 @@ def one(path, pictures):
                 result['problems'].append(f'the picture shows {colors} colors: nothing rendered')
         # A mecanum drive, last of all: told to go back, to slide to its left and to turn on the spot, it does
         # each by about as much as asked and nothing else. Its footprint's +X is forward, +Y its left.
+        def footprint():
+            pos, quat = art.get_world_poses()
+            w, x, y, z = (float(v) for v in np.asarray(quat)[0])
+            return np.asarray(pos)[0][:2].copy(), math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
+
+        def told(vx, vy, wz):
+            def send(i):
+                m = Twist()
+                m.linear.x, m.linear.y, m.angular.z = vx, vy, wz
+                twist_pub.publish(m)
+            at, yaw = footprint()
+            run(SECONDS, send)
+            run(0.5, lambda i: twist_pub.publish(Twist()))
+            to, yaw2 = footprint()
+            d = to - at
+            turned = (yaw2 - yaw + math.pi) % (2 * math.pi) - math.pi
+            return float(d[0] * math.cos(yaw) + d[1] * math.sin(yaw)), float(-d[0] * math.sin(yaw) + d[1] * math.cos(yaw)), turned
+
+        # A rover on tracks: told to go back and to turn on the spot, it does each within what a long contact that skids allows, and nothing else.
+        if info['tracks'] and drive_kind == 'twist':
+            went = {'back': told(-SPEED, 0.0, 0.0), 'turn': told(0.0, 0.0, 1.0)}
+            result['tracks'] = {k: [round(v[0] * 1000), round(v[1] * 1000), round(v[2], 3)] for k, v in went.items()}
+            for k, (i, ideal, unit, (least, most)) in {'back': (0, -SPEED * SECONDS, 'm', TRACK_STRAIGHT), 'turn': (2, 1.0 * SECONDS, 'rad', TRACK_TURN)}.items():
+                if not least <= went[k][i] / ideal <= most:
+                    result['problems'].append(f'tracks {k}: went {went[k][i]:.3f} {unit} of the {ideal:.3f} asked')
+                stray = [abs(v) for j, v in enumerate(went[k]) if j != i]
+                if stray[0] > TRACK_STRAY or stray[1] > TRACK_STRAY:
+                    result['problems'].append(f'tracks {k}: strayed, forward {went[k][0]:.3f} m, left {went[k][1]:.3f} m, turn {went[k][2]:.3f} rad')
         if info['mecanum'] and drive_kind == 'twist':
-            def footprint():
-                pos, quat = art.get_world_poses()
-                w, x, y, z = (float(v) for v in np.asarray(quat)[0])
-                return np.asarray(pos)[0][:2].copy(), math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
-
-            def told(vx, vy, wz):
-                def send(i):
-                    m = Twist()
-                    m.linear.x, m.linear.y, m.angular.z = vx, vy, wz
-                    twist_pub.publish(m)
-                at, yaw = footprint()
-                run(SECONDS, send)
-                run(0.5, lambda i: twist_pub.publish(Twist()))
-                to, yaw2 = footprint()
-                d = to - at
-                turned = (yaw2 - yaw + math.pi) % (2 * math.pi) - math.pi
-                return float(d[0] * math.cos(yaw) + d[1] * math.sin(yaw)), float(-d[0] * math.sin(yaw) + d[1] * math.cos(yaw)), turned
-
             # Back first, away from the wall it drove up to.
             went = {'back': told(-SPEED, 0.0, 0.0), 'left': told(0.0, SPEED, 0.0), 'turn': told(0.0, 0.0, 1.0)}
             result['mecanum'] = {k: [round(v[0] * 1000), round(v[1] * 1000), round(v[2], 3)] for k, v in went.items()}

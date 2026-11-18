@@ -1,0 +1,155 @@
+{
+  "format": "plastikcad",
+  "version": 3,
+  "units": "mm",
+  "id": "fxreferencetrackedrover",
+  "name": "Reference tracked rover",
+  "scene": [
+    {
+      "id": "fx000074",
+      "type": "shape",
+      "name": "Body",
+      "shape": "box",
+      "params": {
+        "radius": 0
+      },
+      "pos": [0,0,55],
+      "rot": [0,0,0],
+      "size": [140,310.79999999999995,50],
+      "color": "#8fa3bf"
+    },
+    {
+      "id": "fx000075",
+      "type": "part",
+      "name": "Track left",
+      "part": "track",
+      "params": {
+        "belt": 3,
+        "boreClearance": 0.2,
+        "boreDiameter": 5,
+        "boreFlat": 4.5,
+        "boreType": "round",
+        "endDiameter": 60,
+        "hubDiameter": 16,
+        "hubHeight": 0,
+        "idlerRise": 0,
+        "keyDepth": 1,
+        "keyWidth": 2,
+        "length": 240,
+        "roadDiameter": 40,
+        "roadWheels": 3,
+        "setScrewDiameter": 2.8,
+        "setScrews": 1,
+        "sprocketRise": 0,
+        "width": 40
+      },
+      "natural": [310.79999999999995,40,70.80000000000003],
+      "pos": [-95,0,35.40000000000001],
+      "rot": [0,0,90],
+      "size": [310.79999999999995,40,70.80000000000003],
+      "flip": [false,true,false],
+      "color": "#e8853a"
+    },
+    {
+      "id": "fx000076",
+      "type": "part",
+      "name": "Track right",
+      "part": "track",
+      "params": {
+        "belt": 3,
+        "boreClearance": 0.2,
+        "boreDiameter": 5,
+        "boreFlat": 4.5,
+        "boreType": "round",
+        "endDiameter": 60,
+        "hubDiameter": 16,
+        "hubHeight": 0,
+        "idlerRise": 0,
+        "keyDepth": 1,
+        "keyWidth": 2,
+        "length": 240,
+        "roadDiameter": 40,
+        "roadWheels": 3,
+        "setScrewDiameter": 2.8,
+        "setScrews": 1,
+        "sprocketRise": 0,
+        "width": 40
+      },
+      "natural": [310.79999999999995,40,70.80000000000003],
+      "pos": [95,0,35.40000000000001],
+      "rot": [0,0,90],
+      "size": [310.79999999999995,40,70.80000000000003],
+      "color": "#e8853a"
+    }
+  ],
+  "assets": {},
+  "robot": {
+    "root": "fx000074",
+    "base": "free",
+    "links": [
+      {
+        "node": "fx000074",
+        "mass": {
+          "kind": "material",
+          "material": "pla",
+          "infill": 20,
+          "shell": 1.2
+        },
+        "collision": "box",
+        "friction": 0.8
+      }
+    ],
+    "joints": [
+      {
+        "id": "fx000077",
+        "name": "Track left joint",
+        "type": "continuous",
+        "parent": "fx000074",
+        "child": "fx000075",
+        "origin": [-119.99999999999999,0,0],
+        "axis": [0,1,0],
+        "lower": -90,
+        "upper": 90,
+        "effort": 2.6,
+        "velocity": 900,
+        "damping": 0.00828,
+        "friction": 0,
+        "motor": "37d-70"
+      },
+      {
+        "id": "fx000078",
+        "name": "Track right joint",
+        "type": "continuous",
+        "parent": "fx000074",
+        "child": "fx000076",
+        "origin": [-119.99999999999999,0,0],
+        "axis": [0,1,0],
+        "lower": -90,
+        "upper": 90,
+        "effort": 2.6,
+        "velocity": 900,
+        "damping": 0.00828,
+        "friction": 0,
+        "motor": "37d-70"
+      }
+    ],
+    "sensors": [
+      {
+        "id": "fx000079",
+        "name": "IMU",
+        "kind": "imu",
+        "link": "fx000074",
+        "origin": [0,0,0],
+        "rot": [0,0,0],
+        "rate": 100
+      }
+    ],
+    "drive": {
+      "kind": "differential",
+      "roles": {
+        "fx000077": "left",
+        "fx000078": "right"
+      }
+    }
+  }
+}

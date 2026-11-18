@@ -32,6 +32,8 @@ import { motorOf } from './motors';
 import { drivePy, envPy, trainPy } from '../io/scripts';
 import { collisionPrimitive } from './collision';
 import { mecanumOf, rollersOf } from './wheels';
+import { trackOf, trackWheels } from './tracks';
+import type { Track } from './tracks';
 import { DRIVE_KINDS, driveJoints, withRole } from './types';
 import { APP_NAME } from '../appInfo';
 import type { DriveKind, DriveRole, Robot, RobotJoint, World } from './types';
@@ -144,7 +146,7 @@ interface Prepared {
   loopJoints: UrdfJoint[];
   sensors: (GazeboSensor & { id: string; link: string; xyz: Vec3; rpy: Vec3; touch: number })[];
   drive: PreparedDrive | null;
-  /** The rollers of the mecanum wheels: bodies of the export's own, which the robot's lists do not show. */
+  /** The rollers of the mecanum wheels and the wheels that stand in for the tracks' belts: bodies of the export's own, which the robot's lists do not show. */
   rollers: PreparedRoller[];
   /** Joints under ros2_control. */
   controlled: string[];
@@ -169,6 +171,10 @@ export interface PreparedRoller {
   /** Each ball's center in the roller's frame, and its radius. */
   balls: { at: Vec3; radius: number }[];
   friction: number;
+  /** A wheel that stands in for a track's belt collides as a cylinder about its hinge instead: its size, and how it is turned from standing along Z (roll, pitch, yaw). */
+  cylinder?: { radius: number; length: number; rpy: Vec3 };
+  /** Such a wheel of a track in the drive is turned by the track's motor: its share of the effort (N·m), the speed (rad/s), and what the hinge resists by. */
+  driven?: { effort: number; velocity: number; damping: number; friction: number; armature?: number };
 }
 
 function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, meshUri: (path: string) => string, naming: Naming): Prepared {
@@ -199,6 +205,7 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
   const files: PackageFile[] = [];
   const links: Prepared['links'] = [];
   const wheels: { id: string; wheel: MecanumWheel }[] = [];
+  const tracks: { id: string; track: Track; collides: boolean }[] = [];
   for (const id of tree.order) {
     const node = nodeById.get(id)!;
     const link = linkOf(robot, id, node);
@@ -218,8 +225,13 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
     // A mecanum wheel meets the floor by its rollers, which follow below, and has no shape of its own to collide as.
     const mecanum = link.collision === 'none' ? null : mecanumOf(node);
     const wheel = mecanum && typeof mecanum !== 'string' ? mecanum : null;
+    // A track meets the floor by the wheels that stand in for its belt, which follow below.
+    const found = wheel ? null : trackOf(node);
+    const track = found && typeof found !== 'string' ? found : null;
     if (wheel) {
       wheels.push({ id, wheel });
+    } else if (track) {
+      tracks.push({ id, track, collides: link.collision !== 'none' });
     } else if (link.collision === 'box' || link.collision === 'cylinder' || link.collision === 'sphere') {
       // The primitive fitted to the object, where it stands and turned as it is (URDF's roll, pitch, yaw are the design's X, Y, Z turns).
       const fitted = collisionPrimitive(node, link);
@@ -287,6 +299,56 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
     const role = robot.drive?.roles[j.id];
     return role && !role.startsWith('steer') && axis[1] * forward[0] - axis[0] * forward[1] < 0 ? (axis.map((x) => -x) as Vec3) : axis;
   };
+  // A track's belt is stood in for by a row of wheels on hinges to the track, which is itself held still against
+  // the link it hangs from: the joint that carries a track with a part in the drive is the track's motor, written
+  // fixed, and the wheels are what it turns, each with its share of the motor's effort. A track with no part in
+  // the drive keeps its joint, and its wheels turn free. The wheels weigh half the track between them, and the
+  // track's own mass and inertia are lessened by as much: its mesh was weighed wheels and all. The belt ties every
+  // wheel to the motor, so each carries the whole of its rotor's inertia: a wheel as light as these alone would
+  // slip where a geared motor's does not, and the track would hardly turn the robot on the spot.
+  const trackMotors = new Map<string, { joints: string[]; radius: number; middle: Vec3 }>();
+  for (const { id, track, collides } of tracks) {
+    const l = links.find((o) => o.node.id === id)!;
+    const made = trackWheels(track);
+    const carrier = tree.parentJoint.get(id);
+    const role = carrier && robot.drive?.roles[carrier.id];
+    const motor = carrier && role && !role.startsWith('steer') ? carrier : undefined;
+    // A positive turn of a driven wheel moves the base the way the robot faces, like any wheel of the drive.
+    const axis = motor && made.axis[1] * forward[0] - made.axis[0] * forward[1] < 0 ? (made.axis.map((x) => -x) as Vec3) : made.axis;
+    const [ax, ay, az] = axis;
+    const n = made.centers.length;
+    const each = l.inertial ? (0.5 * l.inertial.mass * 1000) / n : 1;
+    if (l.inertial) l.inertial = { mass: l.inertial.mass / 2, origin: l.inertial.origin, inertia: l.inertial.inertia.map((x) => x / 2) as Tensor };
+    const [along, across] = [toSI(0.5 * each * made.radius ** 2), toSI((each * (3 * made.radius ** 2 + made.length ** 2)) / 12)];
+    const d = along - across;
+    // A cylinder stands along Z until it is turned: Z onto the axle.
+    const seed: Vec3 = Math.abs(az) < 0.9 ? [0, 0, 1] : [1, 0, 0];
+    const side: Vec3 = [seed[1] * az - seed[2] * ay, seed[2] * ax - seed[0] * az, seed[0] * ay - seed[1] * ax];
+    const sn = Math.hypot(...side) || 1;
+    const x = side.map((v) => v / sn) as Vec3;
+    const y: Vec3 = [ay * x[2] - az * x[1], az * x[0] - ax * x[2], ax * x[1] - ay * x[0]];
+    const rpy = eulerOf([...x, ...y, ...axis, 0, 0, 0]).map((deg) => deg * RAD) as Vec3;
+    const joints: string[] = [];
+    made.centers.forEach((c, i) => {
+      const wname = names.take(`${l.name}_wheel_${i + 1}`, naming.link);
+      const joint = names.take(`${wname}_joint`, naming.joint);
+      joints.push(joint);
+      rollers.push({
+        name: wname,
+        joint,
+        wheel: l.name,
+        at: c.map((v, k) => (v - l.frame[k]) * M) as Vec3,
+        axis,
+        inertial: { mass: each / 1000, origin: [0, 0, 0], inertia: [across + d * ax * ax, across + d * ay * ay, across + d * az * az, d * ax * ay, d * ax * az, d * ay * az] },
+        balls: [],
+        friction: l.friction ?? 1,
+        ...(collides ? { cylinder: { radius: made.radius * M, length: made.length * M, rpy } } : {}),
+        ...(motor ? { driven: { effort: motor.effort / n, velocity: motor.velocity * RAD, damping: motor.damping / n, friction: motor.friction / n, armature: motorOf(motor.motor)?.armature } } : {}),
+      });
+    });
+    if (motor) trackMotors.set(motor.id, { joints, radius: made.radius, middle: made.middle });
+  }
+
   // The pose a simulation begins in, where a joint has a start: every joint's value in it, and how far the
   // robot's lowest point moves, which the base is raised or lowered by so that it stands on the floor as designed.
   const begun = startPose(robot, doc.scene);
@@ -314,6 +376,10 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
     const parentFrame = frames.get(j.parent)!;
     const placed = placedJoints.get(j.id)!;
     const scale = j.type === 'prismatic' ? M : RAD;
+    // The joint that is a track's motor holds the track still: the wheels it turns are the export's own.
+    if (trackMotors.has(j.id)) {
+      return { name: jointNames.get(j)!, type: 'fixed', parent: linkNames.get(j.parent)!, child: linkNames.get(j.child)!, origin: placed.origin.map((x, i) => (x - parentFrame[i]) * M) as Vec3, axis: placed.axis, preserve: true };
+    }
     const axis = forwardAxis(j, placed.axis);
     // Measured about the axis as it is written: the other way round for a wheel whose axis was turned.
     const start = j.type === 'fixed' ? 0 : (begun?.values.get(j.id) ?? 0) * scale * (axis === placed.axis ? 1 : -1);
@@ -376,12 +442,15 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
     const complete =
       def.id === 'differential' ? has('left') && has('right') : def.id === 'ackermann' ? has('left') && has('right') && has('steer-left', 1) && has('steer-right', 1) : (['front-left', 'front-right', 'rear-left', 'rear-right'] as const).every((r) => has(r, 1));
     if (complete) {
-      const at = (j: RobotJoint): Vec3 => placedJoints.get(j.id)!.origin;
+      // A track is where the middle of its row of wheels is, and as large as one of them.
+      const at = (j: RobotJoint): Vec3 => trackMotors.get(j.id)?.middle ?? placedJoints.get(j.id)!.origin;
       const mean = (js: RobotJoint[]): Vec3 => js.reduce((acc, j) => acc.map((v, i) => v + at(j)[i] / js.length) as Vec3, [0, 0, 0] as Vec3);
       const apart = (a: Vec3, b: Vec3) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) * M;
       const wheelJoints = def.roles.filter((r) => !r.id.startsWith('steer')).flatMap((r) => parts[r.id]);
       const steerJoints = def.roles.filter((r) => r.id.startsWith('steer')).flatMap((r) => parts[r.id]);
       const radii = wheelJoints.map((j) => {
+        const track = trackMotors.get(j.id);
+        if (track) return track.radius;
         const geo = geometry.get(j.child);
         const axis = placedJoints.get(j.id)!.axis;
         if (!geo) return 0;
@@ -389,7 +458,7 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
         const axle = axis.map(Math.abs).indexOf(Math.max(...axis.map(Math.abs)));
         return Math.max(...size.filter((_, i) => i !== axle)) / 2;
       });
-      const names = (js: RobotJoint[]) => js.map((j) => jointNames.get(j)!);
+      const names = (js: RobotJoint[]) => js.flatMap((j) => trackMotors.get(j.id)?.joints ?? [jointNames.get(j)!]);
       const base = { kind: def.id, forward, roles: Object.fromEntries(def.roles.map((r) => [r.id, names(parts[r.id])])), wheels: names(wheelJoints), steer: names(steerJoints), wheelRadius: (radii.reduce((a, b) => a + b, 0) / radii.length) * M };
       if (def.id === 'mecanum') {
         const [fl, fr, rl, rr] = [parts['front-left'][0], parts['front-right'][0], parts['rear-left'][0], parts['rear-right'][0]];
@@ -565,7 +634,9 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
   // A mecanum wheel's rollers are Gazebo's alone: SDF links and joints beside the plugins, which RViz, the robot's
   // state publisher and a real robot never see. The joint states are then those of the robot's own joints.
   const own = p.rollers.length ? joints.filter((j) => j.type !== 'fixed').map((j) => j.name) : undefined;
-  const plugins = [jointStateXml('joint_states', own), ...p.rollers.map(rollerXml), ...welds, ...(p.drive ? [driveXml(gazeboDrive(p.drive, footprint?.name ?? base))] : [])];
+  // A robot whose every moving joint is the export's own (a rover on two tracks) has no joint states to tell: the publisher,
+  // which tells of every joint when it is named none, is left out.
+  const plugins = [...(own?.length === 0 ? [] : [jointStateXml('joint_states', own)]), ...p.rollers.map(rollerXml), ...welds, ...(p.drive ? [driveXml(gazeboDrive(p.drive, footprint?.name ?? base))] : [])];
   // A start is a place the joint is put in as Gazebo loads the robot, before the weld that closes a loop is made:
   // the weld would hold the loop as it then stood, pulled out of shape. So the joints on a loop begin as designed,
   // and the launch sends the controller to every start once it runs, no faster than the slowest of them can go.
@@ -637,7 +708,7 @@ export function buildSdfModel(doc: Doc, geometry: Map<string, LinkGeometry>, rob
   const base = p.linkNames.get(robot.root!)!;
   const footprint = footprintOf(p, robot);
   const own = p.rollers.length ? joints.filter((j) => j.type !== 'fixed').map((j) => j.name) : undefined;
-  const plugins = [...p.rollers.map(rollerXml), jointStateXml('joint_states', own), ...welds, ...(p.drive ? [driveXml(gazeboDrive(p.drive, footprint?.name ?? base))] : []), ...held.map((j) => positionXml(j.name, j.limit?.velocity ?? 1, j.start ?? 0))];
+  const plugins = [...p.rollers.map(rollerXml), ...(own?.length === 0 ? [] : [jointStateXml('joint_states', own)]), ...welds, ...(p.drive ? [driveXml(gazeboDrive(p.drive, footprint?.name ?? base))] : []), ...held.map((j) => positionXml(j.name, j.limit?.velocity ?? 1, j.start ?? 0))];
   files.unshift(
     { name: 'model.config', bytes: encodeText(modelConfig(pkg, `${doc.name}, made with PlastikCAD`)) },
     { name: 'model.sdf', bytes: encodeText(writeSdf(p.robotName, links, joints, plugins, robot.base === 'fixed' ? p.linkNames.get(robot.root!) : undefined, footprint)) },
@@ -770,15 +841,18 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
     const designed = wheel.frame.map((x, i) => x + r.at[i] / M) as Vec3;
     const at = (to ? apply(to, designed) : designed).map((x) => x * M) as Vec3;
     const turn = to ? quatOfMatrix(to) : undefined;
-    links.push({ name: r.name, pos: [at[0], at[1], at[2] + p.lift], ...(turn && Math.abs(turn[0]) < 1 - 1e-9 ? { rot: turn } : {}), inertial: r.inertial, visual: [], collision: r.balls.map((b) => ({ sphere: { radius: b.radius }, origin: b.at, rpy: [0, 0, 0] as Vec3 })), friction: r.friction });
-    rollerJoints.push({ name: r.joint, type: 'continuous', parent: r.wheel, child: r.name, origin: r.at, axis: r.axis, dynamics: { damping: ROLLER_DAMPING, friction: 0 }, loop: false, outside: true, drive: null });
+    const collision: UsdCollision[] = r.cylinder ? [{ cylinder: { radius: r.cylinder.radius, length: r.cylinder.length }, origin: [0, 0, 0], rpy: r.cylinder.rpy }] : r.balls.map((b) => ({ sphere: { radius: b.radius }, origin: b.at, rpy: [0, 0, 0] as Vec3 }));
+    links.push({ name: r.name, pos: [at[0], at[1], at[2] + p.lift], ...(turn && Math.abs(turn[0]) < 1 - 1e-9 ? { rot: turn } : {}), inertial: r.inertial, visual: [], collision, friction: r.friction });
+    // A wheel the drive turns is a joint of the articulation, which is what the drive's controller commands; one that turns free is kept out of it.
+    if (r.driven) rollerJoints.push({ name: r.joint, type: 'continuous', parent: r.wheel, child: r.name, origin: r.at, axis: r.axis, limit: { lower: 0, upper: 0, effort: r.driven.effort, velocity: r.driven.velocity }, dynamics: { damping: r.driven.damping, friction: r.driven.friction }, armature: r.driven.armature, loop: false, drive: 'velocity' });
+    else rollerJoints.push({ name: r.joint, type: 'continuous', parent: r.wheel, child: r.name, origin: r.at, axis: r.axis, dynamics: { damping: ROLLER_DAMPING, friction: 0 }, loop: false, outside: true, drive: null });
   }
   let drive: UsdModel['drive'] = null;
   if (p.drive) {
     const r = p.drive.roles;
     const left = r.left ?? [...(r['front-left'] ?? []), ...(r['rear-left'] ?? [])];
     const right = r.right ?? [...(r['front-right'] ?? []), ...(r['rear-right'] ?? [])];
-    const speeds = p.treeJoints.filter((j) => p.drive!.wheels.includes(j.name) && j.limit?.velocity).map((j) => j.limit!.velocity);
+    const speeds = [...p.treeJoints.filter((j) => p.drive!.wheels.includes(j.name) && j.limit?.velocity).map((j) => j.limit!.velocity), ...p.rollers.filter((r) => r.driven && r.driven.velocity > 0 && p.drive!.wheels.includes(r.joint)).map((r) => r.driven!.velocity)];
     const steer = p.drive.kind === 'ackermann' ? [r['steer-left']?.[0], r['steer-right']?.[0]].filter((n): n is string => Boolean(n)) : p.drive.steer;
     // A mecanum drive's wheels by corner: front left, front right, rear left, rear right.
     const corners = p.drive.kind === 'mecanum' ? [r['front-left']![0], r['front-right']![0], r['rear-left']![0], r['rear-right']![0]] : undefined;
@@ -858,7 +932,7 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
   const { pkg, files, warnings } = p;
   const byName = new Map(p.links.map((l) => [l.name, l]));
   // A joint with no effort or speed gets no actuator, and the drive does not name one for it.
-  const actuated = new Set(p.treeJoints.filter(drivable).map((j) => j.name));
+  const actuated = new Set([...p.treeJoints.filter(drivable).map((j) => j.name), ...p.rollers.filter((r) => r.driven && r.driven.effort > 0 && r.driven.velocity > 0).map((r) => r.joint)]);
   const childrenOf = new Map<string, UrdfJoint[]>();
   for (const j of p.treeJoints) childrenOf.set(j.parent, [...(childrenOf.get(j.parent) ?? []), j]);
   const sensorsOf = (link: string) => p.sensors.filter((s) => s.link === link);
@@ -870,9 +944,12 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
     pos: r.at,
     inertial: r.inertial,
     visual: [],
-    collision: r.balls.map((b) => ({ geometry: { sphere: { radius: b.radius } }, origin: b.at })),
+    collision: r.cylinder ? [{ geometry: { cylinder: { radius: r.cylinder.radius, length: r.cylinder.length } }, rpy: r.cylinder.rpy }] : r.balls.map((b) => ({ geometry: { sphere: { radius: b.radius } }, origin: b.at })),
     friction: r.friction,
-    joint: { name: r.joint, type: 'continuous', axis: r.axis, dynamics: { damping: ROLLER_DAMPING, friction: 0 }, internal: true },
+    // A wheel that stands in for a track's belt is turned by the track's motor; a roller, and a wheel of a track nothing drives, turns free.
+    joint: r.driven
+      ? { name: r.joint, type: 'continuous', axis: r.axis, limit: { lower: 0, upper: 0, effort: r.driven.effort, velocity: r.driven.velocity }, dynamics: { damping: r.driven.damping, friction: r.driven.friction }, armature: r.driven.armature, internal: true }
+      : { name: r.joint, type: 'continuous', axis: r.axis, dynamics: { damping: ROLLER_DAMPING, friction: 0 }, internal: true },
     children: [],
   });
   const body = (name: string, joint: UrdfJoint | undefined): MjcfBody => {

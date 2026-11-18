@@ -38,6 +38,10 @@ failures = []
 # A mecanum drive told to slide goes at least this share of what it went when told forward, and strays no more than
 # this share of it along its own forward.
 MECANUM_LEAST, MECANUM_STRAY = 0.8, 0.1
+# A rover on tracks (a differential drive with a row of wheels each side) told to turn on the spot at this rate
+# (rad/s) for this long turns between these shares of it, the time taken from its run forward: a long contact
+# skids (Gazebo gave 75 % in the trial, plain Coulomb friction gives 70 to 80 %). It moves no farther than this (m).
+TRACK_TURN, TRACK_SECONDS, TRACK_SHARE, TRACK_DRIFT = 1.0, 3.0, (0.5, 1.05), 0.05
 
 
 def fail(pkg, what):
@@ -313,6 +317,28 @@ def check_mecanum(name, model, world, twist, forward, after, before):
         ok(f'cmd_vel z turned the robot {math.degrees(turned):.0f}° to the left on the spot ({drift:.3f} m of drift)')
 
 
+def on_tracks(text):
+    """Whether a robot file's differential drive turns a row of wheels each side: a rover on tracks."""
+    return 'DiffDrive' in text and min(text.count('<left_joint>'), text.count('<right_joint>')) >= 3
+
+
+def check_tracks(name, model, world, twist, forward, after):
+    """A rover on tracks, after its run forward (`forward` m on 0.2 m/s for 3 s): told to turn on the spot it
+    turns most of what it was told, where it stands. Measured against the run forward, which the same clock
+    timed, not against the clock."""
+    twist(0.0, 0.0, TRACK_TURN, TRACK_SECONDS)
+    spun = gz_pose(model, world)
+    if not spun:
+        return fail(name, 'could not read the pose after the turn')
+    turned = (spun[5] - after[5] + math.pi) % (2 * math.pi) - math.pi
+    drift = math.hypot(spun[0] - after[0], spun[1] - after[1])
+    share = turned / (TRACK_TURN * TRACK_SECONDS * forward / 0.6)
+    if not TRACK_SHARE[0] <= share <= TRACK_SHARE[1] or drift > TRACK_DRIFT:
+        fail(name, f'told to turn left on the spot, the robot on tracks turned {math.degrees(turned):.0f}° ({100 * share:.0f} % of what it was told) and moved {drift:.3f} m')
+    else:
+        ok(f'cmd_vel z turned the robot on its tracks {math.degrees(turned):.0f}° to the left on the spot ({100 * share:.0f} % of what it was told, {drift:.3f} m of drift)')
+
+
 def check_rviz(name, urdf, env):
     """display.launch.py on a virtual display: every link gets a frame, RViz stays up with no error, and a screenshot shows the robot in color."""
     links = [l.get('name') for l in ET.parse(urdf).getroot().findall('link')]
@@ -323,7 +349,8 @@ def check_rviz(name, urdf, env):
     time.sleep(1)
     launched = Launched(['ros2', 'launch', name, 'display.launch.py'], f'/tmp/{name}.display.log', env=denv)
     try:
-        if not wait_for(lambda: topic_once('/joint_states', 5), 40):
+        # A robot with no moving joint of its own (a rover on two tracks) has no joint states to publish: its frames are all fixed.
+        if moving_joints(urdf) and not wait_for(lambda: topic_once('/joint_states', 5), 40):
             fail(name, 'display.launch.py published no /joint_states within 40 s (joint_state_publisher_gui)')
             return
         # Frames: fixed joints go out once on /tf_static, moving ones with every joint state.
@@ -434,8 +461,10 @@ def check_ros_package(pkg_dir, env):
     try:
         world_name = ET.parse(world).getroot().find('world').get('name')
         # The robot is in when its joints are published.
-        js = wait_for(lambda: topic_once('/joint_states', 5), 60)
-        if not js:
+        js = wait_for(lambda: topic_once('/joint_states', 5), 60) if joints else None
+        if not joints:
+            ok("no moving joint of the robot's own, so no /joint_states")
+        elif not js:
             fail(name, 'no /joint_states within 60 s of launch')
         else:
             missing = sorted(set(joints) - set(js.get('name', [])))
@@ -572,15 +601,20 @@ def check_ros_package(pkg_dir, env):
                 if tipped:
                     fail(name, f'robot tipped: roll {math.degrees(after[3]):.0f}°, pitch {math.degrees(after[4]):.0f}°')
                 with open(urdf) as f:
-                    mecanum = 'MecanumDrive' in f.read()
-                if mecanum and not tipped:
-                    def twist(x, y, z, seconds):
-                        run(['ros2', 'topic', 'pub', '-r', '20', '-t', str(int(seconds * 20)), '/cmd_vel', 'geometry_msgs/msg/Twist', f'{{linear: {{x: {x}, y: {y}}}, angular: {{z: {z}}}}}'], timeout=seconds + 20, env=env)
-                        run(['ros2', 'topic', 'pub', '-1', '-w', '1', '/cmd_vel', 'geometry_msgs/msg/Twist', '{}'], timeout=20, env=env)
-                        time.sleep(0.5)
+                    text = f.read()
+                mecanum, tracks = 'MecanumDrive' in text, on_tracks(text)
 
+                def twist(x, y, z, seconds):
+                    run(['ros2', 'topic', 'pub', '-r', '20', '-t', str(int(seconds * 20)), '/cmd_vel', 'geometry_msgs/msg/Twist', f'{{linear: {{x: {x}, y: {y}}}, angular: {{z: {z}}}}}'], timeout=seconds + 20, env=env)
+                    run(['ros2', 'topic', 'pub', '-1', '-w', '1', '/cmd_vel', 'geometry_msgs/msg/Twist', '{}'], timeout=20, env=env)
+                    time.sleep(0.5)
+
+                if mecanum and not tipped:
                     time.sleep(0.5)
                     check_mecanum(name, name, world_name, twist, dist, gz_pose(name, world_name) or after, before)
+                if tracks and not tipped:
+                    time.sleep(0.5)
+                    check_tracks(name, name, world_name, twist, dist, gz_pose(name, world_name) or after)
             if odom0 and odom1 and not isinstance(odom0.get('pose'), type(None)):
                 p0, p1 = odom0['pose']['pose']['position'], odom1['pose']['pose']['position']
                 od = math.hypot(p1['x'] - p0['x'], p1['y'] - p0['y'])
@@ -751,18 +785,23 @@ def check_sdf_package(pkg_dir, env):
                         heading = math.degrees(math.atan2(after[1] - before[1], after[0] - before[0]))
                         ok(f'cmd_vel drove the model {dist:.3f} m, heading {heading:.0f}°')
                         with open(model) as f:
-                            mecanum = 'MecanumDrive' in f.read()
-                        if mecanum:
-                            def twist(x, y, z, seconds):
-                                end = time.time() + seconds
-                                while time.time() < end:
-                                    run(['gz', 'topic', '-t', '/cmd_vel', '-m', 'gz.msgs.Twist', '-p', f'linear: {{x: {x}, y: {y}}}, angular: {{z: {z}}}'], timeout=10, env=env)
-                                    time.sleep(0.1)
-                                run(['gz', 'topic', '-t', '/cmd_vel', '-m', 'gz.msgs.Twist', '-p', 'linear: {x: 0}'], timeout=10, env=env)
-                                time.sleep(0.5)
+                            text = f.read()
+                        mecanum, tracks = 'MecanumDrive' in text, on_tracks(text)
 
+                        def twist(x, y, z, seconds):
+                            end = time.time() + seconds
+                            while time.time() < end:
+                                run(['gz', 'topic', '-t', '/cmd_vel', '-m', 'gz.msgs.Twist', '-p', f'linear: {{x: {x}, y: {y}}}, angular: {{z: {z}}}'], timeout=10, env=env)
+                                time.sleep(0.1)
+                            run(['gz', 'topic', '-t', '/cmd_vel', '-m', 'gz.msgs.Twist', '-p', 'linear: {x: 0}'], timeout=10, env=env)
+                            time.sleep(0.5)
+
+                        if mecanum:
                             time.sleep(0.5)
                             check_mecanum(name, model_name, world_name, twist, dist, gz_pose(model_name, world_name) or after, before)
+                        if tracks:
+                            time.sleep(0.5)
+                            check_tracks(name, model_name, world_name, twist, dist, gz_pose(model_name, world_name) or after)
     finally:
         errs = launched.errors()
         launched.stop()

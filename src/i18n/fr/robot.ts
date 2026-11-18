@@ -325,6 +325,8 @@ export const robot: Catalog = {
   'The visual shape itself: slow, and most simulators approximate it anyway.': 'La forme visuelle elle-même\u00a0: lent, et la plupart des simulateurs l’approximent de toute façon.',
   'None [[collision]]': 'Aucune',
   'Rollers [[collision]]': 'Rouleaux',
+  'Track [[collision]]': 'Chenille',
+  'A row of wheels along its belt, turning together: what a simulator drives a track on.': 'Une rangée de roues le long de sa bande, qui tournent ensemble\u00a0: ce sur quoi un simulateur fait rouler une chenille.',
   'Its rollers, each turning freely: what a mecanum wheel slides on.': 'Ses rouleaux, chacun libre de tourner\u00a0: ce sur quoi une roue mecanum glisse.',
   'Replaces the object with a Mecanum wheel part of its size': 'Remplace l’objet par une pièce Roue mecanum de sa taille',
   '{name} is {now} wide, up from {was}: its rollers need the room.': '{name} fait {now} de large au lieu de {was}\u00a0: ses rouleaux ont besoin de cette place.',
@@ -348,8 +350,8 @@ export const robot: Catalog = {
 
   // Drives and the parts wheels play in them (robot/types.ts)
   Differential: 'Différentiel',
-  'Turns the left and right wheels together from velocity commands (cmd_vel) and reports odometry. A track is all of its wheels on one side.':
-    'Fait tourner ensemble les roues gauches et droites d’après des commandes de vitesse (cmd_vel) et publie l’odométrie. Une chenille, c’est l’ensemble de ses roues d’un même côté.',
+  'Turns the left and right wheels together from velocity commands (cmd_vel) and reports odometry. The joint of a Track part drives its whole belt.':
+    'Fait tourner ensemble les roues gauches et droites d’après des commandes de vitesse (cmd_vel) et publie l’odométrie. L’articulation d’une pièce Chenille entraîne toute sa bande.',
   Left: 'Gauche',
   Right: 'Droite',
   'Drives the wheels on each side and steers like a car: one steering joint each side turns a front wheel mount.':
@@ -404,6 +406,8 @@ export const robot: Catalog = {
   'The drive needs at least one wheel joint on each side.': 'L’entraînement a besoin d’au moins une articulation de roue de chaque côté.',
   'An Ackermann drive needs a driven wheel on each side and one steering joint on each side.': 'Un entraînement Ackermann a besoin d’une roue motrice et d’une articulation de direction de chaque côté.',
   'A mecanum drive needs one wheel at each corner.': 'Un entraînement mecanum a besoin d’une roue à chaque coin.',
+  '{name}: stretched unevenly, so it cannot drive as a track. Scale it the same on every side.': '{name}\u00a0: étiré de façon inégale, donc incapable de rouler comme une chenille. Mettez-le à la même échelle sur tous les côtés.',
+  '{name}: holds several Track parts, so it cannot drive as a track. Keep one Track in each object.': '{name}\u00a0: contient plusieurs pièces Chenille, donc incapable de rouler comme une chenille. Gardez une seule Chenille par objet.',
   '{name}: stretched unevenly, so it cannot slide sideways. Scale it the same on every side.': '{name}\u00a0: étiré de façon inégale, donc incapable de glisser latéralement. Mettez-le à la même échelle sur tous les côtés.',
   '{name}: its rollers leave gaps, so it cannot slide sideways. Add rollers or make the wheel wider.': '{name}\u00a0: ses rouleaux laissent des vides, donc incapable de glisser latéralement. Ajoutez des rouleaux ou élargissez la roue.',
   '{name}: not a Mecanum wheel part, so it cannot slide sideways. Use a Mecanum wheel from the parts.': '{name}\u00a0: n’est pas une pièce Roue mecanum, donc incapable de glisser latéralement. Utilisez une Roue mecanum des pièces.',

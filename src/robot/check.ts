@@ -12,6 +12,7 @@ import { followFault, isHinge, jointInDesign, linkNodes, linkOf, robotForward, r
 import type { FollowFault } from './model';
 import { DRIVE_KINDS, JOINT_TYPES, withRole } from './types';
 import { leansRight, mecanumOf } from './wheels';
+import { trackOf, trackWheels } from './tracks';
 import type { Robot, RobotJoint } from './types';
 import { lengthText, said } from '../units';
 
@@ -153,12 +154,24 @@ export function checkRobot(doc: Doc, props: Map<string, LinkProperties>, robot: 
         }
       }
     }
+    // A track is driven by the wheels the exports make from the Track part's settings: one that is no longer the
+    // part its settings describe would be turned about its joint like a wheel, belt and all.
+    for (const [id, role] of Object.entries(drive.roles)) {
+      const child = nodes.find((n) => n.id === joint(id)?.child);
+      if (!child || role.startsWith('steer') || drive.kind === 'mecanum') continue;
+      const found = trackOf(child);
+      if (found === 'stretched') error(tr('{name}: stretched unevenly, so it cannot drive as a track. Scale it the same on every side.', { name: child.name }), { link: child.id });
+      else if (found === 'several') error(tr('{name}: holds several Track parts, so it cannot drive as a track. Keep one Track in each object.', { name: child.name }), { link: child.id });
+    }
     // The drive controller turns every wheel about one axle direction; a wheel turned another way drags.
     // A wheel whose object is hidden, a hole or gone has no axle to compare; its joint is faulted above.
     const wheels = Object.entries(drive.roles).filter(([, role]) => !role.startsWith('steer')).map(([id]) => joint(id)).filter((j): j is RobotJoint => Boolean(j));
     const axles = wheels.flatMap((j) => {
       const child = nodes.find((n) => n.id === j.child);
-      return child ? [jointInDesign(j, child).axis] : [];
+      if (!child) return [];
+      // A track turns about its own axles, wherever its joint points.
+      const track = trackOf(child);
+      return [typeof track === 'string' ? jointInDesign(j, child).axis : trackWheels(track).axis];
     });
     if (axles.some((a) => Math.abs(a[0] * axles[0][0] + a[1] * axles[0][1] + a[2] * axles[0][2]) < Math.cos((5 * Math.PI) / 180))) warn(tr('Drive: the wheel axles do not all run the same way, so a wheel will drag.'));
   }

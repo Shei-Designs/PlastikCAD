@@ -8,6 +8,7 @@ import { collisionPrimitive, primitiveMesh } from '../robot/collision';
 import type { Collides } from '../robot/collision';
 import type { CollisionKind } from '../robot/types';
 import { mecanumOf, rollersMesh } from '../robot/wheels';
+import { trackMesh, trackOf } from '../robot/tracks';
 import { Cancelled } from '../worker/client';
 import { geometry } from './geometry';
 import { propsKey } from './massProps';
@@ -20,11 +21,16 @@ const SETTLE_MS = 150;
 type Links = Record<string, Collides>;
 
 const linkOf = (node: SceneNode, links: Links): Collides => links[node.id] ?? { collision: 'hull' };
-/** A mecanum wheel that collides at all collides as its rollers, whatever kind its link is set to: the exports give it nothing else. */
-const rolls = (node: SceneNode, link: Collides) => {
+/**
+ * A mecanum wheel that collides at all collides as its rollers, and a track as the wheels that stand in for its
+ * belt, whatever kind its link is set to: the exports give it nothing else. The shape it collides as, made here.
+ */
+const rolls = (node: SceneNode, link: Collides): (() => MeshData) | null => {
   if (link.collision === 'none') return null;
-  const found = mecanumOf(node);
-  return typeof found === 'string' ? null : found;
+  const wheel = mecanumOf(node);
+  if (typeof wheel !== 'string') return () => rollersMesh(wheel);
+  const track = trackOf(node);
+  return typeof track === 'string' ? null : () => trackMesh(track);
 };
 const keyOf = (node: SceneNode, link: Collides): string => `${link.collision}|${link.shape ? JSON.stringify(link.shape) : ''}|${link.pieces ?? 1}|${propsKey(node)}`;
 const kindsOf = (links: Links): Record<string, CollisionKind> => Object.fromEntries(Object.entries(links).map(([id, l]) => [id, l.collision]));
@@ -55,7 +61,7 @@ class CollisionShapesStore {
       const key = wheel ? `rollers|${propsKey(node)}` : keyOf(node, link);
       let mesh = this.entries.get(key);
       if (mesh === undefined && wheel) {
-        mesh = rollersMesh(wheel);
+        mesh = wheel();
         this.keep(key, mesh);
       }
       if (mesh === undefined && (kind === 'box' || kind === 'cylinder' || kind === 'sphere')) {

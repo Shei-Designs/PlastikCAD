@@ -14,21 +14,32 @@ import { mecanumRollers, rollerPlace } from '../parts/generators/wheels';
 import type { MecanumRollers } from '../parts/generators/wheels';
 import type { DriveRole } from './types';
 
-const WHEEL_PARTS = ['wheel', 'mecanum-wheel'];
+const WHEEL_PARTS = ['wheel', 'mecanum-wheel', 'track'];
 const MECANUM = 'mecanum-wheel';
 
-/** Friction of a link that is a wheel from the Wheels parts, until one is typed: rubber on a hard floor. */
+/** Friction of a link that is a wheel or a track from the Wheels parts, until one is typed: rubber on a hard floor. */
 export const WHEEL_FRICTION = 1;
 
+/** How much larger a part stands in the design than it was built, where it is the same on every side and square; null for one stretched unevenly. */
+export function evenScale(to: Mat): number | null {
+  const cols: Vec3[] = [0, 1, 2].map((i) => [to[i * 3], to[i * 3 + 1], to[i * 3 + 2]] as Vec3);
+  const len = cols.map((c) => Math.hypot(...c));
+  const scale = (len[0] + len[1] + len[2]) / 3;
+  const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  if (!(scale > 0) || len.some((l) => Math.abs(l - scale) > 0.005 * scale)) return null;
+  if ([dot(cols[0], cols[1]), dot(cols[0], cols[2]), dot(cols[1], cols[2])].some((d) => Math.abs(d) > 0.005 * scale * scale)) return null;
+  return scale;
+}
+
 /** Every part of the Wheels family in an object, itself or grouped into it (holes aside), with the transform from the part's built shape to the design. */
-function wheelParts(node: SceneNode, to: Mat = nodeMatrix(node)): { part: PartNode; to: Mat }[] {
+export function wheelParts(node: SceneNode, to: Mat = nodeMatrix(node)): { part: PartNode; to: Mat }[] {
   if (node.hole || node.hidden) return [];
   if (node.type === 'part') return WHEEL_PARTS.includes(node.part) ? [{ part: node, to }] : [];
   if (node.type !== 'group') return [];
   return node.children.flatMap((c) => wheelParts(c, multiply(to, nodeMatrix(c))));
 }
 
-/** Whether an object is a wheel from the Wheels parts, or holds one. */
+/** Whether an object is a wheel or a track from the Wheels parts, or holds one. */
 export const isWheel = (node: SceneNode): boolean => wheelParts(node).length > 0;
 
 /** Why an object is not a mecanum wheel a simulator can be given: it is not the part, it holds several, it was stretched unevenly, or its rollers leave gaps. */
@@ -51,12 +62,8 @@ export function mecanumOf(node: SceneNode): MecanumWheel | MecanumFault {
   if (found.length > 1) return 'several';
   const { part, to } = found[0];
   // Evenly scaled: the three axes of the part come out as long as each other, and square to each other.
-  const cols: Vec3[] = [0, 1, 2].map((i) => [to[i * 3], to[i * 3 + 1], to[i * 3 + 2]] as Vec3);
-  const len = cols.map((c) => Math.hypot(...c));
-  const scale = (len[0] + len[1] + len[2]) / 3;
-  const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-  if (!(scale > 0) || len.some((l) => Math.abs(l - scale) > 0.005 * scale)) return 'stretched';
-  if ([dot(cols[0], cols[1]), dot(cols[0], cols[2]), dot(cols[1], cols[2])].some((d) => Math.abs(d) > 0.005 * scale * scale)) return 'stretched';
+  const scale = evenScale(to);
+  if (scale === null) return 'stretched';
   const figures = mecanumRollers(sanitizeParams(getGenerator(MECANUM), part.params));
   if (figures.reach < (2 * Math.PI) / figures.count - 1e-9) return 'gaps';
   // The part is built standing on z = 0 and then centered on its box, which the hub makes taller than the wheel is wide.

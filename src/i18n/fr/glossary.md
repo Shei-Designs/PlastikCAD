@@ -268,6 +268,7 @@ and every catalog entry that uses it together.
 | tread / web / rim (of a wheel) | bande de roulement / voile / jante |
 | track / belt (of a track) / lug | chenille / bande / crampon |
 | sprocket (of a track) / idler / road wheel / rise / rail (of a track) | barbotin / roue tendeuse / galet / relevage / longeron |
+| Track (a collision shape: the wheels that stand in for the belt) | Chenille |
 | base link / parent / child | segment de base / parent / enfant |
 | loop / linkage / follows | boucle / mécanisme / suit |
 | attach / not attached | attacher / non attaché |
