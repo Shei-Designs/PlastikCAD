@@ -246,6 +246,23 @@ describe('what the exports write for a mecanum wheel', () => {
     expect(sdf).toContain('gz::sim::systems::MecanumDrive');
   });
 
+  it("Gazebo: a roller grips along its axle, whichever way the robot faces", () => {
+    // Gazebo's friction is a square it lays along the world's axes unless told a direction: each ball of a roller
+    // tells its roller's axle, in the roller's own frame (which the axle does not turn in), with the grip whole.
+    const doc = mecanumRover();
+    const { geometry } = geometryOf(doc);
+    for (const xml of [text(buildSdfModel(doc, geometry), 'model.sdf'), text(buildRobotPackage(doc, geometry), '.urdf')]) {
+      expect(xml).toContain('xmlns:gz="http://gazebosim.org/schema"');
+      const rollers = [...xml.matchAll(/<link name="(Wheel_\w+_roller_\d+)">([\s\S]*?)<\/link>\s*<joint name="\1_joint" type="revolute">[\s\S]*?<xyz expressed_in="Wheel_\w+">([^<]+)<\/xyz>/g)];
+      expect(rollers.length).toBe(36);
+      for (const [, name, link, axle] of rollers) {
+        const balls = link.match(/<collision /g)!.length;
+        expect(balls).toBeGreaterThan(0);
+        expect(link.split(`<surface><friction><ode><mu>1</mu><mu2>1</mu2><fdir1 gz:expressed_in="${name}">${axle}</fdir1></ode></friction></surface>`).length - 1).toBe(balls);
+      }
+    }
+  });
+
   it('Gazebo: a roller hinge holds still against a bearing drag that follows the load, so a stopped robot does not roll on', () => {
     const drag = (x: string) => [...x.matchAll(/<xyz expressed_in="Wheel_\w+">[^<]+<\/xyz><dynamics><friction>([-0-9.e]+)<\/friction><\/dynamics><\/axis>/g)].map((m) => Number(m[1]));
     const doc = mecanumRover();

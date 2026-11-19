@@ -1403,8 +1403,8 @@ describe('the friction of a wheel that skids', () => {
     for (const [, rotor] of rotors('mecanum').mjcf.filter(([joint]) => joint.startsWith('Wheel_'))) expect(rotor).toBe(0.0005);
   });
 
-  it("leaves a track's wheels, a mecanum wheel's rollers and a car's wheels as they were", () => {
-    for (const name of ['tracked', 'mecanum', 'car']) {
+  it("leaves a track's wheels and a car's wheels as they were", () => {
+    for (const name of ['tracked', 'car']) {
       const { urdf, sdf } = made(name);
       for (const xml of [urdf, sdf]) {
         expect(xml).not.toContain('fdir1');
