@@ -1322,6 +1322,41 @@ describe('the motors of a loop', () => {
   });
 });
 
+describe("a link's friction against the floor", () => {
+  // Each simulator joins two surfaces' figures its own way (MuJoCo the larger, Gazebo the smaller, PhysX their
+  // average): every export is written so that the link's figure is what holds on the floor it comes with.
+  const geo = (d: Doc) => new Map(linkNodes(d.scene).map((n) => [n.id, boxGeometry(n)]));
+
+  it("gives MuJoCo's collision shapes the priority over the floor, for every robot", () => {
+    for (const { make } of ROBOTS) {
+      const d = make();
+      const xml = file(buildMjcfModel(d, geo(d)), /\.xml$/);
+      expect(xml).toContain('<default class="collision"><geom group="3" conaffinity="0" priority="1" ');
+      expect(xml.match(/<geom name="floor"[^>]*>/)![0]).not.toContain('priority');
+    }
+  });
+
+  it("has Isaac Sim multiply two surfaces' figures, the floor's being 1, for every robot", () => {
+    for (const { make } of ROBOTS) {
+      const d = make();
+      const usd = file(buildIsaacStage(d, geo(d)), /\.usda$/);
+      const materials = [...usd.matchAll(/def Material "(friction_[0-9_]+)" \(\s*prepend apiSchemas = \["PhysicsMaterialAPI", "PhysxMaterialAPI"\]\s*\)\s*\{([^}]*)\}/g)];
+      expect(materials.length).toBeGreaterThan(0);
+      expect(materials.length).toBe(usd.match(/def Material "friction_/g)!.length);
+      for (const [, , body] of materials) expect(body).toContain('uniform token physxMaterial:frictionCombineMode = "multiply"');
+      expect(usd).toMatch(/def Material "friction_1" [^}]*float physics:staticFriction = 1\n/);
+      expect(usd).toContain('rel material:binding:physics = </World/PhysicsMaterials/friction_1>');
+    }
+  });
+
+  it("gives Gazebo's floor a friction no link's reaches, in the SDF model's world and the ROS package's", () => {
+    const d = ROBOTS.find((r) => r.file === 'rover')!.make();
+    for (const pkg of [buildSdfModel(d, geo(d)), buildRobotPackage(d, geo(d))]) {
+      expect(file(pkg, /^worlds\/.*\.sdf$/)).toContain('<plane><normal>0 0 1</normal><size>100 100</size></plane></geometry><surface><friction><ode><mu>100</mu><mu2>100</mu2></ode></friction></surface>');
+    }
+  });
+});
+
 describe('the friction of a wheel that skids', () => {
   const geo = (d: Doc) => new Map(linkNodes(d.scene).map((n) => [n.id, boxGeometry(n)]));
   const made = (which: string) => {

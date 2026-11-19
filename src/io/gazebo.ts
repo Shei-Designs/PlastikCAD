@@ -243,6 +243,13 @@ export function surfaceXml(friction: number, skid?: Skid): string {
 }
 
 /**
+ * The floor's own friction in the world a robot is exported with. Where two surfaces meet Gazebo takes the smaller
+ * of their figures: with a floor this high a link's figure is what holds on it, whatever was typed (a floor of 1
+ * cut every figure above 1 down to 1).
+ */
+const FLOOR_GRIP = 100;
+
+/**
  * The system plugins an empty world needs for sensors and physics, with the robot's model included when `include` is given.
  * `robot` is the name the robot goes by in the world; the light and the floor keep clear of it. `welded` is for a robot
  * with a loop, which a weld holds shut: the physics' default solver (Dantzig) throws such a robot apart as soon as it
@@ -270,7 +277,7 @@ export function worldXml(name: string, include?: string, robot = name, welded = 
     <model name="${own('ground_plane')}">
       <static>true</static>
       <link name="link">
-        <collision name="collision"><geometry><plane><normal>0 0 1</normal><size>100 100</size></plane></geometry>${surfaceXml(1)}</collision>
+        <collision name="collision"><geometry><plane><normal>0 0 1</normal><size>100 100</size></plane></geometry>${surfaceXml(FLOOR_GRIP)}</collision>
         <visual name="visual"><geometry><plane><normal>0 0 1</normal><size>100 100</size></plane></geometry><material><ambient>0.8 0.8 0.8 1</ambient><diffuse>0.8 0.8 0.8 1</diffuse></material></visual>
       </link>
     </model>${include ? `\n    <include>\n      <uri>model://${escapeXml(include)}</uri>\n      <pose>0 0 0.05 0 0 0</pose>\n    </include>` : ''}

@@ -350,15 +350,21 @@ function materialPrim(name: string, color: [number, number, number]): string[] {
   ];
 }
 
+/**
+ * A surface's friction. Where two surfaces meet PhysX takes the average of their figures unless told otherwise, so a
+ * link's figure was only half heard against the floor's 1 (a caster typed 0.05 dragged at 0.52). Multiplied, the
+ * floor's 1 leaves the link's figure as it was typed.
+ */
 function physicsMaterialPrim(name: string, friction: number): string[] {
   return [
     `def Material "${name}" (`,
-    '    prepend apiSchemas = ["PhysicsMaterialAPI"]',
+    '    prepend apiSchemas = ["PhysicsMaterialAPI", "PhysxMaterialAPI"]',
     ')',
     '{',
     `    float physics:dynamicFriction = ${fmt(friction, 3)}`,
     '    float physics:restitution = 0',
     `    float physics:staticFriction = ${fmt(friction, 3)}`,
+    '    uniform token physxMaterial:frictionCombineMode = "multiply"',
     '}',
   ];
 }

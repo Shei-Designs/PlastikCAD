@@ -359,7 +359,10 @@ in the design file and synced with it.
   *From the shape* gives them back to the shape.
 - **Collision.** A convex hull by default, or the object's box, a cylinder
   or a sphere filling it (turned as the object is), the exact mesh, or none;
-  and the surface's coefficient of friction for Gazebo. A group collides as
+  and the surface's coefficient of friction: what holds it on the floor of
+  every export and of the test drive, whose own friction does not enter
+  (a world of your own joins the two as its simulator does: Gazebo takes
+  the smaller, MuJoCo the larger, Isaac Sim their product). A group collides as
   a hull for each of its parts (down through the groups in it, a part its
   holes cut in two as each half, a part inside another left out), so the
   space between them stays open; above 64 pieces it is one hull round all.
