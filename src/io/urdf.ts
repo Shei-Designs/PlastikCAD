@@ -6,7 +6,7 @@ import type { Vec3 } from '../model/types';
 import type { Tensor } from '../robot/inertia';
 import type { JointType, SensorKind } from '../robot/types';
 import { escapeXml, fmt } from './format';
-import { GZ_NAMESPACE, surfaceXml } from './gazebo';
+import { GZ_NAMESPACE, namesGz, surfaceXml } from './gazebo';
 import type { Skid } from './gazebo';
 
 export interface UrdfInertial {
@@ -196,7 +196,7 @@ export function writeUrdf(name: string, links: UrdfLink[], joints: UrdfJoint[], 
       '  </gazebo>',
     );
   }
-  const gz = links.some((l) => l.skid && l.collision.length > 0) ? ` ${GZ_NAMESPACE}` : '';
+  const gz = links.some((l) => l.skid && l.collision.length > 0) || namesGz(extras.plugins ?? []) ? ` ${GZ_NAMESPACE}` : '';
   if (!xacro) return [`<?xml version="1.0"?>`, `<!-- Made with ${APP_NAME}. Units: meters, kilograms, radians. -->`, `<robot name="${escapeXml(name)}"${gz}>`, ...head, ...body, ...jointLines, ...gazebo, ...control, '</robot>', ''].join('\n');
   const guarded = (arg: string, lines: string[]): string[] => (lines.length ? [`  <xacro:if value="$(arg ${arg})">`, ...lines.map((l) => (l ? `  ${l}` : l)), '  </xacro:if>'] : []);
   return [

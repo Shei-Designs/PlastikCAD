@@ -60,6 +60,11 @@ ROS = None  # this script's own ROS node, made in main()
 # A mecanum drive told to slide goes at least this share of what it went when told forward, and strays no more than
 # this share of it along its own forward.
 MECANUM_LEAST, MECANUM_STRAY = 0.8, 0.1
+# A mecanum rover standing on a slope across its wheels holds on this one (degrees) and slides on that one: its
+# rollers grip along their axles alone, 45° off, so it holds a pull of 1/√2 of its weight at a grip of 1, a slope of
+# 35.3°. Gazebo gives that whichever way the rover faces once each roller's friction is laid along its axle: it held
+# at 34° and slid at 36.5° at six headings. Laid along the world's axes it held 41° facing along one of them.
+ROLLER_HOLDS, ROLLER_SLIDES = 32.0, 38.5
 # A rover on tracks (a differential drive with a row of wheels each side) told to turn on the spot at this rate
 # (rad/s) for this long turns at between these shares of it, by the simulation's own time: a long contact
 # skids (Gazebo gave 75 % in the trial, plain Coulomb friction gives 70 to 80 %). It moves no farther than this (m).
@@ -488,7 +493,8 @@ def check_friction_frames(name, sdf):
     if lost:
         fail(name, f'a friction direction is told in {lost}, no link of the model as Gazebo has it')
     elif frames:
-        ok(f'friction directions are told in the frame of {sorted(frames)}, a link Gazebo keeps')
+        told = sorted(frames)
+        ok(f'friction directions are told in the frame of {told if len(told) <= 4 else f"{len(told)} links ({told[0]}, ...)"}, each a link Gazebo keeps')
 
 
 def moving_joints(urdf_path):
@@ -697,6 +703,38 @@ def check_mecanum(name, sim, send, forward, after, before):
         fail(name, f'told to turn left on the spot, the robot turned {math.degrees(turned):.0f}° and moved {drift:.3f} m')
     else:
         ok(f'cmd_vel z turned the robot {math.degrees(turned):.0f}° to the left on the spot ({drift:.3f} m of drift)')
+
+
+def check_roller_grip(name, world, world_name, model_name, env):
+    """A mecanum rover's SDF model on a slope across its wheels (the world's gravity leaned toward the model's X,
+    as it stands in its world): it holds on the gentler one and slides on the steeper, see ROLLER_HOLDS."""
+    with open(world) as f:
+        text = f.read()
+    for slope, holds in ((ROLLER_HOLDS, True), (ROLLER_SLIDES, False)):
+        lean = math.radians(slope)
+        leaned = f'/tmp/{name}.slope{slope:g}.sdf'
+        with open(leaned, 'w') as f:
+            f.write(text.replace('<physics ', f'<gravity>{9.81 * math.sin(lean):.6f} 0 {-9.81 * math.cos(lean):.6f}</gravity>\n    <physics ', 1))
+        sim = Sim(world_name, model_name)
+        launched = Launched(['gz', 'sim', '-s', '-r', '--headless-rendering', leaned], f'/tmp/{name}.slope{slope:g}.log', env=env)
+        try:
+            # A second to settle, then three: a rover that lets go at 35.3° is 3 m down a slope of 38.5° by then.
+            if not sim.appear(180) or not sim.wait(1.0):
+                fail(name, f'the model did not appear on a slope of {slope:g}°')
+                continue
+            start = sim.pose()
+            if not sim.wait(3.0):
+                fail(name, f'the simulation did not get through three seconds on a slope of {slope:g}°')
+                continue
+            went = sim.pose()[0] - start[0]
+            if holds and abs(went) > 0.005:
+                fail(name, f'on a slope of {slope:g}° across its wheels the rover slid {went:.3f} m in 3 s: its rollers should hold to 35.3°')
+            elif not holds and went < 0.5:
+                fail(name, f'on a slope of {slope:g}° across its wheels the rover went only {went:.3f} m in 3 s: its rollers hold more than their grip (35.3°)')
+            else:
+                ok(f'on a slope of {slope:g}° across its wheels the rover {"holds" if holds else "slides"} ({went:.3f} m in 3 s)')
+        finally:
+            launched.stop()
 
 
 def on_tracks(text):
@@ -1165,6 +1203,9 @@ def check_sdf_package(pkg_dir, env):
             for l in errs[:12]:
                 print('       ' + l.strip()[:220])
             fail(name, f'{len(errs)} error line(s) in the gz log')
+    with open(model) as f:
+        if 'MecanumDrive' in f.read():
+            check_roller_grip(name, world, world_name, model_name, env)
 
 
 def main():

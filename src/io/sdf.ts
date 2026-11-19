@@ -8,7 +8,7 @@ import type { Vec3 } from '../model/types';
 import type { Tensor } from '../robot/inertia';
 import type { JointType } from '../robot/types';
 import { escapeXml, fmt } from './format';
-import { GZ_NAMESPACE, pad, surfaceXml } from './gazebo';
+import { GZ_NAMESPACE, namesGz, pad, surfaceXml } from './gazebo';
 import type { Skid } from './gazebo';
 import type { Naming, UrdfGeometry } from './urdf';
 
@@ -124,7 +124,7 @@ export function writeSdf(name: string, links: SdfLink[], joints: SdfJoint[], plu
   return [
     '<?xml version="1.0"?>',
     `<!-- Made with ${APP_NAME}. Units: meters, kilograms, radians. -->`,
-    links.some((l) => l.skid) ? `<sdf version="1.11" ${GZ_NAMESPACE}>` : '<sdf version="1.11">',
+    links.some((l) => l.skid) || namesGz(plugins) ? `<sdf version="1.11" ${GZ_NAMESPACE}>` : '<sdf version="1.11">',
     `<model name="${escapeXml(name)}">`,
     '  <self_collide>false</self_collide>',
     ...links.map(linkXml),

@@ -191,7 +191,7 @@ export function rollerXml(r: GazeboRoller): string {
     `<link name="${escapeXml(r.name)}">`,
     `  <pose relative_to="${wheel}">${v(r.at)} 0 0 0</pose>`,
     `  <inertial><mass>${n(r.inertial.mass)}</mass><inertia><ixx>${n(xx)}</ixx><ixy>${n(xy)}</ixy><ixz>${n(xz)}</ixz><iyy>${n(yy)}</iyy><iyz>${n(yz)}</iyz><izz>${n(zz)}</izz></inertia></inertial>`,
-    ...r.balls.map((b, i) => `  <collision name="${escapeXml(r.name)}_collision${i ? `_${i}` : ''}"><pose>${v(b.at)} 0 0 0</pose><geometry><sphere><radius>${fmt(b.radius, 6)}</radius></sphere></geometry>${surfaceXml(r.friction)}</collision>`),
+    ...r.balls.map((b, i) => `  <collision name="${escapeXml(r.name)}_collision${i ? `_${i}` : ''}"><pose>${v(b.at)} 0 0 0</pose><geometry><sphere><radius>${fmt(b.radius, 6)}</radius></sphere></geometry>${surfaceXml(r.friction, { frame: r.name, along: r.axis, whole: true })}</collision>`),
     ...(r.cylinder ? [`  <collision name="${escapeXml(r.name)}_collision"><pose>0 0 0 ${v(r.cylinder.rpy)}</pose><geometry><cylinder><radius>${fmt(r.cylinder.radius, 6)}</radius><length>${fmt(r.cylinder.length, 6)}</length></cylinder></geometry>${surfaceXml(r.friction)}</collision>`] : []),
     '</link>',
     `<joint name="${escapeXml(r.joint)}" type="revolute">`,
@@ -224,6 +224,9 @@ export function positionXml(joint: string, velocity: number, start = 0): string 
 /** The namespace of Gazebo's own attributes, declared on the root of a file that carries one (`gz:expressed_in`). */
 export const GZ_NAMESPACE = 'xmlns:gz="http://gazebosim.org/schema"';
 
+/** Whether any of these elements, written by this module, carries one of Gazebo's own attributes. */
+export const namesGz = (xml: string[]): boolean => xml.some((x) => x.includes(' gz:'));
+
 /**
  * A wheel that has to slide to let its robot turn (see `skid` in the export): the link whose frame keeps the
  * wheel's heading without turning with it, and a level direction in that frame halfway between the wheel's axle
@@ -232,6 +235,8 @@ export const GZ_NAMESPACE = 'xmlns:gz="http://gazebosim.org/schema"';
 export interface Skid {
   frame: string;
   along: Vec3;
+  /** The grip is laid along `along` as it is, not cut down to fit the circle: a mecanum wheel's roller, which holds along its axle alone. */
+  whole?: true;
 }
 
 /**
@@ -240,9 +245,11 @@ export interface Skid {
  * world's axes, so a wheel pushed along and across at once holds with up to 1.4 times its grip, and how much
  * depends on which way the robot faces. For a wheel with a `skid` the square is laid on the wheel's diagonals
  * and made to fit inside the circle: the full grip along and across, and what is used one way is not there the other.
+ * A mecanum wheel's roller turns freely one way and so grips along its axle alone: there the square is laid along
+ * the axle, whole, or the wheel would hold with up to 1.4 times its grip when the axle lies between the world's axes.
  */
 export function surfaceXml(friction: number, skid?: Skid): string {
-  const mu = skid ? fmt(friction * Math.SQRT1_2, 6) : fmt(friction, 4);
+  const mu = skid && !skid.whole ? fmt(friction * Math.SQRT1_2, 6) : fmt(friction, 4);
   const fdir = skid ? `<fdir1 gz:expressed_in="${escapeXml(skid.frame)}">${skid.along.map((x) => fmt(x, 6)).join(' ')}</fdir1>` : '';
   return `<surface><friction><ode><mu>${mu}</mu><mu2>${mu}</mu2>${fdir}</ode></friction></surface>`;
 }
