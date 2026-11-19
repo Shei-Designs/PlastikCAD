@@ -61,10 +61,11 @@ export interface MjcfModel {
   servos: string[];
   wheels: string[];
   /**
-   * The robot turns by sliding its wheels sideways (a differential drive with more than one wheel on a side).
-   * MuJoCo's usual friction cone is a pyramid laid along the world's axes, which grips more along some headings
-   * than others: such a rover longer than it is wide slows to a stop as it comes round to 45° (measured: 4 % of
-   * the turn asked, where it began at 46 %). The elliptic cone grips alike all round, and is asked for here.
+   * The robot turns by sliding its wheels sideways (a differential drive with more than one wheel on a side, or
+   * with tracks). MuJoCo's usual friction cone is a pyramid laid along the world's axes, which grips more along
+   * some headings than others: such a rover longer than it is wide slows to a stop as it comes round to 45°
+   * (measured: 4 % of the turn asked, where it began at 46 %; a rover on tracks 240 mm long and 100 mm apart, 2 %
+   * where it began at 23 %). The elliptic cone grips alike all round, and is asked for here.
    */
   skids?: boolean;
   /** Those of the servos' joints that take a torque instead: a plain motor, with no gains of its own. */
