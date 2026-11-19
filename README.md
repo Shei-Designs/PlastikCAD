@@ -423,7 +423,11 @@ in the design file and synced with it.
   from its mesh; the wheel itself then collides as nothing. The rollers are
   the simulator's alone: no link, joint, motor or controller of the robot's.
   In the ROS 2 package they are in Gazebo's blocks of the URDF, so RViz, the
-  transform tree and a real robot do not see them. The wheel must be scaled
+  transform tree and a real robot do not see them; in the Isaac Sim stage
+  they are in the articulation, which holds them on their hinges, and turn
+  as though heavier about their axles than they are (PhysX lets rollers as
+  light as real ones slip), while the joint states and transforms tell of
+  the robot's own joints and links alone. The wheel must be scaled
   the same on every side, and the hand its corner wants: front left and rear
   right take a *Left* wheel, the other two a *Right* one. A link that is a
   wheel part, plain or mecanum, has a friction of 1 until one is typed.

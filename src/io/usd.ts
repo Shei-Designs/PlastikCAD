@@ -57,6 +57,8 @@ export interface UsdJoint {
   loop: boolean;
   /** A joint the articulation leaves out though it closes no loop: its child is a body of its own, which no joint state or transform tells of. */
   outside?: boolean;
+  /** A joint of the articulation that no joint state or transform tells of, nor its child: a mecanum wheel's roller's hinge. */
+  hidden?: boolean;
   /** Where the joint is in its child's frame (m), for a joint that closes a loop: any other is at its child's origin. */
   inChild?: Vec3;
   /** What the joint's drive is told: a speed (a wheel), a position (a servo), an effort (a joint commanded by torque, which the drive does not hold), or nothing. */
@@ -713,7 +715,15 @@ function rosGraph(model: UsdModel, robotPath: string, linkPath: (link: string) =
   const base = linkPath(baseFrame);
   // The sensors' frames are plain prims in their links: named here, they are published beside the links.
   const frames = model.sensors.flatMap((s) => (s.frame ? [`${linkPath(s.link)}/${s.frame}`, ...(s.optical ? [`${linkPath(s.link)}/${s.frame}/${s.optical}`] : [])] : []));
-  const jointed = model.joints.some((j) => j.type !== 'fixed' && !j.outside && !j.loop);
+  // The robot's own joints. Where the articulation holds others too (a mecanum wheel's rollers), the joint states
+  // are read for these by name, and the transforms are told of the robot's own links one by one, each from the base,
+  // rather than of the articulation's whole tree.
+  const own = model.joints.filter((j) => j.type !== 'fixed' && !j.outside && !j.loop && !j.hidden);
+  const jointed = own.length > 0;
+  const hidden = model.joints.some((j) => j.hidden);
+  const away = new Set(model.joints.filter((j) => j.hidden || j.outside).map((j) => j.child));
+  const ownLinks = model.links.filter((l) => !away.has(l.name)).map((l) => linkPath(l.name)).filter((path) => path !== base);
+  const read = { 'inputs:jointNames': from('token[]', 'joint_read.outputs:jointNames'), 'inputs:jointPositions': from('double[]', 'joint_read.outputs:jointPositions'), 'inputs:jointVelocities': from('double[]', 'joint_read.outputs:jointVelocities'), 'inputs:jointEfforts': from('double[]', 'joint_read.outputs:measuredJointEfforts'), 'inputs:jointDofTypes': { type: 'uchar[]', value: `[${own.map((j) => (j.type === 'prismatic' ? 1 : 0)).join(', ')}]` }, 'inputs:stageMetersPerUnit': num('float', 1) };
   const nodes: GraphNode[] = [
     { name: 'tick', type: 'omni.graph.action.OnPlaybackTick', version: 2, attrs: { 'outputs:tick': EXEC } },
     { name: 'context', type: 'isaacsim.ros2.bridge.ROS2Context', version: 2, attrs: { 'outputs:context': { type: 'uint64' } } },
@@ -721,13 +731,23 @@ function rosGraph(model: UsdModel, robotPath: string, linkPath: (link: string) =
     { name: 'clock', type: 'isaacsim.ros2.bridge.ROS2PublishClock', version: 1, attrs: { 'inputs:execIn': from('uint', 'tick.outputs:tick'), 'inputs:context': from('uint64', 'context.outputs:context'), 'inputs:timeStamp': from('double', 'time.outputs:simulationTime') } },
     // A robot whose only moving joints stand outside the articulation (a rover on tracks: the wheels under its
     // belts) has no joint of its own to tell of, and no joint states, as in the other exports.
+    ...(jointed && hidden
+      ? [
+          {
+            name: 'joint_read',
+            type: 'isaacsim.core.nodes.IsaacArticulationState',
+            version: 1,
+            attrs: { 'inputs:execIn': from('uint', 'tick.outputs:tick'), 'inputs:targetPrim': target(robotPath), 'inputs:jointNames': tokens(own.map((j) => j.name)), 'outputs:jointNames': { type: 'token[]' }, 'outputs:jointPositions': { type: 'double[]' }, 'outputs:jointVelocities': { type: 'double[]' }, 'outputs:measuredJointEfforts': { type: 'double[]' } },
+          } satisfies GraphNode,
+        ]
+      : []),
     ...(jointed
       ? [
           {
             name: 'joint_states',
             type: 'isaacsim.ros2.bridge.ROS2PublishJointState',
             version: 1,
-            attrs: { 'inputs:execIn': from('uint', 'tick.outputs:tick'), 'inputs:context': from('uint64', 'context.outputs:context'), 'inputs:timeStamp': from('double', 'time.outputs:simulationTime'), 'inputs:targetPrim': target(robotPath), 'inputs:topicName': text('joint_states') },
+            attrs: { 'inputs:execIn': from('uint', 'tick.outputs:tick'), 'inputs:context': from('uint64', 'context.outputs:context'), 'inputs:timeStamp': from('double', 'time.outputs:simulationTime'), ...(hidden ? read : { 'inputs:targetPrim': target(robotPath) }), 'inputs:topicName': text('joint_states') },
           } satisfies GraphNode,
         ]
       : []),
@@ -735,7 +755,7 @@ function rosGraph(model: UsdModel, robotPath: string, linkPath: (link: string) =
       name: 'tf',
       type: 'isaacsim.ros2.bridge.ROS2PublishTransformTree',
       version: 1,
-      attrs: { 'inputs:execIn': from('uint', 'tick.outputs:tick'), 'inputs:context': from('uint64', 'context.outputs:context'), 'inputs:timeStamp': from('double', 'time.outputs:simulationTime'), 'inputs:targetPrims': target(robotPath, ...frames), 'inputs:parentPrim': target(base) },
+      attrs: { 'inputs:execIn': from('uint', 'tick.outputs:tick'), 'inputs:context': from('uint64', 'context.outputs:context'), 'inputs:timeStamp': from('double', 'time.outputs:simulationTime'), 'inputs:targetPrims': target(...(hidden ? ownLinks : [robotPath]), ...frames), 'inputs:parentPrim': target(base) },
     },
   ];
   if (!model.fixedBase) {

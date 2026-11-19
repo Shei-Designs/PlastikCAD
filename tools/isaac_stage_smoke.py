@@ -29,6 +29,13 @@ SPEED = 0.3  # m/s asked of a rover
 # A mecanum drive told to go forward, slide or turn goes this share of what was asked at least and at most (its
 # rollers slip a little, and it takes a moment to get going), and strays no farther than this another way (m, rad).
 MECANUM_LEAST, MECANUM_MOST, MECANUM_STRAY = 0.8, 1.05, 0.05
+# A mecanum drive told nothing holds against a push along or across of this share of its weight, moving no farther
+# than this in 3 s (m), and slides at the second share: its rollers, at 45°, hold up to 0.71 under a friction of 1,
+# and MuJoCo holds the reference rover up to 0.65 or 0.7 with its wheels turned any way. Isaac holds it 2 to 4 mm at
+# 0.5 and up to 0.65 or 0.7 with its four wheels turned alike, but lets go along it at 0.6 with them turned unlike
+# (one wheel on two rollers, the next on one), whatever the solver's passes, step rate or rollers' inertia. With its
+# rollers on plain joints out of the articulation it walked off along a diagonal at 0.5, 150 to 200 mm.
+MECANUM_HOLD, MECANUM_SLIDE, MECANUM_CREEP = 0.5, 0.8, 0.015
 # A rover on tracks (a row of wheels each side stands in for a belt) told to go back goes between these shares of
 # what was asked, and told to turn on the spot at 1 rad/s between these shares of it: a long contact skids. The
 # reference rover turns 48 % and strays 32 mm, the same every run; MuJoCo turns it 41 to 46 %, Gazebo 73 %, and
@@ -374,8 +381,9 @@ def one(path, pictures):
                 result['problems'].append(f"joint_states arrived ({len(got['joint_states'])}) from a robot with no joint of its own")
         elif not got['joint_states']:
             result['problems'].append('no joint_states arrived')
-        elif set(got['joint_states'][-1].name) != set(names):
-            result['problems'].append(f"joint_states names {list(got['joint_states'][-1].name)} are not the articulation's {names}")
+        # The articulation holds a mecanum wheel's rollers' hinges too, which are the simulator's alone.
+        elif set(got['joint_states'][-1].name) != {n for n in names if '_roller_' not in n}:
+            result['problems'].append(f"joint_states names {list(got['joint_states'][-1].name)} are not the robot's own of the articulation's {names}")
         # A mecanum wheel's rollers are the simulator's alone: no joint state and no transform tells of one.
         told = sorted(n for n in set(got['joint_states'][-1].name if got['joint_states'] else []) | frames if '_roller_' in n)
         if told:
@@ -629,6 +637,29 @@ def one(path, pictures):
                 stray = [abs(v) for j, v in enumerate(went[k]) if j != i]
                 if stray[0] > MECANUM_STRAY or stray[1] > MECANUM_STRAY:
                     result['problems'].append(f'mecanum {k}: strayed, forward {went[k][0]:.3f} m, left {went[k][1]:.3f} m, turn {went[k][2]:.3f} rad')
+            # Told nothing, and leaned so that its weight pushes it along, then across, at MECANUM_HOLD of itself, it
+            # stays where it is; at MECANUM_SLIDE it slides (so the lean is felt).
+            import omni.usd
+            from pxr import Gf, UsdPhysics
+            scene = next(p for p in omni.usd.get_context().get_stage().Traverse() if p.IsA(UsdPhysics.Scene))
+            down = scene.GetAttribute('physics:gravityDirection').Get()
+            held = {}
+            for k, side in (('along', 0.0), ('across', math.pi / 2)):
+                for pull in (MECANUM_HOLD, MECANUM_SLIDE):
+                    at, yaw = footprint()
+                    lean, way = math.atan(pull), yaw + side
+                    scene.GetAttribute('physics:gravityDirection').Set(Gf.Vec3f(math.sin(lean) * math.cos(way), math.sin(lean) * math.sin(way), -math.cos(lean)))
+                    run(1.0, lambda i: None)
+                    at = footprint()[0]
+                    run(SECONDS, lambda i: None)
+                    held[f'{k} {pull}'] = round(float(np.linalg.norm(footprint()[0] - at)) * 1000, 1)
+                    scene.GetAttribute('physics:gravityDirection').Set(down)
+                    run(1.0, lambda i: None)
+                if held[f'{k} {MECANUM_HOLD}'] > MECANUM_CREEP * 1000:
+                    result['problems'].append(f'mecanum held {k} at {MECANUM_HOLD} of its weight: moved {held[f"{k} {MECANUM_HOLD}"]} mm in {SECONDS:.0f} s')
+                if held[f'{k} {MECANUM_SLIDE}'] < 0.1:
+                    result['problems'].append(f'mecanum leaned {k} at {MECANUM_SLIDE} of its weight: moved only {held[f"{k} {MECANUM_SLIDE}"]} mm in {SECONDS:.0f} s')
+            result['mecanum_held_mm'] = held
         node.destroy_node()
         rclpy.shutdown()
         try:

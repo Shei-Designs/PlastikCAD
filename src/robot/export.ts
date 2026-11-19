@@ -926,8 +926,9 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
     const turn = to ? quatOfMatrix(to) : undefined;
     return { name: l.name, pos: [at[0], at[1], at[2] + p.lift], ...(turn && Math.abs(turn[0]) < 1 - 1e-9 ? { rot: turn } : {}), inertial: l.inertial, visual: geo.visual.map((v) => ({ mesh: inFrame(v.mesh, l.frame), color: rgb(v.color) })), collision, friction: l.friction ?? 0.5 };
   });
-  // A mecanum wheel's rollers: bodies on free hinges, standing with their wheels in the pose the simulation begins in. Their
-  // hinges are kept out of the articulation, so the joint states and the transform tree, which tell of it, hold the robot's own alone.
+  // A mecanum wheel's rollers and a track's wheels: bodies on hinges, standing with their wheels in the pose the
+  // simulation begins in. A roller's hinge is in the articulation, which holds it exactly (see `ROLLER_RIM`), and
+  // the graph tells of the robot's own joints and links alone; a track's wheels are kept out of it (see usd.ts).
   const rollerJoints: UsdJoint[] = [];
   for (const r of p.rollers) {
     const wheel = p.links.find((l) => l.name === r.wheel)!;
@@ -936,14 +937,21 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
     const at = (to ? apply(to, designed) : designed).map((x) => x * M) as Vec3;
     const turn = to ? quatOfMatrix(to) : undefined;
     const collision: UsdCollision[] = r.cylinder ? [{ cylinder: { radius: r.cylinder.radius, length: r.cylinder.length }, origin: [0, 0, 0], rpy: r.cylinder.rpy }] : r.balls.map((b) => ({ sphere: { radius: b.radius }, origin: b.at, rpy: [0, 0, 0] as Vec3 }));
+    const [ax, ay, az] = r.axis;
+    const along = [ax * ax, ay * ay, az * az, ax * ay, ax * az, ay * az];
     // A joint outside the articulation has no rotor inertia of its own to give: the wheel's body carries it, about its axle.
     const rotor = r.driven?.armature ?? 0;
-    const [ax, ay, az] = r.axis;
-    const inertial = rotor ? { ...r.inertial, inertia: r.inertial.inertia.map((x, i) => x + rotor * [ax * ax, ay * ay, az * az, ax * ay, ax * az, ay * az][i]) as Tensor } : r.inertial;
+    // A roller turns as one no lighter about its axle than `ROLLER_RIM` says, its inertia across grown alike.
+    const own = r.inertial.inertia;
+    const spin = own[0] * ax * ax + own[1] * ay * ay + own[2] * az * az + 2 * (own[3] * ax * ay + own[4] * ax * az + own[5] * ay * az);
+    const roller = r.balls.length > 0;
+    const rim = roller ? Math.max(1, (ROLLER_RIM * r.inertial.mass * Math.max(...r.balls.map((b) => b.radius)) ** 2) / spin) : 1;
+    const inertial = rotor || rim > 1 ? { ...r.inertial, inertia: own.map((x, i) => x * rim + rotor * along[i]) as Tensor } : r.inertial;
     links.push({ name: r.name, pos: [at[0], at[1], at[2] + p.lift], ...(turn && Math.abs(turn[0]) < 1 - 1e-9 ? { rot: turn } : {}), inertial, visual: [], collision, friction: r.friction, ...(r.cylinder ? { standIn: true } : {}) });
     // A wheel the drive turns is kept out of the articulation like one that turns free: the stage's graph tells its joint's drive the speed.
     if (r.driven) rollerJoints.push({ name: r.joint, type: 'continuous', parent: r.wheel, child: r.name, origin: r.at, axis: r.axis, limit: { lower: 0, upper: 0, effort: r.driven.effort, velocity: r.driven.velocity }, dynamics: { damping: r.driven.damping, friction: r.driven.friction }, loop: false, outside: true, drive: 'velocity' });
-    else rollerJoints.push({ name: r.joint, type: 'continuous', parent: r.wheel, child: r.name, origin: r.at, axis: r.axis, dynamics: { damping: ROLLER_DAMPING, friction: 0 }, loop: false, outside: true, drive: null });
+    else if (!roller) rollerJoints.push({ name: r.joint, type: 'continuous', parent: r.wheel, child: r.name, origin: r.at, axis: r.axis, dynamics: { damping: ROLLER_DAMPING, friction: 0 }, loop: false, outside: true, drive: null });
+    else rollerJoints.push({ name: r.joint, type: 'continuous', parent: r.wheel, child: r.name, origin: r.at, axis: r.axis, dynamics: { damping: ROLLER_DAMPING, friction: 0 }, loop: false, hidden: true, drive: null });
   }
   let drive: UsdModel['drive'] = null;
   if (p.drive) {
@@ -1049,6 +1057,21 @@ const ROLLER_STEPS = 120;
  * along that diagonal for good. With this much it stops within a few centimeters, and slides about a hundredth less far.
  */
 const ROLLER_BEARING = 0.02;
+
+/**
+ * The least inertia of a mecanum wheel's roller about its axle in Isaac Sim, as a multiple of its mass times its
+ * radius squared (a solid roller has about 0.4): its inertia across is grown by as much. PhysX holds a roller as
+ * light as a real one (6 g, 10 mm in radius, on the reference rover) poorly against its wheel, whose motor's rotor
+ * weighs on it, and the floor: the reference rover, leaned so that its weight pushed it along at half of itself,
+ * crept 45 mm in 3 s, and away at 0.65 (by hand its rollers hold up to 0.71, and in MuJoCo it creeps 3 to 6 mm
+ * up to 0.7 and slides at 0.75). With this it creeps 2 to 6 mm along up to 0.7 and across up to 0.65, and lets go
+ * across at 0.7; at 1.2 it crept 24 mm along at 0.65. With its wheels turned unlike (one on two rollers, the next
+ * on one) it holds 4 mm along at 0.55 and lets go at 0.6, more inertia or not. A roller turns little, so this weighs
+ * on nothing else: the rover slides as fast as before. (Kept out of the articulation, on plain joints, light rollers
+ * wobbled on their hinges and the rover walked off along a diagonal at half its weight, at every inertia, step rate,
+ * count of solver passes and contact stiffness tried.)
+ */
+const ROLLER_RIM = 4;
 
 /** What a roller's hinge resists its turning by, N·m·s/rad: next to nothing, and enough to keep it from ringing. */
 const ROLLER_DAMPING = 1e-5;
