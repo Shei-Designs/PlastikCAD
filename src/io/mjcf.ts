@@ -426,8 +426,10 @@ export function writeMjcf(model: MjcfModel): string {
     `  <option timestep="${TIMESTEP}" gravity="0 0 -9.81" integrator="implicitfast" cone="elliptic" impratio="${IMPRATIO}"/>`,
     '  <default>',
     '    <default class="visual"><geom contype="0" conaffinity="0" group="2"/></default>',
-    // The robot's shapes meet the floor and the course, never each other, as in the SDF and the USD stage.
-    '    <default class="collision"><geom group="3" conaffinity="0" rgba="0.6 0.6 0.9 0.3"/></default>',
+    // The robot's shapes meet the floor and the course, never each other, as in the SDF and the USD stage. Their
+    // friction is what holds there: MuJoCo takes the larger of two surfaces' figures unless one has the priority, so
+    // that without it nothing under the floor's 1 would be heard (a caster typed 0.05 gripped as 1).
+    '    <default class="collision"><geom group="3" conaffinity="0" priority="1" rgba="0.6 0.6 0.9 0.3"/></default>',
     '  </default>',
     '  <asset>',
     ...[...meshes].map(([n, file]) => `    <mesh name="${n}" file="${escapeXml(file)}"/>`),

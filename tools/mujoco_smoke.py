@@ -46,6 +46,11 @@ SKID_SPEED, SKID_TURN_RATE, SKID_SECONDS = 0.3, 1.0, 3.0
 SKID_STRAIGHT, SKID_TURN, SKID_STRAY = (0.9, 1.02), (0.75, 1.05), 0.02
 
 root = sys.argv[1] if len(sys.argv) > 1 else "fixtures/out"
+# A link's friction is what holds on the floor: MuJoCo takes the larger of two surfaces' figures unless one has the
+# priority, which the robot's shapes are given. A rover on two wheels a side with its wheels' friction set to this
+# is pulled across them at this much under and over it, as a share of its weight: it let go between 0.300 and 0.305
+# (and at 1.00, the floor's own figure, before its shapes had the priority).
+GRIP, GRIP_MARGIN = 0.3, 0.05
 # Each MuJoCo model is <name>/<name>.xml; the ROS and SDF packages beside them carry XML of their own.
 xmls = sorted(x for x in glob.glob(os.path.join(root, "*", "*.xml")) if os.path.basename(x) == os.path.basename(os.path.dirname(x)) + ".xml")
 if not xmls:
@@ -265,6 +270,30 @@ for xml in xmls:
             if any(w.number for w in e.warning):
                 ok = False
                 notes.append(f"skid {label}: warnings " + ", ".join(mujoco.mjtWarning(i).name for i, w in enumerate(e.warning) if w.number))
+        # A link's friction is what holds on the floor, whatever the floor's own: with its wheels' set to GRIP the
+        # rover, pulled across them (gravity leaned that way, as on a slope), holds under it and slides over it.
+        for pull, holds in ((GRIP - GRIP_MARGIN, True), (GRIP + GRIP_MARGIN, False)):
+            g = mujoco.MjModel.from_xml_path(xml)
+            for geom in range(g.ngeom):
+                if g.geom_bodyid[geom] > base and g.geom_contype[geom]:
+                    g.geom_friction[geom, 0] = GRIP
+            e = mujoco.MjData(g)
+            if home >= 0:
+                mujoco.mj_resetDataKeyframe(g, e, home)
+            for _ in steps(0.5):
+                mujoco.mj_step(g, e)
+            lean = np.arctan(pull)
+            g.opt.gravity[:] = [9.81 * np.sin(lean) * left[0], 9.81 * np.sin(lean) * left[1], -9.81 * np.cos(lean)]
+            for _ in steps(1.0):
+                mujoco.mj_step(g, e)
+            at = e.qpos[:2].copy()
+            for _ in steps(1.5):
+                mujoco.mj_step(g, e)
+            slid = float((e.qpos[:2] - at) @ left)
+            notes.append(f"wheels of friction {GRIP} pulled across at {pull:.2f} of the weight: {'hold' if holds else 'slide'} ({1000 * slid:.0f} mm in 1.5 s)")
+            if (slid > 0.01) if holds else (slid < 0.1):
+                ok = False
+                notes.append(f"grip FAILED: a friction of {GRIP} {'let go under' if holds else 'held over'} {pull:.2f} of the weight")
     # Every camera must render a picture of something, and a depth picture of the floor that runs away to the top.
     if m.ncam:
         try:
