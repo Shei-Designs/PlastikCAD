@@ -313,7 +313,7 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
   // track's own mass and inertia are lessened by as much: its mesh was weighed wheels and all. The belt ties every
   // wheel to the motor, so each carries the whole of its rotor's inertia: a wheel as light as these alone would
   // slip where a geared motor's does not, and the track would hardly turn the robot on the spot. Nor is it ever
-  // less than `RIM_SHARE` says, whatever the motor: a joint with figures typed by hand names no rotor at all.
+  // less than `rimOf` says, whatever the motor: a joint with figures typed by hand names no rotor at all.
   const trackMotors = new Map<string, { joints: string[]; radius: number; middle: Vec3 }>();
   const motorOfTrack = (id: string) => {
     const carrier = tree.parentJoint.get(id);
@@ -355,7 +355,7 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
         balls: [],
         friction: l.friction ?? 1,
         ...(collides ? { cylinder: { radius: made.radius * M, length: made.length * M, rpy } } : {}),
-        ...(motor ? { driven: { effort: motor.effort / n, velocity: motor.velocity * RAD, damping: motor.damping / n, friction: motor.friction / n, armature: Math.max(motorOf(motor.motor)?.armature ?? 0, RIM_SHARE * carried * (made.radius * M) ** 2) } } : {}),
+        ...(motor ? { driven: { effort: motor.effort / n, velocity: motor.velocity * RAD, damping: motor.damping / n, friction: motor.friction / n, armature: Math.max(motorOf(motor.motor)?.armature ?? 0, rimOf(carried, made.radius * M, motor.effort / n, motor.velocity * RAD)) } } : {}),
       });
     });
     if (motor) trackMotors.set(motor.id, { joints, radius: made.radius, middle: made.middle });
@@ -514,7 +514,7 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
       );
     }
   }
-  // A wheel that slides sideways as the robot turns (see `skid`) has a rim no lighter than `RIM_SHARE` says, as a
+  // A wheel that slides sideways as the robot turns (see `skid`) has a rim no lighter than `rimOf` says, as a
   // track's wheels have, whatever its motor. Against a lighter one a simulator's friction pushes the wrong way,
   // more across the wheel than against its slip, since the wheel gives way so easily the way it rolls. A rover
   // 200 mm by 400 mm, where plain friction gives 20 % of the turn asked: Isaac Sim turned it 9 % and walked it off
@@ -530,8 +530,8 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
   const skidding = new Set(links.filter((l) => l.skid).map((l) => l.name));
   if (drive) {
     const turned = treeJoints.filter((j) => drive!.wheels.includes(j.name));
-    const rim = RIM_SHARE * (links.reduce((m, l) => m + (l.inertial?.mass ?? 0), 0) / Math.max(1, turned.length)) * drive.wheelRadius ** 2;
-    for (const j of turned) if (skidding.has(j.child) || !j.armature) j.armature = Math.max(j.armature ?? 0, rim);
+    const load = links.reduce((m, l) => m + (l.inertial?.mass ?? 0), 0) / Math.max(1, turned.length);
+    for (const j of turned) if (skidding.has(j.child) || !j.armature) j.armature = Math.max(j.armature ?? 0, rimOf(load, drive.wheelRadius, j.limit?.effort ?? 0, j.limit?.velocity ?? 0));
   }
   const driven = new Set(driveJoints(robot.drive));
   const controlled = robot.control ? tree.order.slice(1).map((id) => tree.parentJoint.get(id)!).filter((j) => hasMotor(j) && !driven.has(j.id)).map((j) => jointNames.get(j)!) : [];
@@ -1002,6 +1002,24 @@ referencing this stage, or copy the \`${robotPrim(model.name)}\` prim into it.
  * does, 8 a tenth more than 4, and much more makes the robot slow to start.
  */
 export const RIM_SHARE = 4;
+/**
+ * The longest that rim may take its motor to bring to its top speed, at its stall torque and with nothing else to
+ * move, s: the rim is no heavier than this times the torque over the speed. The rim stands in for a geared motor's
+ * rotor, and a rotor is as large as its motor: gearmotors from a few grams to a few hundred reach their speed
+ * unloaded in some 0.03 to 0.1 s (reckoned from the size of their rotors; no maker gives the figure), so twice
+ * the longest is allowed. Without this bound a rover whose motors are small for its weight was slow to start and
+ * to stop as no real one is: on four 0.08 N·m motors the reference rover took 0.52 s to reach 0.3 m/s where it
+ * takes 0.11 s with no rim at all, and went on 80 mm after the stop where it goes 17 mm; with the bound, 0.17 s
+ * and 25 mm. The reference robots' motors are far inside it (0.03 s), and their rims are as `RIM_SHARE` says.
+ */
+export const RIM_SECONDS = 0.2;
+/**
+ * The least rotor inertia of a driven wheel that needs a rim (see `RIM_SHARE`), kg·m²: `carried` is what the wheel
+ * carries of the robot, kg, `radius` its own, m, and `effort` and `velocity` its motor's torque and top speed,
+ * N·m and rad/s.
+ */
+const rimOf = (carried: number, radius: number, effort: number, velocity: number): number =>
+  Math.min(RIM_SHARE * carried * radius ** 2, velocity > 0 ? (RIM_SECONDS * effort) / velocity : Infinity);
 
 /** Physics steps a second for an Isaac Sim stage whose robot has rollers. */
 const ROLLER_STEPS = 120;
