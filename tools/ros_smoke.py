@@ -79,6 +79,15 @@ TRACK_TURN, TRACK_SECONDS, TRACK_SHARE, TRACK_DRIFT = 1.0, 3.0, (0.5, 1.05), 0.0
 # Gazebo, has its load shared along its width as the physics pleases, and one a hair off flat, as the model's was
 # written, stands on one end; each figure was the same to three places over seven runs.) It moves no farther than this (m).
 SKID_TURN, SKID_SECONDS, SKID_SHARE, SKID_DRIFT = 1.0, 3.0, (0.95, 1.05), 0.01
+# A rover on one wheel a side and a caster slides no wheel to turn: it turns about the middle of its axle as fast as
+# it is told. Told forward at the speed every drive is (m/s) it goes between these shares of the way and turns no
+# more than this on it (rad); told to turn on the spot at this rate (rad/s) for this long, it
+# turns at between these shares of it, by the simulation's own time, and the middle of its axle, where its frame
+# is, moves no farther than this (m). The reference one goes 99.7 % of the way without turning, and turns 100.0 %
+# of the rate as a ROS package and 99.9 % as an SDF model, moving 1 mm. (On plain cylinders it moved 35 mm and
+# 10 mm as it turned, and on wheels 100 mm wide turned 126 % and 106 % of the rate: a cylinder lying flat has its
+# load put along its width as Gazebo's physics pleases.)
+TWO_SPEED, TWO_STRAIGHT, TWO_ASIDE, TWO_TURN, TWO_SECONDS, TWO_SHARE, TWO_DRIFT = 0.2, (0.97, 1.03), 0.02, 1.0, 3.0, (0.97, 1.03), 0.005
 # A car told round a circle each way, at this speed (m/s, more than a wheel left to roll could turn at before it was
 # freed of its joint's limit) and the rate that steers its knuckles this far (rad), for this long: the radius its
 # path makes, the way it went over the turn it made, the start and the stop with it, is between these shares of the
@@ -594,6 +603,8 @@ def check_drive(name, sim, send, text, what):
     skid = skid_turn(text)
     if skid:
         check_skid(name, sim, send, skid)
+    if on_two_wheels(text):
+        check_two_wheels(name, sim, send, dist, before, after)
     circle = car_circle(text)
     if circle:
         check_car(name, sim, send, circle)
@@ -640,6 +651,35 @@ def check_skid(name, sim, send, share):
         fail(name, f'told to turn left on the spot, the robot on two wheels a side {told} and moved {drift:.3f} m')
     else:
         ok(f'cmd_vel z turned the robot on two wheels a side: it {told}, {drift:.3f} m of drift')
+
+
+def on_two_wheels(text):
+    """Whether a robot's file (URDF or SDF) has a differential drive on one wheel a side."""
+    sides = [re.findall(rf'<{side}_joint>([^<]+)</{side}_joint>', text) for side in ('left', 'right')]
+    return 'DiffDrive' in text and all(len(side) == 1 for side in sides)
+
+
+def check_two_wheels(name, sim, send, dist, before, after):
+    """A rover on two wheels, after its run forward: it went as far as it was told, the way it faces, and told to
+    turn on the spot it turns as fast as it is told, about the middle of its axle. The rate is read by the
+    simulation's own time (see `turn_of`)."""
+    aside = abs(math.remainder(after[5] - before[5], 2 * math.pi))
+    went = f'went {dist:.3f} m of the {TWO_SPEED * 3.0:.1f} told, turning {math.degrees(aside):.2f}° on the way'
+    if not TWO_STRAIGHT[0] <= dist / (TWO_SPEED * 3.0) <= TWO_STRAIGHT[1] or aside > TWO_ASIDE:
+        return fail(name, f'told forward, the robot on two wheels {went}')
+    spin = move(sim, send, 0.0, 0.0, TWO_TURN, TWO_SECONDS)
+    if not spin:
+        return fail(name, f'the robot did not come to rest around the turn ({sim.moving()})')
+    start, spun, _, seen = spin
+    turned, gap, rate = turn_of(seen)
+    if not followed(name, gap, TWO_TURN):
+        return
+    drift = math.hypot(spun[0] - start[0], spun[1] - start[1])
+    told = f'turned {math.degrees(turned):.0f}° at {rate:.3f} rad/s ({100 * rate / TWO_TURN:.1f} % of the {TWO_TURN:.1f} told)'
+    if not TWO_SHARE[0] <= rate / TWO_TURN <= TWO_SHARE[1] or drift > TWO_DRIFT:
+        fail(name, f'told to turn left on the spot, the robot on two wheels {told} and moved {drift:.3f} m')
+    else:
+        ok(f'cmd_vel drove the robot on two wheels straight (it {went}) and turned it on the spot: it {told}, {drift:.3f} m of drift')
 
 
 def car_circle(text):

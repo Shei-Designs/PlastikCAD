@@ -38,6 +38,12 @@ TRACK_STRAIGHT, TRACK_TURN, TRACK_STRAY = (0.9, 1.05), (0.35, 0.85), 0.05
 # the reference rover, wider than long, and 20 % for the long one. It must turn between these shares of what plain
 # friction gives, about its own middle: it ends no farther from where it stood than this (m).
 SKID_TURN, SKID_STRAY = (0.8, 1.1), 0.05
+# A rover on one wheel a side and a caster slides no wheel to turn: told to go back, and to turn on the spot at
+# 1 rad/s, it does each between these shares of what was asked, the turn about the middle of its axle, and strays
+# no farther than this another way (m, rad). The reference one turns 99.6 % of what it is told and ends 2 mm from
+# where it stood; it goes back 1.08 of the way, the run-on after the stop counted in, as it is for every rover here.
+# On plain cylinders, which PhysX loads to one side, it turned 81 to 89 %.
+TWO_STRAIGHT, TWO_TURN, TWO_STRAY = (0.9, 1.15), (0.95, 1.03), 0.03
 MUST_MOVE = 0.1  # m
 MAY_SETTLE = 0.02  # m the base may drop while settling
 WALL_AT = 1.0  # m ahead
@@ -120,6 +126,8 @@ def read_stage(path):
         'mecanum': 'def OmniGraphNode "wheel0_linear"' in text,
         # Two wheels a side slide sideways as their rover turns.
         'skids': len(corners) == 4 and 'def OmniGraphNode "wheel0_linear"' not in text,
+        # One wheel a side, and a caster: nothing slides as it turns.
+        'two_wheels': len(corners) == 2 and 'def OmniGraphNode "wheel0_linear"' not in text,
         # A track's belt is stood in for by a row of wheels on hinges to it.
         'tracks': len(re.findall(r'def PhysicsRevoluteJoint "[^"]*_wheel_\d+_joint"', text)) >= 6,
         'meshes': len(re.findall(r'def Mesh "visual_\d+"', text)),
@@ -531,6 +539,17 @@ def one(path, pictures):
                 result['problems'].append(f'turn on the spot: went {turned:.3f} rad of the {plain:.3f} plain friction gives ({1.0 * SECONDS:.3f} asked)')
             if math.hypot(forward, left) > SKID_STRAY:
                 result['problems'].append(f'turn on the spot: strayed, forward {forward:.3f} m, left {left:.3f} m')
+        # A rover on one wheel a side: told to go back and to turn on the spot, it does each as far as it is told,
+        # the turn about the middle of its axle, where its base stands.
+        if info['two_wheels'] and drive_kind == 'twist':
+            went = {'back': told(-SPEED, 0.0, 0.0), 'turn': told(0.0, 0.0, 1.0)}
+            result['two_wheels'] = {k: [round(v[0] * 1000), round(v[1] * 1000), round(v[2], 3)] for k, v in went.items()}
+            for k, (i, ideal, unit, (least, most)) in {'back': (0, -SPEED * SECONDS, 'm', TWO_STRAIGHT), 'turn': (2, 1.0 * SECONDS, 'rad', TWO_TURN)}.items():
+                if not least <= went[k][i] / ideal <= most:
+                    result['problems'].append(f'two wheels {k}: went {went[k][i]:.3f} {unit} of the {ideal:.3f} asked')
+                stray = [abs(v) for j, v in enumerate(went[k]) if j != i]
+                if stray[0] > TWO_STRAY or stray[1] > TWO_STRAY:
+                    result['problems'].append(f'two wheels {k}: strayed, forward {went[k][0]:.3f} m, left {went[k][1]:.3f} m, turn {went[k][2]:.3f} rad')
         # A car: told to go straight back it does, by about as much as asked and without turning or straying; told
         # to circle to its left and then to its right, it goes round the circle its wheelbase and the steering
         # angle make, the same either way.

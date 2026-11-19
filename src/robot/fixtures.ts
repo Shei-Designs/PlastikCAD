@@ -1,4 +1,4 @@
-// The reference robots: a rover, a long rover, a car, an arm, a quadruped and a linkage built from
+// The reference robots: a rover, a long rover, a rover on two wheels, a car, an arm, a quadruped and a linkage built from
 // shapes, and a rover on mecanum wheels and one on tracks from the Wheels parts, which the
 // tests export and simulate and which fixtures/robots holds for opening in
 // the app. Each is as large as the motors in the
@@ -64,6 +64,33 @@ function rover(name = 'Reference rover', track = 280, base = 220): Doc {
     joints,
     sensors: [lidar, imu, camera],
     drive: { kind: 'differential', roles: Object.fromEntries(joints.map((j, i) => [j.id, sideOf(wheels[i])])) },
+    control: true,
+  });
+}
+
+/**
+ * A rover on two wheels and a ball caster: the wheels lie along X and it drives along Y, as the rover does. It turns
+ * about the middle of its axle, which is the middle of its body, without sliding a wheel sideways, so it turns as
+ * much as it is told; the caster, which has next to no grip, is dragged round behind. Its weight (a battery's, say)
+ * is low and well behind the axle, so that braking as hard as its wheels grip does not tip it onto its nose.
+ */
+function twoWheeled(): Doc {
+  const body = shape('box', 'Body', [0, 0, 50], [220, 240, 40]);
+  const wheels = [-1, 1].map((sx) => shape('cylinder', `Wheel ${sx < 0 ? 'left' : 'right'}`, [sx * 135, 0, 50], [100, 100, 40], [0, 90, 0], '#e8853a'));
+  const caster = shape('sphere', 'Caster', [0, -90, 15], [30, 30, 30], [0, 0, 0], '#5b6b82');
+  const joints = wheels.map((w) => joint(`${w.name} joint`, body, w, [0, 0, 0], { type: 'continuous', motor: '37d-70' }));
+  const imu = defaultSensor(id(), 'IMU', 'imu', body.id, [0, 0, 0]);
+  return design('Reference two-wheeled rover', [body, ...wheels, caster], {
+    root: body.id,
+    base: 'free',
+    links: [
+      { ...defaultLink(body.id), collision: 'box', mass: { kind: 'measured', grams: 900, center: [0, -60, -10] } },
+      ...wheels.map((w) => ({ ...defaultLink(w.id), collision: 'cylinder' as CollisionKind, friction: 1 })),
+      { ...defaultLink(caster.id), collision: 'sphere', friction: 0.05 },
+    ],
+    joints: [...joints, joint('Caster mount', body, caster, [0, 0, 0], { type: 'fixed' })],
+    sensors: [imu],
+    drive: { kind: 'differential', roles: { [joints[0].id]: 'left', [joints[1].id]: 'right' } },
     control: true,
   });
 }
@@ -229,4 +256,5 @@ export const ROBOTS: { file: string; make: () => Doc }[] = [
   { file: 'tracked', make: () => trackedRover() },
   // Last, so that the others' objects keep the ids they had.
   { file: 'long', make: () => rover('Reference long rover', 200, 400) },
+  { file: 'two', make: twoWheeled },
 ];

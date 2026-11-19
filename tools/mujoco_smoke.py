@@ -44,7 +44,12 @@ TRACK_STRAIGHT, TRACK_TURN, TRACK_STRAY = (0.9, 1.02), (0.28, 0.7), 0.05
 # middle stays where it was.
 SKID_SPEED, SKID_TURN_RATE, SKID_SECONDS = 0.3, 1.0, 3.0
 SKID_STRAIGHT, SKID_TURN, SKID_STRAY = (0.9, 1.02), (0.75, 1.05), 0.02
-# Told to go straight, a rover on tracks or on two wheels a side must be at nine tenths of the speed within this
+# A rover on one wheel a side and a caster slides no wheel to turn: run and told to turn the same, it goes straight
+# and turns between these shares of what was asked, about the middle of its axle, and strays no farther than this
+# another way (m, rad). The reference one goes 97.4 % of the way and 96.1 % of the turn, the start from rest in
+# both, and strays 3.5 mm.
+TWO_STRAIGHT, TWO_TURN, TWO_STRAY = (0.93, 1.02), (0.92, 1.02), 0.02
+# Told to go straight, a rover on tracks or on wheels must be at nine tenths of the speed within this
 # long (s). A driven wheel has a rim as heavy as its load asks (see RIM_SHARE in src/robot/export.ts), which its
 # motor has to bring to speed with the rover: the reference rovers take 0.03 to 0.05 s, their motors being strong
 # for their weight. A rim or a gain that made them slow to start would show here.
@@ -245,8 +250,12 @@ for xml in xmls:
             if any(w.number for w in e.warning):
                 ok = False
                 notes.append(f"tracks {label}: warnings " + ", ".join(mujoco.mjtWarning(i).name for i, w in enumerate(e.warning) if w.number))
-    # A rover on two wheels a side, from a fresh start each time: told to go straight and to turn on the spot.
-    if spec and spec["kind"] == "differential" and all(len(spec["roles"][side]) == 2 for side in ("left", "right")):
+    # A rover on one wheel a side or two, from a fresh start each time: told to go straight and to turn on the spot.
+    a_side = {len(spec["roles"][side]) for side in ("left", "right")} if spec and spec["kind"] == "differential" else set()
+    if a_side in ({1}, {2}):
+        skids = a_side == {2}
+        kind = "skid" if skids else "two wheels"
+        straight, turns, stray_most = (SKID_STRAIGHT, SKID_TURN, SKID_STRAY) if skids else (TWO_STRAIGHT, TWO_TURN, TWO_STRAY)
         r, sep = spec["wheelRadius"], spec["wheelSeparation"]
         fwd = np.array(spec["forward"][:2], float)
         left = np.array([-fwd[1], fwd[0]])
@@ -254,9 +263,9 @@ for xml in xmls:
         yaw_of = lambda q: float(np.arctan2(2 * (q[0] * q[3] + q[1] * q[2]), 1 - 2 * (q[2] ** 2 + q[3] ** 2)))  # noqa: E731
         # From the back axle to the front one, as the model stands.
         along = [float(d.xpos[m.jnt_bodyid[m.actuator_trnid[a, 0]]][:2] @ fwd) for a in sides["left"] + sides["right"]]
-        plain = sep**2 / (sep**2 + (max(along) - min(along)) ** 2)
+        plain = sep**2 / (sep**2 + (max(along) - min(along)) ** 2) if skids else 1.0
         rim = SKID_TURN_RATE * sep / 2
-        runs = {"straight": (SKID_SPEED, SKID_SPEED, SKID_SPEED * SKID_SECONDS, SKID_STRAIGHT), "turn": (-rim, rim, SKID_TURN_RATE * SKID_SECONDS * plain, SKID_TURN)}
+        runs = {"straight": (SKID_SPEED, SKID_SPEED, SKID_SPEED * SKID_SECONDS, straight), "turn": (-rim, rim, SKID_TURN_RATE * SKID_SECONDS * plain, turns)}
         for label, (vl, vr, ideal, (least, most)) in runs.items():
             e = mujoco.MjData(m)
             if home >= 0:
@@ -278,22 +287,22 @@ for xml in xmls:
             went = [float((e.qpos[:2] - at) @ fwd), float((e.qpos[:2] - at) @ left), yaw]
             i = 0 if label == "straight" else 2
             stray = [abs(v) for j, v in enumerate(went) if j != i]
-            of = "" if i == 0 else f" that plain friction gives ({100 * plain:.0f} % of {SKID_TURN_RATE * SKID_SECONDS:.1f} asked)"
-            notes.append(f"skid {label}: {went[i]:.3f} of {ideal:.3f} {'rad' if i == 2 else 'm'}{of} ({100 * went[i] / ideal:.0f} %), strayed {1000 * max(stray[:1] if i == 0 else stray[:2]):.1f} mm")
+            of = "" if i == 0 or not skids else f" that plain friction gives ({100 * plain:.0f} % of {SKID_TURN_RATE * SKID_SECONDS:.1f} asked)"
+            notes.append(f"{kind} {label}: {went[i]:.3f} of {ideal:.3f} {'rad' if i == 2 else 'm'}{of} ({100 * went[i] / ideal:.1f} %), strayed {1000 * max(stray[:1] if i == 0 else stray[:2]):.1f} mm")
             if label == "straight":
-                notes.append(f"skid start: at nine tenths of {vl} m/s after {'never' if started is None else f'{started:.3f} s'}")
+                notes.append(f"{kind} start: at nine tenths of {vl} m/s after {'never' if started is None else f'{started:.3f} s'}")
                 if started is None or started > START_WITHIN:
                     ok = False
-                    notes.append(f"skid start FAILED: more than {START_WITHIN} s")
-            if not least <= went[i] / ideal <= most or max(stray) > SKID_STRAY:
+                    notes.append(f"{kind} start FAILED: more than {START_WITHIN} s")
+            if not least <= went[i] / ideal <= most or max(stray) > stray_most:
                 ok = False
-                notes.append(f"skid {label} FAILED: forward {went[0]:.3f} m, left {went[1]:.3f} m, turn {went[2]:.3f} rad")
+                notes.append(f"{kind} {label} FAILED: forward {went[0]:.3f} m, left {went[1]:.3f} m, turn {went[2]:.3f} rad")
             if any(w.number for w in e.warning):
                 ok = False
-                notes.append(f"skid {label}: warnings " + ", ".join(mujoco.mjtWarning(i).name for i, w in enumerate(e.warning) if w.number))
+                notes.append(f"{kind} {label}: warnings " + ", ".join(mujoco.mjtWarning(i).name for i, w in enumerate(e.warning) if w.number))
         # A link's friction is what holds on the floor, whatever the floor's own: with its wheels' set to GRIP the
         # rover, pulled across them (gravity leaned that way, as on a slope), holds under it and slides over it.
-        for pull, holds in ((GRIP - GRIP_MARGIN, True), (GRIP + GRIP_MARGIN, False)):
+        for pull, holds in ((GRIP - GRIP_MARGIN, True), (GRIP + GRIP_MARGIN, False)) if skids else ():
             g = mujoco.MjModel.from_xml_path(xml)
             for geom in range(g.ngeom):
                 if g.geom_bodyid[geom] > base and g.geom_contype[geom]:

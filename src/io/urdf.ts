@@ -6,7 +6,7 @@ import type { Vec3 } from '../model/types';
 import type { Tensor } from '../robot/inertia';
 import type { JointType, SensorKind } from '../robot/types';
 import { escapeXml, fmt } from './format';
-import { crowned, GZ_NAMESPACE, namesGz, surfaceXml } from './gazebo';
+import { collisionShapes, GZ_NAMESPACE, namesGz, surfaceXml } from './gazebo';
 import type { Skid } from './gazebo';
 
 export interface UrdfInertial {
@@ -37,6 +37,8 @@ export interface UrdfLink {
   friction?: number;
   /** Set on a wheel that slides as its robot turns (see `surfaceXml`); the frame is a link Gazebo keeps as its own. */
   skid?: Skid;
+  /** Set on a wheel, driven or free: its cylinder stands on a ridge round its middle in Gazebo and Isaac Sim (see `CROWN`). */
+  crowned?: boolean;
   /** Gazebo sensor elements fixed in this link (see `sensorXml`), written in a <gazebo> block for it. */
   sensors?: string[];
 }
@@ -120,15 +122,12 @@ function linkXml(link: UrdfLink, materials: Map<string, string>): string {
     if (v.color) lines.push(`      <material name="${materialName(v.color, materials)}"/>`);
     lines.push('    </visual>');
   }
-  for (const c of link.collision) {
-    // A wheel that skids stands on a ridge round its middle, for Gazebo (see `crowned`).
-    const shapes: UrdfGeometry[] = link.skid && 'cylinder' in c.geometry ? crowned(c.geometry.cylinder.radius, c.geometry.cylinder.length).map((s) => ({ cylinder: { radius: s.radius, length: s.length } })) : [c.geometry];
-    for (const geometry of shapes) {
-      lines.push('    <collision>');
-      lines.push(originXml(c.origin, c.rpy, '      ').trimEnd());
-      lines.push(`      <geometry>${geometryXml(geometry)}</geometry>`);
-      lines.push('    </collision>');
-    }
+  // A wheel stands on a ridge round its middle, for Gazebo (see `collisionShapes`).
+  for (const c of collisionShapes<UrdfGeometry, UrdfShape>(link)) {
+    lines.push('    <collision>');
+    lines.push(originXml(c.origin, c.rpy, '      ').trimEnd());
+    lines.push(`      <geometry>${geometryXml(c.geometry)}</geometry>`);
+    lines.push('    </collision>');
   }
   lines.push('  </link>');
   return lines.filter((l) => l !== '').join('\n');

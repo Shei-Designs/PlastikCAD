@@ -138,15 +138,30 @@ const FLOOR_FRICTION = 1;
  */
 export const SPEED_BAND = 0.01;
 /**
- * A crowned wheel's tread, as shares of the cylinder that stands for it: a ridge round its middle this much of its
- * width, and the rest of it this much of its radius lower, clear of a flat floor. PhysX puts a wide flat wheel's
- * weight on the floor wherever along its line of touch it pleases, up to half the wheel's width to one side, the
- * same side for every wheel: a rover whose wheels slide as it turns then turns about a point well off its middle
- * (a tenth of a meter, for wheels 40 mm wide on a rover 200 mm by 400 mm), and walks as it turns. A rover on two
- * wheels turns as one whose wheels stood that much farther apart would (94 % of what it is told on the ridge, 74 %
- * without, for wheels 100 mm wide), and a car on wheels 90 mm wide goes round a circle 40 % too wide.
+ * A crowned wheel's tread: a ridge round its middle, `width` of the wheel's width, and the rest of the wheel
+ * `clear` lower (m), off a flat floor, or `most` of its radius lower where that is less. PhysX puts a wide flat
+ * wheel's weight on the floor wherever along its line of touch it pleases, up to half the wheel's width to one
+ * side, the same side for every wheel: a rover whose wheels slide as it turns then turns about a point well off its
+ * middle (a tenth of a meter, for wheels 40 mm wide on a rover 200 mm by 400 mm), and walks as it turns. A rover on
+ * two wheels turns as one whose wheels stood that much farther apart would (94 % of what it is told on the ridge,
+ * 74 % without, for wheels 100 mm wide), and a car on wheels 90 mm wide goes round a circle 40 % too wide. Gazebo's
+ * physics shares a flat cylinder's load along its width as it pleases too, and stands one a hair off flat (a
+ * quarter turn written to six places is) on one end: the ROS package and the SDF model, whose quarter turns reach
+ * it rounded differently, turned a rover on four wheels up to a tenth apart.
+ *
+ * The rest of the wheel stands that far off the floor because PhysX takes into a step whatever could touch within
+ * it, and a body falls g/60², 2.7 mm, in a step of a sixtieth of a second. Nearer the floor than that the low
+ * cylinder bore no weight and still added to the wheel's grip across (16 % at half a millimeter off, 10 % at one,
+ * none at 2.5) and shifted the load from wheel to wheel.
  */
-export const CROWN = { width: 1 / 40, drop: 0.01 };
+export const CROWN = { width: 1 / 40, clear: 0.004, most: 0.2 };
+/** The two cylinders a crowned wheel collides as (m): the wheel's own, a little low, and the ridge of its full radius (see `CROWN`). */
+export function crowned(radius: number, length: number): { radius: number; length: number; tread: boolean }[] {
+  return [
+    { radius: radius - Math.min(CROWN.clear, radius * CROWN.most), length, tread: false },
+    { radius, length: length * CROWN.width, tread: true },
+  ];
+}
 /** USD's default film back, mm; the focal length is chosen against it for the field of view asked. */
 const APERTURE = 20.955;
 
@@ -391,7 +406,7 @@ function collisionPrim(c: UsdCollision, i: number, material: string): string[] {
     const round = (name: string, radius: number, length: number) => [...head('Cylinder').map((l, k) => (k ? l : l.replace(`"collision_${i}"`, `"${name}"`))), ...indent([...common, 'uniform token axis = "Z"', `double height = ${fmt(length)}`, `double radius = ${fmt(radius)}`, ...xformOps(c.origin, rot)], 1), '}'];
     const { radius, length } = c.cylinder;
     if (!c.crowned) return round(`collision_${i}`, radius, length);
-    return [...round(`collision_${i}`, radius * (1 - CROWN.drop), length), ...round(`collision_${i}_tread`, radius, length * CROWN.width)];
+    return crowned(radius, length).flatMap((s) => round(`collision_${i}${s.tread ? '_tread' : ''}`, s.radius, s.length));
   }
   return [...head('Sphere'), ...indent([...common, `double radius = ${fmt(c.sphere.radius)}`, ...xformOps(c.origin, rot)], 1), '}'];
 }

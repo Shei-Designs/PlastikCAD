@@ -125,10 +125,10 @@ heightmap (one source, three writers) or built from placed blocks.
 ## 6. How PlastikCAD's smoke tests can help
 
 `pnpm smoke:robots`, `pnpm smoke:ros`, `pnpm smoke:isaac` and
-`pnpm smoke:usd` in the PlastikCAD repo export eight reference robots (a
-rover and a long rover on four wheels, a car, an arm, a quadruped, a
-linkage that closes a loop, a rover on mecanum wheels and a rover on
-tracks) and run them in MuJoCo, in ROS 2 Jazzy and Gazebo
+`pnpm smoke:usd` in the PlastikCAD repo export nine reference robots (a
+rover and a long rover on four wheels, a rover on two wheels and a caster,
+a car, an arm, a quadruped, a linkage that closes a loop, a rover on
+mecanum wheels and a rover on tracks) and run them in MuJoCo, in ROS 2 Jazzy and Gazebo
 (Docker), in Isaac Sim through its URDF importer, and in Isaac Sim as the
 exported stages. The exported packages land in `fixtures/out/`. They are ready-made
 robots for the world builder to place and test with, and the smoke scripts
