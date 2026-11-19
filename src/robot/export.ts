@@ -914,6 +914,8 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
     controlled: p.controlled,
     // Rollers pass the floor from one to the next many times a second: PhysX keeps them true at twice its usual step rate.
     ...(p.rollers.length ? { stepsPerSecond: ROLLER_STEPS } : {}),
+    // Wheels that have to slide sideways for the robot to turn (see `skid`): PhysX lets them with its other solver.
+    ...(p.links.some((l) => l.skid) ? { skids: true } : {}),
   };
   const files: PackageFile[] = [{ name: `${pkg}.usda`, bytes: encodeText(writeUsda(model)) }, { name: 'README.md', bytes: encodeText(usdReadme(pkg, doc.name, model)) }];
   return { name: pkg, files, warnings, leftOut: p.leftOut };
@@ -946,7 +948,7 @@ Each sensor's readings are in its own frame, \`<sensor>_link\`, and a camera's
 pictures in \`<sensor>_optical_frame\`, as in the ROS package. ${model.footprint && !model.fixedBase ? `The base frame is \`${model.footprint.name}\`, on the floor under \`${model.root}\`\nand facing the robot's forward along +X; the odometry is given for it.` : `The base frame is \`${model.root}\`.`}${model.sensors.some((s) => s.kind === 'lidar') ? ' A lidar\nscans the whole circle in Isaac Sim, at the angular step of the design.' : ''}
 ${model.sensors.some((s) => s.kind === 'touch') ? '\nTouch sensors are Isaac contact sensors on their links; read them from a\nscript or the Contact Sensor window, as the ROS 2 bridge has no publisher\nfor them.\n' : ''}
 The floor is a stand-in: place the robot in a world of your own by
-referencing this stage, or copy the \`${robotPrim(model.name)}\` prim into it.
+referencing this stage, or copy the \`${robotPrim(model.name)}\` prim into it.${model.skids ? '\nThat world needs the solver this stage asks for, which lets the wheels slide\nas the robot turns: `physxScene:solverType = "PGS"` on its physics scene.' : ''}
 `;
 }
 

@@ -558,7 +558,11 @@ in the design file and synced with it.
   alone; the graph tells each track wheel's joint its side's speed, and the
   wheels of a row, which overlap, meet neither one another nor the robot's
   links. A robot whose only moving joints are such wheels publishes no
-  joint states.
+  joint states. A wheel holds the speed it is told with up to its motor's
+  torque. The stage of a rover with more than one wheel a side asks for
+  PhysX's PGS solver (`physxScene:solverType = "PGS"`), which lets its
+  wheels slide as it turns: a stage of your own needs the same, or a rover
+  longer than it is wide hardly turns.
   *File > Open*, Play, and it runs; nothing is imported or set up on
   the Isaac side. Isaac Sim can still import the ROS 2 package's URDF, but
   the stage carries what the importer cannot read from URDF: drive gains, a

@@ -1368,4 +1368,17 @@ describe('the friction of a wheel that skids', () => {
       }
     }
   });
+
+  it('asks Isaac Sim for the solver that lets a turning wheel slide sideways, for such a rover alone', () => {
+    const made = (which: string) => {
+      const d = ROBOTS.find((r) => r.file === which)!.make();
+      return buildIsaacStage(d, geo(d));
+    };
+    const stage = (which: string) => file(made(which), /\.usda$/);
+    // The stage's README says so too, for whoever puts the rover in a world of their own.
+    expect(file(made('rover'), /^README\.md$/)).toContain('`physxScene:solverType = "PGS"`');
+    expect(file(made('tracked'), /^README\.md$/)).not.toContain('solverType');
+    expect(stage('rover')).toMatch(/def PhysicsScene "physicsScene" \(\n\s*prepend apiSchemas = \["PhysxSceneAPI"\]\n\s*\)\n\s*\{[^}]*uniform token physxScene:solverType = "PGS"/);
+    for (const name of ['tracked', 'mecanum', 'car', 'arm']) expect(stage(name)).not.toContain('solverType');
+  });
 });
