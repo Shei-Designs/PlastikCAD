@@ -56,6 +56,23 @@ def joint_range(model, a):
     return 0.0, 0.5
 
 
+def ackermann(d, v, w):
+    """A car's controls for a speed v (m/s, at the middle of the wheels that do not steer) and a turn rate w (rad/s,
+    left positive): the car turns about a point on the line of those wheels. Each knuckle is turned square to the line
+    from it to that point, so the inner one turns further; each driven wheel runs at the speed of its own place
+    ("places" in drive.json: along the car's forward and to its left), so the outer ones run faster."""
+    base, kingpin, limit = d["wheelBase"], d["kingpinWidth"], d["steeringLimit"]
+    sharpest = math.tan(limit) / (base + kingpin / 2 * math.tan(limit))  # the inner knuckle at its limit
+    c = max(-sharpest, min(sharpest, w / v)) if abs(v) > 1e-6 else 0.0
+    out = {}
+    for role, y in (("steer-left", kingpin / 2), ("steer-right", -kingpin / 2)):
+        for name in d["roles"].get(role, []):
+            out[name] = math.atan2(base * c, 1 - y * c)
+    for name, (x, y) in d["places"].items():
+        out[name] = v * math.copysign(math.hypot(1 - y * c, x * c), 1 - y * c) / d["wheelRadius"]
+    return out
+
+
 class Joints:
     """Aims joints at angles. A servo takes the angle itself; a joint commanded by torque gets the torque of a
     spring and a damper about the angle, and stays where the simulation began until it is aimed elsewhere."""
@@ -128,13 +145,8 @@ class Rover:
             for name in roles.get("right", []):
                 data.ctrl[self.ids[name]] = (v + w * sep / 2) / r
         elif d["kind"] == "ackermann":
-            for side in ("left", "right"):
-                for name in roles.get(side, []):
-                    data.ctrl[self.ids[name]] = v / r
-            steer = math.atan(d["wheelBase"] * w / v) if abs(v) > 1e-6 else 0.0
-            steer = max(-d["steeringLimit"], min(d["steeringLimit"], steer))
-            for name in roles.get("steer-left", []) + roles.get("steer-right", []):
-                data.ctrl[self.ids[name]] = steer
+            for name, value in ackermann(d, v, w).items():
+                data.ctrl[self.ids[name]] = value
         else:  # mecanum: forward, sideways (vy) and turn, lx and ly half the wheelbase and track
             k = (d["wheelBase"] + sep) / 2
             for role, sign_y, sign_w in (("front-left", -1, -1), ("front-right", 1, 1), ("rear-left", 1, -1), ("rear-right", -1, 1)):

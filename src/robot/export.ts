@@ -90,6 +90,8 @@ export interface PreparedDrive {
   kingpinWidth?: number;
   /** A car's driven wheels, left to right, m: those on the steering knuckles, and those off them. */
   axleWidths?: { steered?: number; fixed?: number };
+  /** A car's driven wheels by joint name, m: along the robot's forward and to its left, from the middle of the wheels that do not steer. */
+  places?: Record<string, [number, number]>;
   steeringLimit?: number;
   /** The top speed of the slower steering joint, rad/s. */
   steeringSpeed?: number;
@@ -107,6 +109,8 @@ export interface DriveSpec {
   wheelBase?: number;
   kingpinWidth?: number;
   steeringLimit?: number;
+  /** A car's driven wheels by actuator, m: along the robot's forward and to its left, from the middle of the wheels that do not steer. */
+  places?: Record<string, [number, number]>;
 }
 
 /** The MuJoCo package, with what the test drive needs to pose the design from the model and name its controls. */
@@ -507,7 +511,12 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
             return l.length && r.length ? apart(mean(l), mean(r)) : undefined;
           };
           drive.axleWidths = { steered: width(true), fixed: width(false) };
-          drive.wheelBase = apart(mean(fixed.length ? fixed : driven), mean([sl, sr]));
+          const middle = mean(fixed.length ? fixed : driven);
+          drive.wheelBase = apart(middle, mean([sl, sr]));
+          // The car turns about a point on the line of the wheels that do not steer: each driven wheel's speed follows from where it stands.
+          const left: Vec3 = [-forward[1], forward[0], 0];
+          const along = (j: RobotJoint, way: Vec3) => at(j).reduce((sum, v, i) => sum + (v - middle[i]) * way[i], 0) * M;
+          drive.places = Object.fromEntries(driven.map((j) => [jointNames.get(j)!, [along(j, forward), along(j, left)]]));
           drive.steeringLimit = (Math.min(...[sl, sr].map((j) => Math.min(Math.abs(j.lower), Math.abs(j.upper)))) * Math.PI) / 180;
           drive.steeringSpeed = (Math.min(sl.velocity, sr.velocity) * Math.PI) / 180;
         }
@@ -1128,7 +1137,8 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
     const actuator = (joint: string) => (p.drive!.steer.includes(joint) ? `${joint}_servo` : `${joint}_motor`);
     const roles = Object.fromEntries(Object.entries(p.drive.roles).map(([role, joints]) => [role, (joints ?? []).filter((j) => actuated.has(j)).map(actuator)]));
     const { kind, forward, wheelRadius, wheelSeparation, wheelBase, kingpinWidth, steeringLimit } = p.drive;
-    drive = { kind, units: 'meters, radians', forward, roles, wheelRadius, wheelSeparation, wheelBase, kingpinWidth, steeringLimit };
+    const places = p.drive.places && Object.fromEntries(Object.entries(p.drive.places).filter(([j]) => actuated.has(j)).map(([j, at]) => [actuator(j), at]));
+    drive = { kind, units: 'meters, radians', forward, roles, wheelRadius, wheelSeparation, wheelBase, kingpinWidth, steeringLimit, places };
     files.push({ name: 'drive.json', bytes: encodeText(JSON.stringify(drive, null, 2) + '\n') });
   }
   return {

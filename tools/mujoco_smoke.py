@@ -7,6 +7,7 @@ Needs the `mujoco` package (pip install mujoco, or a venv). Each model is
 settled for a second, then driven: velocity motors run at their limit and the
 base must travel; a mecanum drive must go forward, slide and turn as told;
 a rover on tracks must go straight and turn on the spot;
+a car must go round the circle its steering asks, alike both ways;
 position servos are sent 0.3 rad and must follow; a free
 base must not collapse; and MuJoCo must raise no warnings. Exit code 1 on any
 failure, 2 when mujoco is missing.
@@ -54,6 +55,13 @@ TWO_STRAIGHT, TWO_TURN, TWO_STRAY = (0.93, 1.02), (0.97, 1.02), 0.02
 # motor has to bring to speed with the rover: the reference rovers take 0.03 to 0.05 s, their motors being strong
 # for their weight. A rim or a gain that made them slow to start would show here.
 START_WITHIN = 0.2
+# A car is told by drive.py to go at this speed (m/s), at the middle of its wheels that do not steer, round the curve
+# of a single wheel steered this far (rad), for this long (s), each way. The middle of those wheels must go round,
+# over the second half, between these shares of the circle asked, and the two ways must differ by no more than this
+# share. The reference car goes 104.4 % both ways: its steering servos stop some 0.7° short of their angles against
+# the tyres' scrub. With both knuckles at one angle and its wheels at one speed it went 127 %.
+CAR_SPEED, CAR_STEER, CAR_SECONDS = 0.3, 0.3, 12.0
+CAR_CIRCLE, CAR_ALIKE = (0.97, 1.08), 0.01
 
 root = sys.argv[1] if len(sys.argv) > 1 else "fixtures/out"
 # A link's friction is what holds on the floor: MuJoCo takes the larger of two surfaces' figures unless one has the
@@ -324,6 +332,52 @@ for xml in xmls:
             if (slid > 0.01) if holds else (slid < 0.1):
                 ok = False
                 notes.append(f"grip FAILED: a friction of {GRIP} {'let go under' if holds else 'held over'} {pull:.2f} of the weight")
+    # A car, from a fresh start each time, told by its own drive.py to go round a circle each way: the middle of the
+    # wheels that do not steer must go round the circle asked, alike both ways.
+    if spec and spec["kind"] == "ackermann" and os.path.exists(os.path.join(os.path.dirname(xml), "drive.py")):
+        import importlib.util
+
+        found = importlib.util.spec_from_file_location("car_drive", os.path.join(os.path.dirname(xml), "drive.py"))
+        car = importlib.util.module_from_spec(found)
+        found.loader.exec_module(car)
+        bodies = {n: m.jnt_bodyid[m.actuator_trnid[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_ACTUATOR, n), 0]] for n in spec.get("places", {})}
+        curve = np.tan(CAR_STEER) / spec["wheelBase"]
+        radii = []
+        if not hasattr(car, "ackermann") or not bodies:
+            ok = False
+            notes.append("car FAILED: drive.py or drive.json gives no wheel its own speed")
+        for side in (1, -1) if bodies and hasattr(car, "ackermann") else ():
+            e = mujoco.MjData(m)
+            if home >= 0:
+                mujoco.mj_resetDataKeyframe(m, e, home)
+            for _ in steps(0.5):
+                mujoco.mj_step(m, e)
+            for actuator, value in car.ackermann(spec, CAR_SPEED, side * CAR_SPEED * curve).items():
+                e.ctrl[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_ACTUATOR, actuator)] = value
+
+            def middle():
+                # Each driven wheel, less its place along the car's forward and to its left.
+                f = e.xmat[base].reshape(3, 3) @ np.array(spec["forward"], float)
+                lf = np.array([-f[1], f[0]])
+                return np.mean([e.xpos[b][:2] - x * f[:2] - y * lf for n, b in bodies.items() for x, y in [spec["places"][n]]], axis=0)
+
+            heading = lambda: float(np.arctan2(e.xmat[base][3], e.xmat[base][0]))  # noqa: E731
+            for _ in steps(CAR_SECONDS / 2):
+                mujoco.mj_step(m, e)
+            path, turned, last, h = 0.0, 0.0, middle(), heading()
+            for _ in steps(CAR_SECONDS / 2):
+                mujoco.mj_step(m, e)
+                now, nh = middle(), heading()
+                path += float(np.linalg.norm(now - last))
+                turned += (nh - h + np.pi) % (2 * np.pi) - np.pi
+                last, h = now, nh
+            radii.append(path / max(abs(turned), 1e-9))
+        shares = [r * curve for r in radii]
+        if radii:
+            notes.append(f"car circles {radii[0]:.3f} / {radii[1]:.3f} m of {1 / curve:.3f}")
+        if radii and (not all(CAR_CIRCLE[0] <= s <= CAR_CIRCLE[1] for s in shares) or abs(shares[0] - shares[1]) > CAR_ALIKE):
+            ok = False
+            notes.append(f"car circle FAILED: {100 * shares[0]:.1f} % and {100 * shares[1]:.1f} % of the circle asked")
     # Every camera must render a picture of something, and a depth picture of the floor that runs away to the top.
     if m.ncam:
         try:

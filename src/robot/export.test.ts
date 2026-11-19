@@ -9,7 +9,7 @@ import { loadMujoco, Simulation } from '../sim/mujoco';
 import type { LinkGeometry } from '../worker/protocol';
 import { checkRobot } from './check';
 import { buildIsaacStage, buildMjcfModel, buildRobotPackage, buildSdfModel, exportSummary, RIM_SECONDS } from './export';
-import type { RobotPackage } from './export';
+import type { DriveSpec, RobotPackage } from './export';
 import { meshProperties } from './inertia';
 import { driveForward, jointInChild, jointInDesign, linkNodes, motorsOnLoopJoints, openLoops, spanningTree, withMotors } from './model';
 import { motorFigures, motorOf } from './motors';
@@ -1557,7 +1557,7 @@ describe('the friction of a wheel that skids', () => {
     for (const name of ['tracked', 'mecanum', 'arm', 'quadruped', 'linkage']) expect(stage(name)).not.toContain('_tread"');
   });
 
-  it('has Isaac Sim turn only the wheels of a car that have a motor, each by its own of the four speeds for its own axle, steers by the width between the knuckles, and measures the wheelbase to the wheels that do not steer', () => {
+  it('has Isaac Sim turn only the wheels of a car that have a motor, each by its own of the four speeds for its own axle, steers by the width between the knuckles, and measures the wheelbase to the wheels that do not steer; the MuJoCo drive.json has each driven wheel where it stands', () => {
     // The reference car driven by its rear wheels as it comes, by its front wheels alone, or by all four.
     const car = (driven: 'rear' | 'front' | 'all') => {
       const d = ROBOTS.find((r) => r.file === 'car')!.make();
@@ -1580,7 +1580,8 @@ describe('the friction of a wheel that skids', () => {
       const widths = Object.fromEntries([...usd.matchAll(/def OmniGraphNode "(ackermann(?:_front|_rear)?)"[\s\S]*?custom double inputs:trackWidth = (\S+)/g)].map((m) => [m[1], Number(m[2])]));
       const from = [...usd.matchAll(/def OmniGraphNode "wheel\d_speed"[\s\S]*?inputs:array\.connect = <\/World\/ROS2\/(\w+)\.outputs:wheelRotationVelocity>/g)].map((m) => m[1]);
       const told = /def OmniGraphNode "wheels"[\s\S]*?inputs:execIn\.connect = <\/World\/ROS2\/(\w+)\.outputs:execOut>/.exec(usd)![1];
-      return { usd, wheels, places, damping, widths, from, told, wheelBase: Number(/custom double inputs:wheelBase = (\S+)/.exec(usd)![1]), sdfBase: Number(/<wheel_base>([^<]+)</.exec(file(buildSdfModel(d, geo(d)), /model\.sdf$/))![1]) };
+      const spec = JSON.parse(file(buildMjcfModel(d, geo(d)), /^drive\.json$/)) as DriveSpec;
+      return { usd, wheels, places, damping, widths, from, told, spec, wheelBase: Number(/custom double inputs:wheelBase = (\S+)/.exec(usd)![1]), sdfBase: Number(/<wheel_base>([^<]+)</.exec(file(buildSdfModel(d, geo(d)), /model\.sdf$/))![1]) };
     };
     // Isaac's controller gives front left, front right, rear left, rear right: the rear wheels take the third and fourth.
     const rear = read('rear');
@@ -1603,6 +1604,14 @@ describe('the friction of a wheel that skids', () => {
     expect([front.widths, front.from, front.told]).toEqual([{ ackermann: 0.244, ackermann_front: 0.324 }, ['ackermann_front', 'ackermann_front'], 'ackermann_front']);
     expect([all.widths, all.from, all.told]).toEqual([{ ackermann: 0.244, ackermann_front: 0.324, ackermann_rear: 0.24 }, ['ackermann_rear', 'ackermann_front', 'ackermann_rear', 'ackermann_front'], 'ackermann_rear']);
     for (const made of [rear, front, all]) expect(made.usd).toContain('prepend double[] inputs:positionCommand.connect = </World/ROS2/ackermann.outputs:wheelAngles>');
+    // MuJoCo's drive.json carries the same geometry for drive.py and the test drive: each driven wheel's motor where it
+    // stands, along the car's forward and to its left from the middle of the rear axle, whichever wheels drive.
+    for (const made of [rear, front, all]) expect([made.spec.wheelBase, made.spec.kingpinWidth]).toEqual([0.32, 0.244]);
+    const at = { Rear_wheel_left_joint_motor: [0, 0.12], Rear_wheel_right_joint_motor: [0, -0.12], Front_wheel_left_joint_motor: [0.32, 0.162], Front_wheel_right_joint_motor: [0.32, -0.162] };
+    const near = (places: Record<string, [number, number]> | undefined) => Object.fromEntries(Object.entries(places ?? {}).map(([n, p]) => [n, p.map((v) => Math.round(v * 1e6) / 1e6)]));
+    expect(near(rear.spec.places)).toEqual({ Rear_wheel_left_joint_motor: at.Rear_wheel_left_joint_motor, Rear_wheel_right_joint_motor: at.Rear_wheel_right_joint_motor });
+    expect(near(front.spec.places)).toEqual({ Front_wheel_left_joint_motor: at.Front_wheel_left_joint_motor, Front_wheel_right_joint_motor: at.Front_wheel_right_joint_motor });
+    expect(near(all.spec.places)).toEqual(at);
   });
 
   it("lets a wheel that nothing drives roll free in Gazebo, and turns a car's knuckles at their servo's speed", () => {
