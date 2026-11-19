@@ -88,9 +88,12 @@ export interface UsdDrive {
   /** The driven wheels' joints, left side then right (differential, mecanum). */
   left: string[];
   right: string[];
-  /** Ackermann: the steering joints, left then right, and every wheel as Isaac's controller lists them: front left, front right, rear left, rear right. */
+  /**
+   * Ackermann: the steering joints, left then right, and each driven wheel with its place among the four speeds
+   * Isaac's controller gives: front left 0, front right 1, rear left 2, rear right 3.
+   */
   steer: string[];
-  ackermannWheels?: string[];
+  ackermannWheels?: { joint: string; place: number }[];
   /** Mecanum: the four wheels' joints by corner: front left, front right, rear left, rear right. */
   corners?: string[];
   wheelRadius: number;
@@ -841,7 +844,18 @@ function rosGraph(model: UsdModel, robotPath: string, linkPath: (link: string) =
         },
       },
       { name: 'steering', type: 'isaacsim.core.nodes.IsaacArticulationController', version: 1, attrs: { 'inputs:execIn': from('uint', 'ackermann.outputs:execOut'), 'inputs:targetPrim': target(robotPath), 'inputs:jointNames': tokens(d.steer), 'inputs:positionCommand': from('double[]', 'ackermann.outputs:wheelAngles') } },
-      { name: 'wheels', type: 'isaacsim.core.nodes.IsaacArticulationController', version: 1, attrs: { 'inputs:execIn': from('uint', 'ackermann.outputs:execOut'), 'inputs:targetPrim': target(robotPath), 'inputs:jointNames': tokens(d.ackermannWheels ?? [...d.left, ...d.right]), 'inputs:velocityCommand': from('double[]', 'ackermann.outputs:wheelRotationVelocity') } },
+    );
+    // Of the controller's four speeds each driven wheel takes its own.
+    const driven = d.ackermannWheels ?? [];
+    driven.forEach((w, i) => nodes.push({ name: `wheel${i}_speed`, type: 'omni.graph.nodes.ArrayIndex', version: 1, attrs: { 'inputs:array': from('double[]', 'ackermann.outputs:wheelRotationVelocity'), 'inputs:index': num('int', w.place), 'outputs:value': { type: 'double' } } }));
+    nodes.push(
+      {
+        name: 'speeds',
+        type: 'omni.graph.nodes.ConstructArray',
+        version: 1,
+        attrs: { 'inputs:arraySize': num('int', driven.length), 'inputs:arrayType': { type: 'token', value: '"double[]"' }, ...Object.fromEntries(driven.map((_, i) => [`inputs:input${i}`, from('double', `wheel${i}_speed.outputs:value`)])), 'outputs:array': { type: 'double[]' } },
+      },
+      { name: 'wheels', type: 'isaacsim.core.nodes.IsaacArticulationController', version: 1, attrs: { 'inputs:execIn': from('uint', 'ackermann.outputs:execOut'), 'inputs:targetPrim': target(robotPath), 'inputs:jointNames': tokens(driven.map((w) => w.joint)), 'inputs:velocityCommand': from('double[]', 'speeds.outputs:array') } },
     );
   }
   if (model.controlled.length) {

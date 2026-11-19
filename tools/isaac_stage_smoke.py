@@ -41,6 +41,14 @@ SKID_TURN, SKID_STRAY = (0.8, 1.1), 0.05
 MUST_MOVE = 0.1  # m
 MAY_SETTLE = 0.02  # m the base may drop while settling
 WALL_AT = 1.0  # m ahead
+# A car told to go straight back for this long goes between these shares of what was asked, strays no farther to
+# a side than this (m) and turns no more than this (rad); steered this far (rad) either way it goes round the
+# circle its wheelbase makes within these shares of its radius, and the two circles differ by no more than this
+# share of it. (The reference car goes 1.02 of the way back, 6 mm aside, turning 0.5°, and round circles of 1.035
+# and 1.04 of the radius, the same every run. With its front wheels driven backwards, as a stage once had them,
+# it went 0.95 of the way, turning 2.5°, round circles of 1.11 and 1.12.)
+CAR_SECONDS, CAR_STEER = 6.0, 0.3
+CAR_STRAIGHT, CAR_STRAY, CAR_VEER, CAR_CIRCLE, CAR_ALIKE = (0.97, 1.06), 0.03, math.radians(1.5), (0.97, 1.07), 0.03
 
 
 def stage_of(folder):
@@ -116,6 +124,8 @@ def read_stage(path):
         'tracks': len(re.findall(r'def PhysicsRevoluteJoint "[^"]*_wheel_\d+_joint"', text)) >= 6,
         'meshes': len(re.findall(r'def Mesh "visual_\d+"', text)),
         'wheels': re.findall(r'custom token\[\] inputs:jointNames = \[([^\]]*)\]', text),
+        # A car's wheelbase, as its steering controller is given it.
+        'wheel_base': next((float(m.group(1)) for m in re.finditer(r'custom double inputs:wheelBase = ([-\d.e]+)', text)), 0.0),
     }
 
 
@@ -521,6 +531,55 @@ def one(path, pictures):
                 result['problems'].append(f'turn on the spot: went {turned:.3f} rad of the {plain:.3f} plain friction gives ({1.0 * SECONDS:.3f} asked)')
             if math.hypot(forward, left) > SKID_STRAY:
                 result['problems'].append(f'turn on the spot: strayed, forward {forward:.3f} m, left {left:.3f} m')
+        # A car: told to go straight back it does, by about as much as asked and without turning or straying; told
+        # to circle to its left and then to its right, it goes round the circle its wheelbase and the steering
+        # angle make, the same either way.
+        if drive_kind == 'ackermann' and ackermann_pub is not None and info['wheel_base'] > 0:
+            def steered(speed, angle, seconds):
+                def send(i):
+                    m = AckermannDriveStamped()
+                    m.drive.speed, m.drive.steering_angle = speed, angle
+                    ackermann_pub.publish(m)
+                at, yaw = footprint()
+                seen = {'at': at, 'yaw': yaw, 'turned': 0.0, 'path': 0.0}
+
+                def follow():
+                    now_at, now = footprint()
+                    seen['turned'] += (now - seen['yaw'] + math.pi) % (2 * math.pi) - math.pi
+                    seen['path'] += float(np.linalg.norm(now_at - seen['at']))
+                    seen['at'], seen['yaw'] = now_at, now
+
+                def sent(i):
+                    send(i)
+                    follow()
+
+                def stopped(i):
+                    ackermann_pub.publish(AckermannDriveStamped())
+                    follow()
+
+                run(seconds, sent)
+                run(0.5, stopped)
+                d = seen['at'] - at
+                return float(d[0] * math.cos(yaw) + d[1] * math.sin(yaw)), float(-d[0] * math.sin(yaw) + d[1] * math.cos(yaw)), seen['turned'], seen['path']
+
+            # Back first, away from the wall it drove up to, and far enough to circle clear of it.
+            back = steered(-SPEED, 0.0, CAR_SECONDS)
+            result['car_back'] = [round(back[0] * 1000), round(back[1] * 1000), round(math.degrees(back[2]), 2)]
+            if not CAR_STRAIGHT[0] <= back[0] / (-SPEED * CAR_SECONDS) <= CAR_STRAIGHT[1]:
+                result['problems'].append(f'car straight back: went {-back[0]:.3f} m of the {SPEED * CAR_SECONDS:.3f} asked')
+            if abs(back[1]) > CAR_STRAY or abs(back[2]) > CAR_VEER:
+                result['problems'].append(f'car straight back: strayed {back[1]:.3f} m to its left and turned {math.degrees(back[2]):.2f} deg')
+            ideal = info['wheel_base'] / math.tan(CAR_STEER)
+            radii = []
+            for side, angle in (('left', CAR_STEER), ('right', -CAR_STEER)):
+                _, _, turned, path = steered(SPEED, angle, CAR_SECONDS)
+                radius = path / abs(turned) if abs(turned) > 1e-3 else float('inf')
+                radii.append(radius)
+                if turned * angle <= 0 or not CAR_CIRCLE[0] <= radius / ideal <= CAR_CIRCLE[1]:
+                    result['problems'].append(f'car circle to its {side}: radius {radius:.3f} m, turned {math.degrees(turned):.1f} deg, where steering {CAR_STEER} rad on a wheelbase of {info["wheel_base"]:.3f} m makes {ideal:.3f} m')
+            result['car_circles_mm'] = [round(r * 1000) if math.isfinite(r) else None for r in radii]
+            if abs(radii[0] - radii[1]) > CAR_ALIKE * ideal:
+                result['problems'].append(f'car circles: {radii[0]:.3f} m to its left, {radii[1]:.3f} m to its right')
         if info['mecanum'] and drive_kind == 'twist':
             # Back first, away from the wall it drove up to.
             went = {'back': told(-SPEED, 0.0, 0.0), 'left': told(0.0, SPEED, 0.0), 'turn': told(0.0, 0.0, 1.0)}
