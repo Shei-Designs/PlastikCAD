@@ -1529,7 +1529,7 @@ describe('the friction of a wheel that skids', () => {
     for (const name of ['tracked', 'mecanum', 'arm', 'quadruped', 'linkage']) expect(stage(name)).not.toContain('_tread"');
   });
 
-  it('has Isaac Sim turn only the wheels of a car that have a motor, each by its own of the four speeds, and measures the wheelbase to the wheels that do not steer', () => {
+  it('has Isaac Sim turn only the wheels of a car that have a motor, each by its own of the four speeds for its own axle, steers by the width between the knuckles, and measures the wheelbase to the wheels that do not steer', () => {
     // The reference car driven by its rear wheels as it comes, by its front wheels alone, or by all four.
     const car = (driven: 'rear' | 'front' | 'all') => {
       const d = ROBOTS.find((r) => r.file === 'car')!.make();
@@ -1548,7 +1548,11 @@ describe('the friction of a wheel that skids', () => {
       const wheels = /def OmniGraphNode "wheels"[\s\S]*?inputs:jointNames = \[([^\]]*)\]/.exec(usd)![1].replace(/"/g, '').split(', ');
       const places = [...usd.matchAll(/def OmniGraphNode "wheel\d_speed"[\s\S]*?custom int inputs:index = (\d)/g)].map((m) => Number(m[1]));
       const damping = Object.fromEntries([...usd.matchAll(/def PhysicsRevoluteJoint "((?:Front|Rear)_wheel_[a-z]+)_joint"[\s\S]*?physics:damping = (\S+)/g)].map((m) => [m[1], Number(m[2])]));
-      return { usd, wheels, places, damping, wheelBase: Number(/custom double inputs:wheelBase = (\S+)/.exec(usd)![1]), sdfBase: Number(/<wheel_base>([^<]+)</.exec(file(buildSdfModel(d, geo(d)), /model\.sdf$/))![1]) };
+      // Each controller with the width it is given, and the controller each driven wheel's speed is taken from.
+      const widths = Object.fromEntries([...usd.matchAll(/def OmniGraphNode "(ackermann(?:_front|_rear)?)"[\s\S]*?custom double inputs:trackWidth = (\S+)/g)].map((m) => [m[1], Number(m[2])]));
+      const from = [...usd.matchAll(/def OmniGraphNode "wheel\d_speed"[\s\S]*?inputs:array\.connect = <\/World\/ROS2\/(\w+)\.outputs:wheelRotationVelocity>/g)].map((m) => m[1]);
+      const told = /def OmniGraphNode "wheels"[\s\S]*?inputs:execIn\.connect = <\/World\/ROS2\/(\w+)\.outputs:execOut>/.exec(usd)![1];
+      return { usd, wheels, places, damping, widths, from, told, wheelBase: Number(/custom double inputs:wheelBase = (\S+)/.exec(usd)![1]), sdfBase: Number(/<wheel_base>([^<]+)</.exec(file(buildSdfModel(d, geo(d)), /model\.sdf$/))![1]) };
     };
     // Isaac's controller gives front left, front right, rear left, rear right: the rear wheels take the third and fourth.
     const rear = read('rear');
@@ -1564,6 +1568,13 @@ describe('the friction of a wheel that skids', () => {
     expect([all.wheels, all.places]).toEqual([['Rear_wheel_left_joint', 'Front_wheel_left_joint', 'Rear_wheel_right_joint', 'Front_wheel_right_joint'], [2, 0, 3, 1]]);
     // From the knuckles to the rear axle, 320 mm, whichever wheels drive: not to the middle of the driven ones.
     for (const made of [rear, front, all]) expect([made.wheelBase, made.sdfBase]).toEqual([0.32, 0.32]);
+    // The knuckles stand 244 mm apart, the rear wheels 240 and the front wheels 324. Isaac's controller takes one
+    // width for the steering angles and the wheel speeds alike, so the angles come from one of the knuckles' width and
+    // each driven axle's speeds from one of its own; the wheels are told once the last of them has run.
+    expect([rear.widths, rear.from, rear.told]).toEqual([{ ackermann: 0.244, ackermann_rear: 0.24 }, ['ackermann_rear', 'ackermann_rear'], 'ackermann_rear']);
+    expect([front.widths, front.from, front.told]).toEqual([{ ackermann: 0.244, ackermann_front: 0.324 }, ['ackermann_front', 'ackermann_front'], 'ackermann_front']);
+    expect([all.widths, all.from, all.told]).toEqual([{ ackermann: 0.244, ackermann_front: 0.324, ackermann_rear: 0.24 }, ['ackermann_rear', 'ackermann_front', 'ackermann_rear', 'ackermann_front'], 'ackermann_rear']);
+    for (const made of [rear, front, all]) expect(made.usd).toContain('prepend double[] inputs:positionCommand.connect = </World/ROS2/ackermann.outputs:wheelAngles>');
   });
 
   it("lets a wheel that nothing drives roll free in Gazebo, and turns a car's knuckles at their servo's speed", () => {

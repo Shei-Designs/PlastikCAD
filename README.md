@@ -572,7 +572,10 @@ in the design file and synced with it.
   wheels of a row, which overlap, meet neither one another nor the robot's
   links. A robot whose only moving joints are such wheels publishes no
   joint states. A wheel holds the speed it is told with up to its motor's
-  torque. A wheel's cylinder stands on a narrow ridge round the middle of
+  torque. A car's knuckles are steered for the width between them, and each
+  driven axle's wheels are told the speeds for the width they stand apart,
+  so a car circles alike to the left and to the right whichever wheels
+  drive it. A wheel's cylinder stands on a narrow ridge round the middle of
   its tread, so a robot turns about the middle of its wheels, however wide
   they are. A rover with more than one wheel a side turns by sliding its
   wheels sideways: each such wheel's rotor is no lighter at the rim than
