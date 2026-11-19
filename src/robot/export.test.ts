@@ -7,10 +7,11 @@ import type { Doc, SceneNode } from '../model/types';
 import { loadMujoco, Simulation } from '../sim/mujoco';
 import type { LinkGeometry } from '../worker/protocol';
 import { checkRobot } from './check';
-import { buildIsaacStage, buildMjcfModel, buildRobotPackage, buildSdfModel, exportSummary } from './export';
+import { buildIsaacStage, buildMjcfModel, buildRobotPackage, buildSdfModel, exportSummary, RIM_SECONDS } from './export';
 import type { RobotPackage } from './export';
 import { meshProperties } from './inertia';
 import { driveForward, jointInChild, jointInDesign, linkNodes, motorsOnLoopJoints, openLoops, spanningTree, withMotors } from './model';
+import { motorFigures, motorOf } from './motors';
 import { defaultJoint, defaultLink, defaultSensor, DRIVE_KINDS, SENSOR_KINDS } from './types';
 import { ROBOTS } from './fixtures';
 import type { Robot } from './types';
@@ -1436,6 +1437,23 @@ describe('the friction of a wheel that skids', () => {
     expect(mjcf).toHaveLength(2);
     // Four times what each of the two driven wheels carries of the car, at the wheel's rim.
     for (const rotor of [...usd, ...mjcf]) expect(rotor).toBeCloseTo(4 * (mass / 2) * radius ** 2, 5);
+  });
+
+  it('gives a wheel no more rim than its motor brings to its top speed in a fifth of a second', () => {
+    // The rover on four small gearmotors (0.08 N·m, 1200 °/s): the rim its load asks for is some 0.0056 kg·m², which they would take over a second to spin up.
+    const tt = motorOf('tt-48')!;
+    const d = ROBOTS.find((r) => r.file === 'rover')!.make();
+    for (const j of d.robot!.joints) Object.assign(j, motorFigures(tt));
+    const usd = [...file(buildIsaacStage(d, geo(d)), /\.usda$/).matchAll(/float physxJoint:armature = (\S+)/g)].map(([, v]) => Number(v));
+    const mjcf = [...file(buildMjcfModel(d, geo(d)), /\.xml$/).matchAll(/<joint name="Wheel_[a-z_]+" type="hinge"[^>]*armature="([^"]+)"/g)].map(([, v]) => Number(v));
+    expect(usd).toHaveLength(4);
+    expect(mjcf).toHaveLength(4);
+    const most = (RIM_SECONDS * tt.torque) / ((tt.speed * Math.PI) / 180);
+    expect(most).toBeLessThan(0.001);
+    for (const rotor of [...usd, ...mjcf]) expect(rotor).toBeCloseTo(most, 6);
+    // And never less than the motor's own rotor: a motor too small to turn anything keeps what the table gives it.
+    for (const j of d.robot!.joints) j.effort = 0.001;
+    for (const [, v] of file(buildMjcfModel(d, geo(d)), /\.xml$/).matchAll(/<joint name="Wheel_[a-z_]+" type="hinge"[^>]*armature="([^"]+)"/g)) expect(Number(v)).toBe(tt.armature);
   });
 
   it('gives Isaac Sim a skidding wheel a rim as heavy as its load, and every wheel a crowned tread', () => {

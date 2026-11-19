@@ -574,7 +574,9 @@ in the design file and synced with it.
   wheels sideways: each such wheel's rotor is no lighter at the rim than
   four times the load the wheel carries, so the rover turns as far as plain
   friction lets it, about its own middle. A driven wheel whose motor names
-  no rotor, as in a robot brought in from a URDF, has that rim too.
+  no rotor, as in a robot brought in from a URDF, has that rim too. The rim
+  is never more than its motor brings to its top speed in a fifth of a
+  second, so small motors under a heavy robot start and stop as they should.
   *File > Open*, Play, and it runs; nothing is imported or set up on
   the Isaac side. Isaac Sim can still import the ROS 2 package's URDF, but
   the stage carries what the importer cannot read from URDF: drive gains, a
