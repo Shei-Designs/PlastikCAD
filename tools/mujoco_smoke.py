@@ -46,9 +46,9 @@ SKID_SPEED, SKID_TURN_RATE, SKID_SECONDS = 0.3, 1.0, 3.0
 SKID_STRAIGHT, SKID_TURN, SKID_STRAY = (0.9, 1.02), (0.75, 1.05), 0.02
 # A rover on one wheel a side and a caster slides no wheel to turn: run and told to turn the same, it goes straight
 # and turns between these shares of what was asked, about the middle of its axle, and strays no farther than this
-# another way (m, rad). The reference one goes 97.4 % of the way and 96.1 % of the turn, the start from rest in
-# both, and strays 3.5 mm.
-TWO_STRAIGHT, TWO_TURN, TWO_STRAY = (0.93, 1.02), (0.92, 1.02), 0.02
+# another way (m, rad). The reference one goes 98.0 % of the way and 99.7 % of the turn, the start from rest in
+# both, and strays 7.6 mm. With wheels as light at the rim as their motors' rotors alone it turned 96.1 %.
+TWO_STRAIGHT, TWO_TURN, TWO_STRAY = (0.93, 1.02), (0.97, 1.02), 0.02
 # Told to go straight, a rover on tracks or on wheels must be at nine tenths of the speed within this
 # long (s). A driven wheel has a rim as heavy as its load asks (see RIM_SHARE in src/robot/export.ts), which its
 # motor has to bring to speed with the rover: the reference rovers take 0.03 to 0.05 s, their motors being strong
