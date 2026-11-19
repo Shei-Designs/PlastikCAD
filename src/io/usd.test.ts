@@ -51,15 +51,15 @@ describe('writeUsda', () => {
     expect(usda).toContain('float3 xformOp:scale = (0.1, 0.1, 0.05)');
     expect(usda).toContain('def Cylinder "collision_0"');
     expect(usda).toContain('rel material:binding:physics = </World/PhysicsMaterials/friction_0_6>');
-    // The wheel joint: body to wheel at the wheel's frame, axis X turned onto the design's Y, a velocity drive damped by effort over speed.
+    // The wheel joint: body to wheel at the wheel's frame, axis X turned onto the design's Y, a velocity drive that holds its speed.
     expect(usda).toContain('def PhysicsRevoluteJoint "wheel_joint" (\n                prepend apiSchemas = ["PhysxJointAPI", "PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]');
     expect(usda).toContain('rel physics:body0 = </World/Test_cart/body>');
     expect(usda).toContain('rel physics:body1 = </World/Test_cart/wheel>');
     expect(usda).toContain('point3f physics:localPos0 = (0, -0.06, 0.02)');
     expect(usda).toContain('quatf physics:localRot0 = (0.707107, 0, 0, 0.707107)');
     expect(usda).not.toContain('physics:lowerLimit');
-    // USD Physics takes an angular drive's gains per degree: 0.1 N·m over 20 rad/s, a degree at a time.
-    expect(attr(usda, 'wheel_joint', 'drive:angular:physics:damping')).toBeCloseTo((0.1 / 20) * PER_DEGREE, 8);
+    // The wheel holds the speed asked of it: its whole 0.1 N·m once it is a hundredth of its 20 rad/s off. USD Physics takes an angular drive's gains per degree.
+    expect(attr(usda, 'wheel_joint', 'drive:angular:physics:damping')).toBeCloseTo((0.1 / (20 * 0.01)) * PER_DEGREE, 8);
     expect(usda).toContain('float drive:angular:physics:maxForce = 0.1');
     expect(usda).toContain('float drive:angular:physics:stiffness = 0');
     // The floor, the lights and the physics scene.

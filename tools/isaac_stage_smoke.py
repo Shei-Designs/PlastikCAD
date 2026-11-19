@@ -31,8 +31,11 @@ SPEED = 0.3  # m/s asked of a rover
 MECANUM_LEAST, MECANUM_MOST, MECANUM_STRAY = 0.8, 1.05, 0.05
 # A rover on tracks (a row of wheels each side stands in for a belt) told to go back goes between these shares of
 # what was asked, and told to turn on the spot at 1 rad/s between these shares of it: a long contact skids (the
-# reference rover turns 47 %; plain Coulomb friction would give 70 to 80 %). It strays no farther than this (m, rad).
+# reference rover turns 67 %; plain Coulomb friction would give 70 to 80 %). It strays no farther than this (m, rad).
 TRACK_STRAIGHT, TRACK_TURN, TRACK_STRAY = (0.9, 1.05), (0.35, 0.85), 0.05
+# A rover with two wheels a side, which slide as it turns, told to turn on the spot at 1 rad/s: between these shares
+# of it (the reference rover, wider than long, turns 57 %; plain friction would give 62 %).
+SKID_TURN = (0.4, 1.05)
 MUST_MOVE = 0.1  # m
 MAY_SETTLE = 0.02  # m the base may drop while settling
 WALL_AT = 1.0  # m ahead
@@ -94,6 +97,7 @@ def read_stage(path):
         # A mecanum drive's graph mixes a speed for each wheel.
         'mecanum': 'def OmniGraphNode "wheel0_linear"' in text,
         # A track's belt is stood in for by a row of wheels on hinges to it.
+        'skids': 'physxScene:solverType = "PGS"' in text,
         'tracks': len(re.findall(r'def PhysicsRevoluteJoint "[^"]*_wheel_\d+_joint"', text)) >= 6,
         'meshes': len(re.findall(r'def Mesh "visual_\d+"', text)),
         'wheels': re.findall(r'custom token\[\] inputs:jointNames = \[([^\]]*)\]', text),
@@ -127,8 +131,11 @@ def one(path, pictures):
             return
         app.update()
         stage = ctx.get_stage()
-        # Stepped as the stage asks to be, where it says: Isaac Sim's own sixty steps a second otherwise.
-        world = World(stage_units_in_meters=1.0, **({'physics_dt': 1.0 / info['steps_per_second']} if info['steps_per_second'] else {}))
+        # Stepped as the stage asks to be, where it says: Isaac Sim's own sixty steps a second otherwise. The
+        # stage's own physics settings are kept (its solver, where it names one), as they are for a user who
+        # opens it and presses Play: the world's defaults would write over them. Sixty pictures a second, as
+        # those defaults had it.
+        world = World(stage_units_in_meters=1.0, set_defaults=False, rendering_dt=1.0 / 60, **({'physics_dt': 1.0 / info['steps_per_second']} if info['steps_per_second'] else {}))
 
         # The robot's articulation, its joints and meshes, as the stage has them.
         root = None
@@ -488,6 +495,13 @@ def one(path, pictures):
                 stray = [abs(v) for j, v in enumerate(went[k]) if j != i]
                 if stray[0] > TRACK_STRAY or stray[1] > TRACK_STRAY:
                     result['problems'].append(f'tracks {k}: strayed, forward {went[k][0]:.3f} m, left {went[k][1]:.3f} m, turn {went[k][2]:.3f} rad')
+        # A rover whose wheels slide as it turns: told to turn on the spot, it does, as far as that sliding allows.
+        if info['skids'] and drive_kind == 'twist':
+            told(-SPEED, 0.0, 0.0)
+            turned = told(0.0, 0.0, 1.0)[2]
+            result['skid_turn'] = round(turned, 3)
+            if not SKID_TURN[0] <= turned / (1.0 * SECONDS) <= SKID_TURN[1]:
+                result['problems'].append(f'turn on the spot: went {turned:.3f} rad of the {1.0 * SECONDS:.3f} asked')
         if info['mecanum'] and drive_kind == 'twist':
             # Back first, away from the wall it drove up to.
             went = {'back': told(-SPEED, 0.0, 0.0), 'left': told(0.0, SPEED, 0.0), 'turn': told(0.0, 0.0, 1.0)}

@@ -121,10 +121,25 @@ export interface UsdModel {
   controlled: string[];
   /** Physics steps a second, where the robot needs finer ones than Isaac Sim's sixty (a mecanum wheel's rollers). */
   stepsPerSecond?: number;
+  /**
+   * The robot turns by sliding its wheels sideways (a differential drive with more than one wheel on a side).
+   * PhysX's usual solver (TGS) holds a wheel that is turning from sliding sideways, so such a rover longer than
+   * it is wide hardly turns (8 % of what plain friction gives 20 % of, measured); its other solver (PGS) lets
+   * the wheel slide as friction would (21 %), and is asked for here.
+   */
+  skids?: boolean;
 }
 
 const DEG = 180 / Math.PI;
 const FLOOR_FRICTION = 1;
+/**
+ * How far off the speed asked of it, as a share of its top speed, a speed-driven joint gives its whole torque. A
+ * drive as soft as the motor's own torque–speed line (the whole torque only at a standstill) gives up speed to
+ * every load: a 14 kg mecanum rover ran at 86 % of the speed asked on a level floor, and a rover turning on the
+ * spot at a quarter of it, its wheels held back by the floor they have to slide on. A motor's controller holds
+ * the speed it is told, as Gazebo's does.
+ */
+const SPEED_BAND = 0.01;
 /** USD's default film back, mm; the focal length is chosen against it for the field of view asked. */
 const APERTURE = 20.955;
 
@@ -563,13 +578,14 @@ function jointPrim(j: UsdJoint, robot: string, leader?: UsdJoint): string[] {
       const scale = j.type === 'prismatic' ? 1 : DEG;
       body.push(`float physics:lowerLimit = ${fmt(j.limit.lower * scale, 4)}`, `float physics:upperLimit = ${fmt(j.limit.upper * scale, 4)}`);
     }
-    // The drive: a wheel is told a speed and resists with its damping alone; a servo holds a position, stiff
+    // The drive: a wheel is told a speed and holds it with whatever torque that takes, up to its own (the whole
+    // of it once the wheel is `SPEED_BAND` of its top speed off what was asked); a servo holds a position, stiff
     // enough to reach it within a tenth of a radian (or a tenth of a meter) at full effort, damped to settle;
     // a joint nothing drives keeps its own damping. USD Physics takes an angular drive's gains per degree.
     const effort = j.limit?.effort ?? 1;
     const velocity = j.limit?.velocity || 1;
     const perUnit = j.type === 'prismatic' ? 1 : 1 / DEG;
-    const [stiffness, damping] = j.drive === 'velocity' ? [0, effort / velocity] : j.drive === 'position' ? [effort / 0.1, effort / 0.1 / 20] : [0, Math.max(j.dynamics?.damping ?? 0, 0)];
+    const [stiffness, damping] = j.drive === 'velocity' ? [0, effort / (velocity * SPEED_BAND)] : j.drive === 'position' ? [effort / 0.1, effort / 0.1 / 20] : [0, Math.max(j.dynamics?.damping ?? 0, 0)];
     body.push(
       `float drive:${drive}:physics:damping = ${fmt(damping * perUnit, 9)}`,
       `float drive:${drive}:physics:maxForce = ${fmt(effort, 6)}`,
@@ -905,10 +921,11 @@ export function writeUsda(model: UsdModel): string {
   const standIns = model.links.filter((l) => l.standIn);
 
   const world: string[] = [
-    ...(model.stepsPerSecond ? ['def PhysicsScene "physicsScene" (', '    prepend apiSchemas = ["PhysxSceneAPI"]', ')'] : ['def PhysicsScene "physicsScene"']),
+    ...(model.stepsPerSecond || model.skids ? ['def PhysicsScene "physicsScene" (', '    prepend apiSchemas = ["PhysxSceneAPI"]', ')'] : ['def PhysicsScene "physicsScene"']),
     '{',
     '    vector3f physics:gravityDirection = (0, 0, -1)',
     '    float physics:gravityMagnitude = 9.81',
+    ...(model.skids ? ['    uniform token physxScene:solverType = "PGS"'] : []),
     ...(model.stepsPerSecond ? [`    uint physxScene:timeStepsPerSecond = ${model.stepsPerSecond}`] : []),
     '}',
     '',
