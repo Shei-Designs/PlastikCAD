@@ -1439,24 +1439,27 @@ describe('the friction of a wheel that skids', () => {
     }
   });
 
-  it('gives MuJoCo a skidding wheel the rim Isaac Sim gets, on the rover and the long one, and leaves the motor its rotor elsewhere', () => {
+  it("gives every driven wheel the one rim in MuJoCo and in Isaac Sim, and leaves every other joint its motor's rotor", () => {
     const rotors = (which: string) => {
       const d = ROBOTS.find((r) => r.file === which)!.make();
       const mjcf = [...file(buildMjcfModel(d, geo(d)), /\.xml$/).matchAll(/<joint name="([A-Za-z_]+)" type="hinge"[^>]*armature="([^"]+)"/g)].map(([, name, v]) => [name, Number(v)] as const);
       const usd = [...file(buildIsaacStage(d, geo(d)), /\.usda$/).matchAll(/def PhysicsRevoluteJoint "([A-Za-z_]+)"[\s\S]*?float physxJoint:armature = (\S+)/g)].map(([, name, v]) => [name, Number(v)] as const);
       return { mjcf, usd: new Map(usd) };
     };
-    for (const name of ['rover', 'long']) {
+    // Driven wheels a robot: a rover on two wheels a side, one on one wheel a side, a car's rear pair, four mecanum wheels.
+    for (const [name, wheels] of [['rover', 4], ['long', 4], ['two', 2], ['car', 2], ['mecanum', 4]] as const) {
       const { mjcf, usd } = rotors(name);
-      expect(mjcf).toHaveLength(4);
+      const driven = mjcf.filter(([joint]) => /wheel/i.test(joint) && !/Front_wheel/.test(joint));
+      expect(driven).toHaveLength(wheels);
       // The 37 mm gearmotor's own rotor is 0.0005 kg·m²: the rim is some ten times that, and one figure for both simulators.
-      for (const [joint, rotor] of mjcf) {
+      for (const [joint, rotor] of driven) {
         expect(rotor).toBeGreaterThan(0.003);
         expect(rotor).toBeCloseTo(usd.get(joint)!, 5);
       }
     }
-    for (const [, rotor] of rotors('car').mjcf) expect([0.0005, 0.002]).toContain(rotor);
-    for (const [, rotor] of rotors('mecanum').mjcf.filter(([joint]) => joint.startsWith('Wheel_'))) expect(rotor).toBe(0.0005);
+    // A car's steering servos keep their own rotor, as an arm's joints and a walker's do: the rim is a wheel's.
+    expect(rotors('car').mjcf.filter(([joint]) => !/wheel/i.test(joint)).map(([, rotor]) => rotor)).toEqual([0.002, 0.002]);
+    for (const name of ['arm', 'quadruped']) for (const [, rotor] of rotors(name).mjcf) expect(rotor).toBeLessThan(0.003);
   });
 
   it("leaves a track's wheels and a car's wheels as they were", () => {

@@ -514,24 +514,22 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
       );
     }
   }
-  // A wheel that slides sideways as the robot turns (see `skid`) has a rim no lighter than `rimOf` says, as a
-  // track's wheels have, whatever its motor. Against a lighter one a simulator's friction pushes the wrong way,
-  // more across the wheel than against its slip, since the wheel gives way so easily the way it rolls. A rover
-  // 200 mm by 400 mm, where plain friction gives 20 % of the turn asked: Isaac Sim turned it 9 % and walked it off
-  // to one side, and turns it 19.5 % about its middle with the rim; MuJoCo turned it 12 %, and 17 % with it.
-  // Any other driven wheel keeps its motor's rotor, and has that rim only where it names none: figures typed by
-  // hand, or a robot brought in from a URDF, which has no place for one. With no rotor at all a wheel under load
-  // slips where it should grip: a rover on two wheels and a ball that drags, brought in from its own URDF, turned
-  // 66 % of what it was told in Isaac Sim and went 90 % of the way, and does 98 % of each with the rim.
+  // Every driven wheel has a rim no lighter than `rimOf` says, as a track's wheels have, whatever its motor: its
+  // own rotor where that is the heavier. Against a lighter one a simulator's friction pushes the wrong way, more
+  // across the wheel than against its slip, since the wheel gives way so easily the way it rolls, and the wheel's
+  // motor must be the softer for it. A rover 200 mm by 400 mm, where plain friction gives 20 % of the turn asked:
+  // Isaac Sim turned it 9 % and walked it off to one side, and turns it 19.5 % about its middle with the rim;
+  // MuJoCo turned it 12 %, and 17 % with it. A rover on two wheels and a ball turned 96 % of what it was told in
+  // MuJoCo and 100 % with the rim; a car parked on a slope of 20° rolled 6 mm/s and rolls under 1; a rover on
+  // mecanum wheels let go of a push across it at 0.70 of its weight, and holds to 0.74 where 0.71 is right.
   // A wheel, driven or free, is whatever turns without end on its joint. Its cylinder stands on the middle of its
   // tread (see `CROWN`), in Isaac Sim and in Gazebo.
   const turning = new Set(treeJoints.filter((j) => j.type === 'continuous').map((j) => j.child));
   for (const l of links) if (turning.has(l.name) && l.collision.some((c) => 'cylinder' in c.geometry)) l.crowned = true;
-  const skidding = new Set(links.filter((l) => l.skid).map((l) => l.name));
   if (drive) {
     const turned = treeJoints.filter((j) => drive!.wheels.includes(j.name));
     const load = links.reduce((m, l) => m + (l.inertial?.mass ?? 0), 0) / Math.max(1, turned.length);
-    for (const j of turned) if (skidding.has(j.child) || !j.armature) j.armature = Math.max(j.armature ?? 0, rimOf(load, drive.wheelRadius, j.limit?.effort ?? 0, j.limit?.velocity ?? 0));
+    for (const j of turned) j.armature = Math.max(j.armature ?? 0, rimOf(load, drive.wheelRadius, j.limit?.effort ?? 0, j.limit?.velocity ?? 0));
   }
   const driven = new Set(driveJoints(robot.drive));
   const controlled = robot.control ? tree.order.slice(1).map((id) => tree.parentJoint.get(id)!).filter((j) => hasMotor(j) && !driven.has(j.id)).map((j) => jointNames.get(j)!) : [];
@@ -993,9 +991,8 @@ referencing this stage, or copy the \`${robotPrim(model.name)}\` prim into it.
 }
 
 /**
- * The least a driven wheel of a track, or one that slides sideways as its rover turns (see `skid`), weighs at its
- * rim, as a multiple of what it carries of the robot: its rotor
- * inertia is never less than this times that mass times its radius squared. A rim lighter than its load is
+ * The least a driven wheel, a track's or a robot's own, weighs at its rim, as a multiple of what it carries of the
+ * robot: its rotor inertia is never less than this times that mass times its radius squared. A rim lighter than its load is
  * brought to the floor's speed by friction within a step, whatever its motor asks, and lets go again the next:
  * the track chatters where it should skid, and hardly turns the robot. Measured on the reference rover turning on
  * the spot in MuJoCo, at two robot masses and three motor gains: 1 gives about four fifths of the turn that 4
@@ -1014,7 +1011,7 @@ export const RIM_SHARE = 4;
  */
 export const RIM_SECONDS = 0.2;
 /**
- * The least rotor inertia of a driven wheel that needs a rim (see `RIM_SHARE`), kg·m²: `carried` is what the wheel
+ * The least rotor inertia of a driven wheel (see `RIM_SHARE`), kg·m²: `carried` is what the wheel
  * carries of the robot, kg, `radius` its own, m, and `effort` and `velocity` its motor's torque and top speed,
  * N·m and rad/s.
  */
