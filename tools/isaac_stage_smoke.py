@@ -30,11 +30,12 @@ SPEED = 0.3  # m/s asked of a rover
 # rollers slip a little, and it takes a moment to get going), and strays no farther than this another way (m, rad).
 MECANUM_LEAST, MECANUM_MOST, MECANUM_STRAY = 0.8, 1.05, 0.05
 # A rover on tracks (a row of wheels each side stands in for a belt) told to go back goes between these shares of
-# what was asked, and told to turn on the spot at 1 rad/s between these shares of it: a long contact skids. The
-# reference rover turns 48 % and strays 32 mm, the same every run; MuJoCo turns it 41 to 46 %, Gazebo 73 %, and
-# plain Coulomb friction with its weight even along the track 71 to 80 %. (On rigid contacts, which put its weight
-# on a few of its wheels, it turned 67 %.) It strays no farther than this (m, rad).
-TRACK_STRAIGHT, TRACK_TURN, TRACK_STRAY = (0.9, 1.05), (0.35, 0.85), 0.05
+# what was asked, and told to turn on the spot at 1 rad/s between these shares of it: a long contact skids. Plain
+# Coulomb friction under its eight wheels a side, carrying alike, turns the reference rover 67 %, as Isaac does
+# (steadily; the smoke's count takes in the start); MuJoCo turns it 41 to 46 %, Gazebo 73 %. When its wheels gave
+# under it, it stood on one diagonal's end wheels as it turned, went 48 % and strayed 39 mm, 51 mm the other way. It
+# strays no farther than this (m, rad).
+TRACK_STRAIGHT, TRACK_TURN, TRACK_STRAY = (0.9, 1.05), (0.35, 0.85), 0.01
 # A rover with two wheels a side, which slide as it turns, told to turn on the spot at 1 rad/s. Plain friction under
 # four wheels that carry alike turns it t²/(t² + L²) of that, t from side to side and L from axle to axle: 62 % for
 # the reference rover, wider than long, and 20 % for the long one. It must turn between these shares of what plain
