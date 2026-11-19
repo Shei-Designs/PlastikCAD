@@ -1350,13 +1350,11 @@ describe('the friction of a wheel that skids', () => {
     expect(urdf).not.toMatch(/<gazebo reference="Wheel_[a-z_]+">\s*<mu1>/);
   });
 
-  it('asks MuJoCo for the friction cone that grips alike at every heading, for that rover and the one on tracks', () => {
-    const mjcf = (which: string) => {
-      const d = ROBOTS.find((r) => r.file === which)!.make();
-      return file(buildMjcfModel(d, geo(d)), /\.xml$/);
-    };
-    for (const name of ['rover', 'tracked']) expect(mjcf(name)).toContain('integrator="implicitfast" cone="elliptic"/>');
-    for (const name of ['mecanum', 'car']) expect(mjcf(name)).not.toContain('cone=');
+  it('asks MuJoCo for the friction cone that grips alike at every heading, for every robot', () => {
+    for (const { make } of ROBOTS) {
+      const d = make();
+      expect(file(buildMjcfModel(d, geo(d)), /\.xml$/)).toContain('integrator="implicitfast" cone="elliptic" impratio="10"/>');
+    }
   });
 
   it("leaves a track's wheels, a mecanum wheel's rollers and a car's wheels as they were", () => {

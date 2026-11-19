@@ -60,14 +60,6 @@ export interface MjcfModel {
   /** Position servos over these joints, velocity motors over the wheels. */
   servos: string[];
   wheels: string[];
-  /**
-   * The robot turns by sliding its wheels sideways (a differential drive with more than one wheel on a side, or
-   * with tracks). MuJoCo's usual friction cone is a pyramid laid along the world's axes, which grips more along
-   * some headings than others: such a rover longer than it is wide slows to a stop as it comes round to 45°
-   * (measured: 4 % of the turn asked, where it began at 46 %; a rover on tracks 240 mm long and 100 mm apart, 2 %
-   * where it began at 23 %). The elliptic cone grips alike all round, and is asked for here.
-   */
-  skids?: boolean;
   /** Those of the servos' joints that take a torque instead: a plain motor, with no gains of its own. */
   torques?: string[];
   /** The floor: level, bumpy around a flat start, tilted, or level with steps or a ramp ahead. */
@@ -177,6 +169,17 @@ const sig = (x: number): string => String(Number(x.toPrecision(4)));
 
 /** The simulation's step, s. */
 const TIMESTEP = 0.002;
+/**
+ * How much harder the engine holds a contact from sliding than from sinking in. MuJoCo's friction gives way a
+ * little under any push, and by its usual cone (a pyramid laid along the world's axes) grips less along some
+ * headings than others. Measured on the reference robots with the usual cone and a ratio of 1: a walker
+ * standing on a 20° slope slid 45 to 59 mm in ten seconds, a car across it 29 mm, and a rover on mecanum wheels
+ * pushed sideways let go at half its weight where its rollers hold 0.71 of it (a rover that slides its wheels to
+ * turn, longer than it is wide, slowed to a stop as it came round to 45°). With the elliptic cone, which grips
+ * alike all round, and this ratio, the walker slides 2 to 3 mm, the car 1.5 mm, and the mecanum rover holds
+ * 0.68 of its weight at every heading. What is left along a wheel's rolling is its motor giving way, not the floor.
+ */
+const IMPRATIO = 10;
 /** A position servo pushes with its full effort from this far off its target, rad. */
 const SERVO_BAND = 0.1;
 /**
@@ -420,7 +423,7 @@ export function writeMjcf(model: MjcfModel): string {
     `<!-- Made with ${APP_NAME}. Units: meters, kilograms, radians. -->`,
     `<mujoco model="${escapeXml(model.name)}">`,
     '  <compiler angle="radian" meshdir="meshes" autolimits="true"/>',
-    `  <option timestep="${TIMESTEP}" gravity="0 0 -9.81" integrator="implicitfast"${model.skids ? ' cone="elliptic"' : ''}/>`,
+    `  <option timestep="${TIMESTEP}" gravity="0 0 -9.81" integrator="implicitfast" cone="elliptic" impratio="${IMPRATIO}"/>`,
     '  <default>',
     '    <default class="visual"><geom contype="0" conaffinity="0" group="2"/></default>',
     // The robot's shapes meet the floor and the course, never each other, as in the SDF and the USD stage.

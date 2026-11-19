@@ -522,9 +522,9 @@ in the design file and synced with it.
   Or a *MuJoCo model*: one MJCF file with the bodies nested down the tree,
   position servos on the controlled joints (torque motors on those
   commanded by torque) and velocity motors on the
-  wheels (each holds the speed it is told with up to its motor's torque; a
-  rover with more than one wheel a side, or on tracks, asks for the elliptic
-  friction cone, so that it slides alike at every heading as it turns), loops closed
+  wheels (each holds the speed it is told with up to its motor's torque), the
+  elliptic friction cone and a friction-to-normal ratio of 10, so that feet and
+  wheels grip alike at every heading and do not creep on a slope, loops closed
   by connect constraints, followers by joint
   constraints, cameras, IMUs, touch sensors and lidars (a fan of
   rangefinders, up to 90 rays), a `home` keyframe, the floor *World* chose,

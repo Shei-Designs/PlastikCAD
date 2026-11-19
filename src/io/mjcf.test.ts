@@ -3,7 +3,7 @@ import { writeMjcf } from './mjcf';
 import type { MjcfBody, MjcfModel } from './mjcf';
 
 /** A 2 kg body with one wheel on an axle along Y: the wheel's inertia about it and its motor's rotor are given. */
-function rover(wheelInertia: number, armature: number, effort: number, velocity: number, skids = false): string {
+function rover(wheelInertia: number, armature: number, effort: number, velocity: number): string {
   const wheel: MjcfBody = {
     name: 'wheel',
     pos: [0, 0.1, 0],
@@ -14,7 +14,7 @@ function rover(wheelInertia: number, armature: number, effort: number, velocity:
     children: [],
   };
   const base: MjcfBody = { name: 'body', pos: [0, 0, 0.05], inertial: { mass: 2, origin: [0, 0, 0], inertia: [0.01, 0.01, 0.01, 0, 0, 0] }, visual: [], collision: [], children: [wheel] };
-  const model: MjcfModel = { name: 'rover', base, floating: true, connects: [], followers: [], servos: [], wheels: ['axle'], world: 'flat', forward: [1, 0, 0], ...(skids ? { skids: true } : {}) };
+  const model: MjcfModel = { name: 'rover', base, floating: true, connects: [], followers: [], servos: [], wheels: ['axle'], world: 'flat', forward: [1, 0, 0] };
   return writeMjcf(model);
 }
 const gain = (xml: string): number => Number(xml.match(/<velocity name="axle_motor" joint="axle" kv="([^"]+)" ctrlrange="-10 10" forcerange="-2 2"\/>/)![1]);
@@ -35,9 +35,8 @@ describe("a wheel's motor in the MuJoCo model", () => {
   });
 });
 
-describe('the friction cone of the MuJoCo model', () => {
-  it('is the elliptic one for a robot whose wheels skid, and MuJoCo\'s own otherwise', () => {
-    expect(rover(0.0001, 0, 2, 10, true)).toContain('<option timestep="0.002" gravity="0 0 -9.81" integrator="implicitfast" cone="elliptic"/>');
-    expect(rover(0.0001, 0, 2, 10)).toContain('<option timestep="0.002" gravity="0 0 -9.81" integrator="implicitfast"/>');
+describe('the friction of the MuJoCo model', () => {
+  it('grips alike at every heading, and holds a contact from sliding ten times as hard as from sinking in', () => {
+    expect(rover(0.0001, 0, 2, 10)).toContain('<option timestep="0.002" gravity="0 0 -9.81" integrator="implicitfast" cone="elliptic" impratio="10"/>');
   });
 });
