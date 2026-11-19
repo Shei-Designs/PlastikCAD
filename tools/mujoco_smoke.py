@@ -44,6 +44,11 @@ TRACK_STRAIGHT, TRACK_TURN, TRACK_STRAY = (0.9, 1.02), (0.28, 0.7), 0.05
 # middle stays where it was.
 SKID_SPEED, SKID_TURN_RATE, SKID_SECONDS = 0.3, 1.0, 3.0
 SKID_STRAIGHT, SKID_TURN, SKID_STRAY = (0.9, 1.02), (0.75, 1.05), 0.02
+# Told to go straight, a rover on tracks or on two wheels a side must be at nine tenths of the speed within this
+# long (s). A driven wheel has a rim as heavy as its load asks (see RIM_SHARE in src/robot/export.ts), which its
+# motor has to bring to speed with the rover: the reference rovers take 0.03 to 0.05 s, their motors being strong
+# for their weight. A rim or a gain that made them slow to start would show here.
+START_WITHIN = 0.2
 
 root = sys.argv[1] if len(sys.argv) > 1 else "fixtures/out"
 # A link's friction is what holds on the floor: MuJoCo takes the larger of two surfaces' figures unless one has the
@@ -213,11 +218,14 @@ for xml in xmls:
                 mujoco.mj_step(m, e)
             at, yaw, last = e.qpos[:2].copy(), 0.0, yaw_of(e.qpos[3:7])
             heights = []
+            told, started = e.time, None
             for side, v in (("left", vl), ("right", vr)):
                 for a in sides[side]:
                     e.ctrl[a] = v / r
             for _ in steps(TRACK_SECONDS):
                 mujoco.mj_step(m, e)
+                if started is None and label == "straight" and float(e.qvel[:2] @ fwd) >= 0.9 * vl:
+                    started = e.time - told
                 now = yaw_of(e.qpos[3:7])
                 yaw += (now - last + np.pi) % (2 * np.pi) - np.pi
                 last = now
@@ -226,6 +234,11 @@ for xml in xmls:
             i = 0 if label == "straight" else 2
             stray = [abs(v) for j, v in enumerate(went) if j != i]
             notes.append(f"tracks {label}: {went[i]:.3f} of {ideal:.3f} {'rad' if i == 2 else 'm'} ({100 * went[i] / ideal:.0f} %), height within {(max(heights) - min(heights)) * 1000:.2f} mm")
+            if label == "straight":
+                notes.append(f"tracks start: at nine tenths of {vl} m/s after {'never' if started is None else f'{started:.3f} s'}")
+                if started is None or started > START_WITHIN:
+                    ok = False
+                    notes.append(f"tracks start FAILED: more than {START_WITHIN} s")
             if not least <= went[i] / ideal <= most or max(stray) > TRACK_STRAY:
                 ok = False
                 notes.append(f"tracks {label} FAILED: forward {went[0]:.3f} m, left {went[1]:.3f} m, turn {went[2]:.3f} rad")
@@ -251,11 +264,14 @@ for xml in xmls:
             for _ in steps(0.5):
                 mujoco.mj_step(m, e)
             at, yaw, last = e.qpos[:2].copy(), 0.0, yaw_of(e.qpos[3:7])
+            told, started = e.time, None
             for side, v in (("left", vl), ("right", vr)):
                 for a in sides[side]:
                     e.ctrl[a] = v / r
             for _ in steps(SKID_SECONDS):
                 mujoco.mj_step(m, e)
+                if started is None and label == "straight" and float(e.qvel[:2] @ fwd) >= 0.9 * vl:
+                    started = e.time - told
                 now = yaw_of(e.qpos[3:7])
                 yaw += (now - last + np.pi) % (2 * np.pi) - np.pi
                 last = now
@@ -264,6 +280,11 @@ for xml in xmls:
             stray = [abs(v) for j, v in enumerate(went) if j != i]
             of = "" if i == 0 else f" that plain friction gives ({100 * plain:.0f} % of {SKID_TURN_RATE * SKID_SECONDS:.1f} asked)"
             notes.append(f"skid {label}: {went[i]:.3f} of {ideal:.3f} {'rad' if i == 2 else 'm'}{of} ({100 * went[i] / ideal:.0f} %), strayed {1000 * max(stray[:1] if i == 0 else stray[:2]):.1f} mm")
+            if label == "straight":
+                notes.append(f"skid start: at nine tenths of {vl} m/s after {'never' if started is None else f'{started:.3f} s'}")
+                if started is None or started > START_WITHIN:
+                    ok = False
+                    notes.append(f"skid start FAILED: more than {START_WITHIN} s")
             if not least <= went[i] / ideal <= most or max(stray) > SKID_STRAY:
                 ok = False
                 notes.append(f"skid {label} FAILED: forward {went[0]:.3f} m, left {went[1]:.3f} m, turn {went[2]:.3f} rad")
