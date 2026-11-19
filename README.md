@@ -400,7 +400,10 @@ in the design file and synced with it.
   robot gets a `base_footprint` root on the floor under the base link,
   facing +X as ROS expects. A differential drive with more than one wheel
   a side turns by skidding them, as a real one does, so it turns less than
-  its wheels' speeds say: by less the longer it is against its width.
+  its wheels' speeds say: by less the longer it is against its width. For
+  Gazebo each such wheel stands on a narrow ridge round the middle of its
+  tread, so the SDF model and the ROS 2 package turn alike, about the
+  rover's own middle.
   A wheel with no part in the drive and no controller rolls free: Gazebo,
   which holds a joint to the top speed in its file, is given none for it.
   A car's knuckles turn at their servo's speed.

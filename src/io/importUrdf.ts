@@ -24,6 +24,7 @@ import { encodeFloat32, encodeUint32 } from './base64';
 import { centerMesh, checkedMesh, guarded, importFile } from './import';
 import type { Companion } from './import';
 import { urdfName } from './urdf';
+import { CROWN } from './usd';
 import { MeshBuilder } from './weld';
 import { childOf, childrenOf, localName, xmlTree } from './xml';
 import type { XmlElement } from './xml';
@@ -58,6 +59,20 @@ interface Shape {
   geometry: Geometry;
   pose: Mat;
   color?: string;
+}
+
+/**
+ * A wheel this app wrote crowned for Gazebo (see `crowned` in gazebo.ts) is two cylinders in one place, the wheel's
+ * own a little low and a ridge of its full radius: read back as the one cylinder it stands for.
+ */
+function uncrowned(shapes: Shape[]): Shape[] {
+  const [low, ridge] = shapes;
+  if (shapes.length !== 2 || !('cylinder' in low.geometry) || !('cylinder' in ridge.geometry)) return shapes;
+  const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3 * Math.abs(b);
+  const { radius, length } = low.geometry.cylinder;
+  const full = ridge.geometry.cylinder;
+  if (!near(radius, full.radius * (1 - CROWN.drop)) || !near(full.length, length * CROWN.width) || low.pose.some((v, i) => Math.abs(v - ridge.pose[i]) > 1e-9)) return shapes;
+  return [{ ...low, geometry: { cylinder: { radius: full.radius, length } } }];
 }
 
 interface Link {
@@ -466,7 +481,7 @@ function readUrdf(bytes: Uint8Array, companions: Companion[]): ImportedRobot {
     links.set(name, {
       name,
       visuals: childrenOf(l, 'visual').map((v) => readShape(v, materials)).filter((s): s is Shape => s !== null),
-      collisions: childrenOf(l, 'collision').map((c) => readShape(c, materials)).filter((s): s is Shape => s !== null),
+      collisions: uncrowned(childrenOf(l, 'collision').map((c) => readShape(c, materials)).filter((s): s is Shape => s !== null)),
       grams: kg !== undefined && kg > 0 ? Number((kg * MM).toFixed(2)) : null,
       ...(inertial ? { inertial: { pose: originOf(inertial), ...(tensor ? { tensor: tensor as Tensor } : {}) } } : {}),
     });

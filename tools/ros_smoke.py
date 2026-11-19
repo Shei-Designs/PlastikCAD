@@ -73,10 +73,12 @@ TRACK_TURN, TRACK_SECONDS, TRACK_SHARE, TRACK_DRIFT = 1.0, 3.0, (0.5, 1.05), 0.0
 # this long, it turns at between these shares of what Gazebo's friction gives, by the simulation's own time:
 # t/(t + L) of the rate told, t from side to side and L from axle to axle, since that friction is a square laid on
 # the wheels' diagonals (see `check_friction_frames`) where plain friction is a circle. That is 56 % for the
-# reference rover and 33 % for the long one. The SDF model turns the two 101 % and 99 % of that and the ROS package
-# 109 % and 94 % (its URDF, as Gazebo converts it, turns so as a plain model too), each the same to three figures
-# over seven runs, one of them held to one core on a busy machine. It moves no farther than this (m).
-SKID_TURN, SKID_SECONDS, SKID_SHARE, SKID_DRIFT = 1.0, 3.0, (0.8, 1.2), 0.05
+# reference rover and 33 % for the long one. Each wheel stands on a ridge round its middle, and the SDF model and
+# the ROS package then both turn the two 100.2 % and 99.8 % of that, without moving. (On plain cylinders the model
+# turned 101 % and 99 % and the package 109 % and 94 %: a cylinder lying exactly flat, as the package's reaches
+# Gazebo, has its load shared along its width as the physics pleases, and one a hair off flat, as the model's was
+# written, stands on one end; each figure was the same to three places over seven runs.) It moves no farther than this (m).
+SKID_TURN, SKID_SECONDS, SKID_SHARE, SKID_DRIFT = 1.0, 3.0, (0.95, 1.05), 0.01
 # A car told round a circle each way, at this speed (m/s, more than a wheel left to roll could turn at before it was
 # freed of its joint's limit) and the rate that steers its knuckles this far (rad), for this long: the radius its
 # path makes, the way it went over the turn it made, the start and the stop with it, is between these shares of the
