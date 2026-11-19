@@ -526,8 +526,9 @@ in the design file and synced with it.
   position servos on the controlled joints (torque motors on those
   commanded by torque) and velocity motors on the
   wheels (each holds the speed it is told with up to its motor's torque; those
-  of a rover with more than one wheel a side have a rotor no lighter at the rim
-  than four times the load each carries, as in the Isaac Sim stage), the
+  of a rover with more than one wheel a side, and any whose motor names no
+  rotor, have one no lighter at the rim than four times the load each
+  carries, as in the Isaac Sim stage), the
   elliptic friction cone and a friction-to-normal ratio of 10, so that feet and
   wheels grip alike at every heading and do not creep on a slope, loops closed
   by connect constraints, followers by joint
@@ -564,11 +565,13 @@ in the design file and synced with it.
   wheels of a row, which overlap, meet neither one another nor the robot's
   links. A robot whose only moving joints are such wheels publishes no
   joint states. A wheel holds the speed it is told with up to its motor's
-  torque. A rover with more than one wheel a side turns by
-  sliding its wheels sideways: each such wheel's rotor is no lighter at the
-  rim than four times the load the wheel carries, and its collision stands
-  on a narrow ridge round the middle of its tread, so the rover turns as
-  far as plain friction lets it, about its own middle.
+  torque. A wheel's cylinder stands on a narrow ridge round the middle of
+  its tread, so a robot turns about the middle of its wheels, however wide
+  they are. A rover with more than one wheel a side turns by sliding its
+  wheels sideways: each such wheel's rotor is no lighter at the rim than
+  four times the load the wheel carries, so the rover turns as far as plain
+  friction lets it, about its own middle. A driven wheel whose motor names
+  no rotor, as in a robot brought in from a URDF, has that rim too.
   *File > Open*, Play, and it runs; nothing is imported or set up on
   the Isaac side. Isaac Sim can still import the ROS 2 package's URDF, but
   the stage carries what the importer cannot read from URDF: drive gains, a

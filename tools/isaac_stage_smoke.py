@@ -44,8 +44,8 @@ WALL_AT = 1.0  # m ahead
 # A car told to go straight back for this long goes between these shares of what was asked, strays no farther to
 # a side than this (m) and turns no more than this (rad); steered this far (rad) either way it goes round the
 # circle its wheelbase makes within these shares of its radius, and the two circles differ by no more than this
-# share of it. (The reference car goes 1.02 of the way back, 6 mm aside, turning 0.5°, and round circles of 1.035
-# and 1.04 of the radius, the same every run. With its front wheels driven backwards, as a stage once had them,
+# share of it. (The reference car goes 1.02 of the way back, 6 mm aside, turning 0.5°, and round circles of 1.024
+# and 1.022 of the radius, the same every run. With its front wheels driven backwards, as a stage once had them,
 # it went 0.95 of the way, turning 2.5°, round circles of 1.11 and 1.12.)
 CAR_SECONDS, CAR_STEER = 6.0, 0.3
 CAR_STRAIGHT, CAR_STRAY, CAR_VEER, CAR_CIRCLE, CAR_ALIKE = (0.97, 1.06), 0.03, math.radians(1.5), (0.97, 1.07), 0.03
@@ -118,8 +118,8 @@ def read_stage(path):
         'steps_per_second': next((int(m.group(1)) for m in re.finditer(r'uint physxScene:timeStepsPerSecond = (\d+)', text)), 0),
         # A mecanum drive's graph mixes a speed for each wheel.
         'mecanum': 'def OmniGraphNode "wheel0_linear"' in text,
-        # A wheel that slides sideways as its rover turns stands on a ridge round its tread.
-        'skids': bool(re.search(r'def Cylinder "collision_\d+_tread"', text)),
+        # Two wheels a side slide sideways as their rover turns.
+        'skids': len(corners) == 4 and 'def OmniGraphNode "wheel0_linear"' not in text,
         # A track's belt is stood in for by a row of wheels on hinges to it.
         'tracks': len(re.findall(r'def PhysicsRevoluteJoint "[^"]*_wheel_\d+_joint"', text)) >= 6,
         'meshes': len(re.findall(r'def Mesh "visual_\d+"', text)),
