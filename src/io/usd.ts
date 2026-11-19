@@ -146,7 +146,7 @@ export const SPEED_BAND = 0.01;
  * wheels turns as one whose wheels stood that much farther apart would (94 % of what it is told on the ridge, 74 %
  * without, for wheels 100 mm wide), and a car on wheels 90 mm wide goes round a circle 40 % too wide.
  */
-const CROWN = { width: 1 / 40, drop: 0.01 };
+export const CROWN = { width: 1 / 40, drop: 0.01 };
 /** USD's default film back, mm; the focal length is chosen against it for the field of view asked. */
 const APERTURE = 20.955;
 
