@@ -90,10 +90,12 @@ export interface UsdDrive {
   right: string[];
   /**
    * Ackermann: the steering joints, left then right, and each driven wheel with its place among the four speeds
-   * Isaac's controller gives: front left 0, front right 1, rear left 2, rear right 3.
+   * Isaac's controller gives (front left 0, front right 1, rear left 2, rear right 3) and how far its axle's driven
+   * wheels stand apart, m. `kingpinWidth` is between the two steering joints, m.
    */
   steer: string[];
-  ackermannWheels?: { joint: string; place: number }[];
+  ackermannWheels?: { joint: string; place: number; width: number }[];
+  kingpinWidth?: number;
   /** Mecanum: the four wheels' joints by corner: front left, front right, rear left, rear right. */
   corners?: string[];
   wheelRadius: number;
@@ -844,33 +846,47 @@ function rosGraph(model: UsdModel, robotPath: string, linkPath: (link: string) =
       });
     }
   } else if (d && d.kind === 'ackermann') {
-    // ackermann_cmd (speed and steering angle) → the steering joints' angles and the wheels' speeds.
+    // ackermann_cmd (speed and steering angle) → the steering joints' angles and the wheels' speeds. Isaac's controller
+    // takes one width, for the two steering angles and the four wheel speeds alike. The angles are right for the
+    // width between the steering joints: a knuckle's wheel, wherever it stands on its axle, rolls square to the line
+    // from the knuckle to the point the car turns about. A wheel's speed is right for the width its own axle's wheels
+    // stand apart. Told angles for another width, the two front wheels point past each other and one of them has to
+    // slide. PhysX shares a car's weight among its four rigid wheels unevenly, more on one diagonal, by the order the
+    // wheels come in, and the lighter front wheel is the one that slides: so the car circled 5 % wider one way than
+    // the other. The angles therefore come from one controller, of the knuckles' width, and each driven axle whose
+    // wheels stand another width apart has a controller of its own for their speeds.
+    const driven = d.ackermannWheels ?? [];
+    const kingpin = d.kingpinWidth ?? d.wheelSeparation;
+    const controller = (name: string, width: number, after: string): GraphNode => ({
+      name,
+      type: 'isaacsim.robot.wheeled_robots.AckermannController',
+      version: 2,
+      attrs: {
+        'inputs:execIn': from('uint', `${after}.outputs:execOut`),
+        'inputs:speed': from('double', 'ackermann_cmd.outputs:speed'),
+        'inputs:steeringAngle': from('double', 'ackermann_cmd.outputs:steeringAngle'),
+        'inputs:wheelBase': num('double', d.wheelBase ?? d.wheelSeparation),
+        'inputs:trackWidth': num('double', width),
+        'inputs:frontWheelRadius': num('double', d.wheelRadius),
+        'inputs:backWheelRadius': num('double', d.wheelRadius),
+        'inputs:maxWheelVelocity': num('double', d.maxWheelSpeed),
+        'inputs:maxWheelRotation': num('double', d.steeringLimit ?? 0.6),
+        'outputs:execOut': EXEC,
+        'outputs:wheelAngles': { type: 'double[]' },
+        'outputs:wheelRotationVelocity': { type: 'double[]' },
+      },
+    });
+    // The speeds of an axle whose wheels stand the knuckles' width apart are the first controller's own.
+    const own = (w: { place: number; width: number }) => (Math.abs(w.width - kingpin) < 1e-6 ? 'ackermann' : w.place < 2 ? 'ackermann_front' : 'ackermann_rear');
+    const axles = [...new Set(driven.map(own))].filter((name) => name !== 'ackermann').sort();
     nodes.push(
       { name: 'ackermann_cmd', type: 'isaacsim.ros2.bridge.ROS2SubscribeAckermannDrive', version: 1, attrs: { 'inputs:execIn': from('uint', 'tick.outputs:tick'), 'inputs:context': from('uint64', 'context.outputs:context'), 'inputs:topicName': text('ackermann_cmd'), 'outputs:execOut': EXEC, 'outputs:speed': { type: 'double' }, 'outputs:steeringAngle': { type: 'double' } } },
-      {
-        name: 'ackermann',
-        type: 'isaacsim.robot.wheeled_robots.AckermannController',
-        version: 2,
-        attrs: {
-          'inputs:execIn': from('uint', 'ackermann_cmd.outputs:execOut'),
-          'inputs:speed': from('double', 'ackermann_cmd.outputs:speed'),
-          'inputs:steeringAngle': from('double', 'ackermann_cmd.outputs:steeringAngle'),
-          'inputs:wheelBase': num('double', d.wheelBase ?? d.wheelSeparation),
-          'inputs:trackWidth': num('double', d.wheelSeparation),
-          'inputs:frontWheelRadius': num('double', d.wheelRadius),
-          'inputs:backWheelRadius': num('double', d.wheelRadius),
-          'inputs:maxWheelVelocity': num('double', d.maxWheelSpeed),
-          'inputs:maxWheelRotation': num('double', d.steeringLimit ?? 0.6),
-          'outputs:execOut': EXEC,
-          'outputs:wheelAngles': { type: 'double[]' },
-          'outputs:wheelRotationVelocity': { type: 'double[]' },
-        },
-      },
+      controller('ackermann', kingpin, 'ackermann_cmd'),
+      ...axles.map((name, i) => controller(name, driven.find((w) => own(w) === name)!.width, i ? axles[i - 1] : 'ackermann')),
       { name: 'steering', type: 'isaacsim.core.nodes.IsaacArticulationController', version: 1, attrs: { 'inputs:execIn': from('uint', 'ackermann.outputs:execOut'), 'inputs:targetPrim': target(robotPath), 'inputs:jointNames': tokens(d.steer), 'inputs:positionCommand': from('double[]', 'ackermann.outputs:wheelAngles') } },
     );
-    // Of the controller's four speeds each driven wheel takes its own.
-    const driven = d.ackermannWheels ?? [];
-    driven.forEach((w, i) => nodes.push({ name: `wheel${i}_speed`, type: 'omni.graph.nodes.ArrayIndex', version: 1, attrs: { 'inputs:array': from('double[]', 'ackermann.outputs:wheelRotationVelocity'), 'inputs:index': num('int', w.place), 'outputs:value': { type: 'double' } } }));
+    // Of its controller's four speeds each driven wheel takes its own.
+    driven.forEach((w, i) => nodes.push({ name: `wheel${i}_speed`, type: 'omni.graph.nodes.ArrayIndex', version: 1, attrs: { 'inputs:array': from('double[]', `${own(w)}.outputs:wheelRotationVelocity`), 'inputs:index': num('int', w.place), 'outputs:value': { type: 'double' } } }));
     nodes.push(
       {
         name: 'speeds',
@@ -878,7 +894,7 @@ function rosGraph(model: UsdModel, robotPath: string, linkPath: (link: string) =
         version: 1,
         attrs: { 'inputs:arraySize': num('int', driven.length), 'inputs:arrayType': { type: 'token', value: '"double[]"' }, ...Object.fromEntries(driven.map((_, i) => [`inputs:input${i}`, from('double', `wheel${i}_speed.outputs:value`)])), 'outputs:array': { type: 'double[]' } },
       },
-      { name: 'wheels', type: 'isaacsim.core.nodes.IsaacArticulationController', version: 1, attrs: { 'inputs:execIn': from('uint', 'ackermann.outputs:execOut'), 'inputs:targetPrim': target(robotPath), 'inputs:jointNames': tokens(driven.map((w) => w.joint)), 'inputs:velocityCommand': from('double[]', 'speeds.outputs:array') } },
+      { name: 'wheels', type: 'isaacsim.core.nodes.IsaacArticulationController', version: 1, attrs: { 'inputs:execIn': from('uint', `${axles[axles.length - 1] ?? 'ackermann'}.outputs:execOut`), 'inputs:targetPrim': target(robotPath), 'inputs:jointNames': tokens(driven.map((w) => w.joint)), 'inputs:velocityCommand': from('double[]', 'speeds.outputs:array') } },
     );
   }
   if (model.controlled.length) {

@@ -88,6 +88,8 @@ export interface PreparedDrive {
   wheelBase?: number;
   /** Between the two steering joints. */
   kingpinWidth?: number;
+  /** A car's driven wheels, left to right, m: those on the steering knuckles, and those off them. */
+  axleWidths?: { steered?: number; fixed?: number };
   steeringLimit?: number;
   /** The top speed of the slower steering joint, rad/s. */
   steeringSpeed?: number;
@@ -499,6 +501,12 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
           const axle = placedJoints.get(driven[0].id)!.axis;
           const free = allJoints.filter((j) => j.type === 'continuous' && !robot.drive!.roles[j.id] && !steered(j) && Math.abs(placedJoints.get(j.id)!.axis.reduce((sum, x, i) => sum + x * axle[i], 0)) > 0.9);
           const fixed = driven.some((j) => !steered(j)) ? driven.filter((j) => !steered(j)) : free;
+          // The driven wheels of each axle stand their own width apart, and neither width need be the knuckles'.
+          const width = (on: boolean) => {
+            const [l, r] = [parts.left, parts.right].map((side) => side.filter((j) => steered(j) === on));
+            return l.length && r.length ? apart(mean(l), mean(r)) : undefined;
+          };
+          drive.axleWidths = { steered: width(true), fixed: width(false) };
           drive.wheelBase = apart(mean(fixed.length ? fixed : driven), mean([sl, sr]));
           drive.steeringLimit = (Math.min(...[sl, sr].map((j) => Math.min(Math.abs(j.lower), Math.abs(j.upper)))) * Math.PI) / 180;
           drive.steeringSpeed = (Math.min(sl.velocity, sr.velocity) * Math.PI) / 180;
@@ -861,11 +869,15 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
   // An Ackermann car in Isaac: the controller gives four speeds, front left, front right, rear left, rear right, and
   // each driven wheel takes the one for its place: a wheel on a steering knuckle is a front wheel. A wheel no motor
   // turns is told nothing and rolls free, as in every other export.
-  let ackermannWheels: { joint: string; place: number }[] | undefined;
+  let ackermannWheels: { joint: string; place: number; width: number }[] | undefined;
   if (p.drive?.kind === 'ackermann') {
     const r = p.drive.roles;
     const jointNamed = (name?: string) => p.treeJoints.find((j) => j.name === name);
-    const placed = (side: 'left' | 'right') => (r[side] ?? []).map((joint) => ({ joint, place: (jointNamed(joint)?.parent === jointNamed(r[`steer-${side}`]?.[0])?.child ? 0 : 2) + (side === 'left' ? 0 : 1) }));
+    const placed = (side: 'left' | 'right') =>
+      (r[side] ?? []).map((joint) => {
+        const front = jointNamed(joint)?.parent === jointNamed(r[`steer-${side}`]?.[0])?.child;
+        return { joint, place: (front ? 0 : 2) + (side === 'left' ? 0 : 1), width: (front ? p.drive!.axleWidths?.steered : p.drive!.axleWidths?.fixed) ?? p.drive!.wheelSeparation };
+      });
     ackermannWheels = [...placed('left'), ...placed('right')];
   }
   const frameOf = (link: string): Vec3 => p.frames.get([...p.linkNames].find(([, n]) => n === link)![0])!;
@@ -933,7 +945,7 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
     const steer = p.drive.kind === 'ackermann' ? [r['steer-left']?.[0], r['steer-right']?.[0]].filter((n): n is string => Boolean(n)) : p.drive.steer;
     // A mecanum drive's wheels by corner: front left, front right, rear left, rear right.
     const corners = p.drive.kind === 'mecanum' ? [r['front-left']![0], r['front-right']![0], r['rear-left']![0], r['rear-right']![0]] : undefined;
-    drive = { kind: p.drive.kind, left, right, steer, ackermannWheels, corners, wheelRadius: p.drive.wheelRadius, wheelSeparation: p.drive.wheelSeparation, wheelBase: p.drive.wheelBase, maxWheelSpeed: speeds.length ? Math.min(...speeds) : 10, steeringLimit: p.drive.steeringLimit };
+    drive = { kind: p.drive.kind, left, right, steer, ackermannWheels, corners, wheelRadius: p.drive.wheelRadius, wheelSeparation: p.drive.wheelSeparation, kingpinWidth: p.drive.kingpinWidth, wheelBase: p.drive.wheelBase, maxWheelSpeed: speeds.length ? Math.min(...speeds) : 10, steeringLimit: p.drive.steeringLimit };
   }
   // The frames the readings are stamped with are named as the ROS package names them, clear of the links.
   const sensors: UsdModel['sensors'] = p.sensors.map((s) => {
