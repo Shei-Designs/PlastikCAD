@@ -320,8 +320,22 @@ def one(path, pictures):
                 joint_pub.publish(m)
 
         # Standing still first: the sensors read the scene as built, the wall a meter ahead.
+        touched, touch_error, pads = {}, None, []
+        if info['touches']:
+            try:
+                from isaacsim.sensors.experimental.physics import ContactSensor
+                pads = [(prim.GetName(), ContactSensor(str(prim.GetPath()))) for prim in stage.Traverse() if prim.GetTypeName() == 'IsaacContactSensor']
+            except Exception as e:  # noqa: BLE001
+                touch_error = f'contact sensors could not be read: {type(e).__name__}: {e}'
         run(1.0, lambda i: drive(0.0, 0.0))
         settled = np.asarray(art.get_world_poses()[0][0]).copy()
+        # The touch pads are read standing too, before the servo is told to move: a walker with one leg swung up stands on the others.
+        try:
+            for pad, sensor in pads:
+                reading = sensor.get_sensor_reading()
+                touched[pad] = round(float(reading.value), 3) if reading.is_valid else None
+        except Exception as e:  # noqa: BLE001
+            touch_error = f'contact sensors could not be read: {type(e).__name__}: {e}'
         first_scans = {k: list(v) for k, v in got['scan'].items()}
         # The IMUs are judged standing still as well: a walker told to move one joint leans.
         still_imu = {k: v[-1] for k, v in got['imu'].items() if v}
@@ -447,22 +461,16 @@ def one(path, pictures):
                 result['problems'].append(f'the {what} is stamped with "{frame}", which the transform tree does not have ({", ".join(sorted(frames))})')
         # Touch sensors: Isaac's contact sensor interface must read a force on each pad that stands on the floor.
         if info['touches']:
-            touched = {}
-            try:
-                from isaacsim.sensors.experimental.physics import ContactSensor
-                sensors = [(prim.GetName(), ContactSensor(str(prim.GetPath()))) for prim in stage.Traverse() if prim.GetTypeName() == 'IsaacContactSensor']
-                # A few more steps, so each sensor has a reading of the robot as it stands.
-                run(0.2, lambda i: None)
-                for pad, sensor in sensors:
-                    reading = sensor.get_sensor_reading()
-                    touched[pad] = round(float(reading.value), 3) if reading.is_valid else None
-            except Exception as e:  # noqa: BLE001
-                result['problems'].append(f'contact sensors could not be read: {type(e).__name__}: {e}')
+            if touch_error:
+                result['problems'].append(touch_error)
             result['touch_N'] = touched
             quiet = [k for k, v in touched.items() if not v]
             # With nothing holding its joints the robot lies as it fell, on whatever it fell on.
             if len(quiet) == len(touched) and touched and not info['torques']:
                 result['problems'].append('no contact sensor feels any force')
+            # A reference robot's pads are its feet: standing still, it stands on all of them, not on three.
+            elif quiet and not info['torques']:
+                result['problems'].append(f'standing, {", ".join(quiet)} feel{"s" if len(quiet) == 1 else ""} nothing while the other pads do')
 
         # A joint commanded by torque goes the way its effort pushes it: full effort one way, then the other.
         if info['torques']:
