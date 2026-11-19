@@ -564,7 +564,10 @@ in the design file and synced with it.
   asks for 120 physics steps a second, which keeps them true: a stage of
   your own that the robot is referenced into needs the same rate
   (`physxScene:timeStepsPerSecond = 120` on its physics scene), or it
-  slides short. A robot on tracks is stepped as finely. The rollers, and the
+  slides short. A robot on tracks is stepped as finely. A wheel on a
+  cylinder grips with the friction typed for it, small or large, at 50
+  steps a second or more: a stage stepped 30 times a second adds a tenth.
+  The rollers, and the
   wheels that stand in for a track's belt, are bodies outside the
   articulation, so its joint states and transforms are the robot's own
   alone; the graph tells each track wheel's joint its side's speed, and the

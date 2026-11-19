@@ -185,6 +185,27 @@ describe('parseUrdf', () => {
     for (const j of moving.slice(2)) expect(back(j.name).command).toBeUndefined();
   });
 
+  it('reads a small wheel this app wrote back as the one cylinder it is', () => {
+    // The two-wheeled rover at a fifth of its size: wheels 10 mm in radius, whose own cylinder is written 4 mm low as a larger wheel's is.
+    const doc = ROBOTS.find((r) => r.file === 'two')!.make();
+    const fifth = (v: number[]) => v.map((x) => x / 5) as [number, number, number];
+    doc.scene = doc.scene.map((n) => ({ ...n, pos: fifth(n.pos), size: fifth(n.size) }));
+    doc.robot = { ...doc.robot!, sensors: [], joints: doc.robot!.joints.map((j) => ({ ...j, origin: fifth(j.origin) })) };
+    const nodes = linkNodes(doc.scene);
+    const geo = robotGeometry(nodes, Object.fromEntries(nodes.map((n) => [n.id, linkOf(doc.robot!, n.id).collision])), true);
+    const pkg = buildRobotPackage(doc, new Map(geo.map((g) => [g.id, g])), doc.robot!);
+    const urdf = pkg.files.find((f) => f.name.endsWith('.urdf'))!;
+    const cylinders = [...new TextDecoder().decode(urdf.bytes).matchAll(/<collision>\s*<origin[^>]*>\s*<geometry><cylinder radius="([^"]+)" length="([^"]+)"/g)].map((m) => [Number(m[1]), Number(m[2])]);
+    expect(cylinders).toEqual([[0.006, 0.008], [0.01, 0.0002], [0.006, 0.008], [0.01, 0.0002]]);
+    const { robot, warnings } = parseUrdf(urdf.bytes, pkg.files.filter((f) => f !== urdf).map((f) => ({ name: f.name, bytes: f.bytes })));
+    expect(warnings).toEqual([]);
+    for (const wheel of robot.links.slice(1, 3)) {
+      expect(wheel.collision).toBe('cylinder');
+      // The cylinder fitted to the wheel is the file's, so nothing of the file's two is kept.
+      expect(wheel.shape).toBeUndefined();
+    }
+  });
+
   it('takes a joint with only an effort interface as commanded by torque', () => {
     const urdf = `<robot name="r"><link name="a"><visual><geometry><box size="0.1 0.1 0.1"/></geometry></visual></link><link name="b"><visual><geometry><box size="0.1 0.1 0.1"/></geometry></visual></link>
       <joint name="knee" type="revolute"><parent link="a"/><child link="b"/><axis xyz="0 1 0"/><limit lower="-1" upper="1" effort="5" velocity="2"/></joint>

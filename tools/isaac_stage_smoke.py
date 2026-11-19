@@ -55,6 +55,14 @@ WALL_AT = 1.0  # m ahead
 # it went 0.95 of the way, turning 2.5°, round circles of 1.11 and 1.12.)
 CAR_SECONDS, CAR_STEER = 6.0, 0.3
 CAR_STRAIGHT, CAR_STRAY, CAR_VEER, CAR_CIRCLE, CAR_ALIKE = (0.97, 1.06), 0.03, math.radians(1.5), (0.97, 1.07), 0.03
+# A wheel stands on a ridge round its middle, and the rest of it is a cylinder a little lower. PhysX gives a body a
+# whole step's gravity before it solves the step's contacts, so a low cylinder nearer the floor than a body falls in
+# a step (g dt², 2.7 mm at sixty steps a second) is in the solve: it bears no weight and still adds to the wheel's
+# grip, the same on a wheel of any size (15 % at half a millimeter off, 9 to 12 % at one, 5 % at two under a
+# friction of 0.3, none from three; at 120 steps a second, where a body falls 0.7 mm, none from one millimeter).
+# Every stage's wheels are held to this many falls of clearance (the 4 mm they have are 1.47 at sixty steps a
+# second); a wheel under 5 mm in radius, which has not the room, to a low cylinder no more than a fifth of its radius.
+TREAD_CLEAR, TREAD_SMALL = 1.2, 0.21
 
 
 def stage_of(folder):
@@ -131,6 +139,8 @@ def read_stage(path):
         # A track's belt is stood in for by a row of wheels on hinges to it.
         'tracks': len(re.findall(r'def PhysicsRevoluteJoint "[^"]*_wheel_\d+_joint"', text)) >= 6,
         'meshes': len(re.findall(r'def Mesh "visual_\d+"', text)),
+        # Each wheel's two cylinders: the name of its link, the low one's radius and the ridge's (m).
+        'treads': [(m.group(1), float(m.group(2)), float(m.group(3))) for m in re.finditer(r'def Xform "([^"]+)" \((?:(?!def Xform)[\s\S])*?def Cylinder "collision_\d+" \((?:(?!def )[\s\S])*?double radius = ([-\d.e]+)(?:(?!def )[\s\S])*?\}\s*def Cylinder "collision_\d+_tread" \((?:(?!def )[\s\S])*?double radius = ([-\d.e]+)', text)],
         'wheels': re.findall(r'custom token\[\] inputs:jointNames = \[([^\]]*)\]', text),
         # A car's wheelbase, as its steering controller is given it.
         'wheel_base': next((float(m.group(1)) for m in re.finditer(r'custom double inputs:wheelBase = ([-\d.e]+)', text)), 0.0),
@@ -162,6 +172,13 @@ def one(path, pictures):
         if not ctx.open_stage(path):
             result['problems'].append('the stage did not open')
             return
+        # Read off the file, before anything runs (see TREAD_CLEAR).
+        fall = 9.81 / (info['steps_per_second'] or 60) ** 2
+        for link, low, whole in info['treads']:
+            if whole - low < TREAD_CLEAR * fall and low > TREAD_SMALL * whole:
+                result['problems'].append(f'{link}: its low cylinder is {1000 * (whole - low):.2f} mm off the floor, under {TREAD_CLEAR} of the {1000 * fall:.2f} mm a body falls in a step')
+        if info['treads']:
+            result['notes'].append(f"{len(info['treads'])} wheels on ridges, the rest {1000 * min(w - l for _, l, w in info['treads']):.1f} mm off the floor ({1000 * fall:.2f} mm falls in a step)")
         app.update()
         stage = ctx.get_stage()
         # Stepped as the stage asks to be, where it says: Isaac Sim's own sixty steps a second otherwise. The
