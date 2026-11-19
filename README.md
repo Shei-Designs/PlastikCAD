@@ -398,6 +398,9 @@ in the design file and synced with it.
   facing +X as ROS expects. A differential drive with more than one wheel
   a side turns by skidding them, as a real one does, so it turns less than
   its wheels' speeds say: by less the longer it is against its width.
+  A wheel with no part in the drive and no controller rolls free: Gazebo,
+  which holds a joint to the top speed in its file, is given none for it.
+  A car's knuckles turn at their servo's speed.
 - **Mecanum wheels.** A mecanum drive slides sideways on the *Mecanum
   wheel* part from the Wheels parts, and on nothing else. A link that is
   that part, or holds it (with a bore cut through it, a hub glued on), gets

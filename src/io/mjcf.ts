@@ -181,7 +181,7 @@ const TIMESTEP = 0.002;
  */
 const IMPRATIO = 10;
 /** A position servo pushes with its full effort from this far off its target, rad. */
-const SERVO_BAND = 0.1;
+export const SERVO_BAND = 0.1;
 /**
  * A wheel's motor gives its whole torque `SPEED_BAND` of its top speed off the speed asked, as in the Isaac Sim
  * stage: with the motor's own torque–speed line for a gain, a rover turning on the spot ran its wheels at two fifths

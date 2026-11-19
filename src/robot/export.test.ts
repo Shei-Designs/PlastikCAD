@@ -1448,4 +1448,27 @@ describe('the friction of a wheel that skids', () => {
     // From the knuckles to the rear axle, 320 mm, whichever wheels drive: not to the middle of the driven ones.
     for (const made of [rear, front, all]) expect([made.wheelBase, made.sdfBase]).toEqual([0.32, 0.32]);
   });
+
+  it("lets a wheel that nothing drives roll free in Gazebo, and turns a car's knuckles at their servo's speed", () => {
+    const d = ROBOTS.find((r) => r.file === 'car')!.make();
+    const made = (doc: Doc) => [file(buildSdfModel(doc, geo(doc)), /model\.sdf$/), file(buildRobotPackage(doc, geo(doc)), /\.urdf$/)];
+    const joint = (xml: string, name: string) => new RegExp(`<joint name="${name}"[\\s\\S]*?</joint>`).exec(xml)![0];
+    for (const xml of made(d)) {
+      // Gazebo holds a joint to the top speed in its file. The front wheels have no part in the drive and no controller:
+      // with their limit left in they were braked at 6.28 rad/s, 0.28 m/s of a car that is told 0.3 and more.
+      for (const side of ['left', 'right']) expect(joint(xml, `Front_wheel_${side}_joint`)).not.toContain('<limit');
+      // The driven wheels and the knuckles keep their motors' limits.
+      expect(joint(xml, 'Rear_wheel_left_joint')).toMatch(/effort.*2\.6.*velocity.*15\.707963/);
+      expect(joint(xml, 'Knuckle_left_steering')).toMatch(/effort.*0\.92.*velocity.*6\.108652/);
+      // The servo's 350°/s, reached a tenth of a radian from where the knuckle is told: the plugin's own gain of 1
+      // takes a second to go two thirds of the way.
+      expect(Number(/<steer_p_gain>([^<]+)</.exec(xml)![1])).toBeCloseTo(((350 * Math.PI) / 180) / 0.1, 4);
+    }
+    // Under a controller the same wheels are held by it, and keep the limit it works within.
+    const held = { ...d, robot: { ...d.robot!, control: true } };
+    for (const xml of made(held)) expect(joint(xml, 'Front_wheel_left_joint')).toContain('<limit');
+    // A rover's caster or any other wheel left to roll is the same case; a joint with a range is not touched.
+    const rover = ROBOTS.find((r) => r.file === 'rover')!.make();
+    for (const xml of made(rover)) expect(xml).not.toContain('steer_p_gain');
+  });
 });
