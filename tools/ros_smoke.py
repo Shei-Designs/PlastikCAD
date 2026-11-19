@@ -68,7 +68,9 @@ TRACK_TURN, TRACK_SECONDS, TRACK_SHARE, TRACK_DRIFT = 1.0, 3.0, (0.5, 1.05), 0.0
 # this long, it turns at between these shares of what Gazebo's friction gives, by the simulation's own time:
 # t/(t + L) of the rate told, t from side to side and L from axle to axle, since that friction is a square laid on
 # the wheels' diagonals (see `check_friction_frames`) where plain friction is a circle. That is 56 % for the
-# reference rover and 33 % for the long one. It moves no farther than this (m).
+# reference rover and 33 % for the long one. The SDF model turns the two 101 % and 99 % of that and the ROS package
+# 109 % and 94 % (its URDF, as Gazebo converts it, turns so as a plain model too), each the same to three figures
+# over seven runs, one of them held to one core on a busy machine. It moves no farther than this (m).
 SKID_TURN, SKID_SECONDS, SKID_SHARE, SKID_DRIFT = 1.0, 3.0, (0.8, 1.2), 0.05
 # How long, by the clock on the wall, anything may take to appear or the simulation to get through a stretch of
 # its own time, on however busy a machine (s). Reaching it is a failure, so its size decides no figure.
@@ -613,7 +615,7 @@ def check_skid(name, sim, send, share):
         return
     drift = math.hypot(spun[0] - start[0], spun[1] - start[1])
     of = rate / (share * SKID_TURN)
-    told = f'turned {math.degrees(turned):.0f}° at {rate:.2f} rad/s ({100 * of:.0f} % of the {share * SKID_TURN:.2f} rad/s its sliding wheels allow of the {SKID_TURN:.1f} told)'
+    told = f'turned {math.degrees(turned):.0f}° at {rate:.3f} rad/s ({100 * of:.1f} % of the {share * SKID_TURN:.3f} rad/s its sliding wheels allow of the {SKID_TURN:.1f} told)'
     if not SKID_SHARE[0] <= of <= SKID_SHARE[1] or drift > SKID_DRIFT:
         fail(name, f'told to turn left on the spot, the robot on two wheels a side {told} and moved {drift:.3f} m')
     else:
