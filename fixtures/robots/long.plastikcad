@@ -1,0 +1,257 @@
+{
+  "format": "plastikcad",
+  "version": 3,
+  "units": "mm",
+  "id": "fxreferencelongrover",
+  "name": "Reference long rover",
+  "scene": [
+    {
+      "id": "fx000080",
+      "type": "shape",
+      "name": "Body",
+      "shape": "box",
+      "params": {
+        "radius": 0
+      },
+      "pos": [0,0,80],
+      "rot": [0,0,0],
+      "size": [160,500,80],
+      "color": "#8fa3bf"
+    },
+    {
+      "id": "fx000081",
+      "type": "shape",
+      "name": "Wheel left back",
+      "shape": "cylinder",
+      "params": {
+        "radius": 0,
+        "sides": 64
+      },
+      "pos": [-100,-200,50],
+      "rot": [0,90,0],
+      "size": [100,100,40],
+      "color": "#e8853a"
+    },
+    {
+      "id": "fx000082",
+      "type": "shape",
+      "name": "Wheel left front",
+      "shape": "cylinder",
+      "params": {
+        "radius": 0,
+        "sides": 64
+      },
+      "pos": [-100,200,50],
+      "rot": [0,90,0],
+      "size": [100,100,40],
+      "color": "#e8853a"
+    },
+    {
+      "id": "fx000083",
+      "type": "shape",
+      "name": "Wheel right back",
+      "shape": "cylinder",
+      "params": {
+        "radius": 0,
+        "sides": 64
+      },
+      "pos": [100,-200,50],
+      "rot": [0,90,0],
+      "size": [100,100,40],
+      "color": "#e8853a"
+    },
+    {
+      "id": "fx000084",
+      "type": "shape",
+      "name": "Wheel right front",
+      "shape": "cylinder",
+      "params": {
+        "radius": 0,
+        "sides": 64
+      },
+      "pos": [100,200,50],
+      "rot": [0,90,0],
+      "size": [100,100,40],
+      "color": "#e8853a"
+    }
+  ],
+  "assets": {},
+  "robot": {
+    "root": "fx000080",
+    "base": "free",
+    "links": [
+      {
+        "node": "fx000080",
+        "mass": {
+          "kind": "material",
+          "material": "pla",
+          "infill": 20,
+          "shell": 1.2
+        },
+        "collision": "box",
+        "friction": 0.8
+      },
+      {
+        "node": "fx000081",
+        "mass": {
+          "kind": "material",
+          "material": "pla",
+          "infill": 20,
+          "shell": 1.2
+        },
+        "collision": "cylinder",
+        "friction": 1
+      },
+      {
+        "node": "fx000082",
+        "mass": {
+          "kind": "material",
+          "material": "pla",
+          "infill": 20,
+          "shell": 1.2
+        },
+        "collision": "cylinder",
+        "friction": 1
+      },
+      {
+        "node": "fx000083",
+        "mass": {
+          "kind": "material",
+          "material": "pla",
+          "infill": 20,
+          "shell": 1.2
+        },
+        "collision": "cylinder",
+        "friction": 1
+      },
+      {
+        "node": "fx000084",
+        "mass": {
+          "kind": "material",
+          "material": "pla",
+          "infill": 20,
+          "shell": 1.2
+        },
+        "collision": "cylinder",
+        "friction": 1
+      }
+    ],
+    "joints": [
+      {
+        "id": "fx000085",
+        "name": "Wheel left back joint",
+        "type": "continuous",
+        "parent": "fx000080",
+        "child": "fx000081",
+        "origin": [0,0,0],
+        "axis": [0,0,1],
+        "lower": -90,
+        "upper": 90,
+        "effort": 2.6,
+        "velocity": 900,
+        "damping": 0.00828,
+        "friction": 0,
+        "motor": "37d-70"
+      },
+      {
+        "id": "fx000086",
+        "name": "Wheel left front joint",
+        "type": "continuous",
+        "parent": "fx000080",
+        "child": "fx000082",
+        "origin": [0,0,0],
+        "axis": [0,0,1],
+        "lower": -90,
+        "upper": 90,
+        "effort": 2.6,
+        "velocity": 900,
+        "damping": 0.00828,
+        "friction": 0,
+        "motor": "37d-70"
+      },
+      {
+        "id": "fx000087",
+        "name": "Wheel right back joint",
+        "type": "continuous",
+        "parent": "fx000080",
+        "child": "fx000083",
+        "origin": [0,0,0],
+        "axis": [0,0,1],
+        "lower": -90,
+        "upper": 90,
+        "effort": 2.6,
+        "velocity": 900,
+        "damping": 0.00828,
+        "friction": 0,
+        "motor": "37d-70"
+      },
+      {
+        "id": "fx000088",
+        "name": "Wheel right front joint",
+        "type": "continuous",
+        "parent": "fx000080",
+        "child": "fx000084",
+        "origin": [0,0,0],
+        "axis": [0,0,1],
+        "lower": -90,
+        "upper": 90,
+        "effort": 2.6,
+        "velocity": 900,
+        "damping": 0.00828,
+        "friction": 0,
+        "motor": "37d-70"
+      }
+    ],
+    "sensors": [
+      {
+        "id": "fx000089",
+        "name": "Lidar",
+        "kind": "lidar",
+        "link": "fx000080",
+        "origin": [0,0,50],
+        "rot": [0,0,0],
+        "rate": 10,
+        "lidar": {
+          "samples": 36,
+          "hfov": 360,
+          "min": 100,
+          "max": 4000
+        }
+      },
+      {
+        "id": "fx000090",
+        "name": "IMU",
+        "kind": "imu",
+        "link": "fx000080",
+        "origin": [0,0,0],
+        "rot": [0,0,0],
+        "rate": 100
+      },
+      {
+        "id": "fx000091",
+        "name": "Camera",
+        "kind": "camera",
+        "link": "fx000080",
+        "origin": [0,255,40],
+        "rot": [0,20,90],
+        "rate": 30,
+        "camera": {
+          "hfov": 80,
+          "width": 320,
+          "height": 240,
+          "near": 50,
+          "far": 10000
+        }
+      }
+    ],
+    "drive": {
+      "kind": "differential",
+      "roles": {
+        "fx000085": "left",
+        "fx000086": "left",
+        "fx000087": "right",
+        "fx000088": "right"
+      }
+    }
+  }
+}

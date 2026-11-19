@@ -1359,6 +1359,26 @@ describe('the friction of a wheel that skids', () => {
     for (const name of ['mecanum', 'car']) expect(mjcf(name)).not.toContain('cone=');
   });
 
+  it('gives MuJoCo a skidding wheel the rim Isaac Sim gets, on the rover and the long one, and leaves the motor its rotor elsewhere', () => {
+    const rotors = (which: string) => {
+      const d = ROBOTS.find((r) => r.file === which)!.make();
+      const mjcf = [...file(buildMjcfModel(d, geo(d)), /\.xml$/).matchAll(/<joint name="([A-Za-z_]+)" type="hinge"[^>]*armature="([^"]+)"/g)].map(([, name, v]) => [name, Number(v)] as const);
+      const usd = [...file(buildIsaacStage(d, geo(d)), /\.usda$/).matchAll(/def PhysicsRevoluteJoint "([A-Za-z_]+)"[\s\S]*?float physxJoint:armature = (\S+)/g)].map(([, name, v]) => [name, Number(v)] as const);
+      return { mjcf, usd: new Map(usd) };
+    };
+    for (const name of ['rover', 'long']) {
+      const { mjcf, usd } = rotors(name);
+      expect(mjcf).toHaveLength(4);
+      // The 37 mm gearmotor's own rotor is 0.0005 kg·m²: the rim is some ten times that, and one figure for both simulators.
+      for (const [joint, rotor] of mjcf) {
+        expect(rotor).toBeGreaterThan(0.003);
+        expect(rotor).toBeCloseTo(usd.get(joint)!, 5);
+      }
+    }
+    for (const [, rotor] of rotors('car').mjcf) expect([0.0005, 0.002]).toContain(rotor);
+    for (const [, rotor] of rotors('mecanum').mjcf.filter(([joint]) => joint.startsWith('Wheel_'))) expect(rotor).toBe(0.0005);
+  });
+
   it("leaves a track's wheels, a mecanum wheel's rollers and a car's wheels as they were", () => {
     for (const name of ['tracked', 'mecanum', 'car']) {
       const { urdf, sdf } = made(name);
