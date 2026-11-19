@@ -1369,7 +1369,7 @@ describe("a link's friction against the floor", () => {
     for (const { make } of ROBOTS) {
       const d = make();
       const usd = file(buildIsaacStage(d, geo(d)), /\.usda$/);
-      const materials = [...usd.matchAll(/def Material "(friction_[0-9_]+)" \(\s*prepend apiSchemas = \["PhysicsMaterialAPI", "PhysxMaterialAPI"\]\s*\)\s*\{([^}]*)\}/g)];
+      const materials = [...usd.matchAll(/def Material "(friction_[0-9_]+(?:_firm)?)" \(\s*prepend apiSchemas = \["PhysicsMaterialAPI", "PhysxMaterialAPI"\]\s*\)\s*\{([^}]*)\}/g)];
       expect(materials.length).toBeGreaterThan(0);
       expect(materials.length).toBe(usd.match(/def Material "friction_/g)!.length);
       for (const [, , body] of materials) expect(body).toContain('uniform token physxMaterial:frictionCombineMode = "multiply"');
@@ -1386,12 +1386,14 @@ describe("a link's friction against the floor", () => {
       const d = make();
       const usd = file(buildIsaacStage(d, geo(d)), /\.usda$/);
       const weight = [...usd.matchAll(/float physics:mass = (\S+)/g)].reduce((sum, m) => sum + Number(m[1]), 0) - 0.0001 * (usd.includes('def Xform "base_footprint"') ? 1 : 0);
-      const materials = [...usd.matchAll(/def Material "(friction_[0-9_]+|floor)" \(\s*prepend apiSchemas = \["PhysicsMaterialAPI", "PhysxMaterialAPI"\]\s*\)\s*\{([^}]*)\}/g)];
+      const materials = [...usd.matchAll(/def Material "(friction_[0-9_]+(?:_firm)?|floor)" \(\s*prepend apiSchemas = \["PhysicsMaterialAPI", "PhysxMaterialAPI"\]\s*\)\s*\{([^}]*)\}/g)];
       for (const [, which, body] of materials) {
         const stiffness = /compliantContactStiffness = (\S+)/.exec(body);
         const damping = /compliantContactDamping = (\S+)/.exec(body);
-        if (which === 'floor') {
+        // The floor does not give, nor a track's wheels (see the next test).
+        if (which === 'floor' || which.endsWith('_firm')) {
           expect(stiffness, name).toBeNull();
+          expect(damping, name).toBeNull();
           continue;
         }
         // The robot's whole weight would sink a point of it 1 mm, damped critically.
@@ -1399,6 +1401,22 @@ describe("a link's friction against the floor", () => {
         expect(Number(damping![1]) / Math.sqrt(Number(stiffness![1]) * weight), name).toBeCloseTo(1, 3);
         expect(body).not.toContain('AccelerationSpring');
       }
+    }
+  });
+
+  it("holds a track's wheels firm in Isaac Sim, and only them", () => {
+    for (const { file: name, make } of ROBOTS) {
+      const d = make();
+      const usd = file(buildIsaacStage(d, geo(d)), /\.usda$/);
+      // Each body and the physics material its collisions are bound to.
+      const bound = usd.split(/(?=def Xform ")/).flatMap((part) => {
+        const body = /^def Xform "([^"]+)"/.exec(part)?.[1];
+        const material = /rel material:binding:physics = <\/World\/PhysicsMaterials\/([^>]+)>/.exec(part)?.[1];
+        return body && material && material !== 'floor' ? [[body, material]] : [];
+      });
+      expect(bound.length, name).toBeGreaterThan(0);
+      for (const [body, material] of bound) expect(material.endsWith('_firm'), `${name} ${body}`).toBe(/^Track_.+_wheel_\d+$/.test(body));
+      expect(bound.some(([, material]) => material.endsWith('_firm')), name).toBe(name === 'tracked');
     }
   });
 

@@ -137,9 +137,9 @@ const FLOOR_FRICTION = 1;
  * body on four rigid wheels may share its weight among them in any of many ways: it took one with 7.1 N on one
  * diagonal's wheels and 4.8 N on the other's, picked by the order the wheels come in the file, and a car that spun
  * its back wheels at the start went off its line by up to 0.9° over 3 m. Given this the four share within 1 N, as
- * in MuJoCo and Gazebo, whose contacts give alike, and the car keeps its line within 0.25°; a track's wheels share
- * its weight along its length, and it turns on the spot as it does in MuJoCo. A spring given as an acceleration,
- * alike for every part, let a mecanum wheel's light rollers sink 8 mm.
+ * in MuJoCo and Gazebo, whose contacts give alike, and the car keeps its line within 0.25°. A track's wheels do not
+ * give (see `materialKey`). A spring given as an acceleration, alike for every part, let a mecanum wheel's light
+ * rollers sink 8 mm.
  */
 const SINK = 0.001;
 /**
@@ -366,6 +366,15 @@ function meshLines(mesh: MeshData): string[] {
 
 const colorKey = (c: [number, number, number]): string => `color_${c.map((x) => Math.round(x * 255).toString(16).padStart(2, '0')).join('')}`;
 const frictionKey = (f: number): string => `friction_${fmt(f, 3).replace(/[.-]/g, '_')}`;
+/**
+ * The material a link's collisions are bound to. A stand-in's (a wheel of the row that is a track's belt) does not give:
+ * these wheels are light bodies on joints outside the articulation, which PhysX lets drift a few hundredths of a
+ * millimetre under a skid's pull, as much as a giving contact sinks. A rover on tracks then stood on one diagonal's end
+ * wheels as it turned on the spot (5 N on each, the other fourteen next to nothing), turned 48 % of what was asked
+ * instead of the 67 % plain friction gives it, and went 39 mm off the spot one way, 51 mm the other. Held firm, its
+ * wheels share its weight within 0.2 N, and it turns as plain friction says.
+ */
+const materialKey = (l: UsdLink): string => (l.standIn ? `${frictionKey(l.friction)}_firm` : frictionKey(l.friction));
 
 function materialPrim(name: string, color: [number, number, number]): string[] {
   return [
@@ -610,7 +619,7 @@ function linkPrim(l: UsdLink, sensors: UsdSensor[], touched: boolean): string[] 
   l.visual.forEach((v, i) => {
     body.push('', `def Mesh "visual_${i}" (`, '    prepend apiSchemas = ["MaterialBindingAPI"]', ')', '{', ...indent([`rel material:binding = </World/Looks/${colorKey(v.color)}>`, ...meshLines(v.mesh)], 1), '}');
   });
-  l.collision.forEach((c, i) => body.push('', ...collisionPrim(c, i, frictionKey(l.friction))));
+  l.collision.forEach((c, i) => body.push('', ...collisionPrim(c, i, materialKey(l))));
   for (const s of sensors) body.push('', ...sensorPrim(s), ...(s.frame ? ['', ...framePrim(s)] : []));
   return [`def Xform "${l.name}" (`, `    prepend apiSchemas = [${apis.join(', ')}]`, ')', '{', ...indent(body, 1), '}'];
 }
@@ -987,11 +996,11 @@ export function writeUsda(model: UsdModel): string {
   const robotPath = `/World/${robot}`;
   const linkPath = (link: string) => `${robotPath}/${link}`;
   const colors = new Map<string, [number, number, number]>();
-  const frictions = new Map<string, number>();
+  const frictions = new Map<string, { friction: number; firm: boolean }>();
   const weight = model.links.reduce((sum, l) => sum + (l.inertial?.mass ?? 0), 0);
   for (const l of model.links) {
     for (const v of l.visual) colors.set(colorKey(v.color), v.color);
-    frictions.set(frictionKey(l.friction), l.friction);
+    frictions.set(materialKey(l), { friction: l.friction, firm: !!l.standIn });
   }
   const touched = new Set(model.sensors.filter((s) => s.kind === 'touch').map((s) => s.link));
   const sensorsOf = (link: string) => model.sensors.filter((s) => s.link === link);
@@ -1052,7 +1061,7 @@ export function writeUsda(model: UsdModel): string {
     '',
     'def Scope "PhysicsMaterials"',
     '{',
-    ...indent([...physicsMaterialPrim('floor', FLOOR_FRICTION), ...[...frictions].flatMap(([k, f]) => ['', ...physicsMaterialPrim(k, f, weight)])], 1),
+    ...indent([...physicsMaterialPrim('floor', FLOOR_FRICTION), ...[...frictions].flatMap(([k, m]) => ['', ...physicsMaterialPrim(k, m.friction, m.firm ? undefined : weight)])], 1),
     '}',
     '',
     // The articulation begins at the footprint where there is one, so that it is the root the links hang from.

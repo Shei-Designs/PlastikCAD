@@ -597,6 +597,9 @@ in the design file and synced with it.
   line: on rigid contacts PhysX could put more of it on one diagonal, by
   the order the wheels came in the file, and a car went off its line. A
   stage of your own keeps this, since it is the robot's materials that give.
+  The wheels that stand in for a track's belt do not give: they are light
+  bodies on hinges PhysX lets drift as far as a giving contact sinks, and a
+  rover on tracks stood on two of them as it turned.
   *File > Open*, Play, and it runs; nothing is imported or set up on
   the Isaac side. Isaac Sim can still import the ROS 2 package's URDF, but
   the stage carries what the importer cannot read from URDF: drive gains, a
