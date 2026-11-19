@@ -144,7 +144,7 @@ export const SPEED_BAND = 0.01;
  * same side for every wheel: a rover whose wheels slide as it turns then turns about a point well off its middle
  * (a tenth of a meter, for wheels 40 mm wide on a rover 200 mm by 400 mm), and walks as it turns.
  */
-const CROWN = { width: 1 / 40, drop: 0.01 };
+export const CROWN = { width: 1 / 40, drop: 0.01 };
 /** USD's default film back, mm; the focal length is chosen against it for the field of view asked. */
 const APERTURE = 20.955;
 

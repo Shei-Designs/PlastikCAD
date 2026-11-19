@@ -397,7 +397,10 @@ in the design file and synced with it.
   robot gets a `base_footprint` root on the floor under the base link,
   facing +X as ROS expects. A differential drive with more than one wheel
   a side turns by skidding them, as a real one does, so it turns less than
-  its wheels' speeds say: by less the longer it is against its width.
+  its wheels' speeds say: by less the longer it is against its width. For
+  Gazebo each such wheel stands on a narrow ridge round the middle of its
+  tread, so the SDF model and the ROS 2 package turn alike, about the
+  rover's own middle.
 - **Mecanum wheels.** A mecanum drive slides sideways on the *Mecanum
   wheel* part from the Wheels parts, and on nothing else. A link that is
   that part, or holds it (with a bore cut through it, a hub glued on), gets

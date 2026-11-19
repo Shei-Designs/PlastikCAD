@@ -8,7 +8,7 @@ import type { Vec3 } from '../model/types';
 import type { Tensor } from '../robot/inertia';
 import type { JointType } from '../robot/types';
 import { escapeXml, fmt } from './format';
-import { GZ_NAMESPACE, pad, surfaceXml } from './gazebo';
+import { crowned, GZ_NAMESPACE, pad, surfaceXml } from './gazebo';
 import type { Skid } from './gazebo';
 import type { Naming, UrdfGeometry } from './urdf';
 
@@ -88,12 +88,16 @@ function linkXml(l: SdfLink): string {
     lines.push('    </visual>');
   });
   l.collision.forEach((c, i) => {
-    lines.push(`    <collision name="${escapeXml(l.name)}_collision${i ? `_${i}` : ''}">`);
     const pose = poseXml(c.origin, c.rpy);
-    if (pose) lines.push(`      ${pose}`);
-    lines.push(`      ${geometryXml(c.geometry)}`);
-    if (l.friction !== undefined || l.skid) lines.push(`      ${surfaceXml(l.friction ?? 1, l.skid)}`);
-    lines.push('    </collision>');
+    // A wheel that skids stands on a ridge round its middle (see `crowned`).
+    const shapes: { geometry: UrdfGeometry; tail: string }[] = l.skid && 'cylinder' in c.geometry ? crowned(c.geometry.cylinder.radius, c.geometry.cylinder.length).map((s) => ({ geometry: { cylinder: { radius: s.radius, length: s.length } }, tail: s.tread ? '_tread' : '' })) : [{ geometry: c.geometry, tail: '' }];
+    for (const s of shapes) {
+      lines.push(`    <collision name="${escapeXml(l.name)}_collision${i ? `_${i}` : ''}${s.tail}">`);
+      if (pose) lines.push(`      ${pose}`);
+      lines.push(`      ${geometryXml(s.geometry)}`);
+      if (l.friction !== undefined || l.skid) lines.push(`      ${surfaceXml(l.friction ?? 1, l.skid)}`);
+      lines.push('    </collision>');
+    }
   });
   for (const s of l.sensors ?? []) lines.push(pad(s, '    '));
   lines.push('  </link>');

@@ -6,7 +6,7 @@ import type { Vec3 } from '../model/types';
 import type { Tensor } from '../robot/inertia';
 import type { JointType, SensorKind } from '../robot/types';
 import { escapeXml, fmt } from './format';
-import { GZ_NAMESPACE, surfaceXml } from './gazebo';
+import { crowned, GZ_NAMESPACE, surfaceXml } from './gazebo';
 import type { Skid } from './gazebo';
 
 export interface UrdfInertial {
@@ -121,10 +121,14 @@ function linkXml(link: UrdfLink, materials: Map<string, string>): string {
     lines.push('    </visual>');
   }
   for (const c of link.collision) {
-    lines.push('    <collision>');
-    lines.push(originXml(c.origin, c.rpy, '      ').trimEnd());
-    lines.push(`      <geometry>${geometryXml(c.geometry)}</geometry>`);
-    lines.push('    </collision>');
+    // A wheel that skids stands on a ridge round its middle, for Gazebo (see `crowned`).
+    const shapes: UrdfGeometry[] = link.skid && 'cylinder' in c.geometry ? crowned(c.geometry.cylinder.radius, c.geometry.cylinder.length).map((s) => ({ cylinder: { radius: s.radius, length: s.length } })) : [c.geometry];
+    for (const geometry of shapes) {
+      lines.push('    <collision>');
+      lines.push(originXml(c.origin, c.rpy, '      ').trimEnd());
+      lines.push(`      <geometry>${geometryXml(geometry)}</geometry>`);
+      lines.push('    </collision>');
+    }
   }
   lines.push('  </link>');
   return lines.filter((l) => l !== '').join('\n');

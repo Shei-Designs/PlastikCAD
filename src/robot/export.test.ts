@@ -1350,6 +1350,32 @@ describe('the friction of a wheel that skids', () => {
     expect(urdf).not.toMatch(/<gazebo reference="Wheel_[a-z_]+">\s*<mu1>/);
   });
 
+  it('stands such a wheel on a ridge round its middle for Gazebo, the same in the SDF model and the ROS package, and no other wheel', () => {
+    for (const which of ['rover', 'long']) {
+      const { urdf, sdf } = made(which);
+      // The wheel's own cylinder a hundredth of its radius low, and a ridge of the full radius a fortieth of its width: both with the wheel's friction.
+      const wheels = [...sdf.matchAll(/<link name="(Wheel_[a-z_]+)">([\s\S]*?)<\/link>/g)];
+      expect(wheels).toHaveLength(4);
+      for (const [, name, link] of wheels) {
+        const shapes = [...link.matchAll(/<collision name="([^"]+)">\s*<pose>([^<]+)<\/pose>\s*<geometry><cylinder><radius>([^<]+)<\/radius><length>([^<]+)<\/length><\/cylinder><\/geometry>\s*(<surface>.*<\/surface>)/g)].map((m) => m.slice(1));
+        expect(shapes.map(([collision, , radius, length]) => [collision, Number(radius), Number(length)])).toEqual([
+          [`${name}_collision`, 0.0495, 0.04],
+          [`${name}_collision_tread`, 0.05, 0.001],
+        ]);
+        expect(shapes[0][1]).toBe(shapes[1][1]);
+        expect(shapes[0][4]).toBe(shapes[1][4]);
+        expect(shapes[0][4]).toContain('fdir1');
+      }
+      const inUrdf = [...urdf.matchAll(/<link name="Wheel_[a-z_]+">([\s\S]*?)<\/link>/g)].map(([, link]) => [...link.matchAll(/<collision>\s*<origin xyz="0 0 0" rpy="0 1.570796 0"\/>\s*<geometry><cylinder radius="([^"]+)" length="([^"]+)"\/>/g)].map((m) => [Number(m[1]), Number(m[2])]));
+      expect(inUrdf).toEqual(Array(4).fill([[0.0495, 0.04], [0.05, 0.001]]));
+    }
+    // A car's wheels roll and steer: one cylinder each, as drawn.
+    const car = made('car');
+    expect(car.sdf).not.toContain('_tread');
+    expect(car.sdf.match(/<cylinder>/g)).toHaveLength(4);
+    expect(car.urdf.match(/<cylinder /g)).toHaveLength(4);
+  });
+
   it('asks MuJoCo for the friction cone that grips alike at every heading, for every robot', () => {
     for (const { make } of ROBOTS) {
       const d = make();

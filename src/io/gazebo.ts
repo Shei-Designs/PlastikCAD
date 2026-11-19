@@ -5,6 +5,7 @@
 import type { Vec3 } from '../model/types';
 import type { SensorKind } from '../robot/types';
 import { escapeXml, fmt } from './format';
+import { CROWN } from './usd';
 
 export interface GazeboSensor {
   /** Name of the sensor and of the frame (link) it sits in. */
@@ -227,6 +228,20 @@ export const GZ_NAMESPACE = 'xmlns:gz="http://gazebosim.org/schema"';
 export interface Skid {
   frame: string;
   along: Vec3;
+}
+
+/**
+ * The two cylinders a wheel that skids collides as in Gazebo: the wheel's own, a little low, and a ridge of its
+ * full radius round its middle (see `CROWN`). A cylinder lying exactly flat touches the floor along its whole width,
+ * and Gazebo's physics shares its load along that line as it pleases; one a hair off flat (a quarter turn written
+ * to six places is) stands on one end. Either way the rover turns about the wrong points: the ROS package and the
+ * SDF model, whose quarter turns reach Gazebo rounded differently, turned up to a tenth apart.
+ */
+export function crowned(radius: number, length: number): { radius: number; length: number; tread: boolean }[] {
+  return [
+    { radius: radius * (1 - CROWN.drop), length, tread: false },
+    { radius, length: length * CROWN.width, tread: true },
+  ];
 }
 
 /**
