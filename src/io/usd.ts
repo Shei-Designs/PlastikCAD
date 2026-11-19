@@ -19,7 +19,8 @@ export type UsdCollision =
   /** A mesh in the link's frame; `convex` for a hull, else PhysX decomposes it. */
   | { mesh: MeshData; convex: boolean }
   | { box: Vec3; origin: Vec3; rpy: Vec3 }
-  | { cylinder: { radius: number; length: number }; origin: Vec3; rpy: Vec3 }
+  /** `crowned` for a wheel that slides sideways as its robot turns: it stands on the middle of its tread (see `CROWN`). */
+  | { cylinder: { radius: number; length: number }; origin: Vec3; rpy: Vec3; crowned?: boolean }
   | { sphere: { radius: number }; origin: Vec3; rpy: Vec3 };
 
 export interface UsdLink {
@@ -121,13 +122,6 @@ export interface UsdModel {
   controlled: string[];
   /** Physics steps a second, where the robot needs finer ones than Isaac Sim's sixty (a mecanum wheel's rollers). */
   stepsPerSecond?: number;
-  /**
-   * The robot turns by sliding its wheels sideways (a differential drive with more than one wheel on a side).
-   * PhysX's usual solver (TGS) holds a wheel that is turning from sliding sideways, so such a rover longer than
-   * it is wide hardly turns (8 % of what plain friction gives 20 % of, measured); its other solver (PGS) lets
-   * the wheel slide as friction would (21 %), and is asked for here.
-   */
-  skids?: boolean;
 }
 
 const DEG = 180 / Math.PI;
@@ -140,6 +134,14 @@ const FLOOR_FRICTION = 1;
  * the speed it is told, as Gazebo's does.
  */
 export const SPEED_BAND = 0.01;
+/**
+ * A crowned wheel's tread, as shares of the cylinder that stands for it: a ridge round its middle this much of its
+ * width, and the rest of it this much of its radius lower, clear of a flat floor. PhysX puts a wide flat wheel's
+ * weight on the floor wherever along its line of touch it pleases, up to half the wheel's width to one side, the
+ * same side for every wheel: a rover whose wheels slide as it turns then turns about a point well off its middle
+ * (a tenth of a meter, for wheels 40 mm wide on a rover 200 mm by 400 mm), and walks as it turns.
+ */
+const CROWN = { width: 1 / 40, drop: 0.01 };
 /** USD's default film back, mm; the focal length is chosen against it for the field of view asked. */
 const APERTURE = 20.955;
 
@@ -375,7 +377,10 @@ function collisionPrim(c: UsdCollision, i: number, material: string): string[] {
     return [...head('Cube'), ...indent([...common, 'double size = 1', `float3 xformOp:scale = ${v3(c.box)}`, `quatf xformOp:orient = ${q4(rot)}`, `double3 xformOp:translate = ${v3(c.origin)}`, 'uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]'], 1), '}'];
   }
   if ('cylinder' in c) {
-    return [...head('Cylinder'), ...indent([...common, 'uniform token axis = "Z"', `double height = ${fmt(c.cylinder.length)}`, `double radius = ${fmt(c.cylinder.radius)}`, ...xformOps(c.origin, rot)], 1), '}'];
+    const round = (name: string, radius: number, length: number) => [...head('Cylinder').map((l, k) => (k ? l : l.replace(`"collision_${i}"`, `"${name}"`))), ...indent([...common, 'uniform token axis = "Z"', `double height = ${fmt(length)}`, `double radius = ${fmt(radius)}`, ...xformOps(c.origin, rot)], 1), '}'];
+    const { radius, length } = c.cylinder;
+    if (!c.crowned) return round(`collision_${i}`, radius, length);
+    return [...round(`collision_${i}`, radius * (1 - CROWN.drop), length), ...round(`collision_${i}_tread`, radius, length * CROWN.width)];
   }
   return [...head('Sphere'), ...indent([...common, `double radius = ${fmt(c.sphere.radius)}`, ...xformOps(c.origin, rot)], 1), '}'];
 }
@@ -921,11 +926,10 @@ export function writeUsda(model: UsdModel): string {
   const standIns = model.links.filter((l) => l.standIn);
 
   const world: string[] = [
-    ...(model.stepsPerSecond || model.skids ? ['def PhysicsScene "physicsScene" (', '    prepend apiSchemas = ["PhysxSceneAPI"]', ')'] : ['def PhysicsScene "physicsScene"']),
+    ...(model.stepsPerSecond ? ['def PhysicsScene "physicsScene" (', '    prepend apiSchemas = ["PhysxSceneAPI"]', ')'] : ['def PhysicsScene "physicsScene"']),
     '{',
     '    vector3f physics:gravityDirection = (0, 0, -1)',
     '    float physics:gravityMagnitude = 9.81',
-    ...(model.skids ? ['    uniform token physxScene:solverType = "PGS"'] : []),
     ...(model.stepsPerSecond ? [`    uint physxScene:timeStepsPerSecond = ${model.stepsPerSecond}`] : []),
     '}',
     '',

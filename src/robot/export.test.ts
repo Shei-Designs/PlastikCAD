@@ -1369,16 +1369,28 @@ describe('the friction of a wheel that skids', () => {
     }
   });
 
-  it('asks Isaac Sim for the solver that lets a turning wheel slide sideways, for such a rover alone', () => {
-    const made = (which: string) => {
+  it('gives Isaac Sim a skidding wheel with a rim as heavy as its load and a crowned tread, and such a wheel alone', () => {
+    const stage = (which: string) => {
       const d = ROBOTS.find((r) => r.file === which)!.make();
-      return buildIsaacStage(d, geo(d));
+      return file(buildIsaacStage(d, geo(d)), /\.usda$/);
     };
-    const stage = (which: string) => file(made(which), /\.usda$/);
-    // The stage's README says so too, for whoever puts the rover in a world of their own.
-    expect(file(made('rover'), /^README\.md$/)).toContain('`physxScene:solverType = "PGS"`');
-    expect(file(made('tracked'), /^README\.md$/)).not.toContain('solverType');
-    expect(stage('rover')).toMatch(/def PhysicsScene "physicsScene" \(\n\s*prepend apiSchemas = \["PhysxSceneAPI"\]\n\s*\)\n\s*\{[^}]*uniform token physxScene:solverType = "PGS"/);
-    for (const name of ['tracked', 'mecanum', 'car', 'arm']) expect(stage(name)).not.toContain('solverType');
+    const rover = stage('rover');
+    // Four times the mass a wheel carries, at the wheel's rim: the masses and the radius are the stage's own.
+    const mass = [...rover.matchAll(/float physics:mass = (\S+)/g)].reduce((m, [, v]) => m + Number(v), 0);
+    const radius = Number(/custom double inputs:wheelRadius = (\S+)/.exec(rover)![1]);
+    const rotors = [...rover.matchAll(/def PhysicsRevoluteJoint "Wheel_[a-z_]+_joint"[\s\S]*?float physxJoint:armature = (\S+)/g)].map(([, v]) => Number(v));
+    expect(rotors).toHaveLength(4);
+    for (const rotor of rotors) expect(rotor).toBeCloseTo(4 * (mass / 4) * radius ** 2, 5);
+    // The wheel's cylinder a hundredth lower, and a ridge of its whole radius round its middle, a fortieth of its width.
+    const treads = [...rover.matchAll(/def Cylinder "collision_0" \([\s\S]*?double height = (\S+)\s+double radius = (\S+)[\s\S]*?def Cylinder "collision_0_tread" \([\s\S]*?double height = (\S+)\s+double radius = (\S+)/g)];
+    expect(treads).toHaveLength(4);
+    for (const [, width, low, ridge, whole] of treads.map((t) => t.map(Number))) {
+      expect(low / whole).toBeCloseTo(0.99, 3);
+      expect(ridge / width).toBeCloseTo(1 / 40, 3);
+      expect(whole).toBeCloseTo(radius, 6);
+    }
+    // PhysX's usual solver, whose friction is the same every way along the floor, is left to it.
+    for (const name of ['rover', 'tracked', 'mecanum', 'car', 'arm']) expect(stage(name)).not.toContain('solverType');
+    for (const name of ['tracked', 'mecanum', 'car', 'arm']) expect(stage(name)).not.toContain('_tread"');
   });
 });
