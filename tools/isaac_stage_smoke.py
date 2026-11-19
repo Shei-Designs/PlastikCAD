@@ -33,10 +33,11 @@ MECANUM_LEAST, MECANUM_MOST, MECANUM_STRAY = 0.8, 1.05, 0.05
 # what was asked, and told to turn on the spot at 1 rad/s between these shares of it: a long contact skids (the
 # reference rover turns 67 %; plain Coulomb friction would give 70 to 80 %). It strays no farther than this (m, rad).
 TRACK_STRAIGHT, TRACK_TURN, TRACK_STRAY = (0.9, 1.05), (0.35, 0.85), 0.05
-# A rover with two wheels a side, which slide as it turns, told to turn on the spot at 1 rad/s: between these shares
-# of it (the reference rover, wider than long, turns 61 %; plain friction would give 62 %), about its own middle:
-# it ends no farther from where it stood than this (m).
-SKID_TURN, SKID_STRAY = (0.5, 0.7), 0.05
+# A rover with two wheels a side, which slide as it turns, told to turn on the spot at 1 rad/s. Plain friction under
+# four wheels that carry alike turns it t²/(t² + L²) of that, t from side to side and L from axle to axle: 62 % for
+# the reference rover, wider than long, and 20 % for the long one. It must turn between these shares of what plain
+# friction gives, about its own middle: it ends no farther from where it stood than this (m).
+SKID_TURN, SKID_STRAY = (0.8, 1.1), 0.05
 MUST_MOVE = 0.1  # m
 MAY_SETTLE = 0.02  # m the base may drop while settling
 WALL_AT = 1.0  # m ahead
@@ -65,6 +66,8 @@ def read_stage(path):
     held, loops = [], []
     # The joints commanded by torque, with the most each can push: nothing holds them until efforts arrive.
     torques = {}
+    # Where each joint is, in its parent's frame.
+    places = {}
     for m in re.finditer(r'def Physics(Revolute|Prismatic)Joint "([^"]+)"', text):
         after = text[m.end():]
         # Up to the next joint, however deep it is indented: a joint with no start must not be read as having its neighbor's.
@@ -79,9 +82,19 @@ def read_stage(path):
         gain = re.search(r'float drive:(?:angular|linear):physics:stiffness = ([-0-9.e]+)', block)
         if gain and float(gain.group(1)) > 0:
             held.append(m.group(2))
+        place = re.search(r'point3f physics:localPos0 = \(([^)]+)\)', block)
+        if place:
+            places[m.group(2)] = [float(v) for v in place.group(1).split(',')]
         if 'bool physics:excludeFromArticulation = 1' in block:
             loops.append(m.group(2))
+    # What plain friction turns a rover on two wheels a side, of the turn asked: its wheels stand at the corners of a
+    # box as wide as the drive says, and the box's diagonal tells how long.
+    wheels = re.findall(r'custom token\[\] inputs:jointNames = \[([^\]]*)\]', text)
+    across = re.search(r'custom double inputs:wheelDistance = ([-0-9.e]+)', text)
+    corners = [places[n] for n in re.findall(r'"([^"]+)"', wheels[0]) if n in places] if wheels else []
+    diagonal = max((math.dist(a[:2], b[:2]) for a in corners for b in corners), default=0.0)
     return {
+        'plain_turn': float(across.group(1)) ** 2 / diagonal**2 if across and diagonal > 0 else None,
         'starts': starts,
         'torques': torques,
         'held': held,
@@ -502,8 +515,10 @@ def one(path, pictures):
             told(-SPEED, 0.0, 0.0)
             forward, left, turned = told(0.0, 0.0, 1.0)
             result['skid_turn'] = [round(forward * 1000), round(left * 1000), round(turned, 3)]
-            if not SKID_TURN[0] <= turned / (1.0 * SECONDS) <= SKID_TURN[1]:
-                result['problems'].append(f'turn on the spot: went {turned:.3f} rad of the {1.0 * SECONDS:.3f} asked')
+            plain = (info['plain_turn'] or 1.0) * 1.0 * SECONDS
+            result['skid_turn'].append(f'{100 * turned / plain:.0f} % of the {plain:.3f} rad plain friction gives')
+            if not SKID_TURN[0] <= turned / plain <= SKID_TURN[1]:
+                result['problems'].append(f'turn on the spot: went {turned:.3f} rad of the {plain:.3f} plain friction gives ({1.0 * SECONDS:.3f} asked)')
             if math.hypot(forward, left) > SKID_STRAY:
                 result['problems'].append(f'turn on the spot: strayed, forward {forward:.3f} m, left {left:.3f} m')
         if info['mecanum'] and drive_kind == 'twist':

@@ -64,6 +64,14 @@ MECANUM_LEAST, MECANUM_STRAY = 0.8, 0.1
 # (rad/s) for this long turns at between these shares of it, by the simulation's own time: a long contact
 # skids (Gazebo gave 75 % in the trial, plain Coulomb friction gives 70 to 80 %). It moves no farther than this (m).
 TRACK_TURN, TRACK_SECONDS, TRACK_SHARE, TRACK_DRIFT = 1.0, 3.0, (0.5, 1.05), 0.05
+# A rover on two wheels a side turns by sliding them sideways. Told to turn on the spot at this rate (rad/s) for
+# this long, it turns at between these shares of what Gazebo's friction gives, by the simulation's own time:
+# t/(t + L) of the rate told, t from side to side and L from axle to axle, since that friction is a square laid on
+# the wheels' diagonals (see `check_friction_frames`) where plain friction is a circle. That is 56 % for the
+# reference rover and 33 % for the long one. The SDF model turns the two 101 % and 99 % of that and the ROS package
+# 109 % and 94 % (its URDF, as Gazebo converts it, turns so as a plain model too), each the same to three figures
+# over seven runs, one of them held to one core on a busy machine. It moves no farther than this (m).
+SKID_TURN, SKID_SECONDS, SKID_SHARE, SKID_DRIFT = 1.0, 3.0, (0.8, 1.2), 0.05
 # How long, by the clock on the wall, anything may take to appear or the simulation to get through a stretch of
 # its own time, on however busy a machine (s). Reaching it is a failure, so its size decides no figure.
 BOUND = 300
@@ -566,6 +574,52 @@ def check_drive(name, sim, send, text, what):
         check_mecanum(name, sim, send, dist, after, before)
     if on_tracks(text):
         check_tracks(name, sim, send)
+    skid = skid_turn(text)
+    if skid:
+        check_skid(name, sim, send, skid)
+
+
+def skid_turn(text):
+    """What Gazebo's friction turns a rover on two wheels a side, as a share of the turn asked: t/(t + L), t from
+    side to side and L from axle to axle, read from a robot's file (URDF or SDF). None for any other robot."""
+    sides = [re.findall(rf'<{side}_joint>([^<]+)</{side}_joint>', text) for side in ('left', 'right')]
+    across = re.search(r'<wheel_separation>([^<]+)</wheel_separation>', text)
+    if 'DiffDrive' not in text or not across or any(len(side) != 2 for side in sides):
+        return None
+    corners = []
+    for joint in sides[0] + sides[1]:
+        block = re.search(rf'<joint name="{re.escape(joint)}"[\s\S]*?</joint>', text)
+        # A URDF joint says where it is; an SDF joint is where its child link is.
+        at = block and re.search(r'<origin xyz="([^"]+)"', block.group(0))
+        child = block and re.search(r'<child>([^<]+)</child>', block.group(0))
+        if not at and child:
+            at = re.search(rf'<link name="{re.escape(child.group(1))}">\s*<pose>([^<]+)</pose>', text)
+        if not at:
+            return None
+        corners.append([float(v) for v in at.group(1).split()[:2]])
+    t = float(across.group(1))
+    diagonal = max(math.dist(a, b) for a in corners for b in corners)
+    return t / (t + math.sqrt(max(diagonal**2 - t**2, 0.0)))
+
+
+def check_skid(name, sim, send, share):
+    """A rover on two wheels a side, after its run forward: told to turn on the spot it turns at about the
+    `share` of the rate told that its wheels' sliding allows, where it stands. The rate is read by the
+    simulation's own time (see `turn_of`)."""
+    spin = move(sim, send, 0.0, 0.0, SKID_TURN, SKID_SECONDS)
+    if not spin:
+        return fail(name, f'the robot did not come to rest around the turn ({sim.moving()})')
+    start, spun, _, seen = spin
+    turned, gap, rate = turn_of(seen)
+    if not followed(name, gap, SKID_TURN):
+        return
+    drift = math.hypot(spun[0] - start[0], spun[1] - start[1])
+    of = rate / (share * SKID_TURN)
+    told = f'turned {math.degrees(turned):.0f}° at {rate:.3f} rad/s ({100 * of:.1f} % of the {share * SKID_TURN:.3f} rad/s its sliding wheels allow of the {SKID_TURN:.1f} told)'
+    if not SKID_SHARE[0] <= of <= SKID_SHARE[1] or drift > SKID_DRIFT:
+        fail(name, f'told to turn left on the spot, the robot on two wheels a side {told} and moved {drift:.3f} m')
+    else:
+        ok(f'cmd_vel z turned the robot on two wheels a side: it {told}, {drift:.3f} m of drift')
 
 
 def check_mecanum(name, sim, send, forward, after, before):

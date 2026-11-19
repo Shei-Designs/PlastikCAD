@@ -1,4 +1,4 @@
-// The reference robots: a rover, a car, an arm, a quadruped and a linkage built from
+// The reference robots: a rover, a long rover, a car, an arm, a quadruped and a linkage built from
 // shapes, and a rover on mecanum wheels and one on tracks from the Wheels parts, which the
 // tests export and simulate and which fixtures/robots holds for opening in
 // the app. Each is as large as the motors in the
@@ -41,10 +41,14 @@ function design(name: string, scene: SceneNode[], robot: Robot): Doc {
   return doc;
 }
 
-/** A box on four wheels: the wheels lie along X (cylinders turned 90° about Y), so it drives along Y. */
-function rover(): Doc {
-  const body = shape('box', 'Body', [0, 0, 80], [240, 320, 80]);
-  const wheels = [-1, 1].flatMap((sx) => [-1, 1].map((sy) => shape('cylinder', `Wheel ${sx < 0 ? 'left' : 'right'} ${sy < 0 ? 'back' : 'front'}`, [sx * 140, sy * 110, 50], [100, 100, 40], [0, 90, 0], '#e8853a')));
+/**
+ * A box on four wheels: the wheels lie along X (cylinders turned 90° about Y), so it drives along Y. `track` is
+ * from the wheels of one side to the other's and `base` from the back axle to the front one, mm: the rover is wider
+ * than it is long, and the long rover, which has to drag its wheels much farther sideways to turn, twice as long as wide.
+ */
+function rover(name = 'Reference rover', track = 280, base = 220): Doc {
+  const body = shape('box', 'Body', [0, 0, 80], [track - 40, base + 100, 80]);
+  const wheels = [-1, 1].flatMap((sx) => [-1, 1].map((sy) => shape('cylinder', `Wheel ${sx < 0 ? 'left' : 'right'} ${sy < 0 ? 'back' : 'front'}`, [(sx * track) / 2, (sy * base) / 2, 50], [100, 100, 40], [0, 90, 0], '#e8853a')));
   const joints = wheels.map((w) => joint(`${w.name} joint`, body, w, [0, 0, 0], { type: 'continuous', motor: '37d-70' }));
   const sideOf = (w: SceneNode) => (w.pos[0] < 0 ? 'left' : 'right');
   // A coarse scanner on the body's top, above the wheels: 130 mm up, so a range much past 4 m would read the floor at the far end.
@@ -52,8 +56,8 @@ function rover(): Doc {
   // An IMU at the body's center, for odometry.
   const imu = defaultSensor(id(), 'IMU', 'imu', body.id, [0, 0, 0]);
   // A small color camera at the front of the body's top, turned to look the way the rover drives (+Y) and tilted 20° down at the floor ahead; its near clip is short so the floor at the bottom of the picture stays inside it.
-  const camera = { ...defaultSensor(id(), 'Camera', 'camera', body.id, [0, 165, 40]), rot: [0, 20, 90] as Vec3, camera: { hfov: 80, width: 320, height: 240, near: 50, far: 10000 } };
-  return design('Reference rover', [body, ...wheels], {
+  const camera = { ...defaultSensor(id(), 'Camera', 'camera', body.id, [0, base / 2 + 55, 40]), rot: [0, 20, 90] as Vec3, camera: { hfov: 80, width: 320, height: 240, near: 50, far: 10000 } };
+  return design(name, [body, ...wheels], {
     root: body.id,
     base: 'free',
     links: [{ ...defaultLink(body.id), collision: 'box' }, ...wheels.map((w) => ({ ...defaultLink(w.id), collision: 'cylinder' as CollisionKind, friction: 1 }))],
@@ -216,11 +220,13 @@ function linkage(): Doc {
 }
 
 export const ROBOTS: { file: string; make: () => Doc }[] = [
-  { file: 'rover', make: rover },
+  { file: 'rover', make: () => rover() },
   { file: 'car', make: car },
   { file: 'arm', make: arm },
   { file: 'quadruped', make: quadruped },
   { file: 'linkage', make: linkage },
   { file: 'mecanum', make: () => mecanumRover() },
   { file: 'tracked', make: () => trackedRover() },
+  // Last, so that the others' objects keep the ids they had.
+  { file: 'long', make: () => rover('Reference long rover', 200, 400) },
 ];
