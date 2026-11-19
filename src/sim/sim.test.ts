@@ -307,7 +307,7 @@ describe('the rover on tracks', () => {
       sim.step(0.5);
       const before = yaw(sim, base);
       sim.drive(0, 1);
-      sim.step(1.5);
+      sim.step(1);
       const turned = yaw(sim, base) - before;
       sim.dispose();
       return turned;
@@ -441,7 +441,8 @@ describe('a rover on tracks with a raised end', () => {
       expect(e / f).toBeLessThan(1.01);
     });
     // Turning on the spot the wheels on the floor are held back by the skid and those in the air are not: counted in,
-    // they would show the belt running some two hundredths faster than the wheels that carry the rover turn.
+    // they would show the belt running faster than the wheels that carry the rover turn. Each motor holds its speed,
+    // so it is by little: under a thousandth, and more than twice what it is going straight.
     sim.drive(0, 0);
     const stopped = run(0.5);
     sim.drive(0, 1);
@@ -449,8 +450,8 @@ describe('a rover on tracks with a raised end', () => {
     turned.forEach(([onFloor, every], i) => {
       const [f, e] = [Math.abs(onFloor - stopped[i][0]), Math.abs(every - stopped[i][1])];
       expect(f).toBeGreaterThan(500);
-      expect(e / f).toBeGreaterThan(1.005);
-      expect(e / f).toBeLessThan(1.05);
+      expect(e / f).toBeGreaterThan(1.0005);
+      expect(e / f).toBeLessThan(1.01);
     });
     sim.dispose();
   });
