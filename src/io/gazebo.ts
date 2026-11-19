@@ -5,6 +5,7 @@
 import type { Vec3 } from '../model/types';
 import type { SensorKind } from '../robot/types';
 import { escapeXml, fmt } from './format';
+import { SERVO_BAND } from './mjcf';
 import { CROWN } from './usd';
 
 export interface GazeboSensor {
@@ -77,7 +78,7 @@ export type GazeboDrive = {
   wheelSeparation: number;
 } & (
   | { kind: 'differential'; leftJoints: string[]; rightJoints: string[] }
-  | { kind: 'ackermann'; leftJoints: string[]; rightJoints: string[]; leftSteer: string; rightSteer: string; wheelBase: number; kingpinWidth: number; steeringLimit: number }
+  | { kind: 'ackermann'; leftJoints: string[]; rightJoints: string[]; leftSteer: string; rightSteer: string; wheelBase: number; kingpinWidth: number; steeringLimit: number; steeringSpeed: number }
   | { kind: 'mecanum'; frontLeft: string; frontRight: string; rearLeft: string; rearRight: string; wheelBase: number }
 );
 
@@ -101,6 +102,10 @@ export function driveXml(d: GazeboDrive): string {
       `  <right_steering_joint>${escapeXml(d.rightSteer)}</right_steering_joint>`,
       `  <kingpin_width>${m(d.kingpinWidth)}</kingpin_width>`,
       `  <steering_limit>${m(d.steeringLimit)}</steering_limit>`,
+      // The plugin turns a knuckle at the angle it has yet to go times this gain, 1 where none is given: a second to
+      // go two thirds of the way, whatever the servo. With this one the knuckle goes at its servo's top speed (the
+      // joint's limit holds it to that) until `SERVO_BAND` from where it is told, as a servo does in the other exports.
+      ...(d.steeringSpeed > 0 ? [`  <steer_p_gain>${m(d.steeringSpeed / SERVO_BAND)}</steer_p_gain>`] : []),
       `  <wheel_base>${m(d.wheelBase)}</wheel_base>`,
       `  <wheel_separation>${m(d.wheelSeparation)}</wheel_separation>`,
       `  <wheel_radius>${m(d.wheelRadius)}</wheel_radius>`,

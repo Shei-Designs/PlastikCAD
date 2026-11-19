@@ -401,6 +401,9 @@ in the design file and synced with it.
   Gazebo each such wheel stands on a narrow ridge round the middle of its
   tread, so the SDF model and the ROS 2 package turn alike, about the
   rover's own middle.
+  A wheel with no part in the drive and no controller rolls free: Gazebo,
+  which holds a joint to the top speed in its file, is given none for it.
+  A car's knuckles turn at their servo's speed.
 - **Mecanum wheels.** A mecanum drive slides sideways on the *Mecanum
   wheel* part from the Wheels parts, and on nothing else. A link that is
   that part, or holds it (with a bore cut through it, a hub glued on), gets

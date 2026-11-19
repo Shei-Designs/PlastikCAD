@@ -79,6 +79,15 @@ TRACK_TURN, TRACK_SECONDS, TRACK_SHARE, TRACK_DRIFT = 1.0, 3.0, (0.5, 1.05), 0.0
 # Gazebo, has its load shared along its width as the physics pleases, and one a hair off flat, as the model's was
 # written, stands on one end; each figure was the same to three places over seven runs.) It moves no farther than this (m).
 SKID_TURN, SKID_SECONDS, SKID_SHARE, SKID_DRIFT = 1.0, 3.0, (0.95, 1.05), 0.01
+# A car told round a circle each way, at this speed (m/s, more than a wheel left to roll could turn at before it was
+# freed of its joint's limit) and the rate that steers its knuckles this far (rad), for this long: the radius its
+# path makes, the way it went over the turn it made, the start and the stop with it, is between these shares of the
+# circle told, and the two ways are alike within this share of it. The path is the model's frame's, which stands
+# ahead of the axle that does not steer and so goes a little wider than that axle does. The reference car makes
+# 101.7 % and 102.6 % of the circle told as a ROS package and 101.9 % and 102.4 % as an SDF model. With the plugin's
+# own steering gain (a second to turn the knuckles two thirds of the way) and the front wheels held to their joint's
+# top speed it made 156 to 181 %.
+CAR_SPEED, CAR_STEER, CAR_SECONDS, CAR_RADIUS, CAR_ALIKE = 0.45, 0.3, 6.0, (0.97, 1.06), 0.03
 # How long, by the clock on the wall, anything may take to appear or the simulation to get through a stretch of
 # its own time, on however busy a machine (s). Reaching it is a failure, so its size decides no figure.
 BOUND = 300
@@ -585,6 +594,9 @@ def check_drive(name, sim, send, text, what):
     skid = skid_turn(text)
     if skid:
         check_skid(name, sim, send, skid)
+    circle = car_circle(text)
+    if circle:
+        check_car(name, sim, send, circle)
 
 
 def skid_turn(text):
@@ -628,6 +640,37 @@ def check_skid(name, sim, send, share):
         fail(name, f'told to turn left on the spot, the robot on two wheels a side {told} and moved {drift:.3f} m')
     else:
         ok(f'cmd_vel z turned the robot on two wheels a side: it {told}, {drift:.3f} m of drift')
+
+
+def car_circle(text):
+    """The radius of the circle a car steers with its knuckles CAR_STEER off straight (m): its wheelbase over the
+    tangent of that, read from the robot's file (URDF or SDF). None for any other robot."""
+    base = re.search(r'<wheel_base>([^<]+)</wheel_base>', text)
+    return float(base.group(1)) / math.tan(CAR_STEER) if 'AckermannSteering' in text and base else None
+
+
+def check_car(name, sim, send, radius):
+    """A car, after its run forward: told round a circle of `radius` to its left and then to its right, it goes
+    round one of about that radius each way, and the two alike. Read by the simulation's own time."""
+    made = []
+    for way, side in ((1, 'left'), (-1, 'right')):
+        went = move(sim, send, CAR_SPEED, 0.0, way * CAR_SPEED / radius, CAR_SECONDS)
+        if not went:
+            return fail(name, f'the car did not come to rest around its circle to the {side} ({sim.moving()})')
+        seen = went[3]
+        turned, gap, _ = turn_of(seen)
+        if not followed(name, gap, CAR_SPEED / radius):
+            return
+        path = sum(math.hypot(b[1] - a[1], b[2] - a[2]) for a, b in zip(seen, seen[1:]))
+        # A car that does not turn the way told has no circle to measure.
+        if way * turned < 0.5:
+            return fail(name, f'told round a circle of {radius:.3f} m to its {side} at {CAR_SPEED} m/s for {CAR_SECONDS:.0f} s, the car went {path:.3f} m and turned {math.degrees(turned):.0f}° where {math.degrees(way * CAR_SPEED / radius * CAR_SECONDS):.0f}° was told')
+        made.append(path / abs(turned))
+    told = f'circles of {made[0]:.3f} m to its left and {made[1]:.3f} m to its right ({100 * made[0] / radius:.1f} % and {100 * made[1] / radius:.1f} % of the {radius:.3f} m told)'
+    if any(not CAR_RADIUS[0] <= r / radius <= CAR_RADIUS[1] for r in made) or abs(made[0] - made[1]) > CAR_ALIKE * radius:
+        fail(name, f'told round a circle each way at {CAR_SPEED} m/s, the car made {told}')
+    else:
+        ok(f'cmd_vel steered the car round {told}')
 
 
 def check_mecanum(name, sim, send, forward, after, before):
