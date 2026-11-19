@@ -89,6 +89,8 @@ export interface PreparedDrive {
   /** Between the two steering joints. */
   kingpinWidth?: number;
   steeringLimit?: number;
+  /** The top speed of the slower steering joint, rad/s. */
+  steeringSpeed?: number;
 }
 
 /** What drives what, as drive.json carries it for the scripts and the test drive: the actuators of each role, and the geometry a velocity command needs. */
@@ -499,6 +501,7 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
           const fixed = driven.some((j) => !steered(j)) ? driven.filter((j) => !steered(j)) : free;
           drive.wheelBase = apart(mean(fixed.length ? fixed : driven), mean([sl, sr]));
           drive.steeringLimit = (Math.min(...[sl, sr].map((j) => Math.min(Math.abs(j.lower), Math.abs(j.upper)))) * Math.PI) / 180;
+          drive.steeringSpeed = (Math.min(sl.velocity, sr.velocity) * Math.PI) / 180;
         }
       }
     } else {
@@ -544,11 +547,23 @@ function footprintOf(p: Prepared, robot: Robot, lift = 0): { name: string; joint
   return { name, joint: `${name}_joint`, base: p.linkNames.get(robot.root!)!, turn: -Math.atan2(fy, fx) || 0, height: p.frames.get(robot.root!)![2] * M + lift };
 }
 
+/**
+ * A joint's limit as Gazebo is to have it. Gazebo holds a joint to the top speed its file gives it, whether or not
+ * anything turns it: a wheel left to roll is braked at its motor's top speed, and a car whose front wheels are held
+ * back neither reaches its speed nor turns. So a joint that turns without end and that nothing in the export commands
+ * (no part in the drive, no controller, no joint to follow) is written without a limit, and rolls free as it does in
+ * the other simulators.
+ */
+function gazeboLimit(p: Prepared, j: UrdfJoint): UrdfJoint['limit'] {
+  const commanded = Boolean(j.mimic) || p.controlled.includes(j.name) || Boolean(p.drive && (p.drive.wheels.includes(j.name) || p.drive.steer.includes(j.name)));
+  return j.type === 'continuous' && !commanded ? undefined : j.limit;
+}
+
 /** The prepared drive as the Gazebo plugin wants it. */
 function gazeboDrive(d: PreparedDrive, baseFrame: string): GazeboDrive {
   const shared = { baseFrame, wheelRadius: d.wheelRadius, wheelSeparation: d.wheelSeparation };
   if (d.kind === 'mecanum') return { ...shared, kind: 'mecanum', frontLeft: d.roles['front-left']![0], frontRight: d.roles['front-right']![0], rearLeft: d.roles['rear-left']![0], rearRight: d.roles['rear-right']![0], wheelBase: d.wheelBase! };
-  if (d.kind === 'ackermann') return { ...shared, kind: 'ackermann', leftJoints: d.roles.left!, rightJoints: d.roles.right!, leftSteer: d.roles['steer-left']![0], rightSteer: d.roles['steer-right']![0], wheelBase: d.wheelBase!, kingpinWidth: d.kingpinWidth!, steeringLimit: d.steeringLimit! };
+  if (d.kind === 'ackermann') return { ...shared, kind: 'ackermann', leftJoints: d.roles.left!, rightJoints: d.roles.right!, leftSteer: d.roles['steer-left']![0], rightSteer: d.roles['steer-right']![0], wheelBase: d.wheelBase!, kingpinWidth: d.kingpinWidth!, steeringLimit: d.steeringLimit!, steeringSpeed: d.steeringSpeed ?? 0 };
   return { ...shared, kind: 'differential', leftJoints: d.roles.left!, rightJoints: d.roles.right! };
 }
 
@@ -628,14 +643,14 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
   const lift = p.controlled.length ? p.lift : 0;
   const footprint = footprintOf(p, robot, lift);
   const links: UrdfLink[] = p.links.map(({ frame: _f, node: _n, ...l }) => l);
-  const joints: UrdfJoint[] = [...p.treeJoints];
+  const joints: UrdfJoint[] = p.treeJoints.map((j) => ({ ...j, limit: gazeboLimit(p, j) }));
   // A URDF is a tree, and so is a model to Gazebo's physics: the joint that closes a loop carries a pin, a leaf of
   // the tree, where its child would be, and Gazebo welds the pin to that child. Elsewhere the loop stays open.
   const welds: string[] = [];
   for (const j of p.loopJoints) {
     const pin = p.names.take(`${j.name}_pin`, p.naming.link);
     links.push({ name: pin, inertial: { mass: PIN.mass, origin: [0, 0, 0], inertia: PIN.inertia }, visual: [], collision: [] });
-    joints.push({ name: j.name, type: j.type, parent: j.parent, child: pin, origin: j.origin, axis: j.axis, limit: j.limit, dynamics: j.dynamics });
+    joints.push({ name: j.name, type: j.type, parent: j.parent, child: pin, origin: j.origin, axis: j.axis, limit: gazeboLimit(p, j), dynamics: j.dynamics });
     welds.push(weldXml(j.child, pkg, pin));
   }
   // Gazebo closes the loop, so the loop moves the joints on it: Gazebo is not told what they follow, which its
@@ -745,14 +760,14 @@ export function buildSdfModel(doc: Doc, geometry: Map<string, LinkGeometry>, rob
     const pin = p.names.take(`${j.name}_pin`, p.naming.link);
     links.push({ name: pin, pose: j.origin.map((x, i) => x + frameOf(j.parent)[i] * M) as Vec3, inertial: { mass: PIN.mass, origin: [0, 0, 0], inertia: PIN.inertia }, visual: [], collision: [] });
     welds.push(weldXml(j.child, p.robotName, pin));
-    return { name: j.name, type: j.type, parent: j.parent, child: pin, pose: [0, 0, 0], axis: j.axis, limit: j.limit, dynamics: j.dynamics };
+    return { name: j.name, type: j.type, parent: j.parent, child: pin, pose: [0, 0, 0], axis: j.axis, limit: gazeboLimit(p, j), dynamics: j.dynamics };
   });
   const joints: SdfJoint[] = p.treeJoints.map((j) => {
     const childFrame = p.frames.get([...p.linkNames].find(([, n]) => n === j.child)![0])!;
     const parentFrame = p.frames.get([...p.linkNames].find(([, n]) => n === j.parent)![0])!;
     // The joint in its child's frame: its place in the parent's frame, carried over.
     const pose = j.origin.map((x, i) => x + (parentFrame[i] - childFrame[i]) * M) as Vec3;
-    return { name: j.name, type: j.type, parent: j.parent, child: j.child, pose, axis: j.axis, limit: j.limit, dynamics: j.dynamics, ...(j.mimic && !onLoop.has(j.name) ? { mimic: j.mimic } : {}) };
+    return { name: j.name, type: j.type, parent: j.parent, child: j.child, pose, axis: j.axis, limit: gazeboLimit(p, j), dynamics: j.dynamics, ...(j.mimic && !onLoop.has(j.name) ? { mimic: j.mimic } : {}) };
   });
   joints.push(...pinned);
   const base = p.linkNames.get(robot.root!)!;
