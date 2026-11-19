@@ -139,7 +139,7 @@ const FLOOR_FRICTION = 1;
  * spot at a quarter of it, its wheels held back by the floor they have to slide on. A motor's controller holds
  * the speed it is told, as Gazebo's does.
  */
-const SPEED_BAND = 0.01;
+export const SPEED_BAND = 0.01;
 /** USD's default film back, mm; the focal length is chosen against it for the field of view asked. */
 const APERTURE = 20.955;
 

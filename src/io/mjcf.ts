@@ -9,6 +9,7 @@ import { lidarAngles } from '../robot/types';
 import type { JointType, World } from '../robot/types';
 import { escapeXml, fmt } from './format';
 import type { Naming, UrdfGeometry } from './urdf';
+import { SPEED_BAND } from './usd';
 
 export interface MjcfBody {
   name: string;
@@ -178,18 +179,14 @@ const TIMESTEP = 0.002;
 /** A position servo pushes with its full effort from this far off its target, rad. */
 const SERVO_BAND = 0.1;
 /**
- * How far off the speed asked of it, as a share of its top speed, a wheel's motor gives its whole torque: the Isaac
- * Sim stage's rule. A motor as soft as its own torque–speed line (the whole torque only at a standstill) gives up
- * speed to every load: a rover turning on the spot ran its wheels at two fifths to three fifths of the speed asked,
- * held back by the floor they have to slide on. A motor's controller holds the speed it is told, as Gazebo's does.
- */
-const SPEED_BAND = 0.01;
-/**
- * The most a wheel motor's gain may be, as a multiple of the wheel's own inertia over the time step. Past its torque
- * limit a motor pushes with the limit alone, which MuJoCo integrates as it stands: a gain that takes a slipping
- * wheel through the band in a small part of a step throws it from one limit to the other, and the rover hops on
- * the spot for seconds after every change of command. Measured on a rover turning, at three wheel inertias: clean
- * up to ten times the inertia over the step, hopping from twenty; half the clean figure is kept.
+ * A wheel's motor gives its whole torque `SPEED_BAND` of its top speed off the speed asked, as in the Isaac Sim
+ * stage: with the motor's own torque–speed line for a gain, a rover turning on the spot ran its wheels at two fifths
+ * to three fifths of the speed asked. This is the most that gain may be, as a multiple of the wheel's own inertia
+ * over the time step. Past its torque limit a motor pushes with the limit alone, which MuJoCo integrates as it
+ * stands: a gain that takes a slipping wheel through the band in a small part of a step throws it from one limit
+ * to the other, and the rover hops on the spot for seconds after every change of command. Measured on a rover
+ * turning, at three wheel inertias: clean up to ten times the inertia over the step, hopping from twenty; half the
+ * clean figure is kept.
  */
 const SPEED_STEPS = 5;
 /** The app's joint defaults in SI, for a joint exported without limits. */
