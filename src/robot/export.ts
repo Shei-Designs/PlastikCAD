@@ -490,7 +490,14 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
         if (def.id === 'ackermann') {
           const [sl, sr] = [parts['steer-left'][0], parts['steer-right'][0]];
           drive.kingpinWidth = apart(at(sl), at(sr));
-          drive.wheelBase = apart(mean([...parts.left, ...parts.right]), mean([sl, sr]));
+          // The wheelbase runs from the steering knuckles to the wheels that do not steer: the driven ones off the
+          // knuckles, or, in a car driven by its steered wheels alone, the wheels that roll free about the same line.
+          const steered = (j: RobotJoint) => j.parent === sl.child || j.parent === sr.child;
+          const driven = [...parts.left, ...parts.right];
+          const axle = placedJoints.get(driven[0].id)!.axis;
+          const free = allJoints.filter((j) => j.type === 'continuous' && !robot.drive!.roles[j.id] && !steered(j) && Math.abs(placedJoints.get(j.id)!.axis.reduce((sum, x, i) => sum + x * axle[i], 0)) > 0.9);
+          const fixed = driven.some((j) => !steered(j)) ? driven.filter((j) => !steered(j)) : free;
+          drive.wheelBase = apart(mean(fixed.length ? fixed : driven), mean([sl, sr]));
           drive.steeringLimit = (Math.min(...[sl, sr].map((j) => Math.min(Math.abs(j.lower), Math.abs(j.upper)))) * Math.PI) / 180;
         }
       }
@@ -817,16 +824,15 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
   // A joint commanded by torque has no servo: its drive holds nothing, and `/joint_command` carries its efforts.
   const torque = new Set(p.torque);
   const position = new Set([...p.controlled.filter((j) => !torque.has(j)), ...(p.drive?.steer ?? [])]);
-  // An Ackermann car in Isaac: the controller speaks for all four wheels, front left, front right, rear left, rear right,
-  // so the front wheels, which turn free on their knuckles in the design, get velocity drives too.
-  let ackermannWheels: string[] | undefined;
+  // An Ackermann car in Isaac: the controller gives four speeds, front left, front right, rear left, rear right, and
+  // each driven wheel takes the one for its place: a wheel on a steering knuckle is a front wheel. A wheel no motor
+  // turns is told nothing and rolls free, as in every other export.
+  let ackermannWheels: { joint: string; place: number }[] | undefined;
   if (p.drive?.kind === 'ackermann') {
     const r = p.drive.roles;
-    const frontOf = (steer?: string) => p.treeJoints.find((j) => j.type === 'continuous' && j.parent === p.treeJoints.find((s) => s.name === steer)?.child)?.name;
-    const fronts = [frontOf(r['steer-left']?.[0]), frontOf(r['steer-right']?.[0])];
-    ackermannWheels = [...fronts, r.left?.[0], r.right?.[0]].filter((n): n is string => Boolean(n));
-    for (const n of ackermannWheels) velocity.add(n);
-    if (ackermannWheels.length !== 4) warnings.push('Isaac Sim steers a car by four wheels, two on the knuckles and two behind; this one has another layout, so cmd_vel will not drive it there.');
+    const jointNamed = (name?: string) => p.treeJoints.find((j) => j.name === name);
+    const placed = (side: 'left' | 'right') => (r[side] ?? []).map((joint) => ({ joint, place: (jointNamed(joint)?.parent === jointNamed(r[`steer-${side}`]?.[0])?.child ? 0 : 2) + (side === 'left' ? 0 : 1) }));
+    ackermannWheels = [...placed('left'), ...placed('right')];
   }
   const frameOf = (link: string): Vec3 => p.frames.get([...p.linkNames].find(([, n]) => n === link)![0])!;
   // A wheel that slides sideways as the robot turns (see `skid`) has a rim no lighter than `RIM_SHARE` says, as a

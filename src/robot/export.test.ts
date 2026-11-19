@@ -1393,4 +1393,41 @@ describe('the friction of a wheel that skids', () => {
     for (const name of ['rover', 'tracked', 'mecanum', 'car', 'arm']) expect(stage(name)).not.toContain('solverType');
     for (const name of ['tracked', 'mecanum', 'car', 'arm']) expect(stage(name)).not.toContain('_tread"');
   });
+
+  it('has Isaac Sim turn only the wheels of a car that have a motor, each by its own of the four speeds, and measures the wheelbase to the wheels that do not steer', () => {
+    // The reference car driven by its rear wheels as it comes, by its front wheels alone, or by all four.
+    const car = (driven: 'rear' | 'front' | 'all') => {
+      const d = ROBOTS.find((r) => r.file === 'car')!.make();
+      const robot = d.robot!;
+      const [rl, rr, fl, fr] = ['Rear wheel left joint', 'Rear wheel right joint', 'Front wheel left joint', 'Front wheel right joint'].map((n) => robot.joints.find((j) => j.name === n)!);
+      const motorOnto = (from: Robot['joints'][number], to: Robot['joints'][number]) => ({ ...from, id: to.id, name: to.name, parent: to.parent, child: to.child, origin: to.origin, axis: to.axis, type: to.type });
+      const swap = new Map(driven === 'rear' ? [] : [[fl, motorOnto(rl, fl)], [fr, motorOnto(rr, fr)], ...(driven === 'front' ? ([[rl, motorOnto(fl, rl)], [rr, motorOnto(fr, rr)]] as const) : [])]);
+      const steer = Object.fromEntries(Object.entries(robot.drive!.roles).filter(([, role]) => role.startsWith('steer')));
+      const sides: Record<string, 'left' | 'right'> = { ...(driven === 'front' ? {} : { [rl.id]: 'left', [rr.id]: 'right' }), ...(driven === 'rear' ? {} : { [fl.id]: 'left', [fr.id]: 'right' }) };
+      d.robot = { ...robot, joints: robot.joints.map((j) => swap.get(j) ?? j), drive: { ...robot.drive!, roles: { ...steer, ...sides } } };
+      return d;
+    };
+    const read = (driven: 'rear' | 'front' | 'all') => {
+      const d = car(driven);
+      const usd = file(buildIsaacStage(d, geo(d)), /\.usda$/);
+      const wheels = /def OmniGraphNode "wheels"[\s\S]*?inputs:jointNames = \[([^\]]*)\]/.exec(usd)![1].replace(/"/g, '').split(', ');
+      const places = [...usd.matchAll(/def OmniGraphNode "wheel\d_speed"[\s\S]*?custom int inputs:index = (\d)/g)].map((m) => Number(m[1]));
+      const damping = Object.fromEntries([...usd.matchAll(/def PhysicsRevoluteJoint "((?:Front|Rear)_wheel_[a-z]+)_joint"[\s\S]*?physics:damping = (\S+)/g)].map((m) => [m[1], Number(m[2])]));
+      return { usd, wheels, places, damping, wheelBase: Number(/custom double inputs:wheelBase = (\S+)/.exec(usd)![1]), sdfBase: Number(/<wheel_base>([^<]+)</.exec(file(buildSdfModel(d, geo(d)), /model\.sdf$/))![1]) };
+    };
+    // Isaac's controller gives front left, front right, rear left, rear right: the rear wheels take the third and fourth.
+    const rear = read('rear');
+    expect([rear.wheels, rear.places]).toEqual([['Rear_wheel_left_joint', 'Rear_wheel_right_joint'], [2, 3]]);
+    expect(rear.usd).toContain('prepend double[] inputs:velocityCommand.connect = </World/ROS2/speeds.outputs:array>');
+    // A front wheel with no motor has no drive to push it: what is left is its own bearing's drag, far below a motor's hold.
+    expect(rear.damping.Front_wheel_left).toBeLessThan(rear.damping.Rear_wheel_left / 1000);
+    expect(rear.damping.Front_wheel_right).toBe(rear.damping.Front_wheel_left);
+    const front = read('front');
+    expect([front.wheels, front.places]).toEqual([['Front_wheel_left_joint', 'Front_wheel_right_joint'], [0, 1]]);
+    expect(front.damping.Rear_wheel_left).toBeLessThan(front.damping.Front_wheel_left / 1000);
+    const all = read('all');
+    expect([all.wheels, all.places]).toEqual([['Rear_wheel_left_joint', 'Front_wheel_left_joint', 'Rear_wheel_right_joint', 'Front_wheel_right_joint'], [2, 0, 3, 1]]);
+    // From the knuckles to the rear axle, 320 mm, whichever wheels drive: not to the middle of the driven ones.
+    for (const made of [rear, front, all]) expect([made.wheelBase, made.sdfBase]).toEqual([0.32, 0.32]);
+  });
 });
