@@ -261,7 +261,7 @@
         "upper": 90,
         "effort": 0.239,
         "velocity": 360,
-        "damping": 0.0019,
+        "damping": 0.000038,
         "friction": 0
       },
       {
@@ -276,7 +276,7 @@
         "upper": 90,
         "effort": 0.239,
         "velocity": 360,
-        "damping": 0.0019,
+        "damping": 0.000038,
         "friction": 0
       }
     ],

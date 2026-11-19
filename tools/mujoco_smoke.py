@@ -62,6 +62,10 @@ START_WITHIN = 0.2
 # the tyres' scrub. With both knuckles at one angle and its wheels at one speed it went 127 %.
 CAR_SPEED, CAR_STEER, CAR_SECONDS = 0.3, 0.3, 12.0
 CAR_CIRCLE, CAR_ALIKE = (0.97, 1.08), 0.01
+# Told straight ahead and then straight back, as long as round a circle, the car keeps its line: it turns no more
+# than this (rad) and strays to neither side farther than this (m). The reference car turns 0.0000° and strays under
+# 0.01 mm either way, its two sides alike in every figure.
+CAR_VEER, CAR_STRAY = np.radians(0.15), 0.01
 
 root = sys.argv[1] if len(sys.argv) > 1 else "fixtures/out"
 # A link's friction is what holds on the floor: MuJoCo takes the larger of two surfaces' figures unless one has the
@@ -372,6 +376,24 @@ for xml in xmls:
                 turned += (nh - h + np.pi) % (2 * np.pi) - np.pi
                 last, h = now, nh
             radii.append(path / max(abs(turned), 1e-9))
+        for way in (1, -1) if bodies and hasattr(car, "ackermann") else ():
+            e = mujoco.MjData(m)
+            if home >= 0:
+                mujoco.mj_resetDataKeyframe(m, e, home)
+            for _ in steps(0.5):
+                mujoco.mj_step(m, e)
+            start, h0 = e.xpos[base][:2].copy(), float(np.arctan2(e.xmat[base][3], e.xmat[base][0]))
+            f = e.xmat[base].reshape(3, 3) @ np.array(spec["forward"], float)
+            for actuator, value in car.ackermann(spec, way * CAR_SPEED, 0.0).items():
+                e.ctrl[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_ACTUATOR, actuator)] = value
+            for _ in steps(CAR_SECONDS):
+                mujoco.mj_step(m, e)
+            veer = (float(np.arctan2(e.xmat[base][3], e.xmat[base][0])) - h0 + np.pi) % (2 * np.pi) - np.pi
+            aside = float((e.xpos[base][:2] - start) @ np.array([-f[1], f[0]]))
+            notes.append(f"car straight {'ahead' if way > 0 else 'back'}: turned {np.degrees(veer):+.4f} deg, {1000 * aside:+.2f} mm to its left")
+            if abs(veer) > CAR_VEER or abs(aside) > CAR_STRAY:
+                ok = False
+                notes.append(f"car straight FAILED: told straight {'ahead' if way > 0 else 'back'}, it turned {np.degrees(veer):.2f} deg and strayed {1000 * aside:.1f} mm")
         shares = [r * curve for r in radii]
         if radii:
             notes.append(f"car circles {radii[0]:.3f} / {radii[1]:.3f} m of {1 / curve:.3f}")

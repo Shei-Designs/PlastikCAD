@@ -591,13 +591,12 @@ in the design file and synced with it.
   its own middle, and a wheel under load grips where it should. The rim is
   never more than its motor brings to its top speed in a fifth of a second,
   so small motors under a heavy robot start and stop as they should.
-  Known limits: a car stands on four rigid wheels, and PhysX picks how its
-  weight is shared among them, often more on one diagonal, so a car told to
-  go straight may veer a little (about 0.7° over 3 m for the reference
-  car); and a rover on two wheels a side, turning on the spot, may circle a
-  point a little off its middle in one direction. Both follow the order the
-  wheels come in, not the design, and a controller that steers by feedback
-  takes them out.
+  The robot's surfaces give a little where they touch, as MuJoCo's do (its
+  whole weight would sink one point of them 1 mm), so a robot on four
+  wheels shares its weight among them as its design does, and keeps its
+  line: on rigid contacts PhysX could put more of it on one diagonal, by
+  the order the wheels came in the file, and a car went off its line. A
+  stage of your own keeps this, since it is the robot's materials that give.
   *File > Open*, Play, and it runs; nothing is imported or set up on
   the Isaac side. Isaac Sim can still import the ROS 2 package's URDF, but
   the stage carries what the importer cannot read from URDF: drive gains, a

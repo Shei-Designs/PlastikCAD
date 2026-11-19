@@ -23,13 +23,17 @@ const lever = (side: SceneNode[], grams: (node: SceneNode) => number | null): nu
  * joint is a wheel, a turret or a spinner: it only ever spins its child side
  * and never holds it up, so it is fitted to that side alone, at a turn a
  * second. Fitting a free wheel to the body it carries gave it damping that
- * braked the whole robot.
+ * braked the whole robot. Until a motor is chosen for it (which brings its
+ * own figures) it spins on a bearing, whose drag is a thousandth of that
+ * effort at full speed: a ball bearing's. A twentieth dragged a car's free
+ * front wheels so hard that they pushed their knuckles 0.07° out against the
+ * steering servos, and the car drifted off its line.
  */
 export function jointDefaults(childSide: SceneNode[], parentSide: SceneNode[], grams: (node: SceneNode) => number | null = () => null, continuous = false): Pick<RobotJoint, 'effort' | 'velocity' | 'damping'> {
   const load = continuous ? lever(childSide, grams) : Math.max(lever(childSide, grams), lever(parentSide, grams));
   const effort = round3(Math.max(5 * load, 1e-4));
   const velocity = continuous ? 360 : 90;
-  const damping = round3((0.05 * effort) / ((velocity * Math.PI) / 180));
+  const damping = round3(((continuous ? 0.001 : 0.05) * effort) / ((velocity * Math.PI) / 180));
   return { effort, velocity, damping };
 }
 

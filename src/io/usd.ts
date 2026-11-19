@@ -132,6 +132,17 @@ export interface UsdModel {
 const DEG = 180 / Math.PI;
 const FLOOR_FRICTION = 1;
 /**
+ * How far the robot's whole weight would sink one point of its surfaces into what it stands on, m: the robot's
+ * surfaces give, as springs of its weight over this, damped critically. PhysX holds a contact rigid otherwise, and a
+ * body on four rigid wheels may share its weight among them in any of many ways: it took one with 7.1 N on one
+ * diagonal's wheels and 4.8 N on the other's, picked by the order the wheels come in the file, and a car that spun
+ * its back wheels at the start went off its line by up to 0.9° over 3 m. Given this the four share within 1 N, as
+ * in MuJoCo and Gazebo, whose contacts give alike, and the car keeps its line within 0.25°; a track's wheels share
+ * its weight along its length, and it turns on the spot as it does in MuJoCo. A spring given as an acceleration,
+ * alike for every part, let a mecanum wheel's light rollers sink 8 mm.
+ */
+const SINK = 0.001;
+/**
  * How far off the speed asked of it, as a share of its top speed, a speed-driven joint gives its whole torque. A
  * drive as soft as the motor's own torque–speed line (the whole torque only at a standstill) gives up speed to
  * every load: a 14 kg mecanum rover ran at 86 % of the speed asked on a level floor, and a rover turning on the
@@ -379,7 +390,8 @@ function materialPrim(name: string, color: [number, number, number]): string[] {
  * link's figure was only half heard against the floor's 1 (a caster typed 0.05 dragged at 0.52). Multiplied, the
  * floor's 1 leaves the link's figure as it was typed.
  */
-function physicsMaterialPrim(name: string, friction: number): string[] {
+function physicsMaterialPrim(name: string, friction: number, mass?: number): string[] {
+  const stiffness = mass ? (mass * 9.81) / SINK : 0;
   return [
     `def Material "${name}" (`,
     '    prepend apiSchemas = ["PhysicsMaterialAPI", "PhysxMaterialAPI"]',
@@ -389,6 +401,8 @@ function physicsMaterialPrim(name: string, friction: number): string[] {
     '    float physics:restitution = 0',
     `    float physics:staticFriction = ${fmt(friction, 3)}`,
     '    uniform token physxMaterial:frictionCombineMode = "multiply"',
+    // The robot's surfaces give a little (see `SINK`); the floor, which a world of the user's own replaces, does not.
+    ...(stiffness > 0 ? [`    float physxMaterial:compliantContactDamping = ${fmt(Math.sqrt(stiffness * mass!), 4)}`, `    float physxMaterial:compliantContactStiffness = ${fmt(stiffness, 4)}`] : []),
     '}',
   ];
 }
@@ -973,7 +987,8 @@ export function writeUsda(model: UsdModel): string {
   const robotPath = `/World/${robot}`;
   const linkPath = (link: string) => `${robotPath}/${link}`;
   const colors = new Map<string, [number, number, number]>();
-  const frictions = new Map<string, number>([[frictionKey(FLOOR_FRICTION), FLOOR_FRICTION]]);
+  const frictions = new Map<string, number>();
+  const weight = model.links.reduce((sum, l) => sum + (l.inertial?.mass ?? 0), 0);
   for (const l of model.links) {
     for (const v of l.visual) colors.set(colorKey(v.color), v.color);
     frictions.set(frictionKey(l.friction), l.friction);
@@ -1012,7 +1027,7 @@ export function writeUsda(model: UsdModel): string {
     '    )',
     '    {',
     '        uniform token axis = "Z"',
-    `        rel material:binding:physics = </World/PhysicsMaterials/${frictionKey(FLOOR_FRICTION)}>`,
+    '        rel material:binding:physics = </World/PhysicsMaterials/floor>',
     '        uniform token purpose = "guide"',
     '    }',
     '',
@@ -1037,7 +1052,7 @@ export function writeUsda(model: UsdModel): string {
     '',
     'def Scope "PhysicsMaterials"',
     '{',
-    ...indent([...frictions].flatMap(([k, f], i) => [...(i ? [''] : []), ...physicsMaterialPrim(k, f)]), 1),
+    ...indent([...physicsMaterialPrim('floor', FLOOR_FRICTION), ...[...frictions].flatMap(([k, f]) => ['', ...physicsMaterialPrim(k, f, weight)])], 1),
     '}',
     '',
     // The articulation begins at the footprint where there is one, so that it is the root the links hang from.

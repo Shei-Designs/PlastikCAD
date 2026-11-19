@@ -23,4 +23,9 @@ describe('jointDefaults', () => {
     expect(fit.damping).toBeLessThan(1e-4);
     expect(fit.damping).toBeLessThan(jointDefaults([wheel], [body], grams).damping / 100);
   });
+
+  it("gives a continuous joint a ball bearing's drag, a thousandth of its effort at full speed, until a motor is chosen", () => {
+    const fit = jointDefaults([wheel], [body], grams, true);
+    expect(fit.damping).toBe(Number(((0.001 * fit.effort) / (2 * Math.PI)).toPrecision(3)));
+  });
 });
