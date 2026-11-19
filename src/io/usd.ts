@@ -19,7 +19,7 @@ export type UsdCollision =
   /** A mesh in the link's frame; `convex` for a hull, else PhysX decomposes it. */
   | { mesh: MeshData; convex: boolean }
   | { box: Vec3; origin: Vec3; rpy: Vec3 }
-  /** `crowned` for a wheel that slides sideways as its robot turns: it stands on the middle of its tread (see `CROWN`). */
+  /** `crowned` for a wheel: it stands on the middle of its tread (see `CROWN`). */
   | { cylinder: { radius: number; length: number }; origin: Vec3; rpy: Vec3; crowned?: boolean }
   | { sphere: { radius: number }; origin: Vec3; rpy: Vec3 };
 
@@ -142,7 +142,9 @@ export const SPEED_BAND = 0.01;
  * width, and the rest of it this much of its radius lower, clear of a flat floor. PhysX puts a wide flat wheel's
  * weight on the floor wherever along its line of touch it pleases, up to half the wheel's width to one side, the
  * same side for every wheel: a rover whose wheels slide as it turns then turns about a point well off its middle
- * (a tenth of a meter, for wheels 40 mm wide on a rover 200 mm by 400 mm), and walks as it turns.
+ * (a tenth of a meter, for wheels 40 mm wide on a rover 200 mm by 400 mm), and walks as it turns. A rover on two
+ * wheels turns as one whose wheels stood that much farther apart would (94 % of what it is told on the ridge, 74 %
+ * without, for wheels 100 mm wide), and a car on wheels 90 mm wide goes round a circle 40 % too wide.
  */
 export const CROWN = { width: 1 / 40, drop: 0.01 };
 /** USD's default film back, mm; the focal length is chosen against it for the field of view asked. */
@@ -350,15 +352,21 @@ function materialPrim(name: string, color: [number, number, number]): string[] {
   ];
 }
 
+/**
+ * A surface's friction. Where two surfaces meet PhysX takes the average of their figures unless told otherwise, so a
+ * link's figure was only half heard against the floor's 1 (a caster typed 0.05 dragged at 0.52). Multiplied, the
+ * floor's 1 leaves the link's figure as it was typed.
+ */
 function physicsMaterialPrim(name: string, friction: number): string[] {
   return [
     `def Material "${name}" (`,
-    '    prepend apiSchemas = ["PhysicsMaterialAPI"]',
+    '    prepend apiSchemas = ["PhysicsMaterialAPI", "PhysxMaterialAPI"]',
     ')',
     '{',
     `    float physics:dynamicFriction = ${fmt(friction, 3)}`,
     '    float physics:restitution = 0',
     `    float physics:staticFriction = ${fmt(friction, 3)}`,
+    '    uniform token physxMaterial:frictionCombineMode = "multiply"',
     '}',
   ];
 }
