@@ -139,8 +139,8 @@ const FLOOR_FRICTION = 1;
 export const SPEED_BAND = 0.01;
 /**
  * A crowned wheel's tread: a ridge round its middle, `width` of the wheel's width, and the rest of the wheel
- * `clear` lower (m), off a flat floor, or `most` of its radius lower where that is less. PhysX puts a wide flat
- * wheel's weight on the floor wherever along its line of touch it pleases, up to half the wheel's width to one
+ * `clear` lower (m), off a flat floor, down to `least` of its radius on a wheel too small for that. PhysX puts a wide
+ * flat wheel's weight on the floor wherever along its line of touch it pleases, up to half the wheel's width to one
  * side, the same side for every wheel: a rover whose wheels slide as it turns then turns about a point well off its
  * middle (a tenth of a meter, for wheels 40 mm wide on a rover 200 mm by 400 mm), and walks as it turns. A rover on
  * two wheels turns as one whose wheels stood that much farther apart would (94 % of what it is told on the ridge,
@@ -149,16 +149,21 @@ export const SPEED_BAND = 0.01;
  * quarter turn written to six places is) on one end: the ROS package and the SDF model, whose quarter turns reach
  * it rounded differently, turned a rover on four wheels up to a tenth apart.
  *
- * The rest of the wheel stands that far off the floor because PhysX takes into a step whatever could touch within
- * it, and a body falls g/60², 2.7 mm, in a step of a sixtieth of a second. Nearer the floor than that the low
- * cylinder bore no weight and still added to the wheel's grip across (16 % at half a millimeter off, 10 % at one,
- * none at 2.5) and shifted the load from wheel to wheel.
+ * The rest of the wheel stands that far off the floor because PhysX gives a body the whole step's gravity before
+ * it solves the step's contacts, and a body falls g/60², 2.7 mm, in a step of a sixtieth of a second. Nearer the
+ * floor than that the low cylinder of a wheel on a joint bore no weight and still added to the wheel's grip, across
+ * and along alike (15 % at half a millimeter off, 9 to 12 % at one, 5 % at two under a friction of 0.3, none from
+ * three), and shifted the load from wheel to wheel. That is a length, whatever the wheel's size, so the clearance is
+ * one too: as a share of the radius it left small wheels with more grip than large ones (12 % more at 5 mm, 5 % at
+ * 10 mm). Only a wheel under 5 mm in radius has less than the 4 mm, and one under 3.4 mm less than the fall (1 %
+ * more grip at 3 mm, 3 to 7 % at 2 mm). The 4 mm serve down to 50 steps a second; at 40 the low cylinder adds up
+ * to 6 % again, at 30, 8 to 11 %.
  */
-export const CROWN = { width: 1 / 40, clear: 0.004, most: 0.2 };
+export const CROWN = { width: 1 / 40, clear: 0.004, least: 0.2 };
 /** The two cylinders a crowned wheel collides as (m): the wheel's own, a little low, and the ridge of its full radius (see `CROWN`). */
 export function crowned(radius: number, length: number): { radius: number; length: number; tread: boolean }[] {
   return [
-    { radius: radius - Math.min(CROWN.clear, radius * CROWN.most), length, tread: false },
+    { radius: Math.max(radius - CROWN.clear, radius * CROWN.least), length, tread: false },
     { radius, length: length * CROWN.width, tread: true },
   ];
 }

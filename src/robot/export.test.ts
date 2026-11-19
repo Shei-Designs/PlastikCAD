@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { MainModule } from '@mujoco/mujoco';
+import { crowned } from '../io/usd';
 import { xmlTree } from '../io/xml';
 import type { XmlElement } from '../io/xml';
 import { emptyDoc } from '../model/file';
@@ -500,9 +501,33 @@ describe('buildRobotPackage', () => {
     // The wheel joint (4 mm inboard, in the wheel's frame) turned with the wheel, so the box center is 4 mm above it.
     // The wheel is round about its own Y, 8 mm long: the cylinder lies along that, a quarter turn on from the wheel's own.
     // It is a wheel (it turns without end), so it stands on a ridge round its middle, a fortieth of its width; the rest
-    // of so small a wheel is a fifth of its radius lower, not the 4 mm of a larger one.
+    // of the wheel is 4 mm lower, small as it is (10 mm in radius), as a larger one's is.
     const at = '<origin xyz="0 0 0.004" rpy="3.141593 0 0"\\/>';
-    expect(urdf).toMatch(new RegExp(`<collision>\\s*${at}\\s*<geometry><cylinder radius="0.008" length="0.008"\\/><\\/geometry>\\s*<\\/collision>\\s*<collision>\\s*${at}\\s*<geometry><cylinder radius="0.01" length="0.0002"\\/>`));
+    expect(urdf).toMatch(new RegExp(`<collision>\\s*${at}\\s*<geometry><cylinder radius="0.006" length="0.008"\\/><\\/geometry>\\s*<\\/collision>\\s*<collision>\\s*${at}\\s*<geometry><cylinder radius="0.01" length="0.0002"\\/>`));
+  });
+
+  it('keeps the rest of a wheel 4 mm off the floor whatever the wheel\'s size, in every export that crowns it', () => {
+    // What a wheel's low cylinder has to clear is a length, what a body falls in a step, so it is the same length
+    // on a wheel of any size: as a share of the radius it left a small wheel more grip than a large one in Isaac Sim.
+    for (const mm of [5, 8, 10, 12.5, 20, 32.5, 50, 100, 250]) {
+      const [low, ridge] = crowned(mm / 1000, (0.8 * mm) / 1000);
+      expect(ridge.radius).toBe(mm / 1000);
+      expect(ridge.radius - low.radius).toBeCloseTo(0.004, 9);
+      expect(low.length).toBeCloseTo((0.8 * mm) / 1000, 9);
+      expect(ridge.length).toBeCloseTo(low.length / 40, 9);
+    }
+    // A wheel under 5 mm in radius has no room for that: a fifth of its radius is left it.
+    for (const mm of [1, 2.5, 4]) expect(crowned(mm / 1000, 0.001)[0].radius).toBeCloseTo((0.2 * mm) / 1000, 9);
+    // The small rover's wheel, 10 mm in radius, in the stage and the SDF model as in the URDF: 6 mm and the ridge.
+    const d = doc();
+    d.robot!.links[0].collision = 'cylinder';
+    const pair = [...file(buildIsaacStage(d, geometry()), /\.usda$/).matchAll(/def Cylinder "collision_0(_tread)?" \([\s\S]*?double radius = (\S+)/g)].map((m) => [m[1] ?? '', Number(m[2])]);
+    expect(pair).toEqual([
+      ['', 0.006],
+      ['_tread', 0.01],
+    ]);
+    const sdf = file(buildSdfModel(d, geometry()), /^model\.sdf$/);
+    expect([...sdf.matchAll(/<collision name="Left_wheel_collision(?:_1)?">[\s\S]*?<radius>([^<]+)<\/radius>/g)].map((m) => Number(m[1]))).toEqual([0.006, 0.01]);
   });
 
   it('hangs a pin from a loop-closing joint, which Gazebo welds to the link the joint closes on', () => {
