@@ -24,7 +24,7 @@ import { encodeFloat32, encodeUint32 } from './base64';
 import { centerMesh, checkedMesh, guarded, importFile } from './import';
 import type { Companion } from './import';
 import { urdfName } from './urdf';
-import { CROWN } from './usd';
+import { crowned } from './usd';
 import { MeshBuilder } from './weld';
 import { childOf, childrenOf, localName, xmlTree } from './xml';
 import type { XmlElement } from './xml';
@@ -62,7 +62,7 @@ interface Shape {
 }
 
 /**
- * A wheel this app wrote crowned for Gazebo (see `crowned` in gazebo.ts) is two cylinders in one place, the wheel's
+ * A wheel this app wrote crowned for Gazebo (see `collisionShapes` in gazebo.ts) is two cylinders in one place, the wheel's
  * own a little low and a ridge of its full radius: read back as the one cylinder it stands for.
  */
 function uncrowned(shapes: Shape[]): Shape[] {
@@ -71,7 +71,9 @@ function uncrowned(shapes: Shape[]): Shape[] {
   const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3 * Math.abs(b);
   const { radius, length } = low.geometry.cylinder;
   const full = ridge.geometry.cylinder;
-  if (!near(radius, full.radius * (1 - CROWN.drop)) || !near(full.length, length * CROWN.width) || low.pose.some((v, i) => Math.abs(v - ridge.pose[i]) > 1e-9)) return shapes;
+  // The crown's figures are in meters, a shape's here in mm.
+  const [asLow, asRidge] = crowned(full.radius / 1000, length / 1000);
+  if (!near(radius, asLow.radius * 1000) || !near(full.length, asRidge.length * 1000) || low.pose.some((v, i) => Math.abs(v - ridge.pose[i]) > 1e-9)) return shapes;
   return [{ ...low, geometry: { cylinder: { radius: full.radius, length } } }];
 }
 

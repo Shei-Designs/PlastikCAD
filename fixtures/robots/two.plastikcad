@@ -1,0 +1,180 @@
+{
+  "format": "plastikcad",
+  "version": 3,
+  "units": "mm",
+  "id": "fxreferencetwowheeledrover",
+  "name": "Reference two-wheeled rover",
+  "scene": [
+    {
+      "id": "fx000092",
+      "type": "shape",
+      "name": "Body",
+      "shape": "box",
+      "params": {
+        "radius": 0
+      },
+      "pos": [0,0,50],
+      "rot": [0,0,0],
+      "size": [220,240,40],
+      "color": "#8fa3bf"
+    },
+    {
+      "id": "fx000093",
+      "type": "shape",
+      "name": "Wheel left",
+      "shape": "cylinder",
+      "params": {
+        "radius": 0,
+        "sides": 64
+      },
+      "pos": [-135,0,50],
+      "rot": [0,90,0],
+      "size": [100,100,40],
+      "color": "#e8853a"
+    },
+    {
+      "id": "fx000094",
+      "type": "shape",
+      "name": "Wheel right",
+      "shape": "cylinder",
+      "params": {
+        "radius": 0,
+        "sides": 64
+      },
+      "pos": [135,0,50],
+      "rot": [0,90,0],
+      "size": [100,100,40],
+      "color": "#e8853a"
+    },
+    {
+      "id": "fx000095",
+      "type": "shape",
+      "name": "Caster",
+      "shape": "sphere",
+      "params": {
+        "sides": 48
+      },
+      "pos": [0,-90,15],
+      "rot": [0,0,0],
+      "size": [30,30,30],
+      "color": "#5b6b82"
+    }
+  ],
+  "assets": {},
+  "robot": {
+    "root": "fx000092",
+    "base": "free",
+    "links": [
+      {
+        "node": "fx000092",
+        "mass": {
+          "kind": "measured",
+          "grams": 900,
+          "center": [0,-60,-10]
+        },
+        "collision": "box",
+        "friction": 0.8
+      },
+      {
+        "node": "fx000093",
+        "mass": {
+          "kind": "material",
+          "material": "pla",
+          "infill": 20,
+          "shell": 1.2
+        },
+        "collision": "cylinder",
+        "friction": 1
+      },
+      {
+        "node": "fx000094",
+        "mass": {
+          "kind": "material",
+          "material": "pla",
+          "infill": 20,
+          "shell": 1.2
+        },
+        "collision": "cylinder",
+        "friction": 1
+      },
+      {
+        "node": "fx000095",
+        "mass": {
+          "kind": "material",
+          "material": "pla",
+          "infill": 20,
+          "shell": 1.2
+        },
+        "collision": "sphere",
+        "friction": 0.05
+      }
+    ],
+    "joints": [
+      {
+        "id": "fx000096",
+        "name": "Wheel left joint",
+        "type": "continuous",
+        "parent": "fx000092",
+        "child": "fx000093",
+        "origin": [0,0,0],
+        "axis": [0,0,1],
+        "lower": -90,
+        "upper": 90,
+        "effort": 2.6,
+        "velocity": 900,
+        "damping": 0.00828,
+        "friction": 0,
+        "motor": "37d-70"
+      },
+      {
+        "id": "fx000097",
+        "name": "Wheel right joint",
+        "type": "continuous",
+        "parent": "fx000092",
+        "child": "fx000094",
+        "origin": [0,0,0],
+        "axis": [0,0,1],
+        "lower": -90,
+        "upper": 90,
+        "effort": 2.6,
+        "velocity": 900,
+        "damping": 0.00828,
+        "friction": 0,
+        "motor": "37d-70"
+      },
+      {
+        "id": "fx000099",
+        "name": "Caster mount",
+        "type": "fixed",
+        "parent": "fx000092",
+        "child": "fx000095",
+        "origin": [0,0,0],
+        "axis": [0,0,1],
+        "lower": -90,
+        "upper": 90,
+        "effort": 5.35,
+        "velocity": 90,
+        "damping": 0.17,
+        "friction": 0
+      }
+    ],
+    "sensors": [
+      {
+        "id": "fx000098",
+        "name": "IMU",
+        "kind": "imu",
+        "link": "fx000092",
+        "origin": [0,0,0],
+        "rot": [0,0,0],
+        "rate": 100
+      }
+    ],
+    "drive": {
+      "kind": "differential",
+      "roles": {
+        "fx000096": "left",
+        "fx000097": "right"
+      }
+    }
+  }
+}

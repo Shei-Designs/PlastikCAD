@@ -498,7 +498,10 @@ describe('buildRobotPackage', () => {
     const urdf = text(buildRobotPackage(d, geo).files.find((f) => f.name === 'urdf/test_rover.urdf')!.bytes);
     // The wheel joint (4 mm inboard, in the wheel's frame) turned with the wheel, so the box center is 4 mm above it.
     // The wheel is round about its own Y, 8 mm long: the cylinder lies along that, a quarter turn on from the wheel's own.
-    expect(urdf).toMatch(/<collision>\s*<origin xyz="0 0 0.004" rpy="3.141593 0 0"\/>\s*<geometry><cylinder radius="0.01" length="0.008"\/>/);
+    // It is a wheel (it turns without end), so it stands on a ridge round its middle, a fortieth of its width; the rest
+    // of so small a wheel is a fifth of its radius lower, not the 4 mm of a larger one.
+    const at = '<origin xyz="0 0 0.004" rpy="3.141593 0 0"\\/>';
+    expect(urdf).toMatch(new RegExp(`<collision>\\s*${at}\\s*<geometry><cylinder radius="0.008" length="0.008"\\/><\\/geometry>\\s*<\\/collision>\\s*<collision>\\s*${at}\\s*<geometry><cylinder radius="0.01" length="0.0002"\\/>`));
   });
 
   it('hangs a pin from a loop-closing joint, which Gazebo welds to the link the joint closes on', () => {
@@ -1385,30 +1388,47 @@ describe('the friction of a wheel that skids', () => {
     expect(urdf).not.toMatch(/<gazebo reference="Wheel_[a-z_]+">\s*<mu1>/);
   });
 
-  it('stands such a wheel on a ridge round its middle for Gazebo, the same in the SDF model and the ROS package, and no other wheel', () => {
+  it('stands every wheel on a ridge round its middle for Gazebo, the same in the SDF model and the ROS package', () => {
     for (const which of ['rover', 'long']) {
       const { urdf, sdf } = made(which);
-      // The wheel's own cylinder a hundredth of its radius low, and a ridge of the full radius a fortieth of its width: both with the wheel's friction.
+      // The wheel's own cylinder 4 mm low, clear of the floor, and a ridge of the full radius a fortieth of its width: both with the wheel's friction.
       const wheels = [...sdf.matchAll(/<link name="(Wheel_[a-z_]+)">([\s\S]*?)<\/link>/g)];
       expect(wheels).toHaveLength(4);
       for (const [, name, link] of wheels) {
         const shapes = [...link.matchAll(/<collision name="([^"]+)">\s*<pose>([^<]+)<\/pose>\s*<geometry><cylinder><radius>([^<]+)<\/radius><length>([^<]+)<\/length><\/cylinder><\/geometry>\s*(<surface>.*<\/surface>)/g)].map((m) => m.slice(1));
+        // Named as Gazebo names the collisions of a link it reads from a URDF: the first, then numbered.
         expect(shapes.map(([collision, , radius, length]) => [collision, Number(radius), Number(length)])).toEqual([
-          [`${name}_collision`, 0.0495, 0.04],
-          [`${name}_collision_tread`, 0.05, 0.001],
+          [`${name}_collision`, 0.046, 0.04],
+          [`${name}_collision_1`, 0.05, 0.001],
         ]);
         expect(shapes[0][1]).toBe(shapes[1][1]);
         expect(shapes[0][4]).toBe(shapes[1][4]);
         expect(shapes[0][4]).toContain('fdir1');
       }
       const inUrdf = [...urdf.matchAll(/<link name="Wheel_[a-z_]+">([\s\S]*?)<\/link>/g)].map(([, link]) => [...link.matchAll(/<collision>\s*<origin xyz="0 0 0" rpy="0 1.570796 0"\/>\s*<geometry><cylinder radius="([^"]+)" length="([^"]+)"\/>/g)].map((m) => [Number(m[1]), Number(m[2])]));
-      expect(inUrdf).toEqual(Array(4).fill([[0.0495, 0.04], [0.05, 0.001]]));
+      expect(inUrdf).toEqual(Array(4).fill([[0.046, 0.04], [0.05, 0.001]]));
     }
-    // A car's wheels roll and steer: one cylinder each, as drawn.
-    const car = made('car');
-    expect(car.sdf).not.toContain('_tread');
-    expect(car.sdf.match(/<cylinder>/g)).toHaveLength(4);
-    expect(car.urdf.match(/<cylinder /g)).toHaveLength(4);
+    // A wheel that does not slide stands on the ridge too: a rover's two, and a car's four, the ones that roll free with the driven ones.
+    const cylinders = (xml: string) => [...xml.matchAll(/<cylinder(?:><radius>| radius=")([0-9.]+)/g)].map((m) => Number(m[1]));
+    for (const which of ['two', 'car']) {
+      const { urdf, sdf } = made(which);
+      const pairs = which === 'car' ? 4 : 2;
+      const [low, whole] = which === 'car' ? [0.041, 0.045] : [0.046, 0.05];
+      for (const xml of [sdf, urdf]) expect(cylinders(xml)).toEqual(Array(pairs).fill([low, whole]).flat());
+      // Its friction is the wheel's own, the same every way: no direction is laid for a wheel that only rolls.
+      expect(sdf).not.toContain('fdir1');
+    }
+    // Nothing that is not a wheel on a cylinder does: a track's wheels and a mecanum wheel's rollers are written as they were.
+    for (const which of ['tracked', 'mecanum', 'arm', 'quadruped', 'linkage']) expect(made(which).sdf).not.toMatch(/<collision name="[^"]+_collision_1">\s*(<pose>[^<]*<\/pose>\s*)?<geometry><cylinder><radius>[^<]+<\/radius><length>0\.00/);
+  });
+
+  it('has a touch sensor on a wheel feel the ridge it stands on as well as the rest of it', () => {
+    const d = ROBOTS.find((r) => r.file === 'two')!.make();
+    const wheelId = d.scene.find((n) => n.name === 'Wheel left')!.id;
+    d.robot!.sensors = [...d.robot!.sensors, defaultSensor('touch001', 'tread', 'touch', wheelId, [0, 0, 0])];
+    const contact = /<sensor name="tread" type="contact">[\s\S]*?<contact>\s*<collision>Wheel_left_collision<\/collision>\s*<collision>Wheel_left_collision_1<\/collision>\s*<topic>/;
+    expect(file(buildRobotPackage(d, geo(d)), /\.urdf$/)).toMatch(contact);
+    expect(file(buildSdfModel(d, geo(d)), /^model\.sdf$/)).toMatch(contact);
   });
 
   it('asks MuJoCo for the friction cone that grips alike at every heading, for every robot', () => {
@@ -1476,11 +1496,11 @@ describe('the friction of a wheel that skids', () => {
     const rotors = [...rover.matchAll(/def PhysicsRevoluteJoint "Wheel_[a-z_]+_joint"[\s\S]*?float physxJoint:armature = (\S+)/g)].map(([, v]) => Number(v));
     expect(rotors).toHaveLength(4);
     for (const rotor of rotors) expect(rotor).toBeCloseTo(4 * (mass / 4) * radius ** 2, 5);
-    // The wheel's cylinder a hundredth lower, and a ridge of its whole radius round its middle, a fortieth of its width.
+    // The wheel's cylinder 4 mm lower, farther from the floor than anything falls in a step, and a ridge of its whole radius round its middle, a fortieth of its width.
     const treads = [...rover.matchAll(/def Cylinder "collision_0" \([\s\S]*?double height = (\S+)\s+double radius = (\S+)[\s\S]*?def Cylinder "collision_0_tread" \([\s\S]*?double height = (\S+)\s+double radius = (\S+)/g)];
     expect(treads).toHaveLength(4);
     for (const [, width, low, ridge, whole] of treads.map((t) => t.map(Number))) {
-      expect(low / whole).toBeCloseTo(0.99, 3);
+      expect(whole - low).toBeCloseTo(0.004, 6);
       expect(ridge / width).toBeCloseTo(1 / 40, 3);
       expect(whole).toBeCloseTo(radius, 6);
     }

@@ -8,7 +8,7 @@ import type { Vec3 } from '../model/types';
 import type { Tensor } from '../robot/inertia';
 import type { JointType } from '../robot/types';
 import { escapeXml, fmt } from './format';
-import { crowned, GZ_NAMESPACE, namesGz, pad, surfaceXml } from './gazebo';
+import { collisionShapes, GZ_NAMESPACE, namesGz, pad, surfaceXml } from './gazebo';
 import type { Skid } from './gazebo';
 import type { Naming, UrdfGeometry } from './urdf';
 
@@ -22,6 +22,8 @@ export interface SdfLink {
   friction?: number;
   /** Set on a wheel that slides as its robot turns (see `surfaceXml`). */
   skid?: Skid;
+  /** Set on a wheel: its cylinder stands on a ridge round its middle (see `collisionShapes`). */
+  crowned?: boolean;
   /** Sensor elements fixed in this link (see `sensorXml`). */
   sensors?: string[];
 }
@@ -87,17 +89,14 @@ function linkXml(l: SdfLink): string {
     }
     lines.push('    </visual>');
   });
-  l.collision.forEach((c, i) => {
+  // A wheel stands on a ridge round its middle (see `collisionShapes`).
+  collisionShapes<UrdfGeometry, SdfLink['collision'][number]>(l).forEach((c, i) => {
     const pose = poseXml(c.origin, c.rpy);
-    // A wheel that skids stands on a ridge round its middle (see `crowned`).
-    const shapes: { geometry: UrdfGeometry; tail: string }[] = l.skid && 'cylinder' in c.geometry ? crowned(c.geometry.cylinder.radius, c.geometry.cylinder.length).map((s) => ({ geometry: { cylinder: { radius: s.radius, length: s.length } }, tail: s.tread ? '_tread' : '' })) : [{ geometry: c.geometry, tail: '' }];
-    for (const s of shapes) {
-      lines.push(`    <collision name="${escapeXml(l.name)}_collision${i ? `_${i}` : ''}${s.tail}">`);
-      if (pose) lines.push(`      ${pose}`);
-      lines.push(`      ${geometryXml(s.geometry)}`);
-      if (l.friction !== undefined || l.skid) lines.push(`      ${surfaceXml(l.friction ?? 1, l.skid)}`);
-      lines.push('    </collision>');
-    }
+    lines.push(`    <collision name="${escapeXml(l.name)}_collision${i ? `_${i}` : ''}">`);
+    if (pose) lines.push(`      ${pose}`);
+    lines.push(`      ${geometryXml(c.geometry)}`);
+    if (l.friction !== undefined || l.skid) lines.push(`      ${surfaceXml(l.friction ?? 1, l.skid)}`);
+    lines.push('    </collision>');
   });
   for (const s of l.sensors ?? []) lines.push(pad(s, '    '));
   lines.push('  </link>');

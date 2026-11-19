@@ -8,7 +8,7 @@ import { apply, boundsCenter, boundsSize, eulerOf, multiply, ownOrigin, rotation
 import type { Mat } from '../model/math';
 import type { Doc, SceneNode, Vec3 } from '../model/types';
 import { encodeText } from '../io/format';
-import { driveXml, jointStateXml, PIN, positionXml, rollerXml, sensorTopic, sensorXml, weldXml, worldXml } from '../io/gazebo';
+import { collisionShapes, driveXml, jointStateXml, PIN, positionXml, rollerXml, sensorTopic, sensorXml, weldXml, worldXml } from '../io/gazebo';
 import type { GazeboDrive } from '../io/gazebo';
 import type { BridgeTopic } from '../io/rosPackage';
 import type { GazeboSensor } from '../io/gazebo';
@@ -523,6 +523,10 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
   // hand, or a robot brought in from a URDF, which has no place for one. With no rotor at all a wheel under load
   // slips where it should grip: a rover on two wheels and a ball that drags, brought in from its own URDF, turned
   // 66 % of what it was told in Isaac Sim and went 90 % of the way, and does 98 % of each with the rim.
+  // A wheel, driven or free, is whatever turns without end on its joint. Its cylinder stands on the middle of its
+  // tread (see `CROWN`), in Isaac Sim and in Gazebo.
+  const turning = new Set(treeJoints.filter((j) => j.type === 'continuous').map((j) => j.child));
+  for (const l of links) if (turning.has(l.name) && l.collision.some((c) => 'cylinder' in c.geometry)) l.crowned = true;
   const skidding = new Set(links.filter((l) => l.skid).map((l) => l.name));
   if (drive) {
     const turned = treeJoints.filter((j) => drive!.wheels.includes(j.name));
@@ -672,7 +676,8 @@ export function buildRobotPackage(doc: Doc, geometry: Map<string, LinkGeometry>,
     if (s.kind === 'touch') {
       const link = links.find((l) => l.name === s.link);
       const folded = footprint && s.link === base ? { collision: `${footprint.name}_fixed_joint_lump__${base}_collision` } : {};
-      if (link) link.sensors = [...(link.sensors ?? []), sensorXml({ ...s, ...folded, ...(link.collision.length > 1 ? { collisions: link.collision.length } : {}) })];
+      const shapes = link ? collisionShapes(link).length : 0;
+      if (link) link.sensors = [...(link.sensors ?? []), sensorXml({ ...s, ...folded, ...(shapes > 1 ? { collisions: shapes } : {}) })];
       const carrier = joints.find((j) => j.child === s.link);
       if (carrier?.type === 'fixed') carrier.preserve = true;
       continue;
@@ -746,7 +751,8 @@ export function buildSdfModel(doc: Doc, geometry: Map<string, LinkGeometry>, rob
   for (const s of p.sensors) {
     const list = sensorsByLink.get(s.link) ?? [];
     // In SDF the sensor sits in its link at its own pose, and its frame is the link's.
-    const pieces = p.links.find((l) => l.name === s.link)?.collision.length ?? 1;
+    const on = p.links.find((l) => l.name === s.link);
+    const pieces = on ? collisionShapes(on).length : 1;
     list.push(sensorXml({ ...s, pose: { xyz: s.xyz, rpy: s.rpy }, ...(pieces > 1 ? { collisions: pieces } : {}) }));
     sensorsByLink.set(s.link, list);
   }
@@ -883,8 +889,6 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
     drive: velocity.has(j.name) ? 'velocity' : position.has(j.name) ? 'position' : torque.has(j.name) ? 'effort' : null,
     ...(j.start ? { start: j.start } : {}),
   });
-  // A wheel, driven or free: whatever turns without end on its joint. Its cylinder stands on the middle of its tread (see `CROWN`).
-  const wheels = new Set(p.treeJoints.filter((j) => j.type === 'continuous').map((j) => j.child));
   const links: UsdModel['links'] = p.links.map((l) => {
     const geo = geometry.get(l.node.id)!;
     const kind = linkOf(robot, l.node.id).collision;
@@ -893,7 +897,7 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
     l.collision.forEach((c, i) => {
       if ('mesh' in c.geometry) {
         if (meshes[i]) collision.push({ mesh: inFrame(meshes[i], l.frame), convex: kind !== 'mesh' });
-      } else collision.push({ ...c.geometry, origin: c.origin ?? [0, 0, 0], rpy: c.rpy ?? [0, 0, 0], ...(wheels.has(l.name) && 'cylinder' in c.geometry ? { crowned: true } : {}) } as UsdCollision);
+      } else collision.push({ ...c.geometry, origin: c.origin ?? [0, 0, 0], rpy: c.rpy ?? [0, 0, 0], ...(l.crowned && 'cylinder' in c.geometry ? { crowned: true } : {}) } as UsdCollision);
     });
     // In the pose the simulation begins in, a link stands where that pose puts it, turned as it turns it, the whole
     // robot raised or lowered to stand on the floor. A joint's zero stays where the design has it: the joint's
