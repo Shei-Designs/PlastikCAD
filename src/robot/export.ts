@@ -504,6 +504,16 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
       );
     }
   }
+  // A wheel that slides sideways as the robot turns (see `skid`) has a rim no lighter than `RIM_SHARE` says, as a
+  // track's wheels have, whatever its motor. Against a lighter one a simulator's friction pushes the wrong way,
+  // more across the wheel than against its slip, since the wheel gives way so easily the way it rolls. A rover
+  // 200 mm by 400 mm, where plain friction gives 20 % of the turn asked: Isaac Sim turned it 9 % and walked it off
+  // to one side, and turns it 19.5 % about its middle with the rim; MuJoCo turned it 12 %, and 17 % with it.
+  const skidding = new Set(links.filter((l) => l.skid).map((l) => l.name));
+  if (drive && skidding.size) {
+    const rim = RIM_SHARE * (links.reduce((m, l) => m + (l.inertial?.mass ?? 0), 0) / skidding.size) * drive.wheelRadius ** 2;
+    for (const j of treeJoints) if (skidding.has(j.child)) j.armature = Math.max(j.armature ?? 0, rim);
+  }
   const driven = new Set(driveJoints(robot.drive));
   const controlled = robot.control ? tree.order.slice(1).map((id) => tree.parentJoint.get(id)!).filter((j) => hasMotor(j) && !driven.has(j.id)).map((j) => jointNames.get(j)!) : [];
 
@@ -829,12 +839,6 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
     if (ackermannWheels.length !== 4) warnings.push('Isaac Sim steers a car by four wheels, two on the knuckles and two behind; this one has another layout, so cmd_vel will not drive it there.');
   }
   const frameOf = (link: string): Vec3 => p.frames.get([...p.linkNames].find(([, n]) => n === link)![0])!;
-  // A wheel that slides sideways as the robot turns (see `skid`) has a rim no lighter than `RIM_SHARE` says, as a
-  // track's wheels have, whatever its motor. PhysX's friction pushes a lighter one the wrong way, more across the
-  // wheel than against its slip: a rover 200 mm by 400 mm turned 9 % of what was asked where plain friction
-  // gives 20 %, and walked off to one side or the other; with the rim it turns 19.5 %, about its middle.
-  const skidding = new Set(p.links.filter((l) => l.skid).map((l) => l.name));
-  const rim = skidding.size ? RIM_SHARE * (p.links.reduce((m, l) => m + (l.inertial?.mass ?? 0), 0) / skidding.size) * (p.drive?.wheelRadius ?? 0) ** 2 : 0;
   const jointOf = (j: UrdfJoint, loop: boolean): UsdJoint => ({
     name: j.name,
     type: j.type,
@@ -846,7 +850,7 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
     dynamics: j.dynamics,
     // A joint that closes a loop stands outside the articulation, where PhysX has no followers.
     mimic: loop ? undefined : j.mimic,
-    armature: skidding.has(j.child) ? Math.max(j.armature ?? 0, rim) : j.armature,
+    armature: j.armature,
     loop,
     // A loop joint's child hangs from another joint, and has its frame there: the joint is where its parent has it, as the child's frame sees that.
     ...(loop ? { inChild: j.origin.map((x, i) => x + (frameOf(j.parent)[i] - frameOf(j.child)[i]) * M) as Vec3 } : {}),
@@ -957,7 +961,8 @@ referencing this stage, or copy the \`${robotPrim(model.name)}\` prim into it.
 }
 
 /**
- * The least a driven wheel of a track weighs at its rim, as a multiple of what it carries of the robot: its rotor
+ * The least a driven wheel of a track, or one that slides sideways as its rover turns (see `skid`), weighs at its
+ * rim, as a multiple of what it carries of the robot: its rotor
  * inertia is never less than this times that mass times its radius squared. A rim lighter than its load is
  * brought to the floor's speed by friction within a step, whatever its motor asks, and lets go again the next:
  * the track chatters where it should skid, and hardly turns the robot. Measured on the reference rover turning on
