@@ -30,8 +30,10 @@ SPEED = 0.3  # m/s asked of a rover
 # rollers slip a little, and it takes a moment to get going), and strays no farther than this another way (m, rad).
 MECANUM_LEAST, MECANUM_MOST, MECANUM_STRAY = 0.8, 1.05, 0.05
 # A rover on tracks (a row of wheels each side stands in for a belt) told to go back goes between these shares of
-# what was asked, and told to turn on the spot at 1 rad/s between these shares of it: a long contact skids (the
-# reference rover turns 67 %; plain Coulomb friction would give 70 to 80 %). It strays no farther than this (m, rad).
+# what was asked, and told to turn on the spot at 1 rad/s between these shares of it: a long contact skids. The
+# reference rover turns 48 % and strays 32 mm, the same every run; MuJoCo turns it 41 to 46 %, Gazebo 73 %, and
+# plain Coulomb friction with its weight even along the track 71 to 80 %. (On rigid contacts, which put its weight
+# on a few of its wheels, it turned 67 %.) It strays no farther than this (m, rad).
 TRACK_STRAIGHT, TRACK_TURN, TRACK_STRAY = (0.9, 1.05), (0.35, 0.85), 0.05
 # A rover with two wheels a side, which slide as it turns, told to turn on the spot at 1 rad/s. Plain friction under
 # four wheels that carry alike turns it t²/(t² + L²) of that, t from side to side and L from axle to axle: 62 % for
@@ -50,11 +52,12 @@ WALL_AT = 1.0  # m ahead
 # A car told to go straight back for this long goes between these shares of what was asked, strays no farther to
 # a side than this (m) and turns no more than this (rad); steered this far (rad) either way it goes round the
 # circle its wheelbase makes within these shares of its radius, and the two circles differ by no more than this
-# share of it. (The reference car goes 1.02 of the way back, 6 mm aside, turning 0.5°, and round circles of 1.024
-# and 1.022 of the radius, the same every run. With its front wheels driven backwards, as a stage once had them,
-# it went 0.95 of the way, turning 2.5°, round circles of 1.11 and 1.12.)
+# share of it. (The reference car goes 1.02 of the way back, 1 mm aside, turning 0.04°, and round circles of 1.020
+# and 1.021 of the radius, the same every run. With its free front wheels dragging as a motor's would, and every
+# contact rigid, it turned 0.26° on the way back, by the order its wheels came in the file; with its front wheels
+# driven backwards, as a stage once had them, it went 0.95 of the way, turning 2.5°, round circles of 1.11 and 1.12.)
 CAR_SECONDS, CAR_STEER = 6.0, 0.3
-CAR_STRAIGHT, CAR_STRAY, CAR_VEER, CAR_CIRCLE, CAR_ALIKE = (0.97, 1.06), 0.03, math.radians(1.5), (0.97, 1.07), 0.03
+CAR_STRAIGHT, CAR_STRAY, CAR_VEER, CAR_CIRCLE, CAR_ALIKE = (0.97, 1.06), 0.01, math.radians(0.15), (0.97, 1.07), 0.03
 # A wheel stands on a ridge round its middle, and the rest of it is a cylinder a little lower. PhysX gives a body a
 # whole step's gravity before it solves the step's contacts, so a low cylinder nearer the floor than a body falls in
 # a step (g dt², 2.7 mm at sixty steps a second) is in the solve: it bears no weight and still adds to the wheel's

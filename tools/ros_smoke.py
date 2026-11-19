@@ -97,6 +97,10 @@ TWO_SPEED, TWO_STRAIGHT, TWO_ASIDE, TWO_TURN, TWO_SECONDS, TWO_SHARE, TWO_DRIFT 
 # own steering gain (a second to turn the knuckles two thirds of the way) and the front wheels held to their joint's
 # top speed it made 156 to 181 %.
 CAR_SPEED, CAR_STEER, CAR_SECONDS, CAR_RADIUS, CAR_ALIKE = 0.45, 0.3, 6.0, (0.97, 1.06), 0.03
+# Told straight back as fast and as long first, it turns no more than this (rad) and its path bows from a straight
+# line no farther than this (m). The reference car turns under 0.005° and bows under a millimetre, as a package and
+# as a model.
+CAR_VEER, CAR_STRAY = math.radians(0.15), 0.01
 # How long, by the clock on the wall, anything may take to appear or the simulation to get through a stretch of
 # its own time, on however busy a machine (s). Reaching it is a failure, so its size decides no figure.
 BOUND = 300
@@ -691,7 +695,21 @@ def car_circle(text):
 
 def check_car(name, sim, send, radius):
     """A car, after its run forward: told round a circle of `radius` to its left and then to its right, it goes
-    round one of about that radius each way, and the two alike. Read by the simulation's own time."""
+    round one of about that radius each way, and the two alike. First, told straight back as long, it keeps its
+    line. Read by the simulation's own time."""
+    went = move(sim, send, -CAR_SPEED, 0.0, 0.0, CAR_SECONDS)
+    if not went:
+        return fail(name, f'the car did not come to rest after its run straight back ({sim.moving()})')
+    seen = went[3]
+    veer = turn_of(seen)[0]
+    # How far the path bows from the straight line between where it began and where it ended.
+    (x0, y0), (x1, y1) = seen[0][1:3], seen[-1][1:3]
+    chord = math.hypot(x1 - x0, y1 - y0) or 1.0
+    aside = max((abs((x1 - x0) * (p[2] - y0) - (y1 - y0) * (p[1] - x0)) / chord for p in seen), default=0.0)
+    line = f'straight back {CAR_SPEED * CAR_SECONDS:.2f} m, turning {math.degrees(veer):+.3f}° and bowing {1000 * aside:.1f} mm off a straight line'
+    if abs(veer) > CAR_VEER or abs(aside) > CAR_STRAY:
+        return fail(name, f'the car went {line}')
+    ok(f'cmd_vel drove the car {line}')
     made = []
     for way, side in ((1, 'left'), (-1, 'right')):
         went = move(sim, send, CAR_SPEED, 0.0, way * CAR_SPEED / radius, CAR_SECONDS)

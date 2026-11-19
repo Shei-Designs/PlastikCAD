@@ -1373,8 +1373,32 @@ describe("a link's friction against the floor", () => {
       expect(materials.length).toBeGreaterThan(0);
       expect(materials.length).toBe(usd.match(/def Material "friction_/g)!.length);
       for (const [, , body] of materials) expect(body).toContain('uniform token physxMaterial:frictionCombineMode = "multiply"');
-      expect(usd).toMatch(/def Material "friction_1" [^}]*float physics:staticFriction = 1\n/);
-      expect(usd).toContain('rel material:binding:physics = </World/PhysicsMaterials/friction_1>');
+      // The floor has a material of its own, of friction 1, that a world of the user's own replaces.
+      const floor = /def Material "floor" \(\s*prepend apiSchemas = \["PhysicsMaterialAPI", "PhysxMaterialAPI"\]\s*\)\s*\{([^}]*)\}/.exec(usd)![1];
+      expect(floor).toContain('float physics:staticFriction = 1\n');
+      expect(floor).toContain('uniform token physxMaterial:frictionCombineMode = "multiply"');
+      expect(usd).toMatch(/def Plane "collision" \([^)]*\)\s*\{\s*uniform token axis = "Z"\s*rel material:binding:physics = <\/World\/PhysicsMaterials\/floor>/);
+    }
+  });
+
+  it("has Isaac Sim's contacts give under the robot as MuJoCo's do, and not the floor's", () => {
+    for (const { file: name, make } of ROBOTS) {
+      const d = make();
+      const usd = file(buildIsaacStage(d, geo(d)), /\.usda$/);
+      const weight = [...usd.matchAll(/float physics:mass = (\S+)/g)].reduce((sum, m) => sum + Number(m[1]), 0) - 0.0001 * (usd.includes('def Xform "base_footprint"') ? 1 : 0);
+      const materials = [...usd.matchAll(/def Material "(friction_[0-9_]+|floor)" \(\s*prepend apiSchemas = \["PhysicsMaterialAPI", "PhysxMaterialAPI"\]\s*\)\s*\{([^}]*)\}/g)];
+      for (const [, which, body] of materials) {
+        const stiffness = /compliantContactStiffness = (\S+)/.exec(body);
+        const damping = /compliantContactDamping = (\S+)/.exec(body);
+        if (which === 'floor') {
+          expect(stiffness, name).toBeNull();
+          continue;
+        }
+        // The robot's whole weight would sink a point of it 1 mm, damped critically.
+        expect(Number(stiffness![1]) / ((weight * 9.81) / 0.001), name).toBeCloseTo(1, 3);
+        expect(Number(damping![1]) / Math.sqrt(Number(stiffness![1]) * weight), name).toBeCloseTo(1, 3);
+        expect(body).not.toContain('AccelerationSpring');
+      }
     }
   });
 
