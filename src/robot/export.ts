@@ -829,6 +829,12 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
     if (ackermannWheels.length !== 4) warnings.push('Isaac Sim steers a car by four wheels, two on the knuckles and two behind; this one has another layout, so cmd_vel will not drive it there.');
   }
   const frameOf = (link: string): Vec3 => p.frames.get([...p.linkNames].find(([, n]) => n === link)![0])!;
+  // A wheel that slides sideways as the robot turns (see `skid`) has a rim no lighter than `RIM_SHARE` says, as a
+  // track's wheels have, whatever its motor. PhysX's friction pushes a lighter one the wrong way, more across the
+  // wheel than against its slip: a rover 200 mm by 400 mm turned 9 % of what was asked where plain friction
+  // gives 20 %, and walked off to one side or the other; with the rim it turns 19.5 %, about its middle.
+  const skidding = new Set(p.links.filter((l) => l.skid).map((l) => l.name));
+  const rim = skidding.size ? RIM_SHARE * (p.links.reduce((m, l) => m + (l.inertial?.mass ?? 0), 0) / skidding.size) * (p.drive?.wheelRadius ?? 0) ** 2 : 0;
   const jointOf = (j: UrdfJoint, loop: boolean): UsdJoint => ({
     name: j.name,
     type: j.type,
@@ -840,7 +846,7 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
     dynamics: j.dynamics,
     // A joint that closes a loop stands outside the articulation, where PhysX has no followers.
     mimic: loop ? undefined : j.mimic,
-    armature: j.armature,
+    armature: skidding.has(j.child) ? Math.max(j.armature ?? 0, rim) : j.armature,
     loop,
     // A loop joint's child hangs from another joint, and has its frame there: the joint is where its parent has it, as the child's frame sees that.
     ...(loop ? { inChild: j.origin.map((x, i) => x + (frameOf(j.parent)[i] - frameOf(j.child)[i]) * M) as Vec3 } : {}),
@@ -855,7 +861,7 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
     l.collision.forEach((c, i) => {
       if ('mesh' in c.geometry) {
         if (meshes[i]) collision.push({ mesh: inFrame(meshes[i], l.frame), convex: kind !== 'mesh' });
-      } else collision.push({ ...c.geometry, origin: c.origin ?? [0, 0, 0], rpy: c.rpy ?? [0, 0, 0] } as UsdCollision);
+      } else collision.push({ ...c.geometry, origin: c.origin ?? [0, 0, 0], rpy: c.rpy ?? [0, 0, 0], ...(l.skid && 'cylinder' in c.geometry ? { crowned: true } : {}) } as UsdCollision);
     });
     // In the pose the simulation begins in, a link stands where that pose puts it, turned as it turns it, the whole
     // robot raised or lowered to stand on the floor. A joint's zero stays where the design has it: the joint's
@@ -914,8 +920,6 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
     controlled: p.controlled,
     // Rollers pass the floor from one to the next many times a second: PhysX keeps them true at twice its usual step rate.
     ...(p.rollers.length ? { stepsPerSecond: ROLLER_STEPS } : {}),
-    // Wheels that have to slide sideways for the robot to turn (see `skid`): PhysX lets them with its other solver.
-    ...(p.links.some((l) => l.skid) ? { skids: true } : {}),
   };
   const files: PackageFile[] = [{ name: `${pkg}.usda`, bytes: encodeText(writeUsda(model)) }, { name: 'README.md', bytes: encodeText(usdReadme(pkg, doc.name, model)) }];
   return { name: pkg, files, warnings, leftOut: p.leftOut };
@@ -948,7 +952,7 @@ Each sensor's readings are in its own frame, \`<sensor>_link\`, and a camera's
 pictures in \`<sensor>_optical_frame\`, as in the ROS package. ${model.footprint && !model.fixedBase ? `The base frame is \`${model.footprint.name}\`, on the floor under \`${model.root}\`\nand facing the robot's forward along +X; the odometry is given for it.` : `The base frame is \`${model.root}\`.`}${model.sensors.some((s) => s.kind === 'lidar') ? ' A lidar\nscans the whole circle in Isaac Sim, at the angular step of the design.' : ''}
 ${model.sensors.some((s) => s.kind === 'touch') ? '\nTouch sensors are Isaac contact sensors on their links; read them from a\nscript or the Contact Sensor window, as the ROS 2 bridge has no publisher\nfor them.\n' : ''}
 The floor is a stand-in: place the robot in a world of your own by
-referencing this stage, or copy the \`${robotPrim(model.name)}\` prim into it.${model.skids ? '\nThat world needs the solver this stage asks for, which lets the wheels slide\nas the robot turns: `physxScene:solverType = "PGS"` on its physics scene.' : ''}
+referencing this stage, or copy the \`${robotPrim(model.name)}\` prim into it.
 `;
 }
 

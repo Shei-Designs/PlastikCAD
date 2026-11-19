@@ -559,10 +559,11 @@ in the design file and synced with it.
   wheels of a row, which overlap, meet neither one another nor the robot's
   links. A robot whose only moving joints are such wheels publishes no
   joint states. A wheel holds the speed it is told with up to its motor's
-  torque. The stage of a rover with more than one wheel a side asks for
-  PhysX's PGS solver (`physxScene:solverType = "PGS"`), which lets its
-  wheels slide as it turns: a stage of your own needs the same, or a rover
-  longer than it is wide hardly turns.
+  torque. A rover with more than one wheel a side turns by
+  sliding its wheels sideways: each such wheel's rotor is no lighter at the
+  rim than four times the load the wheel carries, and its collision stands
+  on a narrow ridge round the middle of its tread, so the rover turns as
+  far as plain friction lets it, about its own middle.
   *File > Open*, Play, and it runs; nothing is imported or set up on
   the Isaac side. Isaac Sim can still import the ROS 2 package's URDF, but
   the stage carries what the importer cannot read from URDF: drive gains, a

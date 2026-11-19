@@ -34,8 +34,9 @@ MECANUM_LEAST, MECANUM_MOST, MECANUM_STRAY = 0.8, 1.05, 0.05
 # reference rover turns 67 %; plain Coulomb friction would give 70 to 80 %). It strays no farther than this (m, rad).
 TRACK_STRAIGHT, TRACK_TURN, TRACK_STRAY = (0.9, 1.05), (0.35, 0.85), 0.05
 # A rover with two wheels a side, which slide as it turns, told to turn on the spot at 1 rad/s: between these shares
-# of it (the reference rover, wider than long, turns 57 %; plain friction would give 62 %).
-SKID_TURN = (0.4, 1.05)
+# of it (the reference rover, wider than long, turns 61 %; plain friction would give 62 %), about its own middle:
+# it ends no farther from where it stood than this (m).
+SKID_TURN, SKID_STRAY = (0.5, 0.7), 0.05
 MUST_MOVE = 0.1  # m
 MAY_SETTLE = 0.02  # m the base may drop while settling
 WALL_AT = 1.0  # m ahead
@@ -96,8 +97,9 @@ def read_stage(path):
         'steps_per_second': next((int(m.group(1)) for m in re.finditer(r'uint physxScene:timeStepsPerSecond = (\d+)', text)), 0),
         # A mecanum drive's graph mixes a speed for each wheel.
         'mecanum': 'def OmniGraphNode "wheel0_linear"' in text,
+        # A wheel that slides sideways as its rover turns stands on a ridge round its tread.
+        'skids': bool(re.search(r'def Cylinder "collision_\d+_tread"', text)),
         # A track's belt is stood in for by a row of wheels on hinges to it.
-        'skids': 'physxScene:solverType = "PGS"' in text,
         'tracks': len(re.findall(r'def PhysicsRevoluteJoint "[^"]*_wheel_\d+_joint"', text)) >= 6,
         'meshes': len(re.findall(r'def Mesh "visual_\d+"', text)),
         'wheels': re.findall(r'custom token\[\] inputs:jointNames = \[([^\]]*)\]', text),
@@ -498,10 +500,12 @@ def one(path, pictures):
         # A rover whose wheels slide as it turns: told to turn on the spot, it does, as far as that sliding allows.
         if info['skids'] and drive_kind == 'twist':
             told(-SPEED, 0.0, 0.0)
-            turned = told(0.0, 0.0, 1.0)[2]
-            result['skid_turn'] = round(turned, 3)
+            forward, left, turned = told(0.0, 0.0, 1.0)
+            result['skid_turn'] = [round(forward * 1000), round(left * 1000), round(turned, 3)]
             if not SKID_TURN[0] <= turned / (1.0 * SECONDS) <= SKID_TURN[1]:
                 result['problems'].append(f'turn on the spot: went {turned:.3f} rad of the {1.0 * SECONDS:.3f} asked')
+            if math.hypot(forward, left) > SKID_STRAY:
+                result['problems'].append(f'turn on the spot: strayed, forward {forward:.3f} m, left {left:.3f} m')
         if info['mecanum'] and drive_kind == 'twist':
             # Back first, away from the wall it drove up to.
             went = {'back': told(-SPEED, 0.0, 0.0), 'left': told(0.0, SPEED, 0.0), 'turn': told(0.0, 0.0, 1.0)}
