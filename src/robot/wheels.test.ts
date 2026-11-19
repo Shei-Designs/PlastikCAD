@@ -306,8 +306,21 @@ describe('what the exports write for a mecanum wheel', () => {
     const usda = text(pkg, '.usda');
     expect(usda.match(/def Xform "Wheel_\w+_roller_\d+"/g)?.length).toBe(36);
     expect(usda.match(/def PhysicsRevoluteJoint "Wheel_\w+_roller_\d+_joint"/g)?.length).toBe(36);
-    // The rollers' hinges are outside the articulation, whose joint states and transforms are then the robot's own.
-    expect(usda.match(/bool physics:excludeFromArticulation = 1/g)?.length).toBe(36);
+    // The rollers' hinges are in the articulation, which holds them exactly; the joint states are read for the
+    // robot's own joints by name, and the transforms told of its own links, so that neither tells of a roller.
+    expect(usda).not.toContain('excludeFromArticulation');
+    const read = usda.slice(usda.indexOf('def OmniGraphNode "joint_read"'));
+    expect(read).toContain('custom token[] inputs:jointNames = ["Wheel_rear_left_joint", "Wheel_front_left_joint", "Wheel_rear_right_joint", "Wheel_front_right_joint"]');
+    const states = usda.slice(usda.indexOf('def OmniGraphNode "joint_states"'));
+    expect(states.slice(0, states.indexOf('node:type'))).not.toContain('inputs:targetPrim ');
+    const tf = usda.slice(usda.indexOf('def OmniGraphNode "tf"'));
+    const targets = tf.slice(tf.indexOf('inputs:targetPrims'), tf.indexOf(']'));
+    expect(targets.match(/<[^>]+>/g)).toEqual(['Body', 'Wheel_rear_left', 'Wheel_front_left', 'Wheel_rear_right', 'Wheel_front_right', 'Body/IMU_link'].map((l) => `</World/Reference_mecanum_rover/${l}>`));
+    // A roller turns as one no lighter about its axle than four times its mass at its radius: 6.3 g at 9.9 mm.
+    const roller = usda.slice(usda.indexOf('def Xform "Wheel_rear_left_roller_1"'));
+    const [along] = roller.match(/diagonalInertia = \(([\d.e-]+)/)!.slice(1).map(Number);
+    const mass = Number(roller.match(/physics:mass = ([\d.]+)/)![1]);
+    expect(along / (mass * 0.009903 ** 2)).toBeCloseTo(4, 1);
     expect(usda).toContain('uint physxScene:timeStepsPerSecond = 120');
     expect(usda).not.toContain('DifferentialController');
     // Front left: forward less sideways, less the turn; the wheel is 50 mm in radius, so 20 a meter.
