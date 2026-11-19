@@ -888,9 +888,9 @@ describe('xacro and MuJoCo', () => {
     expect(xml).toContain('<mujoco model="Test_Rover">');
     expect(xml).toContain('<compiler angle="radian" meshdir="meshes" autolimits="true"/>');
     expect(xml).toContain('<mesh name="visual_Body_obj" file="visual/Body.obj"/>');
-    // The base floats (there is a drive), its frame at the body's middle, 10 mm up; the wheel hangs from it 36 mm out with a hinge about Y, no range; the arm's shoulder has one in radians.
+    // The base floats (there is a drive), its frame at the body's middle, 10 mm up; the wheel hangs from it 36 mm out with a hinge about Y, no range, and the rim a driven wheel has where its motor names no rotor; the arm's shoulder has a range in radians.
     expect(xml).toMatch(/<body name="Body" pos="0 0 0.01">\s*<freejoint name="root"\/>/);
-    expect(xml).toMatch(/<body name="Left_wheel" pos="0 0.036 0">\s*<joint name="left_wheel_joint" type="hinge" axis="0 1 0" damping="0.001" frictionloss="0"\/>/);
+    expect(xml).toMatch(/<body name="Left_wheel" pos="0 0.036 0">\s*<joint name="left_wheel_joint" type="hinge" axis="0 1 0" damping="0.001" frictionloss="0" armature="[0-9.e-]+"\/>/);
     expect(xml).toMatch(/<joint name="shoulder" type="hinge" axis="0 1 0" range="-1.570796 1.570796" limited="true"/);
     expect(xml).toMatch(/<inertial pos="0 0.004 0" mass="0.05" fullinertia="/);
     expect(xml).toContain('<geom type="mesh" mesh="visual_Body_obj" class="visual" material="color_ff8800"/>');
@@ -1387,7 +1387,23 @@ describe('the friction of a wheel that skids', () => {
     }
   });
 
-  it('gives Isaac Sim a skidding wheel with a rim as heavy as its load and a crowned tread, and such a wheel alone', () => {
+  it('gives a driven wheel that names no rotor the rim, in MuJoCo and in Isaac Sim alike', () => {
+    // The car with its motors' figures as typed by hand, as a robot brought in from a URDF has them: no motor is named, so no rotor.
+    const d = ROBOTS.find((r) => r.file === 'car')!.make();
+    for (const j of d.robot!.joints) if (j.name.startsWith('Rear wheel')) delete j.motor;
+    const stage = file(buildIsaacStage(d, geo(d)), /\.usda$/);
+    const mass = [...stage.matchAll(/float physics:mass = (\S+)/g)].reduce((m, [, v]) => m + Number(v), 0);
+    // The car's wheels are 90 mm across.
+    const radius = 0.045;
+    const usd = [...stage.matchAll(/def PhysicsRevoluteJoint "(Rear_wheel_[a-z]+_joint)"[\s\S]*?float physxJoint:armature = (\S+)/g)].map(([, , v]) => Number(v));
+    const mjcf = [...file(buildMjcfModel(d, geo(d)), /\.xml$/).matchAll(/<joint name="Rear_wheel_[a-z]+_joint" type="hinge"[^>]*armature="([^"]+)"/g)].map(([, v]) => Number(v));
+    expect(usd).toHaveLength(2);
+    expect(mjcf).toHaveLength(2);
+    // Four times what each of the two driven wheels carries of the car, at the wheel's rim.
+    for (const rotor of [...usd, ...mjcf]) expect(rotor).toBeCloseTo(4 * (mass / 2) * radius ** 2, 5);
+  });
+
+  it('gives Isaac Sim a skidding wheel a rim as heavy as its load, and every wheel a crowned tread', () => {
     const stage = (which: string) => {
       const d = ROBOTS.find((r) => r.file === which)!.make();
       return file(buildIsaacStage(d, geo(d)), /\.usda$/);
@@ -1409,7 +1425,9 @@ describe('the friction of a wheel that skids', () => {
     }
     // PhysX's usual solver, whose friction is the same every way along the floor, is left to it.
     for (const name of ['rover', 'tracked', 'mecanum', 'car', 'arm']) expect(stage(name)).not.toContain('solverType');
-    for (const name of ['tracked', 'mecanum', 'car', 'arm']) expect(stage(name)).not.toContain('_tread"');
+    // A car's wheels stand on the ridge too, the ones that roll free with the driven ones; nothing that is not a wheel on a cylinder does.
+    expect(stage('car').match(/def Cylinder "collision_0_tread"/g)).toHaveLength(4);
+    for (const name of ['tracked', 'mecanum', 'arm', 'quadruped', 'linkage']) expect(stage(name)).not.toContain('_tread"');
   });
 
   it('has Isaac Sim turn only the wheels of a car that have a motor, each by its own of the four speeds, and measures the wheelbase to the wheels that do not steer', () => {

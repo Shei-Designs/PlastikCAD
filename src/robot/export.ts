@@ -516,10 +516,15 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
   // more across the wheel than against its slip, since the wheel gives way so easily the way it rolls. A rover
   // 200 mm by 400 mm, where plain friction gives 20 % of the turn asked: Isaac Sim turned it 9 % and walked it off
   // to one side, and turns it 19.5 % about its middle with the rim; MuJoCo turned it 12 %, and 17 % with it.
+  // Any other driven wheel keeps its motor's rotor, and has that rim only where it names none: figures typed by
+  // hand, or a robot brought in from a URDF, which has no place for one. With no rotor at all a wheel under load
+  // slips where it should grip: a rover on two wheels and a ball that drags, brought in from its own URDF, turned
+  // 66 % of what it was told in Isaac Sim and went 90 % of the way, and does 98 % of each with the rim.
   const skidding = new Set(links.filter((l) => l.skid).map((l) => l.name));
-  if (drive && skidding.size) {
-    const rim = RIM_SHARE * (links.reduce((m, l) => m + (l.inertial?.mass ?? 0), 0) / skidding.size) * drive.wheelRadius ** 2;
-    for (const j of treeJoints) if (skidding.has(j.child)) j.armature = Math.max(j.armature ?? 0, rim);
+  if (drive) {
+    const turned = treeJoints.filter((j) => drive!.wheels.includes(j.name));
+    const rim = RIM_SHARE * (links.reduce((m, l) => m + (l.inertial?.mass ?? 0), 0) / Math.max(1, turned.length)) * drive.wheelRadius ** 2;
+    for (const j of turned) if (skidding.has(j.child) || !j.armature) j.armature = Math.max(j.armature ?? 0, rim);
   }
   const driven = new Set(driveJoints(robot.drive));
   const controlled = robot.control ? tree.order.slice(1).map((id) => tree.parentJoint.get(id)!).filter((j) => hasMotor(j) && !driven.has(j.id)).map((j) => jointNames.get(j)!) : [];
@@ -863,6 +868,8 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
     drive: velocity.has(j.name) ? 'velocity' : position.has(j.name) ? 'position' : torque.has(j.name) ? 'effort' : null,
     ...(j.start ? { start: j.start } : {}),
   });
+  // A wheel, driven or free: whatever turns without end on its joint. Its cylinder stands on the middle of its tread (see `CROWN`).
+  const wheels = new Set(p.treeJoints.filter((j) => j.type === 'continuous').map((j) => j.child));
   const links: UsdModel['links'] = p.links.map((l) => {
     const geo = geometry.get(l.node.id)!;
     const kind = linkOf(robot, l.node.id).collision;
@@ -871,7 +878,7 @@ export function buildIsaacStage(doc: Doc, geometry: Map<string, LinkGeometry>, r
     l.collision.forEach((c, i) => {
       if ('mesh' in c.geometry) {
         if (meshes[i]) collision.push({ mesh: inFrame(meshes[i], l.frame), convex: kind !== 'mesh' });
-      } else collision.push({ ...c.geometry, origin: c.origin ?? [0, 0, 0], rpy: c.rpy ?? [0, 0, 0], ...(l.skid && 'cylinder' in c.geometry ? { crowned: true } : {}) } as UsdCollision);
+      } else collision.push({ ...c.geometry, origin: c.origin ?? [0, 0, 0], rpy: c.rpy ?? [0, 0, 0], ...(wheels.has(l.name) && 'cylinder' in c.geometry ? { crowned: true } : {}) } as UsdCollision);
     });
     // In the pose the simulation begins in, a link stands where that pose puts it, turned as it turns it, the whole
     // robot raised or lowered to stand on the floor. A joint's zero stays where the design has it: the joint's
