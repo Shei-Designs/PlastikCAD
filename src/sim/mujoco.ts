@@ -4,6 +4,7 @@
 // tests run one under Node.
 import type { MainModule, MjData, MjModel, MjVFS } from '@mujoco/mujoco';
 import type { DriveSpec } from '../robot/export';
+import { ackermann, sharpest } from './ackermann';
 
 export interface SimActuator {
   name: string;
@@ -275,11 +276,18 @@ export class Simulation {
       set('left', wheel(v - (w * sep) / 2));
       set('right', wheel(v + (w * sep) / 2));
     } else if (d.kind === 'ackermann') {
-      set('left', wheel(v));
-      set('right', wheel(v));
-      const steer = clamp(turn, -1, 1) * (d.steeringLimit ?? 0.5);
-      set('steer-left', steer);
-      set('steer-right', steer);
+      // Each knuckle at its own angle and each driven wheel at its own speed, as the car's geometry has them; the
+      // whole command slowed when the fastest wheel would pass its motor's top speed, so that the car keeps its curve.
+      const car = { wheelBase: d.wheelBase ?? sep, kingpinWidth: d.kingpinWidth ?? sep, steeringLimit: d.steeringLimit ?? 0.5, places: d.places ?? {} };
+      const { left, right, speeds } = ackermann(car, v, clamp(turn, -1, 1) * sharpest(car));
+      const fastest = Math.max(0, ...Object.values(speeds).map((s) => Math.abs(s) / r));
+      const scale = fastest > top ? top / fastest : 1;
+      for (const [name, s] of Object.entries(speeds)) {
+        const a = this.index.get(name);
+        if (a !== undefined) ctrl[a] = (s * scale) / r;
+      }
+      set('steer-left', left);
+      set('steer-right', right);
     } else {
       const vy = clamp(side, -1, 1) * vmax;
       const k = ((d.wheelBase ?? sep) + sep) / 2;

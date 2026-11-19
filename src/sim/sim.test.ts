@@ -529,6 +529,44 @@ describe('the car', () => {
     sim.dispose();
   });
 
+  it('goes round the circle its steering asks, alike to the left and to the right: the inner knuckle turns further, the outer wheel runs faster', () => {
+    const radii = [1, -1].map((side) => {
+      const { sim, base } = simulate(make('car'));
+      sim.step(0.5);
+      // A third of its top speed, half its sharpest curve: 1.35 m from the middle of the rear axle to the point it turns about.
+      sim.drive(0.4, 0.5 * side);
+      sim.step(3);
+      const steer = sim.actuators.filter((a) => a.kind === 'servo').map((a) => Math.abs(sim.jointValue(a.joint)));
+      const [inner, outer] = side > 0 ? steer : [...steer].reverse();
+      // 14.6° and 12.2° asked.
+      expect(inner).toBeGreaterThan(outer + 0.03);
+      let path = 0;
+      let last = position(sim, base);
+      const from = yaw(sim, base);
+      let turned = 0;
+      let heading = from;
+      for (let i = 0; i < 80; i++) {
+        sim.step(0.05);
+        const now = position(sim, base);
+        path += Math.hypot(now[0] - last[0], now[1] - last[1]);
+        last = now;
+        const h = yaw(sim, base);
+        turned += ((h - heading + 540) % 360) - 180;
+        heading = h;
+      }
+      sim.dispose();
+      return path / ((Math.abs(turned) * Math.PI) / 180);
+    });
+    // The base's frame stands midway between the axles, 160 mm ahead of the rear one: its own circle is that much wider.
+    const c = 0.5 * (Math.tan(Math.PI / 6) / (0.32 + 0.122 * Math.tan(Math.PI / 6)));
+    const asked = Math.hypot(1 / c, 0.16);
+    // The steering servos stop a little short of their angles against the tyres' scrub, so the car goes a few percent wide.
+    // 105.4 % both ways when this was written.
+    for (const r of radii) expect(r / asked).toBeGreaterThan(0.98);
+    for (const r of radii) expect(r / asked).toBeLessThan(1.08);
+    expect(Math.abs(radii[0] - radii[1]) / asked).toBeLessThan(0.01);
+  });
+
   it('steers when its body reaches over the wheels: the robot\'s own shapes pass through each other, as in Gazebo and Isaac Sim', () => {
     const doc = make('car');
     // The body widened into a shell over the front wheels and their knuckles.

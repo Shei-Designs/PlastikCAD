@@ -407,7 +407,13 @@ in the design file and synced with it.
   are.
   A wheel with no part in the drive and no controller rolls free: Gazebo,
   which holds a joint to the top speed in its file, is given none for it.
-  A car's knuckles turn at their servo's speed.
+  A car's knuckles turn at their servo's speed. In every export and in the
+  test drive a car turns about a point on the line of its wheels that do
+  not steer, the inner knuckle further than the outer. The test drive, the
+  MuJoCo model's `drive.py` (from the wheels' places in `drive.json`) and
+  the Isaac Sim stage run each driven wheel at the speed of where it
+  stands; Gazebo's controller gives each side the speed of its wheel that
+  does not steer.
 - **Mecanum wheels.** A mecanum drive slides sideways on the *Mecanum
   wheel* part from the Wheels parts, and on nothing else. A link that is
   that part, or holds it (with a bore cut through it, a hub glued on), gets
@@ -585,6 +591,13 @@ in the design file and synced with it.
   its own middle, and a wheel under load grips where it should. The rim is
   never more than its motor brings to its top speed in a fifth of a second,
   so small motors under a heavy robot start and stop as they should.
+  Known limits: a car stands on four rigid wheels, and PhysX picks how its
+  weight is shared among them, often more on one diagonal, so a car told to
+  go straight may veer a little (about 0.7° over 3 m for the reference
+  car); and a rover on two wheels a side, turning on the spot, may circle a
+  point a little off its middle in one direction. Both follow the order the
+  wheels come in, not the design, and a controller that steers by feedback
+  takes them out.
   *File > Open*, Play, and it runs; nothing is imported or set up on
   the Isaac side. Isaac Sim can still import the ROS 2 package's URDF, but
   the stage carries what the importer cannot read from URDF: drive gains, a
