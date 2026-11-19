@@ -895,7 +895,7 @@ describe('xacro and MuJoCo', () => {
     expect(xml).toMatch(/<inertial pos="0 0.004 0" mass="0.05" fullinertia="/);
     expect(xml).toContain('<geom type="mesh" mesh="visual_Body_obj" class="visual" material="color_ff8800"/>');
     expect(xml).toContain('<geom type="box" size="0.005 0.005 0.02" pos="0 0 0.02" class="collision" friction="0.8 0.005 0.0001"/>');
-    // Actuators: the wheels velocity motors, with the motor's gain from its effort over its speed and both as limits. The implicit integrator takes the gain and the damping at any size.
+    // Actuators: the wheels velocity motors, which hold the speed they are told (mjcf.test.ts has the gain), with the effort and the speed as limits. The implicit integrator takes the gain and the damping at any size.
     expect(xml).toContain('integrator="implicitfast"');
     // The torque is held to what takes the heavier side to full speed in one step (I·v/dt), and the gain follows.
     expect(xml).toMatch(/<velocity name="left_wheel_joint_motor" joint="left_wheel_joint" kv="[0-9.e-]+" ctrlrange="-12.57 12.57" forcerange="-([0-9.e-]+) \1"\/>/);
@@ -1348,6 +1348,15 @@ describe('the friction of a wheel that skids', () => {
     for (const [, , along] of blocks) expect(along.split(' ').map((v) => Math.abs(Number(v)))).toEqual([1, 1, 0]);
     expect(urdf).toContain('<robot name="Reference_rover" xmlns:gz="http://gazebosim.org/schema">');
     expect(urdf).not.toMatch(/<gazebo reference="Wheel_[a-z_]+">\s*<mu1>/);
+  });
+
+  it('asks MuJoCo for the friction cone that grips alike at every heading, for that rover alone', () => {
+    const mjcf = (which: string) => {
+      const d = ROBOTS.find((r) => r.file === which)!.make();
+      return file(buildMjcfModel(d, geo(d)), /\.xml$/);
+    };
+    expect(mjcf('rover')).toContain('integrator="implicitfast" cone="elliptic"/>');
+    for (const name of ['tracked', 'mecanum', 'car']) expect(mjcf(name)).not.toContain('cone=');
   });
 
   it("leaves a track's wheels, a mecanum wheel's rollers and a car's wheels as they were", () => {

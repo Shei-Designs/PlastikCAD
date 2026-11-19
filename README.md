@@ -522,7 +522,10 @@ in the design file and synced with it.
   Or a *MuJoCo model*: one MJCF file with the bodies nested down the tree,
   position servos on the controlled joints (torque motors on those
   commanded by torque) and velocity motors on the
-  wheels, loops closed by connect constraints, followers by joint
+  wheels (each holds the speed it is told with up to its motor's torque; a
+  rover with more than one wheel a side asks for the elliptic friction cone,
+  so that its wheels slide alike at every heading as it turns), loops closed
+  by connect constraints, followers by joint
   constraints, cameras, IMUs, touch sensors and lidars (a fan of
   rangefinders, up to 90 rays), a `home` keyframe, the floor *World* chose,
   the meshes beside it and, with *Scripts* on, `drive.py` to drive it in

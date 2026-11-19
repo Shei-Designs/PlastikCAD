@@ -9,6 +9,7 @@ import { lidarAngles } from '../robot/types';
 import type { JointType, World } from '../robot/types';
 import { escapeXml, fmt } from './format';
 import type { Naming, UrdfGeometry } from './urdf';
+import { SPEED_BAND } from './usd';
 
 export interface MjcfBody {
   name: string;
@@ -59,6 +60,13 @@ export interface MjcfModel {
   /** Position servos over these joints, velocity motors over the wheels. */
   servos: string[];
   wheels: string[];
+  /**
+   * The robot turns by sliding its wheels sideways (a differential drive with more than one wheel on a side).
+   * MuJoCo's usual friction cone is a pyramid laid along the world's axes, which grips more along some headings
+   * than others: such a rover longer than it is wide slows to a stop as it comes round to 45° (measured: 4 % of
+   * the turn asked, where it began at 46 %). The elliptic cone grips alike all round, and is asked for here.
+   */
+  skids?: boolean;
   /** Those of the servos' joints that take a torque instead: a plain motor, with no gains of its own. */
   torques?: string[];
   /** The floor: level, bumpy around a flat start, tilted, or level with steps or a ramp ahead. */
@@ -170,6 +178,17 @@ const sig = (x: number): string => String(Number(x.toPrecision(4)));
 const TIMESTEP = 0.002;
 /** A position servo pushes with its full effort from this far off its target, rad. */
 const SERVO_BAND = 0.1;
+/**
+ * A wheel's motor gives its whole torque `SPEED_BAND` of its top speed off the speed asked, as in the Isaac Sim
+ * stage: with the motor's own torque–speed line for a gain, a rover turning on the spot ran its wheels at two fifths
+ * to three fifths of the speed asked. This is the most that gain may be, as a multiple of the wheel's own inertia
+ * over the time step. Past its torque limit a motor pushes with the limit alone, which MuJoCo integrates as it
+ * stands: a gain that takes a slipping wheel through the band in a small part of a step throws it from one limit
+ * to the other, and the rover hops on the spot for seconds after every change of command. Measured on a rover
+ * turning, at three wheel inertias: clean up to ten times the inertia over the step, hopping from twenty; half the
+ * clean figure is kept.
+ */
+const SPEED_STEPS = 5;
 /** The app's joint defaults in SI, for a joint exported without limits. */
 const DEFAULT_EFFORT = 10;
 const DEFAULT_VELOCITY = Math.PI / 2;
@@ -199,9 +218,10 @@ function placeBodies(base: MjcfBody): Map<MjcfBody, Vec3> {
  * The inertia a joint works against, kg·m²: the heavier of the two sides it
  * separates (the body it hangs and everything below, or everything else)
  * about its axis. A knee carries the body as much as the shin; a wheel's
- * motor pushes the rover.
+ * motor pushes the rover. `lighter` gives the other side instead: the wheel
+ * itself, which is what its motor spins up when it slips.
  */
-function inertiaAboutJoint(b: MjcfBody, placed: Map<MjcfBody, Vec3>): number {
+function inertiaAboutJoint(b: MjcfBody, placed: Map<MjcfBody, Vec3>, lighter = false): number {
   if (!b.joint) return 0;
   const n = Math.hypot(...b.joint.axis) || 1;
   const u = b.joint.axis.map((x) => x / n) as Vec3;
@@ -216,7 +236,7 @@ function inertiaAboutJoint(b: MjcfBody, placed: Map<MjcfBody, Vec3>): number {
     if (below.has(body)) child += i;
     else rest += i;
   }
-  return Math.max(child, rest);
+  return lighter ? Math.min(child, rest) : Math.max(child, rest);
 }
 
 /**
@@ -225,22 +245,26 @@ function inertiaAboutJoint(b: MjcfBody, placed: Map<MjcfBody, Vec3>): number {
  * (kv) is integrated implicitly and safe at any size, but a position gain or
  * a torque the time step cannot follow would blow the simulation up, so kp is
  * kept under what the inertia can take in a step, and the torque under what
- * takes the part to full speed in one. Velocity feedback at full effort over
- * the velocity limit makes a motor that stalls at its speed limit, like a
- * real one.
+ * takes the part to full speed in one. A wheel's motor holds the speed it is
+ * told with up to its whole torque (`speed`, see `SPEED_BAND` and
+ * `SPEED_STEPS`), and is never asked for more than its speed limit.
  */
 /** Whether a joint can take an actuator: it moves, and has an effort and a speed to be moved by. Without them the gains are not numbers. */
 export const drivable = (j: Pick<MjcfJoint, 'type' | 'limit'> | undefined): boolean =>
   Boolean(j && j.type !== 'fixed' && (!j.limit || (j.limit.effort > 0 && j.limit.velocity > 0 && Number.isFinite(j.limit.effort) && Number.isFinite(j.limit.velocity))));
 
-function actuatorGains(b: MjcfBody | undefined, placed: Map<MjcfBody, Vec3>): { kp: number; kv: number; effort: number; velocity: number } {
+function actuatorGains(b: MjcfBody | undefined, placed: Map<MjcfBody, Vec3>): { kp: number; kv: number; speed: number; effort: number; velocity: number } {
   const effort = b?.joint?.limit?.effort ?? DEFAULT_EFFORT;
   const velocity = b?.joint?.limit?.velocity ?? DEFAULT_VELOCITY;
   const inertia = b ? inertiaAboutJoint(b, placed) : 0;
   const torque = inertia > 0 ? Math.min(effort, (inertia * velocity) / TIMESTEP) : effort;
   const kp = inertia > 0 ? Math.min(torque / SERVO_BAND, inertia / TIMESTEP ** 2) : torque / SERVO_BAND;
   const kv = inertia > 0 ? Math.min(torque / velocity, 2 * Math.sqrt(kp * inertia)) : torque / velocity;
-  return { kp, kv, effort: torque, velocity };
+  // A wheel's motor: as stiff as `SPEED_BAND` asks, as far as the step can follow, and never softer than the motor's own line.
+  const light = b ? inertiaAboutJoint(b, placed, true) : 0;
+  const stiff = torque / (velocity * SPEED_BAND);
+  const speed = light > 0 ? Math.max(torque / velocity, Math.min(stiff, (SPEED_STEPS * light) / TIMESTEP)) : stiff;
+  return { kp, kv, speed, effort: torque, velocity };
 }
 
 /** Roll, pitch, yaw (radians, about the fixed X, Y, Z) as a MuJoCo quaternion "w x y z". */
@@ -383,7 +407,7 @@ export function writeMjcf(model: MjcfModel): string {
     if (torques.has(j)) return `    <motor name="${escapeXml(j)}_torque" joint="${escapeXml(j)}" ctrlrange="-${sig(g.effort)} ${sig(g.effort)}"/>`;
     return servos.has(j)
       ? `    <position name="${escapeXml(j)}_servo" joint="${escapeXml(j)}" kp="${sig(g.kp)}" kv="${sig(g.kv)}" forcerange="-${sig(g.effort)} ${sig(g.effort)}"/>`
-      : `    <velocity name="${escapeXml(j)}_motor" joint="${escapeXml(j)}" kv="${sig(g.effort / g.velocity)}" ctrlrange="-${sig(g.velocity)} ${sig(g.velocity)}" forcerange="-${sig(g.effort)} ${sig(g.effort)}"/>`;
+      : `    <velocity name="${escapeXml(j)}_motor" joint="${escapeXml(j)}" kv="${sig(g.speed)}" ctrlrange="-${sig(g.velocity)} ${sig(g.velocity)}" forcerange="-${sig(g.effort)} ${sig(g.effort)}"/>`;
   });
   const startOf = new Map(joints.map((j) => [j.name, j.start ?? 0]));
   const ctrl = driven.map((j) => (servos.has(j) && !torques.has(j) ? fmt(startOf.get(j) ?? 0, 6) : '0'));
@@ -395,7 +419,7 @@ export function writeMjcf(model: MjcfModel): string {
     `<!-- Made with ${APP_NAME}. Units: meters, kilograms, radians. -->`,
     `<mujoco model="${escapeXml(model.name)}">`,
     '  <compiler angle="radian" meshdir="meshes" autolimits="true"/>',
-    `  <option timestep="${TIMESTEP}" gravity="0 0 -9.81" integrator="implicitfast"/>`,
+    `  <option timestep="${TIMESTEP}" gravity="0 0 -9.81" integrator="implicitfast"${model.skids ? ' cone="elliptic"' : ''}/>`,
     '  <default>',
     '    <default class="visual"><geom contype="0" conaffinity="0" group="2"/></default>',
     // The robot's shapes meet the floor and the course, never each other, as in the SDF and the USD stage.
