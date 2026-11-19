@@ -1056,9 +1056,6 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
     torques: servosOnly ? [] : p.torque,
     // The wheels get velocity motors; steering joints position servos, as the simulator has no plugin to turn them.
     wheels: (p.drive?.wheels ?? []).filter((j) => actuated.has(j)),
-    // Wheels that have to slide sideways for the robot to turn (see `skid`), and a driven track's, which slide the same
-    // way: MuJoCo lets them alike at every heading with its other friction cone.
-    ...(p.links.some((l) => l.skid) || p.rollers.some((r) => r.driven) ? { skids: true } : {}),
   };
   const collisions = p.links.map((l) => `${l.name}: ${linkOf(robot, l.node.id).collision}`);
   files.unshift({ name: `${pkg}.xml`, bytes: encodeText(writeMjcf(model)) }, { name: 'README.md', bytes: encodeText(mjcfReadme(pkg, doc.name, collisions, robot.scripts !== false, p.sensors.some((s) => s.kind === 'lidar'))) });
