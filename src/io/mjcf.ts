@@ -59,6 +59,8 @@ export interface MjcfModel {
   connects: { body1: string; body2: string; anchor: Vec3 }[];
   /** Followers: joint1 = offset + multiplier × joint2. */
   followers: { joint: string; leader: string; multiplier: number; offset: number }[];
+  /** How many wheels the robot stands on, those on springs among them; when absent, the wheels on springs alone. */
+  standsOn?: number;
   /** Position servos over these joints, velocity motors over the wheels. */
   servos: string[];
   wheels: string[];
@@ -196,15 +198,20 @@ export const SERVO_BAND = 0.1;
  */
 const SPEED_STEPS = 5;
 /**
- * How far each wheel that stands in for a track's belt sinks on its spring under an even share of the robot's
- * weight, m. A row of wheels on one rigid track carries more points than the robot needs to stand: how the weight
+ * How far each wheel that stands in for a track's belt, or of a skid-steer side of three wheels or more, sinks on its
+ * spring under an even share of the robot's weight, m. A row of wheels on one rigid side carries more points than the
+ * robot needs to stand: how the weight
  * shares out among them is not settled by the robot's balance but by how much each point gives. MuJoCo's contacts
  * leave it to its solver instead, which hands the weight to the points that slip fastest: a rigid table on the
  * reference tracked rover's sixteen points, spun on the floor, stood on its four corners alone (any MuJoCo, any
  * step, either cone), and the rover turning on the spot stood on its tracks' ends, 1.5 N where the middle wheels
  * carried 0.4, and turned 41 % of what its tracks asked where plain friction turns it 65 %, less the faster it
  * turned. On a spring each wheel carries what its spring is pressed by, as a real belt and its road wheels give:
- * the rover turns 65 % at any speed, its wheels carrying alike within 0.7 to 0.75 N.
+ * the rover turns 65 % at any speed, its wheels carrying alike within 0.7 to 0.75 N. A rover on three wheels a side
+ * stood on its end wheels (7.1 N, the middle ones 2.9) and turned 31 % where plain friction turns it 47 %; on springs
+ * it turns 46 %, its wheels carrying 5.6 to 5.7 N. A side of one or two wheels stands as it is: the robot's balance
+ * settles its loads. The spring is a slide of its own, `<wheel's joint>_spring`, written before the wheel's joint in
+ * the wheel's body: one more position and velocity each in qpos and qvel, and no motor or reading of its own.
  */
 const GIVE = 0.001;
 /**
@@ -225,7 +232,7 @@ const GIVE_MASS = 0.5;
 const GIVE_SWING = 0.25;
 const GRAVITY = 9.81;
 /** The spring under a wheel that hangs by `joint`. */
-const giveName = (joint: MjcfJoint): string => `${joint.name}_give`;
+const giveName = (joint: MjcfJoint): string => `${joint.name}_spring`;
 /** The app's joint defaults in SI, for a joint exported without limits. */
 const DEFAULT_EFFORT = 10;
 const DEFAULT_VELOCITY = Math.PI / 2;
@@ -393,7 +400,7 @@ export function writeMjcf(model: MjcfModel): string {
   const baseAt = tilt ? turned(model.base.pos, [SLOPE, 0, 0]) : model.base.pos;
   // What each wheel on a spring carries when they carry the whole robot alike, N.
   const giving = collect(model.base, (b) => (b.give && b.joint ? [b] : [])).length;
-  const share = (collect(model.base, (b) => [b.inertial?.mass ?? 0]).reduce((s, m) => s + m, 0) * GRAVITY) / Math.max(1, giving);
+  const share = (collect(model.base, (b) => [b.inertial?.mass ?? 0]).reduce((s, m) => s + m, 0) * GRAVITY) / Math.max(1, model.standsOn ?? giving, giving);
   // The slide a wheel on a spring rides, its spring stretched by the wheel's share less its own weight so that it
   // stands where it was designed when the wheels carry alike, and critically damped. None for a robot of no weight.
   const springOf = (b: MjcfBody): string | undefined => {

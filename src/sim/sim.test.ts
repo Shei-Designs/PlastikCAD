@@ -14,7 +14,7 @@ import { checkRobot } from '../robot/check';
 import { withMecanumWheel } from '../robot/replaceWheel';
 import { parseUrdf } from '../io/importUrdf';
 import { emptyDoc } from '../model/file';
-import { ROBOTS, trackedRover } from '../robot/fixtures';
+import { ROBOTS, sixWheeledRover, trackedRover } from '../robot/fixtures';
 import { forward } from '../robot/kinematics';
 import { linkNodes, linkOf, piecesOf } from '../robot/model';
 import { FaultWatch, floorLinks, linkLooks } from '../robot/collisionCheck';
@@ -286,6 +286,45 @@ describe('the rover', () => {
   });
 });
 
+describe('a rover on three wheels a side', () => {
+  /** The share of the turn its wheels ask that it turns, at 0.15 m/s a wheel, over a second once under way. */
+  const share = (doc: Doc, patch?: (xml: string) => string): number => {
+    const { sim, base, drive } = simulate(doc, patch);
+    const { roles, wheelRadius: r, wheelSeparation: b } = drive!;
+    for (const [side, way] of [['left', -1], ['right', 1]] as const) for (const a of roles[side]!) sim.setTarget(a, (way * 0.15) / r);
+    sim.step(0.5);
+    const turned = turnOver(sim, base, 1) * (Math.PI / 180);
+    sim.dispose();
+    return turned / ((2 * 0.15) / b);
+  };
+
+  it("turns on the spot as plain friction says, its wheels' springs sharing its weight", () => {
+    // Plain friction, the weight shared alike by its six wheels, turns it 46.9 %.
+    const sprung = share(sixWheeledRover());
+    expect(sprung).toBeGreaterThan(0.42);
+    expect(sprung).toBeLessThan(0.52);
+    // Without the springs MuJoCo stands it on its end wheels (7.1 N each, the middle ones 2.9) and it turns about 31 %.
+    const rigid = (xml: string) => xml.replace(/\s*<joint name="[^"]+_spring"[^>]*\/>/g, '').replace(/\s*<keyframe>[\s\S]*<\/keyframe>/, '');
+    expect(share(sixWheeledRover(), rigid)).toBeLessThan(0.38);
+  });
+
+  it('stands level with a side of three on springs and a side of two without', () => {
+    const doc = sixWheeledRover();
+    const middle = doc.robot!.joints.find((j) => j.name === 'Wheel right middle joint')!;
+    doc.robot = { ...doc.robot!, drive: { ...doc.robot!.drive!, roles: Object.fromEntries(Object.entries(doc.robot!.drive!.roles).filter(([j]) => j !== middle.id)) } };
+    const { sim, base } = simulate(doc);
+    const start = position(sim, base);
+    sim.step(1);
+    const i = sim.bodies.indexOf(base);
+    const [w, x, y] = [...sim.poses().subarray(7 * i + 3, 7 * i + 6)];
+    // Tipped by no more than a tenth of a degree, and as high as designed within a millimeter.
+    expect((Math.abs(2 * Math.asin(Math.hypot(x, y))) * 180) / Math.PI).toBeLessThan(0.1);
+    expect(Math.abs(position(sim, base)[2] - start[2])).toBeLessThan(0.001);
+    expect(w).toBeGreaterThan(0);
+    sim.dispose();
+  });
+});
+
 describe('the rover on tracks', () => {
   it('drives forward on the wheels that stand in for its belts, and turns on the spot', () => {
     const { sim, base } = simulate(make('tracked'));
@@ -355,7 +394,7 @@ describe('the rover on tracks', () => {
     expect(sprung).toBeGreaterThan(0.58);
     expect(sprung).toBeLessThan(0.7);
     // Without the springs MuJoCo stands it on its tracks' ends, and it turns about 41 %.
-    const rigid = (xml: string) => xml.replace(/\s*<joint name="[^"]+_give"[^>]*\/>/g, '').replace(/\s*<keyframe>[\s\S]*<\/keyframe>/, '');
+    const rigid = (xml: string) => xml.replace(/\s*<joint name="[^"]+_spring"[^>]*\/>/g, '').replace(/\s*<keyframe>[\s\S]*<\/keyframe>/, '');
     expect(share(rigid)).toBeLessThan(0.5);
   });
 

@@ -1111,6 +1111,10 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
     ...(r.cylinder ? { give: true } : {}),
     children: [],
   });
+  // A skid-steer side of three wheels or more stands on more of them than the robot needs, as a track's row does:
+  // those wheels ride springs too (see GIVE in mjcf.ts). A side of one or two, and every other drive, as it was.
+  const rows = p.drive?.kind === 'differential' ? (['left', 'right'] as const).map((side) => p.drive!.roles[side] ?? []) : [];
+  const sprung = new Set(rows.filter((joints) => joints.length >= 3).flat());
   const body = (name: string, joint: UrdfJoint | undefined): MjcfBody => {
     const l = byName.get(name)!;
     const cams = sensorsOf(name).filter((s) => s.kind === 'camera' || s.kind === 'depth');
@@ -1126,6 +1130,7 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
       collision: l.collision,
       friction: l.friction,
       joint: joint ? { name: joint.name, type: joint.type, axis: joint.axis, limit: joint.limit, dynamics: joint.dynamics, armature: joint.armature, start: joint.start } : undefined,
+      ...(joint && joint.type !== 'fixed' && sprung.has(joint.name) ? { give: true } : {}),
       children: [...(childrenOf.get(name) ?? []).map((j) => body(j.child, j)), ...p.rollers.filter((r) => r.wheel === name).map(roller)],
       ...(cams.length ? { cameras: cams.map((s) => ({ name: s.name, pos: s.xyz, rpy: s.rpy, hfov: s.camera.hfov, aspect: s.camera.width / s.camera.height })) } : {}),
       ...(imus.length ? { imus: imus.map((s) => ({ name: s.name, pos: s.xyz, rpy: s.rpy })) } : {}),
@@ -1149,6 +1154,8 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
     torques: servosOnly ? [] : p.torque,
     // The wheels get velocity motors; steering joints position servos, as the simulator has no plugin to turn them.
     wheels: (p.drive?.wheels ?? []).filter((j) => actuated.has(j)),
+    // A skid-steer drive's wheels, a track's among them, share the robot's weight.
+    ...(rows.length ? { standsOn: rows.flat().length } : {}),
   };
   const collisions = p.links.map((l) => `${l.name}: ${linkOf(robot, l.node.id).collision}`);
   files.unshift({ name: `${pkg}.xml`, bytes: encodeText(writeMjcf(model)) }, { name: 'README.md', bytes: encodeText(mjcfReadme(pkg, doc.name, collisions, robot.scripts !== false, p.sensors.some((s) => s.kind === 'lidar'))) });

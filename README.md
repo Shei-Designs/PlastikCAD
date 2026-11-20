@@ -404,7 +404,12 @@ in the design file and synced with it.
   Gazebo every wheel's cylinder, driven or free, stands on a narrow ridge
   round the middle of its tread, so the SDF model and the ROS 2 package
   turn alike, about the middle of the robot's wheels, however wide they
-  are.
+  are. In the MuJoCo model and the test drive, the wheels of a side of
+  three or more ride stiff springs, as a track's do, so that the middle
+  ones carry their share as they turn: each spring is a slide joint of
+  its own, `<wheel joint>_spring`, before the wheel's joint (one more
+  value each in `qpos` and `qvel`, with no motor and no readings); the
+  wheel's joint, its motor and its readings are as they were.
   A wheel with no part in the drive and no controller rolls free: Gazebo,
   which holds a joint to the top speed in its file, is given none for it.
   A car's knuckles turn at their servo's speed. In every export and in the

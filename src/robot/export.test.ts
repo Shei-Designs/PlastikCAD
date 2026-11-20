@@ -14,7 +14,7 @@ import { meshProperties } from './inertia';
 import { driveForward, jointInChild, jointInDesign, linkNodes, motorsOnLoopJoints, openLoops, spanningTree, withMotors } from './model';
 import { motorFigures, motorOf } from './motors';
 import { defaultJoint, defaultLink, defaultSensor, DRIVE_KINDS, SENSOR_KINDS } from './types';
-import { ROBOTS } from './fixtures';
+import { ROBOTS, sixWheeledRover } from './fixtures';
 import type { Robot } from './types';
 
 const text = (b: Uint8Array) => new TextDecoder().decode(b);
@@ -1420,20 +1420,34 @@ describe("a link's friction against the floor", () => {
     }
   });
 
-  it("stands a track's wheels on springs in MuJoCo that share the robot's weight alike, and only them", () => {
-    for (const { file: name, make } of ROBOTS) {
-      const d = make();
+  it("stands a track's wheels, and those of a skid-steer side of three or more, on springs in MuJoCo that share the robot's weight alike, and only them", () => {
+    // A six-wheeled rover, and the same with its right middle wheel out of the drive: a side of two keeps its wheels as they were.
+    const six = sixWheeledRover();
+    const five = sixWheeledRover();
+    const middle = five.robot!.joints.find((j) => j.name === 'Wheel right middle joint')!;
+    five.robot = { ...five.robot!, drive: { ...five.robot!.drive!, roles: Object.fromEntries(Object.entries(five.robot!.drive!.roles).filter(([j]) => j !== middle.id)) } };
+    const cases = [...ROBOTS.map(({ file: name, make }) => ({ name, d: make() })), { name: 'six', d: six }, { name: 'five', d: five }];
+    const expected: Record<string, RegExp | null> = { tracked: /^Track_.+_wheel_\d+$/, six: /^Wheel_(left|right)_(back|middle|front)$/, five: /^Wheel_left_(back|middle|front)$/ };
+    for (const { name, d } of cases) {
       const xml = file(buildMjcfModel(d, geo(d)), /\.xml$/);
       const weight = [...xml.matchAll(/<inertial [^>]*mass="([^"]+)"/g)].reduce((sum, m) => sum + Number(m[1]), 0) * 9.81;
       // Each body and the spring it rides, if any: the first joint written in it.
-      const sprung = [...xml.matchAll(/<body name="([^"]+)"[^>]*>\s*<joint name="([^"]+)_give" type="slide" axis="0 0 1" stiffness="([^"]+)" springref="([^"]+)" damping="([^"]+)" armature="([^"]+)"\/>\s*<joint name="([^"]+)"[^>]*\/>\s*<inertial [^>]*mass="([^"]+)"/g)];
-      expect(sprung.length, name).toBe(name === 'tracked' ? 16 : 0);
-      expect(xml.match(/_give"/g)?.length ?? 0, name).toBe(sprung.length);
+      const sprung = [...xml.matchAll(/<body name="([^"]+)"[^>]*>\s*<joint name="([^"]+)_spring" type="slide" axis="0 0 1" stiffness="([^"]+)" springref="([^"]+)" damping="([^"]+)" armature="([^"]+)"\/>\s*<joint name="([^"]+)"[^>]*\/>\s*<inertial [^>]*mass="([^"]+)"/g)];
+      expect(sprung.length, name).toBe({ tracked: 16, six: 6, five: 3 }[name] ?? 0);
+      expect(xml.match(/_spring"/g)?.length ?? 0, name).toBe(sprung.length);
+      // A wheel's own joint keeps its name, its motor and its readings; its spring has none of either.
+      for (const [, , spring] of sprung) {
+        expect(xml, name).not.toMatch(new RegExp(`(joint|name)="${spring}_spring_`));
+        if (name !== 'tracked') expect(xml, name).toContain(`<velocity name="${spring}_motor" joint="${spring}"`);
+        if (name !== 'tracked') expect(xml, name).toContain(`<jointpos name="${spring}_pos" joint="${spring}"/>`);
+      }
+      expect(xml, name).not.toMatch(/joint="[^"]+_spring"/);
       for (const [, body, spring, k, ref, c, armature, hinge, mass] of sprung) {
-        expect(body, name).toMatch(/^Track_.+_wheel_\d+$/);
+        expect(body, name).toMatch(expected[name]!);
         expect(spring, name).toBe(hinge);
-        // Pressed by an even share of the weight, less the wheel's own, the spring stands the wheel where it was designed.
-        const share = weight / sprung.length;
+        // Pressed by an even share of the weight (among all the drive's wheels: five for the five), less the wheel's
+        // own, the spring stands the wheel where it was designed.
+        const share = weight / (name === 'five' ? 5 : sprung.length);
         expect((-Number(ref) * Number(k) + Number(mass) * 9.81) / share, body).toBeCloseTo(1, 2);
         expect(Number(k) * 0.001, body).toBeLessThanOrEqual(share * 1.001);
         expect(Number(armature) / (share / 9.81), body).toBeCloseTo(0.5, 2);
