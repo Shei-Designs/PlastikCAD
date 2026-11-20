@@ -420,7 +420,11 @@ in the design file and synced with it.
   its rollers in every export and in the test drive: each roller a body on a
   free hinge to its wheel, colliding as a row of balls that touch the wheel's
   circle, worked out from the part's settings and where it stands, never
-  from its mesh; the wheel itself then collides as nothing. The rollers are
+  from its mesh; the wheel itself then collides as nothing. The balls stand
+  at most 2.5° of the wheel's turn apart, each roller's only over its own
+  share of the turn, so a wheel stands as firmly whichever way it has
+  turned and a rover with its wheels turned unlike carries its weight
+  evenly on both diagonals, which a push across the rollers needs. The rollers are
   the simulator's alone: no link, joint, motor or controller of the robot's.
   In the ROS 2 package they are in Gazebo's blocks of the URDF, so RViz, the
   transform tree and a real robot do not see them; in the Isaac Sim stage
@@ -577,10 +581,9 @@ in the design file and synced with it.
   slides short. A robot on tracks is stepped as finely. A wheel on a
   cylinder grips with the friction typed for it, small or large, at 50
   steps a second or more: a stage stepped 30 times a second adds a tenth.
-  The rollers, and the
-  wheels that stand in for a track's belt, are bodies outside the
-  articulation, so its joint states and transforms are the robot's own
-  alone; the graph tells each track wheel's joint its side's speed, and the
+  The rollers are in the articulation and the wheels that stand in for a
+  track's belt are bodies outside it, yet the joint states and transforms
+  are the robot's own alone; the graph tells each track wheel's joint its side's speed, and the
   wheels of a row, which overlap, meet neither one another nor the robot's
   links. A robot whose only moving joints are such wheels publishes no
   joint states. A wheel holds the speed it is told with up to its motor's

@@ -30,12 +30,13 @@ SPEED = 0.3  # m/s asked of a rover
 # rollers slip a little, and it takes a moment to get going), and strays no farther than this another way (m, rad).
 MECANUM_LEAST, MECANUM_MOST, MECANUM_STRAY = 0.8, 1.05, 0.05
 # A mecanum drive told nothing holds against a push along or across of this share of its weight, moving no farther
-# than this in 3 s (m), and slides at the second share: its rollers, at 45°, hold up to 0.71 under a friction of 1,
-# and MuJoCo holds the reference rover up to 0.65 or 0.7 with its wheels turned any way. Isaac holds it 2 to 4 mm at
-# 0.5 and up to 0.65 or 0.7 with its four wheels turned alike, but lets go along it at 0.6 with them turned unlike
-# (one wheel on two rollers, the next on one), whatever the solver's passes, step rate or rollers' inertia. With its
+# than this in 3 s (m), and slides at the second share: its rollers, at 45°, hold up to 0.71 under a friction of 1
+# while each diagonal pair of wheels carries half its weight, and Isaac and MuJoCo hold the reference rover 2 to 6 mm
+# up to 0.65 with its wheels turned any way (Isaac up to 0.7). A diagonal carrying less lets go sooner: when two
+# rollers' ends both met the floor where one hands over to the next, a wheel turned there stood on twice the balls,
+# the rover stood 61/39 on its diagonals with its wheels turned unlike, and Isaac let go along it at 0.6. With its
 # rollers on plain joints out of the articulation it walked off along a diagonal at 0.5, 150 to 200 mm.
-MECANUM_HOLD, MECANUM_SLIDE, MECANUM_CREEP = 0.5, 0.8, 0.015
+MECANUM_HOLD, MECANUM_SLIDE, MECANUM_CREEP = 0.65, 0.8, 0.015
 # A rover on tracks (a row of wheels each side stands in for a belt) told to go back goes between these shares of
 # what was asked, and told to turn on the spot at 1 rad/s between these shares of it: a long contact skids. Plain
 # Coulomb friction under its eight wheels a side, carrying alike, turns the reference rover 67 %, as Isaac does
