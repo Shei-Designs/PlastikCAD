@@ -45,10 +45,13 @@ function design(name: string, scene: SceneNode[], robot: Robot): Doc {
  * A box on four wheels: the wheels lie along X (cylinders turned 90° about Y), so it drives along Y. `track` is
  * from the wheels of one side to the other's and `base` from the back axle to the front one, mm: the rover is wider
  * than it is long, and the long rover, which has to drag its wheels much farther sideways to turn, twice as long as wide.
+ * `perSide` wheels a side stand evenly from the back axle to the front one.
  */
-function rover(name = 'Reference rover', track = 280, base = 220): Doc {
+function rover(name = 'Reference rover', track = 280, base = 220, perSide = 2): Doc {
   const body = shape('box', 'Body', [0, 0, 80], [track - 40, base + 100, 80]);
-  const wheels = [-1, 1].flatMap((sx) => [-1, 1].map((sy) => shape('cylinder', `Wheel ${sx < 0 ? 'left' : 'right'} ${sy < 0 ? 'back' : 'front'}`, [(sx * track) / 2, (sy * base) / 2, 50], [100, 100, 40], [0, 90, 0], '#e8853a')));
+  const places = Array.from({ length: perSide }, (_, i) => -1 + (2 * i) / (perSide - 1));
+  const where = (sy: number) => (sy < 0 ? 'back' : sy > 0 ? 'front' : 'middle');
+  const wheels = [-1, 1].flatMap((sx) => places.map((sy) => shape('cylinder', `Wheel ${sx < 0 ? 'left' : 'right'} ${where(sy)}`, [(sx * track) / 2, (sy * base) / 2, 50], [100, 100, 40], [0, 90, 0], '#e8853a')));
   const joints = wheels.map((w) => joint(`${w.name} joint`, body, w, [0, 0, 0], { type: 'continuous', motor: '37d-70' }));
   const sideOf = (w: SceneNode) => (w.pos[0] < 0 ? 'left' : 'right');
   // A coarse scanner on the body's top, above the wheels: 130 mm up, so a range much past 4 m would read the floor at the far end.
@@ -67,6 +70,9 @@ function rover(name = 'Reference rover', track = 280, base = 220): Doc {
     control: true,
   });
 }
+
+/** A rover on three wheels a side, which slide as it turns: twice as long as wide, as the long rover. Not a reference robot: the tests make it. */
+export const sixWheeledRover = (): Doc => rover('Six-wheeled rover', 280, 400, 3);
 
 /**
  * A rover on two wheels and a ball caster: the wheels lie along X and it drives along Y, as the rover does. It turns
