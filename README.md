@@ -581,10 +581,9 @@ in the design file and synced with it.
   slides short. A robot on tracks is stepped as finely. A wheel on a
   cylinder grips with the friction typed for it, small or large, at 50
   steps a second or more: a stage stepped 30 times a second adds a tenth.
-  The rollers, and the
-  wheels that stand in for a track's belt, are bodies outside the
-  articulation, so its joint states and transforms are the robot's own
-  alone; the graph tells each track wheel's joint its side's speed, and the
+  The rollers are in the articulation and the wheels that stand in for a
+  track's belt are bodies outside it, yet the joint states and transforms
+  are the robot's own alone; the graph tells each track wheel's joint its side's speed, and the
   wheels of a row, which overlap, meet neither one another nor the robot's
   links. A robot whose only moving joints are such wheels publishes no
   joint states. A wheel holds the speed it is told with up to its motor's
