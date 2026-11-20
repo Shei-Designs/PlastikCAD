@@ -100,6 +100,23 @@ describe('the rollers of a mecanum wheel', () => {
     }
   });
 
+  it('touch the floor at evenly spaced turns of the wheel, once each, so the wheel stands as firmly whichever way it has turned', () => {
+    // Two rollers' ends that both reached the floor where one hands over to the next made the wheel twice as stiff
+    // there: a rover with its wheels turned unlike stood mostly on one diagonal, and let go of a push early.
+    for (const size of ['48', '100', '152', '203']) {
+      const doc = mecanumRover(size);
+      for (const w of wheelsOf(doc)) {
+        const turns = rollersOf(found(w))
+          .flatMap((r) => r.balls.map((b) => Math.atan2(b.at[2] + r.center[2] - w.pos[2], b.at[1] + r.center[1] - w.pos[1])))
+          .sort((a, b) => a - b);
+        const step = (2 * Math.PI) / turns.length;
+        expect(step).toBeLessThanOrEqual((2.5 * Math.PI) / 180 + 1e-12);
+        const gaps = turns.map((t, i) => (i + 1 < turns.length ? turns[i + 1] : turns[0] + 2 * Math.PI) - t);
+        for (const g of gaps) expect(g).toBeCloseTo(step, 9);
+      }
+    }
+  });
+
   it('stand where the wheel the kernel builds has its rollers: on the floor under it', () => {
     const doc = mecanumRover();
     const { geometry } = geometryOf(doc);
@@ -316,11 +333,11 @@ describe('what the exports write for a mecanum wheel', () => {
     const tf = usda.slice(usda.indexOf('def OmniGraphNode "tf"'));
     const targets = tf.slice(tf.indexOf('inputs:targetPrims'), tf.indexOf(']'));
     expect(targets.match(/<[^>]+>/g)).toEqual(['Body', 'Wheel_rear_left', 'Wheel_front_left', 'Wheel_rear_right', 'Wheel_front_right', 'Body/IMU_link'].map((l) => `</World/Reference_mecanum_rover/${l}>`));
-    // A roller turns as one no lighter about its axle than four times its mass at its radius: 6.3 g at 9.9 mm.
+    // A roller turns as one no lighter about its axle than four times its mass at its radius: 6.3 g at 10.0 mm.
     const roller = usda.slice(usda.indexOf('def Xform "Wheel_rear_left_roller_1"'));
     const [along] = roller.match(/diagonalInertia = \(([\d.e-]+)/)!.slice(1).map(Number);
     const mass = Number(roller.match(/physics:mass = ([\d.]+)/)![1]);
-    expect(along / (mass * 0.009903 ** 2)).toBeCloseTo(4, 1);
+    expect(along / (mass * 0.010017 ** 2)).toBeCloseTo(4, 1);
     expect(usda).toContain('uint physxScene:timeStepsPerSecond = 120');
     expect(usda).not.toContain('DifferentialController');
     // Front left: forward less sideways, less the turn; the wheel is 50 mm in radius, so 20 a meter.

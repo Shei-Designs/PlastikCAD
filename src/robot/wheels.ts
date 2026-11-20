@@ -71,8 +71,12 @@ export function mecanumOf(node: SceneNode): MecanumWheel | MecanumFault {
   return { part, figures, toDesign, scale };
 }
 
-/** The angle about the axle between one ball of a roller and the next, at most: what keeps the wheel round to a few tenths of a millimeter. */
-const BALL_STEP = (10 * Math.PI) / 180;
+/**
+ * The angle about the axle between one ball of a roller and the next, at most. A simulator's floor gives under each
+ * ball it touches alike, so the wheel stands as firmly whichever way it has turned only when several balls share its
+ * weight wherever it stands: with 10° a wheel turned between two balls stood a fifth softer than one on a ball.
+ */
+const BALL_STEP = (2.5 * Math.PI) / 180;
 /** Rubber, g/mm³: what a roller weighs. */
 const RUBBER = 0.0011;
 
@@ -93,7 +97,8 @@ export interface Roller {
  * The rollers of a mecanum wheel, placed in the design. A roller's true shape is the barrel that touches the
  * wheel's circle all along; a ball centered on its axis that touches that circle from inside lies wholly within
  * the barrel and touches where the barrel does, so a row of such balls is the barrel to within the gap between
- * two of them. A ball is the one shape every simulator has, and it looks the same however the roller has turned.
+ * two of them, over the stretch of it that meets the floor before the next roller does. A ball is the one shape
+ * every simulator has, and it looks the same however the roller has turned.
  */
 export function rollersOf(w: MecanumWheel): Roller[] {
   const m = w.figures;
@@ -103,9 +108,14 @@ export function rollersOf(w: MecanumWheel): Roller[] {
     const p = apply(w.toDesign, v);
     return [p[0] - o[0], p[1] - o[1], p[2] - o[2]];
   };
-  // Along the axis, `s` from the middle is seen from the axle at atan(s / √2 / circle): the balls are spread evenly in that angle.
-  const steps = Math.max(2, Math.ceil(m.reach / BALL_STEP));
-  const places = Array.from({ length: steps + 1 }, (_, i) => Math.SQRT2 * m.circle * Math.tan(m.reach * (i / steps - 0.5)));
+  // Along the axis, `s` from the middle is seen from the axle at atan(s / √2 / circle): the balls are spread evenly in that angle,
+  // over the roller's own share of the turn and no farther, an odd number of them so that one is at its middle. A roller
+  // reaches a little past its share to take the wheel smoothly onto the next, and where both reached the floor the
+  // wheel stood on twice the balls; a rover with its wheels turned unlike stood mostly on one diagonal and let go of a
+  // push at 0.6 of its weight in Isaac Sim, where it holds 0.7 now. Together the balls stand evenly all round the wheel.
+  const share = (2 * Math.PI) / m.count;
+  const steps = 2 * Math.ceil((share / BALL_STEP - 1) / 2) + 1;
+  const places = Array.from({ length: steps }, (_, i) => Math.SQRT2 * m.circle * Math.tan(share * ((i + 0.5) / steps - 0.5)));
   // A barrel is near enough an ellipsoid as long as the roller and as thick as its middle.
   const mass = Math.max(1, RUBBER * (4 / 3) * Math.PI * m.rollerRadius * m.rollerRadius * (m.rollerLength / 2) * k ** 3);
   const along = 0.4 * mass * (m.rollerRadius * k) ** 2;
