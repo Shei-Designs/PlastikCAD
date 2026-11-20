@@ -89,7 +89,8 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
-      - run: pip install mujoco gymnasium
+      # The MuJoCo the test drive runs (package.json).
+      - run: pip install mujoco==4.0.1 gymnasium
       # The cameras' pictures are drawn without a display: Mesa's software renderer stands in for one.
       - run: .github/scripts/apt-mirror.sh && sudo apt-get install -y libosmesa6
       - run: pnpm install --frozen-lockfile

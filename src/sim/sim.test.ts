@@ -9,6 +9,7 @@ import { makeGroup } from '../model/ops';
 import type { Doc, SceneNode } from '../model/types';
 import { defaultLink } from '../robot/types';
 import { buildMjcfModel, buildRobotPackage } from '../robot/export';
+import type { DriveSpec } from '../robot/export';
 import { checkRobot } from '../robot/check';
 import { withMecanumWheel } from '../robot/replaceWheel';
 import { parseUrdf } from '../io/importUrdf';
@@ -36,7 +37,7 @@ beforeAll(async () => {
 const make = (file: string): Doc => ROBOTS.find((r) => r.file === file)!.make();
 
 /** The robot's MuJoCo package loaded, as the app loads it: without visual meshes, which the plate draws itself. */
-function simulate(doc: Doc, patch: (xml: string) => string = (xml) => xml): { sim: Simulation; base: string } {
+function simulate(doc: Doc, patch: (xml: string) => string = (xml) => xml): { sim: Simulation; base: string; drive: DriveSpec | null } {
   const robot = doc.robot!;
   const nodes = linkNodes(doc.scene);
   const geo = robotGeometry(nodes, Object.fromEntries(nodes.map((n) => [n.id, linkOf(robot, n.id).collision])), false);
@@ -44,7 +45,7 @@ function simulate(doc: Doc, patch: (xml: string) => string = (xml) => xml): { si
   const xml = patch(new TextDecoder().decode(pkg.files.find((f) => f.name.endsWith('.xml'))!.bytes));
   const files = pkg.files.filter((f) => f.name.startsWith('meshes/'));
   const sim = Simulation.load(mj, xml, files, pkg.drive);
-  return { sim, base: pkg.bodies[0].body };
+  return { sim, base: pkg.bodies[0].body, drive: pkg.drive };
 }
 
 const position = (sim: Simulation, body: string): [number, number, number] => {
@@ -59,6 +60,19 @@ const yaw = (sim: Simulation, body: string): number => {
   const p = sim.poses();
   const [w, x, y, z] = [p[7 * i + 3], p[7 * i + 4], p[7 * i + 5], p[7 * i + 6]];
   return (Math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z)) * 180) / Math.PI;
+};
+
+/** How far a body turns about Z while the simulation runs on `seconds`, degrees, past half a turn and more. */
+const turnOver = (sim: Simulation, body: string, seconds: number): number => {
+  let total = 0;
+  let last = yaw(sim, body);
+  for (let t = 0; t < seconds - 1e-9; t += 0.05) {
+    sim.step(Math.min(0.05, seconds - t));
+    const now = yaw(sim, body);
+    total += ((now - last + 540) % 360) - 180;
+    last = now;
+  }
+  return total;
 };
 
 /** What the test drive's watch says of the robot's collision shapes after `seconds` on the floor, as the app works it out. */
@@ -291,11 +305,12 @@ describe('the rover on tracks', () => {
     expect(end[2]).toBeCloseTo(0.055, 2);
     sim.drive(0, 0);
     sim.step(0.5);
-    const [stopped, before] = [position(sim, base), yaw(sim, base)];
+    const stopped = position(sim, base);
     sim.drive(0, 1);
-    sim.step(1);
     // Its long tracks skid as they turn it: well short of the 300° a second its wheels would give without.
-    expect(yaw(sim, base) - before).toBeGreaterThan(40);
+    const turned1 = turnOver(sim, base, 1);
+    expect(turned1).toBeGreaterThan(40);
+    expect(turned1).toBeLessThan(300);
     const turned = position(sim, base);
     expect(Math.hypot(turned[0] - stopped[0], turned[1] - stopped[1])).toBeLessThan(0.05);
     sim.dispose();
@@ -305,10 +320,8 @@ describe('the rover on tracks', () => {
     const turn = (doc: Doc): number => {
       const { sim, base } = simulate(doc);
       sim.step(0.5);
-      const before = yaw(sim, base);
       sim.drive(0, 1);
-      sim.step(1);
-      const turned = yaw(sim, base) - before;
+      const turned = turnOver(sim, base, 1);
       sim.dispose();
       return turned;
     };
@@ -324,6 +337,26 @@ describe('the rover on tracks', () => {
 
   it('shows no fault of its collision shapes on a flat floor', () => {
     expect(faultsAfter(make('tracked'), 1.5)).toEqual([]);
+  });
+
+  it("turns on the spot as plain friction says, its wheels' springs sharing its weight along its tracks", () => {
+    /** The share of the turn its tracks ask that it turns, at 0.15 m/s a track, over a second once under way. */
+    const share = (patch?: (xml: string) => string): number => {
+      const { sim, base, drive } = simulate(make('tracked'), patch);
+      const { roles, wheelRadius: r, wheelSeparation: b } = drive!;
+      for (const [side, way] of [['left', -1], ['right', 1]] as const) for (const a of roles[side]!) sim.setTarget(a, (way * 0.15) / r);
+      sim.step(0.5);
+      const turned = turnOver(sim, base, 1) * (Math.PI / 180);
+      sim.dispose();
+      return turned / ((2 * 0.15) / b);
+    };
+    // Plain friction, the weight shared alike by its sixteen wheels' two rims each, turns it 64.8 %.
+    const sprung = share();
+    expect(sprung).toBeGreaterThan(0.58);
+    expect(sprung).toBeLessThan(0.7);
+    // Without the springs MuJoCo stands it on its tracks' ends, and it turns about 41 %.
+    const rigid = (xml: string) => xml.replace(/\s*<joint name="[^"]+_give"[^>]*\/>/g, '').replace(/\s*<keyframe>[\s\S]*<\/keyframe>/, '');
+    expect(share(rigid)).toBeLessThan(0.5);
   });
 
   it('tells how far each belt has run: as far as the rover went, the floor run going backward, and opposite ways in a turn', () => {

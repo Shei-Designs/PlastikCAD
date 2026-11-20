@@ -1420,6 +1420,32 @@ describe("a link's friction against the floor", () => {
     }
   });
 
+  it("stands a track's wheels on springs in MuJoCo that share the robot's weight alike, and only them", () => {
+    for (const { file: name, make } of ROBOTS) {
+      const d = make();
+      const xml = file(buildMjcfModel(d, geo(d)), /\.xml$/);
+      const weight = [...xml.matchAll(/<inertial [^>]*mass="([^"]+)"/g)].reduce((sum, m) => sum + Number(m[1]), 0) * 9.81;
+      // Each body and the spring it rides, if any: the first joint written in it.
+      const sprung = [...xml.matchAll(/<body name="([^"]+)"[^>]*>\s*<joint name="([^"]+)_give" type="slide" axis="0 0 1" stiffness="([^"]+)" springref="([^"]+)" damping="([^"]+)" armature="([^"]+)"\/>\s*<joint name="([^"]+)"[^>]*\/>\s*<inertial [^>]*mass="([^"]+)"/g)];
+      expect(sprung.length, name).toBe(name === 'tracked' ? 16 : 0);
+      expect(xml.match(/_give"/g)?.length ?? 0, name).toBe(sprung.length);
+      for (const [, body, spring, k, ref, c, armature, hinge, mass] of sprung) {
+        expect(body, name).toMatch(/^Track_.+_wheel_\d+$/);
+        expect(spring, name).toBe(hinge);
+        // Pressed by an even share of the weight, less the wheel's own, the spring stands the wheel where it was designed.
+        const share = weight / sprung.length;
+        expect((-Number(ref) * Number(k) + Number(mass) * 9.81) / share, body).toBeCloseTo(1, 2);
+        expect(Number(k) * 0.001, body).toBeLessThanOrEqual(share * 1.001);
+        expect(Number(armature) / (share / 9.81), body).toBeCloseTo(0.5, 2);
+        expect(Number(c) / (2 * Math.sqrt(Number(k) * (Number(mass) + Number(armature)))), body).toBeCloseTo(1, 2);
+      }
+      // The home pose names every joint, the springs' too.
+      const key = xml.match(/<key name="home" qpos="([^"]+)"/)![1].split(' ').length;
+      const joints = (xml.match(/<joint name=/g)?.length ?? 0) + (xml.includes('<freejoint') ? 6 : 0);
+      expect(key, name).toBe(joints + (xml.includes('<freejoint') ? 1 : 0));
+    }
+  });
+
   it("gives Gazebo's floor a friction no link's reaches, in the SDF model's world and the ROS package's", () => {
     const d = ROBOTS.find((r) => r.file === 'rover')!.make();
     for (const pkg of [buildSdfModel(d, geo(d)), buildRobotPackage(d, geo(d))]) {

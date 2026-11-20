@@ -465,8 +465,10 @@ in the design file and synced with it.
   sprocket's with its belt, and its track the distance between the two
   tracks' middles. A long track skids as it turns the robot on the spot, as
   a real one does, so the robot turns less than its wheels' speeds say, by
-  a share that differs between simulators. A track must be scaled the same
-  on every side; mirroring one makes the track of the other side. Its
+  a share that differs between simulators. In the MuJoCo model and the test
+  drive each of those wheels rides a stiff spring, so that the weight shares
+  out along the track as on a real belt rather than onto its ends. A track
+  must be scaled the same on every side; mirroring one makes the track of the other side. Its
   **Collision** is *Track* or *None*, and its friction 1 until one is
   typed. A Track part with no part in the drive keeps its joint, and its
   wheels turn free. A driven wheel of a track counts for at least four
@@ -1100,7 +1102,7 @@ pnpm tauri dev      # run the desktop app with hot reload
 pnpm dev            # or just the UI, in a browser at http://localhost:1430
 pnpm test           # model, geometry, part, file-format, sync and robot export tests (cargo test in src-tauri for the Rust side)
 pnpm e2e            # builds the app and drives it in a headless browser, with a mouse and with fingers (once: pnpm exec playwright install chromium)
-pnpm smoke:robots   # exports the reference robots and runs them in MuJoCo (pip install mujoco)
+pnpm smoke:robots   # exports the reference robots and runs them in MuJoCo (pip install mujoco==4.0.1, as the test drive)
 pnpm smoke:ros      # the same in ROS 2 Jazzy, RViz (screenshots) and Gazebo, in Docker
 pnpm smoke:isaac    # the same in Isaac Sim through its URDF importer (ISAACSIM_PYTHON=~/isaacsim-env/bin/python)
 pnpm smoke:usd      # the exported Isaac Sim stages opened, played and driven over ROS 2 in Isaac Sim

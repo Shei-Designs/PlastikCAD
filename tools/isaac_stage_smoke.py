@@ -40,7 +40,8 @@ MECANUM_HOLD, MECANUM_SLIDE, MECANUM_CREEP = 0.65, 0.8, 0.015
 # A rover on tracks (a row of wheels each side stands in for a belt) told to go back goes between these shares of
 # what was asked, and told to turn on the spot at 1 rad/s between these shares of it: a long contact skids. Plain
 # Coulomb friction under its eight wheels a side, carrying alike, turns the reference rover 67 %, as Isaac does
-# (steadily; the smoke's count takes in the start); MuJoCo turns it 41 to 46 %, Gazebo 73 %. When its wheels gave
+# (steadily; the smoke's count takes in the start); MuJoCo turns it 64 % (65 % by plain friction on its two points
+# a wheel), Gazebo 73 %. When its wheels gave
 # under it, it stood on one diagonal's end wheels as it turned, went 48 % and strayed 39 mm, 51 mm the other way. It
 # strays no farther than this (m, rad).
 TRACK_STRAIGHT, TRACK_TURN, TRACK_STRAY = (0.9, 1.05), (0.35, 0.85), 0.01

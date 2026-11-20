@@ -33,8 +33,8 @@ importers:
         specifier: ^5.3.0
         version: 5.3.0
       '@mujoco/mujoco':
-        specifier: 3.17.0
-        version: 3.17.0
+        specifier: 4.0.1
+        version: 4.0.1
       '@tauri-apps/api':
         specifier: ^2
         version: 2.12.1
@@ -466,8 +466,8 @@ packages:
   '@keyv/serialize@1.1.1':
     resolution: {integrity: sha512-dXn3FZhPv0US+7dtJsIi2R+c7qWYiReoEh5zUntWCf4oSpMNib8FDhSoed6m3QyZdx5hK7iLFkYk3rNxwt8vTA==}
 
-  '@mujoco/mujoco@3.17.0':
-    resolution: {integrity: sha512-0gXUIoedxw1jPAWQC79CC4qU9B3pu0PPa9a4Vt+qGrw4HXFh/KdQhWogybLndOusIGKvzUsU0HG6GgZOvQYj0Q==}
+  '@mujoco/mujoco@4.0.1':
+    resolution: {integrity: sha512-vLuwD6biiyo2D2LG1fwpwJUfWSDZhBIr6aUd3AuPJR8P7FAIeSHgofGC+0XgIpZ0vYi0EOyju+Kv7zPJepX7wA==}
 
   '@nodable/entities@3.1.0':
     resolution: {integrity: sha512-LsS/DjHr+uDM647Gru/cA8+J3a3HfhttwCKLyuoyN7yXTFCxKBtSgMQBvrW9yNPa2/zDRUNuGPaH5QUFoa4arQ==}
@@ -1854,7 +1854,7 @@ snapshots:
 
   '@keyv/serialize@1.1.1': {}
 
-  '@mujoco/mujoco@3.17.0': {}
+  '@mujoco/mujoco@4.0.1': {}
 
   '@nodable/entities@3.1.0': {}
 
