@@ -21,6 +21,8 @@ export interface MjcfBody {
   friction?: number;
   /** The joint this body hangs by; none for the base, or a body welded to its parent. */
   joint?: MjcfJoint;
+  /** The body also rides a spring straight up and down from where it hangs (a wheel standing in for a track's belt; see `GIVE`). */
+  give?: boolean;
   children: MjcfBody[];
   cameras?: { name: string; pos: Vec3; rpy: Vec3; hfov: number; aspect: number }[];
   /** Sites for IMUs: a gyro and an accelerometer each. */
@@ -193,6 +195,37 @@ export const SERVO_BAND = 0.1;
  * clean figure is kept.
  */
 const SPEED_STEPS = 5;
+/**
+ * How far each wheel that stands in for a track's belt sinks on its spring under an even share of the robot's
+ * weight, m. A row of wheels on one rigid track carries more points than the robot needs to stand: how the weight
+ * shares out among them is not settled by the robot's balance but by how much each point gives. MuJoCo's contacts
+ * leave it to its solver instead, which hands the weight to the points that slip fastest: a rigid table on the
+ * reference tracked rover's sixteen points, spun on the floor, stood on its four corners alone (any MuJoCo, any
+ * step, either cone), and the rover turning on the spot stood on its tracks' ends, 1.5 N where the middle wheels
+ * carried 0.4, and turned 41 % of what its tracks asked where plain friction turns it 65 %, less the faster it
+ * turned. On a spring each wheel carries what its spring is pressed by, as a real belt and its road wheels give:
+ * the rover turns 65 % at any speed, its wheels carrying alike within 0.7 to 0.75 N.
+ */
+const GIVE = 0.001;
+/**
+ * How heavy a track wheel is to move on its spring, as a share of what it carries (its armature there; its weight
+ * is its own). MuJoCo lets a contact give under a push the more, the lighter what it moves: on a wheel of its own
+ * weight alone the rover pushed sideways at half its weight crept 0.4 mm a second, and twenty times heavier 3.6.
+ * As heavy as half its share it creeps 0.2 mm a second at any weight, as the four-wheeled reference rover does,
+ * and still turns as plain friction says; heavier, friction turns across the track and the turn falls (60 % at
+ * twice the share).
+ */
+const GIVE_MASS = 0.5;
+/**
+ * The stiffest a track wheel's spring may be, as how far the wheel's swing on it may turn in one step, radians:
+ * MuJoCo works a spring out from where the step began, and a wheel that swings fast for its step rings on and
+ * on (half a radian set a rover five times the reference's weight bouncing 2 mm where it stood). A spring that
+ * stiff gives more than `GIVE`.
+ */
+const GIVE_SWING = 0.25;
+const GRAVITY = 9.81;
+/** The spring under a wheel that hangs by `joint`. */
+const giveName = (joint: MjcfJoint): string => `${joint.name}_give`;
 /** The app's joint defaults in SI, for a joint exported without limits. */
 const DEFAULT_EFFORT = 10;
 const DEFAULT_VELOCITY = Math.PI / 2;
@@ -324,6 +357,8 @@ export function writeMjcf(model: MjcfModel): string {
     // On the slope the robot stands tilted with the floor, about the world's origin, which the floor passes through.
     const lines = [`${indent}<body name="${escapeXml(b.name)}" pos="${vec(b === model.base ? baseAt : b.pos)}"${b === model.base && tilt ? ` quat="${tilt}"` : ''}>`];
     if (b === model.base && model.floating) lines.push(`${indent}  <freejoint name="${FREE_JOINT}"/>`);
+    const spring = springOf(b);
+    if (spring) lines.push(`${indent}  ${spring}`);
     if (b.joint && b.joint.type !== 'fixed') {
       const j = b.joint;
       const hinge = j.type !== 'prismatic';
@@ -356,12 +391,28 @@ export function writeMjcf(model: MjcfModel): string {
   };
   const tilt = model.world === 'slope' ? quatOf([SLOPE, 0, 0]) : '';
   const baseAt = tilt ? turned(model.base.pos, [SLOPE, 0, 0]) : model.base.pos;
+  // What each wheel on a spring carries when they carry the whole robot alike, N.
+  const giving = collect(model.base, (b) => (b.give && b.joint ? [b] : [])).length;
+  const share = (collect(model.base, (b) => [b.inertial?.mass ?? 0]).reduce((s, m) => s + m, 0) * GRAVITY) / Math.max(1, giving);
+  // The slide a wheel on a spring rides, its spring stretched by the wheel's share less its own weight so that it
+  // stands where it was designed when the wheels carry alike, and critically damped. None for a robot of no weight.
+  const springOf = (b: MjcfBody): string | undefined => {
+    if (!b.give || !b.joint || !(share > 0)) return undefined;
+    const weight = (b.inertial?.mass ?? 0) * GRAVITY;
+    const armature = (GIVE_MASS * share) / GRAVITY;
+    const moved = weight / GRAVITY + armature;
+    const stiffness = Math.min(share / GIVE, moved * (GIVE_SWING / TIMESTEP) ** 2);
+    return `<joint name="${escapeXml(giveName(b.joint))}" type="slide" axis="0 0 1" stiffness="${sig(stiffness)}" springref="${sig(-(share - weight) / stiffness)}" damping="${sig(2 * Math.sqrt(stiffness * moved))}" armature="${sig(armature)}"/>`;
+  };
   const body = bodyXml(model.base, '    ');
   const imus = collect(model.base, (b) => b.imus ?? []);
   const touches = collect(model.base, (b) => b.touches ?? []);
   const lidars = collect(model.base, (b) => b.lidars ?? []);
-  // Joints in the order the file gives them, which is the order of qpos.
-  const joints = collect(model.base, (b) => (b.joint && b.joint.type !== 'fixed' ? [b.joint] : []));
+  // Joints in the order the file gives them, which is the order of qpos: a wheel's spring before its hinge.
+  const joints = collect(model.base, (b): MjcfJoint[] => [
+    ...(b.joint && springOf(b) ? [{ name: giveName(b.joint), type: 'prismatic' as const, axis: [0, 0, 1] as Vec3, internal: true }] : []),
+    ...(b.joint && b.joint.type !== 'fixed' ? [b.joint] : []),
+  ]);
   // The home pose: every joint at its start, the base raised or lowered to stand on the floor in it, and each
   // position servo asked to hold its joint there (a velocity motor is asked for nothing).
   const [bx, by, bz] = model.base.pos;

@@ -3,9 +3,9 @@
     ROBOT_FIXTURES_OUT=fixtures/out pnpm exec vitest run src/robot/robots.test.ts
     python3 tools/mujoco_smoke.py fixtures/out
 
-Needs the `mujoco` package (pip install mujoco, or a venv). Each model is
-settled for a second, then driven: velocity motors run at their limit and the
-base must travel; a mecanum drive must go forward, slide and turn as told;
+Needs the `mujoco` package, the version the test drive runs (package.json:
+pip install mujoco==4.0.1, or a venv). Each model is settled for a second,
+then driven: velocity motors run at their limit and the base must travel; a mecanum drive must go forward, slide and turn as told;
 a rover on tracks must go straight and turn on the spot;
 a car must go round the circle its steering asks, alike both ways;
 position servos are sent 0.3 rad and must follow; a free
@@ -20,7 +20,7 @@ import sys
 try:
     import mujoco
 except ImportError:
-    print("mujoco is not installed: pip install mujoco (a venv is fine) and run this with that Python.")
+    print("mujoco is not installed: pip install mujoco==4.0.1 (a venv is fine) and run this with that Python.")
     sys.exit(2)
 import numpy as np
 
@@ -32,10 +32,12 @@ MECANUM_WHEEL_SPEED, MECANUM_SECONDS, MECANUM_LEAST, MECANUM_MOST, MECANUM_STRAY
 # turned on the spot with its tracks at the second speed, one each way, for this long. Straight, it must go between
 # these shares of what was asked: a motor here runs slower the more it is loaded, as a real one does, and its own
 # damping alone costs some 5 %. Turning, a long contact skids: it must turn between these shares of what wheels
-# that did not skid would turn it (the reference rover turns 35 %; plain Coulomb friction would give 70 to 80 %).
-# It must stray no farther than this another way (m, rad).
+# that did not skid would turn it. Plain friction, the weight shared alike by the reference rover's 32 points of
+# contact (each wheel's two rims), turns it 64.8 %, and it turns 64 %. Without the springs under its wheels (GIVE
+# in src/io/mjcf.ts) MuJoCo stood it on its tracks' ends and it turned 41 %. It must stray no farther than this
+# another way (m, rad).
 TRACK_SPEED, TRACK_TURN_SPEED, TRACK_SECONDS = 0.3, 0.15, 3.0
-TRACK_STRAIGHT, TRACK_TURN, TRACK_STRAY = (0.9, 1.02), (0.28, 0.7), 0.05
+TRACK_STRAIGHT, TRACK_TURN, TRACK_STRAY = (0.9, 1.02), (0.55, 0.75), 0.05
 
 # A rover on two wheels a side turns by sliding them sideways. It is run straight at this speed (m/s) and told to
 # turn on the spot at this rate (rad/s), for this long. Plain friction under four wheels that carry alike turns it
@@ -68,6 +70,10 @@ CAR_CIRCLE, CAR_ALIKE = (0.97, 1.08), 0.01
 CAR_VEER, CAR_STRAY = np.radians(0.15), 0.01
 
 root = sys.argv[1] if len(sys.argv) > 1 else "fixtures/out"
+# The MuJoCo the test drive runs (package.json), which CI installs for this smoke too: another is said, not refused.
+with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "package.json")) as f:
+    PINNED = json.load(f)["dependencies"]["@mujoco/mujoco"]
+print(f"MuJoCo {mujoco.__version__}" + ("" if mujoco.__version__ == PINNED else f", not the {PINNED} the test drive runs (pip install mujoco=={PINNED})"))
 # A link's friction is what holds on the floor: MuJoCo takes the larger of two surfaces' figures unless one has the
 # priority, which the robot's shapes are given. A rover on two wheels a side with its wheels' friction set to this
 # is pulled across them at this much under and over it, as a share of its weight: it let go between 0.300 and 0.305

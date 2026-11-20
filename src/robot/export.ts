@@ -1107,6 +1107,8 @@ export function buildMjcfModel(doc: Doc, geometry: Map<string, LinkGeometry>, ro
     joint: r.driven
       ? { name: r.joint, type: 'continuous', axis: r.axis, limit: { lower: 0, upper: 0, effort: r.driven.effort, velocity: r.driven.velocity }, dynamics: { damping: r.driven.damping, friction: r.driven.friction }, armature: r.driven.armature, internal: true }
       : { name: r.joint, type: 'continuous', axis: r.axis, dynamics: { damping: ROLLER_DAMPING, friction: 0 }, internal: true },
+    // A track's wheel shares the robot's weight with the rest of its row as a belt does, on a spring (see GIVE in mjcf.ts).
+    ...(r.cylinder ? { give: true } : {}),
     children: [],
   });
   const body = (name: string, joint: UrdfJoint | undefined): MjcfBody => {
