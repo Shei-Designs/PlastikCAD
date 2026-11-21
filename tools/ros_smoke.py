@@ -71,7 +71,8 @@ ROLLER_HOLDS, ROLLER_SLIDES = 32.0, 38.5
 TRACK_TURN, TRACK_SECONDS, TRACK_SHARE, TRACK_DRIFT = 1.0, 3.0, (0.5, 1.05), 0.05
 # A rover on two wheels a side turns by sliding them sideways. Told to turn on the spot at this rate (rad/s) for
 # this long, it turns at between these shares of what Gazebo's friction gives, by the simulation's own time:
-# t/(t + L) of the rate told, t from side to side and L from axle to axle, since that friction is a square laid on
+# t/(t + L) of the rate told (for any number of wheels a side, L then from back wheel to front), t from side to
+# side and L from axle to axle, since that friction is a square laid on
 # the wheels' diagonals (see `check_friction_frames`) where plain friction is a circle. That is 56 % for the
 # reference rover and 33 % for the long one. Each wheel stands on a ridge round its middle, and the SDF model and
 # the ROS package then both turn the two 100.2 % and 99.8 % of that, without moving. (On plain cylinders the model
