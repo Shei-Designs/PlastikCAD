@@ -67,12 +67,12 @@ MECANUM_LEAST, MECANUM_STRAY = 0.8, 0.1
 ROLLER_HOLDS, ROLLER_SLIDES = 32.0, 38.5
 # A rover on tracks (a differential drive with a row of wheels each side) told to turn on the spot at this rate
 # (rad/s) for this long turns at between these shares of it, by the simulation's own time: a long contact
-# skids (Gazebo gave 73 to 75 %; plain Coulomb friction under the reference rover's eight wheels a side, carrying
-# alike, gives 67 %). It moves no farther than this (m).
+# skids (Gazebo gave 75 % in the trial, plain Coulomb friction gives 70 to 80 %). It moves no farther than this (m).
 TRACK_TURN, TRACK_SECONDS, TRACK_SHARE, TRACK_DRIFT = 1.0, 3.0, (0.5, 1.05), 0.05
 # A rover on two wheels a side turns by sliding them sideways. Told to turn on the spot at this rate (rad/s) for
 # this long, it turns at between these shares of what Gazebo's friction gives, by the simulation's own time:
-# t/(t + L) of the rate told (for any number of wheels a side, L then from back wheel to front), t from side to side and L from axle to axle, since that friction is a square laid on
+# t/(t + L) of the rate told (for any number of wheels a side, L then from back wheel to front), t from side to
+# side and L from axle to axle, since that friction is a square laid on
 # the wheels' diagonals (see `check_friction_frames`) where plain friction is a circle. That is 56 % for the
 # reference rover and 33 % for the long one. Each wheel stands on a ridge round its middle, and the SDF model and
 # the ROS package then both turn the two 100.2 % and 99.8 % of that, without moving. (On plain cylinders the model
