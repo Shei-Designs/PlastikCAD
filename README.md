@@ -400,7 +400,12 @@ in the design file and synced with it.
   robot gets a `base_footprint` root on the floor under the base link,
   facing +X as ROS expects. A differential drive with more than one wheel
   a side turns by skidding them, as a real one does, so it turns less than
-  its wheels' speeds say: by less the longer it is against its width. For
+  its wheels' speeds say: by less the longer it is against its width. How
+  much differs between simulators. Gazebo's friction is a square laid on
+  each wheel's diagonals, not the circle of plain friction, so there such a
+  robot turns on the spot at t/(t + L) of what its wheels' speeds say (t
+  from side to side, L from back wheel to front), whatever its wheel count:
+  more than plain friction for a long robot, less for a short one. For
   Gazebo every wheel's cylinder, driven or free, stands on a narrow ridge
   round the middle of its tread, so the SDF model and the ROS 2 package
   turn alike, about the middle of the robot's wheels, however wide they
@@ -600,9 +605,13 @@ in the design file and synced with it.
   drive it. A wheel's cylinder stands on a narrow ridge round the middle of
   its tread, so a robot turns about the middle of its wheels, however wide
   they are. A driven wheel's rotor is no lighter at the rim than four times
-  the load the wheel carries, whatever its motor, so a rover that turns by
-  sliding its wheels sideways turns as far as plain friction lets it, about
-  its own middle, and a wheel under load grips where it should. The rim is
+  the load the wheel carries, whatever its motor, so a rover on two wheels a
+  side that turns by sliding them sideways turns as far as plain friction
+  lets it, about its own middle, and a wheel under load grips where it
+  should. On three wheels a side or more PhysX turns it further than plain
+  friction, by up to about a quarter in the shapes tried: the friction at
+  its corner wheels leans off their slide toward their rolling, the more
+  the heavier their rotors. The rim is
   never more than its motor brings to its top speed in a fifth of a second,
   so small motors under a heavy robot start and stop as they should.
   The robot's surfaces give a little where they touch, as MuJoCo's do (its
