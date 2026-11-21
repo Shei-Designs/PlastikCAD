@@ -487,7 +487,7 @@ function prepare(doc: Doc, geometry: Map<string, LinkGeometry>, robot: Robot, me
         // friction would hold such a rover that is longer than it is wide square to the world, however hard the
         // wheels turned, so each wheel's friction is laid along its own diagonals (see `surfaceXml`): halfway
         // between the axle and the way the wheel rolls, level, in the frame of the link the wheel hangs from, which
-        // does not turn with it. A track's wheels, many in a row, turn as they should without.
+        // does not turn with it. A track's wheels get the same, in the track's frame (see `rollerXml`).
         if (def.id === 'differential' && Math.max(parts.left.length, parts.right.length) > 1) {
           for (const j of [...parts.left, ...parts.right]) {
             const [x, y] = placedJoints.get(j.id)!.axis;

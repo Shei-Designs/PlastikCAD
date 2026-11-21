@@ -1526,8 +1526,8 @@ describe('the friction of a wheel that skids', () => {
       // Its friction is the wheel's own, the same every way: no direction is laid for a wheel that only rolls.
       expect(sdf).not.toContain('fdir1');
     }
-    // Nothing that is not a wheel on a cylinder does: a track's wheels and a mecanum wheel's rollers are written as they were.
-    for (const which of ['tracked', 'mecanum', 'arm', 'quadruped', 'linkage']) expect(made(which).sdf).not.toMatch(/<collision name="[^"]+_collision_1">\s*(<pose>[^<]*<\/pose>\s*)?<geometry><cylinder><radius>[^<]+<\/radius><length>0\.00/);
+    // Nothing that is not a wheel on a cylinder does: a mecanum wheel's rollers are written as they were (a track's wheels: below).
+    for (const which of ['mecanum', 'arm', 'quadruped', 'linkage']) expect(made(which).sdf).not.toMatch(/<collision name="[^"]+_collision_1">\s*(<pose>[^<]*<\/pose>\s*)?<geometry><cylinder><radius>[^<]+<\/radius><length>0\.00/);
   });
 
   it('has a touch sensor on a wheel feel the ridge it stands on as well as the rest of it', () => {
@@ -1569,12 +1569,34 @@ describe('the friction of a wheel that skids', () => {
     for (const name of ['arm', 'quadruped']) for (const [, rotor] of rotors(name).mjcf) expect(rotor).toBeLessThan(0.003);
   });
 
-  it("leaves a track's wheels and a car's wheels as they were", () => {
-    for (const name of ['tracked', 'car']) {
-      const { urdf, sdf } = made(name);
-      for (const xml of [urdf, sdf]) {
-        expect(xml).not.toContain('fdir1');
-        expect(xml).not.toContain('xmlns:gz');
+  it("leaves a car's wheels as they were", () => {
+    const { urdf, sdf } = made('car');
+    for (const xml of [urdf, sdf]) {
+      expect(xml).not.toContain('fdir1');
+      expect(xml).not.toContain('xmlns:gz');
+    }
+  });
+
+  it("stands a track's wheels on a ridge, their friction on their diagonals in the track's frame, the same in the SDF model and the ROS package", () => {
+    const { urdf, sdf } = made('tracked');
+    for (const xml of [sdf, urdf]) {
+      expect(xml).toContain('xmlns:gz="http://gazebosim.org/schema"');
+      const wheels = [...xml.matchAll(/<link name="(Track_(left|right)_wheel_\d+)">([\s\S]*?)<\/link>/g)];
+      expect(wheels).toHaveLength(16);
+      for (const [, name, side, link] of wheels) {
+        const shapes = [...link.matchAll(/<collision name="([^"]+)"><pose>([^<]+)<\/pose><geometry><cylinder><radius>([^<]+)<\/radius><length>([^<]+)<\/length><\/cylinder><\/geometry>(<surface>.*?<\/surface>)<\/collision>/g)].map((m) => m.slice(1));
+        // The wheel's own cylinder 4 mm low, and a ridge of the full radius a fortieth of its width.
+        expect(shapes.map(([collision, , radius, length]) => [collision, Number(radius), Number(length)])).toEqual([
+          [`${name}_collision`, 0.0314, 0.04],
+          [`${name}_collision_1`, 0.0354, 0.001],
+        ]);
+        expect(shapes[0][1]).toBe(shapes[1][1]);
+        for (const [, , , , surface] of shapes) {
+          const m = surface.match(/<mu>([^<]+)<\/mu><mu2>([^<]+)<\/mu2><fdir1 gz:expressed_in="([^"]+)">([^<]+)<\/fdir1>/)!;
+          // Halfway between the axle (across the track) and the way the wheel rolls, level, in the frame of the track, which does not turn with it.
+          expect([m[1], m[2], m[3]]).toEqual(['0.707107', '0.707107', `Track_${side}`]);
+          expect(m[4].split(' ').map((v) => Math.abs(Number(v)))).toEqual([1, 1, 0]);
+        }
       }
     }
   });

@@ -181,19 +181,32 @@ export interface GazeboRoller {
  * and turned from the wheel link's frame, colliding as a row of balls. The same two elements go into an SDF model
  * as they are and into a URDF inside a <gazebo> block, where Gazebo alone reads them: the rollers are the
  * simulator's business, and no frame or joint of the robot's own. A wheel that stands in for a track's belt is
- * written the same way: a cylinder on a hinge to its track, which the drive turns.
+ * written the same way: a cylinder on a hinge to its track, which the drive turns. It stands on a ridge round its
+ * middle, and its friction is laid on its diagonals in the track's frame, as a skid-steer wheel's is (see
+ * `surfaceXml`). Left on the world's axes, the square turned the reference rover on the spot at 98 % of the rate
+ * asked facing along them and 59 % facing between, 73 % over a turn, and held a pull across the tracks of 1.2 times
+ * its weight facing between them where it slid facing along: along a world axis a track kept its full grip along
+ * itself while it slid sideways, and rolled at the belt's speed. Laid on the diagonals it turns the same whichever
+ * way it faces.
  */
 export function rollerXml(r: GazeboRoller): string {
   const v = (a: Vec3) => a.map((x) => fmt(x, 6)).join(' ');
   const n = (x: number) => fmt(x, 12);
   const [xx, yy, zz, xy, xz, yz] = r.inertial.inertia;
   const wheel = escapeXml(r.wheel);
+  const [ax, ay] = r.axis;
+  const track = surfaceXml(r.friction, { frame: r.wheel, along: [ax + ay, ay - ax, 0] });
+  const name = escapeXml(r.name);
   return [
     `<link name="${escapeXml(r.name)}">`,
     `  <pose relative_to="${wheel}">${v(r.at)} 0 0 0</pose>`,
     `  <inertial><mass>${n(r.inertial.mass)}</mass><inertia><ixx>${n(xx)}</ixx><ixy>${n(xy)}</ixy><ixz>${n(xz)}</ixz><iyy>${n(yy)}</iyy><iyz>${n(yz)}</iyz><izz>${n(zz)}</izz></inertia></inertial>`,
     ...r.balls.map((b, i) => `  <collision name="${escapeXml(r.name)}_collision${i ? `_${i}` : ''}"><pose>${v(b.at)} 0 0 0</pose><geometry><sphere><radius>${fmt(b.radius, 6)}</radius></sphere></geometry>${surfaceXml(r.friction, { frame: r.name, along: r.axis, whole: true })}</collision>`),
-    ...(r.cylinder ? [`  <collision name="${escapeXml(r.name)}_collision"><pose>0 0 0 ${v(r.cylinder.rpy)}</pose><geometry><cylinder><radius>${fmt(r.cylinder.radius, 6)}</radius><length>${fmt(r.cylinder.length, 6)}</length></cylinder></geometry>${surfaceXml(r.friction)}</collision>`] : []),
+    ...(r.cylinder
+      ? crowned(r.cylinder.radius, r.cylinder.length).map(
+          (s, i) => `  <collision name="${name}_collision${i ? `_${i}` : ''}"><pose>0 0 0 ${v(r.cylinder!.rpy)}</pose><geometry><cylinder><radius>${fmt(s.radius, 6)}</radius><length>${fmt(s.length, 6)}</length></cylinder></geometry>${track}</collision>`,
+        )
+      : []),
     '</link>',
     `<joint name="${escapeXml(r.joint)}" type="revolute">`,
     `  <parent>${wheel}</parent>`,

@@ -66,9 +66,14 @@ MECANUM_LEAST, MECANUM_STRAY = 0.8, 0.1
 # at 34° and slid at 36.5° at six headings. Laid along the world's axes it held 41° facing along one of them.
 ROLLER_HOLDS, ROLLER_SLIDES = 32.0, 38.5
 # A rover on tracks (a differential drive with a row of wheels each side) told to turn on the spot at this rate
-# (rad/s) for this long turns at between these shares of it, by the simulation's own time: a long contact
-# skids (Gazebo gave 75 % in the trial, plain Coulomb friction gives 70 to 80 %). It moves no farther than this (m).
-TRACK_TURN, TRACK_SECONDS, TRACK_SHARE, TRACK_DRIFT = 1.0, 3.0, (0.5, 1.05), 0.05
+# (rad/s) for this long turns at between these shares of it, by the simulation's own time, and as fast through each
+# third of the turn as through the others, to within TRACK_STEADY: whichever way it faces. Each track wheel's
+# friction is a square laid on its diagonals, as a skid-steer wheel's is (see `check_friction_frames`): the
+# reference rover turned 64.7 % at every heading, where plain friction gives 67 % for eight wheels a side carrying
+# alike (Gazebo carries the middle ones some 1.7 times as much as the end ones, and the square then gives 65 %).
+# Laid on the world's axes, as it was, the square turned it 98 % facing along them and 59 % facing between, 73 %
+# over a turn. It moves no farther than this (m).
+TRACK_TURN, TRACK_SECONDS, TRACK_SHARE, TRACK_DRIFT, TRACK_STEADY = 1.0, 3.0, (0.55, 0.75), 0.05, 1.1
 # A rover on two wheels a side turns by sliding them sideways. Told to turn on the spot at this rate (rad/s) for
 # this long, it turns at between these shares of what Gazebo's friction gives, by the simulation's own time:
 # t/(t + L) of the rate told, t from side to side and L from axle to axle, since that friction is a square laid on
@@ -814,10 +819,27 @@ def check_tracks(name, sim, send):
         return
     drift = math.hypot(spun[0] - start[0], spun[1] - start[1])
     share = rate / TRACK_TURN
-    if not TRACK_SHARE[0] <= share <= TRACK_SHARE[1] or drift > TRACK_DRIFT:
-        fail(name, f'told to turn left on the spot, the robot on tracks turned {math.degrees(turned):.0f}° at {rate:.2f} rad/s ({100 * share:.0f} % of the rate it was told) and moved {drift:.3f} m')
+    thirds = rates_by_third(seen)
+    uneven = max(thirds) / min(thirds) if thirds and min(thirds) > 0 else float('inf')
+    told = f'{math.degrees(turned):.0f}° at {rate:.2f} rad/s ({100 * share:.0f} % of the rate it was told; by thirds of the turn {", ".join(f"{r:.2f}" for r in thirds)} rad/s)'
+    if not TRACK_SHARE[0] <= share <= TRACK_SHARE[1] or drift > TRACK_DRIFT or uneven > TRACK_STEADY:
+        fail(name, f'told to turn left on the spot, the robot on tracks turned {told} and moved {drift:.3f} m')
     else:
-        ok(f'cmd_vel z turned the robot on its tracks {math.degrees(turned):.0f}° to the left on the spot at {rate:.2f} rad/s ({100 * share:.0f} % of the rate it was told, {drift:.3f} m of drift)')
+        ok(f'cmd_vel z turned the robot on its tracks to the left on the spot: {told}, {drift:.3f} m of drift')
+
+
+def rates_by_third(seen):
+    """The rate of a turn (rad/s) through each third of its middle, from a tenth of it to nine tenths (see `turn_of`),
+    by the simulation's own time: alike for a robot that turns the same whichever way it faces."""
+    sums = [0.0]
+    for a, b in zip(seen, seen[1:]):
+        sums.append(sums[-1] + (b[6] - a[6] + math.pi) % (2 * math.pi) - math.pi)
+    turned = sums[-1]
+    if not turned:
+        return []
+    marks = [0.1 + 0.8 * k / 3 for k in range(4)]
+    at = [next((i for i, v in enumerate(sums) if abs(v) >= m * abs(turned)), len(sums) - 1) for m in marks]
+    return [abs(sums[j] - sums[i]) / (seen[j][0] - seen[i][0]) for i, j in zip(at, at[1:]) if seen[j][0] > seen[i][0]]
 
 
 def check_rviz(name, urdf, env):
