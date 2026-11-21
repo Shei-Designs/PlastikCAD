@@ -404,8 +404,11 @@ in the design file and synced with it.
   much differs between simulators. Gazebo's friction is a square laid on
   each wheel's diagonals, not the circle of plain friction, so there such a
   robot turns on the spot at t/(t + L) of what its wheels' speeds say (t
-  from side to side, L from back wheel to front), whatever its wheel count:
-  more than plain friction for a long robot, less for a short one. For
+  from side to side, L from back wheel to front): more than plain friction
+  for a long robot, less for a short one. With more wheels a side Gazebo
+  puts more of the weight on those nearer the middle, and a robot whose
+  middle wheels carry enough more turns at t/(t + l) instead, l between a
+  pair of its wheels nearer the middle: a track's long row does. For
   Gazebo every wheel's cylinder, driven or free, stands on a narrow ridge
   round the middle of its tread, so the SDF model and the ROS 2 package
   turn alike, about the middle of the robot's wheels, however wide they
@@ -480,7 +483,12 @@ in the design file and synced with it.
   out along the track as on a real belt rather than onto its ends. For
   Gazebo each of them stands on a ridge round its middle and grips as a
   skid-steer wheel does, so the robot turns and holds alike whichever way
-  it faces. A track
+  it faces. It turns there at t/(t + l) of what its wheels' speeds say, l
+  between one pair of the track's wheels: Gazebo shares the weight along
+  the row by how easily each wheel's contact moves, more onto those nearer
+  the centre of mass, and the share each carries picks the pair. The
+  reference rover turns at its third pair from the ends, 65 %, where plain
+  friction gives 67 %. A track
   must be scaled the same on every side; mirroring one makes the track of the other side. Its
   **Collision** is *Track* or *None*, and its friction 1 until one is
   typed. A Track part with no part in the drive keeps its joint, and its
