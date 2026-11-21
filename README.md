@@ -472,7 +472,10 @@ in the design file and synced with it.
   a real one does, so the robot turns less than its wheels' speeds say, by
   a share that differs between simulators. In the MuJoCo model and the test
   drive each of those wheels rides a stiff spring, so that the weight shares
-  out along the track as on a real belt rather than onto its ends. A track
+  out along the track as on a real belt rather than onto its ends. For
+  Gazebo each of them stands on a ridge round its middle and grips as a
+  skid-steer wheel does, so the robot turns and holds alike whichever way
+  it faces. A track
   must be scaled the same on every side; mirroring one makes the track of the other side. Its
   **Collision** is *Track* or *None*, and its friction 1 until one is
   typed. A Track part with no part in the drive keeps its joint, and its
