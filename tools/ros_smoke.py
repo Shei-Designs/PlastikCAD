@@ -70,13 +70,19 @@ ROLLER_HOLDS, ROLLER_SLIDES = 32.0, 38.5
 # third of the turn as through the others, to within TRACK_STEADY: whichever way it faces. Each track wheel's
 # friction is a square laid on its diagonals, as a skid-steer wheel's is (see `check_friction_frames`): the
 # reference rover turned 64.7 % at every heading, where plain friction gives 67 % for eight wheels a side carrying
-# alike (Gazebo carries the middle ones some 1.7 times as much as the end ones, and the square then gives 65 %).
+# alike. Gazebo carries the middle ones some 1.6 times as much as the end ones: rigid contacts leave the split open,
+# and DART, Gazebo's physics, lets each contact give by 1e-5 of how easily a push there moves the robot (its
+# constraint force mixing, to keep its equations solvable), so it loads each in inverse proportion to that and those
+# nearer the centre of mass carry more (that rule gives the reference rover's loads to 0.003 N, and a plain box's on
+# 3, 4 or 8 spheres a side to 0.0001 N). The square then turns the rover at t/(t + l), l between the third pair of wheels from the ends:
+# 65 %. With the body's inertia a hundred times larger the loads come out almost even and it turns 53 %.
 # Laid on the world's axes, as it was, the square turned it 98 % facing along them and 59 % facing between, 73 %
 # over a turn. It moves no farther than this (m).
 TRACK_TURN, TRACK_SECONDS, TRACK_SHARE, TRACK_DRIFT, TRACK_STEADY = 1.0, 3.0, (0.55, 0.75), 0.05, 1.1
 # A rover on two wheels a side turns by sliding them sideways. Told to turn on the spot at this rate (rad/s) for
 # this long, it turns at between these shares of what Gazebo's friction gives, by the simulation's own time:
-# t/(t + L) of the rate told (for any number of wheels a side, L then from back wheel to front), t from side to
+# t/(t + L) of the rate told (on more wheels a side too while the end ones carry their share, L then from back wheel
+# to front; on a track's long row see TRACK_SHARE), t from side to
 # side and L from axle to axle, since that friction is a square laid on
 # the wheels' diagonals (see `check_friction_frames`) where plain friction is a circle. That is 56 % for the
 # reference rover and 33 % for the long one. Each wheel stands on a ridge round its middle, and the SDF model and
