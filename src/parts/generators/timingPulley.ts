@@ -23,6 +23,8 @@ interface BeltBase {
   flankAngle: number;
   /** Radius rounding the corner between flank and OD. */
   tipFillet: number;
+  /** The belt's thickness behind its teeth (overall thickness less tooth height), for a straight belt section. */
+  backing: number;
 }
 
 /** Curvilinear groove (GT2, HTD): a full-radius bottom with tangent flanks. */
@@ -41,27 +43,32 @@ interface FlatGroove extends BeltBase {
 
 type BeltProfile = RoundGroove | FlatGroove;
 
+// `backing` is each belt's overall thickness less its tooth height, from distributors' tables (unverified against
+// the makers' drawings): GT2 1.52/0.76, 2.41/1.14, 3.81/1.93 (Gates PowerGrip GT2 as Pfeifer lists it; many
+// unbranded 2 mm GT2 belts are thinner, about 1.38 overall); HTD 2.4/1.2, 3.6/2.1, 5.6/3.4; T2.5/T5/T10
+// 1.3/0.7, 2.2/1.2, 4.5/2.5; MXL 1.14/0.51, XL 2.30/1.27.
+
 const GT2: Record<string, BeltProfile> = {
-  '2': { kind: 'round', label: 'GT2 2 mm', pitch: 2, plo: 0.254, depth: 0.76, bottomRadius: 0.555, flankAngle: 15, tipFillet: 0.15 },
-  '3': { kind: 'round', label: 'GT2 3 mm', pitch: 3, plo: 0.381, depth: 1.169, bottomRadius: 0.85, flankAngle: 15, tipFillet: 0.25 },
-  '5': { kind: 'round', label: 'GT2 5 mm', pitch: 5, plo: 0.5715, depth: 1.969, bottomRadius: 1.46, flankAngle: 15, tipFillet: 0.42 },
+  '2': { kind: 'round', label: 'GT2 2 mm', pitch: 2, plo: 0.254, depth: 0.76, bottomRadius: 0.555, flankAngle: 15, tipFillet: 0.15, backing: 0.76 },
+  '3': { kind: 'round', label: 'GT2 3 mm', pitch: 3, plo: 0.381, depth: 1.169, bottomRadius: 0.85, flankAngle: 15, tipFillet: 0.25, backing: 1.27 },
+  '5': { kind: 'round', label: 'GT2 5 mm', pitch: 5, plo: 0.5715, depth: 1.969, bottomRadius: 1.46, flankAngle: 15, tipFillet: 0.42, backing: 1.88 },
 };
 
 const HTD: Record<string, BeltProfile> = {
-  '3M': { kind: 'round', label: 'HTD 3M', pitch: 3, plo: 0.381, depth: 1.28, bottomRadius: 0.87, flankAngle: 0, tipFillet: 0.28 },
-  '5M': { kind: 'round', label: 'HTD 5M', pitch: 5, plo: 0.5715, depth: 2.16, bottomRadius: 1.49, flankAngle: 0, tipFillet: 0.45 },
-  '8M': { kind: 'round', label: 'HTD 8M', pitch: 8, plo: 0.6858, depth: 3.6, bottomRadius: 2.55, flankAngle: 0, tipFillet: 0.75 },
+  '3M': { kind: 'round', label: 'HTD 3M', pitch: 3, plo: 0.381, depth: 1.28, bottomRadius: 0.87, flankAngle: 0, tipFillet: 0.28, backing: 1.2 },
+  '5M': { kind: 'round', label: 'HTD 5M', pitch: 5, plo: 0.5715, depth: 2.16, bottomRadius: 1.49, flankAngle: 0, tipFillet: 0.45, backing: 1.5 },
+  '8M': { kind: 'round', label: 'HTD 8M', pitch: 8, plo: 0.6858, depth: 3.6, bottomRadius: 2.55, flankAngle: 0, tipFillet: 0.75, backing: 2.2 },
 };
 
 const T_SERIES: Record<string, BeltProfile> = {
-  'T2.5': { kind: 'flat', label: 'T2.5', pitch: 2.5, plo: 0.27, depth: 0.75, width: 1.75, flankAngle: 20, rootFillet: 0.2, tipFillet: 0.3 },
-  T5: { kind: 'flat', label: 'T5', pitch: 5, plo: 0.425, depth: 1.25, width: 2.67, flankAngle: 20, rootFillet: 0.4, tipFillet: 0.6 },
-  T10: { kind: 'flat', label: 'T10', pitch: 10, plo: 0.93, depth: 2.6, width: 5.3, flankAngle: 20, rootFillet: 0.6, tipFillet: 0.8 },
+  'T2.5': { kind: 'flat', label: 'T2.5', pitch: 2.5, plo: 0.27, depth: 0.75, width: 1.75, flankAngle: 20, rootFillet: 0.2, tipFillet: 0.3, backing: 0.6 },
+  T5: { kind: 'flat', label: 'T5', pitch: 5, plo: 0.425, depth: 1.25, width: 2.67, flankAngle: 20, rootFillet: 0.4, tipFillet: 0.6, backing: 1.0 },
+  T10: { kind: 'flat', label: 'T10', pitch: 10, plo: 0.93, depth: 2.6, width: 5.3, flankAngle: 20, rootFillet: 0.6, tipFillet: 0.8, backing: 2.0 },
 };
 
 const IMPERIAL: Record<string, BeltProfile> = {
-  MXL: { kind: 'flat', label: 'MXL (0.080")', pitch: 2.032, plo: 0.254, depth: 0.52, width: 1.32, flankAngle: 20, rootFillet: 0.13, tipFillet: 0.13 },
-  XL: { kind: 'flat', label: 'XL (0.200")', pitch: 5.08, plo: 0.254, depth: 1.4, width: 3.05, flankAngle: 25, rootFillet: 0.4, tipFillet: 0.4 },
+  MXL: { kind: 'flat', label: 'MXL (0.080")', pitch: 2.032, plo: 0.254, depth: 0.52, width: 1.32, flankAngle: 20, rootFillet: 0.13, tipFillet: 0.13, backing: 0.63 },
+  XL: { kind: 'flat', label: 'XL (0.200")', pitch: 5.08, plo: 0.254, depth: 1.4, width: 3.05, flankAngle: 25, rootFillet: 0.4, tipFillet: 0.4, backing: 1.03 },
 };
 
 /** Extra height of the toothed section over the belt width. */
@@ -376,3 +383,163 @@ export function beltPitch(part: string, p: Params): number | undefined {
   return (profiles[String(p.profile)] ?? Object.values(profiles)[0]).pitch;
 }
 
+
+/**
+ * Half of one belt tooth on a straight section, the pulley groove (`halfGroove`) unrolled: s along the belt from
+ * the tooth's middle, h across it with the belt's land (where the teeth meet the backing) at 0 and the tooth
+ * pointing to -h. Points run from the tooth's tip on its middle to where it meets the land, grown by `clearance`
+ * as a pulley's groove is. Null when neighbouring teeth would meet.
+ */
+function halfTooth(b: BeltProfile, clearance: number, halfPitch: number, q: Quality): Vec2[] | null {
+  const phi = deg(b.flankAngle);
+  const dir: Vec2 = [Math.sin(phi), Math.cos(phi)]; // up the flank, toward the land
+  const n: Vec2 = [Math.cos(phi), -Math.sin(phi)]; // flank normal, away from the tooth
+  const hTip = -(b.depth + clearance);
+
+  let rootR: number;
+  let rootC: Vec2;
+  if (b.kind === 'round') {
+    rootR = b.bottomRadius + clearance;
+    rootC = [0, hTip + rootR];
+  } else {
+    const hw = b.width / 2;
+    const onLand: Vec2 = [hw + clearance * n[0], clearance * n[1]];
+    const center = (r: number): Vec2 => {
+      const qs = onLand[0] - r * n[0];
+      const qh = onLand[1] - r * n[1];
+      return [qs + ((hTip + r - qh) / dir[1]) * dir[0], hTip + r];
+    };
+    rootR = b.rootFillet;
+    rootC = center(rootR);
+    for (let i = 0; i < 24 && rootC[0] < 0; i++) {
+      rootR *= 0.75;
+      rootC = center(rootR);
+    }
+    if (rootC[0] < 0) {
+      rootR = 0;
+      rootC = center(0);
+    }
+    if (rootC[0] < 0) return null;
+  }
+  const flankStart: Vec2 = [rootC[0] + rootR * n[0], rootC[1] + rootR * n[1]];
+
+  // The fillet where the tooth meets the land: tangent to the flank and to the land, on the side away from the tooth.
+  const tip = (rt: number): Vec2 | null => {
+    const q0: Vec2 = [flankStart[0] + rt * n[0], flankStart[1] + rt * n[1]];
+    const t = (-rt - q0[1]) / dir[1];
+    return t < 0 ? null : [q0[0] + t * dir[0], -rt];
+  };
+  const limit = halfPitch * 0.97;
+  let rt = b.tipFillet;
+  let fillet = tip(rt);
+  for (let i = 0; i < 24 && (!fillet || fillet[0] > limit); i++) {
+    rt *= 0.75;
+    fillet = tip(rt);
+  }
+  if (!fillet || fillet[0] > limit) {
+    rt = 0;
+    fillet = tip(0);
+  }
+  if (!fillet || fillet[0] >= halfPitch) return null;
+
+  const pts: Vec2[] = [[0, hTip]];
+  if (rootR > 1e-6) {
+    pts.push(...arc(rootC[0], rootC[1], rootR, -Math.PI / 2, -phi, arcN(q, rootR, Math.PI / 2 - phi)));
+  } else {
+    pts.push(rootC);
+  }
+  if (rt > 1e-6) {
+    pts.push(...arc(fillet[0], fillet[1], rt, Math.PI - phi, Math.PI / 2, arcN(q, rt, Math.PI / 2 - phi)));
+  } else {
+    pts.push(fillet);
+  }
+  return dedupe(pts, 1e-6);
+}
+
+/** CCW outline of a straight belt section of `teeth` teeth: along x from 0, the teeth's tips at y = 0, the back on top. */
+function sectionOutline(b: BeltProfile, teeth: number, clearance: number, q: Quality): Polygon | null {
+  const half = halfTooth(b, clearance, b.pitch / 2, q);
+  if (!half) return null;
+  const tipDepth = b.depth + clearance;
+  const top = tipDepth + b.backing + clearance;
+  const length = teeth * b.pitch;
+  const pts: Vec2[] = [[0, tipDepth]];
+  for (let i = 0; i < teeth; i++) {
+    const x = (i + 0.5) * b.pitch;
+    for (let k = half.length - 1; k >= 1; k--) pts.push([x - half[k][0], tipDepth + half[k][1]]);
+    for (const [s, h] of half) pts.push([x + s, tipDepth + h]);
+  }
+  pts.push([length, tipDepth], [length, top], [0, top]);
+  return dedupe(pts, 1e-6);
+}
+
+const SECTION_PROFILES: Record<string, BeltProfile> = {
+  'GT2-2': GT2['2'],
+  'GT2-3': GT2['3'],
+  'GT2-5': GT2['5'],
+  ...HTD,
+  ...T_SERIES,
+  ...IMPERIAL,
+};
+
+export const beltSection: GeneratorDef = {
+  id: 'belt-section',
+  name: tr('Timing belt section'),
+  category: 'pulleys',
+  summary: tr('Straight piece of timing belt, to show a belt or, as a hole, to cut a slot that holds its end.'),
+  groups: [
+    {
+      title: tr('Belt'),
+      params: [
+        {
+          type: 'select',
+          key: 'profile',
+          label: tr('Profile'),
+          default: 'GT2-2',
+          options: Object.entries(SECTION_PROFILES).map(([value, b]) => ({ value, label: b.label })),
+        },
+        { type: 'number', key: 'teeth', label: tr('Teeth'), default: 10, min: 1, max: 500, step: 1, integer: true },
+        { type: 'number', key: 'beltWidth', label: tr('Belt width'), default: 6, min: 2, max: 100, step: 0.5, unit: 'mm' },
+        {
+          type: 'number',
+          key: 'clearance',
+          label: tr('Clearance'),
+          help: tr('Enlarges the belt by this much on all sides.'),
+          default: 0.1,
+          min: 0,
+          max: 1,
+          step: 0.01,
+          unit: 'mm',
+        },
+      ],
+    },
+  ],
+  build(p: Params, q: Quality): BuildResult {
+    const b = SECTION_PROFILES[str(p, 'profile')];
+    if (!b) throw new Error(`Unknown belt profile "${str(p, 'profile')}"`);
+    const teeth = Math.round(num(p, 'teeth'));
+    let clearance = num(p, 'clearance');
+    const warnings: string[] = [];
+    let outline = sectionOutline(b, teeth, clearance, q);
+    while (!outline && clearance > 0) {
+      clearance = Math.max(0, Math.round((clearance - 0.01) * 100) / 100);
+      outline = sectionOutline(b, teeth, clearance, q);
+    }
+    if (!outline) throw new Error(`The ${b.label} teeth do not fit their pitch`);
+    if (clearance < num(p, 'clearance')) warnings.push(said((unit) => tr('The clearance was reduced to {clearance} so the teeth do not meet.', { clearance: lengthFixed(clearance, unit, 2) })));
+
+    const width = num(p, 'beltWidth') + 2 * clearance;
+    const thickness = b.depth + b.backing + 2 * clearance;
+    return {
+      solid: extrude([outline], width),
+      outline: [outline],
+      info: [
+        lengthInfo(tr('Length'), teeth * b.pitch),
+        lengthInfo(tr('Belt pitch'), b.pitch, 3),
+        lengthInfo(tr('Thickness'), thickness),
+        lengthInfo(tr('Width'), width),
+      ],
+      warnings,
+    };
+  },
+};

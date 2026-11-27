@@ -2,9 +2,10 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { evaluate, initKernel } from '../testing';
 import { selfIntersects, signedArea } from '../math2d';
 import { QUALITY } from '../types';
-import { gt2Pulley, htdPulley, mxlPulley, tPulley } from './timingPulley';
+import { beltSection, gt2Pulley, htdPulley, mxlPulley, tPulley } from './timingPulley';
 import { defaultParams, num } from './types';
 import type { BuildResult, GeneratorDef, Params } from './types';
+import type { Polygon } from '../types';
 
 beforeAll(async () => {
   await initKernel();
@@ -101,4 +102,101 @@ describe('timing pulleys', () => {
     expect(evaluate(r.solid).stats.volume).toBeGreaterThan(0);
     expect(selfIntersects(r.outline![0])).toBe(false);
   });
+});
+
+/** The half-width of a groove or tooth `depth` below its land, from points (s across it, d below the land) on its s >= 0 side. */
+function halfWidthAt(points: [number, number][], depth: number): number {
+  const side = points.filter(([s]) => s >= -1e-9).sort((a, b) => a[1] - b[1]);
+  for (let i = 1; i < side.length; i++) {
+    const [s0, d0] = side[i - 1];
+    const [s1, d1] = side[i];
+    if (d0 <= depth && d1 >= depth && d1 > d0) return s0 + ((depth - d0) / (d1 - d0)) * (s1 - s0);
+  }
+  throw new Error(`No point ${depth} deep`);
+}
+
+describe('timing belt section', () => {
+  const profile = beltSection.groups[0].params.find((d) => d.key === 'profile');
+  if (!profile || profile.type !== 'select') throw new Error('profile select missing');
+
+  function section(p: Params) {
+    const r = beltSection.build({ ...defaultParams(beltSection), ...p }, q);
+    const outline = r.outline![0];
+    expect(signedArea(outline)).toBeGreaterThan(0);
+    expect(selfIntersects(outline)).toBe(false);
+    const e = evaluate(r.solid);
+    expect(e.stats.min[0]).toBeCloseTo(0, 6);
+    expect(e.stats.max[0]).toBeCloseTo(info(r, 'Length'), 2);
+    expect(e.stats.min[1]).toBeCloseTo(0, 6);
+    expect(e.stats.max[1]).toBeCloseTo(info(r, 'Thickness'), 2);
+    expect(e.stats.min[2]).toBeCloseTo(0, 6);
+    expect(e.stats.max[2]).toBeCloseTo(info(r, 'Width'), 2);
+    return { r, outline, e };
+  }
+
+  for (const option of profile.options) {
+    for (const teeth of [1, 10]) {
+      for (const clearance of [0, 0.1, 0.3]) {
+        it(`${option.value} ${teeth}T clearance ${clearance}`, () => {
+          const { r, outline } = section({ profile: option.value, teeth, clearance });
+          expect(r.warnings).toEqual([]);
+          // A tip at y = 0 in the middle of every pitch, a round tooth's a point and a flat one's a flat centred there.
+          const pitch = info(r, 'Belt pitch');
+          const tips = new Map<number, number[]>();
+          for (const [x, y] of outline) if (Math.abs(y) < 1e-9) tips.set(Math.floor(x / pitch), [...(tips.get(Math.floor(x / pitch)) ?? []), x]);
+          expect([...tips.keys()].sort((a, b) => a - b)).toEqual([...Array(teeth).keys()]);
+          for (const [i, xs] of tips) expect((Math.min(...xs) + Math.max(...xs)) / 2).toBeCloseTo((i + 0.5) * pitch, 6);
+        });
+      }
+    }
+  }
+
+  it('has the teeth of the pulley grooves, the backing behind them and the clearance on every side', () => {
+    const { r } = section({ profile: 'GT2-2', teeth: 10, beltWidth: 6, clearance: 0 });
+    expect(info(r, 'Length')).toBeCloseTo(20, 6);
+    expect(info(r, 'Thickness')).toBeCloseTo(1.52, 6); // 0.76 tooth + 0.76 backing
+    expect(info(r, 'Width')).toBeCloseTo(6, 6);
+    const loose = section({ profile: 'GT2-2', teeth: 10, beltWidth: 6, clearance: 0.2 });
+    expect(info(loose.r, 'Thickness')).toBeCloseTo(1.92, 6);
+    expect(info(loose.r, 'Width')).toBeCloseTo(6.4, 6);
+    expect(loose.e.stats.volume).toBeGreaterThan(evaluate(r.solid).stats.volume);
+  });
+
+  it('backs the clearance off when neighbouring teeth would meet', () => {
+    const r = beltSection.build({ ...defaultParams(beltSection), profile: 'GT2-2', teeth: 4, clearance: 1 }, q);
+    expect(r.warnings.join(' ')).toMatch(/clearance was reduced/);
+    expect(selfIntersects(r.outline![0])).toBe(false);
+    expect(evaluate(r.solid).stats.volume).toBeGreaterThan(0);
+  });
+
+  // A section's tooth is the groove of the pulley of the same profile and clearance, unrolled: below the fillet
+  // where it meets the land the two are the same shape. Measured on a large pulley, whose rim is nearly straight.
+  const pulleys: [GeneratorDef, string, string][] = [
+    [gt2Pulley, '2', 'GT2-2'],
+    [gt2Pulley, '5', 'GT2-5'],
+    [htdPulley, '5M', '5M'],
+    [tPulley, 'T5', 'T5'],
+    [mxlPulley, 'XL', 'XL'],
+  ];
+  for (const [def, pulleyProfile, sectionProfile] of pulleys) {
+    it(`a ${sectionProfile} tooth matches the ${def.id} ${pulleyProfile} groove`, () => {
+      for (const clearance of [0, 0.1]) {
+        const pr = def.build({ ...defaultParams(def), profile: pulleyProfile, teeth: 200, toothClearance: clearance, flanges: 'none', hubHeight: 0, boreType: 'none' }, q);
+        const ro = Math.max(...pr.outline![0].map(([x, y]) => Math.hypot(x, y)));
+        const step = (2 * Math.PI) / 200;
+        const groove = pr.outline![0].filter(([x, y]) => Math.abs(Math.atan2(y, x)) < step / 2 && x < ro - 1e-6).map(([x, y]): [number, number] => [y, ro - x]);
+        const sr = section({ profile: sectionProfile, teeth: 3, clearance });
+        const pitch = info(sr.r, 'Belt pitch');
+        const grooveDepth = Math.max(...groove.map(([, d]) => d));
+        // The section's land is where its middle tooth meets the backing; its tooth hangs below it.
+        const middle = (sr.outline as Polygon).filter(([x]) => x > pitch && x < 2 * pitch);
+        const landY = Math.max(...middle.map(([, y]) => y));
+        const tooth = middle.map(([x, y]): [number, number] => [x - 1.5 * pitch, landY - y]);
+        expect(Math.max(...tooth.map(([, d]) => d))).toBeCloseTo(grooveDepth, 6);
+        for (const share of [0.5, 0.8]) {
+          expect(Math.abs(halfWidthAt(tooth, share * grooveDepth) - halfWidthAt(groove, share * grooveDepth))).toBeLessThan(0.01);
+        }
+      }
+    });
+  }
 });
