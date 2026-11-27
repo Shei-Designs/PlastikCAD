@@ -193,7 +193,7 @@ It is the Tinkercad way of modeling, without the cloud and without the clutter:
 | Internal ring gear | MXL / XL timing pulley | Lead screw nut (flanged) |  | | Tee / wye (branch at any angle) | NVIDIA Jetson Nano, Orin Nano / Orin NX and Xavier NX developer kits | The fan itself: frame, hub and blades of a typical fan, to check clearance | | DC motor: 775, 130 | |
 | Gear rack (straight, helical, herringbone) | Chain sprocket (#25–#41, 05B–08B, bicycle) | Screw hole (M2–M20): clearance, threaded or for a heat-set insert, with a counterbore, countersink or nut trap |  | | | | | | | |
 | Bevel gear (90° shafts) | V-belt pulley (Z, A, B, C, SPZ–SPC, one groove or several) | Inch bolt / threaded rod (#6–3/4", UNC or UNF) | | |  | | | | | |
-| Worm | | Inch nut | | |  | | | | | |
+| Worm | Timing belt section: a straight piece of any of the belts above, to show a belt or, as a hole, to cut a slot that holds its end | Inch nut | | |  | | | | | |
 | Throated worm wheel (its teeth wrap round the worm) | | Inch screw hole (#6–3/4"): as the metric one, with an 82° countersink | | |  | | | | | |
 
 Rotating parts share the same options for the shaft: round, D-shaft, hex or
@@ -1041,6 +1041,12 @@ left alone, since that is its shape.
   shapes are parametric fits to the belt standards rather than the
   manufacturers' multi-arc drawings, with a clearance setting to tune the fit
   on your printer.
+- **Timing belt sections** have the teeth of the pulley grooves of the same
+  belt laid out straight, so a section and a pulley with the same clearance
+  agree, on a backing as thick as the belt's tables give (overall thickness
+  less tooth height). Unbranded 2 mm GT2 belts are often thinner than the
+  table's 1.52 mm, about 1.38 mm; set the clearance to suit the belt you
+  have. The clearance grows the belt on every side, its width too.
 - **Sprockets** use the common arc-based drafting construction, not the full
   ANSI B29.1 tooth form.
 - **V-belt pulleys** are grooved as ISO 4183 lays them out: the belt rides on

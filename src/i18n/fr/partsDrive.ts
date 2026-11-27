@@ -208,6 +208,10 @@ export const partsDrive: Catalog = {
   'Pulley for metric trapezoidal T2.5 / T5 / T10 belts.': 'Poulie pour courroies trapézoïdales métriques T2.5 / T5 / T10.',
   'MXL / XL timing pulley': 'Poulie crantée MXL / XL',
   'Pulley for imperial trapezoidal MXL (0.080") and XL (0.200") belts.': 'Poulie pour courroies trapézoïdales en pouces MXL (0.080") et XL (0.200").',
+  'Timing belt section': 'Tronçon de courroie crantée',
+  'Straight piece of timing belt, to show a belt or, as a hole, to cut a slot that holds its end.': 'Tronçon droit de courroie crantée, pour figurer une courroie ou, en perçage, tailler une fente qui en retient le bout.',
+  'Enlarges the belt by this much on all sides.': 'Agrandit la courroie de cette valeur de tous les côtés.',
+  'The clearance was reduced to {clearance} so the teeth do not meet.': 'Jeu réduit à {clearance} pour que les dents ne se touchent pas.',
 
   // Screws, nuts and lead screws (parts/generators/screws.ts)
   Size: 'Taille',

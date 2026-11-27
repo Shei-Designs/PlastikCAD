@@ -10,7 +10,7 @@ import { FAN_PARTS } from './fans';
 import { helicalGear, herringboneGear, rack, ringGear, spurGear } from './gears';
 import { inchBolt, inchNut, inchScrewHole, leadScrew, leadScrewNut, metricBolt, metricNut, screwHole } from './screws';
 import { sprocket } from './sprocket';
-import { gt2Pulley, htdPulley, mxlPulley, tPulley } from './timingPulley';
+import { beltSection, gt2Pulley, htdPulley, mxlPulley, tPulley } from './timingPulley';
 import { vBeltPulley } from './vbelt';
 import { track } from './track';
 import { WHEELS } from './wheels';
@@ -30,6 +30,7 @@ export const GENERATORS: GeneratorDef[] = [
   htdPulley,
   tPulley,
   mxlPulley,
+  beltSection,
   vBeltPulley,
   sprocket,
   metricBolt,
